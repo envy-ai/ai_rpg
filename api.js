@@ -578,6 +578,8 @@ module.exports = function registerApiRoutes(scope) {
         const OFFSCREEN_NPC_ACTIVITY_WEEKLY_HOUR = 7;
         const OFFSCREEN_NPC_ACTIVITY_WEEKLY_COUNT = 15;
         const OFFSCREEN_NPC_ACTIVITY_DEFAULT_DAILY_COUNT = 5;
+        const OFFSCREEN_NPC_ACTIVITY_DEFAULT_DAILY_MAX_TURNS_BETWEEN_PROMPTS = 20;
+        const OFFSCREEN_NPC_ACTIVITY_DEFAULT_WEEKLY_MAX_TURNS_BETWEEN_PROMPTS = 100;
         const OFFSCREEN_NPC_ACTIVITY_MAX_CANDIDATES = 80;
 
         let shortDescriptionBackfillInProgress = false;
@@ -585,7 +587,11 @@ module.exports = function registerApiRoutes(scope) {
         let supplementalStoryInfoTurnCounter = 0;
         let offscreenNpcActivityInProgress = false;
         let offscreenNpcActivityState = {
-            dailyMentionedNpcNamesByWeek: {}
+            dailyMentionedNpcNamesByWeek: {},
+            turnsSinceDailyPrompt: 0,
+            turnsSinceWeeklyPrompt: 0,
+            lastDailyPromptWorldTime: null,
+            lastWeeklyPromptWorldTime: null
         };
         const normalizeSaveFileVersion = (value, fallback = 0) => {
             const numeric = Number(value);
@@ -861,6 +867,17 @@ module.exports = function registerApiRoutes(scope) {
             if (typeof scrubber !== 'function') {
                 throw new Error('Slop remover requires scrubGeneratedBrackets helper.');
             }
+            const resolveSlopRemoverBaseAttempts = () => {
+                const rawBaseAttempts = config?.slop_remover_base_attempts;
+                if (rawBaseAttempts === undefined || rawBaseAttempts === null || rawBaseAttempts === '') {
+                    return 2;
+                }
+                const parsed = Number(rawBaseAttempts);
+                if (!Number.isInteger(parsed) || parsed < 1) {
+                    throw new Error('slop_remover_base_attempts must be an integer greater than or equal to 1.');
+                }
+                return parsed;
+            };
 
             let currentProse = typeof prose === 'string' ? prose : '';
             currentProse = scrubber(currentProse);
@@ -890,7 +907,7 @@ module.exports = function registerApiRoutes(scope) {
             const slopContext = buildSlopContextText();
 
             const originalProse = currentProse;
-            let maxAttempts = 3;
+            let maxAttempts = resolveSlopRemoverBaseAttempts();
             for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
                 const slopWords = Array.from(slopWordSet).sort((a, b) => a.localeCompare(b));
                 const slopNgrams = Array.from(slopNgramSet)
@@ -1256,7 +1273,13 @@ module.exports = function registerApiRoutes(scope) {
 
         function normalizeOffscreenNpcActivityState(value) {
             if (value === null || value === undefined) {
-                return { dailyMentionedNpcNamesByWeek: {} };
+                return {
+                    dailyMentionedNpcNamesByWeek: {},
+                    turnsSinceDailyPrompt: 0,
+                    turnsSinceWeeklyPrompt: 0,
+                    lastDailyPromptWorldTime: null,
+                    lastWeeklyPromptWorldTime: null
+                };
             }
             if (!value || typeof value !== 'object' || Array.isArray(value)) {
                 throw new TypeError('offscreen NPC activity state must be an object.');
@@ -1285,13 +1308,83 @@ module.exports = function registerApiRoutes(scope) {
                     }
                 }
             }
+            const normalizeCounter = (rawValue, label) => {
+                if (rawValue === null || rawValue === undefined || rawValue === '') {
+                    return 0;
+                }
+                const numeric = Number(rawValue);
+                if (!Number.isFinite(numeric) || !Number.isInteger(numeric) || numeric < 0) {
+                    throw new TypeError(`offscreen NPC activity ${label} must be a non-negative integer.`);
+                }
+                return numeric;
+            };
+            const turnsSinceDailyPrompt = normalizeCounter(
+                value.turnsSinceDailyPrompt,
+                'turnsSinceDailyPrompt'
+            );
+            const turnsSinceWeeklyPrompt = normalizeCounter(
+                value.turnsSinceWeeklyPrompt,
+                'turnsSinceWeeklyPrompt'
+            );
+            const normalizeWorldTimeSnapshot = (rawValue, label) => {
+                if (rawValue === null || rawValue === undefined || rawValue === '') {
+                    return null;
+                }
+                if (!rawValue || typeof rawValue !== 'object' || Array.isArray(rawValue)) {
+                    throw new TypeError(`offscreen NPC activity ${label} must be an object.`);
+                }
+                const normalized = normalizeWorldTimeForSchedule(rawValue, `offscreenNpcActivityState.${label}`);
+                return {
+                    dayIndex: normalized.dayIndex,
+                    timeHours: Number(normalized.timeHours.toFixed(4))
+                };
+            };
+            const lastDailyPromptWorldTime = normalizeWorldTimeSnapshot(
+                value.lastDailyPromptWorldTime,
+                'lastDailyPromptWorldTime'
+            );
+            const lastWeeklyPromptWorldTime = normalizeWorldTimeSnapshot(
+                value.lastWeeklyPromptWorldTime,
+                'lastWeeklyPromptWorldTime'
+            );
             return {
-                dailyMentionedNpcNamesByWeek: normalizedByWeek
+                dailyMentionedNpcNamesByWeek: normalizedByWeek,
+                turnsSinceDailyPrompt,
+                turnsSinceWeeklyPrompt,
+                lastDailyPromptWorldTime,
+                lastWeeklyPromptWorldTime
             };
         }
 
         function resetOffscreenNpcActivityState() {
-            offscreenNpcActivityState = { dailyMentionedNpcNamesByWeek: {} };
+            offscreenNpcActivityState = {
+                dailyMentionedNpcNamesByWeek: {},
+                turnsSinceDailyPrompt: 0,
+                turnsSinceWeeklyPrompt: 0,
+                lastDailyPromptWorldTime: null,
+                lastWeeklyPromptWorldTime: null
+            };
+        }
+
+        function incrementOffscreenNpcActivityTurnCounters() {
+            const normalizedState = normalizeOffscreenNpcActivityState(offscreenNpcActivityState);
+            offscreenNpcActivityState = normalizedState;
+            normalizedState.turnsSinceDailyPrompt += 1;
+            normalizedState.turnsSinceWeeklyPrompt += 1;
+        }
+
+        function resetOffscreenNpcActivityTurnCounter(mode) {
+            const normalizedState = normalizeOffscreenNpcActivityState(offscreenNpcActivityState);
+            offscreenNpcActivityState = normalizedState;
+            if (mode === 'daily') {
+                normalizedState.turnsSinceDailyPrompt = 0;
+                return;
+            }
+            if (mode === 'weekly') {
+                normalizedState.turnsSinceWeeklyPrompt = 0;
+                return;
+            }
+            throw new Error(`Unsupported offscreen NPC activity mode "${mode}" for turn-counter reset.`);
         }
 
         function getOffscreenNpcMentionedNamesForWeek(weekIndex) {
@@ -1367,6 +1460,34 @@ module.exports = function registerApiRoutes(scope) {
                 throw new Error('offscreen_npc_activity_prompt_count must be an integer greater than or equal to 0.');
             }
             return numericCount;
+        }
+
+        function resolveOffscreenNpcActivityDailyMaxTurnsBetweenPrompts() {
+            const rawValue = config?.offscreen_npc_activity_daily_max_turns_between_prompts;
+            if (rawValue === undefined || rawValue === null || rawValue === '') {
+                return OFFSCREEN_NPC_ACTIVITY_DEFAULT_DAILY_MAX_TURNS_BETWEEN_PROMPTS;
+            }
+            const numericValue = Number(rawValue);
+            if (!Number.isFinite(numericValue) || !Number.isInteger(numericValue) || numericValue < 0) {
+                throw new Error(
+                    'offscreen_npc_activity_daily_max_turns_between_prompts must be an integer greater than or equal to 0.'
+                );
+            }
+            return numericValue;
+        }
+
+        function resolveOffscreenNpcActivityWeeklyMaxTurnsBetweenPrompts() {
+            const rawValue = config?.offscreen_npc_activity_weekly_max_turns_between_prompts;
+            if (rawValue === undefined || rawValue === null || rawValue === '') {
+                return OFFSCREEN_NPC_ACTIVITY_DEFAULT_WEEKLY_MAX_TURNS_BETWEEN_PROMPTS;
+            }
+            const numericValue = Number(rawValue);
+            if (!Number.isFinite(numericValue) || !Number.isInteger(numericValue) || numericValue < 0) {
+                throw new Error(
+                    'offscreen_npc_activity_weekly_max_turns_between_prompts must be an integer greater than or equal to 0.'
+                );
+            }
+            return numericValue;
         }
 
         function resolveWorldTimeCycleLengthHours() {
@@ -1465,28 +1586,101 @@ module.exports = function registerApiRoutes(scope) {
         }
 
         function resolveOffscreenNpcActivityRunPlan({ startWorldTime, endWorldTime } = {}) {
-            if (!startWorldTime || !endWorldTime) {
-                return null;
-            }
             const dailyCount = resolveOffscreenNpcActivityDailyCount();
-            const dailyPoints = dailyCount > 0
+            const dailyPoints = (startWorldTime && endWorldTime && dailyCount > 0)
                 ? collectCrossedDailyPromptPoints({ startWorldTime, endWorldTime })
                 : [];
-            const weeklyPoints = collectCrossedWeeklyPromptPoints({ startWorldTime, endWorldTime });
-            const totalDue = dailyPoints.length + weeklyPoints.length;
+            const weeklyPoints = (startWorldTime && endWorldTime)
+                ? collectCrossedWeeklyPromptPoints({ startWorldTime, endWorldTime })
+                : [];
+
+            const normalizedState = normalizeOffscreenNpcActivityState(offscreenNpcActivityState);
+            offscreenNpcActivityState = normalizedState;
+
+            const dailyMaxTurnsBetweenPrompts = dailyCount > 0
+                ? resolveOffscreenNpcActivityDailyMaxTurnsBetweenPrompts()
+                : 0;
+            const weeklyMaxTurnsBetweenPrompts = resolveOffscreenNpcActivityWeeklyMaxTurnsBetweenPrompts();
+
+            const forcedDailyPoint = dailyCount > 0
+                && dailyMaxTurnsBetweenPrompts > 0
+                && normalizedState.turnsSinceDailyPrompt >= dailyMaxTurnsBetweenPrompts
+                ? {
+                    mode: 'daily',
+                    reason: 'max-turns-between-prompts',
+                    turnsSinceLastPrompt: normalizedState.turnsSinceDailyPrompt,
+                    maxTurnsBetweenPrompts: dailyMaxTurnsBetweenPrompts
+                }
+                : null;
+
+            const forcedWeeklyPoint = weeklyMaxTurnsBetweenPrompts > 0
+                && normalizedState.turnsSinceWeeklyPrompt >= weeklyMaxTurnsBetweenPrompts
+                ? {
+                    mode: 'weekly',
+                    reason: 'max-turns-between-prompts',
+                    turnsSinceLastPrompt: normalizedState.turnsSinceWeeklyPrompt,
+                    maxTurnsBetweenPrompts: weeklyMaxTurnsBetweenPrompts
+                }
+                : null;
+
+            let totalDue = dailyPoints.length + weeklyPoints.length;
+            if (!dailyPoints.length && forcedDailyPoint) {
+                totalDue += 1;
+            }
+            if (!weeklyPoints.length && forcedWeeklyPoint) {
+                totalDue += 1;
+            }
             if (totalDue <= 0) {
                 return null;
             }
-            if (weeklyPoints.length > 0) {
+            const selectedWeeklyPoint = weeklyPoints[0] || forcedWeeklyPoint;
+            if (selectedWeeklyPoint) {
                 return {
-                    point: weeklyPoints[0],
+                    point: selectedWeeklyPoint,
                     skippedDueToSingleRunLimit: Math.max(0, totalDue - 1)
                 };
             }
+            const selectedDailyPoint = dailyPoints[0] || forcedDailyPoint;
+            if (!selectedDailyPoint) {
+                return null;
+            }
             return {
-                point: dailyPoints[0],
+                point: selectedDailyPoint,
                 skippedDueToSingleRunLimit: Math.max(0, totalDue - 1)
             };
+        }
+
+        function resolveCurrentWorldTimeSnapshotForOffscreenActivity() {
+            const currentWorldTime = typeof Globals?.getSerializedWorldTime === 'function'
+                ? Globals.getSerializedWorldTime()
+                : null;
+            if (!currentWorldTime || typeof currentWorldTime !== 'object') {
+                return null;
+            }
+            const normalized = normalizeWorldTimeForSchedule(
+                currentWorldTime,
+                'currentWorldTime(offscreenNpcActivity)'
+            );
+            return {
+                dayIndex: normalized.dayIndex,
+                timeHours: Number(normalized.timeHours.toFixed(4))
+            };
+        }
+
+        function resolveElapsedOffscreenWorldHours(startWorldTime, endWorldTime) {
+            if (!startWorldTime || !endWorldTime) {
+                return null;
+            }
+            const start = normalizeWorldTimeForSchedule(startWorldTime, 'offscreenElapsedStart');
+            const end = normalizeWorldTimeForSchedule(endWorldTime, 'offscreenElapsedEnd');
+            const cycleLengthHours = resolveWorldTimeCycleLengthHours();
+            const startAbsolute = (start.dayIndex * cycleLengthHours) + start.timeHours;
+            const endAbsolute = (end.dayIndex * cycleLengthHours) + end.timeHours;
+            const elapsed = endAbsolute - startAbsolute;
+            if (!Number.isFinite(elapsed) || elapsed < 0) {
+                return null;
+            }
+            return elapsed;
         }
 
         function parseOffscreenNpcActivityResponse(rawResponse) {
@@ -1877,6 +2071,8 @@ module.exports = function registerApiRoutes(scope) {
                 if (!config?.ai) {
                     throw new Error('AI configuration missing; unable to run offscreen NPC activity prompt.');
                 }
+                const normalizedState = normalizeOffscreenNpcActivityState(offscreenNpcActivityState);
+                offscreenNpcActivityState = normalizedState;
 
                 const pointWeekIndex = Number.isInteger(point?.weekIndex) && point.weekIndex >= 0
                     ? point.weekIndex
@@ -1996,10 +2192,28 @@ module.exports = function registerApiRoutes(scope) {
                         pointWeekIndex
                     );
                 }
+                resetOffscreenNpcActivityTurnCounter(mode);
+                const currentWorldTimeSnapshot = resolveCurrentWorldTimeSnapshotForOffscreenActivity();
+                let elapsedHoursSinceLastRun = null;
+                if (mode === 'daily') {
+                    elapsedHoursSinceLastRun = resolveElapsedOffscreenWorldHours(
+                        normalizedState.lastDailyPromptWorldTime,
+                        currentWorldTimeSnapshot
+                    );
+                    normalizedState.lastDailyPromptWorldTime = currentWorldTimeSnapshot;
+                } else if (mode === 'weekly') {
+                    elapsedHoursSinceLastRun = resolveElapsedOffscreenWorldHours(
+                        normalizedState.lastWeeklyPromptWorldTime,
+                        currentWorldTimeSnapshot
+                    );
+                    normalizedState.lastWeeklyPromptWorldTime = currentWorldTimeSnapshot;
+                }
 
-                const heading = mode === 'weekly'
-                    ? '**Offscreen NPC Activity (Weekly)**'
-                    : '**Offscreen NPC Activity (Twice Daily)**';
+                const heading = Number.isFinite(elapsedHoursSinceLastRun)
+                    ? `**Offscreen NPC Activity (${elapsedHoursSinceLastRun.toFixed(1)} hours since last run)**`
+                    : (mode === 'weekly'
+                        ? '**Offscreen NPC Activity (Weekly)**'
+                        : '**Offscreen NPC Activity (Twice Daily)**');
                 const lines = [heading];
                 for (const activity of uniqueActivities) {
                     const movementPrefix = activity.moved ? '[Moved] ' : '';
@@ -11571,6 +11785,7 @@ module.exports = function registerApiRoutes(scope) {
                     }
 
                     try {
+                        incrementOffscreenNpcActivityTurnCounters();
                         const worldTimeAtTurnEnd = Globals.getSerializedWorldTime();
                         const offscreenRunPlan = resolveOffscreenNpcActivityRunPlan({
                             startWorldTime: worldTimeAtTurnStart,
@@ -14270,7 +14485,7 @@ module.exports = function registerApiRoutes(scope) {
         });
 
         // Update player stats
-        app.post('/api/player/update-stats', (req, res) => {
+        app.post('/api/player/update-stats', async (req, res) => {
             try {
                 const body = req.body || {};
                 const {
@@ -14349,10 +14564,114 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 if (skillValues && typeof skillValues === 'object') {
-                    for (const [skillName, value] of Object.entries(skillValues)) {
-                        if (!isNaN(value)) {
-                            currentPlayer.setSkillValue(skillName, parseInt(value));
+                    if (!(skills instanceof Map)) {
+                        throw new Error('Skill registry is unavailable; cannot update player skills.');
+                    }
+                    if (!(Player.availableSkills instanceof Map)) {
+                        throw new Error('Player.availableSkills is not initialized; cannot update player skills.');
+                    }
+                    if (typeof Skill !== 'function') {
+                        throw new Error('Skill class is unavailable; cannot register new skills.');
+                    }
+
+                    const canonicalSkillNames = new Map();
+                    const existingSkillLookup = new Map();
+                    for (const existingName of skills.keys()) {
+                        if (typeof existingName !== 'string') {
+                            continue;
                         }
+                        const trimmedExisting = existingName.trim();
+                        if (!trimmedExisting) {
+                            continue;
+                        }
+                        const loweredExisting = trimmedExisting.toLowerCase();
+                        if (!existingSkillLookup.has(loweredExisting)) {
+                            existingSkillLookup.set(loweredExisting, trimmedExisting);
+                        }
+                    }
+
+                    const pendingSkillGenerations = new Map(); // lowerName -> requestedName
+                    for (const rawName of Object.keys(skillValues)) {
+                        if (typeof rawName !== 'string') {
+                            continue;
+                        }
+                        const trimmed = rawName.trim();
+                        if (!trimmed) {
+                            continue;
+                        }
+
+                        const lowered = trimmed.toLowerCase();
+                        let canonicalName = existingSkillLookup.get(lowered) || null;
+
+                        if (!canonicalName) {
+                            pendingSkillGenerations.set(lowered, trimmed);
+                            canonicalName = trimmed;
+                        } else if (!Player.availableSkills.has(canonicalName)) {
+                            const existingSkill = skills.get(canonicalName);
+                            if (existingSkill) {
+                                Player.availableSkills.set(canonicalName, existingSkill);
+                            }
+                        }
+
+                        canonicalSkillNames.set(rawName, canonicalName);
+                    }
+
+                    if (pendingSkillGenerations.size) {
+                        const requestedSkillNames = Array.from(pendingSkillGenerations.values());
+                        let generatedSkills = [];
+                        try {
+                            const settingSnapshot = typeof getActiveSettingSnapshot === 'function'
+                                ? getActiveSettingSnapshot()
+                                : currentSetting || null;
+                            const settingDescription = describeSettingForPrompt(settingSnapshot);
+                            generatedSkills = await generateSkillsByNames({
+                                skillNames: requestedSkillNames,
+                                settingDescription
+                            });
+                        } catch (generationError) {
+                            console.warn('Failed to generate metadata for new player skills:', generationError.message);
+                            generatedSkills = [];
+                        }
+
+                        const generationNameMap = new Map(); // requested lower name -> canonical output name
+                        for (let index = 0; index < requestedSkillNames.length; index += 1) {
+                            const requestedName = requestedSkillNames[index];
+                            const loweredRequested = requestedName.toLowerCase();
+                            const generatedSkill = Array.isArray(generatedSkills) ? generatedSkills[index] : null;
+                            const skillInstance = (generatedSkill && generatedSkill.name)
+                                ? generatedSkill
+                                : new Skill({ name: requestedName, description: '', attribute: '' });
+                            const canonical = (skillInstance.name && skillInstance.name.trim()) || requestedName;
+                            generationNameMap.set(loweredRequested, canonical);
+                            existingSkillLookup.set(loweredRequested, canonical);
+                            existingSkillLookup.set(canonical.toLowerCase(), canonical);
+                            skills.set(canonical, skillInstance);
+                            Player.availableSkills.set(canonical, skillInstance);
+                        }
+
+                        for (const [rawName, provisional] of canonicalSkillNames.entries()) {
+                            if (typeof provisional !== 'string') {
+                                continue;
+                            }
+                            const loweredProvisional = provisional.trim().toLowerCase();
+                            if (generationNameMap.has(loweredProvisional)) {
+                                canonicalSkillNames.set(rawName, generationNameMap.get(loweredProvisional));
+                            }
+                        }
+                    }
+
+                    const processedSkillEntries = [];
+                    for (const [rawName, value] of Object.entries(skillValues)) {
+                        const canonicalName = canonicalSkillNames.get(rawName) || rawName;
+                        const numeric = Number(value);
+                        if (!Number.isFinite(numeric)) {
+                            continue;
+                        }
+                        processedSkillEntries.push([canonicalName, Math.trunc(numeric)]);
+                    }
+
+                    for (const [canonicalName, numericValue] of processedSkillEntries) {
+                        currentPlayer.setSkillValue(canonicalName, numericValue);
                     }
                 }
 
@@ -14995,6 +15314,257 @@ module.exports = function registerApiRoutes(scope) {
             return { ...faction };
         };
 
+        const sanitizeFactionAutofillXml = (input) => {
+            return (`<root>${input}</root>`)
+                .replace(/&(?![#a-zA-Z0-9]+;)/g, '&amp;')
+                .replace(/<\s*br\s*>/gi, '<br/>')
+                .replace(/<\s*hr\s*>/gi, '<hr/>');
+        };
+
+        const factionAutofillFieldIsEmpty = (value) => {
+            if (value === null || value === undefined) {
+                return true;
+            }
+            if (typeof value === 'string') {
+                return value.trim().length === 0;
+            }
+            if (Array.isArray(value)) {
+                return value.length === 0;
+            }
+            if (typeof value === 'object') {
+                return Object.keys(value).length === 0;
+            }
+            return false;
+        };
+
+        const normalizeFactionAutofillPayload = (raw = {}) => {
+            const toText = (value) => {
+                if (value === null || value === undefined) {
+                    return '';
+                }
+                return String(value).trim();
+            };
+
+            const normalizeAssetsForAutofill = (value) => {
+                if (value === null || value === undefined) {
+                    return [];
+                }
+                if (!Array.isArray(value)) {
+                    throw new Error('Faction assets must be an array.');
+                }
+                return value.map((asset, index) => {
+                    if (!asset || typeof asset !== 'object') {
+                        throw new Error(`Faction asset at index ${index} must be an object.`);
+                    }
+                    const name = toText(asset.name);
+                    const type = toText(asset.type);
+                    const description = toText(asset.description);
+                    if (!name && !type && !description) {
+                        return null;
+                    }
+                    if (!name) {
+                        throw new Error(`Faction asset at index ${index} is missing a name.`);
+                    }
+                    const normalized = { name };
+                    if (type) normalized.type = type;
+                    if (description) normalized.description = description;
+                    return normalized;
+                }).filter(Boolean);
+            };
+
+            return {
+                name: toText(raw.name),
+                homeRegionName: toText(raw.homeRegionName),
+                shortDescription: toText(raw.shortDescription || ''),
+                description: toText(raw.description || ''),
+                tags: normalizeFactionStringList(raw.tags || [], 'Faction tags'),
+                goals: normalizeFactionStringList(raw.goals || [], 'Faction goals'),
+                assets: normalizeAssetsForAutofill(raw.assets),
+                relations: normalizeFactionRelations(raw.relations || {}, { currentId: null }) || {},
+                reputationTiers: normalizeFactionTiers(raw.reputationTiers || [])
+            };
+        };
+
+        const factionPayloadNeedsAutofill = (payload, { existingFactionIds = [] } = {}) => {
+            if (!payload || typeof payload !== 'object') {
+                return true;
+            }
+            if (Array.isArray(existingFactionIds) && existingFactionIds.length > 0) {
+                const relationMap = payload.relations && typeof payload.relations === 'object'
+                    ? payload.relations
+                    : {};
+                const hasMissingRelation = existingFactionIds.some(targetId => {
+                    const relation = relationMap[targetId];
+                    const status = typeof relation?.status === 'string' ? relation.status.trim() : '';
+                    const notes = typeof relation?.notes === 'string' ? relation.notes.trim() : '';
+                    return !status || !notes;
+                });
+                if (hasMissingRelation) {
+                    return true;
+                }
+            }
+            return [
+                'name',
+                'homeRegionName',
+                'shortDescription',
+                'description',
+                'tags',
+                'goals',
+                'assets',
+                'reputationTiers'
+            ].some(field => factionAutofillFieldIsEmpty(payload[field]));
+        };
+
+        const parseFactionAutofillResponse = (xmlContent) => {
+            if (!xmlContent || typeof xmlContent !== 'string' || !xmlContent.trim()) {
+                throw new Error('AI response was empty.');
+            }
+            const wrapped = sanitizeFactionAutofillXml(xmlContent.trim());
+            const doc = Utils.parseXmlDocument(wrapped, 'text/xml');
+            const parserError = doc.getElementsByTagName('parsererror')[0];
+            if (parserError) {
+                throw new Error(`AI response XML parsing error: ${parserError.textContent}`);
+            }
+
+            const factionNode = doc.getElementsByTagName('faction')[0];
+            if (!factionNode) {
+                throw new Error('AI response missing <faction> element.');
+            }
+
+            const getText = (tagName) => {
+                const node = factionNode.getElementsByTagName(tagName)[0];
+                if (!node || typeof node.textContent !== 'string') {
+                    return '';
+                }
+                return node.textContent.trim();
+            };
+
+            const getList = (parentTag, childTag) => {
+                const parent = factionNode.getElementsByTagName(parentTag)[0];
+                if (!parent) {
+                    return [];
+                }
+                return Array.from(parent.getElementsByTagName(childTag))
+                    .map(node => (typeof node.textContent === 'string' ? node.textContent.trim() : ''))
+                    .filter(Boolean);
+            };
+
+            const assetsParent = factionNode.getElementsByTagName('assets')[0];
+            const assets = assetsParent
+                ? Array.from(assetsParent.getElementsByTagName('asset')).map(assetNode => {
+                    const name = assetNode.getElementsByTagName('name')[0]?.textContent?.trim() || '';
+                    const type = assetNode.getElementsByTagName('type')[0]?.textContent?.trim() || '';
+                    const description = assetNode.getElementsByTagName('description')[0]?.textContent?.trim() || '';
+                    if (!name && !type && !description) {
+                        return null;
+                    }
+                    return { name, type, description };
+                }).filter(Boolean)
+                : [];
+
+            const reputationTiersParent = factionNode.getElementsByTagName('reputationTiers')[0];
+            const reputationTiers = reputationTiersParent
+                ? Array.from(reputationTiersParent.getElementsByTagName('tier')).map(tierNode => {
+                    const thresholdRaw = tierNode.getElementsByTagName('threshold')[0]?.textContent?.trim() || '';
+                    const threshold = Number(thresholdRaw);
+                    if (!Number.isFinite(threshold)) {
+                        return null;
+                    }
+                    const label = tierNode.getElementsByTagName('label')[0]?.textContent?.trim() || '';
+                    const perksParent = tierNode.getElementsByTagName('perks')[0];
+                    const penaltiesParent = tierNode.getElementsByTagName('penalties')[0];
+                    const perks = perksParent
+                        ? Array.from(perksParent.getElementsByTagName('perk'))
+                            .map(node => node?.textContent?.trim() || '')
+                            .filter(Boolean)
+                        : [];
+                    const penalties = penaltiesParent
+                        ? Array.from(penaltiesParent.getElementsByTagName('penalty'))
+                            .map(node => node?.textContent?.trim() || '')
+                            .filter(Boolean)
+                        : [];
+                    return { threshold, label, perks, penalties };
+                }).filter(Boolean)
+                : [];
+
+            const relationsParent = factionNode.getElementsByTagName('relations')[0];
+            const relationEntries = relationsParent
+                ? Array.from(relationsParent.getElementsByTagName('relation')).map(relationNode => {
+                    const factionName = relationNode.getElementsByTagName('factionName')[0]?.textContent?.trim() || '';
+                    const status = relationNode.getElementsByTagName('status')[0]?.textContent?.trim().toLowerCase() || '';
+                    const notes = relationNode.getElementsByTagName('notes')[0]?.textContent?.trim() || '';
+                    if (!factionName || !status || !notes) {
+                        return null;
+                    }
+                    return { factionName, status, notes };
+                }).filter(Boolean)
+                : [];
+
+            return {
+                name: getText('name'),
+                homeRegionName: getText('homeRegionName'),
+                shortDescription: getText('shortDescription'),
+                description: getText('description'),
+                tags: getList('tags', 'tag'),
+                goals: getList('goals', 'goal'),
+                assets,
+                reputationTiers,
+                relationEntries
+            };
+        };
+
+        const mergeFactionAutofillValues = (baseFaction, generatedFaction) => {
+            const merged = { ...baseFaction };
+
+            const adoptIfMissing = (key) => {
+                const current = merged[key];
+                const generated = generatedFaction[key];
+                if (factionAutofillFieldIsEmpty(current) && !factionAutofillFieldIsEmpty(generated)) {
+                    merged[key] = generated;
+                }
+            };
+
+            adoptIfMissing('name');
+            adoptIfMissing('homeRegionName');
+            adoptIfMissing('shortDescription');
+            adoptIfMissing('description');
+            adoptIfMissing('tags');
+            adoptIfMissing('goals');
+            adoptIfMissing('assets');
+            adoptIfMissing('reputationTiers');
+
+            return merged;
+        };
+
+        const mapGeneratedRelationsToIds = (relationEntries, existingFactionsByName) => {
+            if (!Array.isArray(relationEntries) || relationEntries.length === 0) {
+                return {};
+            }
+
+            const relationMap = {};
+            relationEntries.forEach(entry => {
+                if (!entry || typeof entry !== 'object') {
+                    return;
+                }
+                const targetName = typeof entry.factionName === 'string' ? entry.factionName.trim().toLowerCase() : '';
+                const status = typeof entry.status === 'string' ? entry.status.trim().toLowerCase() : '';
+                const notes = typeof entry.notes === 'string' ? entry.notes.trim() : '';
+                if (!targetName || !status || !notes) {
+                    return;
+                }
+                if (!['allied', 'neutral', 'hostile', 'rival'].includes(status)) {
+                    return;
+                }
+                const targetId = existingFactionsByName.get(targetName);
+                if (!targetId) {
+                    return;
+                }
+                relationMap[targetId] = { status, notes };
+            });
+
+            return relationMap;
+        };
+
         app.get('/api/factions', (req, res) => {
             try {
                 const list = Array.from(factions.values())
@@ -15022,6 +15592,156 @@ module.exports = function registerApiRoutes(scope) {
                 res.status(500).json({
                     success: false,
                     error: error?.message || 'Failed to list factions.'
+                });
+            }
+        });
+
+        app.post('/api/factions/fill-missing', async (req, res) => {
+            try {
+                const incomingFaction = req.body?.faction;
+                if (!incomingFaction || typeof incomingFaction !== 'object') {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Request body must include a faction object.'
+                    });
+                }
+
+                const normalizedFaction = normalizeFactionAutofillPayload(incomingFaction);
+                const existingFactions = Array.from(factions.values())
+                    .filter(Boolean)
+                    .map(serializeFactionForClient)
+                    .filter(Boolean)
+                    .sort((a, b) => (a?.name || '').localeCompare((b?.name || ''), undefined, { sensitivity: 'base' }));
+
+                const existingFactionIds = existingFactions
+                    .map(entry => (typeof entry?.id === 'string' ? entry.id.trim() : ''))
+                    .filter(Boolean);
+                if (!factionPayloadNeedsAutofill(normalizedFaction, { existingFactionIds })) {
+                    return res.json({
+                        success: true,
+                        faction: normalizedFaction,
+                        raw: null
+                    });
+                }
+
+                const relationEntries = Object.entries(normalizedFaction.relations || {})
+                    .map(([targetId, relation]) => {
+                        const targetFaction = factions.get(targetId);
+                        return {
+                            factionId: targetId,
+                            factionName: targetFaction?.name || targetId,
+                            status: relation?.status || '',
+                            notes: relation?.notes || ''
+                        };
+                    });
+
+                const renderedTemplate = promptEnv.render('fill-faction-form.xml.njk', {
+                    faction: {
+                        ...normalizedFaction,
+                        relationEntries
+                    },
+                    existingFactions,
+                    settingDescription: currentSetting?.description || ''
+                });
+
+                const promptData = parseXMLTemplate(renderedTemplate);
+                const systemPrompt = promptData.systemPrompt ? promptData.systemPrompt.trim() : '';
+                const generationPrompt = promptData.generationPrompt ? promptData.generationPrompt.trim() : '';
+
+                if (!generationPrompt) {
+                    throw new Error('Failed to build faction autofill prompt from template.');
+                }
+
+                if (!config?.ai) {
+                    throw new Error('AI configuration is incomplete. Please update config.yaml.');
+                }
+
+                const messages = [];
+                if (systemPrompt) {
+                    messages.push({ role: 'system', content: systemPrompt });
+                }
+                messages.push({ role: 'user', content: generationPrompt });
+
+                const requestOptions = {
+                    messages,
+                    metadataLabel: 'faction_autofill'
+                };
+
+                if (typeof promptData.temperature === 'number') {
+                    requestOptions.temperature = promptData.temperature;
+                } else {
+                    const configTemperature = Number(config.ai.temperature);
+                    if (Number.isInteger(configTemperature)) {
+                        requestOptions.temperature = configTemperature;
+                    }
+                }
+
+                const aiMessage = await LLMClient.chatCompletion(requestOptions);
+                if (!aiMessage || typeof aiMessage !== 'string') {
+                    throw new Error('AI did not return a usable response.');
+                }
+
+                LLMClient.logPrompt({
+                    prefix: 'faction_autofill',
+                    metadataLabel: 'faction_autofill',
+                    systemPrompt,
+                    generationPrompt,
+                    response: aiMessage
+                });
+
+                const generatedFaction = parseFactionAutofillResponse(aiMessage);
+                const mergedFaction = mergeFactionAutofillValues(normalizedFaction, generatedFaction);
+
+                const existingFactionNameMap = new Map(
+                    existingFactions
+                        .filter(entry => typeof entry?.name === 'string' && typeof entry?.id === 'string')
+                        .map(entry => [entry.name.trim().toLowerCase(), entry.id])
+                );
+
+                const generatedRelationMap = mapGeneratedRelationsToIds(generatedFaction.relationEntries, existingFactionNameMap);
+                const mergedRelationMap = {
+                    ...(normalizedFaction.relations || {})
+                };
+                for (const [targetId, relation] of Object.entries(generatedRelationMap)) {
+                    const current = mergedRelationMap[targetId];
+                    const status = typeof current?.status === 'string' ? current.status.trim() : '';
+                    const notes = typeof current?.notes === 'string' ? current.notes.trim() : '';
+                    if (!status || !notes) {
+                        mergedRelationMap[targetId] = relation;
+                    }
+                }
+                mergedFaction.relations = mergedRelationMap;
+
+                const finalized = {
+                    name: typeof mergedFaction.name === 'string' ? mergedFaction.name.trim() : '',
+                    homeRegionName: typeof mergedFaction.homeRegionName === 'string' ? mergedFaction.homeRegionName.trim() : '',
+                    shortDescription: typeof mergedFaction.shortDescription === 'string' && mergedFaction.shortDescription.trim()
+                        ? mergedFaction.shortDescription.trim()
+                        : null,
+                    description: typeof mergedFaction.description === 'string' && mergedFaction.description.trim()
+                        ? mergedFaction.description.trim()
+                        : null,
+                    tags: normalizeFactionStringList(mergedFaction.tags || [], 'Faction tags'),
+                    goals: normalizeFactionStringList(mergedFaction.goals || [], 'Faction goals'),
+                    assets: normalizeFactionAssets(mergedFaction.assets || []),
+                    relations: normalizeFactionRelations(mergedFaction.relations || {}, { currentId: null }) || {},
+                    reputationTiers: normalizeFactionTiers(mergedFaction.reputationTiers || [])
+                };
+
+                if (factionPayloadNeedsAutofill(finalized, { existingFactionIds })) {
+                    throw new Error('AI response did not fill all missing faction fields.');
+                }
+
+                res.json({
+                    success: true,
+                    faction: finalized,
+                    raw: aiMessage
+                });
+            } catch (error) {
+                console.error('Failed to fill faction form:', error);
+                res.status(500).json({
+                    success: false,
+                    error: error?.message || 'Failed to auto-fill faction fields.'
                 });
             }
         });
@@ -21971,6 +22691,69 @@ module.exports = function registerApiRoutes(scope) {
             return { saveName, saveDir, metadata };
         }
 
+        function reconcileCurrentPlayerPartyLocationState(player) {
+            if (!player || typeof player.getPartyMembers !== 'function') {
+                return {
+                    membersChecked: 0,
+                    membersClearedFromLocationLists: 0,
+                    locationEntriesRemoved: 0,
+                    membersWithLocationCleared: 0
+                };
+            }
+
+            const rawPartyMembers = player.getPartyMembers();
+            const partyMemberIds = Array.isArray(rawPartyMembers)
+                ? rawPartyMembers
+                : (rawPartyMembers instanceof Set ? Array.from(rawPartyMembers) : []);
+
+            let membersChecked = 0;
+            let membersClearedFromLocationLists = 0;
+            let locationEntriesRemoved = 0;
+            let membersWithLocationCleared = 0;
+
+            for (const rawMemberId of partyMemberIds) {
+                if (typeof rawMemberId !== 'string' || !rawMemberId.trim()) {
+                    continue;
+                }
+                const memberId = rawMemberId.trim();
+                membersChecked += 1;
+
+                const member = players.get(memberId)
+                    || (typeof Player.getById === 'function' ? Player.getById(memberId) : null);
+                if (!member) {
+                    console.warn(`Skipping party-location reconciliation for missing member '${memberId}'.`);
+                    continue;
+                }
+
+                if (typeof member.setInPlayerParty === 'function') {
+                    member.setInPlayerParty(true);
+                }
+
+                const removedCount = Player.removeNpcFromAllLocations(member.id);
+                if (removedCount > 0) {
+                    membersClearedFromLocationLists += 1;
+                    locationEntriesRemoved += removedCount;
+                }
+
+                if (member.currentLocation) {
+                    if (typeof member.setLocation !== 'function') {
+                        throw new Error(
+                            `Unable to clear location for party member '${member.name || member.id}' during load reconciliation: setLocation is not available.`
+                        );
+                    }
+                    member.setLocation(null);
+                    membersWithLocationCleared += 1;
+                }
+            }
+
+            return {
+                membersChecked,
+                membersClearedFromLocationLists,
+                locationEntriesRemoved,
+                membersWithLocationCleared
+            };
+        }
+
         async function performGameLoad(requestedSaveName, { skipSummary = false, saveRoot = null, clientId = null } = {}) {
             const normalizedName = typeof requestedSaveName === 'string' ? requestedSaveName.trim() : '';
             if (!normalizedName) {
@@ -22096,6 +22879,14 @@ module.exports = function registerApiRoutes(scope) {
             if (typeof Player.register === 'function') {
                 Player.register(currentPlayer);
             }
+
+            const partyReconciliation = reconcileCurrentPlayerPartyLocationState(currentPlayer);
+            if (partyReconciliation.locationEntriesRemoved > 0 || partyReconciliation.membersWithLocationCleared > 0) {
+                console.log(
+                    `🧹 Reconciled party/location state on load: checked ${partyReconciliation.membersChecked} member(s), removed ${partyReconciliation.locationEntriesRemoved} location entry/entries, cleared explicit location on ${partyReconciliation.membersWithLocationCleared} member(s).`
+                );
+            }
+
             Globals.syncWorldTimeToPlayer(currentPlayer);
 
             const KNOWN_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.webp', '.gif'];
@@ -23253,6 +24044,16 @@ module.exports = function registerApiRoutes(scope) {
                     chatHistory,
                     getChatHistory,
                     performGameSave,
+                    generateSkillsByNames: typeof generateSkillsByNames === 'function'
+                        ? generateSkillsByNames
+                        : null,
+                    getActiveSettingSnapshot: typeof getActiveSettingSnapshot === 'function'
+                        ? getActiveSettingSnapshot
+                        : null,
+                    describeSettingForPrompt: typeof describeSettingForPrompt === 'function'
+                        ? describeSettingForPrompt
+                        : null,
+                    skillRegistry: skills instanceof Map ? skills : null,
                     reply(payload) {
                         replies.push(payload);
                         return Promise.resolve();

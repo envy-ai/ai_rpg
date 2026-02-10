@@ -22,6 +22,7 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
 ## Static API
 - Lookup and registry:
   - `getAll()`, `getById(id)`, `get(id)`, `getByName(name)`, `getByNames(names)`, `unregister(target)`.
+  - `removeNpcFromAllLocations(npcId)` removes an NPC id from every location's `npcIds` list.
   - `resolvePlayerId(playerLike)`.
 - Current player helpers:
   - `setCurrentPlayerResolver(resolver)`, `getCurrentPlayer()`, `getCurrentPlayerId()`.
@@ -52,6 +53,7 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
   - `getCurrentQuests()`, `getCompletedQuests()`.
 - Party management:
   - `addPartyMember(memberId)`, `removePartyMember(memberId)`, `clearPartyMembers()`, `getPartyMembers()`.
+  - `addPartyMember(...)` now enforces party/location invariants by removing the member from all location NPC lists and clearing their explicit location.
   - Party memory helpers: `addPartyMemoryHistorySegment(...)`, `getPartyMemoryHistorySegments(...)`, `clearPartyMemoryHistory()`.
   - `markPartyMembershipChangedThisTurn()`, `clearPartyMembershipChangeTracking()`.
 - Dispositions:
@@ -119,4 +121,5 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
 - Gear and inventory are tightly coupled; equip/unequip flows update health and modifiers.
 - Need bar logic includes per-turn decay and magnitude-based adjustments.
 - Unspent skill/attribute points are formula-derived at read time from current level + assigned stats/skills.
+- Party members are treated as off-location actors: joining party removes them from all location `npcIds` and clears `currentLocation`.
 - Direct unspent-point mutators (`setUnspent*`/`adjustUnspent*`) now throw by design.

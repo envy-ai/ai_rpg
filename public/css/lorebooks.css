@@ -311,16 +311,15 @@
 /* Modal Styles */
 .modal {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.7);
+  inset: 0;
+  background: var(--airpg-modal-backdrop, rgba(15, 23, 42, 0.75));
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 30px;
   z-index: 1000;
-  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
 }
 
 .modal[hidden] {
@@ -328,13 +327,17 @@
 }
 
 .modal__dialog {
-  background: rgba(30, 30, 40, 0.95);
-  border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--airpg-modal-surface, linear-gradient(145deg, rgba(15, 18, 34, 0.95), rgba(26, 32, 54, 0.94)));
+  border-radius: 16px;
+  border: 1px solid var(--airpg-modal-border, rgba(148, 163, 184, 0.32));
+  box-shadow: var(--airpg-modal-shadow, 0 28px 70px rgba(0, 0, 0, 0.55));
+  color: var(--airpg-modal-text, rgba(255, 255, 255, 0.9));
   width: 90%;
   max-width: 500px;
   max-height: 90vh;
-  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .modal__dialog--small {
@@ -345,35 +348,51 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 1rem 1.5rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--airpg-modal-border, rgba(148, 163, 184, 0.32));
+  background: var(--airpg-modal-header, linear-gradient(135deg, rgba(102, 126, 234, 0.2), rgba(118, 75, 162, 0.2)));
+  color: #f8fafc;
 }
 
 .modal__header h2 {
   margin: 0;
-  font-size: 1.2rem;
+  font-size: 1.22rem;
+  font-weight: 600;
+  color: #ffffff;
 }
 
 .modal__close {
-  background: none;
+  background: rgba(15, 23, 42, 0.6);
   border: none;
-  color: rgba(255, 255, 255, 0.6);
-  font-size: 1.5rem;
-  cursor: pointer;
-  padding: 0;
+  color: #e2e8f0;
+  border-radius: 8px;
+  width: 34px;
+  height: 34px;
+  font-size: 0.95rem;
   line-height: 1;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease;
 }
 
 .modal__close:hover {
-  color: rgba(255, 255, 255, 0.9);
+  background: rgba(37, 99, 235, 0.5);
+  color: #ffffff;
+}
+
+.modal__close:focus {
+  background: rgba(37, 99, 235, 0.5);
+  color: #ffffff;
+  outline: none;
 }
 
 .modal__body {
-  padding: 1.5rem;
+  padding: 24px;
+  overflow-y: auto;
+  color: var(--airpg-modal-text, rgba(255, 255, 255, 0.9));
 }
 
 .modal__help {
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--airpg-modal-muted, rgba(255, 255, 255, 0.72));
   font-size: 0.9rem;
   margin-bottom: 1.5rem;
 }
@@ -384,8 +403,9 @@
 }
 
 .modal__footer {
-  padding: 1rem 1.5rem;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 20px 24px;
+  border-top: 1px solid var(--airpg-modal-border, rgba(148, 163, 184, 0.32));
+  background: rgba(15, 23, 42, 0.55);
 }
 
 .button-group {

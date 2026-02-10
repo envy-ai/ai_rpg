@@ -20,6 +20,13 @@ Most modals live in `views/index.njk` and are wired up by the inline script or `
 - Edits quest name, description, rewards, objectives.
 - Save uses `/api/quest/edit`.
 
+## Faction creation
+
+- `#factionCreateModal`: full new-faction form (name/home region/descriptions/tags/goals/assets/relations/reputation tiers).
+- Submit path:
+  - If fields are missing, calls `/api/factions/fill-missing` to complete blanks.
+  - Then posts to `/api/factions` to create the faction.
+
 ## NPC views and management
 
 - `#npcInventoryModal`: character inventory listing with filters.

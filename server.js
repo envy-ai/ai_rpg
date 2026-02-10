@@ -2829,6 +2829,146 @@ function findActorByName(name) {
     return null;
 }
 
+function normalizeActorNameForComparison(value) {
+    if (typeof value !== 'string') {
+        return '';
+    }
+    return value
+        .replace(/[^\w\s]|_/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .toLowerCase();
+}
+
+function findActorByLooseName(name) {
+    const normalized = normalizeActorNameForComparison(name);
+    if (!normalized) {
+        return null;
+    }
+
+    const candidates = [];
+    const seenIds = new Set();
+    const addCandidate = (actor) => {
+        if (!actor || typeof actor.name !== 'string') {
+            return;
+        }
+        const actorId = typeof actor.id === 'string' ? actor.id : null;
+        if (actorId && seenIds.has(actorId)) {
+            return;
+        }
+        const actorNameNormalized = normalizeActorNameForComparison(actor.name);
+        if (!actorNameNormalized) {
+            return;
+        }
+        if (actorNameNormalized === normalized) {
+            candidates.push(actor);
+            if (actorId) {
+                seenIds.add(actorId);
+            }
+            return;
+        }
+        if (
+            actorNameNormalized.startsWith(`${normalized} `)
+            || normalized.startsWith(`${actorNameNormalized} `)
+        ) {
+            candidates.push(actor);
+            if (actorId) {
+                seenIds.add(actorId);
+            }
+        }
+    };
+
+    if (currentPlayer) {
+        addCandidate(currentPlayer);
+    }
+
+    if (players instanceof Map) {
+        for (const actor of players.values()) {
+            addCandidate(actor);
+        }
+    }
+
+    if (candidates.length === 1) {
+        return candidates[0];
+    }
+
+    return null;
+}
+
+function buildReservedActorNameSet() {
+    const reserved = new SanitizedStringSet();
+
+    const addName = (value) => {
+        if (typeof value === 'string' && value.trim()) {
+            reserved.add(value);
+        }
+    };
+
+    if (currentPlayer) {
+        addName(currentPlayer.name);
+    }
+
+    if (players instanceof Map) {
+        for (const actor of players.values()) {
+            addName(actor?.name);
+        }
+    }
+
+    for (const actor of Player.getAll()) {
+        addName(actor?.name);
+    }
+
+    if (currentPlayer && typeof currentPlayer.getPartyMembers === 'function') {
+        const memberIds = currentPlayer.getPartyMembers();
+        if (Array.isArray(memberIds)) {
+            for (const memberId of memberIds) {
+                if (typeof memberId !== 'string' || !memberId.trim()) {
+                    continue;
+                }
+                const member = players instanceof Map ? players.get(memberId.trim()) : null;
+                addName(member?.name);
+            }
+        }
+    }
+
+    return reserved;
+}
+
+function hasNameCollisionWithReservedSet(name, reservedNames) {
+    if (!(reservedNames instanceof SanitizedStringSet)) {
+        return false;
+    }
+
+    const normalized = normalizeActorNameForComparison(name);
+    if (!normalized) {
+        return false;
+    }
+
+    if (reservedNames.has(normalized)) {
+        return true;
+    }
+
+    const reservedValues = typeof reservedNames.keys === 'function'
+        ? reservedNames.keys()
+        : [];
+    for (const existing of reservedValues) {
+        if (typeof existing !== 'string' || !existing) {
+            continue;
+        }
+        if (existing === normalized) {
+            return true;
+        }
+        if (
+            existing.startsWith(`${normalized} `)
+            || normalized.startsWith(`${existing} `)
+        ) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 function findLocationNpcByLeadingName(name, context = {}) {
     if (!name || typeof name !== 'string') {
         return null;
@@ -2916,6 +3056,11 @@ async function ensureNpcByName(name, context = {}) {
         return existing;
     }
 
+    const looseExisting = findActorByLooseName(name);
+    if (looseExisting) {
+        return looseExisting;
+    }
+
     const locationPrefixMatch = findLocationNpcByLeadingName(name, context);
     if (locationPrefixMatch) {
         return locationPrefixMatch;
@@ -2936,6 +3081,11 @@ async function ensureNpcByName(name, context = {}) {
             return existingNormalized;
         }
 
+        const looseNormalized = findActorByLooseName(normalizedName);
+        if (looseNormalized) {
+            return looseNormalized;
+        }
+
         const normalizedPrefixMatch = findLocationNpcByLeadingName(normalizedName, context);
         if (normalizedPrefixMatch) {
             return normalizedPrefixMatch;
@@ -2952,7 +3102,7 @@ async function ensureNpcByName(name, context = {}) {
     }
 
     const resolvedRegion = context.region || (resolvedLocation ? findRegionByLocationId(resolvedLocation.id) : null);
-    const existingNames = new SanitizedStringSet(Player.getAll().map(npc => npc.name));
+    const existingNames = buildReservedActorNameSet();
 
     const generated = await generateNpcFromEvent({
         name: normalizedName || resolvedName || name,
@@ -4297,6 +4447,10 @@ function buildBasePromptContext({
 
     const shouldIncludeEntryInHistory = (entry) => {
         if (!entry || entry.type === 'status-summary') {
+            return false;
+        }
+        const entryType = typeof entry.type === 'string' ? entry.type.trim().toLowerCase() : '';
+        if (entryType === 'level-up') {
             return false;
         }
         const metadata = entry.metadata && typeof entry.metadata === 'object'
@@ -11066,6 +11220,11 @@ async function generateNpcFromEvent({
             return existing;
         }
 
+        const looseExisting = findActorByLooseName(trimmedName);
+        if (looseExisting) {
+            return looseExisting;
+        }
+
         let resolvedLocation = location || null;
         if (!resolvedLocation && currentPlayer?.currentLocation) {
             try {
@@ -11245,6 +11404,15 @@ async function generateNpcFromEvent({
 
         npcData.description = applyNpcNameTemplate(npcData.description, npcData.name);
         npcData.shortDescription = applyNpcNameTemplate(npcData.shortDescription, npcData.name);
+
+        const reservedNamesBeforeCreate = buildReservedActorNameSet();
+        if (hasNameCollisionWithReservedSet(npcData?.name, reservedNamesBeforeCreate)) {
+            const existingByGeneratedName = findActorByLooseName(npcData?.name) || findActorByName(npcData?.name);
+            if (existingByGeneratedName) {
+                return existingByGeneratedName;
+            }
+            throw new Error(`NPC generation produced duplicate name "${npcData?.name || trimmedName}".`);
+        }
 
         const factionResolution = resolveFactionNameToId(npcData?.faction, {
             fieldLabel: `NPC faction for "${npcData?.name || trimmedName || 'Unnamed NPC'}"`
@@ -11720,6 +11888,40 @@ async function equipBestGearForCharacter({
 Player.setLevelUpHandler(({ character, previousLevel, newLevel }) => {
     if (!character) {
         return null;
+    }
+    try {
+        const characterName = typeof character.name === 'string' && character.name.trim()
+            ? character.name.trim()
+            : (typeof character.id === 'string' && character.id.trim() ? character.id.trim() : 'Unknown Character');
+        const fromLevel = Number(previousLevel);
+        const toLevel = Number(newLevel);
+        const levelText = Number.isFinite(fromLevel) && Number.isFinite(toLevel)
+            ? `${characterName} leveled up from ${fromLevel} to ${toLevel}.`
+            : `${characterName} leveled up.`;
+        const resolvedLocationId = (typeof character.currentLocation === 'string' && character.currentLocation.trim())
+            ? character.currentLocation.trim()
+            : (typeof currentPlayer?.currentLocation === 'string' && currentPlayer.currentLocation.trim()
+                ? currentPlayer.currentLocation.trim()
+                : null);
+        if (!resolvedLocationId) {
+            throw new Error(`Unable to resolve location for level-up entry (${characterName}).`);
+        }
+        pushChatEntry({
+            role: 'assistant',
+            type: 'level-up',
+            content: `⬆️ ${levelText}`,
+            summary: `⬆️ ${levelText}`,
+            metadata: {
+                excludeFromBaseContextHistory: true,
+                levelUp: {
+                    characterId: typeof character.id === 'string' ? character.id : null,
+                    previousLevel: Number.isFinite(fromLevel) ? fromLevel : null,
+                    newLevel: Number.isFinite(toLevel) ? toLevel : null
+                }
+            }
+        }, null, resolvedLocationId);
+    } catch (levelUpLogError) {
+        console.warn('Failed to record level-up chat entry:', levelUpLogError?.message || levelUpLogError);
     }
     return generateLevelUpAbilitiesForCharacter(character, { previousLevel, newLevel });
 });
@@ -13703,6 +13905,12 @@ async function enforceBannedNpcNames({
 
     const bannedWords = getNpcNameBlockedWords();
     const bannedRegexes = getBannedNpcRegexes();
+    if (!(existingNames instanceof SanitizedStringSet)) {
+        existingNames = buildReservedActorNameSet();
+    }
+    const baselineReservedNames = SanitizedStringSet.fromArray(
+        typeof existingNames.keys === 'function' ? existingNames.keys() : []
+    );
 
     if (!bannedWords.length && !bannedRegexes.length) {
         console.log('enforceBannedNpcNames: No banned words or regexes defined.');
@@ -13748,8 +13956,8 @@ async function enforceBannedNpcNames({
             }
         }
 
-        // Check duplicates (excluding self)
-        if (existingNames.has(lowerName)) {
+        // Check duplicates / near-duplicates (excluding self)
+        if (hasNameCollisionWithReservedSet(trimmedName, existingNames)) {
             console.log(`NPC name "${trimmedName}" rejected due to duplicate name.`);
             return false;
         }
@@ -13896,6 +14104,55 @@ async function enforceBannedNpcNames({
         }
     });
     */4
+
+    const ensureUniqueFallbackName = (baseName, reservedSet) => {
+        let candidateBase = typeof baseName === 'string' ? baseName.trim() : '';
+        if (!candidateBase) {
+            candidateBase = 'Wanderer';
+        }
+
+        let counter = 2;
+        let candidate = `${candidateBase} ${counter}`;
+        while (hasNameCollisionWithReservedSet(candidate, reservedSet)) {
+            counter += 1;
+            candidate = `${candidateBase} ${counter}`;
+        }
+        return candidate;
+    };
+
+    const finalizedReservedNames = SanitizedStringSet.fromArray(
+        typeof baselineReservedNames.keys === 'function' ? baselineReservedNames.keys() : []
+    );
+
+    for (const npc of npcDataList) {
+        if (!npc || typeof npc !== 'object') {
+            continue;
+        }
+
+        const currentName = typeof npc.name === 'string' ? npc.name.trim() : '';
+        if (!currentName) {
+            const fallback = ensureUniqueFallbackName(
+                npc.originalName || 'Wanderer',
+                finalizedReservedNames
+            );
+            npc.name = fallback;
+            finalizedReservedNames.add(fallback);
+            continue;
+        }
+
+        if (hasNameCollisionWithReservedSet(currentName, finalizedReservedNames)) {
+            const fallback = ensureUniqueFallbackName(
+                npc.originalName || currentName,
+                finalizedReservedNames
+            );
+            console.warn(`NPC name "${currentName}" still conflicted after regeneration; using fallback "${fallback}".`);
+            npc.name = fallback;
+            finalizedReservedNames.add(fallback);
+            continue;
+        }
+
+        finalizedReservedNames.add(currentName);
+    }
 
     return npcDataList;
 }
@@ -16877,7 +17134,7 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
         const existingNpcsInOtherLocations = getAllPlayers(Array.from(otherLocationNpcIds)).filter(npc => npc && npc.isNPC);
         const existingNpcsInOtherRegions = getAllPlayers(Array.from(otherRegionNpcIds)).filter(npc => npc && npc.isNPC);
 
-        const existingNames = new SanitizedStringSet(Player.getAll().map(npc => npc.name))
+        const existingNames = buildReservedActorNameSet();
 
         const generationHints = location?.generationHints || {};
         const resolveCount = (value, fallback) => {
@@ -17274,7 +17531,7 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
             }
         }
 
-        const existingNames = new SanitizedStringSet(Player.getAll().map(npc => npc.name))
+        const existingNames = buildReservedActorNameSet();
 
         console.log(`Character concepts for region ${region.id}:`, Array.isArray(region.characterConcepts) ? region.characterConcepts : []);
 
@@ -18422,14 +18679,7 @@ function resolveBaseContextPreambleForImagePrompts() {
     const settingPreamble = typeof settingSnapshot?.baseContextPreamble === 'string'
         ? settingSnapshot.baseContextPreamble.trim()
         : '';
-    if (settingPreamble) {
-        return settingPreamble;
-    }
-
-    const configPreamble = typeof config?.base_context_preamble === 'string'
-        ? config.base_context_preamble.trim()
-        : '';
-    return configPreamble;
+    return settingPreamble;
 }
 
 function prependBaseContextPreamble(promptText) {

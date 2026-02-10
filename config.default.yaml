@@ -65,20 +65,23 @@ ai_multimodal:
   enabled: true
   model: "qwen3-vl-235b-a22b-instruct-original"
 
-# overrides for specific prompt types. You can override any AI setting, including the model and endpoint.
-# prompt_ai_overrides:
-#   player_action:
-#     frequency_penalty: 0.0
-#     presence_penalty: 0.1
-#     temperature: 0.85
-#   npc_action:
-#     frequency_penalty: 0.0
-#     presence_penalty: 0.1
-#     temperature: 0.85
-#   random_event:
-#     frequency_penalty: 0.0
-#     presence_penalty: 0.1
-#     temperature: 0.85
+# profile-based model overrides for prompts.
+# each profile can override any AI setting and targets prompt labels via `prompts`.
+# if multiple profiles match a prompt, later profiles win for overlapping keys.
+# ai_model_overrides:
+#   creative:
+#     model: "moonshotai/kimi-k2.5"
+#     temperature: 0.9
+#     prompts:
+#       - player_action
+#       - npc_action
+#       - random_event
+#   deterministic:
+#     model: "zai-org/glm-4.7"
+#     temperature: 0.2
+#     prompts:
+#       - event_checks
+#       - quest_check
 model_swap_options:
   - "zai-org/glm-4.7"
   - "z-ai/glm-4.6"
@@ -185,6 +188,10 @@ supplemental_story_info_prompt_frequency: 5
 # - Number below controls how many NPCs to request in each twice-daily run.
 # - 0 disables the twice-daily offscreen NPC activity prompt.
 offscreen_npc_activity_prompt_count: 5
+# - Safety caps: force at least one run after this many turns (even if 07:00/19:00 or weekly checkpoints were not crossed).
+# - 0 disables the turn-cap trigger for that cadence.
+offscreen_npc_activity_daily_max_turns_between_prompts: 20
+offscreen_npc_activity_weekly_max_turns_between_prompts: 100
 
 # If this is false, no event checks will be performed. This will prevent prose from affecting anything in the game world. This also prevents quest completion checks.
 event_checks:
@@ -239,6 +246,7 @@ formulas:
 baseHealthPerLevel: 15
 repetition_buster: true
 slop_buster: true
+slop_remover_base_attempts: 2
 prose_length: 3-5 sentences
 # Number of events to check concurrently when processing text. Omit to do them all.
 # A lower number makes it easier for the AI but is slower and will use more tokens/requests.

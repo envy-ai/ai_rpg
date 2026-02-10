@@ -689,6 +689,40 @@ class Player {
         return Array.from(this.#instances);
     }
 
+    static removeNpcFromAllLocations(npcId) {
+        if (typeof npcId !== 'string' || !npcId.trim()) {
+            return 0;
+        }
+
+        const trimmedNpcId = npcId.trim();
+        const Location = getLocationModule();
+        if (!Location || typeof Location.getAll !== 'function') {
+            throw new Error('Location module is not available or does not support getAll().');
+        }
+
+        const locations = Location.getAll();
+        if (!Array.isArray(locations)) {
+            throw new Error('Location.getAll() must return an array.');
+        }
+
+        let removedFromCount = 0;
+        for (const location of locations) {
+            if (!location) {
+                continue;
+            }
+            if (typeof location.removeNpcId !== 'function') {
+                throw new Error(
+                    `Unable to unregister '${trimmedNpcId}' from location '${location.name || location.id || 'unknown'}': removeNpcId is not available.`
+                );
+            }
+            if (location.removeNpcId(trimmedNpcId)) {
+                removedFromCount += 1;
+            }
+        }
+
+        return removedFromCount;
+    }
+
     static unregister(target) {
         if (!target) {
             return false;
@@ -2543,22 +2577,8 @@ class Player {
                     member.markPartyMembershipChangedThisTurn();
                 }
 
-                let existingLocation = null;
-                try {
-                    existingLocation = member.currentLocationObject || null;
-                } catch (_) {
-                    existingLocation = null;
-                }
-
                 const existingLocationId = member.currentLocation || null;
-
-                if (existingLocation) {
-                    if (typeof existingLocation.removeNpcId === 'function') {
-                        existingLocation.removeNpcId(member.id);
-                    } else {
-                        throw new Error(`Unable to unregister '${member.name || member.id}' from location '${existingLocation.name || existingLocation.id}': removeNpcId is not available.`);
-                    }
-                }
+                Player.removeNpcFromAllLocations(member.id);
 
                 if (typeof member.setLocation === 'function') {
                     member.setLocation(null);

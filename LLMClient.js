@@ -508,8 +508,8 @@ class LLMClient {
                     aiConfig = { ...aiConfigSource };
                 }
 
-                if (metadataLabel && globalConfig.prompt_ai_overrides && globalConfig.prompt_ai_overrides[metadataLabel]) {
-                    const overrides = globalConfig.prompt_ai_overrides[metadataLabel];
+                const { overrides } = LLMClient.#resolveAiModelOverrides(metadataLabel, globalConfig);
+                if (overrides) {
                     Object.entries(overrides).forEach(([key, value]) => {
                         aiConfig[key] = value;
                     });
@@ -624,6 +624,58 @@ class LLMClient {
         } catch (error) {
             throw new Error(`Failed to clone AI configuration: ${error.message}`);
         }
+    }
+
+    static #normalizePromptLabel(label) {
+        if (typeof label !== 'string') {
+            return '';
+        }
+        return label
+            .trim()
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '_')
+            .replace(/^_+|_+$/g, '');
+    }
+
+    static #resolveAiModelOverrides(metadataLabel, globalConfig = Globals?.config) {
+        const normalizedLabel = LLMClient.#normalizePromptLabel(metadataLabel);
+        if (!normalizedLabel) {
+            return { overrides: null, profiles: [] };
+        }
+
+        const overrideProfiles = globalConfig?.ai_model_overrides;
+        if (!overrideProfiles || typeof overrideProfiles !== 'object' || Array.isArray(overrideProfiles)) {
+            return { overrides: null, profiles: [] };
+        }
+
+        const overrides = {};
+        const appliedProfiles = [];
+        for (const [profileName, profileConfig] of Object.entries(overrideProfiles)) {
+            if (!profileConfig || typeof profileConfig !== 'object' || Array.isArray(profileConfig)) {
+                continue;
+            }
+
+            const prompts = Array.isArray(profileConfig.prompts) ? profileConfig.prompts : [];
+            const matchesPrompt = prompts.some((promptLabel) => (
+                LLMClient.#normalizePromptLabel(promptLabel) === normalizedLabel
+            ));
+            if (!matchesPrompt) {
+                continue;
+            }
+
+            appliedProfiles.push(profileName);
+            for (const [key, value] of Object.entries(profileConfig)) {
+                if (key === 'prompts' || value === undefined) {
+                    continue;
+                }
+                overrides[key] = value;
+            }
+        }
+
+        if (!Object.keys(overrides).length) {
+            return { overrides: null, profiles: appliedProfiles };
+        }
+        return { overrides, profiles: appliedProfiles };
     }
 
     static baseTimeoutMilliseconds() {
@@ -917,11 +969,10 @@ class LLMClient {
                 }
             }
 
-            //check if Globals.config.prompt_ai_overrides[metadataLabel] exists, and if so, iterate through the keys and set the corresponding variables
-            //console.log(`Checking for AI config overrides for metadataLabel: ${metadataLabel}`);
-            if (metadataLabel && Globals.config.prompt_ai_overrides && Globals.config.prompt_ai_overrides[metadataLabel]) {
-                const overrides = Globals.config.prompt_ai_overrides[metadataLabel];
-                log(`Applying AI config overrides for ${metadataLabel}:`, overrides);
+            const { overrides, profiles: overrideProfiles } = LLMClient.#resolveAiModelOverrides(metadataLabel, Globals?.config);
+            if (overrides) {
+                const profileSummary = overrideProfiles.length ? ` (profiles: ${overrideProfiles.join(', ')})` : '';
+                log(`Applying AI model overrides for ${metadataLabel}${profileSummary}:`, overrides);
                 for (const [key, value] of Object.entries(overrides)) {
                     log(`Applying AI config override for ${metadataLabel}: setting ${key} to ${value}`);
                     aiConfig[key] = value;

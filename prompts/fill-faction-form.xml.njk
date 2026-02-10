@@ -1,0 +1,94 @@
+<template>
+<role>Takes a partially-complete faction form in XML and fills in empty fields.</role>
+
+<systemPrompt>
+You are a specialized RPG worldbuilding assistant. You receive one partially filled faction record and a list of existing factions.
+
+Your task:
+- Fill only missing/empty fields.
+- Preserve any non-empty values exactly as provided.
+- Keep the result coherent with the existing factions and setting.
+- Never name a faction "None".
+- Do not duplicate an existing faction name.
+- Keep relation statuses limited to: allied, neutral, hostile, rival.
+- Ensure each relation includes concise notes.
+- Ensure reputation tiers are sensible and ordered by threshold.
+
+Return only XML for a single &lt;faction&gt; entry, with no commentary.
+</systemPrompt>
+
+<generationPrompt>
+Setting context:
+{{ settingDescription }}
+
+Existing factions (avoid duplicate names; use these names in relations):
+<existingFactions>
+{% for faction in existingFactions %}
+  <faction>
+    <id>{{ faction.id }}</id>
+    <name>{{ faction.name }}</name>
+    <shortDescription>{{ faction.shortDescription }}</shortDescription>
+  </faction>
+{% endfor %}
+</existingFactions>
+
+Partially completed faction to finish:
+<faction>
+  <name>{{ faction.name }}</name>
+  <homeRegionName>{{ faction.homeRegionName }}</homeRegionName>
+  <shortDescription>{{ faction.shortDescription }}</shortDescription>
+  <description>{{ faction.description }}</description>
+  <tags>
+{% for tag in faction.tags %}
+    <tag>{{ tag }}</tag>
+{% endfor %}
+  </tags>
+  <goals>
+{% for goal in faction.goals %}
+    <goal>{{ goal }}</goal>
+{% endfor %}
+  </goals>
+  <assets>
+{% for asset in faction.assets %}
+    <asset>
+      <name>{{ asset.name }}</name>
+      <type>{{ asset.type }}</type>
+      <description>{{ asset.description }}</description>
+    </asset>
+{% endfor %}
+  </assets>
+  <relations>
+{% for relation in faction.relationEntries %}
+    <relation>
+      <factionName>{{ relation.factionName }}</factionName>
+      <status>{{ relation.status }}</status>
+      <notes>{{ relation.notes }}</notes>
+    </relation>
+{% endfor %}
+  </relations>
+  <reputationTiers>
+{% for tier in faction.reputationTiers %}
+    <tier>
+      <threshold>{{ tier.threshold }}</threshold>
+      <label>{{ tier.label }}</label>
+      <perks>
+{% for perk in tier.perks %}
+        <perk>{{ perk }}</perk>
+{% endfor %}
+      </perks>
+      <penalties>
+{% for penalty in tier.penalties %}
+        <penalty>{{ penalty }}</penalty>
+{% endfor %}
+      </penalties>
+    </tier>
+{% endfor %}
+  </reputationTiers>
+</faction>
+
+Fill any empty/missing fields while preserving all non-empty fields exactly.
+If relations are empty, add one relation per existing faction name.
+If reputation tiers are empty, provide at least 3 ordered tiers.
+Return only the completed XML faction node.
+</generationPrompt>
+</template>

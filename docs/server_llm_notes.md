@@ -29,6 +29,7 @@ Server & LLM Notes
   - Random events are checked independently of NPC turn processing (forced-event actions still suppress random events), and rolls are scaled by `random_event_frequency_multiplier`.
   - On `<travelProse>` turns, split origin/destination event checks can apply `item_appear` and `scenery_appear` outcomes even after movement has been marked processed.
   - Additional endpoints cover quest confirmations, chat history mutations, player CRUD (attributes, health, needs, party, skills, portraits), NPC CRUD/teleport/equipment/dispositions/memories/goals, location/region CRUD and generation (including stub expansion, exits, maps), crafting, thing/item operations (create, give/drop/teleport/delete/image), settings management (create/save/load/apply), save/load/new-game flows, slash commands, config test endpoints, and image job APIs (request/async generation/job status/metadata listing).
+  - Save-load reconciliation now enforces party/location invariants for the current player on load: party members are removed from all location `npcIds` lists and their explicit `currentLocation` is cleared.
   - Uses helpers like `runAutosaveIfEnabled`, `generateRandomEventSeeds/ensureRandomEventSeedsForArea`, `renderCraftOutcomeForDegree`, and numerous validation branches to reject unsupported operations with explicit errors/status codes.
 
 - Events.js

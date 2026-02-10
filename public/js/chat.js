@@ -3,6 +3,9 @@ class AIRPGChat {
         this.chatLog = document.getElementById('chatLog');
         this.messageInput = document.getElementById('messageInput');
         this.sendButton = document.getElementById('sendButton');
+        this.prefixHelpLink = document.getElementById('prefixHelpLink');
+        this.prefixHelpModal = document.getElementById('prefixHelpModal');
+        this.prefixHelpCloseButton = document.getElementById('prefixHelpCloseBtn');
         this.sendButtonDefaultHtml = this.sendButton ? this.sendButton.innerHTML : 'Send';
         this.skillPointsDisplay = document.getElementById('unspentSkillPointsDisplay');
         this.skillRankElements = this.collectSkillRankElements();
@@ -67,6 +70,7 @@ class AIRPGChat {
 
         this.setupEditModal();
         this.setupQuestConfirmationModal();
+        this.setupPrefixHelpModal();
         this.loadExistingHistory();
 
         window.AIRPG_CHAT = this;
@@ -149,6 +153,65 @@ class AIRPGChat {
                 this.submitQuestConfirmation(false);
             }
         });
+    }
+
+    setupPrefixHelpModal() {
+        if (!this.prefixHelpModal) {
+            return;
+        }
+
+        if (this.prefixHelpCloseButton) {
+            this.prefixHelpCloseButton.addEventListener('click', () => this.closePrefixHelpModal());
+        }
+
+        this.prefixHelpModal.addEventListener('click', (event) => {
+            if (event.target === this.prefixHelpModal) {
+                this.closePrefixHelpModal();
+            }
+        });
+    }
+
+    isPrefixHelpModalOpen() {
+        return Boolean(this.prefixHelpModal && !this.prefixHelpModal.hasAttribute('hidden'));
+    }
+
+    syncBodyModalOpenClass() {
+        const hasOpenModal = Boolean(document.querySelector('.modal[aria-hidden="false"], .chat-edit-modal.is-open, .quest-confirmation.is-open, .npc-selection-modal'));
+        if (hasOpenModal) {
+            document.body.classList.add('modal-open');
+        } else {
+            document.body.classList.remove('modal-open');
+        }
+    }
+
+    openPrefixHelpModal() {
+        if (!this.prefixHelpModal) {
+            return;
+        }
+        this.prefixHelpModal.removeAttribute('hidden');
+        this.prefixHelpModal.setAttribute('aria-hidden', 'false');
+        if (this.prefixHelpLink) {
+            this.prefixHelpLink.setAttribute('aria-expanded', 'true');
+        }
+        document.body.classList.add('modal-open');
+        if (this.prefixHelpCloseButton) {
+            this.prefixHelpCloseButton.focus();
+        }
+    }
+
+    closePrefixHelpModal() {
+        if (!this.prefixHelpModal) {
+            return;
+        }
+        this.prefixHelpModal.setAttribute('hidden', '');
+        this.prefixHelpModal.setAttribute('aria-hidden', 'true');
+        if (this.prefixHelpLink) {
+            this.prefixHelpLink.setAttribute('aria-expanded', 'false');
+        }
+        this.syncBodyModalOpenClass();
+        if (this.prefixHelpLink) {
+            this.prefixHelpLink.focus();
+        }
     }
 
     isQuestConfirmationVisible() {
@@ -2727,6 +2790,13 @@ class AIRPGChat {
     bindEvents() {
         this.sendButton.addEventListener('click', () => this.sendMessage());
 
+        if (this.prefixHelpLink) {
+            this.prefixHelpLink.addEventListener('click', (event) => {
+                event.preventDefault();
+                this.openPrefixHelpModal();
+            });
+        }
+
         this.messageInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
@@ -2749,6 +2819,12 @@ class AIRPGChat {
 
         document.addEventListener('keydown', (event) => {
             if (!event || typeof event.key !== 'string') {
+                return;
+            }
+
+            if (event.key === 'Escape' && this.isPrefixHelpModalOpen()) {
+                event.preventDefault();
+                this.closePrefixHelpModal();
                 return;
             }
 

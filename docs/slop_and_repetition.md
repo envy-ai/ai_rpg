@@ -84,7 +84,7 @@ Quick refresher on where these systems live and how they're wired.
   - `textToEdit` (current response)
   - `slopWords`
   - `slopNgrams`
-- Output must be plain text (no XML). The server retries up to 3 times and can extend to 5 when parse failures occur.
+- Output must be plain text (no XML). The server retries up to `config.slop_remover_base_attempts` (default `2`) and can extend to 5 when parse failures occur.
 - After each attempt, the server re-checks for remaining slop words and n-grams; if it hits max attempts, it logs and allows remaining slop.
 - Diagnostics (`slopWords` + `slopNgrams`) are attached to the response and recorded in chat history.
 
@@ -105,6 +105,7 @@ Quick refresher on where these systems live and how they're wired.
 
 ### Config switches
 - `config.slop_buster`: enables the slop removal pipeline.
+- `config.slop_remover_base_attempts`: base number of slop-remover rewrite attempts (`>= 1`, default `2`).
 - `defs/slopwords.yaml`:
   - `default` for slop words.
   - `ngram_default` for configured ngrams.

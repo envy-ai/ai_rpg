@@ -29,7 +29,8 @@ The main UI is rendered by `views/index.njk` and powered by `public/js/chat.js` 
   - Prefix actions preserve raw input markers in the API payload (`?`, `@`, `@@`, `@@@`) even though optimistic local entries render marker-stripped content.
 - **Sidebar** (`.chat-sidebar`):
   - Player card (portrait, health, need bars, quick actions, and a top-left warning triangle when unspent skill/attribute points are present).
-  - Player "View" opens `#npcViewModal` in editable mode for attributes/skills using shared allocation partials; NPCs use the same sections in read-only mode.
+  - Player "View" opens `#npcViewModal` in editable mode for attributes/skills using shared allocation partials; skills can now be added/removed directly in this modal for the player view. NPCs use the same sections in read-only mode.
+  - Player/NPC Inventory modal keeps active inventory filters (including slot filter selection) when equip/unequip triggers an inventory re-render.
   - Party summary list.
 - **World-time chip** (`#worldTimeIndicator`):
   - Rendered in the Adventure tab's left location panel (compact sidebar style).
@@ -121,6 +122,8 @@ Inline script functions in `views/index.njk` render these tabs:
 - `initQuestPanel()` uses `/api/quest/edit` and `/api/player/quests/:id`.
 - `initFactionPanel()` uses `/api/factions` and `/api/player/factions/:id/standing`.
 - The faction form includes fields for name, home region, short description, description, tags, goals, assets, relations, reputation tiers, and player standing.
+- New faction creation now uses a dedicated modal (not `window.prompt`) with full faction fields (including assets/relations/reputation tiers).
+- On create submit, if any relevant faction fields are blank, the UI calls `/api/factions/fill-missing` before posting to `/api/factions`.
 - `initPartyDisplay()` renders party cards and ties into the chat sidebar.
 
 ## Player overview sync

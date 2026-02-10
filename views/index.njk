@@ -169,7 +169,10 @@
 
                                 <div class="input-area">
                                     <textarea class="message-input" id="messageInput" placeholder="Type your message here..." rows="2"></textarea>
-                                    <button class="send-button" id="sendButton">Send</button>
+                                    <div class="send-controls">
+                                        <button type="button" class="prefix-help-link" id="prefixHelpLink" aria-haspopup="dialog" aria-expanded="false" aria-controls="prefixHelpModal" aria-label="Show chat prefix help">?</button>
+                                        <button class="send-button" id="sendButton">Send</button>
+                                    </div>
                                 </div>
                             </div>
 
@@ -602,6 +605,127 @@
         </div>
     </div>
 
+    <div id="prefixHelpModal" class="modal prefix-help-modal" role="dialog" aria-modal="true" aria-hidden="true" hidden>
+        <div class="modal__dialog">
+            <header class="modal__header">
+                <h2 id="prefixHelpTitle">Chat Prefixes</h2>
+                <button type="button" class="modal__close" id="prefixHelpCloseBtn" aria-label="Close chat prefix help">
+                    <span aria-hidden="true">X</span>
+                </button>
+            </header>
+            <div class="modal__body">
+                <p class="modal__instruction">Use these prefixes at the start of your message:</p>
+                <table class="prefix-help-table" aria-describedby="prefixHelpTitle">
+                    <thead>
+                        <tr>
+                            <th scope="col">Prefix</th>
+                            <th scope="col">What It Does</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>/</code></td>
+                            <td>Runs a slash command (for example <code>/help</code>).</td>
+                        </tr>
+                        <tr>
+                            <td><code>#</code></td>
+                            <td>Logs a comment only. No turn processing is performed.</td>
+                        </tr>
+                        <tr>
+                            <td><code>!</code></td>
+                            <td>Runs a creative-mode action (normal plausibility/attack prechecks are skipped).</td>
+                        </tr>
+                        <tr>
+                            <td><code>!!</code></td>
+                            <td>Runs a forced event action override.</td>
+                        </tr>
+                        <tr>
+                            <td><code>?</code></td>
+                            <td>Asks an in-context question using the question prompt.</td>
+                        </tr>
+                        <tr>
+                            <td><code>@</code></td>
+                            <td>Runs a generic prompt and keeps it in history and base-context history.</td>
+                        </tr>
+                        <tr>
+                            <td><code>@@</code></td>
+                            <td>Runs a generic prompt, logs it, but excludes it from base-context history.</td>
+                        </tr>
+                        <tr>
+                            <td><code>@@@</code></td>
+                            <td>Runs a generic prompt and does not create a visible chat-log entry.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div id="factionCreateModal" class="modal faction-create-modal" role="dialog" aria-modal="true" aria-hidden="true" hidden>
+        <div class="modal__dialog">
+            <header class="modal__header">
+                <h2 id="factionCreateTitle">New Faction</h2>
+                <button type="button" class="modal__close" id="factionCreateCloseBtn" aria-label="Close new faction dialog">
+                    <span aria-hidden="true">X</span>
+                </button>
+            </header>
+            <form id="factionCreateForm" class="modal__body faction-create-form" novalidate>
+                <p class="modal__instruction">Fill what you want manually and leave blanks for AI autofill.</p>
+                <div class="form-grid two-column">
+                    <div class="form-group">
+                        <label for="factionCreateName">Name</label>
+                        <input type="text" id="factionCreateName" name="name" placeholder="Optional (AI can generate)">
+                    </div>
+                    <div class="form-group">
+                        <label for="factionCreateHomeRegion">Home Region</label>
+                        <input type="text" id="factionCreateHomeRegion" name="homeRegionName" placeholder="Optional">
+                    </div>
+                    <div class="form-group">
+                        <label for="factionCreateShortDescription">Short Description</label>
+                        <textarea id="factionCreateShortDescription" name="shortDescription" rows="2" placeholder="Optional one-sentence summary"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label for="factionCreateDescription">Description</label>
+                        <textarea id="factionCreateDescription" name="description" rows="4" placeholder="Optional longer overview"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label for="factionCreateTags">Tags</label>
+                        <textarea id="factionCreateTags" name="tags" rows="2" placeholder="ideology, archetype, focus"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label for="factionCreateGoals">Goals</label>
+                        <textarea id="factionCreateGoals" name="goals" rows="3" placeholder="Primary goals and ambitions"></textarea>
+                    </div>
+                </div>
+
+                <div class="config-section">
+                    <div class="faction-section-header">
+                        <h2>Assets</h2>
+                        <button type="button" class="btn btn-secondary small" id="factionCreateAssetAddButton">Add Asset</button>
+                    </div>
+                    <div class="faction-assets" id="factionCreateAssetsList"></div>
+                </div>
+
+                <div class="config-section">
+                    <h2>Relations</h2>
+                    <div class="faction-relations" id="factionCreateRelationsList"></div>
+                </div>
+
+                <div class="config-section">
+                    <div class="faction-section-header">
+                        <h2>Reputation Tiers</h2>
+                        <button type="button" class="btn btn-secondary small" id="factionCreateTierAddButton">Add Tier</button>
+                    </div>
+                    <div class="faction-tiers" id="factionCreateTiersList"></div>
+                </div>
+            </form>
+            <footer class="modal__footer">
+                <button type="button" class="btn btn-secondary" id="factionCreateCancelBtn">Cancel</button>
+                <button type="submit" form="factionCreateForm" class="btn btn-primary" id="factionCreateSubmitBtn">Create Faction</button>
+            </footer>
+        </div>
+    </div>
+
     <div id="npcModalBackdrop" class="modal-backdrop" hidden></div>
     <div id="questEditBackdrop" class="modal-backdrop" hidden></div>
     <div id="questEditModal" class="modal quest-edit-modal" role="dialog" aria-modal="true" aria-hidden="true" hidden>
@@ -761,7 +885,7 @@
                         {% set skillAddButtonId = 'npcViewSkillAddButton' %}
                         {% set skillAddInputIdBottom = 'npcViewSkillAddInputBottom' %}
                         {% set skillAddButtonIdBottom = 'npcViewSkillAddButtonBottom' %}
-                        {% set skillAddHelpText = 'Adding/removing skills is disabled in this view.' %}
+                        {% set skillAddHelpText = 'Add or remove skills to include in the point pool.' %}
                         {% include "_includes/skill-allocation.njk" %}
                     </section>
                     <section class="npc-view-section npc-view-allocation-actions" id="npcViewAllocationActionsSection" hidden>
@@ -11632,6 +11756,12 @@
                     .sort((a, b) => a[1].localeCompare(b[1], undefined, { sensitivity: 'base' }));
                 const signature = JSON.stringify(slotEntries.map(([value]) => value));
                 if (npcInventorySlotFilter.dataset.optionSignature !== signature) {
+                    const previousValue = typeof npcInventorySlotFilter.value === 'string'
+                        ? npcInventorySlotFilter.value
+                        : '';
+                    const previousLabel = previousValue
+                        ? (npcInventorySlotFilter.options[npcInventorySlotFilter.selectedIndex]?.textContent || previousValue)
+                        : '';
                     npcInventorySlotFilter.innerHTML = '';
                     const allOption = document.createElement('option');
                     allOption.value = '';
@@ -11643,10 +11773,18 @@
                         option.textContent = label;
                         npcInventorySlotFilter.appendChild(option);
                     });
-                    npcInventorySlotFilter.dataset.optionSignature = signature;
-                    if (npcInventorySlotFilter.value && !slotMap.has(npcInventorySlotFilter.value)) {
-                        npcInventorySlotFilter.value = '';
+                    // Preserve any active slot filter across inventory refreshes (equip/unequip updates).
+                    if (previousValue) {
+                        if (!slotMap.has(previousValue)) {
+                            const preservedOption = document.createElement('option');
+                            preservedOption.value = previousValue;
+                            preservedOption.textContent = previousLabel || previousValue;
+                            preservedOption.dataset.preserved = 'true';
+                            npcInventorySlotFilter.appendChild(preservedOption);
+                        }
+                        npcInventorySlotFilter.value = previousValue;
                     }
+                    npcInventorySlotFilter.dataset.optionSignature = signature;
                 }
             }
 
@@ -13301,7 +13439,7 @@
                 addSkillButtons: [npcViewSkillAddButton, npcViewSkillAddButtonBottom],
                 defaultSkillNames: normalizedSkillNames,
                 poolFormulas: formulas,
-                allowSkillAdd: false,
+                allowSkillAdd: !readOnly,
                 readOnly,
                 suppressPoolWarnings: readOnly,
                 attributePoolBaseValue,
@@ -17868,6 +18006,21 @@
             const tiersList = document.getElementById('factionTiersList');
             const standingInput = document.getElementById('factionStandingValue');
             const standingTier = document.getElementById('factionStandingTier');
+            const createModal = document.getElementById('factionCreateModal');
+            const createForm = document.getElementById('factionCreateForm');
+            const createCloseButton = document.getElementById('factionCreateCloseBtn');
+            const createCancelButton = document.getElementById('factionCreateCancelBtn');
+            const createNameInput = document.getElementById('factionCreateName');
+            const createHomeInput = document.getElementById('factionCreateHomeRegion');
+            const createShortDescriptionInput = document.getElementById('factionCreateShortDescription');
+            const createDescriptionInput = document.getElementById('factionCreateDescription');
+            const createTagsInput = document.getElementById('factionCreateTags');
+            const createGoalsInput = document.getElementById('factionCreateGoals');
+            const createAssetsList = document.getElementById('factionCreateAssetsList');
+            const createRelationsList = document.getElementById('factionCreateRelationsList');
+            const createTiersList = document.getElementById('factionCreateTiersList');
+            const createAssetAddButton = document.getElementById('factionCreateAssetAddButton');
+            const createTierAddButton = document.getElementById('factionCreateTierAddButton');
 
             if (!listEl || !formEl) {
                 return;
@@ -17895,6 +18048,22 @@
                     return '';
                 }
                 return entries.join('\n');
+            };
+
+            const isEmptyFactionFieldValue = (value) => {
+                if (value === null || value === undefined) {
+                    return true;
+                }
+                if (typeof value === 'string') {
+                    return value.trim().length === 0;
+                }
+                if (Array.isArray(value)) {
+                    return value.length === 0;
+                }
+                if (typeof value === 'object') {
+                    return Object.keys(value).length === 0;
+                }
+                return false;
             };
 
             const resolveStandingTierLabel = (value, tiers = []) => {
@@ -18173,11 +18342,11 @@
                 }
             };
 
-            const collectAssets = () => {
-                if (!assetsList) {
+            const collectAssetsFrom = (container) => {
+                if (!container) {
                     return [];
                 }
-                const rows = Array.from(assetsList.querySelectorAll('.faction-asset-row'));
+                const rows = Array.from(container.querySelectorAll('.faction-asset-row'));
                 return rows.map(row => {
                     const nameField = row.querySelector('.faction-asset-name');
                     const typeField = row.querySelector('.faction-asset-type');
@@ -18199,11 +18368,11 @@
                 }).filter(Boolean);
             };
 
-            const collectRelations = () => {
-                if (!relationsList) {
+            const collectRelationsFrom = (container) => {
+                if (!container) {
                     return {};
                 }
-                const rows = Array.from(relationsList.querySelectorAll('.faction-relation-row'));
+                const rows = Array.from(container.querySelectorAll('.faction-relation-row'));
                 const relations = {};
                 rows.forEach(row => {
                     const targetId = row.dataset.targetId || '';
@@ -18222,11 +18391,11 @@
                 return relations;
             };
 
-            const collectTiers = () => {
-                if (!tiersList) {
+            const collectTiersFrom = (container) => {
+                if (!container) {
                     return [];
                 }
-                const rows = Array.from(tiersList.querySelectorAll('.faction-tier-row'));
+                const rows = Array.from(container.querySelectorAll('.faction-tier-row'));
                 return rows.map(row => {
                     const thresholdField = row.querySelector('.faction-tier-threshold');
                     const labelField = row.querySelector('.faction-tier-label');
@@ -18253,6 +18422,10 @@
                 }).filter(Boolean);
             };
 
+            const collectAssets = () => collectAssetsFrom(assetsList);
+            const collectRelations = () => collectRelationsFrom(relationsList);
+            const collectTiers = () => collectTiersFrom(tiersList);
+
             const gatherFactionPayload = () => {
                 if (!nameInput || !nameInput.value.trim()) {
                     throw new Error('Faction name is required.');
@@ -18266,10 +18439,126 @@
                     description: description || null,
                     tags: splitList(tagsInput ? tagsInput.value : ''),
                     goals: splitList(goalsInput ? goalsInput.value : ''),
-                    assets: collectAssets(),
-                    relations: collectRelations(),
-                    reputationTiers: collectTiers()
+                    assets: collectAssetsFrom(assetsList),
+                    relations: collectRelationsFrom(relationsList),
+                    reputationTiers: collectTiersFrom(tiersList)
                 };
+            };
+
+            const gatherCreateFactionPayload = () => {
+                const shortDescription = createShortDescriptionInput ? createShortDescriptionInput.value.trim() : '';
+                const description = createDescriptionInput ? createDescriptionInput.value.trim() : '';
+                return {
+                    name: createNameInput ? createNameInput.value.trim() : '',
+                    homeRegionName: createHomeInput ? createHomeInput.value.trim() : '',
+                    shortDescription: shortDescription || null,
+                    description: description || null,
+                    tags: splitList(createTagsInput ? createTagsInput.value : ''),
+                    goals: splitList(createGoalsInput ? createGoalsInput.value : ''),
+                    assets: collectAssetsFrom(createAssetsList),
+                    relations: collectRelationsFrom(createRelationsList),
+                    reputationTiers: collectTiersFrom(createTiersList)
+                };
+            };
+
+            const createPayloadNeedsAutofill = (payload) => {
+                if (!payload || typeof payload !== 'object') {
+                    return true;
+                }
+                if (Array.isArray(state.factions) && state.factions.length > 0) {
+                    const relationMap = payload.relations && typeof payload.relations === 'object'
+                        ? payload.relations
+                        : {};
+                    const hasMissingRelation = state.factions.some(faction => {
+                        const relation = relationMap[faction.id];
+                        const status = typeof relation?.status === 'string' ? relation.status.trim() : '';
+                        const notes = typeof relation?.notes === 'string' ? relation.notes.trim() : '';
+                        return !status || !notes;
+                    });
+                    if (hasMissingRelation) {
+                        return true;
+                    }
+                }
+                return [
+                    'name',
+                    'homeRegionName',
+                    'shortDescription',
+                    'description',
+                    'tags',
+                    'goals',
+                    'assets',
+                    'reputationTiers'
+                ].some(field => isEmptyFactionFieldValue(payload[field]));
+            };
+
+            const fillMissingCreatePayload = async (payload) => {
+                if (!createPayloadNeedsAutofill(payload)) {
+                    return payload;
+                }
+                const response = await fetch('/api/factions/fill-missing', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ faction: payload })
+                });
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok || !data?.success || !data?.faction) {
+                    throw new Error(data?.error || 'Failed to auto-fill missing faction fields.');
+                }
+                return data.faction;
+            };
+
+            const resetCreateModal = () => {
+                if (createForm) {
+                    createForm.reset();
+                }
+                if (createAssetsList) {
+                    createAssetsList.innerHTML = '';
+                    createAssetsList.appendChild(buildAssetRow());
+                }
+                if (createRelationsList) {
+                    createRelationsList.innerHTML = '';
+                    if (!Array.isArray(state.factions) || state.factions.length === 0) {
+                        const empty = document.createElement('div');
+                        empty.className = 'faction-relation-empty';
+                        empty.textContent = 'No existing factions to relate to yet.';
+                        createRelationsList.appendChild(empty);
+                    } else {
+                        state.factions.forEach(faction => {
+                            createRelationsList.appendChild(buildRelationRow(faction, null));
+                        });
+                    }
+                }
+                if (createTiersList) {
+                    createTiersList.innerHTML = '';
+                    createTiersList.appendChild(buildTierRow());
+                }
+            };
+
+            const openCreateModal = () => {
+                if (!createModal) {
+                    return;
+                }
+                resetCreateModal();
+                createModal.removeAttribute('hidden');
+                createModal.setAttribute('aria-hidden', 'false');
+                createModal.classList.add('is-open');
+                document.body.classList.add('modal-open');
+                window.requestAnimationFrame(() => {
+                    createNameInput?.focus();
+                });
+            };
+
+            const closeCreateModal = () => {
+                if (!createModal) {
+                    return;
+                }
+                createModal.setAttribute('hidden', '');
+                createModal.setAttribute('aria-hidden', 'true');
+                createModal.classList.remove('is-open');
+                if (!document.querySelector('.modal[aria-hidden="false"]')) {
+                    document.body.classList.remove('modal-open');
+                }
+                addButton?.focus();
             };
 
             const refreshFactions = async () => {
@@ -18306,23 +18595,60 @@
             window.refreshFactions = refreshFactions;
 
             if (addButton) {
-                addButton.addEventListener('click', async () => {
-                    const name = window.prompt('Enter a name for the new faction:');
-                    const trimmed = typeof name === 'string' ? name.trim() : '';
-                    if (!trimmed) {
-                        return;
+                addButton.addEventListener('click', () => {
+                    openCreateModal();
+                });
+            }
+
+            if (createAssetAddButton) {
+                createAssetAddButton.addEventListener('click', () => {
+                    if (createAssetsList) {
+                        createAssetsList.appendChild(buildAssetRow());
                     }
+                });
+            }
+
+            if (createTierAddButton) {
+                createTierAddButton.addEventListener('click', () => {
+                    if (createTiersList) {
+                        createTiersList.appendChild(buildTierRow());
+                    }
+                });
+            }
+
+            if (createCancelButton) {
+                createCancelButton.addEventListener('click', () => closeCreateModal());
+            }
+
+            if (createCloseButton) {
+                createCloseButton.addEventListener('click', () => closeCreateModal());
+            }
+
+            if (createModal) {
+                createModal.addEventListener('click', (event) => {
+                    if (event.target === createModal) {
+                        closeCreateModal();
+                    }
+                });
+            }
+
+            if (createForm) {
+                createForm.addEventListener('submit', async (event) => {
+                    event.preventDefault();
                     try {
+                        const rawPayload = gatherCreateFactionPayload();
+                        const payload = await fillMissingCreatePayload(rawPayload);
                         const response = await fetch('/api/factions', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ name: trimmed })
+                            body: JSON.stringify(payload)
                         });
                         const data = await response.json().catch(() => ({}));
                         if (!response.ok || !data?.success) {
                             throw new Error(data?.error || 'Failed to create faction.');
                         }
                         state.selectedId = data.faction?.id || null;
+                        closeCreateModal();
                         await refreshFactions();
                     } catch (error) {
                         console.error('Failed to create faction:', error);
@@ -18428,6 +18754,16 @@
                     console.error('Failed to save faction:', error);
                     window.alert(`Failed to save faction: ${error.message || error}`);
                 }
+            });
+
+            document.addEventListener('keydown', (event) => {
+                if (event.key !== 'Escape') {
+                    return;
+                }
+                if (!createModal || createModal.getAttribute('aria-hidden') !== 'false') {
+                    return;
+                }
+                closeCreateModal();
             });
 
             refreshFactions();

@@ -44,4 +44,4 @@ Represents a game setting/world configuration, including theme, genre, prompts, 
 ## Notes
 - Many setters normalize line endings to `\n` for prompt fields.
 - List normalization accepts string (newline-delimited) or array input.
-- `baseContextPreamble` is prepended to image-generation prompts at execution time (falling back to `config.base_context_preamble` when no active setting preamble is available).
+- `baseContextPreamble` is prepended to image-generation prompts at execution time.

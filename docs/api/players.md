@@ -86,6 +86,10 @@ Response:
 ## POST /api/player/levelup
 Level up the current player.
 
+Notes:
+- Level-up events are appended to chat history as `type: level-up` entries.
+- These level-up entries are excluded from base-context `olderStoryHistory` and `recentStoryHistory` assembly.
+
 Response:
 - 200: `{ success: true, player: NpcProfile, message }`
 - 400/404 with `{ success: false, error }`
@@ -122,6 +126,7 @@ Update player stats (admin-style edit).
 
 Request:
 - Body supports: `name`, `description`, `level`, `health`, `attributes`, `skills`, `statusEffects`
+- New skill names in `skills` now trigger skill-metadata generation (name/description/attribute) via the existing skill generation pipeline, then are registered into the runtime skill registry and `Player.availableSkills` before assignment.
 - Rejects `unspentSkillPoints` and `unspentAttributePoints` (400) because pools are formula-derived at read time.
 - Attribute updates are validated by `Player.setAttribute(...)` definitions; the route no longer hard-limits values to a fixed `3..18` range.
 

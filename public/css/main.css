@@ -13,6 +13,24 @@ body {
   overflow: hidden;
 }
 
+:root {
+  --airpg-modal-backdrop: rgba(15, 23, 42, 0.75);
+  --airpg-modal-surface: linear-gradient(
+    145deg,
+    rgba(15, 18, 34, 0.95),
+    rgba(26, 32, 54, 0.94)
+  );
+  --airpg-modal-border: rgba(148, 163, 184, 0.32);
+  --airpg-modal-shadow: 0 28px 70px rgba(0, 0, 0, 0.55);
+  --airpg-modal-header: linear-gradient(
+    135deg,
+    rgba(102, 126, 234, 0.2),
+    rgba(118, 75, 162, 0.2)
+  );
+  --airpg-modal-text: rgba(255, 255, 255, 0.9);
+  --airpg-modal-muted: rgba(255, 255, 255, 0.72);
+}
+
 @media (max-width: 900px) {
   body {
     min-height: 100vh;
@@ -3831,6 +3849,18 @@ body.dark .thing-toggle-hint {
   font-size: 0.9rem;
 }
 
+.faction-create-modal .modal__dialog {
+  width: min(980px, 96vw);
+  max-height: 92vh;
+}
+
+.faction-create-form {
+  gap: 18px;
+}
+.faction-create-form .config-section {
+  margin-bottom: 0;
+}
+
 .prompt-progress-overlay {
   position: fixed;
   top: 16px;
@@ -4351,9 +4381,18 @@ body.modal-open {
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(15, 23, 42, 0.75);
+  background: var(--airpg-modal-backdrop);
+  -webkit-backdrop-filter: blur(6px);
   backdrop-filter: blur(6px);
   z-index: 900;
+}
+
+.quest-confirmation__backdrop,
+.chat-edit-modal__backdrop,
+.npc-selection-backdrop {
+  background: var(--airpg-modal-backdrop);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
 }
 
 .modal-backdrop[hidden] {
@@ -4374,33 +4413,51 @@ body.modal-open {
   display: none;
 }
 
-.modal__dialog {
-  background: linear-gradient(135deg, rgba(15, 23, 42, 0.95), rgba(30, 64, 175, 0.6));
-  border: 1px solid rgba(148, 163, 184, 0.35);
+.modal__dialog,
+.quest-confirmation__dialog,
+.chat-edit-modal__dialog,
+.npc-selection-dialog {
+  background: var(--airpg-modal-surface);
+  border: 1px solid var(--airpg-modal-border);
   border-radius: 16px;
+  box-shadow: var(--airpg-modal-shadow);
+  color: var(--airpg-modal-text);
+}
+
+.modal__dialog {
   width: min(760px, 95vw);
   max-height: 90vh;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 24px 48px rgba(15, 23, 42, 0.55);
   overflow: hidden;
 }
 
-.modal__header {
+.modal__header,
+.quest-confirmation__header,
+.chat-edit-modal__header,
+.npc-selection-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 20px 24px;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.25);
+  border-bottom: 1px solid var(--airpg-modal-border);
+  background: var(--airpg-modal-header);
   color: #f8fafc;
 }
 
-.modal__header h2 {
-  font-size: 1.4rem;
+.modal__header h2,
+.quest-confirmation__title,
+.chat-edit-modal__header h2,
+.npc-selection-header h2 {
+  margin: 0;
+  font-size: 1.22rem;
   font-weight: 600;
+  color: #ffffff;
 }
 
-.modal__close {
+.modal__close,
+.chat-edit-modal__close,
+.npc-selection-close {
   border: none;
   background: rgba(15, 23, 42, 0.6);
   color: #e2e8f0;
@@ -4408,12 +4465,17 @@ body.modal-open {
   width: 34px;
   height: 34px;
   font-size: 0.95rem;
+  line-height: 1;
   cursor: pointer;
   transition: background 0.2s ease, color 0.2s ease;
 }
 
 .modal__close:hover,
-.modal__close:focus {
+.modal__close:focus,
+.chat-edit-modal__close:hover,
+.chat-edit-modal__close:focus,
+.npc-selection-close:hover,
+.npc-selection-close:focus {
   background: rgba(37, 99, 235, 0.5);
   color: #ffffff;
   outline: none;
@@ -4522,6 +4584,13 @@ body.modal-open {
   display: flex;
   flex-direction: column;
   gap: 20px;
+  color: var(--airpg-modal-text);
+}
+
+.quest-confirmation__body,
+.chat-edit-modal__body,
+.npc-selection-body {
+  color: var(--airpg-modal-text);
 }
 
 .modal__instruction {
@@ -4533,7 +4602,14 @@ body.modal-open {
   justify-content: flex-end;
   gap: 12px;
   padding: 20px 24px;
-  border-top: 1px solid rgba(148, 163, 184, 0.25);
+  border-top: 1px solid var(--airpg-modal-border);
+  background: rgba(15, 23, 42, 0.55);
+}
+
+.quest-confirmation__footer,
+.chat-edit-modal__footer,
+.npc-selection-footer {
+  border-top: 1px solid var(--airpg-modal-border);
   background: rgba(15, 23, 42, 0.55);
 }
 

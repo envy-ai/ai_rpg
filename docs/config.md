@@ -93,6 +93,25 @@ offscreen_npc_activity_prompt_count: 5
 - Weekly offscreen NPC activity still runs independently (fixed at 15 NPCs).
 - If elapsed time crosses multiple scheduled offscreen prompt checkpoints in one turn, only one offscreen prompt is run for that turn.
 
+## Offscreen NPC activity max turns between prompts
+
+These caps force an offscreen NPC activity run if too many turns pass without that cadence firing.
+
+```yaml
+offscreen_npc_activity_daily_max_turns_between_prompts: 20
+offscreen_npc_activity_weekly_max_turns_between_prompts: 100
+```
+
+- `offscreen_npc_activity_daily_max_turns_between_prompts`:
+  - Applies to the twice-daily cadence.
+  - When the daily prompt is enabled (`offscreen_npc_activity_prompt_count > 0`), reaching this many turns since the last daily run forces one daily run.
+- `offscreen_npc_activity_weekly_max_turns_between_prompts`:
+  - Applies to the weekly cadence.
+  - Reaching this many turns since the last weekly run forces one weekly run.
+- `0` disables turn-cap forcing for that cadence.
+- Values must be integers `>= 0`; invalid values raise runtime errors when scheduling.
+- Single-run-per-turn still applies: if multiple offscreen prompts are due in one turn (time-based and/or turn-cap based), only one is run.
+
 ## World time
 
 `time` controls the canonical world clock configuration. Internally, the server tracks world time in decimal hours (`worldTime.timeHours`), while config inputs are minute-based.
@@ -112,3 +131,15 @@ time:
 - `tickMinutes`: baseline tick value for systems that need default advancement.
 - `segmentBoundaries`: map of `segmentName -> startMinute` within the cycle.
 - Segment boundaries must be within `[0, cycleLengthMinutes)`.
+
+## Slop remover base attempts
+
+`slop_remover_base_attempts` controls the starting number of rewrite attempts for the slop-remover pass.
+
+```yaml
+slop_remover_base_attempts: 2
+```
+
+- Must be an integer `>= 1`.
+- This is the base attempt count before parse-failure extensions.
+- Parse failures can still increase the effective cap up to 5 attempts.
