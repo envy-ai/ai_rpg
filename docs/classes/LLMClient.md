@@ -38,5 +38,7 @@ Centralized client for LLM chat completions with concurrency limits, streaming p
 ## Notes
 - Streaming progress is broadcast through `Globals.realtimeHub` when available.
 - Retries are built in; stream timeouts are incrementally increased on retry.
+- Retry attempts re-resolve active AI runtime settings (including `ai_model_overrides` selected by `metadataLabel`) before each request attempt, so model/endpoint/key and other settings can change between retries.
+- `ai.custom_args` supports structured provider-specific top-level request args; profile `ai_model_overrides` merge `custom_args` per key (deep merge), with `null` deleting inherited keys.
 - `logPrompt` is the standard logging path for prompts throughout the codebase.
 - The chat completion payload no longer forces `reasoning: true`; it is only sent when configured explicitly.

@@ -3503,7 +3503,9 @@ class AIRPGChat {
                 entries.forEach((entry) => {
                     const actor = safeName(entry?.harvester);
                     const itemName = safeItem(entry?.item);
-                    this.addEventSummary('🌾', `${actor} harvested ${itemName}.`);
+                    const sourceName = safeItem(entry?.source, '');
+                    const fromClause = sourceName ? ` from ${sourceName}` : '';
+                    this.addEventSummary('🌾', `${actor} harvested ${itemName}${fromClause}.`);
                 });
             },
             pick_up_item: (entries) => {

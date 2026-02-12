@@ -997,6 +997,7 @@
             </div>
             <footer class="modal__footer crafting-modal__footer">
                 <button type="button" class="button button-secondary" id="craftingCancelButton">Cancel</button>
+                <button type="button" class="button button-secondary" id="craftingNoProseButton" disabled>Craft (no prose)</button>
                 <button type="button" class="button button-primary" id="craftingActionButton" disabled>Craft Items</button>
             </footer>
         </div>
@@ -1017,6 +1018,7 @@
             </div>
             <footer class="modal__footer">
                 <button type="button" class="button button-secondary" id="salvageIntentCancelBtn">Cancel</button>
+                <button type="button" class="button button-secondary" id="salvageIntentNoProseBtn">Salvage (no prose)</button>
                 <button type="button" class="button button-primary" id="salvageIntentSubmitBtn">Continue</button>
             </footer>
         </div>
@@ -1275,10 +1277,6 @@
                         <label for="npcEditMaxHealth">Max Health</label>
                         <div id="npcEditMaxHealth" class="npc-edit-readonly-value">—</div>
                         <span class="npc-edit-help-text">Calculated automatically</span>
-                    </div>
-                    <div class="npc-edit-field">
-                        <label for="npcEditUnspent">Unspent Skill Points</label>
-                        <input id="npcEditUnspent" type="number" min="0" step="1">
                     </div>
                     <div class="npc-edit-field">
                         <label for="npcEditCurrency">Currency</label>
@@ -1619,7 +1617,7 @@
                 </div>
                 <div class="location-edit-field">
                     <label for="regionEditFaction">Controlling Faction</label>
-                    <select id="regionEditFaction"></select>
+                    <select id="regionEditFaction" name="controllingFactionId"></select>
                 </div>
                 <footer class="location-edit-footer region-edit-footer">
                     <div class="location-edit-status region-edit-status" id="regionEditStatus" role="status" aria-live="polite"></div>
@@ -5371,7 +5369,6 @@
         const npcEditHealthInput = document.getElementById('npcEditHealth');
         const npcEditMaxHealthDisplay = document.getElementById('npcEditMaxHealth');
         const npcEditHealthAttributeSelect = document.getElementById('npcEditHealthAttribute');
-        const npcEditUnspentInput = document.getElementById('npcEditUnspent');
         const npcEditCurrencyInput = document.getElementById('npcEditCurrency');
         const npcEditExperienceInput = document.getElementById('npcEditExperience');
         const npcEditDescriptionInput = document.getElementById('npcEditDescription');
@@ -5476,12 +5473,18 @@
         const npcViewAttributeAllocationSection = document.getElementById('npcViewAttributeAllocationSection');
         const npcViewAttributeGrid = document.getElementById('npcViewAttributeGrid');
         const npcViewAttributePointsRemaining = document.getElementById('npcViewAttributePointsRemaining');
+        const npcViewAttributePointsGroup = npcViewAttributePointsRemaining
+            ? npcViewAttributePointsRemaining.closest('.form-group')
+            : null;
         const npcViewAttributePointsWarning = document.getElementById('npcViewAttributePointsWarning');
         const npcViewEquipment = document.getElementById('npcViewEquipment');
         const npcViewEquipmentEmpty = document.getElementById('npcViewEquipmentEmpty');
         const npcViewSkillAllocationSection = document.getElementById('npcViewSkillAllocationSection');
         const npcViewSkillsGrid = document.getElementById('npcViewSkillsGrid');
         const npcViewSkillPointsRemaining = document.getElementById('npcViewSkillPointsRemaining');
+        const npcViewSkillPointsGroup = npcViewSkillPointsRemaining
+            ? npcViewSkillPointsRemaining.closest('.form-group')
+            : null;
         const npcViewSkillPointsWarning = document.getElementById('npcViewSkillPointsWarning');
         const npcViewSkillAddInput = document.getElementById('npcViewSkillAddInput');
         const npcViewSkillAddButton = document.getElementById('npcViewSkillAddButton');
@@ -5694,6 +5697,7 @@
         const craftingInventoryFilterInput = document.getElementById('craftingInventoryFilterInput');
         const craftingSlotsContainer = document.getElementById('craftingSlots');
         const craftingActionButton = document.getElementById('craftingActionButton');
+        const craftingNoProseButton = document.getElementById('craftingNoProseButton');
         const craftingCancelButton = document.getElementById('craftingCancelButton');
         const craftingNotesInput = document.getElementById('craftingNotesInput');
         const salvageIntentBackdrop = document.getElementById('salvageIntentBackdrop');
@@ -5702,6 +5706,7 @@
         const salvageIntentMessage = document.getElementById('salvageIntentMessage');
         const salvageIntentInput = document.getElementById('salvageIntentInput');
         const salvageIntentSubmitBtn = document.getElementById('salvageIntentSubmitBtn');
+        const salvageIntentNoProseBtn = document.getElementById('salvageIntentNoProseBtn');
         const salvageIntentCancelBtn = document.getElementById('salvageIntentCancelBtn');
         const salvageIntentCloseBtn = document.getElementById('salvageIntentCloseBtn');
 
@@ -7934,10 +7939,6 @@
             const numericMax = Number.parseInt(npc.maxHealth, 10);
             currentNpcOriginalMaxHealth = Number.isFinite(numericMax) ? numericMax : null;
             updateNpcMaxHealth();
-            if (npcEditUnspentInput) {
-                const numericUnspent = Number.parseInt(npc.unspentSkillPoints, 10);
-                npcEditUnspentInput.value = Number.isFinite(numericUnspent) ? numericUnspent : 0;
-            }
             if (npcEditCurrencyInput) {
                 const numericCurrency = Number.parseInt(npc.currency, 10);
                 npcEditCurrencyInput.value = Number.isFinite(numericCurrency) && numericCurrency >= 0 ? numericCurrency : '';
@@ -10631,6 +10632,11 @@
                 await submitCraftingRequest();
             });
         }
+        if (craftingNoProseButton) {
+            craftingNoProseButton.addEventListener('click', async () => {
+                await submitCraftingRequest({ noProse: true });
+            });
+        }
 
         if (craftingModalCloseBtn) {
             craftingModalCloseBtn.addEventListener('click', () => {
@@ -10649,6 +10655,9 @@
 
         if (salvageIntentSubmitBtn) {
             salvageIntentSubmitBtn.addEventListener('click', () => submitSalvageIntent());
+        }
+        if (salvageIntentNoProseBtn) {
+            salvageIntentNoProseBtn.addEventListener('click', () => submitSalvageIntent({ noProse: true }));
         }
 
         if (salvageIntentCancelBtn) {
@@ -12513,6 +12522,9 @@
             if (salvageIntentSubmitBtn) {
                 salvageIntentSubmitBtn.textContent = isHarvestMode ? 'Start Harvest' : 'Start Salvage';
             }
+            if (salvageIntentNoProseBtn) {
+                salvageIntentNoProseBtn.textContent = isHarvestMode ? 'Harvest (no prose)' : 'Salvage (no prose)';
+            }
             salvageIntentBackdrop.removeAttribute('hidden');
             salvageIntentModal.removeAttribute('hidden');
             salvageIntentModal.setAttribute('aria-hidden', 'false');
@@ -12539,7 +12551,7 @@
             }
         }
 
-        async function submitSalvageIntent() {
+        async function submitSalvageIntent({ noProse = false } = {}) {
             const { mode, thingId, thing } = salvageIntentContext || {};
             if (!thingId) {
                 closeSalvageIntentModal();
@@ -12547,7 +12559,7 @@
             }
             const notes = (salvageIntentInput?.value || '').trim();
             closeSalvageIntentModal();
-            await submitSalvageRequest({ thingId, thing, mode, notes });
+            await submitSalvageRequest({ thingId, thing, mode, notes, noProse: Boolean(noProse) });
         }
 
         function openCraftingModal({ mode = 'craft', sourceThing = null, targetType = null } = {}) {
@@ -12605,6 +12617,11 @@
                 craftingActionButton.textContent = currentCraftingMode === 'process'
                     ? 'Process Item'
                     : `Craft ${craftTargetLabelTitle}`;
+            }
+            if (craftingNoProseButton) {
+                craftingNoProseButton.textContent = currentCraftingMode === 'process'
+                    ? 'Process (no prose)'
+                    : `Craft ${craftTargetLabelTitle} (no prose)`;
             }
             if (craftingNotesInput) {
                 craftingNotesInput.value = '';
@@ -12927,11 +12944,17 @@
         }
 
         function updateCraftingActionState() {
-            if (!craftingActionButton) {
+            if (!craftingActionButton && !craftingNoProseButton) {
                 return;
             }
             const filledSlots = Array.from(craftingSlotAssignments.values()).filter(Boolean).length;
-            craftingActionButton.disabled = filledSlots === 0;
+            const shouldDisable = filledSlots === 0;
+            if (craftingActionButton) {
+                craftingActionButton.disabled = shouldDisable;
+            }
+            if (craftingNoProseButton) {
+                craftingNoProseButton.disabled = shouldDisable;
+            }
         }
 
         function handleCraftingInventoryDragStart(event) {
@@ -12983,7 +13006,7 @@
             assignItemToCraftingSlot(slotIndex, thingId);
         }
 
-        function buildCraftingPayload() {
+        function buildCraftingPayload({ noProse = false } = {}) {
             const slots = Array.from(craftingSlotAssignments.entries())
                 .sort((a, b) => a[0] - b[0])
                 .map(([slotIndex, item]) => ({
@@ -13000,6 +13023,7 @@
                 stationThingId: craftingSourceThing?.id || null,
                 stationName: craftingSourceThing ? craftingSourceThing.name : 'no workstation',
                 slotCount: currentCraftingSlotCount,
+                noProse: Boolean(noProse),
                 itemIds: slots.map(entry => entry.thingId),
                 slots
             };
@@ -13013,9 +13037,10 @@
             const craftTargetType = payload.craftTargetType || '';
             const stationThingId = payload.stationThingId || '';
             const slotCount = Number.isFinite(payload.slotCount) ? payload.slotCount : 0;
+            const noProse = payload.noProse === true;
             const notes = payload.notes || '';
             const itemIds = payload.itemIds.slice().sort();
-            return JSON.stringify({ mode, craftTargetType, stationThingId, slotCount, notes, itemIds });
+            return JSON.stringify({ mode, craftTargetType, stationThingId, slotCount, noProse, notes, itemIds });
         }
 
         async function refreshCraftingRelatedViews() {
@@ -13046,8 +13071,8 @@
             }
         }
 
-        async function submitCraftingRequest() {
-            const payload = buildCraftingPayload();
+        async function submitCraftingRequest({ noProse = false } = {}) {
+            const payload = buildCraftingPayload({ noProse: Boolean(noProse) });
             if (!payload.itemIds.length) {
                 return;
             }
@@ -13083,22 +13108,22 @@
             }
         }
 
-        function buildSalvageRequestKey({ thingId, mode }) {
+        function buildSalvageRequestKey({ thingId, mode, noProse = false }) {
             if (!thingId || typeof thingId !== 'string') {
                 return '';
             }
             const normalizedMode = mode === 'harvest' ? 'harvest' : 'salvage';
-            return `${normalizedMode}:${thingId}`;
+            return `${normalizedMode}:${thingId}:${noProse ? '1' : '0'}`;
         }
 
-        async function submitSalvageRequest({ thingId, thing = null, mode = 'salvage', notes = '' } = {}) {
+        async function submitSalvageRequest({ thingId, thing = null, mode = 'salvage', notes = '', noProse = false } = {}) {
             const normalizedMode = mode === 'harvest' ? 'harvest' : 'salvage';
             const isHarvestMode = normalizedMode === 'harvest';
             if (!thingId) {
                 alert(`Unable to ${isHarvestMode ? 'harvest' : 'salvage'} without a valid item.`);
                 return;
             }
-            const requestKey = buildSalvageRequestKey({ thingId, mode: normalizedMode });
+            const requestKey = buildSalvageRequestKey({ thingId, mode: normalizedMode, noProse: Boolean(noProse) });
             if (requestKey && salvageRequestsInFlight.has(requestKey)) {
                 return;
             }
@@ -13119,6 +13144,7 @@
                         thingId,
                         name: thing?.name || null
                     }],
+                    noProse: Boolean(noProse),
                     stationThingId: null,
                     stationName: isHarvestMode ? 'Harvest Interface' : 'Salvage Interface'
                 };
@@ -13710,6 +13736,20 @@
             }
             if (!isPlayerView) {
                 updateNpcViewAllocationStatus('');
+            }
+            if (npcViewAttributePointsGroup) {
+                if (isPlayerView) {
+                    npcViewAttributePointsGroup.removeAttribute('hidden');
+                } else {
+                    npcViewAttributePointsGroup.setAttribute('hidden', '');
+                }
+            }
+            if (npcViewSkillPointsGroup) {
+                if (isPlayerView) {
+                    npcViewSkillPointsGroup.removeAttribute('hidden');
+                } else {
+                    npcViewSkillPointsGroup.setAttribute('hidden', '');
+                }
             }
 
             const attributeValues = resolveNpcViewAttributeValues(latestNpc);
@@ -15841,6 +15881,13 @@
             regionEditModal.classList.add('is-open');
 
             try {
+                if (regionEditFactionSelect) {
+                    await populateFactionSelect(regionEditFactionSelect, {
+                        selectedId: '',
+                        force: true
+                    });
+                }
+
                 const response = await fetch(`/api/regions/${encodeURIComponent(regionId)}`);
                 const data = await response.json().catch(() => ({}));
                 if (!response.ok || !data?.success || !data.region) {
@@ -15864,7 +15911,7 @@
                 }
                 populateRegionParentOptions(data.parentOptions || [], data.region.parentRegionId || null);
                 if (regionEditFactionSelect) {
-                    populateFactionSelect(regionEditFactionSelect, {
+                    await populateFactionSelect(regionEditFactionSelect, {
                         selectedId: data.region.controllingFactionId || ''
                     });
                 }

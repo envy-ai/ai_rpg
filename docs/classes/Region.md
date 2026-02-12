@@ -52,6 +52,7 @@ Represents a region containing multiple locations, with metadata like average le
 
 ## Notes
 - Region stub expansion expects a `<shortDescription>` in the stub response and persists it on the generated `Region`.
+- Region entry stubs with an assigned controlling faction pass that faction into stub-generation prompts as authoritative context; the region-level `<controllingFaction>` field is omitted from stub-mode output expectations so expansion preserves the stub faction.
 - `fromXMLSnippet` accepts both `<region>` and mixed tag variants (name/description/shortDescription).
 - `parentHierarchy` throws on circular references to surface data errors early.
 - Location blueprints now include both a two-paragraph `<description>` and one-sentence `<shortDescription>`; these are carried into stub metadata as `stubDescription`/`stubShortDescription`, including region stub expansions.

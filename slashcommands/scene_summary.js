@@ -75,6 +75,16 @@ function countUnsummarizedEntries(chatHistory) {
         if (!entry || typeof entry !== 'object') {
             continue;
         }
+        const metadata = entry.metadata && typeof entry.metadata === 'object'
+            ? entry.metadata
+            : null;
+        if (metadata?.excludeFromBaseContextHistory === true) {
+            continue;
+        }
+        const entryType = typeof entry.type === 'string' ? entry.type.trim().toLowerCase() : '';
+        if (entryType === 'plot-summary') {
+            continue;
+        }
         const content = typeof entry.content === 'string' ? entry.content.trim() : '';
         const summary = typeof entry.summary === 'string' ? entry.summary.trim() : '';
         const rawText = content || summary;

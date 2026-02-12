@@ -10,6 +10,8 @@ Slash command `/summarize` (alias `/scene_summary`) to summarize chat history in
 ## Behavior
 - When `range` is "check", counts unsummarized entries using `SceneSummaries`.
 - Otherwise parses the range and calls `Globals.summarizeScenesForHistoryRange`.
+- `range=all` without `redo` summarizes only the unsummarized tail.
+- `range=all` with `redo=true` clears overlapping scene summaries and rebuilds all scenes from entry 1.
 - Writes a text export file and replies with the result path.
 
 ## Notes

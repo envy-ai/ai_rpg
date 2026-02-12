@@ -1,7 +1,50 @@
 const Globals = require('../Globals.js');
 const SlashCommandBase = require('../SlashCommandBase.js');
 
-const VALID_TYPES = new Set(['common', 'rare', 'location', 'region']);
+const DEFAULT_FILE_TYPES = new Set(['common', 'rare']);
+const RESERVED_FREQUENCY_KEYS = new Set([
+  'enabled',
+  'location',
+  'region',
+  'locationspecific',
+  'regionspecific'
+]);
+
+function normalizeRandomEventType(value) {
+  if (typeof value !== 'string') {
+    return '';
+  }
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) {
+    return '';
+  }
+  if (!/^[a-z0-9_-]+$/.test(normalized)) {
+    return '';
+  }
+  return normalized;
+}
+
+function getValidTypes() {
+  const validTypes = new Set(['location', 'region']);
+  for (const type of DEFAULT_FILE_TYPES) {
+    validTypes.add(type);
+  }
+
+  const frequencyConfig = Globals?.config?.random_event_frequency;
+  if (!frequencyConfig || typeof frequencyConfig !== 'object') {
+    return validTypes;
+  }
+
+  for (const rawKey of Object.keys(frequencyConfig)) {
+    const key = normalizeRandomEventType(rawKey);
+    if (!key || RESERVED_FREQUENCY_KEYS.has(key) || DEFAULT_FILE_TYPES.has(key)) {
+      continue;
+    }
+    validTypes.add(key);
+  }
+
+  return validTypes;
+}
 
 class RandomCommand extends SlashCommandBase {
   static get name() {
@@ -19,10 +62,13 @@ class RandomCommand extends SlashCommandBase {
   }
 
   static async execute(interaction, args = {}) {
-    const rawType = typeof args.type === 'string' ? args.type.trim().toLowerCase() : '';
-    if (rawType !== '' && !VALID_TYPES.has(rawType)) {
+    const rawInput = typeof args.type === 'string' ? args.type.trim() : '';
+    const normalizedType = normalizeRandomEventType(rawInput);
+    const validTypes = getValidTypes();
+    if (!normalizedType || !validTypes.has(normalizedType)) {
+      const validTypeList = Array.from(validTypes).sort().join(', ');
       await interaction.reply({
-        content: 'Invalid event type. Use one of: common, rare, location, region.',
+        content: `Invalid event type. Use one of: ${validTypeList}.`,
         ephemeral: true
       });
       return;
@@ -36,11 +82,11 @@ class RandomCommand extends SlashCommandBase {
     const entryCollector = [];
     let result;
     try {
-      const { result: summary } = await triggerFn({ type: rawType, entryCollector });
+      const { result: summary } = await triggerFn({ type: normalizedType, entryCollector });
       result = summary;
     } catch (error) {
       await interaction.reply({
-        content: `Failed to trigger ${rawType} random event: ${error.message}`,
+        content: `Failed to trigger ${normalizedType} random event: ${error.message}`,
         ephemeral: true
       });
       return;
@@ -48,7 +94,7 @@ class RandomCommand extends SlashCommandBase {
 
     if (!result) {
       await interaction.reply({
-        content: `No ${rawType} random event was available to trigger.`,
+        content: `No ${normalizedType} random event was available to trigger.`,
         ephemeral: true
       });
       return;
@@ -58,7 +104,7 @@ class RandomCommand extends SlashCommandBase {
     const eventText = latestEntry?.content || result.summary || result.response || '(event generated)';
 
     await interaction.reply({
-      content: `Triggered ${rawType} random event:\n\n${eventText}`,
+      content: `Triggered ${normalizedType} random event:\n\n${eventText}`,
       ephemeral: false
     });
 

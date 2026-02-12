@@ -10,6 +10,7 @@ Request:
   - `slots` (required): array of `{ thingId: string, slotIndex?: number }`
   - `mode`: `craft` | `process` | `salvage` | `harvest` (default `craft`)
   - `actionType`: optional alias for `mode`
+  - `noProse` (optional boolean): when true, skips the player-action prose generation path
   - `craftTargetType`: `item` | `scenery` (used only for craft mode)
   - `intendedItemName`, `notes` (string)
   - Station info: `stationThingId`, `stationName`
@@ -36,5 +37,9 @@ Response:
 Notes:
 - Salvage/harvest require exactly one slot item.
 - When `actionType` is supplied, it overrides `mode` in some cases.
+- When `noProse` is true, the server skips the prose prompt and does not run craft/salvage/harvest event-summary/additional-effect mechanics for that action. Quest checks still run using a deterministic action summary line.
+- Deterministic/action summary lines now include source context:
+  - Harvest/salvage lines use `from <source>`.
+  - Craft/process lines use `using <inputs>`.
 - Crafting/harvest prompts omit prior craft/harvest/process entries from base-context history to reduce duplicate actions.
 - `timeTaken` is parsed from the selected crafting/salvage/harvest `<result>`. If invalid, the server logs an error, strips units and interprets the numeric portion as minutes (`value / 60`), and if still invalid defaults to `1/60` hour. A minimum of `1/60` hour is always advanced (including `timeTaken = 0`).

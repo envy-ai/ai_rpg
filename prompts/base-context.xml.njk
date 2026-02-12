@@ -543,6 +543,9 @@ The below context is an account of the current game state, including the setting
   <abilityContext>
     {% if abilityContext %}{{ abilityContext }}{% endif %}
   </abilityContext>
+  {% if plotSummary and plotSummary | trim %}
+  <plotSummary>{{ plotSummary }}</plotSummary>
+  {% endif %}
   <recentStoryHistory>{{ recentGameHistory }}</recentStoryHistory>
 </gameState>
 <currentConditions>

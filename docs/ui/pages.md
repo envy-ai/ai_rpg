@@ -13,6 +13,7 @@ This page maps routes to templates and the client scripts/styles they load.
 - Inline script responsibilities:
   - Tab switching (`initTabs`), map triggers, party/faction/quest panels.
   - Location display, edit modals, crafting/salvage modals.
+  - Region edit modal field handling (name/description/short description, parent region, average level, and controlling faction dropdown sourced from `/api/factions`).
   - Image rendering helpers (`renderEntityImage`) and tooltip helpers.
 - Data injected by `server.js`:
   - `chatHistory`, `player`, `availableSkills`, `currentSetting`.

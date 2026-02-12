@@ -15,8 +15,9 @@ const FormulaEvaluator = require('./public/js/formula-evaluator.js');
 const Globals = require('./Globals.js');
 const SceneSummaries = require('./SceneSummaies.js');
 const {
-    filterChatHistoryEntries,
+    containsOmittedMarker,
     normalizeEntryText,
+    shouldExcludeSummaryEntry,
     resolveRoleLabel,
     resolveEntryRecordId
 } = require('./chat_history_utils.js');
@@ -27,7 +28,8 @@ const StatusEffect = require('./StatusEffect.js');
 const HIDDEN_CHAT_ENTRY_TYPES = new Set([
     'supplemental-story-info',
     'offscreen-npc-activity-daily',
-    'offscreen-npc-activity-weekly'
+    'offscreen-npc-activity-weekly',
+    'plot-summary'
 ]);
 const HIDDEN_CHAT_LABEL = 'Hidden from Player';
 const HIDDEN_CHAT_PREFIX = `[${HIDDEN_CHAT_LABEL}]`;
@@ -4530,6 +4532,28 @@ function buildBasePromptContext({
         return roleRaw;
     };
 
+    const shouldSkipSceneSummaryFallbackEntry = (entry) => {
+        if (!entry || typeof entry !== 'object') {
+            return false;
+        }
+        if (isHiddenChatEntry(entry)) {
+            return true;
+        }
+        const entryType = typeof entry.type === 'string' ? entry.type.trim().toLowerCase() : '';
+        if (entryType === 'event-summary' || entryType === 'status-summary') {
+            return true;
+        }
+        if (shouldExcludeSummaryEntry(entry)) {
+            return true;
+        }
+        const content = typeof entry.content === 'string' ? entry.content : '';
+        const summary = typeof entry.summary === 'string' ? entry.summary : '';
+        if (containsOmittedMarker(content) || containsOmittedMarker(summary)) {
+            return true;
+        }
+        return false;
+    };
+
     const buildSceneSummarySegments = (entries) => {
         if (!Array.isArray(entries) || entries.length === 0) {
             return null;
@@ -4572,6 +4596,29 @@ function buildBasePromptContext({
         const presentCharacters = collectNpcNamesForContext();
         const absentByScene = sceneSummaries.getAbsentCharactersByScene(presentCharacters);
 
+        const insertionOrderedScenes = typeof sceneSummaries.getScenes === 'function'
+            ? sceneSummaries.getScenes()
+            : scenes;
+        const canonicalScenesByOrder = [];
+        for (let i = 0; i < insertionOrderedScenes.length; i += 1) {
+            const scene = insertionOrderedScenes[i];
+            if (!scene || typeof scene !== 'object') {
+                continue;
+            }
+            const startIndex = Number(scene.startIndex);
+            const endIndex = Number(scene.endIndex);
+            if (!Number.isInteger(startIndex) || !Number.isInteger(endIndex) || startIndex <= 0 || endIndex < startIndex) {
+                continue;
+            }
+            canonicalScenesByOrder.push(scene);
+        }
+        const sceneByEntryIndex = new Map();
+        for (const scene of canonicalScenesByOrder) {
+            for (let index = scene.startIndex; index <= scene.endIndex; index += 1) {
+                sceneByEntryIndex.set(index, scene);
+            }
+        }
+
         const formatSceneBlock = (scene, sceneNumber) => {
             const lines = [];
             lines.push(`Scene ${sceneNumber}:`);
@@ -4579,6 +4626,18 @@ function buildBasePromptContext({
             const absentLabel = absent.length ? absent.join(', ') : 'none';
             lines.push(`[absent characters: ${absentLabel}]`);
             lines.push(scene.summary);
+            if (Array.isArray(scene.details) && scene.details.length) {
+                const detailLines = [];
+                for (const detail of scene.details) {
+                    const detailText = typeof detail === 'string' ? detail.trim() : '';
+                    if (detailText) {
+                        detailLines.push(`- ${detailText}`);
+                    }
+                }
+                if (detailLines.length) {
+                    lines.push(`Details for scene ${sceneNumber}:\n${detailLines.join('\n')}`);
+                }
+            }
             if (Array.isArray(scene.quotes) && scene.quotes.length) {
                 lines.push(`Quotes for scene ${sceneNumber}:`);
                 for (const quote of scene.quotes) {
@@ -4592,7 +4651,6 @@ function buildBasePromptContext({
 
         const emitted = new Set();
         const segments = [];
-        let sceneCursor = 0;
         let sceneNumber = 0;
         let idx = 0;
 
@@ -4603,17 +4661,16 @@ function buildBasePromptContext({
                 continue;
             }
             if (isHiddenChatEntry(entry)) {
-                const summaryText = typeof entry.summary === 'string' ? entry.summary.trim() : '';
-                const summaryLine = formatHiddenSummaryLine(entry, summaryText);
-                if (summaryLine) {
-                    segments.push({ entry, line: summaryLine });
-                }
                 idx += 1;
                 continue;
             }
             const entryId = typeof entry.id === 'string' ? entry.id.trim() : '';
             const entryIndex = entryId ? entryIdToIndex.get(entryId) : null;
             if (!entryIndex) {
+                if (shouldSkipSceneSummaryFallbackEntry(entry)) {
+                    idx += 1;
+                    continue;
+                }
                 const summaryText = typeof entry.summary === 'string' ? entry.summary.trim() : '';
                 const summaryLine = formatHiddenSummaryLine(entry, summaryText);
                 if (summaryLine) {
@@ -4622,12 +4679,12 @@ function buildBasePromptContext({
                 idx += 1;
                 continue;
             }
-
-            while (sceneCursor < scenes.length && scenes[sceneCursor].endIndex < entryIndex) {
-                sceneCursor += 1;
-            }
-            const scene = scenes[sceneCursor];
-            if (!scene || entryIndex < scene.startIndex || entryIndex > scene.endIndex) {
+            const scene = sceneByEntryIndex.get(entryIndex);
+            if (!scene) {
+                if (shouldSkipSceneSummaryFallbackEntry(entry)) {
+                    idx += 1;
+                    continue;
+                }
                 const summaryText = typeof entry.summary === 'string' ? entry.summary.trim() : '';
                 const summaryLine = formatHiddenSummaryLine(entry, summaryText);
                 if (summaryLine) {
@@ -4648,7 +4705,7 @@ function buildBasePromptContext({
                 const nextEntry = entries[idx];
                 const nextEntryId = typeof nextEntry?.id === 'string' ? nextEntry.id.trim() : '';
                 const nextIndex = nextEntryId ? entryIdToIndex.get(nextEntryId) : null;
-                if (!nextIndex || nextIndex > scene.endIndex) {
+                if (!nextIndex || sceneByEntryIndex.get(nextIndex) !== scene) {
                     break;
                 }
                 idx += 1;
@@ -4664,6 +4721,9 @@ function buildBasePromptContext({
     } else {
         for (const entry of summaryCandidates) {
             if (!entry) {
+                continue;
+            }
+            if (shouldSkipSceneSummaryFallbackEntry(entry)) {
                 continue;
             }
             const summaryText = typeof entry.summary === 'string' ? entry.summary.trim() : '';
@@ -4824,12 +4884,33 @@ function buildBasePromptContext({
         lightLevelDescription: worldTimeContext.lightLevelDescription || worldTimeContext.lighting || 'Ambient conditions are unknown.'
     };
 
+    let latestPlotSummary = '';
+    if (Array.isArray(effectiveHistoryEntries)) {
+        for (let index = effectiveHistoryEntries.length - 1; index >= 0; index -= 1) {
+            const entry = effectiveHistoryEntries[index];
+            if (!entry || typeof entry !== 'object') {
+                continue;
+            }
+            const entryType = typeof entry.type === 'string' ? entry.type.trim().toLowerCase() : '';
+            if (entryType !== 'plot-summary') {
+                continue;
+            }
+            const content = typeof entry.content === 'string' ? entry.content.trim() : '';
+            const summary = typeof entry.summary === 'string' ? entry.summary.trim() : '';
+            latestPlotSummary = content || summary;
+            if (latestPlotSummary) {
+                break;
+            }
+        }
+    }
+
     const context = {
         setting: settingContext,
         config: config,
         gameHistory,
         recentGameHistory,
         fullGameHistory,
+        plotSummary: latestPlotSummary,
         currentRegion: currentRegionContext,
         currentLocation: currentLocationContext,
         currentPlayer: currentPlayerContext,
@@ -5187,7 +5268,48 @@ function buildSceneSummaryIndex(chatHistory, { excludeSummaries = true } = {}) {
         throw new Error('Chat history is unavailable for scene summaries.');
     }
 
-    const filteredEntries = filterChatHistoryEntries(chatHistory, { excludeSummaries });
+    const shouldIncludeEntry = (entry) => {
+        if (!entry || typeof entry !== 'object') {
+            return false;
+        }
+
+        const role = typeof entry.role === 'string' ? entry.role.trim().toLowerCase() : '';
+        if (role === 'system') {
+            return false;
+        }
+
+        const entryType = typeof entry.type === 'string' ? entry.type.trim().toLowerCase() : '';
+        const metadata = entry.metadata && typeof entry.metadata === 'object'
+            ? entry.metadata
+            : null;
+        if (metadata?.excludeFromBaseContextHistory === true) {
+            return false;
+        }
+        if (entryType === 'plot-summary') {
+            return false;
+        }
+        if (entryType === 'event-summary' || entryType === 'status-summary') {
+            return false;
+        }
+
+        if (excludeSummaries && shouldExcludeSummaryEntry(entry)) {
+            return false;
+        }
+
+        if (isHiddenChatEntry(entry)) {
+            return true;
+        }
+
+        const content = typeof entry.content === 'string' ? entry.content : '';
+        const summary = typeof entry.summary === 'string' ? entry.summary : '';
+        if (containsOmittedMarker(content) || containsOmittedMarker(summary)) {
+            return false;
+        }
+
+        return true;
+    };
+
+    const filteredEntries = chatHistory.filter(shouldIncludeEntry);
     if (!filteredEntries.length) {
         throw new Error('No chat history entries available after filtering.');
     }
@@ -5279,8 +5401,12 @@ function parseSceneSummaryResponse(responseText, indexMap) {
     for (const sceneNode of sceneNodes) {
         const indexNode = sceneNode.getElementsByTagName('index')[0];
         const summaryNode = sceneNode.getElementsByTagName('summary')[0];
+        const detailsNode = sceneNode.getElementsByTagName('details')[0];
         const rawIndex = indexNode?.textContent?.trim();
         const rawSummary = summaryNode?.textContent?.trim();
+        const rawDetailsText = typeof detailsNode?.textContent === 'string'
+            ? detailsNode.textContent
+            : '';
 
         if (!rawIndex) {
             throw new Error('Scene summary scene is missing a start index.');
@@ -5300,6 +5426,12 @@ function parseSceneSummaryResponse(responseText, indexMap) {
         if (!mapping) {
             throw new Error(`Scene summary index map missing entry for ${localIndex}.`);
         }
+
+        const details = rawDetailsText
+            .split(/\r?\n/)
+            .map(line => line.trim())
+            .map(line => line.replace(/^(?:[-*]+|\d+[.)])\s+/, '').trim())
+            .filter(Boolean);
 
         const quotes = [];
         const quoteNodes = Array.from(sceneNode.getElementsByTagName('quote'));
@@ -5322,6 +5454,7 @@ function parseSceneSummaryResponse(responseText, indexMap) {
             startIndex: mapping.globalIndex,
             startEntryId: mapping.entryId,
             summary: rawSummary,
+            details,
             quotes
         });
     }
@@ -5353,17 +5486,23 @@ async function summarizeScenesForHistoryRange({ chatHistory, startIndex, endInde
     };
     const startToken = normalizeToken(startIndex);
     const endToken = normalizeToken(endIndex);
+    const isAllRange = startToken === 'all' || endToken === 'all';
 
     let parsedStart = null;
     let parsedEnd = null;
-    if (startToken === 'all' || endToken === 'all') {
-        const sceneSummaries = Globals.getSceneSummaries();
-        const firstUnsummarized = sceneSummaries.getFirstUnsummarizedIndex(totalEntries);
-        if (!firstUnsummarized) {
-            throw new Error('All entries are already summarized.');
+    if (isAllRange) {
+        if (redo) {
+            parsedStart = 1;
+            parsedEnd = totalEntries;
+        } else {
+            const sceneSummaries = Globals.getSceneSummaries();
+            const firstUnsummarized = sceneSummaries.getFirstUnsummarizedIndex(totalEntries);
+            if (!firstUnsummarized) {
+                throw new Error('All entries are already summarized.');
+            }
+            parsedStart = firstUnsummarized;
+            parsedEnd = totalEntries;
         }
-        parsedStart = firstUnsummarized;
-        parsedEnd = totalEntries;
     } else {
         parsedStart = Number(startToken);
         parsedEnd = Number(endToken);
@@ -5522,6 +5661,7 @@ async function summarizeScenesForHistoryRange({ chatHistory, startIndex, endInde
                 startIndex: scene.startIndex,
                 startEntryId: scene.startEntryId,
                 summary: scene.summary,
+                details: Array.isArray(scene.details) ? scene.details.slice() : [],
                 quotes: scene.quotes
             }));
             aggregatedScenes.push(...scenesToAdd);
@@ -5533,6 +5673,7 @@ async function summarizeScenesForHistoryRange({ chatHistory, startIndex, endInde
             startIndex: scene.startIndex,
             startEntryId: scene.startEntryId,
             summary: scene.summary,
+            details: Array.isArray(scene.details) ? scene.details.slice() : [],
             quotes: scene.quotes
         }));
         aggregatedScenes.push(...finalScenes);
@@ -5600,6 +5741,7 @@ async function summarizeScenesForHistoryRange({ chatHistory, startIndex, endInde
             startEntryId,
             endEntryId,
             summary: scene.summary,
+            details: Array.isArray(scene.details) ? scene.details.slice() : [],
             quotes: scene.quotes
         });
     }
@@ -7921,11 +8063,10 @@ async function expandRegionEntryStub(stubLocation) {
         const rawStubFactionId = typeof stubLocation.controllingFactionId === 'string'
             ? stubLocation.controllingFactionId.trim()
             : '';
-        const stubControllingFactionId = rawStubFactionId || null;
-        if (stubControllingFactionId) {
-            if (!(factions instanceof Map) || !factions.has(stubControllingFactionId)) {
-                throw new Error(`Region stub "${stubLocation.id}" references unknown faction "${stubControllingFactionId}".`);
-            }
+        let stubControllingFactionId = rawStubFactionId || null;
+        if (stubControllingFactionId && (!(factions instanceof Map) || !factions.has(stubControllingFactionId))) {
+            console.warn(`Region stub "${stubLocation.id}" references unknown faction "${stubControllingFactionId}". Ignoring stub controlling faction for defensive recovery.`);
+            stubControllingFactionId = null;
         }
 
         const applyStubControllingFaction = (targetRegion) => {
@@ -7936,7 +8077,8 @@ async function expandRegionEntryStub(stubLocation) {
                 ? targetRegion.controllingFactionId.trim()
                 : '';
             if (existingId && existingId !== stubControllingFactionId) {
-                throw new Error(`Region "${targetRegion.id}" already has controlling faction "${existingId}", cannot apply stub faction "${stubControllingFactionId}".`);
+                console.warn(`Region "${targetRegion.id}" controlling faction "${existingId}" conflicts with stub faction "${stubControllingFactionId}". Keeping existing faction for defensive recovery.`);
+                return;
             }
             if (!existingId) {
                 targetRegion.controllingFactionId = stubControllingFactionId;
@@ -8073,6 +8215,14 @@ async function expandRegionEntryStub(stubLocation) {
 
             console.log(`🌐 Beginning region stub expansion for ${regionName} (${regionDescription})...`);
 
+            const stubControllingFactionName = stubControllingFactionId
+                ? (typeof Faction?.getById === 'function'
+                    ? Faction.getById(stubControllingFactionId)?.name || null
+                    : (factions instanceof Map && factions.get(stubControllingFactionId)
+                        ? factions.get(stubControllingFactionId).name || null
+                        : null))
+                : null;
+
             stubPrompt = await renderRegionStubPrompt({
                 settingDescription,
                 regionNotes: regionDescription,
@@ -8081,6 +8231,7 @@ async function expandRegionEntryStub(stubLocation) {
                     regionNotes: regionDescription
                 },
                 previousRegion: currentPlayer.currentLocation.region,
+                stubControllingFaction: stubControllingFactionName,
                 hasImage: Boolean(resolvedImageDataUrl)
             });
 
@@ -8177,20 +8328,24 @@ async function expandRegionEntryStub(stubLocation) {
                 console.trace();
             }
 
-            const existingRegionFactionId = typeof region?.controllingFactionId === 'string'
+            let existingRegionFactionId = typeof region?.controllingFactionId === 'string'
                 ? region.controllingFactionId.trim()
                 : '';
+            if (existingRegionFactionId && (!(factions instanceof Map) || !factions.has(existingRegionFactionId))) {
+                console.warn(`Region "${targetRegionId}" has unknown controlling faction "${existingRegionFactionId}". Ignoring existing faction for defensive recovery.`);
+                existingRegionFactionId = '';
+            }
             if (stubControllingFactionId && responseFactionResolution.explicit && responseFactionResolution.id !== stubControllingFactionId) {
-                throw new Error(`Region "${targetRegionId}" stub faction "${stubControllingFactionId}" conflicts with generated faction "${responseFactionResolution.name || responseControllingFactionName}".`);
+                console.warn(`Region "${targetRegionId}" stub faction "${stubControllingFactionId}" conflicts with generated faction "${responseFactionResolution.name || responseControllingFactionName}". Enforcing stub faction for defensive recovery.`);
             }
             let resolvedControllingFactionId = stubControllingFactionId || null;
             if (!resolvedControllingFactionId && responseFactionResolution.explicit) {
                 resolvedControllingFactionId = responseFactionResolution.id;
             }
-            if (resolvedControllingFactionId && existingRegionFactionId && existingRegionFactionId !== resolvedControllingFactionId) {
-                throw new Error(`Region "${targetRegionId}" already has controlling faction "${existingRegionFactionId}", cannot apply "${resolvedControllingFactionId}".`);
-            }
-            if (!resolvedControllingFactionId && existingRegionFactionId) {
+            if (existingRegionFactionId) {
+                if (resolvedControllingFactionId && existingRegionFactionId !== resolvedControllingFactionId) {
+                    console.warn(`Region "${targetRegionId}" existing faction "${existingRegionFactionId}" conflicts with resolved faction "${resolvedControllingFactionId}". Keeping existing faction for defensive recovery.`);
+                }
                 resolvedControllingFactionId = existingRegionFactionId;
             }
 
@@ -18496,6 +18651,8 @@ async function renderRegionGeneratorPrompt(options = {}) {
             minNewRegionExits,
             entryProse: options.entryProse || null,
             existingLocations: existingLocationNames,
+            stubControllingFaction: options.stubControllingFaction || null,
+            stubHasControllingFaction: Boolean(options.stubHasControllingFaction),
             additionalLore: additionalLore,
             hasImage: Boolean(options.hasImage)
         };
@@ -20066,7 +20223,14 @@ function parseRegionExitsResponse(xmlSnippet) {
     return results;
 }
 
-async function renderRegionStubPrompt({ settingDescription, region, previousRegion, regionNotes, hasImage = false }) {
+async function renderRegionStubPrompt({
+    settingDescription,
+    region,
+    previousRegion,
+    regionNotes,
+    stubControllingFaction = null,
+    hasImage = false
+}) {
     try {
         const minRegionExitOverride = Region.stubRegionCount <= 2 ? 1 : null;
         const promptConfig = await renderRegionGeneratorPrompt({
@@ -20075,6 +20239,8 @@ async function renderRegionStubPrompt({ settingDescription, region, previousRegi
             regionName: region?.name || null,
             regionDescription: region?.description || null,
             regionNotes: regionNotes || region?.regionNotes || null,
+            stubControllingFaction,
+            stubHasControllingFaction: Boolean(stubControllingFaction),
             setting: settingDescription || null,
             minRegionExits: minRegionExitOverride,
             hasImage: Boolean(hasImage)

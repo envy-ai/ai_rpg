@@ -637,6 +637,125 @@ class LLMClient {
             .replace(/^_+|_+$/g, '');
     }
 
+    static #isPlainObject(value) {
+        return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+    }
+
+    static #cloneJsonCompatibleValue(value) {
+        if (Array.isArray(value)) {
+            return value.map(item => LLMClient.#cloneJsonCompatibleValue(item));
+        }
+        if (LLMClient.#isPlainObject(value)) {
+            const clone = {};
+            for (const [key, entry] of Object.entries(value)) {
+                clone[key] = LLMClient.#cloneJsonCompatibleValue(entry);
+            }
+            return clone;
+        }
+        return value;
+    }
+
+    // Merge override custom_args profiles while preserving null deletion markers.
+    static #mergeCustomArgsForOverrideProfiles(target, source) {
+        if (!LLMClient.#isPlainObject(source)) {
+            throw new Error('AI model override custom_args must be an object.');
+        }
+        for (const [key, value] of Object.entries(source)) {
+            if (value === undefined) {
+                continue;
+            }
+            if (LLMClient.#isPlainObject(value)) {
+                const existing = target[key];
+                const mergedChild = LLMClient.#isPlainObject(existing)
+                    ? { ...existing }
+                    : {};
+                LLMClient.#mergeCustomArgsForOverrideProfiles(mergedChild, value);
+                target[key] = mergedChild;
+                continue;
+            }
+            target[key] = LLMClient.#cloneJsonCompatibleValue(value);
+        }
+        return target;
+    }
+
+    // Merge effective custom_args onto base args; null deletes keys.
+    static #mergeEffectiveCustomArgs(target, source) {
+        if (!LLMClient.#isPlainObject(source)) {
+            throw new Error('custom_args must be an object.');
+        }
+        for (const [key, value] of Object.entries(source)) {
+            if (value === undefined) {
+                continue;
+            }
+            if (value === null) {
+                delete target[key];
+                continue;
+            }
+            if (LLMClient.#isPlainObject(value)) {
+                const existing = target[key];
+                const mergedChild = LLMClient.#isPlainObject(existing)
+                    ? { ...existing }
+                    : {};
+                LLMClient.#mergeEffectiveCustomArgs(mergedChild, value);
+                if (Object.keys(mergedChild).length === 0) {
+                    delete target[key];
+                } else {
+                    target[key] = mergedChild;
+                }
+                continue;
+            }
+            target[key] = LLMClient.#cloneJsonCompatibleValue(value);
+        }
+        return target;
+    }
+
+    static #assertCustomArgsNoReservedTopLevelKeys(customArgs) {
+        if (!LLMClient.#isPlainObject(customArgs)) {
+            throw new Error('custom_args must be an object.');
+        }
+        const reservedKeys = new Set([
+            'messages',
+            'model',
+            'seed',
+            'stream',
+            'max_tokens',
+            'temperature',
+            'top_p',
+            'frequency_penalty',
+            'presence_penalty'
+        ]);
+        for (const key of Object.keys(customArgs)) {
+            const normalized = String(key).trim().toLowerCase();
+            if (reservedKeys.has(normalized)) {
+                throw new Error(`ai.custom_args cannot include reserved top-level key "${key}".`);
+            }
+        }
+    }
+
+    static #buildEffectiveCustomArgs({ baseCustomArgs, overrideCustomArgs } = {}) {
+        let effective = {};
+        if (baseCustomArgs !== undefined && baseCustomArgs !== null) {
+            if (!LLMClient.#isPlainObject(baseCustomArgs)) {
+                throw new Error('config.ai.custom_args must be an object when provided.');
+            }
+            effective = LLMClient.#cloneJsonCompatibleValue(baseCustomArgs);
+        }
+
+        if (overrideCustomArgs !== undefined) {
+            if (overrideCustomArgs === null) {
+                effective = {};
+            } else {
+                if (!LLMClient.#isPlainObject(overrideCustomArgs)) {
+                    throw new Error('ai_model_overrides.*.custom_args must be an object or null.');
+                }
+                LLMClient.#mergeEffectiveCustomArgs(effective, overrideCustomArgs);
+            }
+        }
+
+        LLMClient.#assertCustomArgsNoReservedTopLevelKeys(effective);
+        return effective;
+    }
+
     static #resolveAiModelOverrides(metadataLabel, globalConfig = Globals?.config) {
         const normalizedLabel = LLMClient.#normalizePromptLabel(metadataLabel);
         if (!normalizedLabel) {
@@ -666,6 +785,21 @@ class LLMClient {
             appliedProfiles.push(profileName);
             for (const [key, value] of Object.entries(profileConfig)) {
                 if (key === 'prompts' || value === undefined) {
+                    continue;
+                }
+                if (key === 'custom_args') {
+                    if (value === null) {
+                        overrides.custom_args = null;
+                        continue;
+                    }
+                    if (!LLMClient.#isPlainObject(value)) {
+                        throw new Error(`ai_model_overrides.${profileName}.custom_args must be an object or null.`);
+                    }
+                    const existingCustomArgs = overrides.custom_args;
+                    if (!LLMClient.#isPlainObject(existingCustomArgs)) {
+                        overrides.custom_args = {};
+                    }
+                    LLMClient.#mergeCustomArgsForOverrideProfiles(overrides.custom_args, value);
                     continue;
                 }
                 overrides[key] = value;
@@ -949,36 +1083,8 @@ class LLMClient {
                 multimodal,
             });
         }
-        const aiConfig = LLMClient.#cloneAiConfig();
         let currentTime = Date.now();
-        let semaphore = null;
         try {
-            if (multimodal) {
-                const multimodalConfig = Globals?.config?.ai_multimodal;
-                if (!multimodalConfig || typeof multimodalConfig !== 'object') {
-                    throw new Error('AI multimodal configuration is not set.');
-                }
-                if (multimodalConfig.enabled !== true) {
-                    throw new Error('AI multimodal configuration is disabled.');
-                }
-                for (const [key, value] of Object.entries(multimodalConfig)) {
-                    if (key === 'enabled' || value === undefined) {
-                        continue;
-                    }
-                    aiConfig[key] = value;
-                }
-            }
-
-            const { overrides, profiles: overrideProfiles } = LLMClient.#resolveAiModelOverrides(metadataLabel, Globals?.config);
-            if (overrides) {
-                const profileSummary = overrideProfiles.length ? ` (profiles: ${overrideProfiles.join(', ')})` : '';
-                log(`Applying AI model overrides for ${metadataLabel}${profileSummary}:`, overrides);
-                for (const [key, value] of Object.entries(overrides)) {
-                    log(`Applying AI config override for ${metadataLabel}: setting ${key} to ${value}`);
-                    aiConfig[key] = value;
-                }
-            }
-
             dumpReasoningToConsole = true;
 
             if (metadataLabel) {
@@ -988,146 +1094,191 @@ class LLMClient {
                 traceLog();
             }
 
-            const payload = additionalPayload && typeof additionalPayload === 'object'
+            const basePayload = additionalPayload && typeof additionalPayload === 'object'
                 ? { ...additionalPayload }
                 : {};
-
-            // payload.reasoning = true;
             const resolvedSeed = Number.isFinite(seed) ? Math.trunc(seed) : LLMClient.#generateSeed();
-
-            if (aiConfig.frequency_penalty !== undefined && frequencyPenalty === null) {
-                payload.frequency_penalty = frequencyPenalty !== null ? frequencyPenalty : aiConfig.frequency_penalty;
-            }
-
-            if (aiConfig.presence_penalty !== undefined && presencePenalty === null) {
-                payload.presence_penalty = presencePenalty !== null ? presencePenalty : aiConfig.presence_penalty;
-            }
-
-            const resolvedTopP = (() => {
-                if (topP !== null && topP !== undefined) {
-                    return topP;
-                }
-                if (payload.top_p !== undefined) {
-                    return payload.top_p;
-                }
-                if (aiConfig.top_p !== undefined) {
-                    return aiConfig.top_p;
-                }
-                return null;
-            })();
-
-            if (resolvedTopP !== null && resolvedTopP !== undefined) {
-                if (!Number.isFinite(resolvedTopP) || resolvedTopP < 0 || resolvedTopP > 1) {
-                    throw new Error('top_p must be a number between 0 and 1.');
-                }
-                payload.top_p = resolvedTopP;
-            }
-
-            if (Array.isArray(messages)) {
-                payload.messages = messages;
-            }
-
-            if (!Array.isArray(payload.messages) || payload.messages.length === 0) {
+            if (!Array.isArray(messages) || messages.length === 0) {
                 throw new Error('LLMClient.chatCompletion requires at least one message.');
             }
 
-            payload.messages = await LLMClient.#convertMessagesToWebp(payload.messages);
-            messages = payload.messages;
+            messages = await LLMClient.#convertMessagesToWebp(messages);
 
-            const resolvedModel = model || payload.model || aiConfig.model;
-            if (!resolvedModel) {
-                throw new Error('AI model is not configured.');
+            const explicitRetryAttempts = Number.isInteger(retryAttempts) && retryAttempts >= 0
+                ? retryAttempts
+                : null;
+            if (explicitRetryAttempts !== null) {
+                retryAttempts = explicitRetryAttempts;
+            } else {
+                const configuredRetryAttempts = Number(Globals?.config?.ai?.retryAttempts);
+                retryAttempts = Number.isInteger(configuredRetryAttempts) && configuredRetryAttempts >= 0
+                    ? configuredRetryAttempts
+                    : 0;
             }
-            payload.model = resolvedModel;
-            if (!Globals.config.ai.supress_seed) {
-                payload.seed = resolvedSeed;
-            }
 
-            const resolvedStream = LLMClient.#resolveBoolean(
-                stream,
-                payload.stream !== undefined ? payload.stream : aiConfig.stream
-            );
-            payload.stream = resolvedStream !== false;
-
-            // if (payload.model !== aiConfig.model) {
-            //     console.log(`Using overridden model: ${payload.model} (default is ${aiConfig.model})`);
-            //     console.trace();
-            // }
-
-            log(`Using model: ${payload.model}`);
-
-            if (maxTokens !== undefined) {
-                if (!Number.isFinite(maxTokens) || maxTokens <= 0) {
-                    throw new Error('maxTokens must be a positive number when provided.');
+            const resolveAttemptRuntime = ({ attemptNumber = 0 } = {}) => {
+                const aiConfig = LLMClient.#cloneAiConfig();
+                if (multimodal) {
+                    const multimodalConfig = Globals?.config?.ai_multimodal;
+                    if (!multimodalConfig || typeof multimodalConfig !== 'object') {
+                        throw new Error('AI multimodal configuration is not set.');
+                    }
+                    if (multimodalConfig.enabled !== true) {
+                        throw new Error('AI multimodal configuration is disabled.');
+                    }
+                    for (const [key, value] of Object.entries(multimodalConfig)) {
+                        if (key === 'enabled' || value === undefined) {
+                            continue;
+                        }
+                        aiConfig[key] = value;
+                    }
                 }
-                payload.max_tokens = maxTokens;
-            } else if (payload.max_tokens === undefined && Number.isFinite(aiConfig.maxTokens) && aiConfig.maxTokens > 0) {
-                payload.max_tokens = aiConfig.maxTokens;
-            }
 
-            const resolvedTemperature = LLMClient.resolveTemperature(
-                temperature,
-                payload.temperature !== undefined ? payload.temperature : aiConfig.temperature
-            );
-            payload.temperature = resolvedTemperature;
-
-            if (typeof captureRequestPayload === 'function') {
-                try {
-                    captureRequestPayload(JSON.parse(JSON.stringify(payload)));
-                } catch (_) {
-                    captureRequestPayload(payload);
+                const { overrides, profiles: overrideProfiles } = LLMClient.#resolveAiModelOverrides(metadataLabel, Globals?.config);
+                let overrideCustomArgs = undefined;
+                if (overrides) {
+                    const profileSummary = overrideProfiles.length ? ` (profiles: ${overrideProfiles.join(', ')})` : '';
+                    log(`Applying AI model overrides for ${metadataLabel}${profileSummary}:`, overrides);
+                    for (const [key, value] of Object.entries(overrides)) {
+                        if (key === 'custom_args') {
+                            overrideCustomArgs = value;
+                            continue;
+                        }
+                        log(`Applying AI config override for ${metadataLabel}: setting ${key} to ${value}`);
+                        aiConfig[key] = value;
+                    }
                 }
-            }
 
-            retryAttempts = Number.isInteger(retryAttempts) && retryAttempts >= 0 ? retryAttempts : Globals.config.ai.retryAttempts || 0;
+                const effectiveCustomArgs = LLMClient.#buildEffectiveCustomArgs({
+                    baseCustomArgs: aiConfig.custom_args,
+                    overrideCustomArgs
+                });
+                const payload = {
+                    ...effectiveCustomArgs,
+                    ...basePayload
+                };
+                payload.messages = messages;
 
-            const resolvedEndpoint = LLMClient.resolveChatEndpoint(endpoint || aiConfig.endpoint);
-            const resolvedApiKey = apiKey || aiConfig.apiKey;
-            if (!resolvedApiKey) {
-                throw new Error('AI API key is not configured.');
-            }
+                if (aiConfig.frequency_penalty !== undefined && frequencyPenalty === null) {
+                    payload.frequency_penalty = aiConfig.frequency_penalty;
+                }
 
-            const configuredMaxConcurrent = LLMClient.getMaxConcurrent(aiConfig);
-            const effectiveMaxConcurrent = Number.isInteger(maxConcurrent) && maxConcurrent > 0
-                ? maxConcurrent
-                : configuredMaxConcurrent;
-            const semaphoreKey = `${resolvedApiKey || 'no-key'}::${resolvedModel || 'no-model'}`;
-            semaphore = LLMClient.#ensureSemaphore(semaphoreKey, effectiveMaxConcurrent, log);
-            await semaphore.acquire();
+                if (aiConfig.presence_penalty !== undefined && presencePenalty === null) {
+                    payload.presence_penalty = aiConfig.presence_penalty;
+                }
 
-            const resolvedTimeout = LLMClient.resolveTimeout(timeoutMs, timeoutScale);
-            let streamStartTimeoutMs = Number.isFinite(aiConfig.stream_start_timeout)
-                ? aiConfig.stream_start_timeout * 1000
-                : 40000;
-            let streamContinueTimeoutMs = Number.isFinite(aiConfig.stream_continue_timeout)
-                ? aiConfig.stream_continue_timeout * 1000
-                : 10000;
-            const incrementStartTimeoutMs = Number.isFinite(aiConfig.increment_start_timeout)
-                ? aiConfig.increment_start_timeout * 1000
-                : 0;
-            const incrementContinueTimeoutMs = Number.isFinite(aiConfig.increment_continue_timeout)
-                ? aiConfig.increment_continue_timeout * 1000
-                : 0;
+                const resolvedTopP = (() => {
+                    if (topP !== null && topP !== undefined) {
+                        return topP;
+                    }
+                    if (payload.top_p !== undefined) {
+                        return payload.top_p;
+                    }
+                    if (aiConfig.top_p !== undefined) {
+                        return aiConfig.top_p;
+                    }
+                    return null;
+                })();
 
-            const requestHeaders = {
-                'Authorization': `Bearer ${resolvedApiKey}`,
-                'Content-Type': 'application/json',
-                ...headers
+                if (resolvedTopP !== null && resolvedTopP !== undefined) {
+                    if (!Number.isFinite(resolvedTopP) || resolvedTopP < 0 || resolvedTopP > 1) {
+                        throw new Error('top_p must be a number between 0 and 1.');
+                    }
+                    payload.top_p = resolvedTopP;
+                }
+
+                const resolvedModel = model || payload.model || aiConfig.model;
+                if (!resolvedModel) {
+                    throw new Error('AI model is not configured.');
+                }
+                payload.model = resolvedModel;
+
+                if (!Globals?.config?.ai?.supress_seed) {
+                    payload.seed = resolvedSeed;
+                }
+
+                const resolvedStream = LLMClient.#resolveBoolean(
+                    stream,
+                    payload.stream !== undefined ? payload.stream : aiConfig.stream
+                );
+                payload.stream = resolvedStream !== false;
+
+                if (maxTokens !== undefined) {
+                    if (!Number.isFinite(maxTokens) || maxTokens <= 0) {
+                        throw new Error('maxTokens must be a positive number when provided.');
+                    }
+                    payload.max_tokens = maxTokens;
+                } else if (payload.max_tokens === undefined && Number.isFinite(aiConfig.maxTokens) && aiConfig.maxTokens > 0) {
+                    payload.max_tokens = aiConfig.maxTokens;
+                }
+
+                const resolvedTemperature = LLMClient.resolveTemperature(
+                    temperature,
+                    payload.temperature !== undefined ? payload.temperature : aiConfig.temperature
+                );
+                payload.temperature = resolvedTemperature;
+
+                const resolvedEndpoint = LLMClient.resolveChatEndpoint(endpoint || aiConfig.endpoint);
+                const resolvedApiKey = apiKey || aiConfig.apiKey;
+                if (!resolvedApiKey) {
+                    throw new Error('AI API key is not configured.');
+                }
+
+                const configuredMaxConcurrent = LLMClient.getMaxConcurrent(aiConfig);
+                const effectiveMaxConcurrent = Number.isInteger(maxConcurrent) && maxConcurrent > 0
+                    ? maxConcurrent
+                    : configuredMaxConcurrent;
+                const semaphoreKey = `${resolvedApiKey || 'no-key'}::${resolvedModel || 'no-model'}`;
+                const resolvedTimeout = LLMClient.resolveTimeout(timeoutMs, timeoutScale);
+                const baseStartTimeoutMs = Number.isFinite(aiConfig.stream_start_timeout)
+                    ? aiConfig.stream_start_timeout * 1000
+                    : 40000;
+                const baseContinueTimeoutMs = Number.isFinite(aiConfig.stream_continue_timeout)
+                    ? aiConfig.stream_continue_timeout * 1000
+                    : 10000;
+                const incrementStartTimeoutMs = Number.isFinite(aiConfig.increment_start_timeout)
+                    ? aiConfig.increment_start_timeout * 1000
+                    : 0;
+                const incrementContinueTimeoutMs = Number.isFinite(aiConfig.increment_continue_timeout)
+                    ? aiConfig.increment_continue_timeout * 1000
+                    : 0;
+                const streamStartTimeoutMs = baseStartTimeoutMs + (incrementStartTimeoutMs * attemptNumber);
+                const streamContinueTimeoutMs = baseContinueTimeoutMs + (incrementContinueTimeoutMs * attemptNumber);
+
+                const requestHeaders = {
+                    'Authorization': `Bearer ${resolvedApiKey}`,
+                    'Content-Type': 'application/json',
+                    ...headers
+                };
+                const baseAxiosOptions = {
+                    headers: requestHeaders,
+                    timeout: payload.stream ? undefined : resolvedTimeout,
+                    responseType: payload.stream ? 'stream' : undefined
+                };
+
+                if (metadataLabel && metadata) {
+                    baseAxiosOptions.metadata = { ...metadata, aiMetricsLabel: metadataLabel };
+                } else if (metadataLabel) {
+                    baseAxiosOptions.metadata = { aiMetricsLabel: metadataLabel };
+                } else if (metadata) {
+                    baseAxiosOptions.metadata = metadata;
+                }
+
+                return {
+                    aiConfig,
+                    payload,
+                    resolvedModel,
+                    resolvedEndpoint,
+                    resolvedApiKey,
+                    resolvedTemperature,
+                    resolvedTimeout,
+                    effectiveMaxConcurrent,
+                    semaphoreKey,
+                    streamStartTimeoutMs,
+                    streamContinueTimeoutMs,
+                    baseAxiosOptions
+                };
             };
-
-            const baseAxiosOptions = {
-                headers: requestHeaders,
-                timeout: payload.stream ? undefined : resolvedTimeout,
-                responseType: payload.stream ? 'stream' : undefined
-            };
-
-            if (metadataLabel && metadata) {
-                baseAxiosOptions.metadata = { ...metadata, aiMetricsLabel: metadataLabel };
-            } else if (metadataLabel) {
-                baseAxiosOptions.metadata = { aiMetricsLabel: metadataLabel };
-            } else if (metadata) {
-                baseAxiosOptions.metadata = metadata;
-            }
 
             let attempt = 0;
             let responseContent = '';
@@ -1165,9 +1316,40 @@ class LLMClient {
                 responseContent = '';
                 streamTrackerId = null;
                 startTimer = null;
+                let attemptSemaphore = null;
+                let attemptRuntime = null;
+                let payload = null;
+                let resolvedModel = null;
+                let resolvedEndpoint = null;
+                let resolvedTimeout = null;
+                let streamStartTimeoutMs = 40000;
+                let streamContinueTimeoutMs = 10000;
                 const controller = new AbortController();
-                const axiosOptions = { ...baseAxiosOptions, signal: controller.signal };
                 try {
+                    attemptRuntime = resolveAttemptRuntime({ attemptNumber: attempt });
+                    payload = attemptRuntime.payload;
+                    resolvedModel = attemptRuntime.resolvedModel;
+                    resolvedEndpoint = attemptRuntime.resolvedEndpoint;
+                    resolvedTimeout = attemptRuntime.resolvedTimeout;
+                    streamStartTimeoutMs = attemptRuntime.streamStartTimeoutMs;
+                    streamContinueTimeoutMs = attemptRuntime.streamContinueTimeoutMs;
+
+                    if (typeof captureRequestPayload === 'function') {
+                        try {
+                            captureRequestPayload(JSON.parse(JSON.stringify(payload)));
+                        } catch (_) {
+                            captureRequestPayload(payload);
+                        }
+                    }
+
+                    attemptSemaphore = LLMClient.#ensureSemaphore(
+                        attemptRuntime.semaphoreKey,
+                        attemptRuntime.effectiveMaxConcurrent,
+                        log
+                    );
+                    await attemptSemaphore.acquire();
+
+                    const axiosOptions = { ...attemptRuntime.baseAxiosOptions, signal: controller.signal };
                     streamTrackerId = payload.stream && !isSilent
                         ? LLMClient.#trackStreamStart(metadataLabel, {
                             startTimeoutMs: streamStartTimeoutMs,
@@ -1367,7 +1549,7 @@ class LLMClient {
                                 metadataLabel,
                                 parameters: {
                                     maxTokens,
-                                    temperature: resolvedTemperature,
+                                    temperature: attemptRuntime?.resolvedTemperature,
                                     model: payload.model,
                                     endpoint: resolvedEndpoint,
                                     timeoutMs: resolvedTimeout,
@@ -1381,7 +1563,7 @@ class LLMClient {
                                     requiredRegex: resolvedRequiredRegex ? resolvedRequiredRegex.toString() : requiredRegex,
                                     dumpReasoningToConsole
                                 },
-                                aiConfigOverride: aiConfig,
+                                aiConfigOverride: attemptRuntime?.aiConfig,
                                 requestPayload: payload,
                                 rawResponse: response.data,
                                 messages
@@ -1488,13 +1670,19 @@ class LLMClient {
                         debugLog(error);
                         return '';
                     }
+                } finally {
+                    if (startTimer) {
+                        clearTimeout(startTimer);
+                        startTimer = null;
+                    }
+                    if (attemptSemaphore) {
+                        attemptSemaphore.release();
+                    }
                 }
 
                 errorLog(`Retrying chat completion (attempt ${attempt + 2} of ${retryAttempts + 1})...`);
                 attempt++;
-                if (payload.stream) {
-                    streamStartTimeoutMs += incrementStartTimeoutMs;
-                    streamContinueTimeoutMs += incrementContinueTimeoutMs;
+                if (attemptRuntime?.payload?.stream) {
                     // bump retry count on all active streams
                     LLMClient.#streamProgress.active.forEach(entry => {
                         entry.retries = (entry.retries || 0) + 1;
@@ -1512,9 +1700,7 @@ class LLMClient {
             log(`Prompt '${label}' completed after ${attempt} retries in ${totalTime / 1000} seconds.${bytesNote}${tokensNote}`);
             return responseContent;
         } finally {
-            if (semaphore) {
-                semaphore.release();
-            }
+            // per-attempt resources are released inside the retry loop.
         }
     }
 }

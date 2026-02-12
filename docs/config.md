@@ -25,6 +25,41 @@ Merge precedence is:
 The override file must exist and contain a YAML object. Invalid or missing files fail startup with a clear error.
 If the server is started with `--config-override`, `reload_config` keeps using the same override file.
 
+## AI custom args
+
+`config.ai.custom_args` lets you inject structured top-level request arguments into every LLM chat-completion payload.
+
+```yaml
+ai:
+  custom_args:
+    thinking:
+      type: disabled
+```
+
+Rules:
+- `custom_args` must be an object when present.
+- Keys are merged into the request payload before the standard core fields are applied.
+- Reserved top-level payload keys are rejected in `custom_args`: `messages`, `model`, `seed`, `stream`, `max_tokens`, `temperature`, `top_p`, `frequency_penalty`, `presence_penalty`.
+
+### Override behavior (`ai_model_overrides`)
+
+`ai_model_overrides.<profile>.custom_args` is merged per argument key (deep object merge), rather than replacing the entire `custom_args` object.
+
+```yaml
+ai_model_overrides:
+  dialogue_generation:
+    prompts: [player_action]
+    custom_args:
+      thinking:
+        type: disabled
+```
+
+Merge semantics:
+- Object values merge recursively by key.
+- Non-object values replace previous values.
+- Arrays replace previous arrays.
+- `null` deletes the targeted key from the inherited `custom_args` tree.
+
 ## Character creation point pools
 
 `config.formulas.character_creation` controls the formulas used to calculate the base point pools for the New Game attribute and skill allocators.
@@ -143,3 +178,29 @@ slop_remover_base_attempts: 2
 - Must be an integer `>= 1`.
 - This is the base attempt count before parse-failure extensions.
 - Parse failures can still increase the effective cap up to 5 attempts.
+
+## Random event frequency and custom types
+
+`random_event_frequency` controls random-event roll chances and supports extensible file-based event types.
+
+```yaml
+random_event_frequency:
+  enabled: true
+  common: 0.05
+  rare: 0.01
+  party: 0.2
+  regionSpecific: 0.06
+  locationSpecific: 0.06
+```
+
+- `enabled: false` disables random event rolls.
+- `locationSpecific` and `regionSpecific` continue to use location/region seed pools (not text files).
+- Any other key under `random_event_frequency` is treated as a file-based random event type (excluding control/seed keys: `enabled`, `location`, `region`, `locationSpecific`, `regionSpecific`).
+- File-based random event types load from `random_events/<type>.txt` (for example `party` -> `random_events/party.txt`).
+- `common` and `rare` remain built-in file-based types and load from `random_events/common.txt` and `random_events/rare.txt`.
+- Chance values:
+  - `<= 1` are treated as decimal probabilities and converted to percentages.
+  - `> 1` are treated as percent values directly.
+  - `<= 0` disables that specific type for normal random rolls.
+
+`random_event_frequency_multiplier` scales roll frequency globally and must be a positive number.

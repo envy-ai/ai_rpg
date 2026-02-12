@@ -29,7 +29,7 @@ The main UI is rendered by `views/index.njk` and powered by `public/js/chat.js` 
   - Prefix actions preserve raw input markers in the API payload (`?`, `@`, `@@`, `@@@`) even though optimistic local entries render marker-stripped content.
 - **Sidebar** (`.chat-sidebar`):
   - Player card (portrait, health, need bars, quick actions, and a top-left warning triangle when unspent skill/attribute points are present).
-  - Player "View" opens `#npcViewModal` in editable mode for attributes/skills using shared allocation partials; skills can now be added/removed directly in this modal for the player view. NPCs use the same sections in read-only mode.
+  - Player "View" opens `#npcViewModal` in editable mode for attributes/skills using shared allocation partials; skills can now be added/removed directly in this modal for the player view. NPCs use the same sections in read-only mode, and their unspent point totals are hidden.
   - Player/NPC Inventory modal keeps active inventory filters (including slot filter selection) when equip/unequip triggers an inventory re-render.
   - Party summary list.
 - **World-time chip** (`#worldTimeIndicator`):
@@ -96,8 +96,8 @@ LLM-backed modal submits close immediately (no visible waiting state) and rely o
 
 - `#addNpcModal` (adds an NPC via `/api/locations/:id/npcs`).
 - `#newExitModal` (creates/edits exits via `/api/locations/:id/exits`).
-- `#craftingModal` (crafting/processing via `/api/craft`).
-- `#salvageIntentModal` (salvage/harvest via `/api/craft`).
+- `#craftingModal` (crafting/processing via `/api/craft`, including a no-prose submit path for craft/process).
+- `#salvageIntentModal` (salvage/harvest via `/api/craft`, including `Harvest (no prose)` / `Salvage (no prose)` submits).
 
 ## Insights and attachments
 

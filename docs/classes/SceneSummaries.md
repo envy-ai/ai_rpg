@@ -4,14 +4,14 @@
 Stores and manages scene summaries extracted from chat history. Tracks scene ranges, entry id mappings, and per-entry NPC names to support gap detection and absence checks.
 
 ## Key State
-- `_scenes`: list of normalized scene objects `{ startIndex, endIndex, startEntryId, endEntryId, summary, quotes }`.
+- `_scenes`: list of normalized scene objects `{ startIndex, endIndex, startEntryId, endEntryId, summary, details, quotes }`.
 - `_entryIdToIndex`: map from entry id to index.
 - `_entryIdToNpcNames`: map from entry id to NPC names.
 - `_metadata`: `{ version, updatedAt, lastSummarizedRange }`.
 
 ## Instance API
 - `clear()`: resets all stored data.
-- `addSummaryResult(summaryResult)`: validates and merges a summary payload (scenes + entryIndexMap).
+- `addSummaryResult(summaryResult)`: validates and merges a summary payload (scenes + entryIndexMap), replacing any existing scenes that overlap the incoming summarized range.
 - `containsEntry(entryId)`: checks if an entry index falls within any scene range.
 - `getFirstUnsummarizedIndex(totalEntries)`: returns the first gap index or null if all summarized.
 - `deleteSummariesOverlappingRange(startIndex, endIndex)`: removes overlapping scenes and returns the gap range needing resummarization.

@@ -93,7 +93,7 @@ const EVENT_PROMPT_ORDER = [
         },
         {
             key: "harvest_gather",
-            prompt: `Did anyone harvest or gather from any natural or man-made resources or collections (for instance, a berry bush, a pile of wood, a copper vein, a crate of spare parts, etc)? If so, answer with the full name of the person who did so as seen in the location context ("player" if it was the player) and the exact name of the item(s) they would obtain from harvesting or gathering. If multiple items would be gathered this way, separate with vertical bars. Format like this: "[name] -> [item] | [name] -> [item]", up to three items at a time. Otherwise, answer N/A. For example, if harvesting from a "Raspberry Bush", the item obtained would be "Raspberries", "Ripe Raspberries", or similar.`,
+            prompt: `Did anyone harvest or gather from any natural or man-made resources or collections (for instance, a berry bush, a pile of wood, a copper vein, a crate of spare parts, etc)? If so, answer with the full name of the person who did so as seen in the location context ("player" if it was the player), the exact name of the item(s) they would obtain, and what it was harvested from. If multiple items would be gathered this way, separate with vertical bars. Prefer this format: "[name] -> [item] -> [source]". If source is genuinely unknown, use "[name] -> [item]". Otherwise, answer N/A. For example, if harvesting from a "Raspberry Bush", the item obtained would be "Raspberries", "Ripe Raspberries", or similar.`,
         },
         {
             key: "item_appear",
@@ -1024,7 +1024,10 @@ class Events {
         this._handlers = this._buildHandlers();
     }
 
-    static async runQuestChecks({ allowWithoutEventChecks = false } = {}) {
+    static async runQuestChecks({
+        allowWithoutEventChecks = false,
+        recentTextOverride = null,
+    } = {}) {
         const config = this.config || Globals.config || {};
         if (config?.event_checks?.enabled === false && !allowWithoutEventChecks) {
             console.info("Quest checks skipped: event_checks.enabled is false.");
@@ -1044,6 +1047,19 @@ class Events {
         const findRegionByLocationId = this._deps.findRegionByLocationId;
 
         const baseContext = await prepareBasePromptContext();
+        if (
+            typeof recentTextOverride === "string" &&
+            recentTextOverride.trim()
+        ) {
+            const supplementalLine = `[Storyteller] ${recentTextOverride.trim()}`;
+            const existingRecentHistory =
+                typeof baseContext.recentGameHistory === "string"
+                    ? baseContext.recentGameHistory.trim()
+                    : "";
+            baseContext.recentGameHistory = existingRecentHistory
+                ? `${existingRecentHistory}\n${supplementalLine}`
+                : supplementalLine;
+        }
 
         // Build a stable quest list for prompt rendering using the player's canonical quest order.
         let currentQuestPromptList = [];
@@ -2516,6 +2532,9 @@ class Events {
         });
         updateArrayEntries(parsed.harvest_gather, (entry) => {
             entry.harvester = resolveName(entry.harvester);
+            if (entry.source && typeof entry.source === "string") {
+                entry.source = entry.source.trim();
+            }
         });
         updateArrayEntries(parsed.pick_up_item, (entry) => {
             entry.name = resolveName(entry.name);
@@ -2760,11 +2779,19 @@ class Events {
             harvest_gather: (raw) =>
                 splitPipeList(raw)
                     .map((entry) => {
-                        const [name, item] = splitArrowParts(entry, 2);
+                        const [name, item, source] = splitArrowParts(entry, 3);
                         if (!name || !item) {
                             return null;
                         }
-                        return { harvester: name.trim(), item: item.trim() };
+                        const normalizedSource =
+                            typeof source === "string" && source.trim()
+                                ? source.trim()
+                                : null;
+                        return {
+                            harvester: name.trim(),
+                            item: item.trim(),
+                            source: normalizedSource,
+                        };
                     })
                     .filter(Boolean),
             pick_up_item: (raw) =>

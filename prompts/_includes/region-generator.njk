@@ -3,6 +3,7 @@
 {% set isStub = mode == 'stub' %}
 {% set includeLocations = mode in ['full', 'stub'] %}
 {% set includeConnections = mode != 'locations' %}
+{% set stubHasAuthoritativeControllingFaction = isStub and stubHasControllingFaction %}
 
 {% if calendarSeasons and calendarSeasons | length %}
 Seasons in this world (name and description):
@@ -48,6 +49,14 @@ Guidelines:
 
 * Furniture and workstations are not locations. These should be mentioned in the description, but will be generated as scenery later. For example, a "blacksmith's forge" is not a location, but a "blacksmith's workshop" is.
 * Choose the controlling faction using the <factions> list in the gameState. Use the full faction name, or "None" if no faction controls the region or location.
+{% if stubHasAuthoritativeControllingFaction %}
+
+IMPORTANT: This stub already has an authoritative region controlling faction:
+<stub>
+  <controllingFaction>{{ stubControllingFaction }}</controllingFaction>
+</stub>
+Do not change this value. Do not include a region-level <controllingFaction> in your output.
+{% endif %}
 
 {% if currentRegion.name %}Output XML in the following format for the region named "{{ currentRegion.name }}".{% elseif regionName %}Output XML in the following format for a new region named "{{ regionName }}".{% else %}Create a region using the following XML format.{% endif %}
 
@@ -66,7 +75,7 @@ If this region is a city, town, village, or other settlement, create at least th
   {% if regionName or currentRegion.name %}<!-- strictly retain this exact region name: -->{% endif %}
   <regionName>{% if isStub %}{{ currentRegion.name }}{% else %}{{ regionName }}{% endif %}</regionName>
   <regionDescription><!-- Three sentences that describe this region. --></regionDescription>
-  <controllingFaction><!-- Full faction name from the list or "None" --></controllingFaction>
+  {% if not stubHasAuthoritativeControllingFaction -%}<controllingFaction><!-- Full faction name from the list or "None" --></controllingFaction>{% endif %}
   <relativeLevel>1</relativeLevel>{# Set to 1 to keep the AI from going nuts with high relative levels for locations. This value doesn't affect actual generation. #}
   <numImportantNPCs>Integer number of important NPCs distributed throughout the whole region (0-4, as appropriate)</numImportantNPCs>
   <weather>

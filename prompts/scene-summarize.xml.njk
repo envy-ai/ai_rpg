@@ -47,9 +47,11 @@ Aim for {{ minScenes }}-{{ maxScenes }} scenes total (maintaining the 15-25 per 
 
 Step 2: Verify accuracy of scene boundaries. Adjust as needed to ensure each scene is self-contained and coherent. Ensure that your thoughts about what happens in each scene accurately reflect the content of that scene. As above, don't worry about formatting, but use some tokens to think it through carefully.
 
-Step 3: Summarize each self-contained scene. Hit important story beats and not minor details. Devote a sentence to your thoughts on how characters or the story developed.
+Step 3: Summarize each self-contained scene. Hit important story beats and not minor details. Devote a sentence to your thoughts on how characters or the story developed. 
 
 Try to strike a balance between aggressive consolidation of scenes and splitting up scenes that flow narratively.
+
+Then, make a list of important details about plots of characters (in short format) that are important enough to remain in the context but weren't included in the summary above. Use 5 to 10 words for each detail.
 
 At the end of each scene, include one or two notable quotes from characters (including the character name), if there are any. If there is only one interesting quote, just write one; better just one than two and one is dull.
 
@@ -66,6 +68,20 @@ Step 3:
 <scene>
 <index><!-- index number of start --></index>
 <summary><!-- 1-2 paragraphs of summary depending on important story beats --></summary>
+<details><!-- list of important details about plots or characters that should be retained in context, but weren't included in the summary above, separated by newlines. 14 words or less per point. Also, characters' life timelines and history are crucial for consistency and should be included here with as much precision as possible. For example:
+- Kobolds stole Jane's jacket when she was 7
+- Jane's father is a blacksmith who hates kobolds
+- Randolph was nearly killed by a dragon at an unspecified time in the past, but survived by hiding in a barrel of ale4
+- Bob was stranded on an island for 3 years starting 20 years ago
+
+Don't include things that don't matter much outside of the scene, or information already available in a character record, like:
+- Jane is cold
+- Jane is wearing a jacket
+- Peter gained a status effect that made him sick for 3 turns
+- Bob burned the peach cobbler he made for dessert
+- Randolph is a level 5 fighter
+-->
+</details>
 <quote>
 <character><!-- character name --></character>
 <text><!-- The actual text of the quote --></text>

@@ -28,9 +28,32 @@ class SceneSummaries {
 
         this.#ingestEntryIndexMap(entryIndexMap);
 
+        const normalizedScenes = [];
         for (const scene of scenes) {
             const normalized = this.#normalizeScene(scene);
-            this._scenes.push(normalized);
+            normalizedScenes.push(normalized);
+        }
+
+        let replacementStart = normalizedScenes[0].startIndex;
+        let replacementEnd = normalizedScenes[0].endIndex;
+        for (const scene of normalizedScenes) {
+            if (scene.startIndex < replacementStart) {
+                replacementStart = scene.startIndex;
+            }
+            if (scene.endIndex > replacementEnd) {
+                replacementEnd = scene.endIndex;
+            }
+        }
+
+        this._scenes = this._scenes.filter(scene => {
+            if (!scene || typeof scene !== 'object') {
+                return false;
+            }
+            return scene.endIndex < replacementStart || scene.startIndex > replacementEnd;
+        });
+
+        for (const scene of normalizedScenes) {
+            this._scenes.push(scene);
         }
 
         this._metadata.updatedAt = new Date().toISOString();
@@ -352,6 +375,18 @@ class SceneSummaries {
         if (!summary) {
             throw new Error('Scene summary entry is missing a summary.');
         }
+        const details = scene.details === undefined ? [] : scene.details;
+        if (!Array.isArray(details)) {
+            throw new Error('Scene summary entry details must be an array when provided.');
+        }
+        const normalizedDetails = details
+            .map((detail) => {
+                if (typeof detail !== 'string') {
+                    throw new Error('Scene summary detail must be a string.');
+                }
+                return detail.trim();
+            })
+            .filter(Boolean);
         const quotes = Array.isArray(scene.quotes) ? scene.quotes : [];
         const normalizedQuotes = quotes.map((quote) => {
             if (!quote || typeof quote !== 'object') {
@@ -371,6 +406,7 @@ class SceneSummaries {
             startEntryId,
             endEntryId,
             summary,
+            details: normalizedDetails,
             quotes: normalizedQuotes
         };
     }
@@ -382,6 +418,7 @@ class SceneSummaries {
             startEntryId: scene.startEntryId,
             endEntryId: scene.endEntryId,
             summary: scene.summary,
+            details: Array.isArray(scene.details) ? scene.details.slice() : [],
             quotes: Array.isArray(scene.quotes)
                 ? scene.quotes.map(quote => ({ character: quote.character, text: quote.text }))
                 : []

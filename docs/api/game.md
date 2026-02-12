@@ -67,6 +67,9 @@ Response:
 - 200: `{ success: true, saveName, saveDir, metadata, message }`
 - 400/500 with `{ success: false, error }`
 
+Notes:
+- Successful saves now emit a server-console line in the shared save path (`performGameSave`), so this applies to both manual saves and autosaves.
+
 ## POST /api/load
 Load a saved game.
 
@@ -80,6 +83,7 @@ Response:
 
 Notes:
 - If a save has no persisted `calendarDefinition`, the server generates one from the active setting via LLM (`calendar_generation`) using the same Earth-like => Gregorian prompt rule, then falls back to Gregorian if generation fails.
+- `/api/load` now runs faction-reference reconciliation before restoring the current player: invalid faction ids are cleared from player `factionId`, player faction standings, location/region/pending-stub controlling faction ids, and faction relation edges that target missing/self factions.
 
 ## GET /api/saves
 List available saves.

@@ -581,10 +581,14 @@ module.exports = function registerApiRoutes(scope) {
         const OFFSCREEN_NPC_ACTIVITY_DEFAULT_DAILY_MAX_TURNS_BETWEEN_PROMPTS = 20;
         const OFFSCREEN_NPC_ACTIVITY_DEFAULT_WEEKLY_MAX_TURNS_BETWEEN_PROMPTS = 100;
         const OFFSCREEN_NPC_ACTIVITY_MAX_CANDIDATES = 80;
+        const PLOT_SUMMARY_PROMPT_FREQUENCY = 10;
 
         let shortDescriptionBackfillInProgress = false;
         let supplementalStoryInfoInProgress = false;
         let supplementalStoryInfoTurnCounter = 0;
+        let plotSummaryInProgress = false;
+        let plotSummaryTurnCounter = 0;
+        let plotSummaryRunOnNextEligibleTurn = false;
         let offscreenNpcActivityInProgress = false;
         let offscreenNpcActivityState = {
             dailyMentionedNpcNamesByWeek: {},
@@ -1771,6 +1775,15 @@ module.exports = function registerApiRoutes(scope) {
             return supplementalStoryInfoTurnCounter % frequency === 0;
         }
 
+        function shouldRunPlotSummaryThisTurn() {
+            if (plotSummaryRunOnNextEligibleTurn) {
+                plotSummaryRunOnNextEligibleTurn = false;
+                return true;
+            }
+            plotSummaryTurnCounter += 1;
+            return plotSummaryTurnCounter % PLOT_SUMMARY_PROMPT_FREQUENCY === 0;
+        }
+
         function resolveRegionNameForLocationId(locationId) {
             if (typeof locationId !== 'string' || !locationId.trim()) {
                 return null;
@@ -1798,6 +1811,12 @@ module.exports = function registerApiRoutes(scope) {
             for (let index = chatHistory.length - 1; index >= 0; index -= 1) {
                 const entry = chatHistory[index];
                 if (!entry || typeof entry !== 'object') {
+                    continue;
+                }
+                const metadata = entry.metadata && typeof entry.metadata === 'object'
+                    ? entry.metadata
+                    : null;
+                if (metadata?.excludeFromBaseContextHistory === true) {
                     continue;
                 }
                 const content = typeof entry.content === 'string' ? entry.content.trim() : '';
@@ -2244,6 +2263,89 @@ module.exports = function registerApiRoutes(scope) {
                 return null;
             } finally {
                 offscreenNpcActivityInProgress = false;
+            }
+        }
+
+        async function runPlotSummaryPrompt({
+            locationOverride = null,
+            entryCollector = null,
+            parentEntryId = null,
+            locationId = null
+        } = {}) {
+            if (plotSummaryInProgress) {
+                console.info('Plot summary prompt already running; skipping new request.');
+                return null;
+            }
+            plotSummaryInProgress = true;
+            try {
+                if (!config?.ai) {
+                    console.warn('AI configuration missing; unable to run plot summary prompt.');
+                    return null;
+                }
+
+                const baseContext = await prepareBasePromptContext({ locationOverride });
+                const renderedTemplate = promptEnv.render('base-context.xml.njk', {
+                    ...baseContext,
+                    promptType: 'plot-summary'
+                });
+                const parsedTemplate = parseXMLTemplate(renderedTemplate);
+                if (!parsedTemplate?.systemPrompt || !parsedTemplate?.generationPrompt) {
+                    console.warn('Plot summary template missing prompts; skipping.');
+                    return null;
+                }
+
+                const requestOptions = {
+                    messages: [
+                        { role: 'system', content: parsedTemplate.systemPrompt },
+                        { role: 'user', content: parsedTemplate.generationPrompt }
+                    ],
+                    metadataLabel: 'plot_summary',
+                    validateXML: false,
+                    runInBackground: true
+                };
+
+                if (typeof parsedTemplate.temperature === 'number') {
+                    requestOptions.temperature = parsedTemplate.temperature;
+                }
+
+                const rawResponse = await LLMClient.chatCompletion(requestOptions);
+                LLMClient.logPrompt({
+                    prefix: 'plot_summary',
+                    metadataLabel: 'plot_summary',
+                    systemPrompt: parsedTemplate.systemPrompt || '',
+                    generationPrompt: parsedTemplate.generationPrompt || '',
+                    response: rawResponse || '',
+                    model: requestOptions.model,
+                    endpoint: requestOptions.endpoint
+                });
+
+                const plotSummaryText = typeof rawResponse === 'string' ? rawResponse.trim() : '';
+                if (!plotSummaryText) {
+                    console.warn('Plot summary response was empty.');
+                    return null;
+                }
+
+                const resolvedLocationId = requireLocationId(
+                    locationId || locationOverride?.id || currentPlayer?.currentLocation,
+                    'plot summary entry'
+                );
+                const entry = {
+                    role: 'assistant',
+                    content: plotSummaryText,
+                    summary: plotSummaryText,
+                    type: 'plot-summary',
+                    parentId: parentEntryId,
+                    locationId: resolvedLocationId,
+                    metadata: {
+                        excludeFromBaseContextHistory: true
+                    }
+                };
+                return pushChatEntry(entry, entryCollector, resolvedLocationId);
+            } catch (error) {
+                console.warn('Failed to run plot summary prompt:', error.message);
+                return null;
+            } finally {
+                plotSummaryInProgress = false;
             }
         }
 
@@ -3084,9 +3186,53 @@ module.exports = function registerApiRoutes(scope) {
             };
         };
 
-        const randomEventCache = {
-            common: null,
-            rare: null
+        const randomEventCache = Object.create(null);
+        const RANDOM_EVENT_DEFAULT_FILE_TYPES = new Set(['common', 'rare']);
+        const RANDOM_EVENT_FREQUENCY_RESERVED_KEYS = new Set([
+            'enabled',
+            'location',
+            'region',
+            'locationspecific',
+            'regionspecific'
+        ]);
+
+        const normalizeRandomEventType = (value) => {
+            if (typeof value !== 'string') {
+                return '';
+            }
+            const normalized = value.trim().toLowerCase();
+            if (!normalized) {
+                return '';
+            }
+            if (!/^[a-z0-9_-]+$/.test(normalized)) {
+                return '';
+            }
+            return normalized;
+        };
+
+        const getConfiguredFileRandomEventTypes = (frequencyConfig, { requirePositiveChance = false } = {}) => {
+            const configuredTypes = new Set(RANDOM_EVENT_DEFAULT_FILE_TYPES);
+            if (!frequencyConfig || typeof frequencyConfig !== 'object') {
+                return configuredTypes;
+            }
+
+            for (const [rawType, rawChance] of Object.entries(frequencyConfig)) {
+                const type = normalizeRandomEventType(rawType);
+                if (!type || RANDOM_EVENT_FREQUENCY_RESERVED_KEYS.has(type) || RANDOM_EVENT_DEFAULT_FILE_TYPES.has(type)) {
+                    continue;
+                }
+
+                if (requirePositiveChance) {
+                    const numericChance = Number(rawChance);
+                    if (!Number.isFinite(numericChance) || numericChance <= 0) {
+                        continue;
+                    }
+                }
+
+                configuredTypes.add(type);
+            }
+
+            return configuredTypes;
         };
 
         function deleteNpcById(npcId, { skipNotFound = false, reason = null, deleteInventory = false } = {}) {
@@ -3654,6 +3800,16 @@ module.exports = function registerApiRoutes(scope) {
             let count = 0;
             for (const entry of filteredEntries) {
                 if (!entry || typeof entry !== 'object') {
+                    continue;
+                }
+                const metadata = entry.metadata && typeof entry.metadata === 'object'
+                    ? entry.metadata
+                    : null;
+                if (metadata?.excludeFromBaseContextHistory === true) {
+                    continue;
+                }
+                const entryType = typeof entry.type === 'string' ? entry.type.trim().toLowerCase() : '';
+                if (entryType === 'plot-summary') {
                     continue;
                 }
                 const content = typeof entry.content === 'string' ? entry.content.trim() : '';
@@ -4441,7 +4597,9 @@ module.exports = function registerApiRoutes(scope) {
                             entries.forEach(entry => {
                                 const actor = safeSummaryName(entry?.harvester);
                                 const itemName = safeSummaryItem(entry?.item);
-                                add('🌾', `${actor} harvested ${itemName}.`);
+                                const sourceName = safeSummaryItem(entry?.source, '');
+                                const fromClause = sourceName ? ` from ${sourceName}` : '';
+                                add('🌾', `${actor} harvested ${itemName}${fromClause}.`);
                             });
                             break;
                         case 'pick_up_item':
@@ -5274,8 +5432,13 @@ module.exports = function registerApiRoutes(scope) {
         }
 
         function loadRandomEventLines(type) {
-            const normalized = type === 'rare' ? 'rare' : 'common';
-            if (Array.isArray(randomEventCache[normalized])) {
+            const normalized = normalizeRandomEventType(type);
+            if (!normalized) {
+                return [];
+            }
+
+            if (Object.prototype.hasOwnProperty.call(randomEventCache, normalized)
+                && Array.isArray(randomEventCache[normalized])) {
                 return randomEventCache[normalized];
             }
 
@@ -5357,36 +5520,22 @@ module.exports = function registerApiRoutes(scope) {
 
         function logRandomEventPrompt({ rarity, eventText, systemPrompt, generationPrompt, responseText, durationSeconds }) {
             try {
-                const logsDir = path.join(Globals.baseDir, 'logs');
-                if (!fs.existsSync(logsDir)) {
-                    fs.mkdirSync(logsDir, { recursive: true });
-                }
-
-                const timestamp = Date.now();
-                const safeSeed = (eventText || '')
-                    .replace(/[^a-zA-Z0-9_-]+/g, '_')
-                    .replace(/_{2,}/g, '_')
-                    .replace(/^_+|_+$/g, '')
-                    .slice(0, 40);
-                const filename = `random_event_${rarity || 'common'}_${timestamp}${safeSeed ? `_${safeSeed}` : ''}.log`;
-                const logPath = path.join(logsDir, filename);
-
-                const parts = [
-                    formatDurationLabel(durationSeconds),
-                    `Rarity: ${rarity || 'common'}`,
-                    `Seed Event: ${eventText || '(unknown)'}`,
-                    '=== RANDOM EVENT SYSTEM PROMPT ===',
-                    systemPrompt || '(none)',
-                    '',
-                    '=== RANDOM EVENT GENERATION PROMPT ===',
-                    generationPrompt || '(none)',
-                    '',
-                    '=== RANDOM EVENT RESPONSE ===',
-                    responseText || '(none)',
-                    ''
-                ];
-
-                fs.writeFileSync(logPath, parts.join('\n'), 'utf8');
+                const durationLabel = formatDurationLabel(durationSeconds)
+                    .replace(/^===\s*/i, '')
+                    .replace(/\s*===$/i, '')
+                    .trim();
+                LLMClient.logPrompt({
+                    prefix: 'random_event',
+                    metadataLabel: 'random_event',
+                    systemPrompt: systemPrompt || '(none)',
+                    generationPrompt: generationPrompt || '(none)',
+                    response: responseText || '(none)',
+                    sections: [
+                        { title: 'API CALL DURATION', content: durationLabel || 'N/A' },
+                        { title: 'RARITY', content: rarity || 'common' },
+                        { title: 'SEED EVENT', content: eventText || '(unknown)' }
+                    ]
+                });
             } catch (error) {
                 console.warn('Failed to log random event prompt:', error.message);
             }
@@ -5725,7 +5874,12 @@ module.exports = function registerApiRoutes(scope) {
                 resolvedRegion = findRegionByLocationId(currentPlayer.currentLocation) || null;
             }
 
-            const normalizedForceType = typeof forceType === 'string' ? forceType.trim().toLowerCase() : null;
+            const rawForceType = typeof forceType === 'string' ? forceType.trim() : '';
+            const normalizedForceType = normalizeRandomEventType(rawForceType);
+            if (rawForceType && !normalizedForceType) {
+                throw new Error(`Unsupported random event type '${rawForceType}'.`);
+            }
+            const configuredFileTypes = getConfiguredFileRandomEventTypes(frequencyConfig, { requirePositiveChance: false });
 
             const locationEvents = resolvedLocation
                 ? resolvedLocation.randomEvents.filter(event => typeof event === 'string' && event.trim())
@@ -5798,11 +5952,10 @@ module.exports = function registerApiRoutes(scope) {
                         return runLocationSeed();
                     case 'region':
                         return runRegionSeed();
-                    case 'common':
-                        return runSeedByRarity('common');
-                    case 'rare':
-                        return runSeedByRarity('rare');
                     default:
+                        if (configuredFileTypes.has(normalizedForceType)) {
+                            return runSeedByRarity(normalizedForceType);
+                        }
                         throw new Error(`Unsupported random event type '${normalizedForceType}'.`);
                 }
             }
@@ -5826,6 +5979,26 @@ module.exports = function registerApiRoutes(scope) {
             const commonChancePercent = toPercent(frequencyConfig.common);
             if (commonChancePercent > 0) {
                 options.push({ type: 'common', chance: commonChancePercent });
+            }
+
+            const seenAdditionalTypes = new Set();
+            for (const [rawType, rawChance] of Object.entries(frequencyConfig)) {
+                const type = normalizeRandomEventType(rawType);
+                if (!type
+                    || RANDOM_EVENT_FREQUENCY_RESERVED_KEYS.has(type)
+                    || type === 'common'
+                    || type === 'rare'
+                    || seenAdditionalTypes.has(type)) {
+                    continue;
+                }
+
+                const chancePercent = toPercent(rawChance);
+                if (chancePercent <= 0) {
+                    continue;
+                }
+
+                seenAdditionalTypes.add(type);
+                options.push({ type, chance: chancePercent });
             }
 
             if (!options.length) {
@@ -10082,6 +10255,15 @@ module.exports = function registerApiRoutes(scope) {
                 let debugInfo = null;
                 let playerActionLogPayload = null;
                 const isPromptOnlyAction = isQuestionAction || isGenericPromptAction;
+                const shouldRunPlotSummaryForThisTurn = (
+                    userMessage
+                    && userMessage.role === 'user'
+                    && !isCommentOnlyAction
+                    && !isForcedEventAction
+                    && !isPromptOnlyAction
+                )
+                    ? shouldRunPlotSummaryThisTurn()
+                    : false;
 
                 // Add the location with the id of currentPlayer.curentLocation to the player context if available
                 if (currentPlayer && currentPlayer.currentLocation) {
@@ -10276,6 +10458,19 @@ module.exports = function registerApiRoutes(scope) {
                             parentId: rejectionMessageEntry?.id || null,
                             locationId: rejectionLocationId
                         }, newChatEntries);
+                    }
+
+                    if (shouldRunPlotSummaryForThisTurn) {
+                        try {
+                            void runPlotSummaryPrompt({
+                                locationOverride: location,
+                                entryCollector: newChatEntries,
+                                parentEntryId: rejectionMessageEntry?.id || null,
+                                locationId: rejectionLocationId
+                            });
+                        } catch (plotSummaryScheduleError) {
+                            console.warn('Failed to schedule plot summary prompt:', plotSummaryScheduleError.message);
+                        }
                     }
 
                     responseData.messages = getClientMessages();
@@ -10980,6 +11175,19 @@ module.exports = function registerApiRoutes(scope) {
                         }
                         responseData.messages = getClientMessages();
                         return await respond(responseData);
+                    }
+
+                    try {
+                        if (shouldRunPlotSummaryForThisTurn) {
+                            void runPlotSummaryPrompt({
+                                locationOverride: location,
+                                entryCollector: newChatEntries,
+                                parentEntryId: aiResponseEntry?.id || null,
+                                locationId: aiResponseLocationId
+                            });
+                        }
+                    } catch (plotSummaryScheduleError) {
+                        console.warn('Failed to schedule plot summary prompt:', plotSummaryScheduleError.message);
                     }
 
                     let eventResult = null;
@@ -15321,6 +15529,18 @@ module.exports = function registerApiRoutes(scope) {
                 .replace(/<\s*hr\s*>/gi, '<hr/>');
         };
 
+        const normalizeFactionRelationNameKey = (value) => {
+            if (typeof value !== 'string') {
+                return '';
+            }
+            return value
+                .trim()
+                .toLowerCase()
+                .replace(/["'`]/g, '')
+                .replace(/\s+/g, ' ')
+                .trim();
+        };
+
         const factionAutofillFieldIsEmpty = (value) => {
             if (value === null || value === undefined) {
                 return true;
@@ -15385,34 +15605,71 @@ module.exports = function registerApiRoutes(scope) {
             };
         };
 
-        const factionPayloadNeedsAutofill = (payload, { existingFactionIds = [] } = {}) => {
+        const analyzeFactionAutofillCompleteness = (payload, { existingFactionIds = [], existingFactionsById = null } = {}) => {
+            const missingFields = [];
+            const missingRelationIds = [];
             if (!payload || typeof payload !== 'object') {
-                return true;
-            }
-            if (Array.isArray(existingFactionIds) && existingFactionIds.length > 0) {
-                const relationMap = payload.relations && typeof payload.relations === 'object'
-                    ? payload.relations
-                    : {};
-                const hasMissingRelation = existingFactionIds.some(targetId => {
-                    const relation = relationMap[targetId];
-                    const status = typeof relation?.status === 'string' ? relation.status.trim() : '';
-                    const notes = typeof relation?.notes === 'string' ? relation.notes.trim() : '';
-                    return !status || !notes;
-                });
-                if (hasMissingRelation) {
-                    return true;
+                missingFields.push('payload');
+            } else {
+                if (Array.isArray(existingFactionIds) && existingFactionIds.length > 0) {
+                    const relationMap = payload.relations && typeof payload.relations === 'object'
+                        ? payload.relations
+                        : {};
+                    for (const targetId of existingFactionIds) {
+                        const relation = relationMap[targetId];
+                        const status = typeof relation?.status === 'string' ? relation.status.trim() : '';
+                        const notes = typeof relation?.notes === 'string' ? relation.notes.trim() : '';
+                        if (!status || !notes) {
+                            missingRelationIds.push(targetId);
+                        }
+                    }
+                }
+                const requiredFields = [
+                    'name',
+                    'homeRegionName',
+                    'shortDescription',
+                    'description',
+                    'tags',
+                    'goals',
+                    'assets',
+                    'reputationTiers'
+                ];
+                for (const field of requiredFields) {
+                    if (factionAutofillFieldIsEmpty(payload[field])) {
+                        missingFields.push(field);
+                    }
                 }
             }
-            return [
-                'name',
-                'homeRegionName',
-                'shortDescription',
-                'description',
-                'tags',
-                'goals',
-                'assets',
-                'reputationTiers'
-            ].some(field => factionAutofillFieldIsEmpty(payload[field]));
+
+            const missingRelationLabels = missingRelationIds.map((id) => {
+                if (existingFactionsById instanceof Map) {
+                    const entry = existingFactionsById.get(id);
+                    if (entry && typeof entry.name === 'string' && entry.name.trim()) {
+                        return entry.name.trim();
+                    }
+                }
+                return id;
+            });
+
+            const issues = [];
+            if (missingFields.length > 0) {
+                issues.push(`missing fields: ${missingFields.join(', ')}`);
+            }
+            if (missingRelationLabels.length > 0) {
+                issues.push(`missing relations: ${missingRelationLabels.join(', ')}`);
+            }
+
+            return {
+                hasMissing: missingFields.length > 0 || missingRelationIds.length > 0,
+                missingFields,
+                missingRelationIds,
+                missingRelationLabels,
+                issues
+            };
+        };
+
+        const factionPayloadNeedsAutofill = (payload, options = {}) => {
+            return analyzeFactionAutofillCompleteness(payload, options).hasMissing;
         };
 
         const parseFactionAutofillResponse = (xmlContent) => {
@@ -15452,11 +15709,30 @@ module.exports = function registerApiRoutes(scope) {
             const assetsParent = factionNode.getElementsByTagName('assets')[0];
             const assets = assetsParent
                 ? Array.from(assetsParent.getElementsByTagName('asset')).map(assetNode => {
-                    const name = assetNode.getElementsByTagName('name')[0]?.textContent?.trim() || '';
-                    const type = assetNode.getElementsByTagName('type')[0]?.textContent?.trim() || '';
-                    const description = assetNode.getElementsByTagName('description')[0]?.textContent?.trim() || '';
+                    let name = assetNode.getElementsByTagName('name')[0]?.textContent?.trim()
+                        || assetNode.getAttribute('name')?.trim()
+                        || '';
+                    const type = assetNode.getElementsByTagName('type')[0]?.textContent?.trim()
+                        || assetNode.getAttribute('type')?.trim()
+                        || '';
+                    let description = assetNode.getElementsByTagName('description')[0]?.textContent?.trim()
+                        || assetNode.getAttribute('description')?.trim()
+                        || '';
+
+                    // Accept compact "<asset>Asset name text</asset>" format.
+                    if (!name) {
+                        const inlineText = assetNode.textContent?.trim() || '';
+                        if (inlineText) {
+                            name = inlineText;
+                        }
+                    }
+
                     if (!name && !type && !description) {
                         return null;
+                    }
+                    if (!name && description) {
+                        name = description;
+                        description = '';
                     }
                     return { name, type, description };
                 }).filter(Boolean)
@@ -15465,12 +15741,17 @@ module.exports = function registerApiRoutes(scope) {
             const reputationTiersParent = factionNode.getElementsByTagName('reputationTiers')[0];
             const reputationTiers = reputationTiersParent
                 ? Array.from(reputationTiersParent.getElementsByTagName('tier')).map(tierNode => {
-                    const thresholdRaw = tierNode.getElementsByTagName('threshold')[0]?.textContent?.trim() || '';
+                    const thresholdRaw = tierNode.getElementsByTagName('threshold')[0]?.textContent?.trim()
+                        || tierNode.getAttribute('threshold')?.trim()
+                        || '';
                     const threshold = Number(thresholdRaw);
                     if (!Number.isFinite(threshold)) {
                         return null;
                     }
-                    const label = tierNode.getElementsByTagName('label')[0]?.textContent?.trim() || '';
+                    const label = tierNode.getElementsByTagName('label')[0]?.textContent?.trim()
+                        || tierNode.getAttribute('label')?.trim()
+                        || tierNode.getAttribute('name')?.trim()
+                        || '';
                     const perksParent = tierNode.getElementsByTagName('perks')[0];
                     const penaltiesParent = tierNode.getElementsByTagName('penalties')[0];
                     const perks = perksParent
@@ -15490,9 +15771,21 @@ module.exports = function registerApiRoutes(scope) {
             const relationsParent = factionNode.getElementsByTagName('relations')[0];
             const relationEntries = relationsParent
                 ? Array.from(relationsParent.getElementsByTagName('relation')).map(relationNode => {
-                    const factionName = relationNode.getElementsByTagName('factionName')[0]?.textContent?.trim() || '';
-                    const status = relationNode.getElementsByTagName('status')[0]?.textContent?.trim().toLowerCase() || '';
-                    const notes = relationNode.getElementsByTagName('notes')[0]?.textContent?.trim() || '';
+                    const factionName = relationNode.getElementsByTagName('factionName')[0]?.textContent?.trim()
+                        || relationNode.getAttribute('factionName')?.trim()
+                        || relationNode.getAttribute('faction')?.trim()
+                        || relationNode.getAttribute('targetFaction')?.trim()
+                        || relationNode.getAttribute('target')?.trim()
+                        || '';
+                    const status = relationNode.getElementsByTagName('status')[0]?.textContent?.trim().toLowerCase()
+                        || relationNode.getAttribute('status')?.trim().toLowerCase()
+                        || '';
+                    let notes = relationNode.getElementsByTagName('notes')[0]?.textContent?.trim()
+                        || relationNode.getAttribute('notes')?.trim()
+                        || '';
+                    if (!notes) {
+                        notes = relationNode.textContent?.trim() || '';
+                    }
                     if (!factionName || !status || !notes) {
                         return null;
                     }
@@ -15547,6 +15840,7 @@ module.exports = function registerApiRoutes(scope) {
                     return;
                 }
                 const targetName = typeof entry.factionName === 'string' ? entry.factionName.trim().toLowerCase() : '';
+                const normalizedTargetName = normalizeFactionRelationNameKey(entry.factionName);
                 const status = typeof entry.status === 'string' ? entry.status.trim().toLowerCase() : '';
                 const notes = typeof entry.notes === 'string' ? entry.notes.trim() : '';
                 if (!targetName || !status || !notes) {
@@ -15555,7 +15849,8 @@ module.exports = function registerApiRoutes(scope) {
                 if (!['allied', 'neutral', 'hostile', 'rival'].includes(status)) {
                     return;
                 }
-                const targetId = existingFactionsByName.get(targetName);
+                const targetId = existingFactionsByName.get(targetName)
+                    || (normalizedTargetName ? existingFactionsByName.get(normalizedTargetName) : null);
                 if (!targetId) {
                     return;
                 }
@@ -15616,7 +15911,12 @@ module.exports = function registerApiRoutes(scope) {
                 const existingFactionIds = existingFactions
                     .map(entry => (typeof entry?.id === 'string' ? entry.id.trim() : ''))
                     .filter(Boolean);
-                if (!factionPayloadNeedsAutofill(normalizedFaction, { existingFactionIds })) {
+                const existingFactionsById = new Map(
+                    existingFactions
+                        .filter(entry => typeof entry?.id === 'string')
+                        .map(entry => [entry.id, entry])
+                );
+                if (!factionPayloadNeedsAutofill(normalizedFaction, { existingFactionIds, existingFactionsById })) {
                     return res.json({
                         success: true,
                         faction: normalizedFaction,
@@ -15692,11 +15992,20 @@ module.exports = function registerApiRoutes(scope) {
                 const generatedFaction = parseFactionAutofillResponse(aiMessage);
                 const mergedFaction = mergeFactionAutofillValues(normalizedFaction, generatedFaction);
 
-                const existingFactionNameMap = new Map(
-                    existingFactions
-                        .filter(entry => typeof entry?.name === 'string' && typeof entry?.id === 'string')
-                        .map(entry => [entry.name.trim().toLowerCase(), entry.id])
-                );
+                const existingFactionNameMap = new Map();
+                for (const entry of existingFactions) {
+                    if (typeof entry?.name !== 'string' || typeof entry?.id !== 'string') {
+                        continue;
+                    }
+                    const exactKey = entry.name.trim().toLowerCase();
+                    if (exactKey) {
+                        existingFactionNameMap.set(exactKey, entry.id);
+                    }
+                    const normalizedKey = normalizeFactionRelationNameKey(entry.name);
+                    if (normalizedKey) {
+                        existingFactionNameMap.set(normalizedKey, entry.id);
+                    }
+                }
 
                 const generatedRelationMap = mapGeneratedRelationsToIds(generatedFaction.relationEntries, existingFactionNameMap);
                 const mergedRelationMap = {
@@ -15728,8 +16037,15 @@ module.exports = function registerApiRoutes(scope) {
                     reputationTiers: normalizeFactionTiers(mergedFaction.reputationTiers || [])
                 };
 
-                if (factionPayloadNeedsAutofill(finalized, { existingFactionIds })) {
-                    throw new Error('AI response did not fill all missing faction fields.');
+                const autofillCompleteness = analyzeFactionAutofillCompleteness(finalized, {
+                    existingFactionIds,
+                    existingFactionsById
+                });
+                if (autofillCompleteness.hasMissing) {
+                    const detailText = autofillCompleteness.issues.length
+                        ? ` ${autofillCompleteness.issues.join('; ')}.`
+                        : '';
+                    throw new Error(`AI response did not fill all missing faction fields.${detailText}`);
                 }
 
                 res.json({
@@ -18329,6 +18645,38 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 const payload = req.body && typeof req.body === 'object' ? req.body : {};
+                const parseNoProseFlag = (value) => {
+                    if (value === undefined || value === null || value === '') {
+                        return false;
+                    }
+                    if (typeof value === 'boolean') {
+                        return value;
+                    }
+                    if (typeof value === 'number') {
+                        if (value === 1) {
+                            return true;
+                        }
+                        if (value === 0) {
+                            return false;
+                        }
+                        throw new Error('Invalid numeric noProse value. Use 1 or 0.');
+                    }
+                    if (typeof value === 'string') {
+                        const normalized = value.trim().toLowerCase();
+                        if (!normalized) {
+                            return false;
+                        }
+                        if (normalized === 'true' || normalized === '1' || normalized === 'yes' || normalized === 'y' || normalized === 'on') {
+                            return true;
+                        }
+                        if (normalized === 'false' || normalized === '0' || normalized === 'no' || normalized === 'n' || normalized === 'off') {
+                            return false;
+                        }
+                        throw new Error(`Invalid noProse value "${value}".`);
+                    }
+                    throw new Error(`Unsupported noProse value type: ${typeof value}`);
+                };
+                const isNoProseRequest = parseNoProseFlag(payload.noProse);
                 const slotEntries = Array.isArray(payload.slots) ? payload.slots : [];
 
                 const slotItems = slotEntries
@@ -18993,276 +19341,344 @@ module.exports = function registerApiRoutes(scope) {
                     return null;
                 })();
 
+                const actorName = currentPlayer.name || 'The player';
+                const recoveredNames = recoveredThingInstances.map(item => item.name || 'Recovered Item');
+                const craftedNames = craftedThingInstances.map(item => item.name || 'Crafted Item');
+                const harvestSourceName = salvageTargetThing?.name || 'a resource';
+                const salvageSourceName = salvageTargetThing?.name || 'an item';
+                const processSourceNames = slotItems
+                    .map(entry => entry?.thing?.name)
+                    .filter(name => typeof name === 'string' && name.trim())
+                    .map(name => name.trim());
+                const processSourceLabel = processSourceNames.length ? processSourceNames.join(', ') : 'materials';
+                const craftUsingLabel = consumedNamesForPrompt.length
+                    ? consumedNamesForPrompt.join(', ')
+                    : 'available materials';
+
+                const buildPrimaryActionSummaryText = () => {
+                    if (isHarvestAction) {
+                        if (recoveredNames.length) {
+                            return `${actorName} harvested ${recoveredNames.join(', ')} from ${harvestSourceName}.`;
+                        }
+                        return `${actorName} attempted to harvest ${harvestSourceName} but obtained nothing usable.`;
+                    }
+                    if (isSalvageAction) {
+                        if (recoveredNames.length) {
+                            return `${actorName} salvaged ${recoveredNames.join(', ')} from ${salvageSourceName}.`;
+                        }
+                        return `${actorName} attempted to salvage from ${salvageSourceName} but recovered nothing usable.`;
+                    }
+                    if (craftingMode === 'process') {
+                        if (craftedNames.length) {
+                            return `${actorName} processed ${craftedNames.join(', ')} using ${processSourceLabel}.`;
+                        }
+                        return `${actorName} attempted to process using ${processSourceLabel} but produced nothing usable.`;
+                    }
+                    if (craftedNames.length) {
+                        return `${actorName} crafted ${craftedNames.join(', ')} using ${craftUsingLabel}.`;
+                    }
+                    return `${actorName} attempted to craft using ${craftUsingLabel} but produced nothing usable.`;
+                };
+
+                const primaryActionSummaryText = buildPrimaryActionSummaryText();
                 let playerActionDescription = '';
                 let playerOtherEffect = selectedResult.other || '';
+                let chatEntry = null;
 
-                let playerActionResponse = '';
-                try {
-                    const playerActionRendered = promptEnv.render('base-context.xml.njk', {
-                        ...baseContext,
-                        promptType: 'player-action-craft',
-                        characterName: currentPlayer.name || 'The player',
-                        intendedItemName: isSalvageAction
-                            ? (salvageTargetThing?.name || salvageItemName || intendedItemName || 'Recovered components')
-                            : intendedItemName,
-                        stationName,
-                        inputItems: craftingItemsForPrompt,
-                        success_or_failure: actionOutcome.label || actionOutcome.degree || '',
-                        producedItem: producedItemDescriptor,
-                        consumedItems: consumedNamesForPrompt.map(name => ({ name })),
-                        otherEffect: selectedResult.other || null,
-                        recoveredItems: recoveredThingInstances.map(item => ({ name: item.name })) || [],
-                        craftingNotes,
-                        targetName: salvageTargetThing?.name,
-                        mode: craftingMode,
-                        craftTargetType: effectiveCraftTargetType
-                    });
+                if (isNoProseRequest) {
+                    playerActionDescription = primaryActionSummaryText;
+                    playerOtherEffect = '';
+                } else {
+                    let playerActionResponse = '';
+                    try {
+                        const playerActionRendered = promptEnv.render('base-context.xml.njk', {
+                            ...baseContext,
+                            promptType: 'player-action-craft',
+                            characterName: actorName,
+                            intendedItemName: isSalvageAction
+                                ? (salvageTargetThing?.name || salvageItemName || intendedItemName || 'Recovered components')
+                                : intendedItemName,
+                            stationName,
+                            inputItems: craftingItemsForPrompt,
+                            success_or_failure: actionOutcome.label || actionOutcome.degree || '',
+                            producedItem: producedItemDescriptor,
+                            consumedItems: consumedNamesForPrompt.map(name => ({ name })),
+                            otherEffect: selectedResult.other || null,
+                            recoveredItems: recoveredThingInstances.map(item => ({ name: item.name })) || [],
+                            craftingNotes,
+                            targetName: salvageTargetThing?.name,
+                            mode: craftingMode,
+                            craftTargetType: effectiveCraftTargetType
+                        });
 
-                    const playerActionTemplate = parseXMLTemplate(playerActionRendered);
-                    if (!playerActionTemplate?.systemPrompt || !playerActionTemplate?.generationPrompt) {
-                        throw new Error('Player action craft template missing prompts.');
+                        const playerActionTemplate = parseXMLTemplate(playerActionRendered);
+                        if (!playerActionTemplate?.systemPrompt || !playerActionTemplate?.generationPrompt) {
+                            throw new Error('Player action craft template missing prompts.');
+                        }
+
+                        playerActionResponse = await LLMClient.chatCompletion({
+                            messages: [
+                                { role: 'system', content: playerActionTemplate.systemPrompt },
+                                { role: 'user', content: playerActionTemplate.generationPrompt }
+                            ],
+                            metadataLabel: 'craft_player_action'
+                        });
+
+                        LLMClient.logPrompt({
+                            metadataLabel: 'craft_player_action',
+                            systemPrompt: playerActionTemplate.systemPrompt,
+                            generationPrompt: playerActionTemplate.generationPrompt,
+                            response: playerActionResponse
+                        });
+
+                        const narrative = parseCraftingNarrativeResponse(playerActionResponse);
+                        if (narrative?.description) {
+                            playerActionDescription = narrative.description;
+                        }
+                        if (narrative?.otherEffectDescription) {
+                            playerOtherEffect = narrative.otherEffectDescription;
+                        }
+                    } catch (actionError) {
+                        console.warn('Failed to generate crafting narrative:', actionError?.message || actionError);
                     }
 
-                    playerActionResponse = await LLMClient.chatCompletion({
-                        messages: [
-                            { role: 'system', content: playerActionTemplate.systemPrompt },
-                            { role: 'user', content: playerActionTemplate.generationPrompt }
-                        ],
-                        metadataLabel: 'craft_player_action'
-                    });
-
-                    LLMClient.logPrompt({
-                        metadataLabel: 'craft_player_action',
-                        systemPrompt: playerActionTemplate.systemPrompt,
-                        generationPrompt: playerActionTemplate.generationPrompt,
-                        response: playerActionResponse
-                    });
-
-                    const narrative = parseCraftingNarrativeResponse(playerActionResponse);
-                    if (narrative?.description) {
-                        playerActionDescription = narrative.description;
+                    if (!playerActionDescription) {
+                        console.warn('Falling back to default crafting narrative.');
+                        console.trace();
+                        const attemptLabel = isSalvageAction
+                            ? 'salvaging'
+                            : (craftingMode === 'process' ? 'processing' : 'crafting');
+                        playerActionDescription = actionOutcome.success
+                            ? `${actorName} successfully completes the ${attemptLabel} attempt at ${stationName}.`
+                            : `${actorName} struggles with the ${attemptLabel} attempt and comes away empty-handed.`;
                     }
-                    if (narrative?.otherEffectDescription) {
-                        playerOtherEffect = narrative.otherEffectDescription;
+
+                    if (!playerOtherEffect && selectedResult.other) {
+                        playerOtherEffect = selectedResult.other;
                     }
-                } catch (actionError) {
-                    console.warn('Failed to generate crafting narrative:', actionError?.message || actionError);
-                }
 
-                if (!playerActionDescription) {
-                    console.warn('Falling back to default crafting narrative.');
-                    console.trace();
-                    const attemptLabel = isSalvageAction
-                        ? 'salvaging'
-                        : (craftingMode === 'process' ? 'processing' : 'crafting');
-                    playerActionDescription = actionOutcome.success
-                        ? `${currentPlayer.name || 'The player'} successfully completes the ${attemptLabel} attempt at ${stationName}.`
-                        : `${currentPlayer.name || 'The player'} struggles with the ${attemptLabel} attempt and comes away empty-handed.`;
-                }
-
-                if (!playerOtherEffect && selectedResult.other) {
-                    playerOtherEffect = selectedResult.other;
-                }
-
-                let narrativeContent = playerActionDescription || '';
-                let craftingSlopRemovalInfo = null;
-                if (Globals.config?.slop_buster === true && narrativeContent.trim()) {
-                    const slopResult = await applySlopRemoval(narrativeContent, { returnDiagnostics: true });
-                    narrativeContent = slopResult.text;
-                    if (slopResult.ran) {
-                        craftingSlopRemovalInfo = {
-                            slopWords: slopResult.slopWords || [],
-                            slopNgrams: slopResult.slopNgrams || []
-                        };
+                    let narrativeContent = playerActionDescription || '';
+                    let craftingSlopRemovalInfo = null;
+                    if (Globals.config?.slop_buster === true && narrativeContent.trim()) {
+                        const slopResult = await applySlopRemoval(narrativeContent, { returnDiagnostics: true });
+                        narrativeContent = slopResult.text;
+                        if (slopResult.ran) {
+                            craftingSlopRemovalInfo = {
+                                slopWords: slopResult.slopWords || [],
+                                slopNgrams: slopResult.slopNgrams || []
+                            };
+                        }
                     }
-                }
 
-                const chatEntry = pushChatEntry({
-                    role: 'assistant',
-                    type: 'player-action',
-                    content: narrativeContent,
-                    metadata: {
-                        craftingMode,
-                        actionType: isSalvageAction ? 'salvage' : craftingMode,
-                        stationName,
-                        intendedItemName: (isSalvageAction
-                            ? (salvageTargetThing?.name || salvageItemName || intendedItemName || null)
-                            : intendedItemName) || null,
-                        craftingNotes: (isSalvageAction ? (salvageNotes || craftingNotes || null) : (craftingNotes || null)),
-                        salvageRecoveredItemIds: isSalvageAction ? recoveredThingInstances.map(item => item.id) : undefined
-                    }
-                }, null, resolvedLocationId);
+                    chatEntry = pushChatEntry({
+                        role: 'assistant',
+                        type: 'player-action',
+                        content: narrativeContent,
+                        metadata: {
+                            craftingMode,
+                            actionType: isSalvageAction ? 'salvage' : craftingMode,
+                            stationName,
+                            intendedItemName: (isSalvageAction
+                                ? (salvageTargetThing?.name || salvageItemName || intendedItemName || null)
+                                : intendedItemName) || null,
+                            craftingNotes: (isSalvageAction ? (salvageNotes || craftingNotes || null) : (craftingNotes || null)),
+                            salvageRecoveredItemIds: isSalvageAction ? recoveredThingInstances.map(item => item.id) : undefined
+                        }
+                    }, null, resolvedLocationId);
 
-                if (chatEntry) {
-                    recordPlausibilityEntry({
-                        data: {
-                            raw: plausibilityResponse,
-                            structured: plausibility
-                        },
-                        parentId: chatEntry.id,
-                        locationId: resolvedLocationId
-                    });
-
-                    recordSkillCheckEntry({
-                        resolution: actionOutcome,
-                        parentId: chatEntry.id,
-                        locationId: resolvedLocationId
-                    });
-
-                    if (craftingSlopRemovalInfo) {
-                        recordSlopRemovalEntry({
-                            data: craftingSlopRemovalInfo,
+                    if (chatEntry) {
+                        recordPlausibilityEntry({
+                            data: {
+                                raw: plausibilityResponse,
+                                structured: plausibility
+                            },
                             parentId: chatEntry.id,
                             locationId: resolvedLocationId
                         });
-                    }
-                }
 
-                const eventItems = [];
-                const recoveredNames = recoveredThingInstances.map(item => item.name || 'Recovered Item');
-                const craftedNames = craftedThingInstances.map(item => item.name || 'Crafted Item');
-                if (isHarvestAction) {
-                    if (recoveredNames.length) {
-                        eventItems.push({
-                            icon: '🌾',
-                            description: `${currentPlayer.name || 'The player'} harvested ${recoveredNames.join(', ')}.`
+                        recordSkillCheckEntry({
+                            resolution: actionOutcome,
+                            parentId: chatEntry.id,
+                            locationId: resolvedLocationId
                         });
-                    } else {
-                        eventItems.push({
-                            icon: '🌾',
-                            description: `${currentPlayer.name || 'The player'} attempted to harvest ${salvageTargetThing?.name || 'a resource'} but obtained nothing usable.`
-                        });
-                    }
-                } else if (isSalvageAction) {
-                    if (recoveredNames.length) {
-                        eventItems.push({
-                            icon: '♻️',
-                            description: `${currentPlayer.name || 'The player'} salvaged ${recoveredNames.join(', ')}.`
-                        });
-                    } else {
-                        eventItems.push({
-                            icon: '♻️',
-                            description: `${currentPlayer.name || 'The player'} salvaged ${salvageTargetThing?.name || 'an item'} but recovered nothing usable.`
-                        });
-                    }
-                } else if (craftedThingInstances.length) {
-                    eventItems.push({
-                        icon: '🛠️',
-                        description: `${currentPlayer.name || 'The player'} crafted ${craftedNames.join(', ')}.`
-                    });
-                }
-                const consumedSummaryNames = consumedThingNames.length
-                    ? consumedThingNames
-                    : consumedNameList;
-                if (consumedSummaryNames.length) {
-                    consumedSummaryNames.forEach(name => {
-                        eventItems.push({
-                            icon: '♻️',
-                            description: `Consumed ${name}.`
-                        });
-                    });
 
-                    const appliedConsumeEffects = [];
-                    if (actionOutcome.success && Array.isArray(consumedThings)) {
-                        for (const thing of consumedThings) {
-                            const targetEffect = thing?.causeStatusEffectOnTarget || thing?.metadata?.causeStatusEffectOnTarget || null;
-                            if (targetEffect && typeof currentPlayer?.addStatusEffect === 'function') {
-                                try {
-                                    const applied = currentPlayer.addStatusEffect(targetEffect, targetEffect.duration ?? 1);
-                                    if (applied) {
-                                        appliedConsumeEffects.push(applied);
-                                    }
-                                } catch (error) {
-                                    console.warn(`Failed to apply consumed item status effect from ${thing?.name || 'consumed item'}:`, error?.message || error);
-                                }
-                            }
-                        }
-                    }
-                    if (appliedConsumeEffects.length) {
-                        appliedConsumeEffects.forEach(effect => {
-                            eventItems.push({
-                                type: 'status_effect_change',
-                                icon: '✨',
-                                description: `Gained status effect: ${effect.name || effect.description || 'Unknown Effect'}`,
-                                effect: {
-                                    name: effect.name || null,
-                                    description: effect.description || '',
-                                    duration: effect.duration ?? null
-                                }
-                            });
-                        });
-                    }
-                }
-                const expectedConsumption = !isHarvestAction && slotItems.length > 0;
-                if (expectedConsumption && consumedSummaryNames.length === 0 && actionOutcome.success) {
-                    eventItems.push({
-                        icon: '✨',
-                        description: 'Through exceptional care, the ingredients were preserved.'
-                    });
-                }
-
-                if (actionOutcome.success && Array.isArray(selectedResult.abilities)) {
-                    selectedResult.abilities
-                        .filter(ability => ability && ability.name && ability.effect)
-                        .forEach(ability => {
-                            eventItems.push({
-                                icon: '✨',
-                                description: `${ability.name}: ${ability.effect}`
-                            });
-                        });
-                }
-
-                if (eventItems.length) {
-                    recordEventSummaryEntry({
-                        label: isHarvestAction
-                            ? '🌾 Harvest Results'
-                            : (isSalvageAction ? '♻️ Salvage Results' : '🛠️ Crafting Results'),
-                        events: eventItems,
-                        parentId: chatEntry ? chatEntry.id : null,
-                        locationId: resolvedLocationId
-                    });
-                }
-
-                let additionalEffectEntry = null;
-                if (playerOtherEffect && playerOtherEffect.trim()) {
-                    const trimmedEffect = playerOtherEffect.trim();
-                    additionalEffectEntry = pushChatEntry({
-                        role: 'assistant',
-                        type: 'player-action',
-                        content: trimmedEffect,
-                        parentId: chatEntry ? chatEntry.id : null
-                    }, null, resolvedLocationId);
-
-                    try {
-                        const additionalEvents = await Events.runEventChecks({ textToCheck: trimmedEffect });
-                        const hasAdditionalEvents = additionalEvents
-                            && (
-                                (Array.isArray(additionalEvents.events) && additionalEvents.events.length)
-                                || (Array.isArray(additionalEvents.experienceAwards) && additionalEvents.experienceAwards.length)
-                                || (Array.isArray(additionalEvents.currencyChanges) && additionalEvents.currencyChanges.length)
-                                || (Array.isArray(additionalEvents.environmentalDamageEvents) && additionalEvents.environmentalDamageEvents.length)
-                                || (Array.isArray(additionalEvents.needBarChanges) && additionalEvents.needBarChanges.length)
-                            );
-                        if (hasAdditionalEvents) {
-                            recordEventSummaryEntry({
-                                label: '✨ Additional Effects',
-                                events: additionalEvents.events || null,
-                                experienceAwards: additionalEvents.experienceAwards || null,
-                                currencyChanges: additionalEvents.currencyChanges || null,
-                                environmentalDamageEvents: additionalEvents.environmentalDamageEvents || null,
-                                needBarChanges: additionalEvents.needBarChanges || null,
-                                parentId: (additionalEffectEntry && additionalEffectEntry.id) || (chatEntry ? chatEntry.id : null),
+                        if (craftingSlopRemovalInfo) {
+                            recordSlopRemovalEntry({
+                                data: craftingSlopRemovalInfo,
+                                parentId: chatEntry.id,
                                 locationId: resolvedLocationId
                             });
                         }
-                    } catch (extraEventError) {
-                        console.warn('Failed to process additional crafting effects:', extraEventError?.message || extraEventError);
+                    }
+                }
+
+                if (!isNoProseRequest) {
+                    const eventItems = [];
+                    if (isHarvestAction) {
+                        if (recoveredNames.length) {
+                            eventItems.push({
+                                icon: '🌾',
+                                description: `${actorName} harvested ${recoveredNames.join(', ')} from ${harvestSourceName}.`
+                            });
+                        } else {
+                            eventItems.push({
+                                icon: '🌾',
+                                description: `${actorName} attempted to harvest ${harvestSourceName} but obtained nothing usable.`
+                            });
+                        }
+                    } else if (isSalvageAction) {
+                        if (recoveredNames.length) {
+                            eventItems.push({
+                                icon: '♻️',
+                                description: `${actorName} salvaged ${recoveredNames.join(', ')} from ${salvageSourceName}.`
+                            });
+                        } else {
+                            eventItems.push({
+                                icon: '♻️',
+                                description: `${actorName} attempted to salvage from ${salvageSourceName} but recovered nothing usable.`
+                            });
+                        }
+                    } else if (craftingMode === 'process') {
+                        if (craftedThingInstances.length) {
+                            eventItems.push({
+                                icon: '🛠️',
+                                description: `${actorName} processed ${craftedNames.join(', ')} using ${processSourceLabel}.`
+                            });
+                        } else {
+                            eventItems.push({
+                                icon: '🛠️',
+                                description: `${actorName} attempted to process using ${processSourceLabel} but produced nothing usable.`
+                            });
+                        }
+                    } else {
+                        if (craftedThingInstances.length) {
+                            eventItems.push({
+                                icon: '🛠️',
+                                description: `${actorName} crafted ${craftedNames.join(', ')} using ${craftUsingLabel}.`
+                            });
+                        } else {
+                            eventItems.push({
+                                icon: '🛠️',
+                                description: `${actorName} attempted to craft using ${craftUsingLabel} but produced nothing usable.`
+                            });
+                        }
+                    }
+                    const consumedSummaryNames = consumedThingNames.length
+                        ? consumedThingNames
+                        : consumedNameList;
+                    if (consumedSummaryNames.length) {
+                        consumedSummaryNames.forEach(name => {
+                            eventItems.push({
+                                icon: '♻️',
+                                description: `Consumed ${name}.`
+                            });
+                        });
+
+                        const appliedConsumeEffects = [];
+                        if (actionOutcome.success && Array.isArray(consumedThings)) {
+                            for (const thing of consumedThings) {
+                                const targetEffect = thing?.causeStatusEffectOnTarget || thing?.metadata?.causeStatusEffectOnTarget || null;
+                                if (targetEffect && typeof currentPlayer?.addStatusEffect === 'function') {
+                                    try {
+                                        const applied = currentPlayer.addStatusEffect(targetEffect, targetEffect.duration ?? 1);
+                                        if (applied) {
+                                            appliedConsumeEffects.push(applied);
+                                        }
+                                    } catch (error) {
+                                        console.warn(`Failed to apply consumed item status effect from ${thing?.name || 'consumed item'}:`, error?.message || error);
+                                    }
+                                }
+                            }
+                        }
+                        if (appliedConsumeEffects.length) {
+                            appliedConsumeEffects.forEach(effect => {
+                                eventItems.push({
+                                    type: 'status_effect_change',
+                                    icon: '✨',
+                                    description: `Gained status effect: ${effect.name || effect.description || 'Unknown Effect'}`,
+                                    effect: {
+                                        name: effect.name || null,
+                                        description: effect.description || '',
+                                        duration: effect.duration ?? null
+                                    }
+                                });
+                            });
+                        }
+                    }
+                    const expectedConsumption = !isHarvestAction && slotItems.length > 0;
+                    if (expectedConsumption && consumedSummaryNames.length === 0 && actionOutcome.success) {
+                        eventItems.push({
+                            icon: '✨',
+                            description: 'Through exceptional care, the ingredients were preserved.'
+                        });
+                    }
+
+                    if (actionOutcome.success && Array.isArray(selectedResult.abilities)) {
+                        selectedResult.abilities
+                            .filter(ability => ability && ability.name && ability.effect)
+                            .forEach(ability => {
+                                eventItems.push({
+                                    icon: '✨',
+                                    description: `${ability.name}: ${ability.effect}`
+                                });
+                            });
+                    }
+
+                    if (eventItems.length) {
+                        recordEventSummaryEntry({
+                            label: isHarvestAction
+                                ? '🌾 Harvest Results'
+                                : (isSalvageAction ? '♻️ Salvage Results' : '🛠️ Crafting Results'),
+                            events: eventItems,
+                            parentId: chatEntry ? chatEntry.id : null,
+                            locationId: resolvedLocationId
+                        });
+                    }
+
+                    let additionalEffectEntry = null;
+                    if (playerOtherEffect && playerOtherEffect.trim()) {
+                        const trimmedEffect = playerOtherEffect.trim();
+                        additionalEffectEntry = pushChatEntry({
+                            role: 'assistant',
+                            type: 'player-action',
+                            content: trimmedEffect,
+                            parentId: chatEntry ? chatEntry.id : null
+                        }, null, resolvedLocationId);
+
+                        try {
+                            const additionalEvents = await Events.runEventChecks({ textToCheck: trimmedEffect });
+                            const hasAdditionalEvents = additionalEvents
+                                && (
+                                    (Array.isArray(additionalEvents.events) && additionalEvents.events.length)
+                                    || (Array.isArray(additionalEvents.experienceAwards) && additionalEvents.experienceAwards.length)
+                                    || (Array.isArray(additionalEvents.currencyChanges) && additionalEvents.currencyChanges.length)
+                                    || (Array.isArray(additionalEvents.environmentalDamageEvents) && additionalEvents.environmentalDamageEvents.length)
+                                    || (Array.isArray(additionalEvents.needBarChanges) && additionalEvents.needBarChanges.length)
+                                );
+                            if (hasAdditionalEvents) {
+                                recordEventSummaryEntry({
+                                    label: '✨ Additional Effects',
+                                    events: additionalEvents.events || null,
+                                    experienceAwards: additionalEvents.experienceAwards || null,
+                                    currencyChanges: additionalEvents.currencyChanges || null,
+                                    environmentalDamageEvents: additionalEvents.environmentalDamageEvents || null,
+                                    needBarChanges: additionalEvents.needBarChanges || null,
+                                    parentId: (additionalEffectEntry && additionalEffectEntry.id) || (chatEntry ? chatEntry.id : null),
+                                    locationId: resolvedLocationId
+                                });
+                            }
+                        } catch (extraEventError) {
+                            console.warn('Failed to process additional crafting effects:', extraEventError?.message || extraEventError);
+                        }
                     }
                 }
 
                 let questResult = null;
                 try {
-                    questResult = await Events.runQuestChecks({ allowWithoutEventChecks: true });
+                    questResult = await Events.runQuestChecks({
+                        allowWithoutEventChecks: true,
+                        recentTextOverride: isNoProseRequest ? primaryActionSummaryText : null
+                    });
                 } catch (questError) {
                     console.warn('Failed to run quest checks after crafting:', questError?.message || questError);
                 }
@@ -22157,6 +22573,9 @@ module.exports = function registerApiRoutes(scope) {
                 Globals.setSaveMetadata({ summaryStyle: 'scene' });
                 Globals.setCurrentSaveInfo(null);
                 supplementalStoryInfoTurnCounter = 0;
+                plotSummaryInProgress = false;
+                plotSummaryTurnCounter = 0;
+                plotSummaryRunOnNextEligibleTurn = false;
                 resetOffscreenNpcActivityState();
                 report('new_game:calendar', 'Generating world calendar...');
                 const calendarDefinition = await resolveCalendarDefinitionForSetting({
@@ -22677,6 +23096,9 @@ module.exports = function registerApiRoutes(scope) {
             } else if (metadata.summaryStyle !== undefined) {
                 metadata.summaryStyle = normalizeSummaryStyle(metadata.summaryStyle);
             }
+            metadata.plotSummaryTurnCounter = Number.isInteger(plotSummaryTurnCounter) && plotSummaryTurnCounter >= 0
+                ? plotSummaryTurnCounter
+                : 0;
             metadata.offscreenNpcActivityState = normalizeOffscreenNpcActivityState(offscreenNpcActivityState);
             const currentLocationId = currentPlayer.currentLocation || null;
             const currentLocation = currentLocationId
@@ -22687,6 +23109,7 @@ module.exports = function registerApiRoutes(scope) {
             metadata.source = path.basename(saveRootPath) === 'autosaves' ? 'autosaves' : 'saves';
 
             Utils.writeSerializedGameState(saveDir, serialized);
+            console.log(`[save] Saved game '${saveName}' (${metadata.source}) at ${saveDir}`);
 
             return { saveName, saveDir, metadata };
         }
@@ -22754,6 +23177,133 @@ module.exports = function registerApiRoutes(scope) {
             };
         }
 
+        function reconcileFactionReferencesOnLoad() {
+            const normalizeFactionId = (value) => {
+                if (typeof value !== 'string') {
+                    return '';
+                }
+                return value.trim();
+            };
+
+            const validFactionIds = new Set(
+                Array.from(factions.keys())
+                    .map(normalizeFactionId)
+                    .filter(Boolean)
+            );
+
+            const stats = {
+                playersChecked: 0,
+                playersFactionCleared: 0,
+                playersStandingsEntriesRemoved: 0,
+                locationsChecked: 0,
+                locationsFactionCleared: 0,
+                regionsChecked: 0,
+                regionsFactionCleared: 0,
+                pendingRegionStubsChecked: 0,
+                pendingRegionStubsFactionCleared: 0,
+                factionRelationsChecked: 0,
+                factionRelationsRemoved: 0
+            };
+
+            for (const player of players.values()) {
+                if (!player) {
+                    continue;
+                }
+                stats.playersChecked += 1;
+
+                const playerFactionId = normalizeFactionId(player.factionId);
+                if (playerFactionId && !validFactionIds.has(playerFactionId)) {
+                    player.factionId = null;
+                    stats.playersFactionCleared += 1;
+                }
+
+                if (typeof player.getFactionStandings === 'function' && typeof player.setFactionStandings === 'function') {
+                    const standings = player.getFactionStandings() || {};
+                    const cleanedStandings = {};
+                    let removedEntries = 0;
+
+                    for (const [rawFactionId, standingValue] of Object.entries(standings)) {
+                        const standingFactionId = normalizeFactionId(rawFactionId);
+                        if (!standingFactionId || !validFactionIds.has(standingFactionId)) {
+                            removedEntries += 1;
+                            continue;
+                        }
+                        cleanedStandings[standingFactionId] = standingValue;
+                    }
+
+                    if (removedEntries > 0) {
+                        player.setFactionStandings(cleanedStandings);
+                        stats.playersStandingsEntriesRemoved += removedEntries;
+                    }
+                }
+            }
+
+            for (const location of gameLocations.values()) {
+                if (!location) {
+                    continue;
+                }
+                stats.locationsChecked += 1;
+                const controllingFactionId = normalizeFactionId(location.controllingFactionId);
+                if (controllingFactionId && !validFactionIds.has(controllingFactionId)) {
+                    location.controllingFactionId = null;
+                    stats.locationsFactionCleared += 1;
+                }
+            }
+
+            for (const region of regions.values()) {
+                if (!region) {
+                    continue;
+                }
+                stats.regionsChecked += 1;
+                const controllingFactionId = normalizeFactionId(region.controllingFactionId);
+                if (controllingFactionId && !validFactionIds.has(controllingFactionId)) {
+                    region.controllingFactionId = null;
+                    stats.regionsFactionCleared += 1;
+                }
+            }
+
+            if (pendingRegionStubs instanceof Map) {
+                for (const pendingStub of pendingRegionStubs.values()) {
+                    if (!pendingStub || typeof pendingStub !== 'object') {
+                        continue;
+                    }
+                    stats.pendingRegionStubsChecked += 1;
+                    const controllingFactionId = normalizeFactionId(pendingStub.controllingFactionId);
+                    if (controllingFactionId && !validFactionIds.has(controllingFactionId)) {
+                        pendingStub.controllingFactionId = null;
+                        stats.pendingRegionStubsFactionCleared += 1;
+                    }
+                }
+            }
+
+            for (const faction of factions.values()) {
+                if (!faction || typeof faction.id !== 'string') {
+                    continue;
+                }
+
+                const sourceRelations = faction.relations;
+                const relationEntries = sourceRelations instanceof Map
+                    ? Array.from(sourceRelations.keys())
+                    : [];
+                stats.factionRelationsChecked += relationEntries.length;
+
+                for (const rawTargetId of relationEntries) {
+                    const targetId = normalizeFactionId(rawTargetId);
+                    const relationReferencesSelf = targetId === faction.id;
+                    if (!targetId || relationReferencesSelf || !validFactionIds.has(targetId)) {
+                        if (typeof faction.removeRelation === 'function') {
+                            const removed = faction.removeRelation(rawTargetId);
+                            if (removed) {
+                                stats.factionRelationsRemoved += 1;
+                            }
+                        }
+                    }
+                }
+            }
+
+            return stats;
+        }
+
         async function performGameLoad(requestedSaveName, { skipSummary = false, saveRoot = null, clientId = null } = {}) {
             const normalizedName = typeof requestedSaveName === 'string' ? requestedSaveName.trim() : '';
             if (!normalizedName) {
@@ -22811,6 +23361,18 @@ module.exports = function registerApiRoutes(scope) {
             console.log(`💾 Loaded save file version: ${Globals.saveFileSaveVersion} (metadata: ${metadata.saveFileSaveVersion ?? 'missing'})`);
             metadata.summaryStyle = normalizeSummaryStyle(metadata.summaryStyle);
             Globals.setSaveMetadata(metadata);
+            {
+                const hasStoredPlotSummaryCounter = Object.prototype.hasOwnProperty.call(metadata, 'plotSummaryTurnCounter');
+                const parsedPlotSummaryCounter = Number(metadata.plotSummaryTurnCounter);
+                if (Number.isInteger(parsedPlotSummaryCounter) && parsedPlotSummaryCounter >= 0) {
+                    plotSummaryTurnCounter = parsedPlotSummaryCounter;
+                    plotSummaryRunOnNextEligibleTurn = false;
+                } else {
+                    plotSummaryTurnCounter = 0;
+                    plotSummaryRunOnNextEligibleTurn = !hasStoredPlotSummaryCounter;
+                }
+            }
+            plotSummaryInProgress = false;
             offscreenNpcActivityState = normalizeOffscreenNpcActivityState(metadata.offscreenNpcActivityState);
             Globals.setCurrentSaveInfo({
                 saveName: metadata.saveName || normalizedName,
@@ -22855,6 +23417,27 @@ module.exports = function registerApiRoutes(scope) {
                     calendarDefinition: generatedCalendarDefinition,
                     settingName: settingSnapshot?.name || null
                 });
+            }
+
+            const factionReconciliation = reconcileFactionReferencesOnLoad();
+            const factionRepairsApplied = (
+                factionReconciliation.playersFactionCleared
+                + factionReconciliation.playersStandingsEntriesRemoved
+                + factionReconciliation.locationsFactionCleared
+                + factionReconciliation.regionsFactionCleared
+                + factionReconciliation.pendingRegionStubsFactionCleared
+                + factionReconciliation.factionRelationsRemoved
+            ) > 0;
+            if (factionRepairsApplied) {
+                console.log(
+                    `🧹 Reconciled faction references on load: `
+                    + `cleared player faction on ${factionReconciliation.playersFactionCleared} player(s), `
+                    + `removed ${factionReconciliation.playersStandingsEntriesRemoved} invalid faction standing entry/entries, `
+                    + `cleared location faction on ${factionReconciliation.locationsFactionCleared} location(s), `
+                    + `cleared region faction on ${factionReconciliation.regionsFactionCleared} region(s), `
+                    + `cleared pending region stub faction on ${factionReconciliation.pendingRegionStubsFactionCleared} stub(s), `
+                    + `removed ${factionReconciliation.factionRelationsRemoved} invalid faction relation(s).`
+                );
             }
 
             let resolvedPlayer = null;
@@ -24044,6 +24627,16 @@ module.exports = function registerApiRoutes(scope) {
                     chatHistory,
                     getChatHistory,
                     performGameSave,
+                    runPlotSummaryPrompt: async ({ parentEntryId = null, locationId = null } = {}) => {
+                        const resolvedLocationId = requireLocationId(
+                            locationId || currentPlayer?.currentLocation,
+                            'runplotsummary slash command'
+                        );
+                        return runPlotSummaryPrompt({
+                            parentEntryId,
+                            locationId: resolvedLocationId
+                        });
+                    },
                     generateSkillsByNames: typeof generateSkillsByNames === 'function'
                         ? generateSkillsByNames
                         : null,

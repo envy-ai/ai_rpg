@@ -28,8 +28,6 @@ An NPC gives the player a fetch quest and offers a nice reward.
 Something really weird happens.
 An NPC asks the player for directions or information.
 An animal (or creature) steals something shiny.
-If applicable The weather shifts drastically (e.g, heavy rain, fog, sudden wind gust).
-The weather shifts subtly (e.g., wind picks up, temperature drops, distant thunder).
 A street performer or bard draws a small crowd.
 An NPC is seen quietly crying in a corner.
 A child or small creature bumps into the player and runs off.
