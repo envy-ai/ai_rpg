@@ -546,6 +546,9 @@ The below context is an account of the current game state, including the setting
   {% if plotSummary and plotSummary | trim %}
   <plotSummary>{{ plotSummary }}</plotSummary>
   {% endif %}
+  {% if plotExpander and plotExpander | trim %}
+  <plotExpander>{{ plotExpander }}</plotExpander>
+  {% endif %}
   <recentStoryHistory>{{ recentGameHistory }}</recentStoryHistory>
 </gameState>
 <currentConditions>

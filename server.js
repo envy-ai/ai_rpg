@@ -29,7 +29,8 @@ const HIDDEN_CHAT_ENTRY_TYPES = new Set([
     'supplemental-story-info',
     'offscreen-npc-activity-daily',
     'offscreen-npc-activity-weekly',
-    'plot-summary'
+    'plot-summary',
+    'plot-expander'
 ]);
 const HIDDEN_CHAT_LABEL = 'Hidden from Player';
 const HIDDEN_CHAT_PREFIX = `[${HIDDEN_CHAT_LABEL}]`;
@@ -228,15 +229,98 @@ function resolveClientMessageHistoryConfig(sourceConfig) {
     return { maxMessages, pruneTo };
 }
 
-function pruneClientMessageHistory(history, pruneTo) {
+function getClientHistoryTurnAnchorIndexes(history) {
+    if (!Array.isArray(history)) {
+        throw new Error('Chat history must be an array before identifying turn anchors.');
+    }
+
+    const userAnchors = [];
+    const assistantFallbackAnchors = [];
+
+    history.forEach((entry, index) => {
+        if (!entry || typeof entry !== 'object') {
+            return;
+        }
+        const role = typeof entry.role === 'string' ? entry.role.trim().toLowerCase() : '';
+        const entryType = typeof entry.type === 'string' ? entry.type.trim().toLowerCase() : '';
+
+        if (role === 'user') {
+            userAnchors.push(index);
+            return;
+        }
+
+        if (role === 'assistant' && (entryType === 'player-action' || entryType === 'storyteller-answer')) {
+            assistantFallbackAnchors.push(index);
+        }
+    });
+
+    return userAnchors.length ? userAnchors : assistantFallbackAnchors;
+}
+
+function sliceClientHistoryByTurnCount(history, turnCount) {
+    if (!Array.isArray(history)) {
+        throw new Error('Chat history must be an array before slicing by turn count.');
+    }
+    const normalizedTurnCount = Number(turnCount);
+    if (!Number.isInteger(normalizedTurnCount) || normalizedTurnCount <= 0) {
+        throw new Error('Turn count must be a positive integer.');
+    }
+
+    const anchorIndexes = getClientHistoryTurnAnchorIndexes(history);
+    if (!anchorIndexes.length) {
+        const startIndex = Math.max(0, history.length - normalizedTurnCount);
+        return history.slice(startIndex);
+    }
+
+    const anchorStartOffset = Math.max(0, anchorIndexes.length - normalizedTurnCount);
+    const startIndex = anchorIndexes[anchorStartOffset];
+    return history.slice(startIndex);
+}
+
+function pruneClientMessageHistory(history, options = {}) {
     if (!Array.isArray(history)) {
         throw new Error('Chat history must be an array before pruning.');
     }
-    const normalizedPruneTo = Number(pruneTo);
-    if (!Number.isInteger(normalizedPruneTo) || normalizedPruneTo <= 0) {
-        throw new Error('Prune size must be a positive integer.');
+
+    if (!options || typeof options !== 'object') {
+        throw new Error('Client message history prune options must be an object.');
     }
-    const startIndex = Math.max(0, history.length - normalizedPruneTo);
+
+    const maxMessages = Number(options.maxMessages);
+    if (!Number.isInteger(maxMessages) || maxMessages <= 0) {
+        throw new Error('Client message history maxMessages must be a positive integer.');
+    }
+
+    const pruneTo = Number(options.pruneTo);
+    if (!Number.isInteger(pruneTo) || pruneTo <= 0) {
+        throw new Error('Client message history pruneTo must be a positive integer.');
+    }
+
+    if (pruneTo > maxMessages) {
+        throw new Error('Client message history pruneTo must be <= maxMessages.');
+    }
+
+    const mode = typeof options.mode === 'string' ? options.mode.trim().toLowerCase() : 'prune';
+    if (mode !== 'prune' && mode !== 'max') {
+        throw new Error(`Unsupported client message history prune mode "${options.mode}".`);
+    }
+
+    const anchorIndexes = getClientHistoryTurnAnchorIndexes(history);
+    const turnCount = anchorIndexes.length;
+    if (turnCount > 0) {
+        if (turnCount <= maxMessages) {
+            return history.slice();
+        }
+        const targetTurns = mode === 'max' ? maxMessages : pruneTo;
+        return sliceClientHistoryByTurnCount(history, targetTurns);
+    }
+
+    if (history.length <= maxMessages) {
+        return history.slice();
+    }
+
+    const targetEntries = mode === 'max' ? maxMessages : pruneTo;
+    const startIndex = Math.max(0, history.length - targetEntries);
     return history.slice(startIndex);
 }
 
@@ -2257,7 +2341,7 @@ function normalizeConfiguredNgramEntry(rawNgram) {
     if (typeof rawNgram !== 'string' || !rawNgram.trim()) {
         throw new Error('Ngrams list contains an invalid ngram entry.');
     }
-    const normalizedTokens = Utils.normalizeKgramTokens(rawNgram);
+    const normalizedTokens = Utils.normalizeKgramTokens(rawNgram, { excludeNpcNames: false });
     if (normalizedTokens.length < 2) {
         throw new Error(`Configured ngram "${rawNgram}" must contain at least 2 non-common tokens after normalization.`);
     }
@@ -2497,6 +2581,27 @@ function serializeNpcForClient(npc, options = {}) {
         importantMemories = [];
     }
 
+    let aliases = [];
+    try {
+        if (typeof npc.getAliases === 'function') {
+            aliases = npc.getAliases();
+        } else if (npc.aliases instanceof Set) {
+            aliases = Array.from(npc.aliases);
+        } else if (Array.isArray(npc.aliases)) {
+            aliases = npc.aliases.slice(0);
+        }
+        if (!Array.isArray(aliases)) {
+            aliases = [];
+        } else {
+            aliases = aliases
+                .filter(alias => typeof alias === 'string')
+                .map(alias => alias.trim())
+                .filter(Boolean);
+        }
+    } catch (_) {
+        aliases = [];
+    }
+
     let statusEffects = [];
     try {
         statusEffects = typeof npc.getStatusEffects === 'function' ? npc.getStatusEffects() : [];
@@ -2691,6 +2796,7 @@ function serializeNpcForClient(npc, options = {}) {
         attributes,
         skills,
         abilities,
+        aliases,
         importantMemories,
         statusEffects,
         intrinsicStatusEffects,
@@ -2831,6 +2937,40 @@ function findActorByName(name) {
     return null;
 }
 
+function findActorByExactName(name, { onlyNpcs = false } = {}) {
+    if (!name || typeof name !== 'string') {
+        return null;
+    }
+    const normalized = name.trim().toLowerCase();
+    if (!normalized) {
+        return null;
+    }
+
+    const matchesFilter = (actor) => {
+        if (!actor || typeof actor.name !== 'string') {
+            return false;
+        }
+        if (onlyNpcs && actor.isNPC !== true) {
+            return false;
+        }
+        return actor.name.trim().toLowerCase() === normalized;
+    };
+
+    if (currentPlayer && matchesFilter(currentPlayer)) {
+        return currentPlayer;
+    }
+
+    if (players instanceof Map) {
+        for (const actor of players.values()) {
+            if (matchesFilter(actor)) {
+                return actor;
+            }
+        }
+    }
+
+    return null;
+}
+
 function normalizeActorNameForComparison(value) {
     if (typeof value !== 'string') {
         return '';
@@ -2895,6 +3035,186 @@ function findActorByLooseName(name) {
     }
 
     return null;
+}
+
+function getActorAliases(actor) {
+    if (!actor) {
+        return [];
+    }
+
+    let source = [];
+    if (typeof actor.getAliases === 'function') {
+        try {
+            source = actor.getAliases();
+        } catch (_) {
+            source = [];
+        }
+    } else if (actor.aliases instanceof Set) {
+        source = Array.from(actor.aliases);
+    } else if (Array.isArray(actor.aliases)) {
+        source = actor.aliases.slice(0);
+    }
+
+    if (!Array.isArray(source)) {
+        return [];
+    }
+
+    const fullNameNormalized = normalizeActorNameForComparison(actor?.name || '');
+    const aliases = [];
+    const seen = new Set();
+    for (const entry of source) {
+        if (typeof entry !== 'string') {
+            continue;
+        }
+        const trimmed = entry.trim();
+        if (!trimmed) {
+            continue;
+        }
+        const normalized = normalizeActorNameForComparison(trimmed);
+        if (!normalized || normalized === fullNameNormalized || seen.has(normalized)) {
+            continue;
+        }
+        seen.add(normalized);
+        aliases.push({ value: trimmed, normalized });
+    }
+    return aliases;
+}
+
+function findActorByAliasInCandidates(name, candidates = []) {
+    const normalizedTarget = normalizeActorNameForComparison(name);
+    if (!normalizedTarget || !Array.isArray(candidates) || !candidates.length) {
+        return null;
+    }
+
+    for (const actor of candidates) {
+        if (!actor) {
+            continue;
+        }
+        const aliases = getActorAliases(actor);
+        for (const aliasEntry of aliases) {
+            if (aliasEntry.normalized === normalizedTarget) {
+                return actor;
+            }
+        }
+    }
+    return null;
+}
+
+function resolveLocationFromEnsureContext(context = {}) {
+    let location = context.location || null;
+    if (typeof location === 'string') {
+        try {
+            location = Location.get(location) || null;
+        } catch (_) {
+            location = null;
+        }
+    }
+
+    if (!location && context.player?.currentLocation) {
+        try {
+            location = Location.get(context.player.currentLocation) || null;
+        } catch (_) {
+            location = null;
+        }
+    }
+
+    if (!location && currentPlayer?.currentLocation) {
+        try {
+            location = Location.get(currentPlayer.currentLocation) || null;
+        } catch (_) {
+            location = null;
+        }
+    }
+
+    return location || null;
+}
+
+function collectPartyNpcCandidatesForEnsure(context = {}) {
+    const partyActors = [];
+    const seenIds = new Set();
+
+    const contextPlayer = context.player || currentPlayer || null;
+    if (!contextPlayer || typeof contextPlayer.getPartyMembers !== 'function') {
+        return partyActors;
+    }
+
+    const memberIds = contextPlayer.getPartyMembers();
+    if (!Array.isArray(memberIds)) {
+        return partyActors;
+    }
+
+    for (const memberId of memberIds) {
+        if (typeof memberId !== 'string') {
+            continue;
+        }
+        const trimmedId = memberId.trim();
+        if (!trimmedId || seenIds.has(trimmedId)) {
+            continue;
+        }
+        seenIds.add(trimmedId);
+        const member = players instanceof Map ? players.get(trimmedId) : null;
+        if (member && member.isNPC) {
+            partyActors.push(member);
+        }
+    }
+
+    return partyActors;
+}
+
+function collectLocationNpcCandidatesForEnsure(context = {}) {
+    const locationCandidates = [];
+    const seenIds = new Set();
+    const location = resolveLocationFromEnsureContext(context);
+    if (!location) {
+        return locationCandidates;
+    }
+
+    const npcIds = Array.isArray(location.npcIds)
+        ? location.npcIds
+        : (typeof location.getNpcIds === 'function' ? Array.from(location.getNpcIds()) : []);
+    for (const npcId of npcIds) {
+        if (typeof npcId !== 'string') {
+            continue;
+        }
+        const trimmedId = npcId.trim();
+        if (!trimmedId || seenIds.has(trimmedId)) {
+            continue;
+        }
+        seenIds.add(trimmedId);
+        const npc = players instanceof Map ? players.get(trimmedId) : null;
+        if (npc && npc.isNPC) {
+            locationCandidates.push(npc);
+        }
+    }
+
+    return locationCandidates;
+}
+
+function collectAllNpcCandidatesForEnsure() {
+    const candidates = [];
+    const seenIds = new Set();
+
+    const addCandidate = (actor) => {
+        if (!actor || actor.isNPC !== true) {
+            return;
+        }
+        const actorId = typeof actor.id === 'string' ? actor.id.trim() : '';
+        if (actorId && seenIds.has(actorId)) {
+            return;
+        }
+        if (actorId) {
+            seenIds.add(actorId);
+        }
+        candidates.push(actor);
+    };
+
+    if (players instanceof Map) {
+        for (const actor of players.values()) {
+            addCandidate(actor);
+        }
+    }
+
+    return candidates;
 }
 
 function buildReservedActorNameSet() {
@@ -3053,21 +3373,6 @@ function findActorById(id) {
 }
 
 async function ensureNpcByName(name, context = {}) {
-    const existing = findActorByName(name);
-    if (existing) {
-        return existing;
-    }
-
-    const looseExisting = findActorByLooseName(name);
-    if (looseExisting) {
-        return looseExisting;
-    }
-
-    const locationPrefixMatch = findLocationNpcByLeadingName(name, context);
-    if (locationPrefixMatch) {
-        return locationPrefixMatch;
-    }
-
     let resolvedName = typeof name === 'string' ? name.trim() : '';
     let normalizedName = resolvedName;
     if (resolvedName) {
@@ -3077,31 +3382,58 @@ async function ensureNpcByName(name, context = {}) {
         }
     }
 
-    if (normalizedName) {
-        const existingNormalized = findActorByName(normalizedName);
-        if (existingNormalized) {
-            return existingNormalized;
+    const fullNameCandidates = [];
+    const seenFullNames = new Set();
+    for (const candidate of [resolvedName, normalizedName]) {
+        if (typeof candidate !== 'string') {
+            continue;
         }
-
-        const looseNormalized = findActorByLooseName(normalizedName);
-        if (looseNormalized) {
-            return looseNormalized;
+        const trimmed = candidate.trim();
+        if (!trimmed) {
+            continue;
         }
+        const lowered = trimmed.toLowerCase();
+        if (seenFullNames.has(lowered)) {
+            continue;
+        }
+        seenFullNames.add(lowered);
+        fullNameCandidates.push(trimmed);
+    }
 
-        const normalizedPrefixMatch = findLocationNpcByLeadingName(normalizedName, context);
-        if (normalizedPrefixMatch) {
-            return normalizedPrefixMatch;
+    for (const candidate of fullNameCandidates) {
+        const match = findActorByExactName(candidate, { onlyNpcs: true });
+        if (match) {
+            return match;
         }
     }
 
-    let resolvedLocation = context.location || null;
-    if (!resolvedLocation && context.player?.currentLocation) {
-        try {
-            resolvedLocation = Location.get(context.player.currentLocation);
-        } catch (_) {
-            resolvedLocation = null;
-        }
+    const aliasLookupName = normalizedName || resolvedName || name;
+    const partyAliasMatch = findActorByAliasInCandidates(aliasLookupName, collectPartyNpcCandidatesForEnsure(context));
+    if (partyAliasMatch) {
+        return partyAliasMatch;
     }
+
+    const locationAliasMatch = findActorByAliasInCandidates(aliasLookupName, collectLocationNpcCandidatesForEnsure(context));
+    if (locationAliasMatch) {
+        return locationAliasMatch;
+    }
+
+    const globalAliasMatch = findActorByAliasInCandidates(aliasLookupName, collectAllNpcCandidatesForEnsure());
+    if (globalAliasMatch) {
+        return globalAliasMatch;
+    }
+
+    const looseExisting = findActorByLooseName(aliasLookupName);
+    if (looseExisting && looseExisting.isNPC) {
+        return looseExisting;
+    }
+
+    const locationPrefixMatch = findLocationNpcByLeadingName(aliasLookupName, context);
+    if (locationPrefixMatch) {
+        return locationPrefixMatch;
+    }
+
+    const resolvedLocation = resolveLocationFromEnsureContext(context);
 
     const resolvedRegion = context.region || (resolvedLocation ? findRegionByLocationId(resolvedLocation.id) : null);
     const existingNames = buildReservedActorNameSet();
@@ -4885,6 +5217,7 @@ function buildBasePromptContext({
     };
 
     let latestPlotSummary = '';
+    let latestPlotExpander = '';
     if (Array.isArray(effectiveHistoryEntries)) {
         for (let index = effectiveHistoryEntries.length - 1; index >= 0; index -= 1) {
             const entry = effectiveHistoryEntries[index];
@@ -4902,6 +5235,22 @@ function buildBasePromptContext({
                 break;
             }
         }
+        for (let index = effectiveHistoryEntries.length - 1; index >= 0; index -= 1) {
+            const entry = effectiveHistoryEntries[index];
+            if (!entry || typeof entry !== 'object') {
+                continue;
+            }
+            const entryType = typeof entry.type === 'string' ? entry.type.trim().toLowerCase() : '';
+            if (entryType !== 'plot-expander') {
+                continue;
+            }
+            const content = typeof entry.content === 'string' ? entry.content.trim() : '';
+            const summary = typeof entry.summary === 'string' ? entry.summary.trim() : '';
+            latestPlotExpander = content || summary;
+            if (latestPlotExpander) {
+                break;
+            }
+        }
     }
 
     const context = {
@@ -4911,6 +5260,7 @@ function buildBasePromptContext({
         recentGameHistory,
         fullGameHistory,
         plotSummary: latestPlotSummary,
+        plotExpander: latestPlotExpander,
         currentRegion: currentRegionContext,
         currentLocation: currentLocationContext,
         currentPlayer: currentPlayerContext,
@@ -5285,7 +5635,7 @@ function buildSceneSummaryIndex(chatHistory, { excludeSummaries = true } = {}) {
         if (metadata?.excludeFromBaseContextHistory === true) {
             return false;
         }
-        if (entryType === 'plot-summary') {
+        if (entryType === 'plot-summary' || entryType === 'plot-expander') {
             return false;
         }
         if (entryType === 'event-summary' || entryType === 'status-summary') {
@@ -8255,34 +8605,18 @@ async function expandRegionEntryStub(stubLocation) {
 
             try {
                 console.log(`🌐 Generating locations for region stub ${regionName} (${targetRegionId})...`);
-                const requestStart = Date.now();
                 stubResponse = await LLMClient.chatCompletion({
                     messages,
                     metadataLabel: 'region_stub_locations',
                     multimodal: Boolean(resolvedImageDataUrl)
                 });
-
-                const durationSeconds = (Date.now() - requestStart) / 1000;
-
-                try {
-                    const logDir = path.join(__dirname, 'logs');
-                    if (!fs.existsSync(logDir)) {
-                        fs.mkdirSync(logDir, { recursive: true });
-                    }
-                    const timestamp = new Date().toISOString().replace(/[-:.TZ]/g, '');
-                    const logPath = path.join(logDir, `region_stub_${targetRegionId}_${timestamp}.log`);
-                    const logParts = [
-                        formatDurationLine(durationSeconds),
-                        '=== REGION STUB PROMPT ===',
-                        stubPrompt.generationPrompt,
-                        '\n=== REGION STUB RESPONSE ===',
-                        stubResponse,
-                        '\n'
-                    ];
-                    fs.writeFileSync(logPath, logParts.join('\n'), 'utf8');
-                } catch (logError) {
-                    console.warn('Failed to log region stub generation:', logError.message);
-                }
+                LLMClient.logPrompt({
+                    prefix: 'region_stub_locations',
+                    metadataLabel: 'region_stub_locations',
+                    systemPrompt: stubPrompt.systemPrompt || '',
+                    generationPrompt: stubPrompt.generationPrompt || '',
+                    response: stubResponse || ''
+                });
             } catch (error) {
                 console.warn('Failed to generate region stub locations:', error.message);
                 return null;
@@ -8335,7 +8669,7 @@ async function expandRegionEntryStub(stubLocation) {
                 console.warn(`Region "${targetRegionId}" has unknown controlling faction "${existingRegionFactionId}". Ignoring existing faction for defensive recovery.`);
                 existingRegionFactionId = '';
             }
-            if (stubControllingFactionId && responseFactionResolution.explicit && responseFactionResolution.id !== stubControllingFactionId) {
+            if (stubControllingFactionId && responseFactionResolution.explicit && responseFactionResolution.id && responseFactionResolution.id !== stubControllingFactionId) {
                 console.warn(`Region "${targetRegionId}" stub faction "${stubControllingFactionId}" conflicts with generated faction "${responseFactionResolution.name || responseControllingFactionName}". Enforcing stub faction for defensive recovery.`);
             }
             let resolvedControllingFactionId = stubControllingFactionId || null;
@@ -9053,18 +9387,16 @@ async function generateInventoryForCharacter({ character, characterDescriptor = 
 
         timeoutScale = Math.max(1, Number(timeoutScale) || 1);
 
-        const requestStart = Date.now();
+        const inventoryMetadataLabel = `inventory_generation_${character.name.replace(/[^A-Za-z0-9]/g, '')}`;
         const inventoryContent = await LLMClient.chatCompletion({
             messages,
             timeoutScale,
-            metadataLabel: `inventory_generation_${character.name.replace(/[^A-Za-z0-9]/g, '')}`
+            metadataLabel: inventoryMetadataLabel
         });
 
         if (!inventoryContent) {
             throw new Error('Empty inventory response from AI');
         }
-
-        const apiDurationSeconds = (Date.now() - requestStart) / 1000;
 
         const items = await parseThingsXml(inventoryContent, {
             isInventory: true,
@@ -9201,26 +9533,13 @@ async function generateInventoryForCharacter({ character, characterDescriptor = 
             await ensureThingNamesAllowed({ things: createdThings, location, region });
         }
 
-        try {
-            const logDir = path.join(__dirname, 'logs');
-            if (!fs.existsSync(logDir)) {
-                fs.mkdirSync(logDir, { recursive: true });
-            }
-            const logPath = path.join(logDir, `inventory_${character.id}.log`);
-            const logParts = [
-                formatDurationLine(apiDurationSeconds),
-                '=== INVENTORY PROMPT ===',
-                generationPrompt,
-                '\n=== INVENTORY RESPONSE ===',
-                inventoryContent,
-                '\n=== PARSED ITEMS ===',
-                JSON.stringify(items, null, 2),
-                '\n'
-            ];
-            fs.writeFileSync(logPath, logParts.join('\n'), 'utf8');
-        } catch (logErr) {
-            console.warn('Failed to write inventory log:', logErr.message);
-        }
+        LLMClient.logPrompt({
+            prefix: 'inventory_generation',
+            metadataLabel: inventoryMetadataLabel,
+            systemPrompt: systemPrompt || '',
+            generationPrompt: generationPrompt || '',
+            response: inventoryContent || ''
+        });
 
         if (autoEquip) {
             try {
@@ -11472,26 +11791,13 @@ async function generateNpcFromEvent({
             throw new Error('Empty NPC generation response');
         }
 
-        const apiDurationSeconds = (Date.now() - requestStart) / 1000;
-
-        try {
-            const logDir = path.join(__dirname, 'logs');
-            if (!fs.existsSync(logDir)) {
-                fs.mkdirSync(logDir, { recursive: true });
-            }
-            const logPath = path.join(logDir, `npc_single_${Date.now()}.log`);
-            const logParts = [
-                formatDurationLine(apiDurationSeconds),
-                '=== SINGLE NPC PROMPT ===',
-                generationPrompt,
-                '\n=== SINGLE NPC RESPONSE ===',
-                npcResponse,
-                '\n'
-            ];
-            fs.writeFileSync(logPath, logParts.join('\n'), 'utf8');
-        } catch (logError) {
-            console.warn('Failed to log single NPC generation:', logError.message);
-        }
+        LLMClient.logPrompt({
+            prefix: 'npc_generation_single',
+            metadataLabel: 'npc_generation_single',
+            systemPrompt: systemPrompt || '',
+            generationPrompt: generationPrompt || '',
+            response: npcResponse || ''
+        });
 
         const parsedResult = parseLocationNpcs(npcResponse);
         const parsedNpcs = Array.isArray(parsedResult?.npcs) ? parsedResult.npcs : [];
@@ -11505,20 +11811,9 @@ async function generateNpcFromEvent({
         let abilityAssignments = new Map();
         let skillConversation = baseConversation;
 
-        const logsDir = path.join(__dirname, 'logs');
-        if (!fs.existsSync(logsDir)) {
-            try {
-                fs.mkdirSync(logsDir, { recursive: true });
-            } catch (mkdirError) {
-                console.warn('Failed to ensure logs directory for NPC generation:', mkdirError?.message || mkdirError);
-            }
-        }
-
         try {
-            const skillLogPath = path.join(logsDir, `npc_single_skills_${Date.now()}.log`);
             const skillResult = await requestNpcSkillAssignments({
-                baseMessages: baseConversation,
-                logPath: skillLogPath
+                baseMessages: baseConversation
             });
             if (skillResult?.assignments instanceof Map) {
                 skillAssignments = skillResult.assignments;
@@ -11528,19 +11823,6 @@ async function generateNpcFromEvent({
             }
         } catch (skillError) {
             console.warn('Failed to generate skills for single NPC:', skillError?.message || skillError);
-        }
-
-        try {
-            const abilityLogPath = path.join(logsDir, `npc_single_abilities_${Date.now()}.log`);
-            const abilityResult = await requestNpcAbilityAssignments({
-                baseMessages: skillConversation,
-                logPath: abilityLogPath
-            });
-            if (abilityResult?.assignments instanceof Map) {
-                abilityAssignments = abilityResult.assignments;
-            }
-        } catch (abilityError) {
-            console.warn('Failed to generate abilities for single NPC:', abilityError?.message || abilityError);
         }
 
         let npcData = parsedNpcs && parsedNpcs.length ? parsedNpcs[0] : null;
@@ -11632,10 +11914,66 @@ async function generateNpcFromEvent({
             }
         }
 
+        const inventoryDescriptor = {
+            role: npcData?.role || npcData?.class || 'citizen',
+            class: npcData?.class || npcData?.role || 'citizen',
+            race: npcData?.race || 'human'
+        };
+
+        let aliasAssignments = new Map();
+        const abilityPromise = (async () => {
+            try {
+                const abilityResult = await requestNpcAbilityAssignments({
+                    baseMessages: skillConversation,
+                    npcNames: [npc.name]
+                });
+                if (abilityResult?.assignments instanceof Map) {
+                    abilityAssignments = abilityResult.assignments;
+                }
+            } catch (abilityError) {
+                console.warn('Failed to generate abilities for single NPC:', abilityError?.message || abilityError);
+            }
+        })();
+
+        const aliasPromise = (async () => {
+            try {
+                const aliasResult = await requestNpcAliasAssignments({
+                    npcNames: [npc.name]
+                });
+                if (aliasResult?.assignments instanceof Map) {
+                    aliasAssignments = aliasResult.assignments;
+                }
+            } catch (aliasError) {
+                console.warn('Failed to generate aliases for single NPC:', aliasError?.message || aliasError);
+            }
+        })();
+
+        const inventoryPromise = (async () => {
+            try {
+                await generateInventoryForCharacter({
+                    character: npc,
+                    characterDescriptor: inventoryDescriptor,
+                    region: resolvedRegion,
+                    location: resolvedLocation
+                });
+            } catch (inventoryError) {
+                console.warn('Failed to generate inventory for new NPC:', inventoryError.message);
+            }
+        })();
+
+        await Promise.all([abilityPromise, aliasPromise, inventoryPromise]);
+
         if (normalizedNpcName && abilityAssignments instanceof Map) {
             const abilityEntry = abilityAssignments.get(normalizedNpcName);
             if (abilityEntry && Array.isArray(abilityEntry.abilities) && abilityEntry.abilities.length) {
                 applyNpcAbilities(npc, abilityEntry.abilities);
+            }
+        }
+
+        if (normalizedNpcName && aliasAssignments instanceof Map) {
+            const aliasEntry = aliasAssignments.get(normalizedNpcName);
+            if (aliasEntry && Array.isArray(aliasEntry.aliases)) {
+                applyNpcAliases(npc, aliasEntry.aliases);
             }
         }
 
@@ -11648,23 +11986,6 @@ async function generateNpcFromEvent({
                     console.warn(`Failed to assign generated memories to NPC ${npc.name}:`, memoryError.message);
                 }
             }
-        }
-
-        const inventoryDescriptor = {
-            role: npcData?.role || npcData?.class || 'citizen',
-            class: npcData?.class || npcData?.role || 'citizen',
-            race: npcData?.race || 'human'
-        };
-
-        try {
-            await generateInventoryForCharacter({
-                character: npc,
-                characterDescriptor: inventoryDescriptor,
-                region: resolvedRegion,
-                location: resolvedLocation
-            });
-        } catch (inventoryError) {
-            console.warn('Failed to generate inventory for new NPC:', inventoryError.message);
         }
 
         if (shouldGenerateNpcImage(npc) && (!npc.imageId || !hasExistingImage(npc.imageId))) {
@@ -12136,6 +12457,26 @@ function parseIntegerFromText(value) {
     return Number.isFinite(parsed) ? parsed : null;
 }
 
+function normalizeFactionNameForLookup(rawName, { stripWhitespace = false } = {}) {
+    if (typeof rawName !== 'string') {
+        return '';
+    }
+    let normalized = rawName.trim().toLowerCase();
+    if (!normalized) {
+        return '';
+    }
+
+    // Strip punctuation/symbols so matching tolerates quote/period/hyphen differences.
+    normalized = normalized.replace(/[^\p{L}\p{N}\s]/gu, '');
+    normalized = normalized.replace(/\s+/g, ' ').trim();
+
+    if (stripWhitespace) {
+        normalized = normalized.replace(/\s+/g, '');
+    }
+
+    return normalized;
+}
+
 function resolveFactionNameToId(rawName, {
     allowNone = true,
     allowBlank = false,
@@ -12154,12 +12495,23 @@ function resolveFactionNameToId(rawName, {
     }
 
     let resolved = null;
+    const normalizedLookup = normalizeFactionNameForLookup(trimmed);
+    const compactLookup = normalizeFactionNameForLookup(trimmed, { stripWhitespace: true });
     if (typeof Faction?.getByName === 'function') {
         resolved = Faction.getByName(trimmed);
     }
     if (!resolved && factions instanceof Map) {
         for (const faction of factions.values()) {
-            if (faction?.name && faction.name.trim().toLowerCase() === trimmed.toLowerCase()) {
+            const factionName = typeof faction?.name === 'string' ? faction.name.trim() : '';
+            if (!factionName) {
+                continue;
+            }
+            const isCaseInsensitiveMatch = factionName.toLowerCase() === trimmed.toLowerCase();
+            const isNormalizedMatch = Boolean(normalizedLookup)
+                && normalizeFactionNameForLookup(factionName) === normalizedLookup;
+            const isCompactNormalizedMatch = Boolean(compactLookup)
+                && normalizeFactionNameForLookup(factionName, { stripWhitespace: true }) === compactLookup;
+            if (isCaseInsensitiveMatch || isNormalizedMatch || isCompactNormalizedMatch) {
                 resolved = faction;
                 break;
             }
@@ -12174,7 +12526,8 @@ function resolveFactionNameToId(rawName, {
                 .filter(name => name.toLowerCase() !== 'none')
             : [];
         const suffix = available.length ? ` Available factions: ${available.join(', ')}.` : '';
-        throw new Error(`${fieldLabel} "${trimmed}" does not match any existing faction name.${suffix}`);
+        console.warn(`[FactionResolver] ${fieldLabel} "${trimmed}" did not match any existing faction. Assuming no faction.${suffix}`);
+        return { id: null, explicit: true, name: 'None' };
     }
 
     return { id: resolved.id, explicit: true, name: resolved.name };
@@ -12608,7 +12961,7 @@ function parseNpcSkillAssignments(xmlContent) {
     }
 }
 
-async function requestNpcSkillAssignments({ baseMessages = [], logPath, timeoutScale = 1, npcNames = [] }) {
+async function requestNpcSkillAssignments({ baseMessages = [], timeoutScale = 1, npcNames = [] }) {
     console.log(`Requesting NPC progression assignments from LLM... (timeoutScale=${timeoutScale})`);
     try {
         const availableSkillsMap = Player.getAvailableSkills();
@@ -12646,7 +12999,6 @@ async function requestNpcSkillAssignments({ baseMessages = [], logPath, timeoutS
 
         timeoutScale = Math.max(1, Number(timeoutScale) || 1);
 
-        const requestStart = Date.now();
         const labelSuffix = Array.isArray(npcNames) && npcNames.length
             ? `:${npcNames.slice(0, 3).map(name => (name || '').trim()).filter(Boolean).join(',')}`
             : '';
@@ -12664,27 +13016,10 @@ async function requestNpcSkillAssignments({ baseMessages = [], logPath, timeoutS
             };
         }
 
-        const durationSeconds = (Date.now() - requestStart) / 1000;
         const normalizedResponse = typeof skillResponse === 'string' ? skillResponse.trim() : '';
         if (!normalizedResponse) {
             console.log('NPC progression assignments returned no result.');
             return null;
-        }
-
-        if (logPath) {
-            const logDir = path.dirname(logPath);
-            if (!fs.existsSync(logDir)) {
-                fs.mkdirSync(logDir, { recursive: true });
-            }
-            const lines = [
-                formatDurationLine(durationSeconds),
-                '=== NPC PROGRESSION PROMPT ===',
-                skillsPrompt,
-                '\n=== NPC PROGRESSION RESPONSE ===',
-                skillResponse,
-                '\n'
-            ];
-            fs.writeFileSync(logPath, lines.join('\n'), 'utf8');
         }
 
         LLMClient.logPrompt({
@@ -12692,13 +13027,7 @@ async function requestNpcSkillAssignments({ baseMessages = [], logPath, timeoutS
             metadataLabel: `npc_progression_assignments${labelSuffix}`,
             systemPrompt: '',
             generationPrompt: skillsPrompt,
-            response: skillResponse,
-            sections: [
-                {
-                    title: 'Duration',
-                    content: formatDurationLine(durationSeconds)
-                }
-            ]
+            response: skillResponse
         });
 
         const assignments = parseNpcSkillAssignments(skillResponse);
@@ -12790,6 +13119,22 @@ function renderNpcAbilitiesPrompt() {
     }
 }
 
+function renderNpcAliasesPrompt({ npcNames = [] } = {}) {
+    try {
+        return promptEnv.render('npc-generate-aliases.xml.njk', {
+            npcNames: Array.isArray(npcNames)
+                ? npcNames
+                    .filter(name => typeof name === 'string')
+                    .map(name => name.trim())
+                    .filter(Boolean)
+                : []
+        });
+    } catch (error) {
+        console.error('Error rendering NPC aliases template:', error);
+        return null;
+    }
+}
+
 function parseNpcAbilityAssignments(xmlContent) {
     if (!xmlContent || typeof xmlContent !== 'string') {
         return new Map();
@@ -12860,7 +13205,62 @@ function parseNpcAbilityAssignments(xmlContent) {
     }
 }
 
-async function requestNpcAbilityAssignments({ baseMessages = [], logPath, timeoutScale = 1, npcNames = [] }) {
+function parseNpcAliasAssignments(xmlContent) {
+    if (!xmlContent || typeof xmlContent !== 'string') {
+        return new Map();
+    }
+
+    try {
+        const doc = Utils.parseXmlDocument(xmlContent, 'text/xml');
+        const parserError = doc.getElementsByTagName('parsererror')[0];
+        if (parserError) {
+            throw new Error(parserError.textContent);
+        }
+
+        const mapping = new Map();
+        const npcNodes = Array.from(doc.getElementsByTagName('npc'));
+        for (const npcNode of npcNodes) {
+            const nameNode = npcNode.getElementsByTagName('name')[0];
+            const npcName = nameNode ? nameNode.textContent.trim() : '';
+            if (!npcName) {
+                continue;
+            }
+
+            const normalizedNpcName = npcName.toLowerCase();
+            const normalizedFullName = normalizeActorNameForComparison(npcName);
+            const aliases = [];
+            const seenAliases = new Set();
+
+            const aliasNodes = Array.from(npcNode.getElementsByTagName('alias'));
+            for (const aliasNode of aliasNodes) {
+                const alias = aliasNode ? aliasNode.textContent.trim() : '';
+                if (!alias) {
+                    continue;
+                }
+
+                const normalizedAlias = normalizeActorNameForComparison(alias);
+                if (!normalizedAlias || normalizedAlias === normalizedFullName || seenAliases.has(normalizedAlias)) {
+                    continue;
+                }
+
+                seenAliases.add(normalizedAlias);
+                aliases.push(alias);
+            }
+
+            mapping.set(normalizedNpcName, {
+                name: npcName,
+                aliases
+            });
+        }
+
+        return mapping;
+    } catch (error) {
+        console.warn('Failed to parse NPC aliases XML:', error.message);
+        return new Map();
+    }
+}
+
+async function requestNpcAbilityAssignments({ baseMessages = [], timeoutScale = 1, npcNames = [] }) {
     try {
         const abilitiesPrompt = renderNpcAbilitiesPrompt();
         if (!abilitiesPrompt) {
@@ -12875,7 +13275,6 @@ async function requestNpcAbilityAssignments({ baseMessages = [], logPath, timeou
         timeoutScale = Math.max(1, Number(timeoutScale) || 1);
 
 
-        const requestStart = Date.now();
         const labelSuffix = Array.isArray(npcNames) && npcNames.length
             ? `:${npcNames.slice(0, 3).map(name => (name || '').trim()).filter(Boolean).join(',')}`
             : '';
@@ -12892,32 +13291,13 @@ async function requestNpcAbilityAssignments({ baseMessages = [], logPath, timeou
             };
         }
 
-        const durationSeconds = (Date.now() - requestStart) / 1000;
-
-        if (logPath) {
-            const logDir = path.dirname(logPath);
-            if (!fs.existsSync(logDir)) {
-                fs.mkdirSync(logDir, { recursive: true });
-            }
-            const formattedContext = Array.isArray(baseMessages) && baseMessages.length
-                ? baseMessages.map((message, index) => {
-                    const role = message?.role || 'unknown';
-                    const content = typeof message?.content === 'string' ? message.content : JSON.stringify(message?.content);
-                    return `#${index + 1} [${role}] ${content}`;
-                }).join('\n')
-                : null;
-            const lines = [
-                formatDurationLine(durationSeconds),
-                formattedContext ? '=== NPC ABILITIES CONTEXT ===' : null,
-                formattedContext,
-                '=== NPC ABILITIES PROMPT ===',
-                abilitiesPrompt,
-                '\n=== NPC ABILITIES RESPONSE ===',
-                abilityResponse,
-                '\n'
-            ].filter(Boolean);
-            fs.writeFileSync(logPath, lines.join('\n'), 'utf8');
-        }
+        LLMClient.logPrompt({
+            prefix: 'npc_ability_assignments',
+            metadataLabel: `npc_ability_assignments${labelSuffix}`,
+            systemPrompt: '',
+            generationPrompt: abilitiesPrompt,
+            response: abilityResponse
+        });
 
         const assignments = parseNpcAbilityAssignments(abilityResponse);
         const conversation = [...messages, { role: 'assistant', content: abilityResponse }];
@@ -12938,6 +13318,91 @@ async function requestNpcAbilityAssignments({ baseMessages = [], logPath, timeou
     }
 }
 
+async function requestNpcAliasAssignments({ timeoutScale = 1, npcNames = [] } = {}) {
+    try {
+        const normalizedNames = Array.isArray(npcNames)
+            ? npcNames
+                .filter(name => typeof name === 'string')
+                .map(name => name.trim())
+                .filter(Boolean)
+            : [];
+
+        if (!normalizedNames.length) {
+            return {
+                assignments: new Map()
+            };
+        }
+
+        const aliasesTemplate = renderNpcAliasesPrompt({ npcNames: normalizedNames });
+        if (!aliasesTemplate) {
+            return {
+                assignments: new Map()
+            };
+        }
+
+        const parsedTemplate = parseXMLTemplate(aliasesTemplate);
+        const systemPrompt = parsedTemplate.systemPrompt || '';
+        const generationPrompt = parsedTemplate.generationPrompt || '';
+        if (!generationPrompt) {
+            return {
+                assignments: new Map()
+            };
+        }
+
+        const messages = [];
+        if (systemPrompt.trim()) {
+            messages.push({ role: 'system', content: systemPrompt });
+        }
+        messages.push({ role: 'user', content: generationPrompt });
+
+        const labelSuffix = normalizedNames.length
+            ? `:${normalizedNames.slice(0, 3).join(',')}`
+            : '';
+        const aliasResponse = await LLMClient.chatCompletion({
+            messages,
+            timeoutScale: Math.max(1, Number(timeoutScale) || 1),
+            metadataLabel: `npc_alias_assignments${labelSuffix}`
+        });
+
+        if (!aliasResponse || !aliasResponse.trim()) {
+            return {
+                assignments: new Map()
+            };
+        }
+
+        LLMClient.logPrompt({
+            prefix: 'npc_alias_assignments',
+            metadataLabel: `npc_alias_assignments${labelSuffix}`,
+            systemPrompt,
+            generationPrompt,
+            response: aliasResponse
+        });
+
+        try {
+            const metadata = (typeof Globals.getSaveMetadata === 'function'
+                ? Globals.getSaveMetadata()
+                : Globals.saveMetadata) || null;
+            if (metadata && typeof metadata === 'object' && !Array.isArray(metadata)) {
+                metadata.npcAliasesGenerated = true;
+                Globals.setSaveMetadata(metadata);
+            }
+        } catch (metadataError) {
+            console.warn('Failed to update npcAliasesGenerated metadata flag:', metadataError?.message || metadataError);
+        }
+
+        return {
+            assignments: parseNpcAliasAssignments(aliasResponse),
+            prompt: generationPrompt,
+            response: aliasResponse
+        };
+    } catch (error) {
+        console.warn('Failed to request NPC alias assignments:', error.message);
+        return {
+            assignments: new Map()
+        };
+    }
+}
+
 function applyNpcAbilities(npc, abilityList) {
     if (!npc || !Array.isArray(abilityList) || abilityList.length === 0) {
         return;
@@ -12948,6 +13413,16 @@ function applyNpcAbilities(npc, abilityList) {
     }
 
     npc.setAbilities(abilityList);
+}
+
+function applyNpcAliases(npc, aliases = []) {
+    if (!npc) {
+        return;
+    }
+    if (typeof npc.setAliases !== 'function') {
+        return;
+    }
+    npc.setAliases(Array.isArray(aliases) ? aliases : []);
 }
 
 function buildLevelUpSummaryForCharacter(character, { previousLevel = null } = {}) {
@@ -13237,54 +13712,12 @@ async function generateLevelUpAbilitiesForCharacter(character, { previousLevel =
             console.warn(`Level-up ability generation request failed for ${trimmedName}:`, error?.message || error);
             return;
         }
-        const durationSeconds = (Date.now() - requestStart) / 1000;
-
-        try {
-            const logsDir = path.join(__dirname, 'logs');
-            if (!fs.existsSync(logsDir)) {
-                fs.mkdirSync(logsDir, { recursive: true });
-            }
-            const timestamp = Date.now();
-            const safeId = typeof character.id === 'string' ? character.id.replace(/[^a-zA-Z0-9_-]/g, '_') : 'unknown';
-            const safeName = trimmedName.replace(/[^a-zA-Z0-9_-]/g, '_') || 'unknown';
-            const logFilename = `levelup_abilities_${timestamp}_${safeId}_${safeName}.log`;
-            const logPath = path.join(logsDir, logFilename);
-            const logLines = [
-                formatDurationLine(durationSeconds),
-                `Character: ${trimmedName}`,
-                `Previous Level: ${Number.isFinite(priorLevel) ? priorLevel : 'unknown'}`,
-                `New Level: ${Number.isFinite(currentLevel) ? currentLevel : 'unknown'}`,
-                '=== LEVEL-UP ABILITIES SYSTEM PROMPT ===',
-                systemPrompt,
-                '',
-                '=== LEVEL-UP ABILITIES GENERATION PROMPT ===',
-                generationPrompt,
-                '',
-                '=== LEVEL-UP ABILITIES RESPONSE ===',
-                abilityResponse,
-                ''
-            ];
-            fs.writeFileSync(logPath, logLines.join('\n'), 'utf8');
-        } catch (logError) {
-            console.warn(`Failed to log level-up abilities prompt for ${trimmedName}:`, logError?.message || logError);
-        }
-
         LLMClient.logPrompt({
             prefix: 'levelup_abilities',
             metadataLabel: 'levelup_abilities',
             systemPrompt: systemPrompt || '',
             generationPrompt: generationPrompt || '',
-            response: abilityResponse || '',
-            sections: [
-                {
-                    title: 'Duration',
-                    content: formatDurationLine(durationSeconds)
-                },
-                {
-                    title: 'Character',
-                    content: `${trimmedName} (level ${Number.isFinite(priorLevel) ? priorLevel : '?'} -> ${Number.isFinite(currentLevel) ? currentLevel : '?'})`
-                }
-            ]
+            response: abilityResponse || ''
         });
 
         const normalizedName = trimmedName.toLowerCase();
@@ -14177,21 +14610,17 @@ async function enforceBannedNpcNames({
             : [{ role: 'user', content: prompt }];
 
 
-        const requestStart = Date.now();
         const regenResponse = await LLMClient.chatCompletion({
             messages,
             temperature: 1,
             metadataLabel: 'npc_name_regen'
         });
 
-        const durationSeconds = (Date.now() - requestStart) / 1000;
-
         // Log the interaction
         try {
             logNpcNameRegeneration({
                 prompt,
-                responseText: regenResponse,
-                durationSeconds
+                responseText: regenResponse
             });
         } catch (logError) {
             console.warn('Failed to log NPC name regeneration:', logError.message);
@@ -14441,8 +14870,7 @@ while (attempts < maxAttempts && npcsNeedingRegen.some(npc => !isNameValid(npc.n
         try {
             logNpcNameRegeneration({
                 prompt,
-                responseText: regenResponse,
-                durationSeconds
+                responseText: regenResponse
             });
         } catch (logError) {
             console.warn('Failed to log NPC name regeneration:', logError.message);
@@ -14824,22 +15252,23 @@ async function ensureUniqueNpcNames({
         const regenMessages = baseMessages.concat({ role: 'user', content: prompt });
 
         let regenText = '';
-        let apiDurationSeconds = null;
         try {
-            const requestStart = Date.now();
             regenText = await LLMClient.chatCompletion({
                 messages: regenMessages,
                 temperature: 1,
                 metadataLabel: 'npc_name_regen_duplicate'
             });
-            apiDurationSeconds = (Date.now() - requestStart) / 1000;
         } catch (error) {
             console.warn('NPC duplicate name regeneration failed:', error.message);
             break;
         }
 
         try {
-            logNpcNameRegeneration({ prompt, responseText: regenText, durationSeconds: apiDurationSeconds });
+            logNpcNameRegeneration({
+                prompt,
+                responseText: regenText,
+                metadataLabel: 'npc_name_regen_duplicate'
+            });
         } catch (logError) {
             console.warn('Failed to log NPC duplicate name regeneration:', logError.message);
         }
@@ -15367,7 +15796,6 @@ async function generateLocationThingsForLocation({ location } = {}) {
         { role: 'user', content: parsedTemplate.generationPrompt }
     ];
 
-    const requestStart = Date.now();
     const aiResponse = await LLMClient.chatCompletion({
         messages,
         temperature: parsedTemplate.temperature,
@@ -15378,30 +15806,13 @@ async function generateLocationThingsForLocation({ location } = {}) {
         return [];
     }
 
-    const apiDurationSeconds = (Date.now() - requestStart) / 1000;
-
-    try {
-        const logDir = path.join(__dirname, 'logs');
-        if (!fs.existsSync(logDir)) {
-            fs.mkdirSync(logDir, { recursive: true });
-        }
-        const logPath = path.join(logDir, `location_${location.id}_things.log`);
-        const parts = [
-            formatDurationLine(apiDurationSeconds),
-            '=== LOCATION THINGS SYSTEM PROMPT ===',
-            parsedTemplate.systemPrompt,
-            '',
-            '=== LOCATION THINGS PROMPT ===',
-            parsedTemplate.generationPrompt,
-            '',
-            '=== LOCATION THINGS RESPONSE ===',
-            aiResponse,
-            ''
-        ];
-        fs.writeFileSync(logPath, parts.join('\n'), 'utf8');
-    } catch (logError) {
-        console.warn('Failed to log location things generation:', logError.message);
-    }
+    LLMClient.logPrompt({
+        prefix: 'location_things_generation',
+        metadataLabel: 'location_things_generation',
+        systemPrompt: parsedTemplate.systemPrompt || '',
+        generationPrompt: parsedTemplate.generationPrompt || '',
+        response: aiResponse || ''
+    });
 
     const parsedItems = await parseThingsXml(aiResponse, {
         promptEnv,
@@ -15791,127 +16202,59 @@ function logFactionGeneration({ systemPrompt, generationPrompt, responseText }) 
     });
 }
 
-function logSkillGeneration({ systemPrompt, generationPrompt, responseText, durationSeconds }) {
-    try {
-        const logDir = path.join(__dirname, 'logs');
-        if (!fs.existsSync(logDir)) {
-            fs.mkdirSync(logDir, { recursive: true });
-        }
-
-        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-        const logPath = path.join(logDir, `skills_generation_${timestamp}.log`);
-        const parts = [
-            formatDurationLine(durationSeconds),
-            '=== SKILL GENERATION SYSTEM PROMPT ===',
-            systemPrompt || '(none)',
-            '',
-            '=== SKILL GENERATION PROMPT ===',
-            generationPrompt || '(none)',
-            '',
-            '=== SKILL GENERATION RESPONSE ===',
-            responseText || '(no response)',
-            ''
-        ];
-        fs.writeFileSync(logPath, parts.join('\n'), 'utf8');
-    } catch (error) {
-        console.warn('Failed to log skills generation:', error.message);
-    }
+function logSkillGeneration({
+    systemPrompt,
+    generationPrompt,
+    responseText,
+    metadataLabel = 'skill_generation'
+}) {
+    LLMClient.logPrompt({
+        prefix: metadataLabel,
+        metadataLabel,
+        systemPrompt: systemPrompt || '',
+        generationPrompt: generationPrompt || '',
+        response: responseText || ''
+    });
 }
 
-function logNpcNameRegeneration({ prompt, responseText, durationSeconds }) {
-    try {
-        const logDir = path.join(__dirname, 'logs');
-        if (!fs.existsSync(logDir)) {
-            fs.mkdirSync(logDir, { recursive: true });
-        }
-
-        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-        const logPath = path.join(logDir, `npc_name_regen_${timestamp}.log`);
-        const parts = [
-            formatDurationLine(durationSeconds),
-            '=== NPC NAME REGEN PROMPT ===',
-            prompt || '(none)',
-            '',
-            '=== NPC NAME REGEN RESPONSE ===',
-            responseText || '(no response)',
-            ''
-        ];
-        fs.writeFileSync(logPath, parts.join('\n'), 'utf8');
-    } catch (error) {
-        console.warn('Failed to log NPC name regeneration:', error.message);
-    }
+function logNpcNameRegeneration({ prompt, responseText, metadataLabel = 'npc_name_regen' }) {
+    LLMClient.logPrompt({
+        prefix: metadataLabel,
+        metadataLabel,
+        systemPrompt: '',
+        generationPrompt: prompt || '',
+        response: responseText || ''
+    });
 }
 
-function logThingNameRegeneration({ prompt, responseText, durationSeconds }) {
-    try {
-        const logDir = path.join(__dirname, 'logs');
-        if (!fs.existsSync(logDir)) {
-            fs.mkdirSync(logDir, { recursive: true });
-        }
-
-        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-        const logPath = path.join(logDir, `thing_name_regen_${timestamp}.log`);
-        const parts = [
-            formatDurationLine(durationSeconds),
-            '=== THING NAME REGEN PROMPT ===',
-            prompt || '(none)',
-            '',
-            '=== THING NAME REGEN RESPONSE ===',
-            responseText || '(no response)',
-            ''
-        ];
-        fs.writeFileSync(logPath, parts.join('\n'), 'utf8');
-    } catch (error) {
-        console.warn('Failed to log thing name regeneration:', error.message);
-    }
+function logThingNameRegeneration({ prompt, responseText }) {
+    LLMClient.logPrompt({
+        prefix: 'thing_name_regen',
+        metadataLabel: 'thing_name_regen',
+        systemPrompt: '',
+        generationPrompt: prompt || '',
+        response: responseText || ''
+    });
 }
 
-function logLocationNameRegeneration({ prompt, responseText, durationSeconds }) {
-    try {
-        const logDir = path.join(__dirname, 'logs');
-        if (!fs.existsSync(logDir)) {
-            fs.mkdirSync(logDir, { recursive: true });
-        }
-
-        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-        const logPath = path.join(logDir, `location_name_regen_${timestamp}.log`);
-        const parts = [
-            formatDurationLine(durationSeconds),
-            '=== LOCATION NAME REGEN PROMPT ===',
-            prompt || '(none)',
-            '',
-            '=== LOCATION NAME REGEN RESPONSE ===',
-            responseText || '(no response)',
-            ''
-        ];
-        fs.writeFileSync(logPath, parts.join('\n'), 'utf8');
-    } catch (error) {
-        console.warn('Failed to log location name regeneration:', error.message);
-    }
+function logLocationNameRegeneration({ prompt, responseText }) {
+    LLMClient.logPrompt({
+        prefix: 'location_name_regen',
+        metadataLabel: 'location_name_regen',
+        systemPrompt: '',
+        generationPrompt: prompt || '',
+        response: responseText || ''
+    });
 }
 
-function logRegionNameRegeneration({ prompt, responseText, durationSeconds }) {
-    try {
-        const logDir = path.join(__dirname, 'logs');
-        if (!fs.existsSync(logDir)) {
-            fs.mkdirSync(logDir, { recursive: true });
-        }
-
-        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-        const logPath = path.join(logDir, `region_name_regen_${timestamp}.log`);
-        const parts = [
-            formatDurationLine(durationSeconds),
-            '=== REGION NAME REGEN PROMPT ===',
-            prompt || '(none)',
-            '',
-            '=== REGION NAME REGEN RESPONSE ===',
-            responseText || '(no response)',
-            ''
-        ];
-        fs.writeFileSync(logPath, parts.join('\n'), 'utf8');
-    } catch (error) {
-        console.warn('Failed to log region name regeneration:', error.message);
-    }
+function logRegionNameRegeneration({ prompt, responseText }) {
+    LLMClient.logPrompt({
+        prefix: 'region_name_regen',
+        metadataLabel: 'region_name_regen',
+        systemPrompt: '',
+        generationPrompt: prompt || '',
+        response: responseText || ''
+    });
 }
 
 function rotateNameCandidates(names, rotationCount = 3) {
@@ -16145,15 +16488,12 @@ async function ensureThingNamesAllowed({
         ];
 
         let responseText = '';
-        let durationSeconds = null;
         try {
-            const requestStart = Date.now();
             responseText = await LLMClient.chatCompletion({
                 messages,
                 temperature: parsedTemplate.temperature,
                 metadataLabel: 'thing_name_regen'
             });
-            durationSeconds = (Date.now() - requestStart) / 1000;
         } catch (error) {
             throw new Error(`Item name regeneration request failed: ${error.message}`);
         }
@@ -16165,8 +16505,7 @@ async function ensureThingNamesAllowed({
         try {
             logThingNameRegeneration({
                 prompt: generationPrompt,
-                responseText,
-                durationSeconds
+                responseText
             });
         } catch (error) {
             console.warn('Failed to log item name regeneration:', error.message);
@@ -16354,15 +16693,12 @@ async function ensureUniqueThingNames({ things: candidateThings = [], location =
     ];
 
     let responseText = '';
-    let durationSeconds = null;
     try {
-        const requestStart = Date.now();
         responseText = await LLMClient.chatCompletion({
             messages,
             temperature: parsedTemplate.temperature,
             metadataLabel: 'thing_name_regen'
         });
-        durationSeconds = (Date.now() - requestStart) / 1000;
     } catch (error) {
         console.warn('Thing name regeneration request failed:', error.message);
         return;
@@ -16375,8 +16711,7 @@ async function ensureUniqueThingNames({ things: candidateThings = [], location =
     try {
         logThingNameRegeneration({
             prompt: parsedTemplate.generationPrompt,
-            responseText,
-            durationSeconds
+            responseText
         });
     } catch (error) {
         console.warn('Failed to log thing name regeneration:', error.message);
@@ -16488,15 +16823,12 @@ async function regenerateLocationName(location) {
     ];
 
     let responseText = '';
-    let durationSeconds = null;
     try {
-        const requestStarted = Date.now();
         responseText = await LLMClient.chatCompletion({
             messages,
             temperature: parsedTemplate.temperature,
             metadataLabel: 'location_name_regen'
         });
-        durationSeconds = (Date.now() - requestStarted) / 1000;
     } catch (error) {
         throw new Error(`Location name regeneration request failed: ${error.message}`);
     }
@@ -16508,8 +16840,7 @@ async function regenerateLocationName(location) {
     try {
         logLocationNameRegeneration({
             prompt: generationPrompt,
-            responseText,
-            durationSeconds
+            responseText
         });
     } catch (error) {
         console.warn('Failed to log location name regeneration:', error.message);
@@ -16838,15 +17169,12 @@ async function regenerateRegionNames(regions) {
         ];
 
         let responseText = '';
-        let durationSeconds = null;
         try {
-            const requestStarted = Date.now();
             responseText = await LLMClient.chatCompletion({
                 messages,
                 temperature: parsedTemplate.temperature,
                 metadataLabel: 'region_name_regen'
             });
-            durationSeconds = (Date.now() - requestStarted) / 1000;
         } catch (error) {
             throw new Error(`Region name regeneration request failed: ${error.message}`);
         }
@@ -16857,8 +17185,7 @@ async function regenerateRegionNames(regions) {
 
         logRegionNameRegeneration({
             prompt: generationPrompt,
-            responseText,
-            durationSeconds
+            responseText
         });
 
         const groups = parseRegionNameRegenResponse(responseText);
@@ -17011,7 +17338,7 @@ async function generateSkillsList({ count, settingDescription, existingSkills = 
             systemPrompt,
             generationPrompt,
             responseText: skillResponse,
-            durationSeconds: (Date.now() - requestStart) / 1000
+            metadataLabel: 'skill_generation'
         });
 
         const parsedSkills = parseSkillsXml(skillResponse);
@@ -17242,7 +17569,7 @@ async function generateSkillsByNames({ skillNames = [], settingDescription }) {
             systemPrompt,
             generationPrompt,
             responseText: skillResponse,
-            durationSeconds: (Date.now() - requestStart) / 1000
+            metadataLabel: 'skill_generation_by_name'
         });
 
         const parsedSkills = parseSkillsXml(skillResponse);
@@ -17352,14 +17679,7 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
             { role: 'user', content: npcPromptWithContext }
         ];
 
-        const logDir = path.join(__dirname, 'logs');
-        if (!fs.existsSync(logDir)) {
-            fs.mkdirSync(logDir, { recursive: true });
-        }
-        const logPath = path.join(logDir, `location_npcs_${location.id}.log`);
-
         console.log('🧑‍🤝‍🧑 Requesting NPC generation for location', location.id);
-        const requestStart = Date.now();
         const npcResponse = await LLMClient.chatCompletion({
             messages,
             timeoutScale: npcCountHint,
@@ -17370,21 +17690,13 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
             throw new Error('Invalid NPC response from AI API');
         }
 
-        const apiDurationSeconds = (Date.now() - requestStart) / 1000;
-
-        try {
-            const parts = [
-                formatDurationLine(apiDurationSeconds),
-                '=== NPC PROMPT ===',
-                [systemPrompt, generationPrompt, aiResponse, npcPromptWithContext].join('\n\n'),
-                '\n=== NPC RESPONSE ===',
-                npcResponse,
-                '\n'
-            ];
-            fs.writeFileSync(logPath, parts.join('\n'), 'utf8');
-        } catch (logErr) {
-            console.warn('Failed to write NPC log:', logErr.message);
-        }
+        LLMClient.logPrompt({
+            prefix: 'location_npc_generation',
+            metadataLabel: 'location_npc_generation',
+            systemPrompt: systemPrompt || '',
+            generationPrompt: [generationPrompt, aiResponse, npcPromptWithContext].join('\n\n'),
+            response: npcResponse || ''
+        });
 
         const parsedResult = parseLocationNpcs(npcResponse);
         let npcsAtLocation = SanitizedStringSet.fromArray(location.getNPCNames());
@@ -17438,17 +17750,20 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
 
         let npcSkillAssignments = new Map();
         let npcAbilityAssignments = new Map();
+        let npcAliasAssignments = new Map();
+        let abilitiesPromise = null;
+        let aliasesPromise = null;
 
         if (npcs.length) {
+            const npcNamesForPrompt = npcs.map(npc => npc?.name || '').filter(Boolean);
+
             const skillsPromise = (async () => {
                 try {
                     Globals.updateSpinnerText({ message: `Generating NPC skills for location ${location.name || location.id}...` });
-                    const skillsLogPath = path.join(logDir, `location_${location.id}_npc_skills.log`);
                     const skillResult = await requestNpcSkillAssignments({
                         baseMessages: baseConversation,
-                        logPath: skillsLogPath,
                         timeoutScale: npctimeoutScale,
-                        npcNames: npcs.map(npc => npc?.name || '').filter(Boolean)
+                        npcNames: npcNamesForPrompt
                     });
                     const rawAssignments = skillResult.assignments || new Map();
                     npcSkillAssignments = rekeyNpcLookupMap(rawAssignments, npcRenameMap) || new Map();
@@ -17460,15 +17775,13 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
                 }
             })();
 
-            const abilitiesPromise = (async () => {
+            abilitiesPromise = (async () => {
                 try {
                     Globals.updateSpinnerText({ message: `Generating NPC abilities for location ${location.name || location.id}...` });
-                    const abilitiesLogPath = path.join(logDir, `location_${location.id}_npc_abilities.log`);
                     const abilityResult = await requestNpcAbilityAssignments({
                         baseMessages: baseConversation,
-                        logPath: abilitiesLogPath,
                         timeoutScale: npctimeoutScale,
-                        npcNames: npcs.map(npc => npc?.name || '').filter(Boolean)
+                        npcNames: npcNamesForPrompt
                     });
                     const rawAbilityAssignments = abilityResult.assignments || new Map();
                     npcAbilityAssignments = rekeyNpcLookupMap(rawAbilityAssignments, npcRenameMap) || new Map();
@@ -17477,7 +17790,21 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
                 }
             })();
 
-            await Promise.all([skillsPromise, abilitiesPromise]);
+            aliasesPromise = (async () => {
+                try {
+                    Globals.updateSpinnerText({ message: `Generating NPC aliases for location ${location.name || location.id}...` });
+                    const aliasResult = await requestNpcAliasAssignments({
+                        timeoutScale: npctimeoutScale,
+                        npcNames: npcNamesForPrompt
+                    });
+                    const rawAliasAssignments = aliasResult.assignments || new Map();
+                    npcAliasAssignments = rekeyNpcLookupMap(rawAliasAssignments, npcRenameMap) || new Map();
+                } catch (aliasError) {
+                    console.warn(`Failed to generate aliases for location NPCs (${location.id}):`, aliasError.message);
+                }
+            })();
+
+            await skillsPromise;
         }
 
         const created = [];
@@ -17544,11 +17871,6 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
                 applyNpcCreationProgressionAllocations(npc, skillAssignmentEntry);
             }
 
-            const abilityAssignmentEntry = npcAbilityAssignments.get(((npcData.name || '').trim().toLowerCase()));
-            if (abilityAssignmentEntry && Array.isArray(abilityAssignmentEntry.abilities) && abilityAssignmentEntry.abilities.length) {
-                applyNpcAbilities(npc, abilityAssignmentEntry.abilities);
-            }
-
             const descriptor = { role: npcData.role, class: npcData.class, race: npcData.race };
             npcContexts.push({ npc, descriptor, name: npcData.name || npc.id });
 
@@ -17580,7 +17902,29 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
             }
         })());
 
-        await Promise.all(inventoryTasks);
+        const inventoryPromise = Promise.all(inventoryTasks);
+        await Promise.all([
+            inventoryPromise,
+            abilitiesPromise || Promise.resolve(),
+            aliasesPromise || Promise.resolve()
+        ]);
+
+        for (const { npc, name } of npcContexts) {
+            const normalizedName = (name || '').trim().toLowerCase();
+            if (!normalizedName) {
+                continue;
+            }
+
+            const abilityAssignmentEntry = npcAbilityAssignments.get(normalizedName);
+            if (abilityAssignmentEntry && Array.isArray(abilityAssignmentEntry.abilities) && abilityAssignmentEntry.abilities.length) {
+                applyNpcAbilities(npc, abilityAssignmentEntry.abilities);
+            }
+
+            const aliasAssignmentEntry = npcAliasAssignments.get(normalizedName);
+            if (aliasAssignmentEntry && Array.isArray(aliasAssignmentEntry.aliases)) {
+                applyNpcAliases(npc, aliasAssignmentEntry.aliases);
+            }
+        }
 
         const equipTasks = npcContexts.map(({ npc, descriptor, name }) => (async () => {
             try {
@@ -17711,7 +18055,6 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
 
         Globals.updateSpinnerText({ message: `Generating NPCs for region ${region.name || region.id}...` });
         console.log('🏘️ Requesting important NPC generation for region', region.id);
-        const requestStart = Date.now();
         const npcResponse = await LLMClient.chatCompletion({
             messages,
             timeoutScale: regionLocations.length,
@@ -17722,26 +18065,13 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
             throw new Error('Invalid region NPC response from AI API');
         }
 
-        const apiDurationSeconds = (Date.now() - requestStart) / 1000;
-
-        try {
-            const logDir = path.join(__dirname, 'logs');
-            if (!fs.existsSync(logDir)) {
-                fs.mkdirSync(logDir, { recursive: true });
-            }
-            const logPath = path.join(logDir, `region_${region.id}_npcs.log`);
-            const parts = [
-                formatDurationLine(apiDurationSeconds),
-                '=== REGION NPC PROMPT ===',
-                npcPrompt,
-                '\n=== REGION NPC RESPONSE ===',
-                npcResponse,
-                '\n'
-            ];
-            fs.writeFileSync(logPath, parts.join('\n'), 'utf8');
-        } catch (logErr) {
-            console.warn('Failed to write region NPC log:', logErr.message);
-        }
+        LLMClient.logPrompt({
+            prefix: 'region_npc_generation',
+            metadataLabel: 'region_npc_generation',
+            systemPrompt: systemPrompt || '',
+            generationPrompt: [generationPrompt, aiResponse, npcPrompt].join('\n\n'),
+            response: npcResponse || ''
+        });
 
         const parsedRegionResult = parseRegionNpcs(npcResponse);
         let parsedNpcs = Array.isArray(parsedRegionResult?.npcs) ? parsedRegionResult.npcs : [];
@@ -17774,16 +18104,17 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
 
         let regionNpcSkillAssignments = new Map();
         let regionNpcAbilityAssignments = new Map();
+        let regionNpcAliasAssignments = new Map();
+        let abilitiesPromise = null;
+        let aliasesPromise = null;
         if (parsedNpcs.length) {
             const npcNamesForLabel = parsedNpcs.map(npc => npc?.name || '').filter(Boolean);
 
             const skillsPromise = (async () => {
                 try {
                     Globals.updateSpinnerText({ message: `Generating NPC skills for region ${region.name || region.id}...` });
-                    const skillsLogPath = path.join(__dirname, 'logs', `region_${region.id}_npc_skills.log`);
                     const skillResult = await requestNpcSkillAssignments({
                         baseMessages: baseConversation,
-                        logPath: skillsLogPath,
                         timeoutScale: npctimeoutScale,
                         npcNames: npcNamesForLabel
                     });
@@ -17794,13 +18125,11 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
                 }
             })();
 
-            const abilitiesPromise = (async () => {
+            abilitiesPromise = (async () => {
                 try {
                     Globals.updateSpinnerText({ message: `Generating NPC abilities for region ${region.name || region.id}...` });
-                    const abilitiesLogPath = path.join(__dirname, 'logs', `region_${region.id}_npc_abilities.log`);
                     const abilityResult = await requestNpcAbilityAssignments({
                         baseMessages: baseConversation,
-                        logPath: abilitiesLogPath,
                         timeoutScale: npctimeoutScale,
                         npcNames: npcNamesForLabel
                     });
@@ -17811,7 +18140,21 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
                 }
             })();
 
-            await Promise.all([skillsPromise, abilitiesPromise]);
+            aliasesPromise = (async () => {
+                try {
+                    Globals.updateSpinnerText({ message: `Generating NPC aliases for region ${region.name || region.id}...` });
+                    const aliasResult = await requestNpcAliasAssignments({
+                        timeoutScale: npctimeoutScale,
+                        npcNames: npcNamesForLabel
+                    });
+                    const rawAliasAssignments = aliasResult.assignments || new Map();
+                    regionNpcAliasAssignments = rekeyNpcLookupMap(rawAliasAssignments, regionNpcRenameMap) || new Map();
+                } catch (aliasError) {
+                    console.warn(`Failed to generate aliases for region NPCs (${region.id}):`, aliasError.message);
+                }
+            })();
+
+            await skillsPromise;
         }
 
         const previousRegionNpcIds = Array.isArray(region.npcIds) ? [...region.npcIds] : [];
@@ -17913,11 +18256,6 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
                 applyNpcCreationProgressionAllocations(npc, regionSkillAssignment);
             }
 
-            const regionAbilityAssignment = regionNpcAbilityAssignments.get(((npcData.name || '').trim().toLowerCase()));
-            if (regionAbilityAssignment && Array.isArray(regionAbilityAssignment.abilities) && regionAbilityAssignment.abilities.length) {
-                applyNpcAbilities(npc, regionAbilityAssignment.abilities);
-            }
-
             const descriptor = { role: npcData.role, class: npcData.class, race: npcData.race };
             npcContexts.push({
                 npc,
@@ -17954,7 +18292,29 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
             }
         })());
 
-        await Promise.all(inventoryTasks);
+        const inventoryPromise = Promise.all(inventoryTasks);
+        await Promise.all([
+            inventoryPromise,
+            abilitiesPromise || Promise.resolve(),
+            aliasesPromise || Promise.resolve()
+        ]);
+
+        for (const { npc, name } of npcContexts) {
+            const normalizedName = (name || '').trim().toLowerCase();
+            if (!normalizedName) {
+                continue;
+            }
+
+            const regionAbilityAssignment = regionNpcAbilityAssignments.get(normalizedName);
+            if (regionAbilityAssignment && Array.isArray(regionAbilityAssignment.abilities) && regionAbilityAssignment.abilities.length) {
+                applyNpcAbilities(npc, regionAbilityAssignment.abilities);
+            }
+
+            const regionAliasAssignment = regionNpcAliasAssignments.get(normalizedName);
+            if (regionAliasAssignment && Array.isArray(regionAliasAssignment.aliases)) {
+                applyNpcAliases(npc, regionAliasAssignment.aliases);
+            }
+        }
 
         const equipTasks = npcContexts.map(({ npc, descriptor, targetLocation, name }) => (async () => {
             try {
@@ -18131,34 +18491,6 @@ function renderThingImagePrompt(thing) {
         // Render the template with the variables
         const renderedTemplate = promptEnv.render(templateName, variables);
 
-        const logTimestamp = Date.now();
-
-        // Don't log here.  We log in the caller after image is generated.
-        /*
-        let logPath = null;
-        try {
-            const logDir = path.join(__dirname, 'logs');
-            if (!fs.existsSync(logDir)) {
-                fs.mkdirSync(logDir, { recursive: true });
-            }
-            const safeThingId = typeof thing.id === 'string' ? thing.id.replace(/[^a-zA-Z0-9_-]/g, '_') : 'unknown';
-            logPath = path.join(logDir, `item_image_${logTimestamp}_${safeThingId}.log`);
-            const logParts = [
-                `Timestamp: ${new Date(logTimestamp).toISOString()}`,
-                `Thing ID: ${thing.id}`,
-                `Thing Name: ${thing.name}`,
-                '=== TEMPLATE CONTEXT ===',
-                JSON.stringify(variables, null, 2),
-                '=== RENDERED TEMPLATE ===',
-                renderedTemplate,
-                ''
-            ];
-            fs.writeFileSync(logPath, logParts.join('\n'), 'utf8');
-        } catch (logError) {
-            console.warn('Failed to log item image template:', logError.message);
-        }
-        */
-
         const parsedTemplate = parseXMLTemplate(renderedTemplate);
 
         LLMClient.logPrompt({
@@ -18166,33 +18498,8 @@ function renderThingImagePrompt(thing) {
             metadataLabel: 'item_image',
             systemPrompt: parsedTemplate.systemPrompt || '',
             generationPrompt: parsedTemplate.generationPrompt || '',
-            response: parsedTemplate.renderedTemplate || '',
-            sections: [
-                {
-                    title: 'Template Context',
-                    content: JSON.stringify(variables, null, 2)
-                },
-                {
-                    title: 'Rendered Template',
-                    content: renderedTemplate || ''
-                }
-            ]
+            response: parsedTemplate.renderedTemplate || ''
         });
-
-        /*
-        try {
-            if (logPath) {
-                const appendParts = [
-                    '=== PARSED GENERATION PROMPT ===',
-                    parsedTemplate.generationPrompt || '(none)',
-                    ''
-                ];
-                fs.appendFileSync(logPath, appendParts.join('\n'), 'utf8');
-            }
-        } catch (logError) {
-            console.warn('Failed to append item image prompt log:', logError.message);
-        }
-        */
         if (!parsedTemplate.generationPrompt) {
             throw new Error(`No generationPrompt found in ${templateName} template`);
         }
@@ -18754,34 +19061,7 @@ async function generatePlayerImage(player, options = {}) {
 
         // Generate the portrait prompt
         const portraitPrompt = renderPlayerPortraitPrompt(player);
-        const { prompt: finalImagePrompt, durationSeconds: promptDurationSeconds } = await generateImagePromptFromTemplate(portraitPrompt, { prefixType: 'character' });
-
-        try {
-            const logDir = path.join(__dirname, 'logs');
-            if (!fs.existsSync(logDir)) {
-                fs.mkdirSync(logDir, { recursive: true });
-            }
-            const safeName = typeof player.name === 'string' && player.name.trim()
-                ? player.name.trim().replace(/[^a-zA-Z0-9_-]/g, '_')
-                : null;
-            const portraitLogFilename = safeName
-                ? `player_${safeName}_${player.id}_portrait.log`
-                : `player_${player.id}_portrait.log`;
-            const logPath = path.join(logDir, portraitLogFilename);
-            const parts = [
-                formatDurationLine(promptDurationSeconds),
-                '=== PORTRAIT SYSTEM PROMPT ===',
-                portraitPrompt.systemPrompt || '(none)',
-                '\n=== PORTRAIT GENERATION PROMPT ===',
-                portraitPrompt.generationPrompt || '(none)',
-                '\n=== PORTRAIT LLM OUTPUT ===',
-                finalImagePrompt,
-                '\n'
-            ];
-            fs.writeFileSync(logPath, parts.join('\n'), 'utf8');
-        } catch (logError) {
-            console.warn('Failed to log portrait prompt:', logError.message);
-        }
+        const { prompt: finalImagePrompt } = await generateImagePromptFromTemplate(portraitPrompt, { prefixType: 'character' });
 
         // Create image generation job with player-specific settings
         const jobId = generateImageId();
@@ -18945,6 +19225,14 @@ async function generateImagePromptFromTemplate(prompts, options = {}) {
 
         generatedImagePrompt = applyImagePromptPrefix(generatedImagePrompt, prefixType);
 
+        LLMClient.logPrompt({
+            prefix: 'image_prompt_generation',
+            metadataLabel: 'image_prompt_generation',
+            systemPrompt: prompts?.systemPrompt || '',
+            generationPrompt: prompts?.generationPrompt || '',
+            response: generatedImagePrompt || ''
+        });
+
         return {
             prompt: generatedImagePrompt,
             durationSeconds: (Date.now() - requestStart) / 1000
@@ -19039,47 +19327,6 @@ async function generateLocationImage(location, options = {}) {
         // Generate the location scene prompt using LLM
         const promptTemplate = renderLocationImagePrompt(location);
         const { prompt: finalImagePrompt } = await generateImagePromptFromTemplate(promptTemplate, { prefixType: 'location' });
-
-        const locationLogTimestamp = Date.now();
-        try {
-            const logsDir = path.join(__dirname, 'logs');
-            if (!fs.existsSync(logsDir)) {
-                fs.mkdirSync(logsDir, { recursive: true });
-            }
-
-            const safeLocationId = String(location.id || 'unknown').replace(/[^a-zA-Z0-9_-]/g, '_');
-            const safeLocationName = typeof location.name === 'string'
-                ? location.name.replace(/[^a-zA-Z0-9_-]/g, '_')
-                : '';
-            const locationFilename = safeLocationName
-                ? `location_image_${locationLogTimestamp}_${safeLocationId}_${safeLocationName}.log`
-                : `location_image_${locationLogTimestamp}_${safeLocationId}.log`;
-            const locationLogPath = path.join(logsDir, locationFilename);
-            const locationLogStack = new Error('Location image log trace').stack || 'No stack trace available';
-            const logSections = [
-                '=== STACK TRACE ===',
-                locationLogStack,
-                '',
-                `Timestamp: ${new Date(locationLogTimestamp).toISOString()}`,
-                `Location ID: ${location.id}`,
-                `Location Name: ${location.name || ''}`,
-                '=== SYSTEM PROMPT ===',
-                promptTemplate.systemPrompt || '(none)',
-                '',
-                '=== GENERATION PROMPT ===',
-                promptTemplate.generationPrompt || '(none)',
-                '',
-                '=== RENDERED TEMPLATE ===',
-                promptTemplate.renderedTemplate || '(none)',
-                '',
-                '=== FINAL IMAGE PROMPT ===',
-                finalImagePrompt,
-                ''
-            ];
-            fs.writeFileSync(locationLogPath, logSections.join('\n'), 'utf8');
-        } catch (logError) {
-            console.warn('Failed to log location image prompt:', logError.message);
-        }
 
         // Create image generation job with location-specific settings
         const jobId = generateImageId();
@@ -19715,7 +19962,6 @@ async function generateLocationFromPrompt(options = {}) {
         //console.log('📝 System Prompt:', systemPrompt);
         //console.log('📤 Full Request Payload:', JSON.stringify({ messages }, null, 2));
 
-        const requestStart = Date.now();
         const aiResponse = await LLMClient.chatCompletion({
             messages,
             metadataLabel: 'location_generation',
@@ -19778,7 +20024,7 @@ async function generateLocationFromPrompt(options = {}) {
 
         if (isStubExpansion) {
             if (existingFactionId) {
-                if (factionResolution.explicit && factionResolution.id !== existingFactionId) {
+                if (factionResolution.explicit && factionResolution.id && factionResolution.id !== existingFactionId) {
                     throw new Error(`Location "${location.id}" already has controlling faction "${existingFactionId}", cannot apply "${factionResolution.name || controllingFactionName}".`);
                 }
                 location.controllingFactionId = existingFactionId;
@@ -19792,27 +20038,13 @@ async function generateLocationFromPrompt(options = {}) {
             location.controllingFactionId = factionResolution.id;
         }
 
-        const apiDurationSeconds = (Date.now() - requestStart) / 1000;
-
-        try {
-            const logDir = path.join(__dirname, 'logs');
-            if (!fs.existsSync(logDir)) {
-                fs.mkdirSync(logDir, { recursive: true });
-            }
-            const logPath = path.join(logDir, `location_${location.id}.log`);
-            const logParts = [
-                formatDurationLine(apiDurationSeconds),
-                '=== LOCATION GENERATION PROMPT ===',
-                generationPrompt,
-                '\n=== LOCATION GENERATION RESPONSE ===',
-                aiResponse,
-                '\n'
-            ];
-            fs.writeFileSync(logPath, logParts.join('\n'), 'utf8');
-            console.log(`📝 Location generation logged to ${logPath}`);
-        } catch (logError) {
-            console.warn('Failed to write location generation log:', logError.message);
-        }
+        LLMClient.logPrompt({
+            prefix: 'location_generation',
+            metadataLabel: 'location_generation',
+            systemPrompt: systemPrompt || '',
+            generationPrompt: generationPrompt || '',
+            response: aiResponse || ''
+        });
 
         // Store the location in gameLocations
         gameLocations.set(location.id, location);
@@ -20047,7 +20279,6 @@ async function chooseExistingRegionExit({
     messages.push({ role: 'user', content: prompt.generationPrompt });
 
     try {
-        const requestStart = Date.now();
         console.log(`🚪 Requesting existing region exit from ${sourceRegion?.name || sourceRegion?.id || 'unknown region'}`
             + ` via ${sourceLocation?.name || sourceLocation?.id || 'unknown location'} to ${targetRegion?.name || targetRegion?.id || 'target region'}.`);
 
@@ -20055,51 +20286,14 @@ async function chooseExistingRegionExit({
             messages,
             metadataLabel: 'existing_region_exit'
         });
-
-        const durationSeconds = (Date.now() - requestStart) / 1000;
-
-        try {
-            const logDir = path.join(__dirname, 'logs');
-            if (!fs.existsSync(logDir)) {
-                fs.mkdirSync(logDir, { recursive: true });
-            }
-
-            const timestamp = new Date().toISOString().replace(/[-:.TZ]/g, '');
-            const sourceRegionLabel = (sourceRegion?.id || sourceRegion?.name || 'unknown').toString().replace(/[^a-z0-9_-]+/gi, '_');
-            const targetRegionLabel = (targetRegion?.id || targetRegion?.name || 'unknown').toString().replace(/[^a-z0-9_-]+/gi, '_');
-            const logPath = path.join(logDir, `region_existing_exit_${sourceRegionLabel}_${targetRegionLabel}_${timestamp}.log`);
-
-            const logParts = [
-                formatDurationLine(durationSeconds),
-                '=== EXISTING REGION EXIT CONTEXT ===',
-                JSON.stringify({
-                    sourceRegion: {
-                        id: sourceRegion?.id || null,
-                        name: sourceRegion?.name || null
-                    },
-                    sourceLocation: {
-                        id: sourceLocation?.id || null,
-                        name: sourceLocation?.name || null
-                    },
-                    targetRegion: {
-                        id: targetRegion?.id || null,
-                        name: targetRegion?.name || null
-                    }
-                }, null, 2),
-                '\n=== EXISTING REGION EXIT SYSTEM PROMPT ===',
-                prompt.systemPrompt || '(none)',
-                '\n=== EXISTING REGION EXIT PROMPT ===',
-                prompt.generationPrompt || '(none)',
-                '\n=== EXISTING REGION EXIT RESPONSE ===',
-                normalizedResponse || '(empty)',
-                '\n'
-            ];
-
-            fs.writeFileSync(logPath, logParts.join('\n'), 'utf8');
-            console.log(`📝 Existing region exit request logged to ${logPath}`);
-        } catch (logError) {
-            console.warn('Failed to log existing region exit prompt:', logError?.message || logError);
-        }
+        const normalizedResponse = typeof aiResponse === 'string' ? aiResponse.trim() : '';
+        LLMClient.logPrompt({
+            prefix: 'existing_region_exit',
+            metadataLabel: 'existing_region_exit',
+            systemPrompt: prompt.systemPrompt || '',
+            generationPrompt: prompt.generationPrompt || '',
+            response: normalizedResponse
+        });
 
         const parsed = parseExistingRegionExitResponse(normalizedResponse);
         if (parsed?.name) {
@@ -21139,7 +21333,6 @@ async function generateRegionFromPrompt(options = {}) {
         report('region:request', { message: 'Requesting region layout from AI...' });
 
         console.log('🗺️ Requesting region generation from AI...');
-        const requestStart = Date.now();
         const aiResponse = await LLMClient.chatCompletion({
             messages,
             //temperature: parsedTemplate.temperature,
@@ -21154,31 +21347,13 @@ async function generateRegionFromPrompt(options = {}) {
         console.log('📥 Region AI Response received.');
         report('region:response', { message: 'Region response received.' });
 
-        const apiDurationSeconds = (Date.now() - requestStart) / 1000;
-
-        // Get timestamp with milliseconds for log filename
-        const timestamp = new Date().toISOString().replace(/[-:.TZ]/g, '');
-        const regionLogId = `region_${timestamp}`;
-
-        try {
-            const logDir = path.join(__dirname, 'logs');
-            if (!fs.existsSync(logDir)) {
-                fs.mkdirSync(logDir, { recursive: true });
-            }
-            const logPath = path.join(logDir, `${regionLogId}.log`);
-            const logParts = [
-                formatDurationLine(apiDurationSeconds),
-                '=== REGION GENERATION PROMPT ===',
-                generationPrompt,
-                '\n=== REGION GENERATION RESPONSE ===',
-                aiResponse,
-                '\n'
-            ];
-            fs.writeFileSync(logPath, logParts.join('\n'), 'utf8');
-            console.log(`📝 Region generation logged to ${logPath}`);
-        } catch (logError) {
-            console.warn('Failed to write region generation log:', logError.message);
-        }
+        LLMClient.logPrompt({
+            prefix: 'region_generation',
+            metadataLabel: 'region_generation',
+            systemPrompt: systemPrompt || '',
+            generationPrompt: generationPrompt || '',
+            response: aiResponse || ''
+        });
 
         const region = Region.fromXMLSnippet(aiResponse);
         await ensureRegionNameAllowed(region);
@@ -21265,7 +21440,10 @@ app.get('/', (req, res) => {
     //const systemPrompt = renderSystemPrompt(currentSetting);
     const activeSetting = getActiveSettingSnapshot();
     const clientMessageHistory = resolveClientMessageHistoryConfig(config);
-    const prunedChatHistory = pruneClientMessageHistory(chatHistory, clientMessageHistory.pruneTo);
+    const prunedChatHistory = pruneClientMessageHistory(chatHistory, {
+        ...clientMessageHistory,
+        mode: 'max'
+    });
     const filteredChatHistory = filterOrphanedChatEntries(prunedChatHistory);
 
     // Get mod scripts and styles if modLoader is available
@@ -21746,7 +21924,9 @@ const apiScope = {
     expandRegionEntryStub,
     queueLocationThingImages,
     requestNpcAbilityAssignments,
+    requestNpcAliasAssignments,
     applyNpcAbilities,
+    applyNpcAliases,
     generateLevelUpAbilitiesForCharacter,
     getActiveSettingSnapshot,
     buildNewGameDefaults,

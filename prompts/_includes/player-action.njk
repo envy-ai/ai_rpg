@@ -94,8 +94,8 @@ Use this format:
 
 These characters are present and aware of the action. This is not necessary an exhaustive list, but it contains no false positives:
 - {{ characterName }}
-{% for npc in npcs %}- {{ npc.name }}
-{% endfor %}{% for member in party %}{% if member not in npcs %}- {{ member.name }}
+{% for npc in npcs %}- {{ npc.name }} ({{ npc.race }}/{{ npc.class }})
+{% endfor %}{% for member in party %}{% if member not in npcs %}- {{ member.name }} ({{ member.race }}/{{ member.class }})
 {% endif %}{% endfor %}
 Pick ONE, TWO, or AT MOST THREE (and only if having a third adds something meaningful) of the above characters to respond or act, unless the action involves moving to a new location or region. In this case, only pick characters who are IN THE PLAYER's PARTY to respond or act. If two or three characters speak with each other, be sure to properly break the dialogue into multiple paragraphs.
 
@@ -104,26 +104,28 @@ If it's been several turns since a party member last spoke or acted, priotirize 
 If moving to a new location or region, the above characters are present at the *origin* location as opposed to the destination location/region. In other words, these are the characters who are present at the *start* of the turn; if the player leaves, they won't be present at the destination unless they're in the party or they specifically move there in the prose.
 
 {{ config.prose_instructions }}
-{% if config.repetition_buster %}{#
-Respond in a numbered list of four steps:
-
-1. Provide a 3-5 sentence response in prose that advances the story while respecting the player's character and current situation. Split those 3-5 sentences into multiple short paragraphs if it makes sense to do so, particularly if different characters are speaking or acting.
-2. Make a bulleted list of ways in which your response to #1 is repetative with previous prose. Also list repetative elements in recent prose that aren't part of your reponse to make them easier to avoid.
-3. Make a short list of things that haven't been done yet in the story that would make sense to do now, given the current situation (staying true to character).
-4. Rewrite the prose from #1 to eliminate all repetative elements identified in #2, taking care to advance (rather than rehash) the story, following suggestions from #3, enclosed in finalProse tags.
-
-Use this format: 
-1. ...
-2. ...
-3. ...
-4. <finalProse>...</finalProse>#}
+{% if config.repetition_buster %}
 You will now perform a self-correction and brainstorming process, then write a final, polished story continuation.
 
 Follow these steps:
 
-1. Draft Response: Generate a preliminary {{ config.prose_length }} paragraph that continues the story based on the current context, stractly adhering to this degree of success/failure: "{{ success_or_failure }}" regardless of how hard the action is. This is just a first attempt.
+1. List each of the 1-3 NPCs you picked to respond or act by name and 1-2 sentences about their current emotional or plot position, desires, and what they're grappling with, if anything.
 
-2. Analysis and planning. Don't view these points of analysis as conflicting; understand that they're a balancing act, and sometimes you need to use the context of the story and the scene to decide which ones win out to maximize writing quality and depth. Do the following analysis on your draft response, in whatever format feels the most comfortable: 
+2. Draft Response: Generate a preliminary but full draft that continues the story based on the current context, stractly adhering to this degree of success/failure: "{{ success_or_failure }}" regardless of how hard the action is. This is just a first attempt.
+
+{% if config.repetition_buster_mode == "glm" %}
+3. Editing and pruning:
+  3a. Railroading. This is a collaborative storytelling effort. They player needs a chance to act. If the draft portrays a significant plot development or a major change in the story state without player input, there's a good chance it's railroading. If you're doing this, you may need to aggressively pare off some of the end and get it to a reasonable length, even if it's really good. While railroading correlates with length, length isn't the determining factor. Use your judgement to determine whether the draft is giving the player enough of a chance to respond and act, and if not, cut it down until it does. The ideal length will depend on the situation. On the other hand, trust the player. If they made a decision and succeeded, narrate through the decision that they committed to. Doing that isn't railroading. 
+
+  3b. Show, don't tell. Cut any dialogue or prose that states something already visible in a character's action or mannerisms. For example, if a character is described as "hesitating" or "looking down at the ground for a moment," that's showing hesitation, so cut any dialogue where they say "I'm not sure about this" or "I don't know how to feel about this." If a character is described as "angrily shouting," cut any dialogue where they say "Stop that!" or "That's infuriating!" Never state a character's emotions directly in prose.
+
+  3c. No response from any character who did not change the scene's outcome. 
+
+  3d. Eliminate repetitiveness. Find any phrases that have occurred in the message history that feel awkward being repeated in the current prose, and cut or rephrase them. This includes words, phrases, concepts, and story beats. For example, if a character has already said "I don't know how to feel about this," they shouldn't say it again. If the phrase "I don't know how to feel about this" has been said recently by any character, then no character should say it now. If the concept of "not knowing how to feel about this" has been expressed recently in prose or dialogue, then no character should express that concept now. Use your judgement to determine what counts as "recently" and what counts as "the same concept."
+
+  3e. Trust the reader. Remove anything that doesn't trust the reader to figure out things from existing context (yes, this is somewhat redundant with 3b but it bears looking at from multiple angles).
+{% else %}
+3. Analysis and planning. Don't view these points of analysis as conflicting; understand that they're a balancing act, and sometimes you need to use the context of the story and the scene to decide which ones win out to maximize writing quality and depth. Do the following analysis on your draft response, in whatever format feels the most comfortable: 
 - **Railroading:** This is a collaborative storytelling effort. If you've got more than a total of about 2-4 paragraphs (use your judgement here based on paragraph size), there's a good chance you're pushing the plot too far without player input. If you're doing this, pare off some of the end and get it to a reasonable length.
 - **Repetitive patterns:** Identify specific words, phrases, concepts, or story beats from your **Draft Response** that are repetitive when compared to the recent story. Also, note any other repetitive patterns in the preceding text that should be avoided.
 - **Meaningless profundity:** Identify dialogue that's meaninglessly profound or just meant to sound "cool" or "deep" but doesn't mean anything or doesn't make sense. Things like "The earth remembers those who ask twice" are immersion-breaking because they're obvious fluff. You're intelligent enough to say truly profound things when the situation calls for it--I've seen you do it, and when you do, it's great. I'm not able to provide an example because true profundity derives from and ties into context, often as a realization that contradicts a character's (and perhaps the reader's) earlier belief. Plain language is better at achieving this than trying to sound all ancient and mysterious. Do this well but infrequently &gt; Don't do it at all &gt;&gt; Do it well, often &gt;&gt; do it poorly. It's not even desirable to do this all the time--the reader will find it exhausting because if every line stands out, none of them do. Be judicious and patient and understand that metaphors are detrimental to profundity.
@@ -140,10 +142,10 @@ Follow these steps:
 - **Success or failure adherence:** Check that the prose strictly adheres to the success_or_failure level provided, regardless of how hard the action is.
 - **Movement and travel:** Is the player moving to a new scene? If so, identify which characters and items are present in the origin scene, noting that they must only be present in the part of the prose that takes place prior to the player arriving at the destination. Exception: If a character is moving to the same location as the player, mention them in the destination portion as well (and optionally in the between portion). Do this in cases where, for example, a character is conversing with, fighting with, or pursuing the player. Note: Talking ain't traveling! If the Player simply *discusses* moving somewhere else, that's conversation, not movement!
 - **Remaining guidelines:** Check the text against the remaining guidelines.
+{% endif %}
+4. Write a second draft based on the above. 
 
-3. Write a second draft based on the above. 
-
-4. Analyze the second draft and make sure everything in it makes sense and is continuous with the story so far (the second draft should not reference things that were removed from the first draft, as important context will be missing, so make sure that context is present in the second draft itself!). Identify any issues to fix in the final prose. Don't add any additional things to the final prose beyond what was in the second draft. Finally, consider whether the player is traveling (to a new scene, region, or location). If ANY of those, which parts of the prose happen before, during, or after travel?
+5. Analyze the second draft and make sure everything in it makes sense and is continuous with the story so far (the second draft should not reference things that were removed from the first draft, as important context will be missing, so make sure that context is present in the second draft itself!). Identify any issues to fix in the final prose. Don't add any additional things to the final prose beyond what was in the second draft. Finally, consider whether the player is traveling (to a new scene, region, or location). If ANY of those, which parts of the prose happen before, during, or after travel?
 
 Write your final, refined prose inside the finalProse or travelProse tags below, using what you determined above.
 
@@ -152,6 +154,7 @@ Use this format:
 2. ...
 3. ...
 4. ...
+5. ...
 <finalProse>...</finalProse>
 
 OR, if the player travels to a place that would constitute a different scene, answer as follows:
@@ -160,6 +163,7 @@ OR, if the player travels to a place that would constitute a different scene, an
 2. ...
 3. ...
 4. ...
+5. ...
 <travelProse>
   <!-- The rationale for this section is so that events can be processed separately at the origin and destination locations. betweenProse may be necessary for the flow of the story, is not processed for events. -->
   <destination><!-- Full name of destination location. If the location is in an entirely different region, use this format: "region name|location name" --></destination>

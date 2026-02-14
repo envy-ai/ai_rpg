@@ -130,21 +130,95 @@ class Utils {
     return longest;
   }
 
-  static #normalizeKgramTokens(text) {
+  static #getNpcNameStopwords() {
+    const stopwords = new Set();
+    let Player = null;
+    try {
+      Player = Utils.#getPlayerModule();
+    } catch (_) {
+      return stopwords;
+    }
+    if (!Player || typeof Player.getAll !== 'function') {
+      return stopwords;
+    }
+
+    let players = [];
+    try {
+      players = Player.getAll();
+    } catch (_) {
+      return stopwords;
+    }
+    if (!Array.isArray(players)) {
+      return stopwords;
+    }
+
+    for (const player of players) {
+      if (!player || player.isNPC !== true || typeof player.name !== 'string') {
+        continue;
+      }
+      const nameTokens = player.name
+        .toLowerCase()
+        .replace(/[^a-z0-9']+/gi, ' ')
+        .split(/\s+/)
+        .map(t => t.trim())
+        .filter(t => t && /[a-z0-9]/i.test(t));
+      for (const token of nameTokens) {
+        stopwords.add(token);
+      }
+
+      let aliases = [];
+      try {
+        if (typeof player.getAliases === 'function') {
+          aliases = player.getAliases();
+        } else if (player.aliases instanceof Set) {
+          aliases = Array.from(player.aliases);
+        } else if (Array.isArray(player.aliases)) {
+          aliases = player.aliases.slice(0);
+        }
+      } catch (_) {
+        aliases = [];
+      }
+
+      if (Array.isArray(aliases)) {
+        for (const alias of aliases) {
+          if (typeof alias !== 'string') {
+            continue;
+          }
+          const aliasTokens = alias
+            .toLowerCase()
+            .replace(/[^a-z0-9']+/gi, ' ')
+            .split(/\s+/)
+            .map(t => t.trim())
+            .filter(t => t && /[a-z0-9]/i.test(t));
+          for (const token of aliasTokens) {
+            stopwords.add(token);
+          }
+        }
+      }
+    }
+    return stopwords;
+  }
+
+  static #normalizeKgramTokens(text, { excludeNpcNames = true } = {}) {
+    const npcNameStopwords = excludeNpcNames ? Utils.#getNpcNameStopwords() : null;
     return text
       .toLowerCase()
       .replace(/[^a-z0-9']+/gi, ' ')
       .split(/\s+/)
       .map(t => t.trim())
       .filter(t => t && /[a-z0-9]/i.test(t))
-      .filter(t => !COMMON_WORDS.has(t));
+      .filter(t => !COMMON_WORDS.has(t))
+      .filter(t => !npcNameStopwords || !npcNameStopwords.has(t));
   }
 
-  static normalizeKgramTokens(text) {
+  static normalizeKgramTokens(text, options = {}) {
     if (typeof text !== 'string') {
       throw new TypeError('Utils.normalizeKgramTokens requires a string argument.');
     }
-    return Utils.#normalizeKgramTokens(text);
+    if (options === null || typeof options !== 'object' || Array.isArray(options)) {
+      throw new TypeError('Utils.normalizeKgramTokens options must be an object.');
+    }
+    return Utils.#normalizeKgramTokens(text, options);
   }
 
   static #buildKgramSet(tokens, k) {

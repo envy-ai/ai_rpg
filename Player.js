@@ -30,6 +30,7 @@ class Player {
     #health;
     #healthAttribute;
     #name;
+    #aliases;
     #description;
     #shortDescription;
     #class;
@@ -232,6 +233,48 @@ class Player {
         }
 
         return Object.keys(entries).length ? Object.freeze(entries) : null;
+    }
+
+    static #normalizeAliasSet(source, fullName = '') {
+        const aliases = new Set();
+        const nameToExclude = typeof fullName === 'string' ? fullName.trim().toLowerCase() : '';
+
+        const addAlias = (value) => {
+            if (typeof value !== 'string') {
+                return;
+            }
+            const trimmed = value.trim();
+            if (!trimmed) {
+                return;
+            }
+            if (nameToExclude && trimmed.toLowerCase() === nameToExclude) {
+                return;
+            }
+            aliases.add(trimmed);
+        };
+
+        if (source instanceof Set) {
+            for (const alias of source.values()) {
+                addAlias(alias);
+            }
+            return aliases;
+        }
+
+        if (Array.isArray(source)) {
+            source.forEach(addAlias);
+            return aliases;
+        }
+
+        if (typeof source === 'string') {
+            addAlias(source);
+            return aliases;
+        }
+
+        if (source && typeof source === 'object') {
+            Object.values(source).forEach(addAlias);
+        }
+
+        return aliases;
     }
 
     static #normalizeFactionId(value) {
@@ -1119,6 +1162,7 @@ class Player {
 
         // Player identification
         this.#name = options.name ?? "Unnamed Player";
+        this.#aliases = Player.#normalizeAliasSet(options.aliases, this.#name);
         this.#description = options.description ?? "A mysterious adventurer with an unknown past.";
         this.#shortDescription = options.shortDescription ?? "";
         this.#id = options.id ?? Player.#generateUniqueId();
@@ -2252,6 +2296,49 @@ class Player {
 
     get name() {
         return this.#name;
+    }
+
+    get aliases() {
+        return new Set(this.#aliases);
+    }
+
+    getAliases() {
+        return Array.from(this.#aliases);
+    }
+
+    setAliases(aliases) {
+        this.#aliases = Player.#normalizeAliasSet(aliases, this.#name);
+        this.#lastUpdated = new Date().toISOString();
+        return this.getAliases();
+    }
+
+    addAlias(alias) {
+        const normalized = Player.#normalizeAliasSet([alias], this.#name);
+        if (!normalized.size) {
+            return false;
+        }
+        const value = normalized.values().next().value;
+        if (!value || this.#aliases.has(value)) {
+            return false;
+        }
+        this.#aliases.add(value);
+        this.#lastUpdated = new Date().toISOString();
+        return true;
+    }
+
+    removeAlias(alias) {
+        if (typeof alias !== 'string') {
+            return false;
+        }
+        const trimmed = alias.trim();
+        if (!trimmed) {
+            return false;
+        }
+        const removed = this.#aliases.delete(trimmed);
+        if (removed) {
+            this.#lastUpdated = new Date().toISOString();
+        }
+        return removed;
     }
 
     get description() {
@@ -3771,6 +3858,7 @@ class Player {
             throw new Error('Player name must be a non-empty string');
         }
         this.#name = name.trim();
+        this.#aliases = Player.#normalizeAliasSet(this.#aliases, this.#name);
         Player.#indexByName.set(this.#name, this);
         this.#lastUpdated = new Date().toISOString();
         return this.#name;
@@ -4132,6 +4220,7 @@ class Player {
             personalityType: this.#personalityType,
             personalityTraits: this.#personalityTraits,
             personalityNotes: this.#personalityNotes,
+            aliases: this.getAliases(),
             attributes: { ...this.#attributes },
             modifiers: this.getAttributeModifiers(),
             attributeInfo: this.getAttributeInfo(),
@@ -4186,6 +4275,7 @@ class Player {
             shortDescription: this.#shortDescription,
             class: this.#class,
             race: this.#race,
+            aliases: this.getAliases(),
             gender: this.#gender,
             level: this.#level,
             health: this.#health,
@@ -4267,6 +4357,7 @@ class Player {
             personalityType: data.personality?.type ?? data.personalityType,
             personalityTraits: data.personality?.traits ?? data.personalityTraits,
             personalityNotes: data.personality?.notes ?? data.personalityNotes,
+            aliases: Array.isArray(data.aliases) ? data.aliases : [],
             goals: Array.isArray(data.personality?.goals)
                 ? data.personality.goals
                 : (Array.isArray(data.goals) ? data.goals : []),

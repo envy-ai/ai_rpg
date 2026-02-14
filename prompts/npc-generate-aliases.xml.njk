@@ -1,0 +1,38 @@
+<template>
+<role>NPC alias generator</role>
+<systemPrompt>You create practical alternate name forms used in dialogue and prose.</systemPrompt>
+<generationPrompt>
+<npcs>
+{% for name in npcNames %}  <npc>
+    <name>{{ name }}</name>
+  </npc>
+{% endfor %}</npcs>
+
+Generate 0 to 3 aliases for each NPC.
+
+Rules:
+- Use only short name variants or common nicknames derived from the NPC's name.
+- Do not repeat the full name.
+- Do not invent titles, roles, or descriptive phrases.
+- If no natural alias exists, return an empty alias list for that NPC.
+
+Examples: 
+Robert "Bob" Smith -&gt; Bob, Robert
+Joe -&gt; [no aliases]
+Samantha -&gt; Sam
+Zoltar the Mighty -&gt; Zoltar
+
+Use your judgement and choose aliases that are likely to be used in dialogue and prose, not just technically possible variants. If the name is already very short or doesn't have common nicknames, it's perfectly fine for that NPC to have no aliases.
+
+Return XML in this format:
+<npcs>
+  <npc>
+    <name><!-- Exact NPC full name --></name>
+    <aliases>
+      <alias><!-- Alias text --></alias>
+      <alias><!-- Alias text --></alias>
+    </aliases>
+  </npc>
+</npcs>
+</generationPrompt>
+</template>

@@ -1,10 +1,10 @@
 # Player
 
 ## Purpose
-Represents a player or NPC with attributes, skills, inventory, gear, status effects, need bars, dispositions, party membership, quests, and progression. Maintains static indexes and shared definitions (gear slots, dispositions, need bars).
+Represents a player or NPC with attributes, skills, inventory, gear, status effects, need bars, dispositions, party membership, quests, progression, and optional alias names. Maintains static indexes and shared definitions (gear slots, dispositions, need bars).
 
 ## Key State
-- Identity: `#id`, `#name`, `#description`, `#shortDescription`, `#imageId`, `#class`, `#race`, `#gender`, `#isNPC`.
+- Identity: `#id`, `#name`, `#aliases`, `#description`, `#shortDescription`, `#imageId`, `#class`, `#race`, `#gender`, `#isNPC`.
 - Core stats: `#attributes`, `#level`, `#experience`, `#health`, `#healthAttribute`.
 - Inventory/gear: `#inventory`, `#gearSlots`, `#gearSlotsByType`, `#gearSlotNameIndex`.
 - Skills/abilities: `#skills`, `#abilities`, `#unspentSkillPoints`, `#unspentAttributePoints`.
@@ -38,7 +38,7 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
   - `setNpcInventoryChangeHandler(handler)`, `setLevelUpHandler(handler)`.
 
 ## Accessors (Grouped)
-- Identity and descriptors: `id`, `name`, `description`, `shortDescription`, `imageId`, `class`, `race`, `gender`, `personalityType`, `personalityTraits`, `personalityNotes`.
+- Identity and descriptors: `id`, `name`, `aliases`, `description`, `shortDescription`, `imageId`, `class`, `race`, `gender`, `personalityType`, `personalityTraits`, `personalityNotes`.
 - Factions: `factionId`.
 - State: `level`, `experience`, `health`, `maxHealth`, `healthAttribute`, `isDead`, `isDisabled`, `inCombat`, `isHostile`, `corpseCountdown`, `elapsedTime`, `createdAt`, `lastUpdated`.
 - Locations: `currentLocation`, `location`, `previousLocationId`, `previousLocation`, `currentLocationObject`, `lastVisitedTime`.
@@ -51,6 +51,8 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
   - `addGoal(goal)`, `removeGoal(goal)`.
   - `addQuest(quest)`, `removeQuest(questId)`, `getQuestById(questId)`.
   - `getCurrentQuests()`, `getCompletedQuests()`.
+- Aliases:
+  - `getAliases()`, `setAliases(list)`, `addAlias(alias)`, `removeAlias(alias)`.
 - Party management:
   - `addPartyMember(memberId)`, `removePartyMember(memberId)`, `clearPartyMembers()`, `getPartyMembers()`.
   - `addPartyMember(...)` now enforces party/location invariants by removing the member from all location NPC lists and clearing their explicit location.

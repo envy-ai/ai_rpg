@@ -1294,6 +1294,12 @@
                 </div>
 
                 <div class="npc-edit-section">
+                    <label for="npcEditAliases">Aliases</label>
+                    <textarea id="npcEditAliases" rows="3" placeholder="One alias per line"></textarea>
+                    <p class="npc-edit-hint">Optional short-name references used in character matching.</p>
+                </div>
+
+                <div class="npc-edit-section">
                     <h3>Personality</h3>
                     <div class="npc-edit-grid">
                         <div class="npc-edit-field">
@@ -5372,6 +5378,7 @@
         const npcEditCurrencyInput = document.getElementById('npcEditCurrency');
         const npcEditExperienceInput = document.getElementById('npcEditExperience');
         const npcEditDescriptionInput = document.getElementById('npcEditDescription');
+        const npcEditAliasesInput = document.getElementById('npcEditAliases');
         const npcEditPersonalityTypeInput = document.getElementById('npcEditPersonalityType');
         const npcEditPersonalityTraitsInput = document.getElementById('npcEditPersonalityTraits');
         const npcEditPersonalityNotesInput = document.getElementById('npcEditPersonalityNotes');
@@ -7949,6 +7956,10 @@
             }
             if (npcEditDescriptionInput) {
                 npcEditDescriptionInput.value = npc.description || '';
+            }
+            if (npcEditAliasesInput) {
+                const aliases = Array.isArray(npc.aliases) ? npc.aliases : [];
+                npcEditAliasesInput.value = aliases.join('\n');
             }
             const personalityDetails = npc.personality || {};
             if (npcEditPersonalityTypeInput) {
@@ -10556,6 +10567,29 @@
                     const loadResult = await loadResponse.json().catch(() => ({}));
 
                     if (loadResponse.ok && loadResult?.success) {
+                        const aliasesGenerated = loadResult?.metadata?.npcAliasesGenerated === true;
+                        if (!aliasesGenerated) {
+                            const shouldGenerateAliases = window.confirm(
+                                'This save does not have NPC aliases yet.\n\nGenerate aliases now? This will run in batches of 20 NPCs per prompt.'
+                            );
+                            if (shouldGenerateAliases) {
+                                setLoadGameStatus('Generating NPC aliases...', 'info');
+                                const aliasResponse = await fetch('/api/npcs/generate-aliases', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({})
+                                });
+                                const aliasResult = await aliasResponse.json().catch(() => ({}));
+                                if (!aliasResponse.ok || !aliasResult?.success) {
+                                    const aliasErrorMessage = aliasResult?.error || `HTTP ${aliasResponse.status}`;
+                                    throw new Error(`Failed to generate NPC aliases: ${aliasErrorMessage}`);
+                                }
+                                const updatedCount = Number.isFinite(aliasResult?.updatedNpcs)
+                                    ? aliasResult.updatedNpcs
+                                    : 0;
+                                setLoadGameStatus(`Generated aliases for ${updatedCount} NPCs.`, 'success');
+                            }
+                        }
                         closeLoadGameModal();
                         window.location.reload();
                     } else {
@@ -11185,6 +11219,12 @@
                 }
                 if (npcEditPersonalityNotesInput) {
                     payload.personalityNotes = npcEditPersonalityNotesInput.value ?? '';
+                }
+                if (npcEditAliasesInput) {
+                    payload.aliases = npcEditAliasesInput.value
+                        .split(/\r?\n/)
+                        .map(alias => alias.trim())
+                        .filter(Boolean);
                 }
 
                 const parsedLevel = Number.parseInt(npcEditLevelInput?.value ?? '', 10);

@@ -10,8 +10,8 @@ Character acting:
 
 These entities are present on the scene. This is not necessary an exhaustive list, but it contains no false positives:
 - {{ characterName }}
-{% for npc in npcs %}- {{ npc.name }}
-{% endfor %}{% for member in party %}{% if member not in npcs %}- {{ member.name }}
+{% for npc in npcs %}- {{ npc.name }} ({{ npc.race }}/{{ npc.class }})
+{% endfor %}{% for member in party %}{% if member not in npcs %}- {{ member.name }} ({{ member.race }}/{{ member.class }})
 {% endif %}{% endfor %}
 <task>The character attempted the above action. Did the character attack anyone, either barehanded, with a weapon, or using an ability? For something to be an attack, it must have a reasonable potential to cause injury. Pushing, shoving, or similar actions are not attacks. In this case, respond with the N/A response below.
 

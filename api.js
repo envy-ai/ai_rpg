@@ -582,6 +582,7 @@ module.exports = function registerApiRoutes(scope) {
         const OFFSCREEN_NPC_ACTIVITY_DEFAULT_WEEKLY_MAX_TURNS_BETWEEN_PROMPTS = 100;
         const OFFSCREEN_NPC_ACTIVITY_MAX_CANDIDATES = 80;
         const PLOT_SUMMARY_PROMPT_FREQUENCY = 10;
+        const PLOT_EXPANDER_DEFAULT_PROMPT_FREQUENCY = 10;
 
         let shortDescriptionBackfillInProgress = false;
         let supplementalStoryInfoInProgress = false;
@@ -589,6 +590,8 @@ module.exports = function registerApiRoutes(scope) {
         let plotSummaryInProgress = false;
         let plotSummaryTurnCounter = 0;
         let plotSummaryRunOnNextEligibleTurn = false;
+        let plotExpanderInProgress = false;
+        let plotExpanderTurnCounter = 0;
         let offscreenNpcActivityInProgress = false;
         let offscreenNpcActivityState = {
             dailyMentionedNpcNamesByWeek: {},
@@ -1784,6 +1787,27 @@ module.exports = function registerApiRoutes(scope) {
             return plotSummaryTurnCounter % PLOT_SUMMARY_PROMPT_FREQUENCY === 0;
         }
 
+        function resolvePlotExpanderPromptFrequency() {
+            const rawFrequency = config?.plot_expander_prompt_frequency;
+            if (rawFrequency === undefined || rawFrequency === null || rawFrequency === '') {
+                return PLOT_EXPANDER_DEFAULT_PROMPT_FREQUENCY;
+            }
+            const numericFrequency = Number(rawFrequency);
+            if (!Number.isFinite(numericFrequency) || numericFrequency < 0 || !Number.isInteger(numericFrequency)) {
+                throw new Error('plot_expander_prompt_frequency must be an integer greater than or equal to 0.');
+            }
+            return numericFrequency;
+        }
+
+        function shouldRunPlotExpanderThisTurn() {
+            const frequency = resolvePlotExpanderPromptFrequency();
+            if (frequency === 0) {
+                return false;
+            }
+            plotExpanderTurnCounter += 1;
+            return plotExpanderTurnCounter % frequency === 0;
+        }
+
         function resolveRegionNameForLocationId(locationId) {
             if (typeof locationId !== 'string' || !locationId.trim()) {
                 return null;
@@ -2346,6 +2370,94 @@ module.exports = function registerApiRoutes(scope) {
                 return null;
             } finally {
                 plotSummaryInProgress = false;
+            }
+        }
+
+        async function runPlotExpanderPrompt({
+            locationOverride = null,
+            entryCollector = null,
+            parentEntryId = null,
+            locationId = null,
+            specificPlot = null
+        } = {}) {
+            if (plotExpanderInProgress) {
+                console.info('Plot expander prompt already running; skipping new request.');
+                return null;
+            }
+            plotExpanderInProgress = true;
+            try {
+                if (!config?.ai) {
+                    console.warn('AI configuration missing; unable to run plot expander prompt.');
+                    return null;
+                }
+
+                const baseContext = await prepareBasePromptContext({ locationOverride });
+                const normalizedSpecificPlot = typeof specificPlot === 'string'
+                    ? specificPlot.trim()
+                    : '';
+                const renderedTemplate = promptEnv.render('base-context.xml.njk', {
+                    ...baseContext,
+                    promptType: 'plot-expander',
+                    specificPlot: normalizedSpecificPlot
+                });
+                const parsedTemplate = parseXMLTemplate(renderedTemplate);
+                if (!parsedTemplate?.systemPrompt || !parsedTemplate?.generationPrompt) {
+                    console.warn('Plot expander template missing prompts; skipping.');
+                    return null;
+                }
+
+                const requestOptions = {
+                    messages: [
+                        { role: 'system', content: parsedTemplate.systemPrompt },
+                        { role: 'user', content: parsedTemplate.generationPrompt }
+                    ],
+                    metadataLabel: 'plot_expander',
+                    validateXML: false,
+                    runInBackground: true
+                };
+
+                if (typeof parsedTemplate.temperature === 'number') {
+                    requestOptions.temperature = parsedTemplate.temperature;
+                }
+
+                const rawResponse = await LLMClient.chatCompletion(requestOptions);
+                LLMClient.logPrompt({
+                    prefix: 'plot_expander',
+                    metadataLabel: 'plot_expander',
+                    systemPrompt: parsedTemplate.systemPrompt || '',
+                    generationPrompt: parsedTemplate.generationPrompt || '',
+                    response: rawResponse || '',
+                    model: requestOptions.model,
+                    endpoint: requestOptions.endpoint
+                });
+
+                const plotExpanderText = typeof rawResponse === 'string' ? rawResponse.trim() : '';
+                if (!plotExpanderText) {
+                    console.warn('Plot expander response was empty.');
+                    return null;
+                }
+
+                const resolvedLocationId = requireLocationId(
+                    locationId || locationOverride?.id || currentPlayer?.currentLocation,
+                    'plot expander entry'
+                );
+                const entry = {
+                    role: 'assistant',
+                    content: plotExpanderText,
+                    summary: plotExpanderText,
+                    type: 'plot-expander',
+                    parentId: parentEntryId,
+                    locationId: resolvedLocationId,
+                    metadata: {
+                        excludeFromBaseContextHistory: true
+                    }
+                };
+                return pushChatEntry(entry, entryCollector, resolvedLocationId);
+            } catch (error) {
+                console.warn('Failed to run plot expander prompt:', error.message);
+                return null;
+            } finally {
+                plotExpanderInProgress = false;
             }
         }
 
@@ -3859,47 +3971,6 @@ module.exports = function registerApiRoutes(scope) {
             return result;
         };
 
-        function logSummaryBatchPrompt({ systemPrompt, generationPrompt, entries, responseText, durationSeconds }) {
-            try {
-                const logDir = path.join(Globals.baseDir || __dirname, 'logs');
-                if (!fs.existsSync(logDir)) {
-                    fs.mkdirSync(logDir, { recursive: true });
-                }
-
-                const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-                const logPath = path.join(logDir, `summary_batch_${timestamp}.log`);
-                const resolvedEntries = Array.isArray(entries)
-                    ? entries.map((item, index) => {
-                        const content = typeof item?.content === 'string' ? item.content.trim() : '';
-                        const label = String(index + 1).padStart(2, '0');
-                        return `[${label}] ${content || '(no content)'}`;
-                    })
-                    : [];
-
-                const parts = [
-                    formatDurationLabel(durationSeconds),
-                    `Entries: ${resolvedEntries.length}`,
-                    '=== SUMMARY SYSTEM PROMPT ===',
-                    systemPrompt || '(none)',
-                    ''
-                ];
-
-                if (generationPrompt) {
-                    parts.push('=== SUMMARY GENERATION PROMPT ===', generationPrompt, '');
-                }
-
-                if (resolvedEntries.length) {
-                    parts.push('=== SUMMARY ENTRIES ===', ...resolvedEntries, '');
-                }
-
-                parts.push('=== SUMMARY RESPONSE ===', responseText || '(none)', '');
-
-                fs.writeFileSync(logPath, parts.join('\n'), 'utf8');
-            } catch (error) {
-                console.warn('Failed to log summary batch prompt:', error.message);
-            }
-        }
-
         const runSummaryBatch = async (batch, { wordLength }) => {
             if (!Array.isArray(batch) || !batch.length) {
                 return true;
@@ -3961,12 +4032,12 @@ module.exports = function registerApiRoutes(scope) {
 
                 const summaryResponse = await LLMClient.chatCompletion(requestOptions);
                 const durationSeconds = (Date.now() - requestStart) / 1000;
-                logSummaryBatchPrompt({
+                LLMClient.logPrompt({
+                    prefix: requestOptions.metadataLabel,
+                    metadataLabel: requestOptions.metadataLabel,
                     systemPrompt: messages[0]?.content || parsedTemplate.systemPrompt || '',
                     generationPrompt: parsedTemplate.generationPrompt || '',
-                    entries: batch,
-                    responseText: summaryResponse,
-                    durationSeconds
+                    response: summaryResponse || ''
                 });
                 const parsedSummaries = parseBatchSummaryResponse(summaryResponse, batch.length);
 
@@ -6425,32 +6496,6 @@ module.exports = function registerApiRoutes(scope) {
             }
         }
 
-        function logDispositionCheck({ systemPrompt, generationPrompt, responseText }) {
-            try {
-                const logDir = path.join(__dirname, 'logs');
-                if (!fs.existsSync(logDir)) {
-                    fs.mkdirSync(logDir, { recursive: true });
-                }
-
-                const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-                const logPath = path.join(logDir, `disposition_check_${timestamp}.log`);
-                const parts = [
-                    '=== DISPOSITION CHECK SYSTEM PROMPT ===',
-                    systemPrompt || '(none)',
-                    '',
-                    '=== DISPOSITION CHECK GENERATION PROMPT ===',
-                    generationPrompt || '(none)',
-                    '',
-                    '=== DISPOSITION CHECK RESPONSE ===',
-                    responseText || '(no response)',
-                    ''
-                ];
-                fs.writeFileSync(logPath, parts.join('\n'), 'utf8');
-            } catch (error) {
-                console.warn('Failed to log disposition check prompt:', error.message);
-            }
-        }
-
         const BAREHANDED_KEYWORDS = new Set(['barehanded', 'bare hands', 'unarmed', 'fists']);
 
         const applyNeedBarTurnTick = () => {
@@ -7447,68 +7492,6 @@ module.exports = function registerApiRoutes(scope) {
             return names;
         }
 
-        function logNextNpcListPrompt({ systemPrompt, generationPrompt, responseText }) {
-            try {
-                const logDir = path.join(__dirname, 'logs');
-                if (!fs.existsSync(logDir)) {
-                    fs.mkdirSync(logDir, { recursive: true });
-                }
-
-                const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-                const logPath = path.join(logDir, `next_npc_list_${timestamp}.log`);
-                const parts = [
-                    '=== NEXT NPC LIST SYSTEM PROMPT ===',
-                    systemPrompt || '(none)',
-                    '',
-                    '=== NEXT NPC LIST GENERATION PROMPT ===',
-                    generationPrompt || '(none)',
-                    '',
-                    '=== NEXT NPC LIST RESPONSE ===',
-                    responseText || '(no response)',
-                    ''
-                ];
-                fs.writeFileSync(logPath, parts.join('\n'), 'utf8');
-            } catch (error) {
-                console.warn('Failed to log next NPC list prompt:', error.message);
-            }
-        }
-
-        function logNpcMemoriesPrompt({ npcName, systemPrompt, generationPrompt, historyEntries, responseText }) {
-            try {
-                const logDir = path.join(__dirname, 'logs');
-                if (!fs.existsSync(logDir)) {
-                    fs.mkdirSync(logDir, { recursive: true });
-                }
-
-                const safeName = (npcName || 'unknown_npc').replace(/[^a-z0-9-_]+/gi, '_').slice(0, 64) || 'npc';
-                const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-                const logPath = path.join(logDir, `npc_memories_${safeName}_${timestamp}.log`);
-
-                const parts = [
-                    `NPC: ${npcName || 'Unknown NPC'}`,
-                    '',
-                    '=== NPC MEMORIES SYSTEM PROMPT ===',
-                    systemPrompt || '(none)',
-                    '',
-                    '=== NPC MEMORIES GENERATION PROMPT ===',
-                    generationPrompt || '(none)',
-                    '',
-                    '=== HISTORY ENTRIES ===',
-                    Array.isArray(historyEntries)
-                        ? JSON.stringify(historyEntries, null, 2)
-                        : '(history unavailable)',
-                    '',
-                    '=== NPC MEMORIES RESPONSE ===',
-                    responseText || '(no response)',
-                    ''
-                ];
-
-                fs.writeFileSync(logPath, parts.join('\n'), 'utf8');
-            } catch (error) {
-                console.warn('Failed to log npc memories prompt:', error.message);
-            }
-        }
-
         async function runNextNpcListPrompt({ locationOverride = null, maxFriendlyNpcsToAct, maxHostileNpcsToAct, currentTurnLog } = {}) {
             const filterNpcNamesToContext = (names, locationCandidate = null) => {
                 if (!Array.isArray(names) || !names.length) {
@@ -7650,10 +7633,12 @@ module.exports = function registerApiRoutes(scope) {
                     hostileLimit: maxHostileNpcsToAct
                 });
 
-                logNextNpcListPrompt({
-                    systemPrompt: parsedTemplate.systemPrompt,
-                    generationPrompt: parsedTemplate.generationPrompt,
-                    responseText: raw
+                LLMClient.logPrompt({
+                    prefix: requestOptions.metadataLabel,
+                    metadataLabel: requestOptions.metadataLabel,
+                    systemPrompt: parsedTemplate.systemPrompt || '',
+                    generationPrompt: parsedTemplate.generationPrompt || '',
+                    response: raw || ''
                 });
 
                 return { raw, names: limitedNames };
@@ -7926,10 +7911,12 @@ module.exports = function registerApiRoutes(scope) {
                 const raw = await LLMClient.chatCompletion(requestOptions);
                 const structured = parseDispositionCheckResponse(raw);
 
-                logDispositionCheck({
-                    systemPrompt: parsedTemplate.systemPrompt,
-                    generationPrompt: parsedTemplate.generationPrompt,
-                    responseText: raw
+                LLMClient.logPrompt({
+                    prefix: requestOptions.metadataLabel,
+                    metadataLabel: requestOptions.metadataLabel,
+                    systemPrompt: parsedTemplate.systemPrompt || '',
+                    generationPrompt: parsedTemplate.generationPrompt || '',
+                    response: raw || ''
                 });
 
                 return { raw, structured };
@@ -8478,12 +8465,12 @@ module.exports = function registerApiRoutes(scope) {
                     console.warn(`Failed to parse npc-memories response for ${npc.name || 'NPC'}:`, parseError.message);
                 }
 
-                logNpcMemoriesPrompt({
-                    npcName: npc.name || 'Unknown NPC',
-                    systemPrompt: parsedTemplate.systemPrompt,
-                    generationPrompt: parsedTemplate.generationPrompt,
-                    historyEntries: sanitizedHistoryEntries,
-                    responseText: raw
+                LLMClient.logPrompt({
+                    prefix: 'npc_memories',
+                    metadataLabel: requestOptions.metadataLabel || 'npc_memories',
+                    systemPrompt: parsedTemplate.systemPrompt || '',
+                    generationPrompt: parsedTemplate.generationPrompt || '',
+                    response: raw || ''
                 });
 
                 return {
@@ -10264,6 +10251,15 @@ module.exports = function registerApiRoutes(scope) {
                 )
                     ? shouldRunPlotSummaryThisTurn()
                     : false;
+                const shouldRunPlotExpanderForThisTurn = (
+                    userMessage
+                    && userMessage.role === 'user'
+                    && !isCommentOnlyAction
+                    && !isForcedEventAction
+                    && !isPromptOnlyAction
+                )
+                    ? shouldRunPlotExpanderThisTurn()
+                    : false;
 
                 // Add the location with the id of currentPlayer.curentLocation to the player context if available
                 if (currentPlayer && currentPlayer.currentLocation) {
@@ -10470,6 +10466,18 @@ module.exports = function registerApiRoutes(scope) {
                             });
                         } catch (plotSummaryScheduleError) {
                             console.warn('Failed to schedule plot summary prompt:', plotSummaryScheduleError.message);
+                        }
+                    }
+                    if (shouldRunPlotExpanderForThisTurn) {
+                        try {
+                            void runPlotExpanderPrompt({
+                                locationOverride: location,
+                                entryCollector: newChatEntries,
+                                parentEntryId: rejectionMessageEntry?.id || null,
+                                locationId: rejectionLocationId
+                            });
+                        } catch (plotExpanderScheduleError) {
+                            console.warn('Failed to schedule plot expander prompt:', plotExpanderScheduleError.message);
                         }
                     }
 
@@ -11188,6 +11196,18 @@ module.exports = function registerApiRoutes(scope) {
                         }
                     } catch (plotSummaryScheduleError) {
                         console.warn('Failed to schedule plot summary prompt:', plotSummaryScheduleError.message);
+                    }
+                    try {
+                        if (shouldRunPlotExpanderForThisTurn) {
+                            void runPlotExpanderPrompt({
+                                locationOverride: location,
+                                entryCollector: newChatEntries,
+                                parentEntryId: aiResponseEntry?.id || null,
+                                locationId: aiResponseLocationId
+                            });
+                        }
+                    } catch (plotExpanderScheduleError) {
+                        console.warn('Failed to schedule plot expander prompt:', plotExpanderScheduleError.message);
                     }
 
                     let eventResult = null;
@@ -12198,7 +12218,10 @@ module.exports = function registerApiRoutes(scope) {
 
         app.get('/api/chat/history', (req, res) => {
             const clientMessageHistory = resolveClientMessageHistoryConfig(config);
-            const prunedHistory = pruneClientMessageHistory(chatHistory, clientMessageHistory.pruneTo);
+            const prunedHistory = pruneClientMessageHistory(chatHistory, {
+                ...clientMessageHistory,
+                mode: 'max'
+            });
             const filteredHistory = filterOrphanedChatEntries(prunedHistory);
             res.json({
                 history: filteredHistory,
@@ -13470,6 +13493,78 @@ module.exports = function registerApiRoutes(scope) {
             }
         });
 
+        app.post('/api/npcs/generate-aliases', async (req, res) => {
+            try {
+                if (typeof requestNpcAliasAssignments !== 'function') {
+                    throw new Error('NPC alias assignment service is unavailable.');
+                }
+                if (typeof applyNpcAliases !== 'function') {
+                    throw new Error('NPC alias assignment applier is unavailable.');
+                }
+
+                const npcBatchSize = 20;
+                const allNpcs = Array.from(players.values()).filter(npc => npc && npc.isNPC === true);
+                let promptsRun = 0;
+                let updatedNpcs = 0;
+                let npcsWithAliases = 0;
+
+                for (let index = 0; index < allNpcs.length; index += npcBatchSize) {
+                    const batch = allNpcs.slice(index, index + npcBatchSize);
+                    if (!batch.length) {
+                        continue;
+                    }
+
+                    const batchNames = batch.map((npc) => {
+                        const name = typeof npc.name === 'string' ? npc.name.trim() : '';
+                        if (!name) {
+                            throw new Error(`NPC ${npc.id || '<unknown>'} is missing a valid name.`);
+                        }
+                        return name;
+                    });
+
+                    promptsRun += 1;
+                    const aliasResult = await requestNpcAliasAssignments({
+                        timeoutScale: batch.length,
+                        npcNames: batchNames
+                    });
+
+                    if (!(aliasResult?.assignments instanceof Map)) {
+                        throw new Error('Alias generation returned an invalid assignment map.');
+                    }
+
+                    for (const npc of batch) {
+                        const normalizedName = npc.name.trim().toLowerCase();
+                        const assignment = aliasResult.assignments.get(normalizedName);
+                        const aliases = Array.isArray(assignment?.aliases) ? assignment.aliases : [];
+                        applyNpcAliases(npc, aliases);
+                        updatedNpcs += 1;
+                        if (aliases.length) {
+                            npcsWithAliases += 1;
+                        }
+                    }
+                }
+
+                const { metadata, persisted } = markNpcAliasesGenerated({ persist: true });
+                return res.json({
+                    success: true,
+                    message: `Generated aliases for ${updatedNpcs} NPCs in ${promptsRun} prompt batch(es).`,
+                    totalNpcs: allNpcs.length,
+                    updatedNpcs,
+                    npcsWithAliases,
+                    promptsRun,
+                    batchSize: npcBatchSize,
+                    persisted,
+                    metadata
+                });
+            } catch (error) {
+                console.error('Failed to generate NPC aliases in bulk:', error);
+                return res.status(500).json({
+                    success: false,
+                    error: error?.message || 'Failed to generate NPC aliases.'
+                });
+            }
+        });
+
         // Get an NPC's full status
         app.get('/api/npcs/:id', (req, res) => {
             try {
@@ -13524,10 +13619,12 @@ module.exports = function registerApiRoutes(scope) {
                     personalityType,
                     personalityTraits,
                     personalityNotes,
-                    statusEffects
+                    statusEffects,
+                    aliases
                 } = body;
 
                 const hasFactionId = Object.prototype.hasOwnProperty.call(body, 'factionId');
+                const hasAliases = Object.prototype.hasOwnProperty.call(body, 'aliases');
                 let resolvedFactionId = null;
                 if (hasFactionId) {
                     try {
@@ -13541,6 +13638,22 @@ module.exports = function registerApiRoutes(scope) {
                     }
                 }
 
+                if (hasAliases) {
+                    if (!Array.isArray(aliases)) {
+                        return res.status(400).json({
+                            success: false,
+                            error: 'aliases must be an array of strings.'
+                        });
+                    }
+                    const hasInvalidAliasEntry = aliases.some(alias => typeof alias !== 'string');
+                    if (hasInvalidAliasEntry) {
+                        return res.status(400).json({
+                            success: false,
+                            error: 'aliases must only contain strings.'
+                        });
+                    }
+                }
+
                 if (Object.prototype.hasOwnProperty.call(body, 'unspentSkillPoints')) {
                     return res.status(400).json({
                         success: false,
@@ -13550,6 +13663,10 @@ module.exports = function registerApiRoutes(scope) {
 
                 if (typeof name === 'string' && name.trim()) {
                     npc.setName(name.trim());
+                }
+
+                if (hasAliases) {
+                    npc.setAliases(aliases);
                 }
 
                 if (typeof description === 'string') {
@@ -21417,35 +21534,6 @@ module.exports = function registerApiRoutes(scope) {
             return [...baseNormalized, ...extras];
         }
 
-        function logSettingAutofillPrompt({ systemPrompt, generationPrompt, additionalInstructions = '', responseText }) {
-            try {
-                const logDir = path.join(__dirname, 'logs');
-                if (!fs.existsSync(logDir)) {
-                    fs.mkdirSync(logDir, { recursive: true });
-                }
-
-                const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-                const logPath = path.join(logDir, `setting_autofill_${timestamp}.log`);
-                const parts = [
-                    `=== SETTINGS AUTOFILL (${new Date().toISOString()}) ===`,
-                    '=== SYSTEM PROMPT ===',
-                    systemPrompt || '(none)',
-                    '',
-                    '=== GENERATION PROMPT ===',
-                    generationPrompt || '(none)',
-                    ''
-                ];
-
-                if (responseText !== undefined) {
-                    parts.push('=== AI RESPONSE ===', responseText || '(empty)', '');
-                }
-
-                fs.writeFileSync(logPath, parts.join('\n'), 'utf8');
-            } catch (error) {
-                console.warn('Failed to log settings autofill prompt:', error.message);
-            }
-        }
-
         function sanitizeForAbilityXml(value) {
             if (value === null || value === undefined) {
                 return '';
@@ -21583,11 +21671,12 @@ module.exports = function registerApiRoutes(scope) {
                     throw new Error('AI did not return a usable response');
                 }
 
-                logSettingAutofillPrompt({
-                    systemPrompt,
-                    generationPrompt,
-                    additionalInstructions,
-                    responseText: aiMessage
+                LLMClient.logPrompt({
+                    prefix: requestOptions.metadataLabel,
+                    metadataLabel: requestOptions.metadataLabel,
+                    systemPrompt: systemPrompt || '',
+                    generationPrompt: generationPrompt || '',
+                    response: aiMessage || ''
                 });
 
                 const generatedSetting = parseSettingXmlResponse(aiMessage);
@@ -22570,12 +22659,14 @@ module.exports = function registerApiRoutes(scope) {
                 skills.clear();
                 Player.setAvailableSkills(new Map());
                 Globals.saveFileSaveVersion = normalizeSaveFileVersion(Globals.currentSaveVersion, 0);
-                Globals.setSaveMetadata({ summaryStyle: 'scene' });
+                Globals.setSaveMetadata({ summaryStyle: 'scene', npcAliasesGenerated: false });
                 Globals.setCurrentSaveInfo(null);
                 supplementalStoryInfoTurnCounter = 0;
                 plotSummaryInProgress = false;
                 plotSummaryTurnCounter = 0;
                 plotSummaryRunOnNextEligibleTurn = false;
+                plotExpanderInProgress = false;
+                plotExpanderTurnCounter = 0;
                 resetOffscreenNpcActivityState();
                 report('new_game:calendar', 'Generating world calendar...');
                 const calendarDefinition = await resolveCalendarDefinitionForSetting({
@@ -23017,6 +23108,54 @@ module.exports = function registerApiRoutes(scope) {
             }
         };
 
+        const normalizeNpcAliasesGeneratedFlag = (value) => value === true;
+
+        const updateRuntimeSaveMetadata = (updater) => {
+            if (typeof updater !== 'function') {
+                throw new Error('updateRuntimeSaveMetadata requires an updater function.');
+            }
+            const currentMetadata = (typeof Globals.getSaveMetadata === 'function'
+                ? Globals.getSaveMetadata()
+                : Globals.saveMetadata) || {};
+            if (!currentMetadata || typeof currentMetadata !== 'object' || Array.isArray(currentMetadata)) {
+                throw new Error('Current save metadata must be an object.');
+            }
+            const nextMetadata = { ...currentMetadata };
+            updater(nextMetadata);
+            Globals.setSaveMetadata(nextMetadata);
+            return nextMetadata;
+        };
+
+        const persistCurrentSaveMetadata = (metadata) => {
+            if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) {
+                throw new Error('persistCurrentSaveMetadata requires a metadata object.');
+            }
+            const saveInfo = typeof Globals.getCurrentSaveInfo === 'function'
+                ? Globals.getCurrentSaveInfo()
+                : Globals.currentSaveInfo;
+            if (!saveInfo || typeof saveInfo !== 'object') {
+                return false;
+            }
+            const saveDir = typeof saveInfo.saveDir === 'string' ? saveInfo.saveDir.trim() : '';
+            if (!saveDir) {
+                return false;
+            }
+            if (!fs.existsSync(saveDir)) {
+                throw new Error(`Save directory does not exist: ${saveDir}`);
+            }
+            const metadataPath = path.join(saveDir, 'metadata.json');
+            fs.writeFileSync(metadataPath, JSON.stringify(metadata, null, 2));
+            return true;
+        };
+
+        const markNpcAliasesGenerated = ({ persist = false } = {}) => {
+            const metadata = updateRuntimeSaveMetadata((nextMetadata) => {
+                nextMetadata.npcAliasesGenerated = true;
+            });
+            const persisted = persist ? persistCurrentSaveMetadata(metadata) : false;
+            return { metadata, persisted };
+        };
+
         function performGameSave({ requestedSaveName = null, saveRoot = null } = {}) {
             if (!currentPlayer) {
                 const error = new Error('No current player to save');
@@ -23087,6 +23226,12 @@ module.exports = function registerApiRoutes(scope) {
             metadata.totalSkills = skills.size;
             metadata.currentSettingId = currentSetting?.id || metadata.currentSettingId || null;
             metadata.currentSettingName = currentSetting?.name || metadata.currentSettingName || null;
+            const runtimeMetadata = (typeof Globals.getSaveMetadata === 'function'
+                ? Globals.getSaveMetadata()
+                : Globals.saveMetadata) || {};
+            metadata.npcAliasesGenerated = normalizeNpcAliasesGeneratedFlag(
+                runtimeMetadata?.npcAliasesGenerated ?? metadata.npcAliasesGenerated
+            );
             metadata.saveFileSaveVersion = normalizeSaveFileVersion(Globals.saveFileSaveVersion, 0);
             const summaryStyle = normalizeSummaryStyle(
                 (typeof Globals.getSaveMetadata === 'function' ? Globals.getSaveMetadata() : Globals.saveMetadata)?.summaryStyle
@@ -23098,6 +23243,9 @@ module.exports = function registerApiRoutes(scope) {
             }
             metadata.plotSummaryTurnCounter = Number.isInteger(plotSummaryTurnCounter) && plotSummaryTurnCounter >= 0
                 ? plotSummaryTurnCounter
+                : 0;
+            metadata.plotExpanderTurnCounter = Number.isInteger(plotExpanderTurnCounter) && plotExpanderTurnCounter >= 0
+                ? plotExpanderTurnCounter
                 : 0;
             metadata.offscreenNpcActivityState = normalizeOffscreenNpcActivityState(offscreenNpcActivityState);
             const currentLocationId = currentPlayer.currentLocation || null;
@@ -23360,6 +23508,7 @@ module.exports = function registerApiRoutes(scope) {
             Globals.saveFileSaveVersion = normalizeSaveFileVersion(metadata.saveFileSaveVersion, 0);
             console.log(`💾 Loaded save file version: ${Globals.saveFileSaveVersion} (metadata: ${metadata.saveFileSaveVersion ?? 'missing'})`);
             metadata.summaryStyle = normalizeSummaryStyle(metadata.summaryStyle);
+            metadata.npcAliasesGenerated = normalizeNpcAliasesGeneratedFlag(metadata.npcAliasesGenerated);
             Globals.setSaveMetadata(metadata);
             {
                 const hasStoredPlotSummaryCounter = Object.prototype.hasOwnProperty.call(metadata, 'plotSummaryTurnCounter');
@@ -23373,6 +23522,15 @@ module.exports = function registerApiRoutes(scope) {
                 }
             }
             plotSummaryInProgress = false;
+            {
+                const parsedPlotExpanderCounter = Number(metadata.plotExpanderTurnCounter);
+                if (Number.isInteger(parsedPlotExpanderCounter) && parsedPlotExpanderCounter >= 0) {
+                    plotExpanderTurnCounter = parsedPlotExpanderCounter;
+                } else {
+                    plotExpanderTurnCounter = 0;
+                }
+            }
+            plotExpanderInProgress = false;
             offscreenNpcActivityState = normalizeOffscreenNpcActivityState(metadata.offscreenNpcActivityState);
             Globals.setCurrentSaveInfo({
                 saveName: metadata.saveName || normalizedName,
@@ -24635,6 +24793,21 @@ module.exports = function registerApiRoutes(scope) {
                         return runPlotSummaryPrompt({
                             parentEntryId,
                             locationId: resolvedLocationId
+                        });
+                    },
+                    runPlotExpanderPrompt: async ({
+                        parentEntryId = null,
+                        locationId = null,
+                        specificPlot = null
+                    } = {}) => {
+                        const resolvedLocationId = requireLocationId(
+                            locationId || currentPlayer?.currentLocation,
+                            'runplotexpander slash command'
+                        );
+                        return runPlotExpanderPrompt({
+                            parentEntryId,
+                            locationId: resolvedLocationId,
+                            specificPlot
                         });
                     },
                     generateSkillsByNames: typeof generateSkillsByNames === 'function'

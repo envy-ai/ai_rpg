@@ -87,6 +87,7 @@ Variants:
 - If the travel prose destination does not match a known location, the server creates a stub destination (and exit) using the event-driven location creation flow.
 - Supplemental story info prompts append `supplemental-story-info` entries linked to the main turn entry; these are stored server-side for base-context prompts and are not sent to clients. They run asynchronously after turn resolution and do not block the response. Frequency is controlled by `supplemental_story_info_prompt_frequency` (`0` disables, `>0` runs every X turns) and prompts also run on turns where new NPCs or things were generated. Only one supplemental story info prompt runs at a time; additional requests are skipped while one is in flight.
 - Plot summary prompts append hidden `plot-summary` entries linked to the main turn entry. They are scheduled every 10 player action submissions (normal/creative actions; excludes `?`, `@`, `!!`, and `#` flows), run asynchronously (fire-and-forget), and do not block event checks or response delivery. Old entries remain in saved chat history but are hidden from client history and excluded from normal base-context history assembly.
+- Plot expander prompts append hidden `plot-expander` entries linked to the main turn entry. They are scheduled on eligible player action turns using `plot_expander_prompt_frequency` (default `10`, `0` disables), run asynchronously (fire-and-forget), and do not block event checks or response delivery. Old entries remain in saved chat history but are hidden from client history and excluded from normal base-context history assembly.
 - Offscreen NPC activity prompts also append hidden server-side entries (`offscreen-npc-activity-daily`, `offscreen-npc-activity-weekly`) linked to the main turn entry:
   - Twice daily when world time crosses `07:00` or `19:00`, requesting `offscreen_npc_activity_prompt_count` non-present NPC updates since last mention.
   - For daily runs, the hidden heading reports elapsed in-game hours since the previous successful daily run (rounded to 1 decimal); first run uses the standard twice-daily heading.
@@ -103,6 +104,10 @@ Errors:
 
 ## GET /api/chat/history
 Returns pruned chat history (system entries and some summaries filtered).
+
+Notes:
+- Uses `client_message_history.max_messages` as a turn-based visibility cap for client history.
+- This is independent from `recent_history_turns`, which only affects base-context prompt construction.
 
 Response (200):
 - `{ history: ChatEntry[], count: number, worldTime: object }` (no `success` flag)

@@ -874,12 +874,56 @@ class AIRPGChat {
         return { maxMessages, pruneTo };
     }
 
+    getServerHistoryTurnAnchorIndexes(history) {
+        if (!Array.isArray(history)) {
+            throw new Error('Server history must be an array before identifying turn anchors.');
+        }
+
+        const userAnchors = [];
+        const assistantFallbackAnchors = [];
+
+        history.forEach((entry, index) => {
+            if (!entry || typeof entry !== 'object') {
+                return;
+            }
+            const role = typeof entry.role === 'string' ? entry.role.trim().toLowerCase() : '';
+            const entryType = typeof entry.type === 'string' ? entry.type.trim().toLowerCase() : '';
+
+            if (role === 'user') {
+                userAnchors.push(index);
+                return;
+            }
+
+            if (role === 'assistant' && (entryType === 'player-action' || entryType === 'storyteller-answer')) {
+                assistantFallbackAnchors.push(index);
+            }
+        });
+
+        return userAnchors.length ? userAnchors : assistantFallbackAnchors;
+    }
+
     pruneServerHistoryIfNeeded() {
-        const { maxMessages, pruneTo } = this.getClientMessageHistoryConfig();
+        const { maxMessages } = this.getClientMessageHistoryConfig();
         if (!Array.isArray(this.serverHistory)) {
             throw new Error('Server history must be an array before pruning.');
         }
-        if (this.serverHistory.length <= maxMessages) {
+
+        const turnAnchorIndexes = this.getServerHistoryTurnAnchorIndexes(this.serverHistory);
+        let prunedHistory = this.serverHistory;
+        let didPrune = false;
+
+        if (turnAnchorIndexes.length > 0) {
+            if (turnAnchorIndexes.length > maxMessages) {
+                const startIndex = turnAnchorIndexes[turnAnchorIndexes.length - maxMessages];
+                prunedHistory = this.serverHistory.slice(startIndex);
+                didPrune = true;
+            }
+        } else if (this.serverHistory.length > maxMessages) {
+            prunedHistory = this.serverHistory.slice(-maxMessages);
+            didPrune = true;
+        }
+
+        if (!didPrune) {
             return false;
         }
 
@@ -887,7 +931,7 @@ class AIRPGChat {
         const resolvedParentById = new Map();
         let lastNonAttachmentId = null;
 
-        this.serverHistory.forEach(entry => {
+        prunedHistory.forEach(entry => {
             if (!entry) {
                 lastNonAttachmentId = null;
                 return;
@@ -903,7 +947,6 @@ class AIRPGChat {
             }
         });
 
-        const prunedHistory = this.serverHistory.slice(-pruneTo);
         const keptIds = new Set(
             prunedHistory
                 .map(entry => entry && entry.id)

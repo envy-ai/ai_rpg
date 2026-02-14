@@ -33,8 +33,8 @@ Status effect vs. Alteration:
 
 These characters are currently known by the system to be present. This is not necessary an exhaustive list, but it contains no false positives. Any entites present in textToCheck are also considered present; this list may not be completely up to date on all newly present characters.
 - {{ characterName }}
-{% for npc in npcs %}- {{ npc.name }}
-{% endfor %}{% for member in party %}{% if member not in npcs %}- {{ member.name }}
+{% for npc in npcs %}- {{ npc.name }} ({{ npc.race }}/{{ npc.class }})
+{% endfor %}{% for member in party %}{% if member not in npcs %}- {{ member.name }} ({{ member.race }}/{{ member.class }})
 {% endif %}{% endfor %}
 
 Event Checks:

@@ -244,7 +244,11 @@ formulas:
     max_attribute: "infinity"
     max_skill: "infinity"
 baseHealthPerLevel: 15
+
 repetition_buster: true
+# repetition_buster_mode is passed to the prompt template so the prompt can be tailored to the model's strength and weaknesses. Currently implemented are "glm" and "kimi". GLM-5 writes more naturally by default and needs less hand-holding, while Kimi-K2.5 needs more direction to avoid common pitfalls.
+repetition_buster_mode: glm
+
 slop_buster: true
 slop_remover_base_attempts: 2
 prose_length: 3-5 sentences
@@ -283,6 +287,10 @@ autosaves_to_retain: 50
 # Number of recent turns to include immediately before the AI generates prose. Previous turns are included further back in the prompt.
 recent_history_turns: 25
 
+# Number of eligible player-action turns between automatic plot-expander prompt runs.
+# Set to 0 to disable automatic plot-expander runs.
+plot_expander_prompt_frequency: 10
+
 base_context:
   # When true, omit inventory items from the base-context prompt.
   omit_inventory_items: false
@@ -290,6 +298,8 @@ base_context:
   omit_abilities: false
 
 client_message_history:
+  # Client-visible turn cap used by /api/chat/history and initial page render.
+  # This is independent from recent_history_turns (base-context prompt segmentation).
   max_messages: 100
   prune_to: 80
 

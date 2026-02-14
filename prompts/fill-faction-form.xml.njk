@@ -13,6 +13,8 @@ Your task:
 - Keep relation statuses limited to: allied, neutral, hostile, rival.
 - Ensure each relation includes concise notes.
 - Ensure reputation tiers are sensible and ordered by threshold.
+- Use the exact nested XML schema shown below for all generated entries.
+- Do not use attribute-only, shorthand, or compact variants for `asset`, `relation`, or `tier` nodes.
 
 Return only XML for a single &lt;faction&gt; entry, with no commentary.
 </systemPrompt>
@@ -89,6 +91,45 @@ Partially completed faction to finish:
 Fill any empty/missing fields while preserving all non-empty fields exactly.
 If relations are empty, add one relation per existing faction name.
 If reputation tiers are empty, provide at least 3 ordered tiers.
+Use this exact output schema:
+&lt;faction&gt;
+  &lt;name&gt;...&lt;/name&gt;
+  &lt;homeRegionName&gt;...&lt;/homeRegionName&gt;
+  &lt;shortDescription&gt;...&lt;/shortDescription&gt;
+  &lt;description&gt;...&lt;/description&gt;
+  &lt;tags&gt;
+    &lt;tag&gt;...&lt;/tag&gt;
+  &lt;/tags&gt;
+  &lt;goals&gt;
+    &lt;goal&gt;...&lt;/goal&gt;
+  &lt;/goals&gt;
+  &lt;assets&gt;
+    &lt;asset&gt;
+      &lt;name&gt;...&lt;/name&gt;
+      &lt;type&gt;...&lt;/type&gt;
+      &lt;description&gt;...&lt;/description&gt;
+    &lt;/asset&gt;
+  &lt;/assets&gt;
+  &lt;relations&gt;
+    &lt;relation&gt;
+      &lt;factionName&gt;...&lt;/factionName&gt;
+      &lt;status&gt;allied|neutral|hostile|rival&lt;/status&gt;
+      &lt;notes&gt;...&lt;/notes&gt;
+    &lt;/relation&gt;
+  &lt;/relations&gt;
+  &lt;reputationTiers&gt;
+    &lt;tier&gt;
+      &lt;threshold&gt;...&lt;/threshold&gt;
+      &lt;label&gt;...&lt;/label&gt;
+      &lt;perks&gt;
+        &lt;perk&gt;...&lt;/perk&gt;
+      &lt;/perks&gt;
+      &lt;penalties&gt;
+        &lt;penalty&gt;...&lt;/penalty&gt;
+      &lt;/penalties&gt;
+    &lt;/tier&gt;
+  &lt;/reputationTiers&gt;
+&lt;/faction&gt;
 Return only the completed XML faction node.
 </generationPrompt>
 </template>

@@ -2,6 +2,21 @@
 
 Common payloads: see `docs/api/common.md`.
 
+## POST /api/npcs/generate-aliases
+Generate aliases in bulk for all current NPCs.
+
+Request:
+- Body: none
+
+Behavior:
+- Processes NPCs in prompt batches of `20` names per request to the alias generator prompt.
+- Applies aliases per NPC by exact lowercased name key; NPCs with no returned aliases are set to an empty alias list.
+- Marks save metadata `npcAliasesGenerated=true` and persists `metadata.json` for the currently loaded save (if one is active).
+
+Response:
+- 200: `{ success: true, message, totalNpcs, updatedNpcs, npcsWithAliases, promptsRun, batchSize, persisted, metadata }`
+- 500: `{ success: false, error }`
+
 ## GET /api/npcs/:id
 Fetch full NPC status (uses `Player.getStatus()`).
 
@@ -14,7 +29,7 @@ Update an NPC's core data.
 
 Request:
 - Path: `id`
-- Body supports: `name`, `description`, `shortDescription`, `race`, `class`, `factionId`, `level`, `health`, `healthAttribute`, `attributes`, `skills`, `abilities`, `currency`, `experience`, `isDead`, `personalityType`, `personalityTraits`, `personalityNotes`, `statusEffects`
+- Body supports: `name`, `description`, `shortDescription`, `race`, `class`, `factionId`, `level`, `health`, `healthAttribute`, `attributes`, `skills`, `abilities`, `currency`, `experience`, `isDead`, `personalityType`, `personalityTraits`, `personalityNotes`, `statusEffects`, `aliases`
 - Rejects `unspentSkillPoints` (400) because pools are formula-derived at read time.
 
 Response:
@@ -24,6 +39,7 @@ Response:
 Notes:
 - Unknown skills may trigger skill generation; canonical names are normalized before assignment.
 - `factionId` must reference an existing faction id or be `null` to clear membership.
+- If provided, `aliases` must be an array of strings.
 
 ## POST /api/npcs/:id/equipment
 Equip or unequip an item in an NPC's inventory.

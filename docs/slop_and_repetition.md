@@ -28,7 +28,7 @@ Quick refresher on where these systems live and how they're wired.
 
 ### Detection logic
 - Overlap detection uses `Utils.findKgramOverlap(prior, response, { k: 6 })`.
-- Token normalization lowercases, strips punctuation as word breaks (except apostrophes), and removes common words and contractions before k-gram matching (`COMMON_WORDS` in `Utils.js`). Modal verbs `could`/`would` and their contractions are intentionally retained.
+- Token normalization lowercases, strips punctuation as word breaks (except apostrophes), and removes common words/contractions plus NPC name and alias tokens before k-gram matching (`COMMON_WORDS` in `Utils.js`). Modal verbs `could`/`would` and their contractions are intentionally retained.
 - The server logs the offending overlap when detected.
 
 ### Key files / functions
@@ -67,7 +67,7 @@ Quick refresher on where these systems live and how they're wired.
 - Configured ngrams:
   - Source: `defs/slopwords.yaml` → `ngrams` (with per-entry ppm or `default`, using `ngram_default`).
   - Analyzer: `server.js` → `analyzeConfiguredNgramsForText()` computes ppm over normalized tokens.
-  - Normalization matches overlap detection (`Utils.normalizeKgramTokens`): lowercase, punctuation stripping, and common-word removal while retaining `could`/`would` variants.
+  - Normalization matches overlap detection (`Utils.normalizeKgramTokens`): lowercase, punctuation stripping, common-word removal, and NPC name/alias token removal while retaining `could`/`would` variants.
   - `api.js` → `getFilteredConfiguredNgrams()` runs analyzer on combined slop history + current response, then filters to ngrams present in the current response.
 - Repeated n-grams:
   - `api.js` → `collectSlopNgrams()`, which combines two scans using `Utils.findKgramOverlaps()`.

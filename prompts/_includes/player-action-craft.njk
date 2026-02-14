@@ -58,8 +58,8 @@ Describe this effect in 1 additional paragraph of prose.
 {% endif %}
 
 These characters are present and aware of the action:
-{% for npc in npcs %}- {{ npc.name }}
-{% endfor %}{% for member in party %}- {{ member.name }}
+{% for npc in npcs %}- {{ npc.name }} ({{ npc.race }}/{{ npc.class }})
+{% endfor %}{% for member in party %}{% if member not in npcs %}- {{ member.name }} ({{ member.race }}/{{ member.class }})
 {% endfor %}
 
 Respond in this format:

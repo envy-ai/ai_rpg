@@ -69,6 +69,7 @@ Response:
 
 Notes:
 - Successful saves now emit a server-console line in the shared save path (`performGameSave`), so this applies to both manual saves and autosaves.
+- Save metadata now includes `npcAliasesGenerated` (boolean). It is set to `true` after alias-generation prompts run.
 
 ## POST /api/load
 Load a saved game.
@@ -84,6 +85,7 @@ Response:
 Notes:
 - If a save has no persisted `calendarDefinition`, the server generates one from the active setting via LLM (`calendar_generation`) using the same Earth-like => Gregorian prompt rule, then falls back to Gregorian if generation fails.
 - `/api/load` now runs faction-reference reconciliation before restoring the current player: invalid faction ids are cleared from player `factionId`, player faction standings, location/region/pending-stub controlling faction ids, and faction relation edges that target missing/self factions.
+- `metadata.npcAliasesGenerated` is normalized to a boolean on load (`true` only when explicitly set `true` in the save metadata).
 
 ## GET /api/saves
 List available saves.

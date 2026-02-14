@@ -204,3 +204,35 @@ random_event_frequency:
   - `<= 0` disables that specific type for normal random rolls.
 
 `random_event_frequency_multiplier` scales roll frequency globally and must be a positive number.
+
+## History windows (`recent_history_turns` vs `client_message_history`)
+
+`recent_history_turns` and `client_message_history` control different history windows:
+
+- `recent_history_turns` affects only base-context prompt assembly (`<recentStoryHistory>` vs `<olderStoryHistory>`).
+- `client_message_history` affects only what the web client receives/renders via `/api/chat/history` and initial page load history.
+
+```yaml
+recent_history_turns: 10
+client_message_history:
+  max_messages: 50
+  prune_to: 40
+```
+
+`client_message_history.max_messages` is interpreted as a **turn cap** (anchored on user entries; assistant prose anchors are used only as fallback when user entries are unavailable). This does not change `recent_history_turns`.
+
+`client_message_history.prune_to` remains a validated config value (`<= max_messages`) for prune-mode flows, but the standard chat-history responses now use `max_messages` turn-capped output so client-visible history length no longer tracks `recent_history_turns`.
+
+## Plot expander cadence
+
+`plot_expander_prompt_frequency` controls automatic hidden `plot-expander` prompt cadence on eligible player-action turns.
+
+```yaml
+plot_expander_prompt_frequency: 10
+```
+
+- Default is `10` when omitted.
+- `0` disables automatic runs.
+- Value must be an integer `>= 0`; invalid values raise runtime errors when scheduling.
+- Runs use the base-context `plot-expander` include and store hidden `plot-expander` entries.
+- The latest `plot-expander` output is injected into base-context as `<plotExpander>` immediately after `<plotSummary>`.

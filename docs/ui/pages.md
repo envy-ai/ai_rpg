@@ -22,6 +22,8 @@ This page maps routes to templates and the client scripts/styles they load.
   - `baseWeaponDamage`, `clientMessageHistory`, `saveMetadata`.
 - Notes: the player "View" modal reuses shared allocation partials for attributes/skills; NPCs use read-only controls, while players can spend points and submit through `/api/player/update-stats` (negative pools blocked, positive pools confirmed). Unspent pools are computed server-side from submitted level/attributes/skills.
 - Notes: client-side name rendering for character/item/scenery cards applies a `font-size: 0.75em` span when a name exceeds 40 characters.
+- Notes: after a successful Load Game action, if save metadata indicates `npcAliasesGenerated=false` (or missing), the client shows a confirmation dialog; accepting runs `/api/npcs/generate-aliases` before page reload (20 NPCs per prompt batch), declining leaves aliases empty.
+- Notes: the shared player/NPC edit modal includes an aliases list field (one alias per line) and submits aliases through `PUT /api/npcs/:id`.
 
 ## New game
 - Route: `/new-game`

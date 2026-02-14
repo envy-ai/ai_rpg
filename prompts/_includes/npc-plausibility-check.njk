@@ -5,8 +5,8 @@ Your task is to describe this NPC's next action:
 
 These characters are present and aware of the action. This is not necessary an exhaustive list, but it contains no false positives:
 - {{ characterName }}
-{% for npc in npcs %}- {{ npc.name }}
-{% endfor %}{% for member in party %}{% if member not in npcs %}- {{ member.name }}
+{% for npc in npcs %}- {{ npc.name }} ({{ npc.race }}/{{ npc.class }})
+{% endfor %}{% for member in party %}{% if member not in npcs %}- {{ member.name }} ({{ member.race }}/{{ member.class }})
 {% endif %}{% endfor %}
 Accounting for their information above, what has recently happened, their goals, motivations, etc, describe in 1-2 sentences what the NPC will attempt to do next. If the situation calls for it, consider having them make use of their abilities and/or skills. Then determine whether the action is trivial (guaranteed success) or requires a skill check (chance of success or failure).  Respond in this format:
 
