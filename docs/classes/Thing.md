@@ -42,7 +42,7 @@ Represents items and scenery in the game world. Supports rarity metadata, attrib
 - Bonuses: `getAttributeBonus(attributeName)`.
 - Cause effects: `setCauseStatusEffects({ target, equipper, legacy })`.
 - Serialization: `toJSON()`, `delete()`.
-- Status effects: `getStatusEffects()`, `setStatusEffects(effects)`, `addStatusEffect(effect, defaultDuration)`, `removeStatusEffect(description)`, `tickStatusEffects()`, `clearExpiredStatusEffects()`.
+- Status effects: `getStatusEffects()`, `setStatusEffects(effects)`, `addStatusEffect(effect, defaultDuration)`, `removeStatusEffect(description)`, `tickStatusEffects(elapsedMinutes)`, `clearExpiredStatusEffects()`.
 - Inventory/world placement: `whoseInventory()`, `removeFromWorld()`, `drop(locationIdOverride)`, `putInLocation(locationId)`, `putInInventory(playerId)`.
 - Type checks: `isType(type)`, `isScenery()`, `isItem()`.
 - `toString()`.

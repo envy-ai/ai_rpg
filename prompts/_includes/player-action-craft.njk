@@ -2,9 +2,9 @@
 
 mode: {{ mode }}
 
-{% set characterName = character.name or 'The character' -%}
+{% set actorName = characterName or (character and character.name) or 'The character' -%}
 {% if mode == 'harvest' %}
-{{ characterName }} attempted to harvest from "{{ targetName }}". They had this degree of success/failure: "{{ success_or_failure }}".
+{{ actorName }} attempted to harvest from "{{ targetName }}". They had this degree of success/failure: "{{ success_or_failure }}".
 Regardless of their success or failure, they gathered {% if recoveredItems.length > 0 %}the following items:{% else %}no items.{% endif %}
 {% for item in recoveredItems %}- {{ item.name }}
 {% endfor %}
@@ -13,7 +13,7 @@ Regardless of their success or failure, they gathered {% if recoveredItems.lengt
 The player mentioned the following intent or approach before harvesting: "{{ harvestNotes }}"
 {% endif %}
 {% elif mode == 'salvage' %}
-{{ characterName }} attempted to salvage "{{ targetName }}". They had this degree of success/failure: "{{ success_or_failure }}".
+{{ actorName }} attempted to salvage "{{ targetName }}". They had this degree of success/failure: "{{ success_or_failure }}".
 Regardless of their success or failure, they recovered {% if recoveredItems.length > 0 %}the following items:{% else %}no items.{% endif %}
 {% for item in recoveredItems %}- {{ item.name }}
 {% endfor %}
@@ -21,10 +21,10 @@ Regardless of their success or failure, they recovered {% if recoveredItems.leng
 The player mentioned the following intent or approach before salvaging: "{{ salvageNotes }}"
 {% endif %}
 {% elif mode == 'repair' or mode == 'upgrade' %}
-{{ characterName }} attempted to {{ mode }} "{{ targetName }}". They had this degree of success/failure: "{{ success_or_failure }}".
+{{ actorName }} attempted to {{ mode }} "{{ targetName }}". They had this degree of success/failure: "{{ success_or_failure }}".
 {% else %}
 
-{{ characterName }} attempted to craft "{{ intendedItemName }}" using the crafting/processing station "{{ stationName }}" out of the following items:
+{{ actorName }} attempted to craft "{{ intendedItemName }}" using the crafting/processing station "{{ stationName }}" out of the following items:
 {% for item in inputItems %}- {{ item.name }}
 {% endfor %} 
 
@@ -60,6 +60,7 @@ Describe this effect in 1 additional paragraph of prose.
 These characters are present and aware of the action:
 {% for npc in npcs %}- {{ npc.name }} ({{ npc.race }}/{{ npc.class }})
 {% endfor %}{% for member in party %}{% if member not in npcs %}- {{ member.name }} ({{ member.race }}/{{ member.class }})
+{% endif %}
 {% endfor %}
 
 Respond in this format:

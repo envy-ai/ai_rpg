@@ -5118,8 +5118,19 @@
                     if (num < 0) {
                         return 'Permanent';
                     }
-                    const rounded = Math.floor(num);
-                    return `${rounded} turn${rounded === 1 ? '' : 's'}`;
+                    const totalMinutes = Math.max(0, Math.round(num * 60));
+                    if (totalMinutes === 0) {
+                        return 'Expired';
+                    }
+                    if (totalMinutes < 60) {
+                        return `${totalMinutes} minute${totalMinutes === 1 ? '' : 's'}`;
+                    }
+                    const hours = Math.floor(totalMinutes / 60);
+                    const minutes = totalMinutes % 60;
+                    if (minutes === 0) {
+                        return `${hours} hour${hours === 1 ? '' : 's'}`;
+                    }
+                    return `${hours}h ${minutes}m`;
                 };
 
                 if (typeof durationValue === 'string') {
@@ -5132,7 +5143,7 @@
                         return 'Permanent';
                     }
                     if (lower === 'instant') {
-                        return '1 turn';
+                        return '1 minute';
                     }
                     const parsed = Number(trimmed);
                     if (Number.isFinite(parsed)) {
@@ -6299,7 +6310,7 @@
                 if (name) effect.name = name;
                 if (description) effect.description = description;
                 if (durationRaw) {
-                    const numeric = Number.parseInt(durationRaw, 10);
+                    const numeric = Number(durationRaw);
                     effect.duration = Number.isFinite(numeric) ? numeric : durationRaw;
                 }
                 return Object.keys(effect).length ? effect : null;
@@ -7883,7 +7894,7 @@
 
                 const durationRaw = row.querySelector('.thing-edit-status-duration')?.value?.trim();
                 if (durationRaw) {
-                    const numeric = Number.parseInt(durationRaw, 10);
+                    const numeric = Number(durationRaw);
                     effect.duration = Number.isFinite(numeric) ? numeric : durationRaw;
                 }
 
@@ -13908,7 +13919,8 @@
                     if (effect.source === 'equipped') {
                         durationText = ' (Continuous)';
                     } else if (Number.isFinite(Number(effect.duration))) {
-                        durationText = ` (Duration ${Number(effect.duration)})`;
+                        const formattedDuration = formatStatusEffectDuration(effect.duration);
+                        durationText = formattedDuration ? ` (Duration ${formattedDuration})` : '';
                     }
 
                     const rows = [];
@@ -14874,7 +14886,7 @@
                 const durationRaw = row.querySelector('.thing-edit-status-duration')?.value?.trim();
                 const effect = { description };
                 if (durationRaw) {
-                    const numeric = Number.parseInt(durationRaw, 10);
+                    const numeric = Number(durationRaw);
                     effect.duration = Number.isFinite(numeric) ? numeric : durationRaw;
                 }
                 const modifierContainer = row.querySelector('.thing-modifier-list');

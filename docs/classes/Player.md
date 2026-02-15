@@ -31,7 +31,7 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
   - `getNeedBarDefinitionsForContext()`.
   - `setAvailableSkills(skillsInput)`, `getAvailableSkills()`.
 - Global behaviors:
-  - `applyStatusEffectNeedBarsToAll()`.
+  - `applyStatusEffectNeedBarsToAll()` (applies need-bar deltas once per elapsed in-game minute and decrements finite status-effect durations by elapsed minutes, capped to remaining time).
   - `updatePreviousLocationsForAll()`.
   - `setExperienceRolloverMultiplier(value)`.
 - Handlers:
@@ -83,7 +83,7 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
 - Status effects:
   - `getStatusEffects()`, `getIntrinsicStatusEffects()`.
   - `setStatusEffects(effects)`, `addStatusEffect(effect, defaultDuration)`, `removeStatusEffect(description)`.
-  - `tickStatusEffects()`, `clearExpiredStatusEffects()`.
+  - `tickStatusEffects(elapsedMinutes)`, `clearExpiredStatusEffects()`.
 - Need bars:
   - `getNeedBars(options)`, `getNeedBarValue(identifier)`.
   - `setNeedBars(list)`, `setNeedBarValue(identifier, value)`.

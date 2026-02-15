@@ -204,7 +204,7 @@ document.addEventListener('DOMContentLoaded', function () {
       const durationRaw = row.querySelector('.thing-edit-status-duration')?.value?.trim();
       const effect = { description };
       if (durationRaw) {
-        const numeric = Number.parseInt(durationRaw, 10);
+        const numeric = Number(durationRaw);
         effect.duration = Number.isFinite(numeric) ? numeric : durationRaw;
       }
       const modifierContainer = row.querySelector('.thing-modifier-list');

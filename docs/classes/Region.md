@@ -39,7 +39,7 @@ Represents a region containing multiple locations, with metadata like average le
 
 ## Instance API
 - `toJSON()`: serializes region state.
-- Status effects: `getStatusEffects()`, `setStatusEffects(effects)`, `addStatusEffect(effect, defaultDuration)`, `removeStatusEffect(description)`, `tickStatusEffects()`, `clearExpiredStatusEffects()`.
+- Status effects: `getStatusEffects()`, `setStatusEffects(effects)`, `addStatusEffect(effect, defaultDuration)`, `removeStatusEffect(description)`, `tickStatusEffects(elapsedMinutes)`, `clearExpiredStatusEffects()`.
 - NPC discovery: `getNPCs()`, `getNPCIds()`, `get locations()`.
 - Location tracking: `addLocationId(id)` / `addLocation(id)`.
 

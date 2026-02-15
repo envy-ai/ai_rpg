@@ -3543,6 +3543,13 @@ function pruneAndDecrementStatusEffects(entity) {
     }
 
     try {
+        if (entity instanceof Player) {
+            if (typeof entity.clearExpiredStatusEffects === 'function') {
+                entity.clearExpiredStatusEffects();
+            }
+            return;
+        }
+
         if (typeof entity.tickStatusEffects === 'function') {
             entity.tickStatusEffects();
         } else if (typeof entity.getStatusEffects === 'function' && typeof entity.setStatusEffects === 'function') {
@@ -3550,7 +3557,9 @@ function pruneAndDecrementStatusEffects(entity) {
                 if (!Number.isFinite(effect.duration) || effect.duration <= 0) {
                     return effect;
                 }
-                return { ...effect, duration: effect.duration - 1 };
+                const remainingMinutes = Math.max(0, Math.round(effect.duration * 60));
+                const nextRemainingMinutes = Math.max(0, remainingMinutes - 1);
+                return { ...effect, duration: nextRemainingMinutes / 60 };
             });
             entity.setStatusEffects(ticked);
         }
@@ -3944,7 +3953,7 @@ function buildBasePromptContext({
             if (typeof entry === 'string') {
                 const description = entry.trim();
                 if (!description) continue;
-                normalized.push({ description, duration: 1 });
+                normalized.push({ description, duration: 1 / 60 });
                 continue;
             }
 
@@ -3959,14 +3968,17 @@ function buildBasePromptContext({
 
                 const rawDuration = entry.duration;
                 let duration = null;
-                if (Number.isFinite(rawDuration)) {
-                    duration = Math.floor(rawDuration);
-                } else if (Number.isFinite(Number(rawDuration))) {
-                    duration = Math.floor(Number(rawDuration));
-                } else if (rawDuration === null) {
+                if (rawDuration === null || rawDuration === undefined || rawDuration === '') {
                     duration = null;
                 } else {
-                    duration = 1;
+                    const hasAppliedAt = Object.prototype.hasOwnProperty.call(entry, 'appliedAt');
+                    try {
+                        duration = (hasAppliedAt && Number.isFinite(Number(rawDuration)))
+                            ? Number(rawDuration)
+                            : StatusEffect.normalizeDuration(rawDuration);
+                    } catch (_) {
+                        duration = 1 / 60;
+                    }
                 }
 
                 const effect = {

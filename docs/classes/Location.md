@@ -43,7 +43,7 @@ Represents a game location, including description, exits, NPCs, items/scenery, a
 - Random events: `addRandomEvent(event)`, `removeRandomEvent(event)`.
 - NPC helpers: `getNPCIds()`, `getNPCs()`, `getNPCNames()`, `addNpcId(id)`, `removeNpcId(id)`, `setNpcIds(ids)`, `clearNpcIds()`.
 - Thing helpers: `addThingId(id)`, `removeThingId(id)`, `setThingIds(ids)`, `clearThingIds()`.
-- Status effects: `getStatusEffects()`, `setStatusEffects(effects)`, `addStatusEffect(effect, defaultDuration)`, `removeStatusEffect(description)`, `tickStatusEffects()`, `clearExpiredStatusEffects()`.
+- Status effects: `getStatusEffects()`, `setStatusEffects(effects)`, `addStatusEffect(effect, defaultDuration)`, `removeStatusEffect(description)`, `tickStatusEffects(elapsedMinutes)`, `clearExpiredStatusEffects()`.
 - `toString()`.
 
 ## Private/Static Helpers

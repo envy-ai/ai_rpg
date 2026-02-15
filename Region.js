@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const Utils = require('./Utils.js');
+const StatusEffect = require('./StatusEffect.js');
 
 let CachedLocationModule = null;
 function getLocationModule() {
@@ -1256,7 +1257,7 @@ class Region {
       if (typeof entry === 'string') {
         const description = entry.trim();
         if (!description) continue;
-        normalized.push({ description, duration: 1 });
+        normalized.push({ description, duration: 1 / 60 });
         continue;
       }
 
@@ -1266,11 +1267,30 @@ class Region {
           : (typeof entry.text === 'string' ? entry.text.trim() : (typeof entry.name === 'string' ? entry.name.trim() : ''));
         if (!descriptionValue) continue;
         const rawDuration = entry.duration;
-        const duration = Number.isFinite(Number(rawDuration)) ? Math.floor(Number(rawDuration)) : (rawDuration === null ? null : 1);
-        normalized.push({
+        let duration = null;
+        if (rawDuration === null || rawDuration === undefined || rawDuration === '') {
+          duration = null;
+        } else {
+          const hasAppliedAt = Object.prototype.hasOwnProperty.call(entry, 'appliedAt');
+          if (hasAppliedAt && Number.isFinite(Number(rawDuration))) {
+            duration = Number(rawDuration);
+          } else {
+            try {
+              duration = StatusEffect.normalizeDuration(rawDuration);
+            } catch (_) {
+              duration = 1 / 60;
+            }
+          }
+        }
+
+        const normalizedEntry = {
           description: descriptionValue,
           duration
-        });
+        };
+        if (Object.prototype.hasOwnProperty.call(entry, 'appliedAt')) {
+          normalizedEntry.appliedAt = entry.appliedAt;
+        }
+        normalized.push(normalizedEntry);
       }
     }
 
@@ -1335,10 +1355,15 @@ class Region {
     return false;
   }
 
-  tickStatusEffects() {
+  tickStatusEffects(elapsedMinutes = 1) {
     if (!this.#statusEffects.length) {
       return;
     }
+    const normalizedMinutes = Number(elapsedMinutes);
+    if (!Number.isFinite(normalizedMinutes) || normalizedMinutes <= 0) {
+      return;
+    }
+    const roundedMinutes = Math.max(1, Math.round(normalizedMinutes));
     const retained = [];
     let changed = false;
     for (const effect of this.#statusEffects) {
@@ -1358,7 +1383,9 @@ class Region {
         retained.push({ ...effect });
         continue;
       }
-      retained.push({ ...effect, duration: effect.duration - 1 });
+      const remainingMinutes = Math.max(0, Math.round(effect.duration * 60));
+      const nextRemainingMinutes = Math.max(0, remainingMinutes - roundedMinutes);
+      retained.push({ ...effect, duration: nextRemainingMinutes / 60 });
       changed = true;
     }
     if (changed) {

@@ -28,7 +28,7 @@ Respond in the following format:
     <sourceDescription><!-- seed description --></sourceDescription>
     <name><!-- Optional explicit name; use provided seed name when present --></name>
     <description><!-- Concise, 1-2 sentence description of the effect --></description>
-    <duration><!-- Positive integer number of turns for the effect to last. Use 1 if instant and -1 if permanent. Use permanent durations VERY SPARINGLY. For instance, being full or well rested may last a long time, but should eventually expire on their own after a while. For longer duration effects, 30-60 turns is reasonable. For shorter, as low as 2 is fine, or anything in between. --></duration>
+    <duration><!-- Duration in hours or minutes (with units) or 'permanent'. Use 'permanent' very sparingly. For instance, a well rested buff may last a long time, but should eventually expire on its own after a while (4-8 hours is reasonable). A permanent buff might be used for major story events or unique character traits. Status effects tick once per minute for the purpose of need bar changes. Example responses: "2 hours", "48 hours", "30 minutes", "5 minutes", "1 minute" (for one-off effects), "permanent", etc. --></duration>
     <attributes>
       <attribute>
         <name><!-- Attribute name (use only attributes listed in the current setting) --></name>
@@ -46,7 +46,7 @@ Respond in the following format:
     <needBars>
       <needBar>
         <name><!-- Name of the need bar affected (the exact name of a need bar, or Health) --></name>
-        <delta><!-- a positive or negative (non-zero) integer within the modifier range for this effect indicating how much the need bar changes per round. Positive is good, negative is bad. --></delta>
+        <delta><!-- a positive or negative (non-zero) integer within the modifier range for this effect indicating how much the need bar changes per minute. Positive is good, negative is bad. --></delta>
       </needBar>
       <!-- Additional need bar modifiers, or omit if no need bar modifiers -->
     </needBars>

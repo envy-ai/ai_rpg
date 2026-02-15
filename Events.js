@@ -6365,14 +6365,17 @@ class Events {
                     if (typeof effect === "string") {
                         return { description: effect, duration: null };
                     }
-                    const duration = Number(effect.duration);
+                    let normalizedDuration = null;
+                    if (effect.duration !== null && effect.duration !== undefined) {
+                        try {
+                            normalizedDuration = StatusEffect.normalizeDuration(effect.duration);
+                        } catch (_) {
+                            normalizedDuration = effect.duration;
+                        }
+                    }
                     return {
                         description: effect.description || String(effect).trim(),
-                        duration: Number.isFinite(duration)
-                            ? duration
-                            : effect.duration === null || effect.duration === undefined
-                                ? null
-                                : effect.duration,
+                        duration: normalizedDuration,
                     };
                 });
             npc.setStatusEffects(normalizedEffects);
@@ -7008,14 +7011,17 @@ class Events {
                         effectNode
                             .getElementsByTagName("duration")[0]
                             ?.textContent?.trim() || "";
-                    const duration = Number(durationText);
+                    let normalizedDuration = null;
+                    if (durationText) {
+                        try {
+                            normalizedDuration = StatusEffect.normalizeDuration(durationText);
+                        } catch (_) {
+                            normalizedDuration = durationText;
+                        }
+                    }
                     statusEffects.push({
                         description,
-                        duration: Number.isFinite(duration)
-                            ? duration
-                            : durationText.toLowerCase() === "permanent"
-                                ? null
-                                : durationText || null,
+                        duration: normalizedDuration,
                     });
                 }
             }

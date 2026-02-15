@@ -2,7 +2,7 @@ const Utils = require('./Utils.js');
 const LLMClient = require('./LLMClient.js');
 
 class StatusEffect {
-    constructor({ name, description, attributes, skills, needBars, duration } = {}) {
+    constructor({ name, description, attributes, skills, needBars, duration, appliedAt } = {}) {
         if (!description || typeof description !== 'string') {
             throw new Error('StatusEffect description must be a non-empty string');
         }
@@ -13,6 +13,7 @@ class StatusEffect {
         this.skills = this.#normalizeModifiers(skills, 'skill');
         this.needBars = this.#normalizeNeedBars(needBars);
         this.duration = this.#normalizeDuration(duration);
+        this.appliedAt = this.#normalizeAppliedAt(appliedAt);
     }
 
     #normalizeModifiers(list, keyName) {
@@ -78,7 +79,7 @@ class StatusEffect {
             }
             const lower = trimmed.toLowerCase();
             if (lower === 'instant') {
-                return 1;
+                return 1 / 60;
             }
             if (lower === 'permanent' || lower === 'continuous') {
                 return -1;
@@ -94,23 +95,55 @@ class StatusEffect {
             if (!Number.isFinite(numeric)) {
                 throw new Error(`StatusEffect duration "${value}" is invalid`);
             }
-            const rounded = Math.floor(numeric);
-            return rounded;
+            if (numeric < 0) {
+                return -1;
+            }
+
+            // Duration units are normalized to decimal hours.
+            // Bare numeric values are treated as minutes for backward compatibility.
+            const hasHourUnits = /\b(hour|hours|hr|hrs)\b/i.test(trimmed);
+            const hasDayUnits = /\b(day|days)\b/i.test(trimmed);
+            const hasMinuteUnits = /\b(minute|minutes|min|mins)\b/i.test(trimmed);
+            if (hasDayUnits) {
+                return numeric * 24;
+            }
+            if (hasHourUnits) {
+                return numeric;
+            }
+            if (hasMinuteUnits || (!hasHourUnits && !hasDayUnits)) {
+                return numeric / 60;
+            }
+            return numeric;
         }
 
         const numeric = Number(value);
         if (!Number.isFinite(numeric)) {
             throw new Error(`StatusEffect duration "${value}" is invalid`);
         }
-        const rounded = Math.floor(numeric);
-        return rounded;
+        if (numeric < 0) {
+            return -1;
+        }
+
+        // Numeric durations are interpreted as minutes, converted to decimal hours.
+        return numeric / 60;
+    }
+
+    #normalizeAppliedAt(value) {
+        if (value === null || value === undefined) {
+            return null;
+        }
+        const numeric = Number(value);
+        if (!Number.isFinite(numeric) || numeric < 0) {
+            throw new Error(`StatusEffect appliedAt "${value}" is invalid`);
+        }
+        return numeric;
     }
 
     #normalizeDuration(value) {
         return StatusEffect.normalizeDuration(value);
     }
 
-    update({ name, description, attributes, skills, needBars, duration } = {}) {
+    update({ name, description, attributes, skills, needBars, duration, appliedAt } = {}) {
         if (typeof name === 'string' && name.trim()) {
             this.name = name.trim();
         }
@@ -129,6 +162,9 @@ class StatusEffect {
         if (duration !== undefined) {
             this.duration = this.#normalizeDuration(duration);
         }
+        if (appliedAt !== undefined) {
+            this.appliedAt = this.#normalizeAppliedAt(appliedAt);
+        }
         return this;
     }
 
@@ -139,7 +175,8 @@ class StatusEffect {
             attributes: this.attributes,
             skills: this.skills,
             needBars: this.needBars,
-            duration: this.duration
+            duration: this.duration,
+            appliedAt: this.appliedAt
         };
     }
 
@@ -147,13 +184,21 @@ class StatusEffect {
         if (!data || typeof data !== 'object') {
             throw new Error('Invalid data provided to StatusEffect.fromJSON');
         }
+        const hasAppliedAt = Object.prototype.hasOwnProperty.call(data, 'appliedAt');
+        const normalizedDurationInput = (
+            hasAppliedAt
+            && Number.isFinite(Number(data.duration))
+        )
+            ? `${Number(data.duration)} hours`
+            : data.duration;
         return new StatusEffect({
             name: data.name,
             description: data.description,
             attributes: data.attributes,
             skills: data.skills,
             needBars: data.needBars,
-            duration: data.duration
+            duration: normalizedDurationInput,
+            appliedAt: data.appliedAt
         });
     }
 

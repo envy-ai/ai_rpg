@@ -1719,15 +1719,28 @@ class Thing {
         }
         const attributes = Array.isArray(entry.attributes) ? entry.attributes : undefined;
         const skills = Array.isArray(entry.skills) ? entry.skills : undefined;
-        const duration = entry.duration !== undefined ? entry.duration : null;
+        const duration = (() => {
+          if (entry.duration === undefined) {
+            return null;
+          }
+          const hasAppliedAt = Object.prototype.hasOwnProperty.call(entry, 'appliedAt');
+          if (hasAppliedAt && Number.isFinite(Number(entry.duration))) {
+            return `${Number(entry.duration)} hours`;
+          }
+          return entry.duration;
+        })();
         const name = typeof entry.name === 'string' ? entry.name : undefined;
+        const appliedAt = Object.prototype.hasOwnProperty.call(entry, 'appliedAt')
+          ? entry.appliedAt
+          : undefined;
 
         normalized.push(new StatusEffect({
           name,
           description: descriptionValue,
           attributes,
           skills,
-          duration
+          duration,
+          appliedAt
         }));
         continue;
       }
@@ -1817,10 +1830,15 @@ class Thing {
     return false;
   }
 
-  tickStatusEffects() {
+  tickStatusEffects(elapsedMinutes = 1) {
     if (!this.#statusEffects.length) {
       return;
     }
+    const normalizedMinutes = Number(elapsedMinutes);
+    if (!Number.isFinite(normalizedMinutes) || normalizedMinutes <= 0) {
+      return;
+    }
+    const roundedMinutes = Math.max(1, Math.round(normalizedMinutes));
     const retained = [];
     let changed = false;
     for (const effect of this.#statusEffects) {
@@ -1840,9 +1858,12 @@ class Thing {
         retained.push(effect);
         continue;
       }
+      const remainingMinutes = Math.max(0, Math.round(effect.duration * 60));
+      const nextRemainingMinutes = Math.max(0, remainingMinutes - roundedMinutes);
       retained.push(new StatusEffect({
         ...effect.toJSON(),
-        duration: effect.duration - 1
+        duration: nextRemainingMinutes / 60,
+        appliedAt: Number.isFinite(effect.appliedAt) ? effect.appliedAt : null
       }));
       changed = true;
     }

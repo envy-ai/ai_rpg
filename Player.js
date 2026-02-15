@@ -834,68 +834,156 @@ class Player {
      */
     static applyStatusEffectNeedBarsToAll() {
         const adjustments = [];
+        let currentWorldHours = null;
+        try {
+            if (typeof Globals?.getTotalWorldHours === 'function') {
+                const resolved = Number(Globals.getTotalWorldHours());
+                if (Number.isFinite(resolved) && resolved >= 0) {
+                    currentWorldHours = resolved;
+                }
+            }
+        } catch (error) {
+            console.warn('Failed to resolve current world time for status effect processing:', error?.message || error);
+        }
+
+        const minutesFromHours = (hours) => {
+            const numeric = Number(hours);
+            if (!Number.isFinite(numeric)) {
+                return null;
+            }
+            return Math.max(0, Math.round(numeric * 60));
+        };
+
         for (const player of this.#instances) {
-            if (!player || typeof player.getStatusEffects !== 'function') {
+            if (!player || !Array.isArray(player.#statusEffects) || !player.#statusEffects.length) {
                 continue;
             }
-            const effects = player.getStatusEffects() || [];
-            if (!player.isNPC) {
-                console.log(`Applying status effect need bar deltas for player ${player.name || player.id || 'unknown'}`);
-                console.log(effects);
-            }
-            for (const effect of effects) {
-                if (!player.isNPC) console.log(` - Processing effect ${effect.name || effect.id || 'unknown'}`);
-                if (!effect || !Array.isArray(effect.needBars)) {
-                    if (!player.isNPC) console.log(`  - Effect ${effect?.name || effect?.id || 'unknown'} has no need bar deltas`);
+
+            let playerChanged = false;
+            for (const effect of player.#statusEffects) {
+                if (!(effect instanceof StatusEffect)) {
                     continue;
                 }
-                for (const entry of effect.needBars) {
-                    if (!entry) {
-                        if (!player.isNPC) console.log(`    - Skipping invalid need bar entry`);
+
+                const baselineHours = Number.isFinite(currentWorldHours) && currentWorldHours >= 0
+                    ? currentWorldHours
+                    : (() => {
+                        try {
+                            if (!player.isNPC) {
+                                return player.elapsedTime;
+                            }
+                        } catch (_) {
+                            // fall through
+                        }
+                        return null;
+                    })();
+                if (!Number.isFinite(baselineHours) || baselineHours < 0) {
+                    continue;
+                }
+
+                // Initialize missing application timestamp without backfilling past time.
+                const hasAppliedAt = Number.isFinite(effect.appliedAt) && effect.appliedAt >= 0;
+                if (!hasAppliedAt) {
+                    effect.appliedAt = baselineHours;
+                    playerChanged = true;
+                    continue;
+                }
+
+                let elapsedHours = baselineHours - effect.appliedAt;
+                if (!Number.isFinite(elapsedHours) || elapsedHours <= 0) {
+                    if (Number.isFinite(elapsedHours) && elapsedHours < 0) {
+                        effect.appliedAt = baselineHours;
+                        playerChanged = true;
+                    }
+                    continue;
+                }
+
+                let elapsedMinutes = Math.floor(elapsedHours * 60);
+                // If a tiny positive elapsed duration gets floored to 0, force one tick.
+                if (elapsedMinutes <= 0) {
+                    elapsedMinutes = 1;
+                }
+
+                let ticksToApply = elapsedMinutes;
+                if (Number.isFinite(effect.duration) && effect.duration >= 0) {
+                    const remainingMinutes = minutesFromHours(effect.duration) ?? 0;
+                    if (remainingMinutes <= 0) {
+                        effect.duration = 0;
+                        effect.appliedAt = baselineHours;
+                        playerChanged = true;
                         continue;
                     }
-                    const name = typeof entry.name === 'string' ? entry.name.trim() : null;
-                    const delta = Number(entry.delta);
-                    if (!name || !Number.isFinite(delta)) {
-                        if (!player.isNPC) console.log(`    - Skipping invalid need bar entry with name "${entry.name}" and delta "${entry.delta}"`);
-                        continue;
+
+                    ticksToApply = Math.min(ticksToApply, remainingMinutes);
+                    const nextRemainingMinutes = Math.max(0, remainingMinutes - ticksToApply);
+                    const nextDurationHours = nextRemainingMinutes / 60;
+                    if (effect.duration !== nextDurationHours) {
+                        effect.duration = nextDurationHours;
+                        playerChanged = true;
                     }
-                    try {
-                        const normalizedName = name.trim().toLowerCase();
-                        if (normalizedName === 'health') {
-                            const beforeHealth = player.health;
-                            const nextHealth = Math.max(0, beforeHealth + delta);
-                            player.setHealth(nextHealth);
-                            const afterHealth = player.health;
-                            if (!player.isNPC) console.log(`    - Applied delta of ${delta} to health: ${beforeHealth} -> ${afterHealth}`);
-                            adjustments.push({
-                                playerId: player.id || null,
-                                playerName: player.name || null,
-                                bar: 'Health',
-                                previousValue: beforeHealth,
-                                newValue: afterHealth,
-                                delta
-                            });
+                }
+
+                if (ticksToApply > 0 && Array.isArray(effect.needBars) && effect.needBars.length) {
+                    for (const entry of effect.needBars) {
+                        if (!entry) {
+                            continue;
+                        }
+                        const name = typeof entry.name === 'string' ? entry.name.trim() : null;
+                        const deltaPerMinute = Number(entry.delta);
+                        if (!name || !Number.isFinite(deltaPerMinute)) {
                             continue;
                         }
 
-                        const before = player.getNeedBarValue(name);
-                        const next = (before ?? 0) + delta;
-                        player.setNeedBarValue(name, next, { allowPlayerOnly: false });
-                        const after = player.getNeedBarValue(name);
-                        if (!player.isNPC) console.log(`    - Applied delta of ${delta} to need bar "${name}": ${before} -> ${after}`);
-                        adjustments.push({
-                            playerId: player.id || null,
-                            playerName: player.name || null,
-                            bar: name,
-                            previousValue: before,
-                            newValue: after,
-                            delta
-                        });
-                    } catch (error) {
-                        console.warn(`Failed to apply need bar delta "${name}" for ${player.name || player.id || 'player'}:`, error?.message || error);
+                        const totalDelta = deltaPerMinute * ticksToApply;
+                        if (totalDelta === 0) {
+                            continue;
+                        }
+
+                        try {
+                            const normalizedName = name.toLowerCase();
+                            if (normalizedName === 'health') {
+                                const beforeHealth = player.health;
+                                const nextHealth = Math.max(0, beforeHealth + totalDelta);
+                                player.setHealth(nextHealth);
+                                const afterHealth = player.health;
+                                adjustments.push({
+                                    playerId: player.id || null,
+                                    playerName: player.name || null,
+                                    bar: 'Health',
+                                    previousValue: beforeHealth,
+                                    newValue: afterHealth,
+                                    delta: totalDelta,
+                                    ticksApplied: ticksToApply
+                                });
+                                continue;
+                            }
+
+                            const before = player.getNeedBarValue(name);
+                            const next = (before ?? 0) + totalDelta;
+                            player.setNeedBarValue(name, next, { allowPlayerOnly: false });
+                            const after = player.getNeedBarValue(name);
+                            adjustments.push({
+                                playerId: player.id || null,
+                                playerName: player.name || null,
+                                bar: name,
+                                previousValue: before,
+                                newValue: after,
+                                delta: totalDelta,
+                                ticksApplied: ticksToApply
+                            });
+                        } catch (error) {
+                            console.warn(`Failed to apply need bar delta "${name}" for ${player.name || player.id || 'player'}:`, error?.message || error);
+                        }
                     }
                 }
+
+                effect.appliedAt = baselineHours;
+                playerChanged = true;
+            }
+
+            if (playerChanged) {
+                player.clearExpiredStatusEffects();
+                player.#lastUpdated = new Date().toISOString();
             }
         }
         return adjustments;
@@ -3202,8 +3290,34 @@ class Player {
         }
 
         const normalized = [];
+        const defaultAppliedAt = (() => {
+            try {
+                if (!this.#isNPC) {
+                    return this.elapsedTime;
+                }
+            } catch (_) {
+                // fall through
+            }
+
+            try {
+                if (typeof Globals?.getTotalWorldHours === 'function') {
+                    const worldHours = Number(Globals.getTotalWorldHours());
+                    if (Number.isFinite(worldHours) && worldHours >= 0) {
+                        return worldHours;
+                    }
+                }
+            } catch (_) {
+                // fall through
+            }
+
+            return 0;
+        })();
+
         for (const entry of effects) {
             if (entry instanceof StatusEffect) {
+                if (!Number.isFinite(entry.appliedAt) || entry.appliedAt < 0) {
+                    entry.appliedAt = defaultAppliedAt;
+                }
                 normalized.push(entry);
                 continue;
             }
@@ -3213,7 +3327,11 @@ class Player {
                 if (!description) {
                     throw new Error('Status effect description must not be empty');
                 }
-                normalized.push(new StatusEffect({ description, duration: 1 }));
+                normalized.push(new StatusEffect({
+                    description,
+                    duration: 1,
+                    appliedAt: defaultAppliedAt
+                }));
                 continue;
             }
 
@@ -3229,7 +3347,17 @@ class Player {
                 const attributes = Array.isArray(entry.attributes) ? entry.attributes : undefined;
                 const skills = Array.isArray(entry.skills) ? entry.skills : undefined;
                 const needBars = Array.isArray(entry.needBars) ? entry.needBars : undefined;
-                const duration = entry.duration !== undefined ? entry.duration : null;
+                const duration = (() => {
+                    if (entry.duration === undefined) {
+                        return null;
+                    }
+                    const hasAppliedAt = Object.prototype.hasOwnProperty.call(entry, 'appliedAt');
+                    if (hasAppliedAt && Number.isFinite(Number(entry.duration))) {
+                        return `${Number(entry.duration)} hours`;
+                    }
+                    return entry.duration;
+                })();
+                const appliedAt = entry.appliedAt !== undefined ? entry.appliedAt : defaultAppliedAt;
 
                 normalized.push(new StatusEffect({
                     name: entry.name,
@@ -3237,7 +3365,8 @@ class Player {
                     attributes,
                     skills,
                     needBars,
-                    duration
+                    duration,
+                    appliedAt
                 }));
                 continue;
             }
@@ -3418,10 +3547,16 @@ class Player {
         return false;
     }
 
-    tickStatusEffects() {
+    tickStatusEffects(elapsedMinutes = 1) {
         if (!Array.isArray(this.#statusEffects) || this.#statusEffects.length === 0) {
             return;
         }
+
+        const normalizedMinutes = Number(elapsedMinutes);
+        if (!Number.isFinite(normalizedMinutes) || normalizedMinutes <= 0) {
+            return;
+        }
+        const roundedMinutes = Math.max(1, Math.round(normalizedMinutes));
 
         const retained = [];
         let changed = false;
@@ -3447,9 +3582,14 @@ class Player {
                 continue;
             }
 
+            const remainingMinutes = Math.max(0, Math.round(effect.duration * 60));
+            const nextRemainingMinutes = Math.max(0, remainingMinutes - roundedMinutes);
+            const nextDuration = nextRemainingMinutes / 60;
+
             retained.push(new StatusEffect({
                 ...effect.toJSON(),
-                duration: effect.duration - 1
+                duration: nextDuration,
+                appliedAt: Number.isFinite(effect.appliedAt) ? effect.appliedAt : null
             }));
             changed = true;
         }

@@ -42,4 +42,5 @@ Notes:
   - Harvest/salvage lines use `from <source>`.
   - Craft/process lines use `using <inputs>`.
 - Crafting/harvest prompts omit prior craft/harvest/process entries from base-context history to reduce duplicate actions.
+- Player-action prose generation uses `_includes/player-action-craft.njk` via `promptType=player-action-craft` and expects XML in `<result><description>...</description></result>` (with optional `<otherEffectDescription>`).
 - `timeTaken` is parsed from the selected crafting/salvage/harvest `<result>`. If invalid, the server logs an error, strips units and interprets the numeric portion as minutes (`value / 60`), and if still invalid defaults to `1/60` hour. A minimum of `1/60` hour is always advanced (including `timeTaken = 0`).
