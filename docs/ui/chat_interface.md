@@ -69,7 +69,7 @@ The chat client listens on `/ws?clientId=...` and handles:
 - `location_exit_created`, `location_exit_deleted` (refresh location + map).
 - `image_job_update` (image job completion via `ImageGenerationManager`).
 - `chat_history_updated` (refresh history and quest panel).
-- `prompt_progress`, `prompt_progress_cleared` (floating top-left prompt-progress overlay with cancel controls, contract/expand toggle, drag handle on the header, native resize handle, and a 3.5-second hidden-placeholder-row debounce before the empty table state is hidden).
+- `prompt_progress`, `prompt_progress_cleared` (floating top-left prompt-progress overlay with cancel/retry controls, contract/expand toggle, drag handle on the header, native resize handle, and a 3.5-second hidden-placeholder-row debounce before the empty table state is hidden).
 - `quest_confirmation_request` (modal prompt).
 
 `processChatPayload()` also consumes `payload.worldTime` from streamed/final chat responses, updates the world-time chip, and emits transition summaries (`segment`/`season`) into the event-summary flow.
@@ -86,6 +86,7 @@ Not exhaustive, but the core UI calls include:
 - `/api/quest/edit` and `/api/player/quests/:id` (quest edit / abandon).
 - `/api/factions` + `/api/player/factions/:id/standing` (faction panel edits).
 - `/api/player` and `/api/player/skills/:name/increase` (sidebar + skill adjust).
+- `/api/player/move` (direct travel fallback path; sends `destinationId` plus `expectedOriginLocationId` for server-side origin verification).
 - `/api/player/update-stats` (player-view modal point allocation submit; unspent pools are server-derived from submitted level/attributes/skills).
 - `/api/locations/:id` and `/api/locations/:id/exits` (location details + exit edits).
 - `/api/things/:id` (thing updates; location drag/drop uses this to convert item/scenery type).
@@ -99,6 +100,7 @@ History window note:
 LLM-backed modal submits close immediately (no visible waiting state) and rely on an internal in-flight guard; errors surface via `alert()` after the modal closes:
 
 - `#addNpcModal` (adds an NPC via `/api/locations/:id/npcs`).
+- `#thingEditModal` create mode (adds item/scenery via `/api/locations/:id/things`; name is optional and can be generated).
 - `#newExitModal` (creates/edits exits via `/api/locations/:id/exits`).
 - `#craftingModal` (crafting/processing via `/api/craft`, including a no-prose submit path for craft/process).
 - `#salvageIntentModal` (salvage/harvest via `/api/craft`, including `Harvest (no prose)` / `Salvage (no prose)` submits).

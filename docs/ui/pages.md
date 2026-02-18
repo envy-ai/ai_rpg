@@ -67,6 +67,7 @@ This page maps routes to templates and the client scripts/styles they load.
 - Notes: the default Starting Location Generation Instructions field mirrors the multiline placeholder used on the New Game form.
 - Notes: the Default Existing Skills field is prefilled from `defs/default_skills.yaml` when creating a new (blank) setting.
 - Notes: the auto-fill button can append up to ~10 setting-specific skills when the skills list is empty or baseline-only.
+- Notes: Prompt Guidance includes `Custom Slop Words` (one per line); single-word entries feed slop-word checks and multi-word entries feed configured ngram checks.
 - Notes: editing a setting and changing its name creates a new setting id (the original setting remains available).
 - Notes: deleting a setting removes both in-memory and persisted copies; deleted settings do not return after page refresh.
 

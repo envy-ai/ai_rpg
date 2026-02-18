@@ -30,6 +30,13 @@ Response:
 - 200: `{ success: true, message }`
 - 400/404: `{ success: false, error }`
 
+## POST /api/prompts/:promptId/retry
+Abort the current in-flight LLM prompt attempt and immediately retry the same prompt call.
+
+Response:
+- 200: `{ success: true, message }`
+- 400/404: `{ success: false, error }`
+
 ## POST /api/slash-command
 Execute a registered slash command.
 

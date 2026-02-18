@@ -2382,7 +2382,7 @@ class AIRPGChat {
             return;
         }
 
-        const tableHeaderHtml = '<tr><th class="prompt-progress-cancel-header"></th><th>Prompt</th><th>Model</th><th>Bytes</th><th>Seconds</th><th>Timeout In</th><th>Latency</th><th>Avg B/s</th><th>Retries</th></tr>';
+        const tableHeaderHtml = '<tr><th class="prompt-progress-cancel-header">Actions</th><th>Prompt</th><th>Model</th><th>Bytes</th><th>Seconds</th><th>Timeout In</th><th>Latency</th><th>Avg B/s</th><th>Retries</th></tr>';
         const renderTimestamp = () => new Date().toISOString().replace('T', ' ').replace('Z', '');
 
         if (!entries.length) {
@@ -2443,20 +2443,42 @@ class AIRPGChat {
         entries.forEach(entry => {
             const row = document.createElement('tr');
             const cancelCell = document.createElement('td');
+            const actionWrap = document.createElement('div');
+            actionWrap.className = 'prompt-progress-actions';
             const cancelButton = document.createElement('button');
             cancelButton.type = 'button';
-            cancelButton.className = 'prompt-progress-cancel';
-            cancelButton.textContent = 'X';
+            cancelButton.className = 'prompt-progress-cancel prompt-progress-action';
+            cancelButton.textContent = '🗙';
             cancelButton.setAttribute('aria-label', `Cancel prompt ${entry.label || 'prompt'}`);
             cancelButton.title = 'Cancel prompt';
+            const retryButton = document.createElement('button');
+            retryButton.type = 'button';
+            retryButton.className = 'prompt-progress-retry prompt-progress-action';
+            retryButton.textContent = '⟳';
+            retryButton.setAttribute('aria-label', `Retry prompt ${entry.label || 'prompt'}`);
+            retryButton.title = 'Retry prompt attempt';
             if (!entry.id) {
                 cancelButton.disabled = true;
+                retryButton.disabled = true;
             } else {
                 cancelButton.addEventListener('click', () => {
-                    this.cancelPromptProgress(entry.id, entry.label || 'prompt', cancelButton, row);
+                    this.cancelPromptProgress(entry.id, entry.label || 'prompt', {
+                        cancelButton,
+                        retryButton,
+                        row
+                    });
+                });
+                retryButton.addEventListener('click', () => {
+                    this.retryPromptProgress(entry.id, entry.label || 'prompt', {
+                        cancelButton,
+                        retryButton,
+                        row
+                    });
                 });
             }
-            cancelCell.appendChild(cancelButton);
+            actionWrap.appendChild(cancelButton);
+            actionWrap.appendChild(retryButton);
+            cancelCell.appendChild(actionWrap);
             const labelCell = document.createElement('td');
             labelCell.textContent = entry.label || 'prompt';
             const modelCell = document.createElement('td');
@@ -2553,17 +2575,24 @@ class AIRPGChat {
         }
     }
 
-    async cancelPromptProgress(promptId, label, button, row) {
+    setPromptProgressActionState({ cancelButton = null, retryButton = null, row = null, isPending = false } = {}) {
+        if (cancelButton) {
+            cancelButton.disabled = isPending;
+        }
+        if (retryButton) {
+            retryButton.disabled = isPending;
+        }
+        if (row) {
+            row.classList.toggle('prompt-progress-canceling', isPending);
+        }
+    }
+
+    async cancelPromptProgress(promptId, label, { cancelButton = null, retryButton = null, row = null } = {}) {
         const resolvedId = typeof promptId === 'string' ? promptId.trim() : '';
         if (!resolvedId) {
             return;
         }
-        if (button) {
-            button.disabled = true;
-        }
-        if (row) {
-            row.classList.add('prompt-progress-canceling');
-        }
+        this.setPromptProgressActionState({ cancelButton, retryButton, row, isPending: true });
         try {
             const response = await fetch(`/api/prompts/${encodeURIComponent(resolvedId)}/cancel`, {
                 method: 'POST',
@@ -2575,12 +2604,28 @@ class AIRPGChat {
             }
         } catch (error) {
             console.warn(`Failed to cancel prompt ${label || resolvedId}:`, error);
-            if (button) {
-                button.disabled = false;
+            this.setPromptProgressActionState({ cancelButton, retryButton, row, isPending: false });
+        }
+    }
+
+    async retryPromptProgress(promptId, label, { cancelButton = null, retryButton = null, row = null } = {}) {
+        const resolvedId = typeof promptId === 'string' ? promptId.trim() : '';
+        if (!resolvedId) {
+            return;
+        }
+        this.setPromptProgressActionState({ cancelButton, retryButton, row, isPending: true });
+        try {
+            const response = await fetch(`/api/prompts/${encodeURIComponent(resolvedId)}/retry`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok || !data?.success) {
+                throw new Error(data?.error || `HTTP ${response.status}`);
             }
-            if (row) {
-                row.classList.remove('prompt-progress-canceling');
-            }
+        } catch (error) {
+            console.warn(`Failed to retry prompt ${label || resolvedId}:`, error);
+            this.setPromptProgressActionState({ cancelButton, retryButton, row, isPending: false });
         }
     }
 

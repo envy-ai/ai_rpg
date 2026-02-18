@@ -11412,11 +11412,6 @@
                     }
 
                     const trimmedName = thingEditNameInput?.value?.trim();
-                    if (!trimmedName) {
-                        updateThingEditStatus('Please provide a name for the item.', 'error');
-                        thingEditNameInput?.focus();
-                        return;
-                    }
 
                     updateThingEditStatus('Generating item...');
                     if (thingEditSaveBtn) {
@@ -11427,9 +11422,11 @@
                         ? 'scenery'
                         : 'item';
                     const seed = {
-                        name: trimmedName,
                         itemOrScenery: typeSelection
                     };
+                    if (trimmedName) {
+                        seed.name = trimmedName;
+                    }
 
                     const descriptionValue = thingEditDescriptionInput?.value?.trim();
                     if (descriptionValue) {
@@ -17258,10 +17255,17 @@
 
                 showLocationOverlay(`Moving to ${resolvedDestinationName}...`);
                 try {
+                    const expectedOriginLocationId = typeof window.currentPlayerData?.currentLocation === 'string'
+                        ? window.currentPlayerData.currentLocation.trim()
+                        : '';
+                    if (!expectedOriginLocationId) {
+                        throw new Error('Current player location is unavailable for move origin verification.');
+                    }
+
                     const response = await fetch('/api/player/move', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ destinationId })
+                        body: JSON.stringify({ destinationId, expectedOriginLocationId })
                     });
 
                     const result = await response.json();

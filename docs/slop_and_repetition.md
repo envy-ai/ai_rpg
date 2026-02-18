@@ -62,11 +62,13 @@ Quick refresher on where these systems live and how they're wired.
 - Slop words:
   - Source: `defs/slopwords.yaml`
   - Analyzer: `server.js` → `analyzeSlopwordsForText()` computes ppm against the provided text.
+  - Active-setting additions: `currentSetting.customSlopWords` entries with a single token are added as slop words (using `default` ppm threshold).
   - `api.js` → `getFilteredSlopWords()` runs the analyzer on combined slop history + current response, then filters to words present in the current response.
   - Slop history segments include `player-action`, `npc-action`, `quest-reward`, and `random-event` chat entries.
 - Configured ngrams:
   - Source: `defs/slopwords.yaml` → `ngrams` (with per-entry ppm or `default`, using `ngram_default`).
   - Analyzer: `server.js` → `analyzeConfiguredNgramsForText()` computes ppm over normalized tokens.
+  - Active-setting additions: `currentSetting.customSlopWords` entries with multiple tokens are normalized and added as configured ngrams (using `ngram_default` ppm threshold).
   - Normalization matches overlap detection (`Utils.normalizeKgramTokens`): lowercase, punctuation stripping, common-word removal, and NPC name/alias token removal while retaining `could`/`would` variants.
   - `api.js` → `getFilteredConfiguredNgrams()` runs analyzer on combined slop history + current response, then filters to ngrams present in the current response.
 - Repeated n-grams:
@@ -95,6 +97,7 @@ Quick refresher on where these systems live and how they're wired.
 - Random event narrative: `api.js` → random event flow
 - Quest reward prose: `Events.js` → quest reward flow
 - Crafting narrative text: `api.js` → craft flow
+- Game intro prose (`<introProse>`): `api.js` → `runGameIntroPrompt` (new-game intro and `/game_intro` slash command path)
 
 ### UI + logging
 - Chat insight icon: 🧹, rendered from `public/js/chat.js`.

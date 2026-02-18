@@ -15,7 +15,12 @@ Characters at location:
 {% endfor %}
 
 Text to check for events:
-<textToCheck>{{ textToCheck }}</textToCheck>
+<textToCheck>
+{% if includePlayerActionBlock and actionText and actionText | trim %}<playerAction>
+{{ actionText }}
+</playerAction>{% endif %}
+{{ textToCheck }}
+</textToCheck>
 
 Location/region rules:
 * A "region" is any group of locations that share a common theme or purpose, such as a building interior, a town, a biome, a dimension, a planet, etc. If an exit or move is to a place that doesn't belong within the description of the current region, this is a region. Being a piece of scenery doesn't preclude something from being a region; for instance, moving into a large building or structure (such as a castle, ship, or cave) is moving to a new region.
@@ -66,6 +71,5 @@ Did I refer to everything by its full, exact name? ...names in prose may differ 
 4. ...
 [... and so on ...]
 </final>
-
 
 

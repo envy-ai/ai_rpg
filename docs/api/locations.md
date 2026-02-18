@@ -115,11 +115,14 @@ Responses:
 ## POST /api/locations/:id/things
 
 Request:
-- Body: `{ seed: { name (required), description?, shortDescription?, type?, slot?, rarity?, itemOrScenery?, value?, weight?, level?, relativeLevel?, isVehicle?, isHarvestable?, isCraftingStation?, isProcessingStation?, isSalvageable?, notes? }, level? }`
+- Body: `{ seed: { name?, description?, shortDescription?, type?, slot?, rarity?, itemOrScenery?, value?, weight?, level?, relativeLevel?, isVehicle?, isHarvestable?, isCraftingStation?, isProcessingStation?, isSalvageable?, notes? }, level? }`
 
 Responses:
 - 200: `{ success: true, thing: ThingJson, location: LocationResponse, message }`
 - 400/404/500: `{ success: false, error }`
+
+Notes:
+- `seed.name` is optional; when omitted, the item/scenery generator is expected to produce a name.
 
 ## GET /api/stubs/:id
 

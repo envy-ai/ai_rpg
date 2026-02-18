@@ -3948,7 +3948,20 @@ body.dark .thing-toggle-hint {
   }
 
   .prompt-progress-cancel-header {
-    width: 28px;
+    width: 96px;
+  }
+
+  .prompt-progress-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .prompt-progress-action {
+    &:disabled {
+      cursor: not-allowed;
+      opacity: 0.45;
+    }
   }
 
   .prompt-progress-cancel {
@@ -3967,10 +3980,24 @@ body.dark .thing-toggle-hint {
       background: rgba(248, 113, 113, 0.15);
       color: #fecaca;
     }
+  }
 
-    &:disabled {
-      cursor: not-allowed;
-      opacity: 0.45;
+  .prompt-progress-retry {
+    height: 22px;
+    padding: 0 8px;
+    border-radius: 999px;
+    border: 1px solid rgba(147, 197, 253, 0.7);
+    background: transparent;
+    color: #93c5fd;
+    font-size: 0.72rem;
+    font-weight: 600;
+    cursor: pointer;
+    line-height: 1;
+    @include transition(background);
+
+    &:hover {
+      background: rgba(147, 197, 253, 0.14);
+      color: #dbeafe;
     }
   }
 }

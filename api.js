@@ -2586,7 +2586,19 @@ module.exports = function registerApiRoutes(scope) {
                 endpoint: requestOptions.endpoint
             });
 
-            const introText = parseGameIntroResponse(rawResponse);
+            let introText = parseGameIntroResponse(rawResponse);
+            let slopRemovalInfo = null;
+            if (Globals.config?.slop_buster === true && introText.trim()) {
+                const slopResult = await applySlopRemoval(introText, { returnDiagnostics: true });
+                introText = slopResult.text;
+                if (slopResult.ran) {
+                    slopRemovalInfo = {
+                        slopWords: slopResult.slopWords || [],
+                        slopNgrams: slopResult.slopNgrams || []
+                    };
+                }
+            }
+
             const resolvedLocationId = requireLocationId(
                 locationId || locationOverride?.id || currentPlayer?.currentLocation,
                 'game intro entry'
@@ -2598,7 +2610,15 @@ module.exports = function registerApiRoutes(scope) {
                 type: 'game-intro',
                 locationId: resolvedLocationId
             };
-            return pushChatEntry(entry, entryCollector, resolvedLocationId);
+            const storedEntry = pushChatEntry(entry, entryCollector, resolvedLocationId);
+            if (slopRemovalInfo && storedEntry?.id) {
+                recordSlopRemovalEntry({
+                    data: slopRemovalInfo,
+                    parentId: storedEntry.id,
+                    locationId: resolvedLocationId
+                }, entryCollector);
+            }
+            return storedEntry;
         }
 
         Globals.generateGameIntro = runGameIntroPrompt;
@@ -3615,6 +3635,99 @@ module.exports = function registerApiRoutes(scope) {
                 }
             }
             return null;
+        };
+
+        const activePlayerMoveLocks = new Map();
+
+        const tryAcquirePlayerMoveLock = (playerId, source = 'unknown') => {
+            const normalizedPlayerId = typeof playerId === 'string' ? playerId.trim() : '';
+            if (!normalizedPlayerId) {
+                throw new Error('Player move lock requires a valid player id.');
+            }
+
+            if (activePlayerMoveLocks.has(normalizedPlayerId)) {
+                return null;
+            }
+
+            const token = Symbol(`move-lock:${normalizedPlayerId}`);
+            const lockInfo = {
+                token,
+                source,
+                acquiredAt: Date.now()
+            };
+            activePlayerMoveLocks.set(normalizedPlayerId, lockInfo);
+
+            return () => {
+                const current = activePlayerMoveLocks.get(normalizedPlayerId);
+                if (current && current.token === token) {
+                    activePlayerMoveLocks.delete(normalizedPlayerId);
+                }
+            };
+        };
+
+        const assertMovementGraphIntegrity = ({ player = currentPlayer, context = 'movement' } = {}) => {
+            const contextLabel = typeof context === 'string' && context.trim() ? context.trim() : 'movement';
+
+            const playerLocationId = typeof player?.currentLocation === 'string'
+                ? player.currentLocation.trim()
+                : '';
+            if (playerLocationId && !gameLocations.has(playerLocationId)) {
+                throw new Error(`[${contextLabel}] Current player location '${playerLocationId}' is missing from gameLocations.`);
+            }
+
+            for (const [regionId, region] of regions.entries()) {
+                if (!region) {
+                    throw new Error(`[${contextLabel}] Region '${regionId}' is null or undefined.`);
+                }
+                if (!Array.isArray(region.locationIds)) {
+                    throw new Error(`[${contextLabel}] Region '${regionId}' has invalid locationIds.`);
+                }
+                for (const locationId of region.locationIds) {
+                    if (!gameLocations.has(locationId)) {
+                        throw new Error(`[${contextLabel}] Region '${regionId}' references missing location '${locationId}'.`);
+                    }
+                }
+            }
+
+            for (const [locationId, location] of gameLocations.entries()) {
+                if (!location) {
+                    throw new Error(`[${contextLabel}] Location '${locationId}' is null or undefined.`);
+                }
+
+                const directions = typeof location.getAvailableDirections === 'function'
+                    ? location.getAvailableDirections()
+                    : null;
+                if (!Array.isArray(directions)) {
+                    throw new Error(`[${contextLabel}] Location '${locationId}' does not expose valid exits.`);
+                }
+                for (const direction of directions) {
+                    const exit = typeof location.getExit === 'function' ? location.getExit(direction) : null;
+                    if (!exit) {
+                        continue;
+                    }
+                    const destinationId = typeof exit.destination === 'string' ? exit.destination.trim() : '';
+                    if (!destinationId) {
+                        throw new Error(`[${contextLabel}] Location '${locationId}' has exit '${direction}' with invalid destination.`);
+                    }
+                    if (!gameLocations.has(destinationId)) {
+                        throw new Error(`[${contextLabel}] Location '${locationId}' has exit '${direction}' to missing location '${destinationId}'.`);
+                    }
+                }
+
+                if (!location.isStub) {
+                    const regionId = typeof location.regionId === 'string' ? location.regionId.trim() : '';
+                    if (!regionId) {
+                        throw new Error(`[${contextLabel}] Non-stub location '${locationId}' is missing regionId.`);
+                    }
+                    const region = regions.get(regionId);
+                    if (!region) {
+                        throw new Error(`[${contextLabel}] Non-stub location '${locationId}' references missing region '${regionId}'.`);
+                    }
+                    if (!Array.isArray(region.locationIds) || !region.locationIds.includes(locationId)) {
+                        throw new Error(`[${contextLabel}] Non-stub location '${locationId}' is not listed in region '${regionId}'.`);
+                    }
+                }
+            }
         };
 
         const findMostRecentHistoryEntryWithRequestId = (collector = null, requestId = null) => {
@@ -5306,6 +5419,7 @@ module.exports = function registerApiRoutes(scope) {
             location,
             stream,
             userInput = null,
+            includePlayerActionForEventChecks = false,
             travelMetadataIsEventDriven = false,
             currentActionIsTravel = false,
             resolveTravelContext = null,
@@ -5345,9 +5459,11 @@ module.exports = function registerApiRoutes(scope) {
 
             let originEventResult = null;
             if (originProse) {
-                const originText = userInput ? `${userInput}\n\n${originProse}` : originProse;
                 originEventResult = await Events.runEventChecks({
-                    textToCheck: originText,
+                    textToCheck: originProse,
+                    actionText: (includePlayerActionForEventChecks && userInput)
+                        ? userInput
+                        : null,
                     stream,
                     suppressMoveEvents: true,
                     allowMoveTurnAppearances: true,
@@ -5397,6 +5513,10 @@ module.exports = function registerApiRoutes(scope) {
 
                 Globals.processedMove = true;
                 location = destinationLocation || location;
+                assertMovementGraphIntegrity({
+                    player: currentPlayer,
+                    context: 'travel prose movement'
+                });
             } catch (travelMoveError) {
                 throw new Error(`Failed to move for travel prose: ${travelMoveError.message || travelMoveError}`);
             }
@@ -5407,11 +5527,11 @@ module.exports = function registerApiRoutes(scope) {
 
             let destinationEventResult = null;
             if (destinationProse) {
-                const destinationText = (!originProse && userInput)
-                    ? `${userInput}\n\n${destinationProse}`
-                    : destinationProse;
                 destinationEventResult = await Events.runEventChecks({
-                    textToCheck: destinationText,
+                    textToCheck: destinationProse,
+                    actionText: (!originProse && includePlayerActionForEventChecks && userInput)
+                        ? userInput
+                        : null,
                     stream,
                     suppressMoveEvents: true,
                     allowMoveTurnAppearances: true,
@@ -9632,6 +9752,7 @@ module.exports = function registerApiRoutes(scope) {
             Globals.processedMove = false;
             let currentUserMessage = null;
             let currentTurnLog = [];
+            let releasePlayerMoveLock = null;
 
             let statusNeedAdjustments = [];
             try {
@@ -9895,10 +10016,9 @@ module.exports = function registerApiRoutes(scope) {
                     throw new Error(`Travel origin mismatch (expected '${initialPlayerLocationId}', received '${normalizedOriginId}').`);
                 }
 
-                const originLocation = gameLocations.get(normalizedOriginId)
-                    || Location.get(normalizedOriginId);
+                const originLocation = gameLocations.get(normalizedOriginId) || null;
                 if (!originLocation) {
-                    throw new Error(`Origin location '${normalizedOriginId}' not found for travel.`);
+                    throw new Error(`Origin location '${normalizedOriginId}' not found in gameLocations for travel.`);
                 }
 
                 const availableDirections = typeof originLocation.getAvailableDirections === 'function'
@@ -9936,10 +10056,9 @@ module.exports = function registerApiRoutes(scope) {
                     throw new Error('Travel exit destination does not match the provided destinationId.');
                 }
 
-                const destinationLocation = gameLocations.get(normalizedDestinationId)
-                    || Location.get(normalizedDestinationId);
+                const destinationLocation = gameLocations.get(normalizedDestinationId) || null;
                 if (!destinationLocation) {
-                    throw new Error(`Destination location '${normalizedDestinationId}' not found.`);
+                    throw new Error(`Destination location '${normalizedDestinationId}' not found in gameLocations.`);
                 }
 
                 resolvedTravelContext = {
@@ -9974,9 +10093,10 @@ module.exports = function registerApiRoutes(scope) {
             try {
                 if (!location && currentPlayer?.currentLocation) {
                     const resolvedLocationId = currentPlayer.currentLocation;
-                    location = gameLocations.get(resolvedLocationId)
-                        || Location.get(resolvedLocationId)
-                        || null;
+                    location = gameLocations.get(resolvedLocationId) || null;
+                    if (!location) {
+                        throw new Error(`Current player location '${resolvedLocationId}' is missing from gameLocations.`);
+                    }
                 }
 
                 if (location) {
@@ -10046,6 +10166,27 @@ module.exports = function registerApiRoutes(scope) {
 
                     const isTravelMessage = rawTravelFlag === true;
                     currentActionIsTravel = isTravelMessage;
+
+                    if (currentActionIsTravel) {
+                        const currentPlayerId = typeof currentPlayer?.id === 'string'
+                            ? currentPlayer.id.trim()
+                            : '';
+                        if (!currentPlayerId) {
+                            const message = 'Cannot process travel action without a valid current player id.';
+                            stream.error({ message });
+                            stream.complete({ aborted: true });
+                            return respond({ error: message }, 400);
+                        }
+                        if (!releasePlayerMoveLock) {
+                            releasePlayerMoveLock = tryAcquirePlayerMoveLock(currentPlayerId, '/api/chat');
+                        }
+                        if (!releasePlayerMoveLock) {
+                            const message = 'Another move is already in progress for this player.';
+                            stream.error({ message });
+                            stream.complete({ aborted: true });
+                            return respond({ error: message }, 409);
+                        }
+                    }
 
                     if (travelMetadataIsEventDriven && currentActionIsTravel) {
                         try {
@@ -11222,14 +11363,14 @@ module.exports = function registerApiRoutes(scope) {
                     } else {
                         try {
                             stream.status('player_action:event_checks', 'Evaluating resulting events.');
-                            if (currentPlayer && 'lastOutcomeSucceeded' in currentPlayer) {
-                                const wasSuccessful = Boolean(currentPlayer.lastOutcomeSucceeded);
-                                const isTrivial = plausibilityType === 'trivial';
-                                if (wasSuccessful || isTrivial) {
-                                    const historyEntry = findMostRecentHistoryEntryWithRequestId(newChatEntries, stream.requestId);
-                                    if (historyEntry && typeof historyEntry.content === 'string' && historyEntry.content.trim()) {
-                                        userInput = historyEntry.content.trim();
-                                    }
+                            const shouldIncludePlayerActionForEventChecks = Boolean(
+                                plausibilityType === 'trivial'
+                                || actionResolution?.success === true
+                            );
+                            if (shouldIncludePlayerActionForEventChecks) {
+                                const historyEntry = findMostRecentHistoryEntryWithRequestId(newChatEntries, stream.requestId);
+                                if (historyEntry && typeof historyEntry.content === 'string' && historyEntry.content.trim()) {
+                                    userInput = historyEntry.content.trim();
                                 }
                             }
 
@@ -11239,6 +11380,7 @@ module.exports = function registerApiRoutes(scope) {
                                     location,
                                     stream,
                                     userInput,
+                                    includePlayerActionForEventChecks: shouldIncludePlayerActionForEventChecks,
                                     travelMetadataIsEventDriven,
                                     currentActionIsTravel,
                                     resolveTravelContext,
@@ -11253,10 +11395,13 @@ module.exports = function registerApiRoutes(scope) {
                                 traveledToLocationId = travelResult.traveledToLocationId || traveledToLocationId;
                                 questResult = await Events.runQuestChecks();
                             } else {
-                                const textToCheck = userInput ? `${userInput}\n\n${aiResponse}` : aiResponse;
+                                const textToCheck = aiResponse;
                                 [eventResult, questResult] = await Promise.all([
                                     Events.runEventChecks({
                                         textToCheck,
+                                        actionText: (shouldIncludePlayerActionForEventChecks && userInput)
+                                            ? userInput
+                                            : null,
                                         stream,
                                         suppressMoveEvents: Boolean(currentActionIsTravel && travelMetadataIsEventDriven)
                                     }),
@@ -11531,6 +11676,10 @@ module.exports = function registerApiRoutes(scope) {
 
                                     traveledToLocationId = destinationLocation?.id || traveledToLocationId;
                                     Globals.processedMove = true;
+                                    assertMovementGraphIntegrity({
+                                        player: currentPlayer,
+                                        context: 'event-driven travel movement'
+                                    });
 
                                     const normalizedName = typeof destinationName === 'string' && destinationName.trim()
                                         ? destinationName.trim()
@@ -12131,6 +12280,11 @@ module.exports = function registerApiRoutes(scope) {
                 } else {
                     // Other errors
                     await respond(withMeta({ error: `Request failed: ${error.message}` }), 500);
+                }
+            } finally {
+                if (typeof releasePlayerMoveLock === 'function') {
+                    releasePlayerMoveLock();
+                    releasePlayerMoveLock = null;
                 }
             }
         });
@@ -18127,12 +18281,6 @@ module.exports = function registerApiRoutes(scope) {
                 const payload = req.body || {};
                 const rawSeed = payload.seed || {};
                 const rawName = typeof rawSeed.name === 'string' ? rawSeed.name.trim() : '';
-                if (!rawName) {
-                    return res.status(400).json({
-                        success: false,
-                        error: 'Item name is required to generate a new item.'
-                    });
-                }
 
                 const region = findRegionByLocationId(location.id) || null;
 
@@ -18145,7 +18293,6 @@ module.exports = function registerApiRoutes(scope) {
                 };
 
                 const seed = {
-                    name: rawName,
                     description: normalizeSeedString(rawSeed.description),
                     shortDescription: normalizeSeedString(rawSeed.shortDescription),
                     type: normalizeSeedString(rawSeed.type),
@@ -18157,6 +18304,9 @@ module.exports = function registerApiRoutes(scope) {
                     isProcessingStation: Boolean(rawSeed.isProcessingStation),
                     isSalvageable: Boolean(rawSeed.isSalvageable)
                 };
+                if (rawName) {
+                    seed.name = rawName;
+                }
 
                 const notes = normalizeSeedString(rawSeed.notes || payload.notes);
                 if (notes) {
@@ -18212,7 +18362,7 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 const createdItems = await generateItemsByNames({
-                    itemNames: [rawName],
+                    itemNames: rawName ? [rawName] : [],
                     location,
                     region,
                     seeds: [seed]
@@ -18222,7 +18372,7 @@ module.exports = function registerApiRoutes(scope) {
                 if (Array.isArray(createdItems) && createdItems.length) {
                     generatedThing = createdItems[0];
                 }
-                if (!generatedThing) {
+                if (!generatedThing && rawName) {
                     generatedThing = findThingByName(rawName);
                 }
                 if (!generatedThing) {
@@ -18246,7 +18396,7 @@ module.exports = function registerApiRoutes(scope) {
                     success: true,
                     thing: thingJson,
                     location: locationData,
-                    message: `${thingJson.name || rawName} has been created.`
+                    message: `${thingJson.name || rawName || 'Item'} has been created.`
                 });
             } catch (error) {
                 console.error('Error generating item:', error);
@@ -18259,6 +18409,7 @@ module.exports = function registerApiRoutes(scope) {
 
         // Move player to a connected location
         app.post('/api/player/move', async (req, res) => {
+            let releasePlayerMoveLock = null;
             try {
                 if (!currentPlayer) {
                     return res.status(404).json({
@@ -18267,7 +18418,23 @@ module.exports = function registerApiRoutes(scope) {
                     });
                 }
 
-                const { destinationId, direction } = req.body || {};
+                const currentPlayerId = typeof currentPlayer.id === 'string' ? currentPlayer.id.trim() : '';
+                if (!currentPlayerId) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Current player is missing a valid id.'
+                    });
+                }
+
+                releasePlayerMoveLock = tryAcquirePlayerMoveLock(currentPlayerId, '/api/player/move');
+                if (!releasePlayerMoveLock) {
+                    return res.status(409).json({
+                        success: false,
+                        error: 'Another move is already in progress for this player.'
+                    });
+                }
+
+                const { destinationId, direction, expectedOriginLocationId } = req.body || {};
                 if (!destinationId && !direction) {
                     return res.status(400).json({
                         success: false,
@@ -18275,7 +18442,23 @@ module.exports = function registerApiRoutes(scope) {
                     });
                 }
 
+                const normalizedExpectedOrigin = typeof expectedOriginLocationId === 'string'
+                    ? expectedOriginLocationId.trim()
+                    : '';
+                if (!normalizedExpectedOrigin) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'expectedOriginLocationId is required.'
+                    });
+                }
+
                 const currentLocationId = currentPlayer.currentLocation;
+                if (currentLocationId !== normalizedExpectedOrigin) {
+                    return res.status(409).json({
+                        success: false,
+                        error: `Move origin mismatch (expected '${normalizedExpectedOrigin}', current '${currentLocationId || 'none'}').`
+                    });
+                }
                 const currentLocation = currentLocationId ? gameLocations.get(currentLocationId) : null;
                 if (!currentLocation) {
                     return res.status(400).json({
@@ -18390,6 +18573,11 @@ module.exports = function registerApiRoutes(scope) {
                     }
                 }
 
+                assertMovementGraphIntegrity({
+                    player: currentPlayer,
+                    context: '/api/player/move'
+                });
+
                 queueNpcAssetsForLocation(destinationLocation);
                 try {
                     queueLocationThingImages(destinationLocation);
@@ -18486,6 +18674,11 @@ module.exports = function registerApiRoutes(scope) {
                     success: false,
                     error: error.message
                 });
+            } finally {
+                if (typeof releasePlayerMoveLock === 'function') {
+                    releasePlayerMoveLock();
+                    releasePlayerMoveLock = null;
+                }
             }
         });
 
@@ -21381,7 +21574,8 @@ module.exports = function registerApiRoutes(scope) {
                 defaultStartingCurrency: toNumberString(raw.defaultStartingCurrency),
                 defaultExistingSkills: toStringArray(raw.defaultExistingSkills),
                 availableClasses: toStringArray(raw.availableClasses),
-                availableRaces: toStringArray(raw.availableRaces)
+                availableRaces: toStringArray(raw.availableRaces),
+                customSlopWords: toStringArray(raw.customSlopWords)
             };
         }
 
@@ -21464,7 +21658,8 @@ module.exports = function registerApiRoutes(scope) {
                 defaultStartingCurrency: toNumber(getText('defaultStartingCurrency')),
                 defaultExistingSkills: getList('defaultExistingSkills', 'skill'),
                 availableClasses: getList('availableClasses', 'class'),
-                availableRaces: getList('availableRaces', 'race')
+                availableRaces: getList('availableRaces', 'race'),
+                customSlopWords: getList('customSlopWords', 'word')
             };
         }
 
@@ -21615,7 +21810,8 @@ module.exports = function registerApiRoutes(scope) {
                         ...normalizedSetting,
                         defaultExistingSkills: normalizedSetting.defaultExistingSkills,
                         availableClasses: normalizedSetting.availableClasses,
-                        availableRaces: normalizedSetting.availableRaces
+                        availableRaces: normalizedSetting.availableRaces,
+                        customSlopWords: normalizedSetting.customSlopWords
                     },
                     additionalInstructions,
                     hasImage: Boolean(imageDataUrl)
@@ -25262,6 +25458,33 @@ module.exports = function registerApiRoutes(scope) {
                 });
             } catch (error) {
                 const message = error?.message || 'Failed to cancel prompt.';
+                const status = message.includes('not active') ? 404 : 400;
+                return res.status(status).json({
+                    success: false,
+                    error: message
+                });
+            }
+        });
+
+        app.post('/api/prompts/:promptId/retry', (req, res) => {
+            try {
+                const promptIdRaw = req.params.promptId;
+                const promptId = typeof promptIdRaw === 'string' ? promptIdRaw.trim() : '';
+                if (!promptId) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Prompt id is required.'
+                    });
+                }
+
+                LLMClient.retryPrompt(promptId);
+
+                return res.json({
+                    success: true,
+                    message: 'Prompt retry requested.'
+                });
+            } catch (error) {
+                const message = error?.message || 'Failed to retry prompt.';
                 const status = message.includes('not active') ? 404 : 400;
                 return res.status(status).json({
                     success: false,

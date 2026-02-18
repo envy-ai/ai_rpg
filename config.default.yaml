@@ -28,10 +28,13 @@ ai:
   model: zai-org/glm-4.7
 
   # Optional: Additional parameters
-  maxTokens: 6000
+  maxTokens: 10000
   lowTemperature: 0.0
   temperature: 0.6
   highTemperature: 1.0
+  # Optional: extra HTTP headers sent with each chat-completion request
+  # headers:
+  #   User-Agent: "Firefox 99.0"
   # Optional: nucleus sampling parameter (0-1)
   top_p: 1.0
   baseTimeoutSeconds: 300
@@ -72,6 +75,8 @@ ai_multimodal:
 #   creative:
 #     model: "moonshotai/kimi-k2.5"
 #     temperature: 0.9
+#     headers:
+#       User-Agent: "Firefox 99.0"
 #     prompts:
 #       - player_action
 #       - npc_action
@@ -251,7 +256,7 @@ repetition_buster_mode: glm
 
 slop_buster: true
 slop_remover_base_attempts: 2
-prose_length: 3-5 sentences
+prose_length: 2-3 paragraphs
 # Number of events to check concurrently when processing text. Omit to do them all.
 # A lower number makes it easier for the AI but is slower and will use more tokens/requests.
 # You can omit this for sophisticated models that can handle more complex prompts.

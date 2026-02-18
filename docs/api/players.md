@@ -63,6 +63,25 @@ Response:
 - 200: `{ success: true, message, members }` (`members` is an array of ids)
 - 400/404/500 with `{ success: false, error }`
 
+## POST /api/player/move
+Move the current player to a connected location.
+
+Request:
+- Body: `{ destinationId?: string, direction?: string, expectedOriginLocationId: string }`
+  - At least one of `destinationId` or `direction` is required.
+  - `expectedOriginLocationId` is required and must match the current server-side player location.
+
+Response:
+- 200: `{ success: true, location: LocationResponse, message, direction }`
+- 400: `{ success: false, error }` (missing args/origin)
+- 404: `{ success: false, error }` (destination not found)
+- 409: `{ success: false, error }` (origin mismatch or another move already in progress)
+- 500: `{ success: false, error }`
+
+Notes:
+- Move requests are guarded by a per-player non-blocking server lock to prevent concurrent double-move races.
+- After successful move resolution, the server runs strict location/region/exit integrity checks and fails loudly on corruption.
+
 ## PUT /api/player/attributes
 Update player attributes.
 

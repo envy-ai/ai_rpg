@@ -31,4 +31,8 @@ Choose the item's rarity from the defined rarity levels.
 
 Note that bonuses will be normalized to the rarity after generation, so use the full range of bonuses (-4 to +4) as needed.
 
+{% if thingSeed.name %}
 The item's name should be "{{ thingSeed.name }}".
+{% else %}
+Choose an appropriate item name and include it in the <name> field.
+{% endif %}

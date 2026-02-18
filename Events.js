@@ -1160,6 +1160,7 @@ class Events {
 
     static async runEventChecks({
         textToCheck,
+        actionText = null,
         stream = null,
         allowEnvironmentalEffects = true,
         isNpcTurn = false,
@@ -1182,6 +1183,12 @@ class Events {
             console.warn("No text to check for events; skipping event analysis.");
             return null;
         }
+        if (actionText !== null && actionText !== undefined && typeof actionText !== "string") {
+            throw new Error("runEventChecks actionText must be a string when provided.");
+        }
+        const normalizedActionText =
+            typeof actionText === "string" ? actionText.trim() : "";
+        const includePlayerActionBlock = normalizedActionText.length > 0;
 
         this._resetTrackingSets();
         const depth = Number.isFinite(_depth) ? _depth : 0;
@@ -1264,6 +1271,8 @@ class Events {
                     ...baseContext,
                     promptType: "event-checks",
                     textToCheck,
+                    actionText: normalizedActionText,
+                    includePlayerActionBlock,
                     eventQuestions: questions,
                     omitGameHistory: true,
                 });

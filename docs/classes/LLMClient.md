@@ -13,10 +13,11 @@ Centralized client for LLM chat completions with concurrency limits, streaming p
 - `#semaphoreLimit`: current global limit.
 - `#streamProgress`: active stream tracking and ticker state.
 - `#abortControllers`: map of in-flight requests by stream id.
-- `#canceledStreams`: set of canceled stream ids.
+- `#controllerAbortIntents`: per-attempt abort intent (`cancel` vs `retry`) keyed by abort controller.
 
 ## Public API (Static)
 - `cancelPrompt(streamId, reason)`: aborts an in-flight request.
+- `retryPrompt(streamId, reason)`: aborts the current attempt and restarts the same prompt call.
 - `ensureAiConfig()`: validates `Globals.config.ai`.
 - `getMaxConcurrent(aiConfigOverride)`: reads `max_concurrent_requests`.
 - `writeLogFile({ prefix, metadataLabel, payload, serializeJson, onFailureMessage, error, append })`: writes error logs.
@@ -38,7 +39,9 @@ Centralized client for LLM chat completions with concurrency limits, streaming p
 ## Notes
 - Streaming progress is broadcast through `Globals.realtimeHub` when available.
 - Retries are built in; stream timeouts are incrementally increased on retry.
+- Manual retries from prompt-progress UI do not consume configured automatic retry attempts for the prompt call.
 - Retry attempts re-resolve active AI runtime settings (including `ai_model_overrides` selected by `metadataLabel`) before each request attempt, so model/endpoint/key and other settings can change between retries.
 - `ai.custom_args` supports structured provider-specific top-level request args; profile `ai_model_overrides` merge `custom_args` per key (deep merge), with `null` deleting inherited keys.
+- `ai.headers` supports global HTTP request headers; profile `ai_model_overrides` merge `headers` per key, with `null` deleting inherited headers.
 - `logPrompt` is the standard logging path for prompts throughout the codebase.
 - The chat completion payload no longer forces `reasoning: true`; it is only sent when configured explicitly.

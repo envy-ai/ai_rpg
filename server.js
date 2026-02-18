@@ -2269,6 +2269,39 @@ function tokenizeSlopText(text) {
     return trimmed.toLowerCase().match(/[a-z]+(?:'[a-z]+)?/g) || [];
 }
 
+function collectActiveSettingCustomSlopEntries() {
+    const settingSnapshot = getActiveSettingSnapshot();
+    const entries = normalizeSettingList(settingSnapshot?.customSlopWords);
+    if (!entries.length) {
+        return { customWords: [], customNgrams: [] };
+    }
+
+    const customWordSet = new Set();
+    const customNgramSet = new Set();
+    for (const entry of entries) {
+        const rawTokens = tokenizeSlopText(entry);
+        if (!rawTokens.length) {
+            throw new Error(`Custom slop entry "${entry}" is invalid; it must include alphabetic characters.`);
+        }
+
+        if (rawTokens.length === 1) {
+            customWordSet.add(rawTokens[0]);
+            continue;
+        }
+
+        const normalizedTokens = Utils.normalizeKgramTokens(entry, { excludeNpcNames: false });
+        if (normalizedTokens.length < 2) {
+            throw new Error(`Custom slop ngram "${entry}" must contain at least 2 non-common tokens after normalization.`);
+        }
+        customNgramSet.add(normalizedTokens.join(' '));
+    }
+
+    return {
+        customWords: Array.from(customWordSet),
+        customNgrams: Array.from(customNgramSet)
+    };
+}
+
 function getSlopwordThreshold(rawLimit, defaultPpm, wordLabel) {
     if (rawLimit === undefined || rawLimit === null) {
         return defaultPpm;
@@ -2290,19 +2323,31 @@ async function analyzeSlopwordsForText(text, { defaultPpmOverride = null } = {})
     }
 
     const { defaultPpm, slopwords } = await loadSlopwordConfig({ defaultPpmOverride });
+    const { customWords } = collectActiveSettingCustomSlopEntries();
     const wordCounts = new Map();
     for (const token of tokens) {
         wordCounts.set(token, (wordCounts.get(token) || 0) + 1);
     }
 
-    const totalWords = tokens.length;
-    const flagged = [];
+    const thresholdsByWord = new Map();
     for (const [rawWord, rawLimit] of Object.entries(slopwords)) {
         if (typeof rawWord !== 'string' || !rawWord.trim()) {
             throw new Error('Slopwords list contains an invalid word entry.');
         }
         const word = rawWord.trim().toLowerCase();
         const allowed = getSlopwordThreshold(rawLimit, defaultPpm, rawWord);
+        thresholdsByWord.set(word, allowed);
+    }
+
+    for (const customWord of customWords) {
+        if (!thresholdsByWord.has(customWord)) {
+            thresholdsByWord.set(customWord, defaultPpm);
+        }
+    }
+
+    const totalWords = tokens.length;
+    const flagged = [];
+    for (const [word, allowed] of thresholdsByWord.entries()) {
         const count = wordCounts.get(word) || 0;
         const ppm = (count / totalWords) * 1000000;
         if (ppm > allowed) {
@@ -2358,6 +2403,7 @@ async function analyzeConfiguredNgramsForText(text) {
     }
 
     const { ngramDefault, ngrams } = await loadSlopwordConfig();
+    const { customNgrams } = collectActiveSettingCustomSlopEntries();
     const normalizedEntryMap = new Map();
     for (const [rawNgram, rawLimit] of Object.entries(ngrams)) {
         const { normalizedTokens, normalizedNgram } = normalizeConfiguredNgramEntry(rawNgram);
@@ -2368,6 +2414,20 @@ async function analyzeConfiguredNgramsForText(text) {
         normalizedEntryMap.set(normalizedNgram, {
             normalizedTokens,
             allowedPpm
+        });
+    }
+
+    for (const normalizedNgram of customNgrams) {
+        if (normalizedEntryMap.has(normalizedNgram)) {
+            continue;
+        }
+        const normalizedTokens = normalizedNgram.split(' ').filter(Boolean);
+        if (normalizedTokens.length < 2) {
+            throw new Error(`Custom slop ngram "${normalizedNgram}" normalized to fewer than 2 tokens.`);
+        }
+        normalizedEntryMap.set(normalizedNgram, {
+            normalizedTokens,
+            allowedPpm: ngramDefault
         });
     }
 
@@ -8804,6 +8864,70 @@ async function expandRegionEntryStub(stubLocation) {
     }
 }
 
+function assertRegionEntryFinalizationIntegrity({
+    removedStubId,
+    replacementLocationId,
+    regionId,
+    context = 'region entry finalization'
+} = {}) {
+    const contextLabel = typeof context === 'string' && context.trim() ? context.trim() : 'region entry finalization';
+    const normalizedRemovedId = typeof removedStubId === 'string' ? removedStubId.trim() : '';
+    const normalizedReplacementId = typeof replacementLocationId === 'string' ? replacementLocationId.trim() : '';
+    const normalizedRegionId = typeof regionId === 'string' ? regionId.trim() : '';
+
+    if (!normalizedRemovedId) {
+        throw new Error(`[${contextLabel}] Missing removed stub location id.`);
+    }
+    if (!normalizedReplacementId) {
+        throw new Error(`[${contextLabel}] Missing replacement location id.`);
+    }
+    if (!gameLocations.has(normalizedReplacementId)) {
+        throw new Error(`[${contextLabel}] Replacement location '${normalizedReplacementId}' is missing from gameLocations.`);
+    }
+    if (gameLocations.has(normalizedRemovedId)) {
+        throw new Error(`[${contextLabel}] Removed stub '${normalizedRemovedId}' still exists in gameLocations.`);
+    }
+
+    if (normalizedRegionId) {
+        const region = regions.get(normalizedRegionId);
+        if (!region) {
+            throw new Error(`[${contextLabel}] Region '${normalizedRegionId}' is missing.`);
+        }
+        if (!Array.isArray(region.locationIds) || !region.locationIds.includes(normalizedReplacementId)) {
+            throw new Error(`[${contextLabel}] Region '${normalizedRegionId}' is missing replacement location '${normalizedReplacementId}'.`);
+        }
+    }
+
+    for (const [candidateRegionId, region] of regions.entries()) {
+        if (!region || !Array.isArray(region.locationIds)) {
+            continue;
+        }
+        if (region.locationIds.includes(normalizedRemovedId)) {
+            throw new Error(`[${contextLabel}] Region '${candidateRegionId}' still references removed stub '${normalizedRemovedId}'.`);
+        }
+    }
+
+    for (const [locationId, location] of gameLocations.entries()) {
+        if (!location || typeof location.getAvailableDirections !== 'function' || typeof location.getExit !== 'function') {
+            continue;
+        }
+        const directions = location.getAvailableDirections();
+        for (const direction of directions) {
+            const exit = location.getExit(direction);
+            if (!exit) {
+                continue;
+            }
+            if (exit.destination === normalizedRemovedId) {
+                throw new Error(`[${contextLabel}] Location '${locationId}' still has exit '${direction}' to removed stub '${normalizedRemovedId}'.`);
+            }
+        }
+    }
+
+    if (currentPlayer?.currentLocation === normalizedRemovedId) {
+        throw new Error(`[${contextLabel}] Current player still points at removed stub '${normalizedRemovedId}'.`);
+    }
+}
+
 async function finalizeRegionEntry({ stubLocation, entranceLocation, region, originDescription }) {
     if (!stubLocation || !entranceLocation) {
         return entranceLocation || null;
@@ -8988,6 +9112,10 @@ async function finalizeRegionEntry({ stubLocation, entranceLocation, region, ori
     }
 
     gameLocations.delete(stubLocation.id);
+    if (typeof Location.removeFromIndex === 'function') {
+        Location.removeFromIndex(stubLocation);
+        Location.removeFromIndex(stubLocation.id);
+    }
 
     const replacementLocationId = entranceLocation.id;
     if (players && typeof players.values === 'function') {
@@ -9027,6 +9155,12 @@ async function finalizeRegionEntry({ stubLocation, entranceLocation, region, ori
     if (originLocation && typeof originLocation.removeNpcId === 'function') {
         // no-op, placeholder in case stub stored NPCs
     }
+
+    assertRegionEntryFinalizationIntegrity({
+        removedStubId: stubLocation.id,
+        replacementLocationId: entranceLocation.id,
+        regionId: region?.id || null
+    });
 
     return entranceLocation;
 }
@@ -9608,10 +9742,6 @@ async function generateItemsByNames({ itemNames = [], location = null, owner = n
             .filter(Boolean)
     ));
 
-    if (!normalized.length) {
-        return [];
-    }
-
     const missing = normalized;
 
     const normalizeThingSeed = (seed = {}) => {
@@ -9695,10 +9825,15 @@ async function generateItemsByNames({ itemNames = [], location = null, owner = n
     };
 
     const seedLookup = new Map();
+    const unnamedSeeds = [];
     if (Array.isArray(seeds)) {
         seeds.forEach(seed => {
             const normalizedSeed = normalizeThingSeed(seed);
-            if (!normalizedSeed || !normalizedSeed.name) {
+            if (!normalizedSeed) {
+                return;
+            }
+            if (!normalizedSeed.name) {
+                unnamedSeeds.push(normalizedSeed);
                 return;
             }
             const key = normalizedSeed.name.toLowerCase();
@@ -9706,6 +9841,24 @@ async function generateItemsByNames({ itemNames = [], location = null, owner = n
                 seedLookup.set(key, normalizedSeed);
             }
         });
+    }
+
+    const generationRequests = [];
+    for (const requestedName of missing) {
+        generationRequests.push({
+            requestedName,
+            seed: seedLookup.get(requestedName.toLowerCase()) || {}
+        });
+    }
+    for (const seed of unnamedSeeds) {
+        generationRequests.push({
+            requestedName: '',
+            seed
+        });
+    }
+
+    if (!generationRequests.length) {
+        return [];
     }
 
     let resolvedLocation = location || null;
@@ -9765,17 +9918,23 @@ async function generateItemsByNames({ itemNames = [], location = null, owner = n
 
         const created = [];
 
-        const generationTasks = missing.map(async (name) => {
-            const seed = seedLookup.get(name.toLowerCase()) || {};
+        const generationTasks = generationRequests.map(async ({ requestedName, seed = {} }, index) => {
+            const requestLabel = (typeof requestedName === 'string' && requestedName.trim())
+                ? requestedName.trim()
+                : `auto_${index + 1}`;
             const requestedThingType = typeof seed.itemOrScenery === 'string'
                 ? seed.itemOrScenery.trim().toLowerCase()
                 : null;
 
             const thingSeed = {
                 ...seed,
-                name,
                 itemOrScenery: requestedThingType
             };
+            if (requestedName) {
+                thingSeed.name = requestedName;
+            } else {
+                delete thingSeed.name;
+            }
 
             const rarityDefinitionForSeed = Thing.getRarityDefinition(thingSeed.rarity);
             if (rarityDefinitionForSeed) {
@@ -9803,7 +9962,7 @@ async function generateItemsByNames({ itemNames = [], location = null, owner = n
                 let requestPayloadForLog = null;
                 const inventoryContent = await LLMClient.chatCompletion({
                     messages,
-                    metadataLabel: `thing_generation_${name.replace(/\s+/g, '_').toLowerCase()}`,
+                    metadataLabel: `thing_generation_${requestLabel.replace(/[^a-z0-9]+/gi, '_').replace(/^_+|_+$/g, '').toLowerCase() || `auto_${index + 1}`}`,
                     captureRequestPayload: (payload) => { requestPayloadForLog = payload; }
                 });
 
@@ -9818,10 +9977,23 @@ async function generateItemsByNames({ itemNames = [], location = null, owner = n
                     parseXMLTemplate,
                     prepareBasePromptContext
                 }) || [];
-                const itemData = parsedItems.find(it => it?.name) || null;
+                const itemData = parsedItems.find(it => it?.name) || parsedItems[0] || null;
                 if (!itemData) {
                     throw new Error('No item data returned by AI');
                 }
+
+                const finalName = (() => {
+                    if (requestedName) {
+                        return requestedName;
+                    }
+                    const generatedName = typeof itemData?.name === 'string'
+                        ? itemData.name.trim()
+                        : '';
+                    if (!generatedName) {
+                        throw new Error('Generated item is missing a name.');
+                    }
+                    return generatedName;
+                })();
 
                 const descriptionParts = [];
                 if (itemData?.description) {
@@ -9889,7 +10061,7 @@ async function generateItemsByNames({ itemNames = [], location = null, owner = n
                 if (detailParts.length) {
                     descriptionParts.push(detailParts.join(' | '));
                 }
-                const composedDescription = descriptionParts.join(' ') || `An item named ${name}.`;
+                const composedDescription = descriptionParts.join(' ') || `An item named ${finalName}.`;
 
                 const metadata = sanitizeMetadataObject({
                     rarity: itemData?.rarity || null,
@@ -9908,7 +10080,7 @@ async function generateItemsByNames({ itemNames = [], location = null, owner = n
                 Object.assign(metadata, booleanFlags);
 
                 const thing = new Thing({
-                    name,
+                    name: finalName,
                     description: composedDescription,
                     shortDescription: itemData?.shortDescription ?? null,
                     thingType: itemData?.thingType,
@@ -9941,7 +10113,7 @@ async function generateItemsByNames({ itemNames = [], location = null, owner = n
                     : (resolvedLocation?.baseLevel ?? resolvedRegion?.averageLevel ?? 'n/a');
 
                 console.log(
-                    `[ItemGeneration] Calculated stats for "${name}": ownerLevel=${ownerLevelForLog}, relativeLevel=${relativeLevel}, computedLevel=${computedLevel}, rarity=${itemData?.rarity || 'unknown'}, slot=${itemData?.slot || 'none'}, bonuses=${bonusSummary || 'none'}`
+                    `[ItemGeneration] Calculated stats for "${finalName}": ownerLevel=${ownerLevelForLog}, relativeLevel=${relativeLevel}, computedLevel=${computedLevel}, rarity=${itemData?.rarity || 'unknown'}, slot=${itemData?.slot || 'none'}, bonuses=${bonusSummary || 'none'}`
                 );
                 things.set(thing.id, thing);
 
@@ -9986,7 +10158,7 @@ async function generateItemsByNames({ itemNames = [], location = null, owner = n
 
                 return thing;
             } catch (itemError) {
-                console.warn(`Failed to generate detailed items from event for "${name}":`, itemError.message);
+                console.warn(`Failed to generate detailed items from event for "${requestedName || `auto_${index + 1}`}":`, itemError.message);
                 console.warn(itemError);
                 return null;
             }
@@ -15991,6 +16163,51 @@ function renderFactionsPrompt(context = {}) {
     }
 }
 
+function renderFactionRelationshipsPrompt(context = {}) {
+    try {
+        const templateName = 'faction-relationships-generator.xml.njk';
+        const factions = Array.isArray(context.factions)
+            ? context.factions.map(faction => ({
+                name: typeof faction?.name === 'string' ? faction.name : '',
+                shortDescription: typeof faction?.shortDescription === 'string' ? faction.shortDescription : '',
+                tags: Array.isArray(faction?.tags) ? faction.tags : [],
+                goals: Array.isArray(faction?.goals) ? faction.goals : []
+            }))
+            : [];
+
+        return promptEnv.render(templateName, {
+            settingDescription: context.settingDescription || 'A vibrant world of adventure.',
+            factions
+        });
+    } catch (error) {
+        console.error('Error rendering faction relationships template:', error);
+        return null;
+    }
+}
+
+function renderFactionReputationPrompt(context = {}) {
+    try {
+        const templateName = 'faction-reputation-generator.xml.njk';
+        const factions = Array.isArray(context.factions)
+            ? context.factions.map(faction => ({
+                name: typeof faction?.name === 'string' ? faction.name : '',
+                shortDescription: typeof faction?.shortDescription === 'string' ? faction.shortDescription : '',
+                description: typeof faction?.description === 'string' ? faction.description : '',
+                tags: Array.isArray(faction?.tags) ? faction.tags : [],
+                goals: Array.isArray(faction?.goals) ? faction.goals : []
+            }))
+            : [];
+
+        return promptEnv.render(templateName, {
+            settingDescription: context.settingDescription || 'A vibrant world of adventure.',
+            factions
+        });
+    } catch (error) {
+        console.error('Error rendering faction reputation template:', error);
+        return null;
+    }
+}
+
 function parseSkillsXml(xmlContent) {
     try {
         const doc = Utils.parseXmlDocument(xmlContent, 'text/xml');
@@ -16027,7 +16244,50 @@ function parseSkillsXml(xmlContent) {
     }
 }
 
-function parseFactionsXml(xmlContent) {
+function getDirectXmlChild(parent, tagName) {
+    if (!parent) {
+        return null;
+    }
+    const children = Array.from(parent.childNodes)
+        .filter(node => node && node.nodeType === 1);
+    return children.find(node => {
+        const nodeName = node.tagName || node.nodeName || '';
+        return nodeName === tagName;
+    }) || null;
+}
+
+function getDirectXmlChildText(parent, tagName) {
+    const node = getDirectXmlChild(parent, tagName);
+    return node ? node.textContent.trim() : '';
+}
+
+function extractXmlList(parent, containerTag, itemTag) {
+    const container = getDirectXmlChild(parent, containerTag);
+    if (!container) {
+        return [];
+    }
+    return Array.from(container.getElementsByTagName(itemTag))
+        .map(node => node.textContent.trim())
+        .filter(Boolean);
+}
+
+function getFactionNodesByPreferredRoot(doc, rootTag) {
+    const preferredRoot = doc.getElementsByTagName(rootTag)[0];
+    if (preferredRoot) {
+        const directFactionNodes = Array.from(preferredRoot.childNodes)
+            .filter(node => node && node.nodeType === 1)
+            .filter(node => {
+                const nodeName = node.tagName || node.nodeName || '';
+                return nodeName === 'faction';
+            });
+        if (directFactionNodes.length) {
+            return directFactionNodes;
+        }
+    }
+    return Array.from(doc.getElementsByTagName('faction'));
+}
+
+function parseFactionCoreXml(xmlContent) {
     const doc = Utils.parseXmlDocument(xmlContent, 'text/xml');
 
     const parserError = doc.getElementsByTagName('parsererror')[0];
@@ -16035,45 +16295,16 @@ function parseFactionsXml(xmlContent) {
         throw new Error(parserError.textContent);
     }
 
-    const factionNodes = Array.from(doc.getElementsByTagName('faction'));
+    const factionNodes = getFactionNodesByPreferredRoot(doc, 'factions');
     if (!factionNodes.length) {
         throw new Error('Faction generation returned no <faction> entries.');
     }
 
-    const getDirectChild = (parent, tagName) => {
-        if (!parent) {
-            return null;
-        }
-        const children = Array.from(parent.childNodes)
-            .filter(node => node && node.nodeType === 1);
-        return children.find(node => {
-            const nodeName = node.tagName || node.nodeName || '';
-            return nodeName === tagName;
-        }) || null;
-    };
-
-    const getDirectChildText = (parent, tagName) => {
-        const node = getDirectChild(parent, tagName);
-        return node ? node.textContent.trim() : '';
-    };
-
-    const extractList = (parent, containerTag, itemTag) => {
-        const container = getDirectChild(parent, containerTag);
-        if (!container) {
-            return [];
-        }
-        return Array.from(container.getElementsByTagName(itemTag))
-            .map(node => node.textContent.trim())
-            .filter(Boolean);
-    };
-
     const parsed = [];
     const seenNames = new Set();
-    const validRelationStatuses = new Set(['allied', 'neutral', 'hostile', 'rival']);
-    const defaultRelationStatus = 'neutral';
-    const defaultRelationNotes = 'No explicit relationship provided.';
+
     for (const node of factionNodes) {
-        const name = getDirectChildText(node, 'name');
+        const name = getDirectXmlChildText(node, 'name');
         if (!name) {
             throw new Error('Faction entry missing a name.');
         }
@@ -16083,26 +16314,28 @@ function parseFactionsXml(xmlContent) {
         }
         seenNames.add(nameKey);
 
-        const tags = extractList(node, 'tags', 'tag');
+        const tags = extractXmlList(node, 'tags', 'tag');
         if (!tags.length) {
             throw new Error(`Faction "${name}" is missing tags.`);
         }
-        const goals = extractList(node, 'goals', 'goal');
+        const goals = extractXmlList(node, 'goals', 'goal');
         if (!goals.length) {
             throw new Error(`Faction "${name}" is missing goals.`);
         }
-        const homeRegionName = getDirectChildText(node, 'homeRegion') || null;
 
-        const description = getDirectChildText(node, 'description');
+        const homeRegionName = getDirectXmlChildText(node, 'homeRegion')
+            || getDirectXmlChildText(node, 'homeRegionName')
+            || null;
+        const description = getDirectXmlChildText(node, 'description');
         if (!description) {
             throw new Error(`Faction "${name}" is missing description.`);
         }
-        const shortDescription = getDirectChildText(node, 'shortDescription');
+        const shortDescription = getDirectXmlChildText(node, 'shortDescription');
         if (!shortDescription) {
             throw new Error(`Faction "${name}" is missing shortDescription.`);
         }
 
-        const assetsContainer = getDirectChild(node, 'assets');
+        const assetsContainer = getDirectXmlChild(node, 'assets');
         const assetNodes = assetsContainer
             ? Array.from(assetsContainer.getElementsByTagName('asset'))
             : [];
@@ -16129,7 +16362,48 @@ function parseFactionsXml(xmlContent) {
             return asset;
         });
 
-        const relationsContainer = getDirectChild(node, 'relations');
+        parsed.push({
+            name,
+            tags,
+            goals,
+            homeRegionName: homeRegionName || null,
+            description,
+            shortDescription,
+            assets
+        });
+    }
+
+    return parsed;
+}
+
+function parseFactionRelationsXml(xmlContent) {
+    const doc = Utils.parseXmlDocument(xmlContent, 'text/xml');
+    const parserError = doc.getElementsByTagName('parsererror')[0];
+    if (parserError) {
+        throw new Error(parserError.textContent);
+    }
+
+    const factionNodes = getFactionNodesByPreferredRoot(doc, 'factionRelationships');
+    if (!factionNodes.length) {
+        throw new Error('Faction relationship generation returned no <faction> entries.');
+    }
+
+    const validRelationStatuses = new Set(['allied', 'neutral', 'hostile', 'rival']);
+    const defaultRelationStatus = 'neutral';
+    const defaultRelationNotes = 'No explicit relationship provided.';
+    const relationsByFactionName = new Map();
+
+    for (const node of factionNodes) {
+        const name = getDirectXmlChildText(node, 'name');
+        if (!name) {
+            throw new Error('Faction relationship entry missing a name.');
+        }
+        const nameKey = name.toLowerCase();
+        if (relationsByFactionName.has(nameKey)) {
+            throw new Error(`Duplicate faction relationship entry for "${name}".`);
+        }
+
+        const relationsContainer = getDirectXmlChild(node, 'relations');
         const relationNodes = relationsContainer
             ? Array.from(relationsContainer.getElementsByTagName('relation'))
             : [];
@@ -16160,13 +16434,43 @@ function parseFactionsXml(xmlContent) {
             relations.push({ targetName, status, notes });
         });
 
-        const tiersContainer = getDirectChild(node, 'reputationTiers');
+        relationsByFactionName.set(nameKey, relations);
+    }
+
+    return relationsByFactionName;
+}
+
+function parseFactionReputationTiersXml(xmlContent) {
+    const doc = Utils.parseXmlDocument(xmlContent, 'text/xml');
+    const parserError = doc.getElementsByTagName('parsererror')[0];
+    if (parserError) {
+        throw new Error(parserError.textContent);
+    }
+
+    const factionNodes = getFactionNodesByPreferredRoot(doc, 'factionReputationTiers');
+    if (!factionNodes.length) {
+        throw new Error('Faction reputation generation returned no <faction> entries.');
+    }
+
+    const tiersByFactionName = new Map();
+    for (const node of factionNodes) {
+        const name = getDirectXmlChildText(node, 'name');
+        if (!name) {
+            throw new Error('Faction reputation entry missing a name.');
+        }
+        const nameKey = name.toLowerCase();
+        if (tiersByFactionName.has(nameKey)) {
+            throw new Error(`Duplicate faction reputation entry for "${name}".`);
+        }
+
+        const tiersContainer = getDirectXmlChild(node, 'reputationTiers');
         const tierNodes = tiersContainer
             ? Array.from(tiersContainer.getElementsByTagName('tier'))
             : [];
         if (!tierNodes.length) {
             throw new Error(`Faction "${name}" is missing reputation tiers.`);
         }
+
         const reputationTiers = tierNodes.map((tierNode, index) => {
             const thresholdNode = tierNode.getElementsByTagName('threshold')[0];
             const labelNode = tierNode.getElementsByTagName('label')[0];
@@ -16175,8 +16479,8 @@ function parseFactionsXml(xmlContent) {
                 throw new Error(`Faction "${name}" reputation tier ${index + 1} is missing a numeric threshold.`);
             }
             const label = labelNode ? labelNode.textContent.trim() : '';
-            const perks = extractList(tierNode, 'perks', 'perk');
-            const penalties = extractList(tierNode, 'penalties', 'penalty');
+            const perks = extractXmlList(tierNode, 'perks', 'perk');
+            const penalties = extractXmlList(tierNode, 'penalties', 'penalty');
             return {
                 threshold: thresholdValue,
                 label,
@@ -16185,20 +16489,10 @@ function parseFactionsXml(xmlContent) {
             };
         });
 
-        parsed.push({
-            name,
-            tags,
-            goals,
-            homeRegionName: homeRegionName || null,
-            description,
-            shortDescription,
-            assets,
-            relations,
-            reputationTiers
-        });
+        tiersByFactionName.set(nameKey, reputationTiers);
     }
 
-    return parsed;
+    return tiersByFactionName;
 }
 
 function logFactionGeneration({ systemPrompt, generationPrompt, responseText }) {
@@ -16208,6 +16502,32 @@ function logFactionGeneration({ systemPrompt, generationPrompt, responseText }) 
     LLMClient.logPrompt({
         prefix: 'faction_generation',
         metadataLabel: 'faction_generation',
+        systemPrompt: systemPrompt || '',
+        generationPrompt: generationPrompt || '',
+        response: responseText || ''
+    });
+}
+
+function logFactionRelationshipGeneration({ systemPrompt, generationPrompt, responseText }) {
+    if (typeof LLMClient.logPrompt !== 'function') {
+        return;
+    }
+    LLMClient.logPrompt({
+        prefix: 'faction_relationship_generation',
+        metadataLabel: 'faction_relationship_generation',
+        systemPrompt: systemPrompt || '',
+        generationPrompt: generationPrompt || '',
+        response: responseText || ''
+    });
+}
+
+function logFactionReputationGeneration({ systemPrompt, generationPrompt, responseText }) {
+    if (typeof LLMClient.logPrompt !== 'function') {
+        return;
+    }
+    LLMClient.logPrompt({
+        prefix: 'faction_reputation_generation',
+        metadataLabel: 'faction_reputation_generation',
         systemPrompt: systemPrompt || '',
         generationPrompt: generationPrompt || '',
         response: responseText || ''
@@ -17393,58 +17713,142 @@ async function generateFactionsList({ count, settingDescription }) {
         return [];
     }
 
-    const renderedTemplate = renderFactionsPrompt({
-        settingDescription: settingDescription || 'A vibrant world of adventure.',
-        numFactions: safeCount
-    });
-
-    if (!renderedTemplate) {
-        throw new Error('Faction template render failed.');
-    }
-
-    const parsedTemplate = parseXMLTemplate(renderedTemplate);
-    const systemPrompt = parsedTemplate.systemPrompt;
-    const generationPrompt = parsedTemplate.generationPrompt;
-
-    if (!systemPrompt || !generationPrompt) {
-        throw new Error('Faction template missing system or generation prompt.');
-    }
-
     if (!config?.ai?.endpoint || !config.ai.apiKey || !config.ai.model) {
         throw new Error('AI configuration missing for faction generation.');
     }
 
-    const messages = [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: generationPrompt }
-    ];
+    const resolvedSettingDescription = settingDescription || 'A vibrant world of adventure.';
+    const maxFactionPromptAttempts = 3;
+    const runFactionPromptStageWithRetries = async ({
+        stageLabel,
+        metadataLabel,
+        renderTemplate,
+        parseResponse,
+        logResponse,
+        validateParsed
+    }) => {
+        for (let attempt = 1; attempt <= maxFactionPromptAttempts; attempt += 1) {
+            try {
+                const renderedTemplate = renderTemplate();
+                if (!renderedTemplate) {
+                    throw new Error(`${stageLabel} template render failed.`);
+                }
 
-    const factionResponse = await LLMClient.chatCompletion({
-        messages,
-        maxTokens: 30000,
-        temperature: parsedTemplate.temperature,
-        metadataLabel: 'faction_generation'
+                const parsedTemplate = parseXMLTemplate(renderedTemplate);
+                const systemPrompt = parsedTemplate.systemPrompt;
+                const generationPrompt = parsedTemplate.generationPrompt;
+                if (!systemPrompt || !generationPrompt) {
+                    throw new Error(`${stageLabel} template missing system or generation prompt.`);
+                }
+
+                const responseText = await LLMClient.chatCompletion({
+                    messages: [
+                        { role: 'system', content: systemPrompt },
+                        { role: 'user', content: generationPrompt }
+                    ],
+                    maxTokens: parsedTemplate.maxTokens || 30000,
+                    temperature: parsedTemplate.temperature,
+                    metadataLabel
+                });
+
+                logResponse({
+                    systemPrompt,
+                    generationPrompt,
+                    responseText
+                });
+
+                const parsed = parseResponse(responseText);
+                if (typeof validateParsed === 'function') {
+                    validateParsed(parsed);
+                }
+                return parsed;
+            } catch (error) {
+                if (attempt >= maxFactionPromptAttempts) {
+                    throw new Error(`Faction ${stageLabel} failed after ${maxFactionPromptAttempts} attempts: ${error.message}`);
+                }
+                console.warn(`Faction ${stageLabel} attempt ${attempt}/${maxFactionPromptAttempts} failed: ${error.message}. Retrying...`);
+            }
+        }
+        throw new Error(`Faction ${stageLabel} failed.`);
+    };
+
+    const parsedCoreFactions = await runFactionPromptStageWithRetries({
+        stageLabel: 'core generation',
+        metadataLabel: 'faction_generation',
+        renderTemplate: () => renderFactionsPrompt({
+            settingDescription: resolvedSettingDescription,
+            numFactions: safeCount
+        }),
+        parseResponse: parseFactionCoreXml,
+        logResponse: logFactionGeneration,
+        validateParsed: (parsed) => {
+            if (!Array.isArray(parsed) || !parsed.length) {
+                throw new Error('Faction generation returned no usable factions.');
+            }
+            if (parsed.length < safeCount) {
+                throw new Error(`Faction generation returned ${parsed.length} factions, expected at least ${safeCount}.`);
+            }
+            if (parsed.length > safeCount) {
+                console.warn(`Faction generation returned ${parsed.length} factions (requested ${safeCount}); accepting all generated factions.`);
+            }
+        }
     });
 
-    logFactionGeneration({
-        systemPrompt,
-        generationPrompt,
-        responseText: factionResponse
-    });
-
-    const parsedFactions = parseFactionsXml(factionResponse);
-    if (!parsedFactions.length) {
-        throw new Error('Faction generation returned no usable factions.');
-    }
-    if (parsedFactions.length !== safeCount) {
-        throw new Error(`Faction generation returned ${parsedFactions.length} factions, expected ${safeCount}.`);
-    }
-
-    const normalizedNames = parsedFactions.map(entry => ({
+    const normalizedNames = parsedCoreFactions.map(entry => ({
         name: entry.name,
         key: entry.name.trim().toLowerCase()
     }));
     const nameLookup = new Map(normalizedNames.map(entry => [entry.key, entry.name]));
+    const knownFactionKeys = new Set(normalizedNames.map(entry => entry.key));
+
+    const parsedRelationshipsByFaction = await runFactionPromptStageWithRetries({
+        stageLabel: 'relationship generation',
+        metadataLabel: 'faction_relationship_generation',
+        renderTemplate: () => renderFactionRelationshipsPrompt({
+            settingDescription: resolvedSettingDescription,
+            factions: parsedCoreFactions
+        }),
+        parseResponse: parseFactionRelationsXml,
+        logResponse: logFactionRelationshipGeneration
+    });
+    for (const relationFactionKey of parsedRelationshipsByFaction.keys()) {
+        if (!knownFactionKeys.has(relationFactionKey)) {
+            console.warn(`Faction relationship generation returned unknown faction "${relationFactionKey}"; ignoring.`);
+        }
+    }
+
+    const parsedReputationByFaction = await runFactionPromptStageWithRetries({
+        stageLabel: 'reputation generation',
+        metadataLabel: 'faction_reputation_generation',
+        renderTemplate: () => renderFactionReputationPrompt({
+            settingDescription: resolvedSettingDescription,
+            factions: parsedCoreFactions
+        }),
+        parseResponse: parseFactionReputationTiersXml,
+        logResponse: logFactionReputationGeneration,
+        validateParsed: (parsed) => {
+            for (const normalized of normalizedNames) {
+                if (!parsed.has(normalized.key)) {
+                    throw new Error(`Faction reputation generation is missing tiers for "${normalized.name}".`);
+                }
+            }
+        }
+    });
+    for (const reputationFactionKey of parsedReputationByFaction.keys()) {
+        if (!knownFactionKeys.has(reputationFactionKey)) {
+            console.warn(`Faction reputation generation returned unknown faction "${reputationFactionKey}"; ignoring.`);
+        }
+    }
+
+    const parsedFactions = parsedCoreFactions.map(entry => {
+        const key = entry.name.trim().toLowerCase();
+        return {
+            ...entry,
+            relations: parsedRelationshipsByFaction.get(key) || [],
+            reputationTiers: parsedReputationByFaction.get(key) || []
+        };
+    });
+
     parsedFactions.forEach(entry => {
         const entryKey = entry.name.trim().toLowerCase();
         const expectedKeys = normalizedNames

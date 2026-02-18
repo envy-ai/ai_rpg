@@ -60,6 +60,43 @@ Merge semantics:
 - Arrays replace previous arrays.
 - `null` deletes the targeted key from the inherited `custom_args` tree.
 
+## AI request headers
+
+`config.ai.headers` lets you inject HTTP headers into every LLM chat-completion request.
+
+```yaml
+ai:
+  headers:
+    User-Agent: "Firefox 99.0"
+```
+
+Rules:
+- `headers` must be an object when present.
+- Header names must be non-empty strings.
+- Header values must be strings.
+
+Header precedence:
+1. built-in defaults (`Authorization`, `Content-Type`)
+2. `ai.headers`
+3. per-call `LLMClient.chatCompletion({ headers })`
+
+### Override behavior (`ai_model_overrides`)
+
+`ai_model_overrides.<profile>.headers` is merged per header key (not replaced as a whole object).
+
+```yaml
+ai_model_overrides:
+  dialogue_generation:
+    prompts: [player_action]
+    headers:
+      User-Agent: "Firefox 99.0"
+```
+
+Merge semantics:
+- Header keys are merged per key across matching profiles.
+- `null` on a specific header key removes that inherited header key.
+- `headers: null` clears inherited headers for that override chain.
+
 ## Character creation point pools
 
 `config.formulas.character_creation` controls the formulas used to calculate the base point pools for the New Game attribute and skill allocators.
@@ -204,6 +241,20 @@ random_event_frequency:
   - `<= 0` disables that specific type for normal random rolls.
 
 `random_event_frequency_multiplier` scales roll frequency globally and must be a positive number.
+
+## Faction generation count
+
+`factions.count` controls the requested number of factions during new-game generation.
+
+```yaml
+factions:
+  count: 5
+```
+
+- `0` disables faction generation.
+- Positive integers request that many factions from the generator.
+- If the generator returns more factions than requested, extras are accepted.
+- If the generator returns fewer factions than requested, new-game setup fails with an error.
 
 ## History windows (`recent_history_turns` vs `client_message_history`)
 

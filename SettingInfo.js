@@ -40,6 +40,7 @@ class SettingInfo {
   #lastUpdated;
   #availableClasses;
   #availableRaces;
+  #customSlopWords;
 
   // Static indexing maps
   static #indexByID = new Map();
@@ -139,6 +140,7 @@ class SettingInfo {
     this.#defaultExistingSkills = SettingInfo.#normalizeExistingSkills(options.defaultExistingSkills);
     this.#availableClasses = SettingInfo.#normalizeStringList(options.availableClasses);
     this.#availableRaces = SettingInfo.#normalizeStringList(options.availableRaces);
+    this.#customSlopWords = SettingInfo.#normalizeStringList(options.customSlopWords);
 
     // Timestamps
     this.#createdAt = new Date().toISOString();
@@ -185,6 +187,7 @@ class SettingInfo {
   get lastUpdated() { return this.#lastUpdated; }
   get availableClasses() { return [...this.#availableClasses]; }
   get availableRaces() { return [...this.#availableRaces]; }
+  get customSlopWords() { return [...this.#customSlopWords]; }
 
   // Setters with validation
   set name(value) {
@@ -351,6 +354,11 @@ class SettingInfo {
     this.#updateTimestamp();
   }
 
+  set customSlopWords(value) {
+    this.#customSlopWords = SettingInfo.#normalizeStringList(value);
+    this.#updateTimestamp();
+  }
+
   // Static methods for CRUD operations
   static create(options) {
     return new SettingInfo(options);
@@ -447,6 +455,7 @@ class SettingInfo {
       defaultExistingSkills: [...this.#defaultExistingSkills],
       availableClasses: [...this.#availableClasses],
       availableRaces: [...this.#availableRaces],
+      customSlopWords: [...this.#customSlopWords],
       createdAt: this.#createdAt,
       lastUpdated: this.#lastUpdated
     };
@@ -503,7 +512,8 @@ class SettingInfo {
       settingName: this.#name,
       settingDescription: this.#description,
       availableClasses: [...this.#availableClasses],
-      availableRaces: [...this.#availableRaces]
+      availableRaces: [...this.#availableRaces],
+      customSlopWords: [...this.#customSlopWords]
     };
   }
 

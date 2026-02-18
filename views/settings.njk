@@ -237,6 +237,12 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                                 <textarea id="characterGenInstructions" name="characterGenInstructions" rows="5" placeholder="Optional extra guidance for NPC and character concept generation..."></textarea>
                                 <div class="help-text">Applied when generating NPCs and character concepts for this setting.</div>
                             </div>
+
+                            <div class="form-group full-width">
+                                <label for="customSlopWords">Custom Slop Words (one per line)</label>
+                                <textarea id="customSlopWords" name="customSlopWords" rows="5" placeholder="echoing silence\nstarlight protocol"></textarea>
+                                <div class="help-text">Single-word entries are checked as slop words. Multi-word entries are checked as ngrams.</div>
+                            </div>
                         </div>
                     </section>
 
@@ -757,6 +763,7 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
             assignValue('writingStyleNotes', setting.writingStyleNotes || '');
             assignValue('baseContextPreamble', setting.baseContextPreamble || '');
             assignValue('characterGenInstructions', setting.characterGenInstructions || '');
+            assignValue('customSlopWords', joinLines(setting.customSlopWords));
             assignValue('imagePromptPrefixCharacter', setting.imagePromptPrefixCharacter || '');
             assignValue('imagePromptPrefixLocation', setting.imagePromptPrefixLocation || '');
             assignValue('imagePromptPrefixItem', setting.imagePromptPrefixItem || '');
@@ -1043,6 +1050,7 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                 settingData.defaultExistingSkills = splitLines(defaultExistingSkillsText);
                 settingData.availableClasses = splitLines(settingData.availableClasses);
                 settingData.availableRaces = splitLines(settingData.availableRaces);
+                settingData.customSlopWords = splitLines(settingData.customSlopWords);
                 
                 try {
                     let response;
@@ -1328,6 +1336,7 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                 settingPayload.defaultExistingSkills = skillsForPrompt;
                 settingPayload.availableClasses = splitLines(settingPayload.availableClasses);
                 settingPayload.availableRaces = splitLines(settingPayload.availableRaces);
+                settingPayload.customSlopWords = splitLines(settingPayload.customSlopWords);
                 const parsedDefaultCurrency = parseInt(settingPayload.defaultStartingCurrency, 10);
                 settingPayload.defaultStartingCurrency = Number.isFinite(parsedDefaultCurrency)
                     ? Math.max(0, parsedDefaultCurrency)
@@ -1395,6 +1404,7 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                     writingStyleNotes: filled.writingStyleNotes,
                     baseContextPreamble: filled.baseContextPreamble,
                     characterGenInstructions: filled.characterGenInstructions,
+                    customSlopWords: filled.customSlopWords,
                     imagePromptPrefixCharacter: filled.imagePromptPrefixCharacter,
                     imagePromptPrefixLocation: filled.imagePromptPrefixLocation,
                     imagePromptPrefixItem: filled.imagePromptPrefixItem,

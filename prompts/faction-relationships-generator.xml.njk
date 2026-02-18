@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<template>
+    <role>Game Master</role>
+    <description>Generate relationship matrices for an existing faction roster</description>
+
+    <systemPrompt>
+You are an AI game designer generating faction-to-faction relationships for a tabletop-style RPG.
+This is stage 2 of 3. The faction roster already exists.
+
+Rules:
+- Use only the provided faction names.
+- Output one top-level faction entry per provided faction.
+- For each faction, include one relation for every other faction (no self-relations).
+- Valid statuses are only: allied, neutral, hostile, rival.
+- Every relation must include exactly one concise sentence of notes.
+- Keep names exact and do not invent additional factions.
+- Do not include reputation tiers in this stage.
+    </systemPrompt>
+
+    <generationPrompt>
+Setting Overview:
+{{ settingDescription }}
+
+Faction roster:
+<factions>
+{% for faction in factions %}
+  <faction>
+    <name>{{ faction.name }}</name>
+    <shortDescription>{{ faction.shortDescription }}</shortDescription>
+    <tags>
+{% for tag in faction.tags %}
+      <tag>{{ tag }}</tag>
+{% endfor %}
+    </tags>
+    <goals>
+{% for goal in faction.goals %}
+      <goal>{{ goal }}</goal>
+{% endfor %}
+    </goals>
+  </faction>
+{% endfor %}
+</factions>
+
+Output only XML with this schema:
+<factionRelationships>
+  <faction>
+    <name>Faction Name</name>
+    <relations>
+      <relation>
+        <factionName>Other Faction Name</factionName>
+        <status>allied|neutral|hostile|rival</status>
+        <notes>One sentence describing the precise nature of the relationship.</notes>
+      </relation>
+    </relations>
+  </faction>
+</factionRelationships>
+
+Each listed faction name must appear exactly once in &lt;factionRelationships&gt;.
+Return only XML.
+    </generationPrompt>
+</template>

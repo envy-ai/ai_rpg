@@ -223,7 +223,7 @@ Core fields:
 - `imagePromptPrefixCharacter`, `imagePromptPrefixLocation`, `imagePromptPrefixItem`, `imagePromptPrefixScenery`
 - `playerStartingLevel`, `defaultStartingCurrency`
 - `defaultPlayerName`, `defaultPlayerDescription`, `defaultStartingLocation`
-- `defaultExistingSkills`, `availableClasses`, `availableRaces`
+- `defaultExistingSkills`, `availableClasses`, `availableRaces`, `customSlopWords`
 - `createdAt`, `lastUpdated`
 
 ## Quest (Quest.toJSON)

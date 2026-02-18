@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<template>
+    <role>Game Master</role>
+    <description>Generate reputation tiers for an existing faction roster</description>
+
+    <systemPrompt>
+You are an AI game designer generating faction reputation tiers for a tabletop-style RPG.
+This is stage 3 of 3. The faction roster already exists.
+
+Rules:
+- Use only the provided faction names.
+- Output one top-level faction entry per provided faction.
+- For each faction, provide exactly five ordered tiers with thresholds at -60, -20, 0, 20, 60.
+- Each tier must include: threshold, label, at least one perk, and at least one penalty.
+- Keep names exact and do not invent additional factions.
+- Do not include faction-to-faction relations in this stage.
+    </systemPrompt>
+
+    <generationPrompt>
+Setting Overview:
+{{ settingDescription }}
+
+Faction roster:
+<factions>
+{% for faction in factions %}
+  <faction>
+    <name>{{ faction.name }}</name>
+    <shortDescription>{{ faction.shortDescription }}</shortDescription>
+    <description>{{ faction.description }}</description>
+    <tags>
+{% for tag in faction.tags %}
+      <tag>{{ tag }}</tag>
+{% endfor %}
+    </tags>
+    <goals>
+{% for goal in faction.goals %}
+      <goal>{{ goal }}</goal>
+{% endfor %}
+    </goals>
+  </faction>
+{% endfor %}
+</factions>
+
+Output only XML with this schema:
+<factionReputationTiers>
+  <faction>
+    <name>Faction Name</name>
+    <reputationTiers>
+      <tier>
+        <threshold>-60|-20|0|20|60</threshold>
+        <label>Tier Label</label>
+        <perks>
+          <perk>Perk text.</perk>
+        </perks>
+        <penalties>
+          <penalty>Penalty text.</penalty>
+        </penalties>
+      </tier>
+    </reputationTiers>
+  </faction>
+</factionReputationTiers>
+
+Each listed faction name must appear exactly once in &lt;factionReputationTiers&gt;.
+Return only XML.
+    </generationPrompt>
+</template>

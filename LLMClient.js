@@ -63,7 +63,7 @@ class LLMClient {
     };
     static #streamCounter = 0;
     static #abortControllers = new Map();
-    static #canceledStreams = new Set();
+    static #controllerAbortIntents = new WeakMap();
 
     static #isInteractive() {
         return process.stdout && process.stdout.isTTY;
@@ -188,7 +188,6 @@ class LLMClient {
         if (!id) return;
         LLMClient.#streamProgress.active.delete(id);
         LLMClient.#abortControllers.delete(id);
-        LLMClient.#canceledStreams.delete(id);
         if (!LLMClient.#streamProgress.active.size) {
             LLMClient.#streamProgress.lastBroadcastHadEntries = false;
         }
@@ -197,16 +196,31 @@ class LLMClient {
     }
 
     static cancelPrompt(streamId, reason = 'Prompt canceled by user') {
+        return LLMClient.#abortPrompt(streamId, {
+            reason,
+            mode: 'cancel'
+        });
+    }
+
+    static retryPrompt(streamId, reason = 'Prompt retry requested by user') {
+        return LLMClient.#abortPrompt(streamId, {
+            reason,
+            mode: 'retry'
+        });
+    }
+
+    static #abortPrompt(streamId, { reason = 'Prompt canceled by user', mode = 'cancel' } = {}) {
         const resolvedId = typeof streamId === 'string' ? streamId.trim() : '';
         if (!resolvedId) {
-            throw new Error('Prompt id is required to cancel.');
+            throw new Error('Prompt id is required.');
         }
         const controller = LLMClient.#abortControllers.get(resolvedId);
         if (!controller) {
             throw new Error(`Prompt '${resolvedId}' is not active.`);
         }
+        const normalizedMode = mode === 'retry' ? 'retry' : 'cancel';
+        LLMClient.#controllerAbortIntents.set(controller, normalizedMode);
         LLMClient.#abortControllers.delete(resolvedId);
-        LLMClient.#canceledStreams.add(resolvedId);
         controller.abort(new Error(reason));
         return true;
     }
@@ -709,6 +723,88 @@ class LLMClient {
         return target;
     }
 
+    // Merge override headers profiles while preserving null deletion markers.
+    static #mergeHeadersForOverrideProfiles(target, source) {
+        if (!LLMClient.#isPlainObject(source)) {
+            throw new Error('AI model override headers must be an object.');
+        }
+        for (const [rawKey, rawValue] of Object.entries(source)) {
+            if (rawValue === undefined) {
+                continue;
+            }
+            const key = typeof rawKey === 'string' ? rawKey.trim() : '';
+            if (!key) {
+                throw new Error('AI model override headers keys must be non-empty strings.');
+            }
+            if (rawValue === null) {
+                target[key] = null;
+                continue;
+            }
+            if (typeof rawValue !== 'string') {
+                throw new Error(`AI model override header "${key}" must be a string or null.`);
+            }
+            target[key] = rawValue;
+        }
+        return target;
+    }
+
+    // Merge effective headers onto base headers; null deletes keys.
+    static #mergeEffectiveHeaders(target, source) {
+        if (!LLMClient.#isPlainObject(source)) {
+            throw new Error('headers must be an object.');
+        }
+        for (const [rawKey, rawValue] of Object.entries(source)) {
+            if (rawValue === undefined) {
+                continue;
+            }
+            const key = typeof rawKey === 'string' ? rawKey.trim() : '';
+            if (!key) {
+                throw new Error('headers keys must be non-empty strings.');
+            }
+            if (rawValue === null) {
+                delete target[key];
+                continue;
+            }
+            if (typeof rawValue !== 'string') {
+                throw new Error(`header "${key}" must be a string.`);
+            }
+            target[key] = rawValue;
+        }
+        return target;
+    }
+
+    static #buildEffectiveHeaders({ baseHeaders, overrideHeaders } = {}) {
+        let effective = {};
+        if (baseHeaders !== undefined && baseHeaders !== null) {
+            if (!LLMClient.#isPlainObject(baseHeaders)) {
+                throw new Error('config.ai.headers must be an object when provided.');
+            }
+            for (const [rawKey, rawValue] of Object.entries(baseHeaders)) {
+                const key = typeof rawKey === 'string' ? rawKey.trim() : '';
+                if (!key) {
+                    throw new Error('config.ai.headers keys must be non-empty strings.');
+                }
+                if (typeof rawValue !== 'string') {
+                    throw new Error(`config.ai.headers.${key} must be a string.`);
+                }
+                effective[key] = rawValue;
+            }
+        }
+
+        if (overrideHeaders !== undefined) {
+            if (overrideHeaders === null) {
+                effective = {};
+            } else {
+                if (!LLMClient.#isPlainObject(overrideHeaders)) {
+                    throw new Error('ai_model_overrides.*.headers must be an object or null.');
+                }
+                LLMClient.#mergeEffectiveHeaders(effective, overrideHeaders);
+            }
+        }
+
+        return effective;
+    }
+
     static #assertCustomArgsNoReservedTopLevelKeys(customArgs) {
         if (!LLMClient.#isPlainObject(customArgs)) {
             throw new Error('custom_args must be an object.');
@@ -800,6 +896,21 @@ class LLMClient {
                         overrides.custom_args = {};
                     }
                     LLMClient.#mergeCustomArgsForOverrideProfiles(overrides.custom_args, value);
+                    continue;
+                }
+                if (key === 'headers') {
+                    if (value === null) {
+                        overrides.headers = null;
+                        continue;
+                    }
+                    if (!LLMClient.#isPlainObject(value)) {
+                        throw new Error(`ai_model_overrides.${profileName}.headers must be an object or null.`);
+                    }
+                    const existingHeaders = overrides.headers;
+                    if (!LLMClient.#isPlainObject(existingHeaders)) {
+                        overrides.headers = {};
+                    }
+                    LLMClient.#mergeHeadersForOverrideProfiles(overrides.headers, value);
                     continue;
                 }
                 overrides[key] = value;
@@ -1097,6 +1208,9 @@ class LLMClient {
             const basePayload = additionalPayload && typeof additionalPayload === 'object'
                 ? { ...additionalPayload }
                 : {};
+            if (headers !== undefined && headers !== null && !LLMClient.#isPlainObject(headers)) {
+                throw new Error('chatCompletion headers must be an object when provided.');
+            }
             const resolvedSeed = Number.isFinite(seed) ? Math.trunc(seed) : LLMClient.#generateSeed();
             if (!Array.isArray(messages) || messages.length === 0) {
                 throw new Error('LLMClient.chatCompletion requires at least one message.');
@@ -1136,12 +1250,17 @@ class LLMClient {
 
                 const { overrides, profiles: overrideProfiles } = LLMClient.#resolveAiModelOverrides(metadataLabel, Globals?.config);
                 let overrideCustomArgs = undefined;
+                let overrideHeaders = undefined;
                 if (overrides) {
                     const profileSummary = overrideProfiles.length ? ` (profiles: ${overrideProfiles.join(', ')})` : '';
                     log(`Applying AI model overrides for ${metadataLabel}${profileSummary}:`, overrides);
                     for (const [key, value] of Object.entries(overrides)) {
                         if (key === 'custom_args') {
                             overrideCustomArgs = value;
+                            continue;
+                        }
+                        if (key === 'headers') {
+                            overrideHeaders = value;
                             continue;
                         }
                         log(`Applying AI config override for ${metadataLabel}: setting ${key} to ${value}`);
@@ -1152,6 +1271,10 @@ class LLMClient {
                 const effectiveCustomArgs = LLMClient.#buildEffectiveCustomArgs({
                     baseCustomArgs: aiConfig.custom_args,
                     overrideCustomArgs
+                });
+                const effectiveHeaders = LLMClient.#buildEffectiveHeaders({
+                    baseHeaders: aiConfig.headers,
+                    overrideHeaders
                 });
                 const payload = {
                     ...effectiveCustomArgs,
@@ -1248,6 +1371,7 @@ class LLMClient {
                 const requestHeaders = {
                     'Authorization': `Bearer ${resolvedApiKey}`,
                     'Content-Type': 'application/json',
+                    ...effectiveHeaders,
                     ...headers
                 };
                 const baseAxiosOptions = {
@@ -1620,15 +1744,19 @@ class LLMClient {
                     if (!responseContent && typeof error?.partialResponse === 'string') {
                         responseContent = error.partialResponse;
                     }
-                    const wasCanceled = streamTrackerId && LLMClient.#canceledStreams.has(streamTrackerId);
-                    if (wasCanceled) {
-                        LLMClient.#canceledStreams.delete(streamTrackerId);
+                    const abortIntent = LLMClient.#controllerAbortIntents.get(controller);
+                    if (abortIntent === 'cancel' || abortIntent === 'retry') {
+                        LLMClient.#controllerAbortIntents.delete(controller);
                         if (streamTrackerId) {
                             LLMClient.#trackStreamEnd(streamTrackerId);
                         }
                         if (startTimer) {
                             clearTimeout(startTimer);
                             startTimer = null;
+                        }
+                        if (abortIntent === 'retry') {
+                            warn(`Prompt '${metadataLabel || 'unknown'}' retry requested by user.`);
+                            continue;
                         }
                         warn(`Prompt '${metadataLabel || 'unknown'}' canceled by user.`);
                         return '';
@@ -1671,6 +1799,7 @@ class LLMClient {
                         return '';
                     }
                 } finally {
+                    LLMClient.#controllerAbortIntents.delete(controller);
                     if (startTimer) {
                         clearTimeout(startTimer);
                         startTimer = null;
