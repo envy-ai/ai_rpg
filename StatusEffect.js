@@ -79,7 +79,7 @@ class StatusEffect {
             }
             const lower = trimmed.toLowerCase();
             if (lower === 'instant') {
-                return 1 / 60;
+                return 1;
             }
             if (lower === 'permanent' || lower === 'continuous') {
                 return -1;
@@ -87,33 +87,7 @@ class StatusEffect {
             if (lower === 'n/a' || lower === 'na' || lower === 'none') {
                 return null;
             }
-            const numericMatch = trimmed.match(/-?\d+(?:\.\d+)?/);
-            if (!numericMatch) {
-                throw new Error(`StatusEffect duration "${value}" is invalid`);
-            }
-            const numeric = Number(numericMatch[0]);
-            if (!Number.isFinite(numeric)) {
-                throw new Error(`StatusEffect duration "${value}" is invalid`);
-            }
-            if (numeric < 0) {
-                return -1;
-            }
-
-            // Duration units are normalized to decimal hours.
-            // Bare numeric values are treated as minutes for backward compatibility.
-            const hasHourUnits = /\b(hour|hours|hr|hrs)\b/i.test(trimmed);
-            const hasDayUnits = /\b(day|days)\b/i.test(trimmed);
-            const hasMinuteUnits = /\b(minute|minutes|min|mins)\b/i.test(trimmed);
-            if (hasDayUnits) {
-                return numeric * 24;
-            }
-            if (hasHourUnits) {
-                return numeric;
-            }
-            if (hasMinuteUnits || (!hasHourUnits && !hasDayUnits)) {
-                return numeric / 60;
-            }
-            return numeric;
+            return Utils.parseDurationToMinutes(trimmed, { fieldName: 'StatusEffect duration' });
         }
 
         const numeric = Number(value);
@@ -123,9 +97,10 @@ class StatusEffect {
         if (numeric < 0) {
             return -1;
         }
-
-        // Numeric durations are interpreted as minutes, converted to decimal hours.
-        return numeric / 60;
+        if (!Number.isInteger(numeric)) {
+            throw new Error(`StatusEffect duration "${value}" is invalid`);
+        }
+        return numeric;
     }
 
     #normalizeAppliedAt(value) {
@@ -184,20 +159,13 @@ class StatusEffect {
         if (!data || typeof data !== 'object') {
             throw new Error('Invalid data provided to StatusEffect.fromJSON');
         }
-        const hasAppliedAt = Object.prototype.hasOwnProperty.call(data, 'appliedAt');
-        const normalizedDurationInput = (
-            hasAppliedAt
-            && Number.isFinite(Number(data.duration))
-        )
-            ? `${Number(data.duration)} hours`
-            : data.duration;
         return new StatusEffect({
             name: data.name,
             description: data.description,
             attributes: data.attributes,
             skills: data.skills,
             needBars: data.needBars,
-            duration: normalizedDurationInput,
+            duration: data.duration,
             appliedAt: data.appliedAt
         });
     }

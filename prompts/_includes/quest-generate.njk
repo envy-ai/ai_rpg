@@ -40,5 +40,16 @@ Here is some information about the quest:
     <currency>
       <!--Integer amount of currency rewarded, based on setting norms. If modifying an existing quest, do not decrease this from the original value, but increasing it is okay.-->
     </currency>
+    <factionReputation>
+      <!--Optional. Use only when this quest should change player reputation with one or more factions.-->
+      <!--Only include entries with non-zero point changes. Positive numbers improve reputation; negative numbers reduce it.-->
+      <!--Use the exact faction name from the <factions> list in context.-->
+      <!--If no faction reputation changes apply, omit all <faction> entries (none are required).-->
+      <faction>
+        <name><!--Exact faction name.--></name>
+        <points><!--Non-zero integer reputation delta (can be negative).--></points>
+      </faction>
+      ... more factions as needed ...
+    </factionReputation>
   </rewards>
 </quest>

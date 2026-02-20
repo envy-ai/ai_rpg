@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<template>
+    <role>Game Master</role>
+    <description>Generate all existing factions' dispositions toward a newly created faction</description>
+
+    <systemPrompt>
+You are an AI game designer generating faction-to-faction relationships for a tabletop-style RPG.
+
+You are given one newly created faction and a roster of existing factions.
+
+Rules:
+- Use only the provided faction names.
+- Generate relationships only from existing factions toward the new faction.
+- Do not generate reverse relationships in this stage.
+- Include exactly one relation per existing faction.
+- Valid statuses are only: allied, neutral, hostile, rival.
+- Every relation must include exactly one concise sentence of notes.
+- Keep names exact and do not invent additional factions.
+    </systemPrompt>
+
+    <generationPrompt>
+Setting Overview:
+{{ settingDescription }}
+
+New faction:
+<newFaction>
+  <name>{{ newFaction.name }}</name>
+  <shortDescription>{{ newFaction.shortDescription }}</shortDescription>
+  <description>{{ newFaction.description }}</description>
+  <tags>
+{% for tag in newFaction.tags %}
+    <tag>{{ tag }}</tag>
+{% endfor %}
+  </tags>
+  <goals>
+{% for goal in newFaction.goals %}
+    <goal>{{ goal }}</goal>
+{% endfor %}
+  </goals>
+</newFaction>
+
+Existing factions (each one needs exactly one disposition toward the new faction):
+<existingFactions>
+{% for faction in existingFactions %}
+  <faction>
+    <name>{{ faction.name }}</name>
+    <shortDescription>{{ faction.shortDescription }}</shortDescription>
+    <tags>
+{% for tag in faction.tags %}
+      <tag>{{ tag }}</tag>
+{% endfor %}
+    </tags>
+    <goals>
+{% for goal in faction.goals %}
+      <goal>{{ goal }}</goal>
+{% endfor %}
+    </goals>
+  </faction>
+{% endfor %}
+</existingFactions>
+
+Output only XML with this schema:
+<factionRelationships>
+  <faction>
+    <name>Existing Faction Name</name>
+    <relations>
+      <relation>
+        <factionName>{{ newFaction.name }}</factionName>
+        <status>allied|neutral|hostile|rival</status>
+        <notes>One sentence describing this faction's stance toward the new faction.</notes>
+      </relation>
+    </relations>
+  </faction>
+</factionRelationships>
+
+Requirements:
+- Include exactly one &lt;faction&gt; entry for each listed existing faction, and no extra entries.
+- Each listed faction must contain exactly one &lt;relation&gt;.
+- That relation's &lt;factionName&gt; must be the new faction's exact name.
+- Return only XML.
+    </generationPrompt>
+</template>

@@ -50,5 +50,7 @@ Loaded on the chat page:
   regular names use line-height `1.25`.
 - Skill allocation controls use `.skill-add-row` for inline add inputs and
   `.skill-remove-btn` for the compact remove button styling.
+- Faction reputation tier thresholds in the faction editor use `.faction-tier-threshold`
+  with a fixed input width of `6em` in `public/css/main.scss`.
 - `.points-warning` reserves space for pool warning text so layout doesn't jump.
 - Pool warning visibility is toggled with `visibility` (not `display`) so that reserved help-text height remains stable.

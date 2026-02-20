@@ -64,6 +64,8 @@ Do not change this value. Do not include a region-level <controllingFaction> in 
 
 If this region is a city, town, village, or other settlement, create at least three building exteriors as locations, each with a regionExit for the interior.
 
+Very important: follow the instructions in &lt;writingStyleNotes&gt; and any tonal guidelines. If the story begins to stray from these tonal guidelines, adjust the region descriptions and location details to realign with the intended mood and style.
+
 {% if regionNotes %}Generate the region described here:
 
 "{{ regionNotes }}".
@@ -87,7 +89,7 @@ If this region is a city, town, village, or other settlement, create at least th
         <name><!-- e.g., "Sunny", "Rainy", "Foggy", "Snowy", "Windy", "Overcast", etc. --></name>
         <description><!-- Brief (10 words or less) description of this weather type as it appears in this region --></description>
         <relativeFrequency><!-- Integer from 1 to 10 indicating how common this weather type is in this region --></relativeFrequency>
-        <durationRange><!-- duration range in unitless decimal hours, e.g. "0.5-2.0" for weather that typically lasts between half an hour and two hours --></durationRange>
+        <durationRange><!-- duration range using explicit durations on both sides, e.g. "30 minutes-2 hours", "01:00-03:30", or "2 hours-1 day" --></durationRange>
       </weatherType>
       <!-- Repeat <weatherType> elements as needed. Add as many as make sense for the region, preferably including some rare ones -->
     </seasonWeather>
@@ -154,7 +156,7 @@ If this region is a city, town, village, or other settlement, create at least th
     ... more concepts ...
   </enemyConcepts>
   <secrets>
-    <!-- Generate interesting secrets, hidden features, or easter eggs appropriate for this region. These should be brief descriptions that could be used to create hidden content later. Be careful to format your XML tags correctly. Generate half as many secrets as there are locations in the region, rounded up.-->
+    <!-- Generate interesting secrets, hidden features, or easter eggs appropriate for this region. These should be brief descriptions that could be used to create hidden content later. Be careful to format your XML tags correctly. Generate half as many secrets as there are locations in the region, rounded up. Adhere strictly to tonal and setting guidelines when generating these. -->
     <secret>1-2 sentence description of a secret or hidden feature</secret>
     <secret>1-2 sentence description of a secret or hidden feature</secret>
     ... more secrets ...

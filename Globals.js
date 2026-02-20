@@ -433,12 +433,12 @@ class Globals {
     return Globals.#normalizeCalendarDefinition(calendar);
   }
 
-  static #resolveDefaultStartHour() {
+  static #resolveDefaultStartMinute() {
     const timeConfig = Globals.getTimeConfig();
     const daySegment = timeConfig.segmentBoundaries.find(
       segment => segment.name.trim().toLowerCase() === 'day'
     );
-    return daySegment ? daySegment.startHour : timeConfig.segmentBoundaries[0].startHour;
+    return daySegment ? daySegment.startMinute : timeConfig.segmentBoundaries[0].startMinute;
   }
 
   static #normalizeWorldTime(value, { allowNull = false } = {}) {
@@ -457,20 +457,35 @@ class Globals {
       throw new Error('worldTime.dayIndex must be a non-negative number.');
     }
 
-    const rawTimeHours = Number(value.timeHours);
-    if (!Number.isFinite(rawTimeHours) || rawTimeHours < 0) {
-      throw new Error('worldTime.timeHours must be a non-negative number.');
+    const hasTimeMinutes = Object.prototype.hasOwnProperty.call(value, 'timeMinutes');
+    const hasTimeHours = Object.prototype.hasOwnProperty.call(value, 'timeHours');
+    if (!hasTimeMinutes && !hasTimeHours) {
+      throw new Error('worldTime must include timeMinutes.');
+    }
+
+    let rawTimeMinutes = null;
+    if (hasTimeMinutes) {
+      rawTimeMinutes = Number(value.timeMinutes);
+      if (!Number.isFinite(rawTimeMinutes) || rawTimeMinutes < 0) {
+        throw new Error('worldTime.timeMinutes must be a non-negative number.');
+      }
+    } else {
+      const rawTimeHours = Number(value.timeHours);
+      if (!Number.isFinite(rawTimeHours) || rawTimeHours < 0) {
+        throw new Error('worldTime.timeHours must be a non-negative number.');
+      }
+      rawTimeMinutes = Math.round(rawTimeHours * 60);
     }
 
     const timeConfig = Globals.getTimeConfig();
-    const cycleLengthHours = timeConfig.cycleLengthHours;
-    const totalHours = rawDayIndex * cycleLengthHours + rawTimeHours;
-    const normalizedDayIndex = Math.floor(totalHours / cycleLengthHours);
-    const normalizedTimeHours = totalHours - (normalizedDayIndex * cycleLengthHours);
+    const cycleLengthMinutes = timeConfig.cycleLengthMinutes;
+    const totalMinutes = Math.round((rawDayIndex * cycleLengthMinutes) + rawTimeMinutes);
+    const normalizedDayIndex = Math.floor(totalMinutes / cycleLengthMinutes);
+    const normalizedTimeMinutes = totalMinutes - (normalizedDayIndex * cycleLengthMinutes);
 
     return {
       dayIndex: normalizedDayIndex,
-      timeHours: normalizedTimeHours
+      timeMinutes: normalizedTimeMinutes
     };
   }
 
@@ -484,7 +499,7 @@ class Globals {
     if (!Globals.worldTime) {
       Globals.worldTime = {
         dayIndex: 0,
-        timeHours: Globals.#resolveDefaultStartHour()
+        timeMinutes: Globals.#resolveDefaultStartMinute()
       };
     } else {
       Globals.worldTime = Globals.#normalizeWorldTime(Globals.worldTime);
@@ -501,7 +516,7 @@ class Globals {
     }
     Globals.worldTime = {
       dayIndex: 0,
-      timeHours: Globals.#resolveDefaultStartHour()
+      timeMinutes: Globals.#resolveDefaultStartMinute()
     };
     Globals.syncWorldTimeToPlayer();
     return Globals.getWorldTimeContext();
@@ -525,7 +540,7 @@ class Globals {
     } else if (!Globals.worldTime) {
       Globals.worldTime = {
         dayIndex: 0,
-        timeHours: Globals.#resolveDefaultStartHour()
+        timeMinutes: Globals.#resolveDefaultStartMinute()
       };
     } else {
       Globals.worldTime = Globals.#normalizeWorldTime(Globals.worldTime);
@@ -545,10 +560,14 @@ class Globals {
     return Globals.#deepClone(Globals.calendarDefinition);
   }
 
-  static getTotalWorldHours() {
+  static getTotalWorldMinutes() {
     Globals.ensureWorldTimeInitialized();
     const timeConfig = Globals.getTimeConfig();
-    return Globals.worldTime.dayIndex * timeConfig.cycleLengthHours + Globals.worldTime.timeHours;
+    return Globals.worldTime.dayIndex * timeConfig.cycleLengthMinutes + Globals.worldTime.timeMinutes;
+  }
+
+  static getTotalWorldHours() {
+    return Globals.getTotalWorldMinutes() / 60;
   }
 
   static syncWorldTimeToPlayer(player = Globals.currentPlayer) {
@@ -559,7 +578,7 @@ class Globals {
       return;
     }
     if (typeof player.elapsedTime === 'number' || typeof player.elapsedTime === 'undefined') {
-      player.elapsedTime = Globals.getTotalWorldHours();
+      player.elapsedTime = Globals.getTotalWorldMinutes();
     }
   }
 
@@ -644,7 +663,7 @@ class Globals {
     }
     const normalizedWorldTime = Globals.#normalizeWorldTime(worldTime);
     const timeConfig = Globals.getTimeConfig();
-    const minute = normalizedWorldTime.timeHours * 60;
+    const minute = normalizedWorldTime.timeMinutes;
 
     let currentSegment = timeConfig.segmentBoundaries[timeConfig.segmentBoundaries.length - 1];
     for (const segment of timeConfig.segmentBoundaries) {
@@ -667,7 +686,7 @@ class Globals {
       Globals.ensureWorldTimeInitialized();
     }
     const normalizedWorldTime = Globals.#normalizeWorldTime(worldTime);
-    const totalMinutes = Math.round(normalizedWorldTime.timeHours * 60);
+    const totalMinutes = normalizedWorldTime.timeMinutes;
     const hour = Math.floor(totalMinutes / 60) % 24;
     const minute = ((totalMinutes % 60) + 60) % 60;
     const paddedHour = String(hour).padStart(2, '0');
@@ -711,12 +730,13 @@ class Globals {
       ? date.seasonTimeDescriptions
       : [];
     if (seasonTimeDescriptions.length) {
+      const timeOfDayHours = normalizedWorldTime.timeMinutes / 60;
       let selected = seasonTimeDescriptions[0];
       for (const entry of seasonTimeDescriptions) {
         if (!entry || !Number.isFinite(Number(entry.timeOfDay))) {
           continue;
         }
-        if (normalizedWorldTime.timeHours >= Number(entry.timeOfDay)) {
+        if (timeOfDayHours >= Number(entry.timeOfDay)) {
           selected = entry;
         } else {
           break;
@@ -741,7 +761,7 @@ class Globals {
     const lightLevelDescription = Globals.getLightLevelDescription(worldTime, { skipEnsure: true });
     const context = {
       dayIndex: worldTime.dayIndex,
-      timeHours: Number(worldTime.timeHours.toFixed(4)),
+      timeMinutes: worldTime.timeMinutes,
       segment,
       season: date.seasonName,
       seasonDescription: date.seasonDescription || null,
@@ -762,10 +782,10 @@ class Globals {
     return context;
   }
 
-  static advanceTime(hours, { source = 'turn' } = {}) {
-    const amount = Number(hours);
-    if (!Number.isFinite(amount) || amount < 0) {
-      throw new Error('Globals.advanceTime requires a non-negative numeric hour amount.');
+  static advanceTime(minutes, { source = 'turn' } = {}) {
+    const amount = Number(minutes);
+    if (!Number.isFinite(amount) || amount < 0 || !Number.isInteger(amount)) {
+      throw new Error('Globals.advanceTime requires a non-negative integer minute amount.');
     }
 
     Globals.ensureWorldTimeInitialized();
@@ -774,7 +794,7 @@ class Globals {
     if (amount === 0) {
       return {
         source,
-        advancedHours: 0,
+        advancedMinutes: 0,
         transitions: [],
         previous: before,
         current: before
@@ -782,11 +802,11 @@ class Globals {
     }
 
     const timeConfig = Globals.getTimeConfig();
-    const totalHours = Globals.getTotalWorldHours() + amount;
-    const dayIndex = Math.floor(totalHours / timeConfig.cycleLengthHours);
-    const timeHours = totalHours - (dayIndex * timeConfig.cycleLengthHours);
+    const totalMinutes = Globals.getTotalWorldMinutes() + amount;
+    const dayIndex = Math.floor(totalMinutes / timeConfig.cycleLengthMinutes);
+    const timeMinutes = totalMinutes - (dayIndex * timeConfig.cycleLengthMinutes);
 
-    Globals.worldTime = Globals.#normalizeWorldTime({ dayIndex, timeHours });
+    Globals.worldTime = Globals.#normalizeWorldTime({ dayIndex, timeMinutes });
     Globals.syncWorldTimeToPlayer();
 
     const after = Globals.getWorldTimeContext();
@@ -797,7 +817,7 @@ class Globals {
         from: before.segment,
         to: after.segment,
         atDayIndex: after.dayIndex,
-        atTimeHours: after.timeHours
+        atTimeMinutes: after.timeMinutes
       });
     }
     if (before.season !== after.season) {
@@ -806,13 +826,13 @@ class Globals {
         from: before.season,
         to: after.season,
         atDayIndex: after.dayIndex,
-        atTimeHours: after.timeHours
+        atTimeMinutes: after.timeMinutes
       });
     }
 
     return {
       source,
-      advancedHours: amount,
+      advancedMinutes: amount,
       transitions,
       previous: before,
       current: after
@@ -922,12 +942,12 @@ class Globals {
     if (player) {
       return player.elapsedTime ?? 0;
     }
-    return Globals.getTotalWorldHours();
+    return Globals.getTotalWorldMinutes();
   }
 
   static set elapsedTime(value) {
-    if (!Number.isFinite(value) || value < 0) {
-      throw new Error('Globals.elapsedTime must be set to a non-negative number.');
+    if (!Number.isFinite(value) || value < 0 || !Number.isInteger(value)) {
+      throw new Error('Globals.elapsedTime must be set to a non-negative integer minute value.');
     }
     const player = Globals.currentPlayer;
     if (player) {
@@ -935,9 +955,9 @@ class Globals {
     }
     Globals.ensureWorldTimeInitialized();
     const timeConfig = Globals.getTimeConfig();
-    const dayIndex = Math.floor(value / timeConfig.cycleLengthHours);
-    const timeHours = value - (dayIndex * timeConfig.cycleLengthHours);
-    Globals.worldTime = Globals.#normalizeWorldTime({ dayIndex, timeHours });
+    const dayIndex = Math.floor(value / timeConfig.cycleLengthMinutes);
+    const timeMinutes = value - (dayIndex * timeConfig.cycleLengthMinutes);
+    Globals.worldTime = Globals.#normalizeWorldTime({ dayIndex, timeMinutes });
   }
 
   static locationById(id) {

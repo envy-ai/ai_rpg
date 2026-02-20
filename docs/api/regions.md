@@ -29,7 +29,7 @@ Response:
 Update a region.
 
 Request:
-- Body: `{ name: string, description: string, shortDescription?: string|null, parentRegionId?: string|null, averageLevel?: number|null, controllingFactionId?: string|null }`
+- Body: `{ name: string, description: string, shortDescription?: string|null, parentRegionId?: string|null, averageLevel?: number|null, controllingFactionId?: string|null, secrets?: string[] }`
 
 Response:
 - 200: `{ success: true, message, region, parentOptions }`
@@ -39,6 +39,7 @@ Notes:
 - Parent cycles are rejected.
 - `averageLevel` accepts numeric values or `null`/empty string to clear.
 - `controllingFactionId` must reference an existing faction id or be `null` to clear.
+- `secrets` must be an array of strings; entries are trimmed and empty values are dropped.
 
 ## POST /api/regions/generate
 Generate a region using AI.

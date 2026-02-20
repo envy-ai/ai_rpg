@@ -70,8 +70,8 @@ Fields:
 - `attributes`: array of `{ attribute, modifier }`
 - `skills`: array of `{ skill, modifier }`
 - `needBars`: array of `{ name, delta }`
-- `duration`: number | null (decimal hours; numeric inputs are minute-based before normalization, `-1` = permanent)
-- `appliedAt`: number | null (world-time hours when the effect was last applied/ticked)
+- `duration`: number | null (minutes; `-1` = permanent)
+- `appliedAt`: number | null (world-time minutes when the effect was last applied/ticked)
 - Modifier arrays are only included when non-empty.
 
 ## NpcProfile (serializeNpcForClient)
@@ -231,6 +231,7 @@ Fields:
 - `id`, `name`, `description`
 - `objectives` (array of `{ id, description, completed, optional }`)
 - `rewardItems`, `rewardCurrency`, `rewardXp`
+- `rewardFactionReputation` (object map of `factionId -> integerDelta`, may include negative values)
 - `secretNotes`, `rewardClaimed`, `paused`
 - `giverId`, `giverName`, `giver`
 - `completed`

@@ -7,7 +7,7 @@ Tracks a quest with objectives, rewards, giver info, and completion state. Maint
 - `#id`: quest id (generated if not provided).
 - `objectives`: array of QuestObjective instances.
 - `name`, `description`, `secretNotes`.
-- `rewardItems`, `rewardCurrency`, `rewardXp`, `rewardClaimed`.
+- `rewardItems`, `rewardCurrency`, `rewardXp`, `rewardFactionReputation`, `rewardClaimed`.
 - `giverId`, `giverName`.
 - `paused`: whether the quest is paused.
 

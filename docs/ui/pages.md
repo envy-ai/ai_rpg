@@ -11,9 +11,9 @@ This page maps routes to templates and the client scripts/styles they load.
   - App: `public/js/cytoscape-convex-hull.js`, `public/js/lightbox.js`, `public/js/image-manager.js`, `public/js/currency-utils.js`, `public/js/formula-evaluator.js`, `public/js/attribute-skill-allocator.js`, `public/js/chat.js`, `public/js/map.js`, `public/js/world-map.js`, `public/js/player-stats.js`.
   - Optional mod scripts from `ModLoader` (injected by `server.js`).
 - Inline script responsibilities:
-  - Tab switching (`initTabs`), map triggers, party/faction/quest panels.
+  - Tab switching (`initTabs`), map triggers, party/faction/quest panels, and Story Tools history paging/editor panel.
   - Location display, edit modals, crafting/salvage modals.
-  - Region edit modal field handling (name/description/short description, parent region, average level, and controlling faction dropdown sourced from `/api/factions`).
+  - Region edit modal field handling (name/description/short description, parent region, average level, controlling faction dropdown sourced from `/api/factions`, and a collapsed-by-default `Region Secrets` editor with add/remove rows); scrolling is handled by the modal overlay and the region dialog has no max-height cap so expanded sections remain usable.
   - Image rendering helpers (`renderEntityImage`) and tooltip helpers.
 - Data injected by `server.js`:
   - `chatHistory`, `player`, `availableSkills`, `currentSetting`.

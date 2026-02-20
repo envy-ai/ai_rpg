@@ -26,6 +26,7 @@
                 <button class="tab-button" id="tab-quests-tab" data-tab="quests" role="tab" aria-selected="false" aria-controls="tab-quests">Quests</button>
                 <button class="tab-button" id="tab-factions-tab" data-tab="factions" role="tab" aria-selected="false" aria-controls="tab-factions">Factions</button>
                 <button class="tab-button" id="tab-party-tab" data-tab="party" role="tab" aria-selected="false" aria-controls="tab-party">Party</button>
+                <button class="tab-button" id="tab-story-tools-tab" data-tab="story-tools" role="tab" aria-selected="false" aria-controls="tab-story-tools">Story Tools</button>
             </div>
 
             <div class="tab-panels">
@@ -594,6 +595,23 @@
                         <div class="party-empty" id="partyEmpty">No companions are currently travelling with you.</div>
                     </div>
                 </section>
+                <section class="tab-panel" id="tab-story-tools" role="tabpanel" aria-labelledby="tab-story-tools-tab" hidden>
+                    <div class="story-tools-panel">
+                        <header class="story-tools-header">
+                            <h2>Story Tools</h2>
+                            <span class="story-tools-count" id="storyToolsCount">0 entries</span>
+                        </header>
+                        <div class="story-tools-layout">
+                            <aside class="story-tools-page-nav" aria-label="Story entry pages">
+                                <div class="story-tools-page-list" id="storyToolsPageList"></div>
+                            </aside>
+                            <div class="story-tools-entries-wrap">
+                                <div class="story-tools-empty" id="storyToolsEmpty" hidden>No story entries found.</div>
+                                <div class="story-tools-entries" id="storyToolsEntries"></div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
             </div>
         </div>
     </div>
@@ -696,6 +714,10 @@
                         <label for="factionCreateGoals">Goals</label>
                         <textarea id="factionCreateGoals" name="goals" rows="3" placeholder="Primary goals and ambitions"></textarea>
                     </div>
+                    <div class="form-group">
+                        <label for="factionCreateGenerationNotes">Generation Notes (AI Guidance)</label>
+                        <textarea id="factionCreateGenerationNotes" name="generationNotes" rows="3" placeholder="Optional guidance for AI autofill"></textarea>
+                    </div>
                 </div>
 
                 <div class="config-section">
@@ -763,6 +785,10 @@
                     <div class="form-group">
                         <label for="questEditRewardItems">Reward Items (comma or newline separated)</label>
                         <textarea id="questEditRewardItems" name="rewardItems" rows="2"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label for="questEditRewardFactionReputation">Faction Reputation Rewards (one per line: faction name or id: +/-points)</label>
+                        <textarea id="questEditRewardFactionReputation" name="rewardFactionReputation" rows="3"></textarea>
                     </div>
                     <div class="form-group">
                         <div class="quest-edit-objective-header">
@@ -1625,6 +1651,12 @@
                     <label for="regionEditFaction">Controlling Faction</label>
                     <select id="regionEditFaction" name="controllingFactionId"></select>
                 </div>
+                <details class="region-edit-secrets" id="regionEditSecretsDetails">
+                    <summary>Region Secrets</summary>
+                    <p class="region-edit-secrets-help">Optional hidden notes for this region.</p>
+                    <div id="regionEditSecretsList" class="region-edit-secrets-list" role="list"></div>
+                    <button type="button" class="npc-edit-add-btn region-edit-secrets-add" id="regionEditSecretsAddBtn">Add Secret</button>
+                </details>
                 <footer class="location-edit-footer region-edit-footer">
                     <div class="location-edit-status region-edit-status" id="regionEditStatus" role="status" aria-live="polite"></div>
                     <div class="location-edit-actions">
@@ -1779,6 +1811,7 @@
             initFactionPanel();
             initPlayerOverviewSync();
             initPartyDisplay();
+            initStoryToolsPanel();
             await maybePromptSummaryStyle();
         });
 
@@ -4355,6 +4388,7 @@
             icon.setAttribute('aria-hidden', 'true');
             icon.textContent = '•••';
             button.appendChild(icon);
+            wireContextMenuButtonTooltipSuppression(button);
 
             const menu = document.createElement('div');
             menu.className = 'entity-context-menu thing-card-menu';
@@ -4413,6 +4447,7 @@
 
             button.addEventListener('click', (event) => {
                 event.stopPropagation();
+                suppressContextTooltipsForTouch();
                 const wasOpen = thingMenuState.openMenu === menu;
                 closeThingContextMenu();
                 if (!wasOpen) {
@@ -5474,6 +5509,9 @@
         const regionEditParentSelect = document.getElementById('regionEditParent');
         const regionEditAverageLevelInput = document.getElementById('regionEditAverageLevel');
         const regionEditFactionSelect = document.getElementById('regionEditFaction');
+        const regionEditSecretsDetails = document.getElementById('regionEditSecretsDetails');
+        const regionEditSecretsList = document.getElementById('regionEditSecretsList');
+        const regionEditSecretsAddBtn = document.getElementById('regionEditSecretsAddBtn');
         const regionEditStatus = document.getElementById('regionEditStatus');
         const regionEditCancelBtn = document.getElementById('regionEditCancelBtn');
         const regionEditCloseBtn = document.getElementById('regionEditCloseBtn');
@@ -5777,6 +5815,62 @@
 
         let locationImageMenuOpen = false;
         let mapLocationMenuOpen = false;
+        const TOUCH_TOOLTIP_SUPPRESS_MS = 1400;
+        let touchTooltipSuppressUntil = 0;
+
+        function isTouchOrCoarsePointerContext() {
+            if (typeof window === 'undefined') {
+                return false;
+            }
+
+            try {
+                if (window.matchMedia('(hover: none)').matches || window.matchMedia('(pointer: coarse)').matches) {
+                    return true;
+                }
+            } catch (_) {
+                // Ignore matchMedia errors in unsupported environments.
+            }
+
+            return Boolean(window.navigator && window.navigator.maxTouchPoints > 0);
+        }
+
+        function shouldSuppressContextTooltips() {
+            if (!isTouchOrCoarsePointerContext()) {
+                return false;
+            }
+
+            if (Date.now() < touchTooltipSuppressUntil) {
+                return true;
+            }
+
+            return Boolean(document.querySelector('.context-menu-open'));
+        }
+
+        function suppressContextTooltipsForTouch(durationMs = TOUCH_TOOLTIP_SUPPRESS_MS) {
+            if (!isTouchOrCoarsePointerContext()) {
+                return;
+            }
+
+            const parsedDuration = Number(durationMs);
+            const safeDuration = Number.isFinite(parsedDuration) ? Math.max(250, parsedDuration) : TOUCH_TOOLTIP_SUPPRESS_MS;
+            touchTooltipSuppressUntil = Math.max(touchTooltipSuppressUntil, Date.now() + safeDuration);
+            window.floatingTooltipController?.hide?.();
+            window.hidePartyTooltip?.();
+        }
+
+        function wireContextMenuButtonTooltipSuppression(button) {
+            if (!(button instanceof HTMLElement) || button.dataset.touchTooltipSuppressWired === 'true') {
+                return;
+            }
+
+            const suppress = () => {
+                suppressContextTooltipsForTouch();
+            };
+
+            button.addEventListener('pointerdown', suppress, { capture: true });
+            button.addEventListener('touchstart', suppress, { capture: true, passive: true });
+            button.dataset.touchTooltipSuppressWired = 'true';
+        }
 
         function openLocationImageMenu() {
             if (!locationImageMenu || !locationImageMenuButton) {
@@ -14079,6 +14173,8 @@
                     window.loadWorldMap?.();
                 } else if (tabName === 'party') {
                     window.refreshParty?.();
+                } else if (tabName === 'story-tools') {
+                    window.refreshStoryTools?.({ preserveSelection: true });
                 } else if (tabName === 'factions') {
                     window.refreshFactions?.();
                 }
@@ -14298,6 +14394,7 @@
                 icon.setAttribute('aria-hidden', 'true');
                 icon.textContent = '•••';
                 button.appendChild(icon);
+                wireContextMenuButtonTooltipSuppression(button);
 
                 const menu = document.createElement('div');
                 menu.className = 'entity-context-menu npc-card-menu';
@@ -14405,6 +14502,7 @@
 
                 button.addEventListener('click', (event) => {
                     event.stopPropagation();
+                    suppressContextTooltipsForTouch();
                     const wasOpen = npcMenuState.openMenu === menu;
                     closeNpcContextMenu();
                     if (!wasOpen) {
@@ -15872,6 +15970,64 @@
             }
         }
 
+        function createRegionSecretRow(secret = '') {
+            if (!regionEditSecretsList) {
+                return null;
+            }
+
+            const row = document.createElement('div');
+            row.className = 'region-edit-secret-row';
+
+            const textarea = document.createElement('textarea');
+            textarea.className = 'region-edit-secret-text';
+            textarea.rows = 3;
+            textarea.placeholder = 'Secret';
+            textarea.value = typeof secret === 'string' ? secret : '';
+
+            const removeBtn = document.createElement('button');
+            removeBtn.type = 'button';
+            removeBtn.className = 'npc-edit-remove-btn region-edit-secret-remove';
+            removeBtn.textContent = 'Remove';
+            removeBtn.addEventListener('click', () => row.remove());
+
+            row.appendChild(textarea);
+            row.appendChild(removeBtn);
+            regionEditSecretsList.appendChild(row);
+            return row;
+        }
+
+        function renderRegionSecrets(secrets = []) {
+            if (!regionEditSecretsList) {
+                return;
+            }
+            regionEditSecretsList.innerHTML = '';
+            const entries = Array.isArray(secrets)
+                ? secrets.filter(secret => typeof secret === 'string')
+                : [];
+            if (!entries.length) {
+                createRegionSecretRow('');
+                return;
+            }
+            entries.forEach(secret => createRegionSecretRow(secret));
+        }
+
+        function collectRegionSecrets() {
+            if (!regionEditSecretsList) {
+                return [];
+            }
+            return Array.from(regionEditSecretsList.querySelectorAll('.region-edit-secret-text'))
+                .map(textarea => textarea?.value ?? '')
+                .map(value => (typeof value === 'string' ? value.trim() : ''))
+                .filter(Boolean);
+        }
+
+        function resetRegionSecretsEditor() {
+            if (regionEditSecretsDetails) {
+                regionEditSecretsDetails.removeAttribute('open');
+            }
+            renderRegionSecrets([]);
+        }
+
         function populateRegionParentOptions(options = [], selectedId = null) {
             if (!regionEditParentSelect) {
                 return;
@@ -15916,6 +16072,7 @@
             if (regionEditForm) {
                 regionEditForm.reset();
             }
+            resetRegionSecretsEditor();
             populateRegionParentOptions([], null);
             if (regionEditSaveBtn) {
                 regionEditSaveBtn.disabled = true;
@@ -15964,6 +16121,10 @@
                         selectedId: data.region.controllingFactionId || ''
                     });
                 }
+                renderRegionSecrets(data.region.secrets || []);
+                if (regionEditSecretsDetails) {
+                    regionEditSecretsDetails.removeAttribute('open');
+                }
                 setRegionEditStatus('', null);
                 if (regionEditSaveBtn) {
                     regionEditSaveBtn.disabled = false;
@@ -15980,6 +16141,7 @@
                 if (regionEditAverageLevelInput) {
                     regionEditAverageLevelInput.value = '';
                 }
+                renderRegionSecrets([]);
             }
         }
 
@@ -15994,6 +16156,7 @@
             if (regionEditForm) {
                 regionEditForm.reset();
             }
+            resetRegionSecretsEditor();
             if (regionEditSaveBtn) {
                 regionEditSaveBtn.disabled = false;
             }
@@ -16048,7 +16211,8 @@
                 description: descriptionValue.trim(),
                 shortDescription: (regionEditShortDescriptionInput?.value ?? '').trim(),
                 parentRegionId: parentValueRaw && parentValueRaw.trim() ? parentValueRaw.trim() : null,
-                averageLevel: normalizedAverageLevel
+                averageLevel: normalizedAverageLevel,
+                secrets: collectRegionSecrets()
             };
 
             if (regionEditFactionSelect) {
@@ -16206,8 +16370,10 @@
         }
 
         if (locationImageMenuButton) {
+            wireContextMenuButtonTooltipSuppression(locationImageMenuButton);
             locationImageMenuButton.addEventListener('click', (event) => {
                 event.stopPropagation();
+                suppressContextTooltipsForTouch();
                 clearLocationMenuContext();
                 toggleLocationImageMenu();
             });
@@ -16400,6 +16566,15 @@
         }
         if (regionEditForm) {
             regionEditForm.addEventListener('submit', submitRegionEditForm);
+        }
+        if (regionEditSecretsAddBtn) {
+            regionEditSecretsAddBtn.addEventListener('click', () => {
+                const row = createRegionSecretRow('');
+                const field = row?.querySelector('.region-edit-secret-text');
+                if (field) {
+                    field.focus();
+                }
+            });
         }
 
         window.addEventListener('keydown', (event) => {
@@ -17480,6 +17655,10 @@
                     if (!content || !event) {
                         return;
                     }
+                    if (shouldSuppressContextTooltips()) {
+                        hideTooltip();
+                        return;
+                    }
                     const { allowHTML = false } = options;
                     if (allowHTML) {
                         floatingTooltip.innerHTML = content;
@@ -17529,6 +17708,7 @@
             const questEditRewardCurrency = document.getElementById('questEditRewardCurrency');
             const questEditRewardXp = document.getElementById('questEditRewardXp');
             const questEditRewardItems = document.getElementById('questEditRewardItems');
+            const questEditRewardFactionReputation = document.getElementById('questEditRewardFactionReputation');
             const questEditObjectives = document.getElementById('questEditObjectives');
             const questEditAddObjective = document.getElementById('questEditAddObjective');
             const questEditCancel = document.getElementById('questEditCancel');
@@ -17538,6 +17718,25 @@
             const toElement = node => (node instanceof HTMLElement ? node : null);
             const activeRoot = toElement(activeContainer);
             const completedRoot = toElement(completedContainer);
+
+            const normalizeQuestFactionRewards = (rawRewards) => {
+                if (!rawRewards || typeof rawRewards !== 'object') {
+                    return [];
+                }
+                return Object.entries(rawRewards)
+                    .map(([factionId, rawAmount]) => {
+                        const normalizedFactionId = typeof factionId === 'string' ? factionId.trim() : '';
+                        const amount = Number(rawAmount);
+                        if (!normalizedFactionId || !Number.isFinite(amount) || !Number.isInteger(amount) || amount === 0) {
+                            return null;
+                        }
+                        return {
+                            factionId: normalizedFactionId,
+                            amount
+                        };
+                    })
+                    .filter(Boolean);
+            };
 
             async function handleAbandonQuest(quest, trigger) {
                 if (!quest || !quest.id) {
@@ -17706,6 +17905,12 @@
                     const items = Array.isArray(quest.rewardItems) ? quest.rewardItems : [];
                     questEditRewardItems.value = items.join(', ');
                 }
+                if (questEditRewardFactionReputation) {
+                    const factionRewards = normalizeQuestFactionRewards(quest.rewardFactionReputation || {});
+                    questEditRewardFactionReputation.value = factionRewards
+                        .map(entry => `${entry.factionId}: ${entry.amount}`)
+                        .join('\n');
+                }
 
                 if (questEditObjectives) {
                     questEditObjectives.innerHTML = '';
@@ -17757,10 +17962,12 @@
                 const rewardCurrency = Number.isFinite(quest.rewardCurrency) ? Math.max(0, quest.rewardCurrency) : 0;
                 const rewardXp = Number.isFinite(quest.rewardXp) ? Math.max(0, quest.rewardXp) : 0;
                 const rewardItems = Array.isArray(quest.rewardItems) ? quest.rewardItems.filter(Boolean) : [];
+                const rewardFactionReputation = normalizeQuestFactionRewards(quest.rewardFactionReputation || {});
                 const rewardParts = [];
                 if (rewardCurrency > 0) rewardParts.push(`${rewardCurrency} gold`);
                 if (rewardXp > 0) rewardParts.push(`${rewardXp} XP`);
                 if (rewardItems.length) rewardParts.push(`${rewardItems.length} item${rewardItems.length === 1 ? '' : 's'}`);
+                if (rewardFactionReputation.length) rewardParts.push(`${rewardFactionReputation.length} faction rep`);
 
                 if (rewardParts.length) {
                     const rewardChip = document.createElement('span');
@@ -17834,7 +18041,7 @@
                     content.appendChild(objectiveSection);
                 }
 
-                if (rewardParts.length || rewardItems.length) {
+                if (rewardParts.length || rewardItems.length || rewardFactionReputation.length) {
                     const rewardSection = document.createElement('div');
                     rewardSection.className = 'quest-rewards';
                     const heading = document.createElement('h4');
@@ -17856,6 +18063,12 @@
                     rewardItems.forEach(label => {
                         const item = document.createElement('li');
                         item.textContent = label;
+                        list.appendChild(item);
+                    });
+                    rewardFactionReputation.forEach(entry => {
+                        const item = document.createElement('li');
+                        const signed = entry.amount > 0 ? `+${entry.amount}` : `${entry.amount}`;
+                        item.textContent = `${signed} reputation (${entry.factionId})`;
                         list.appendChild(item);
                     });
 
@@ -18064,6 +18277,9 @@
                         rewardCurrency: questEditRewardCurrency ? Number(questEditRewardCurrency.value) : questBeingEdited.rewardCurrency,
                         rewardXp: questEditRewardXp ? Number(questEditRewardXp.value) : questBeingEdited.rewardXp,
                         rewardItems: questEditRewardItems ? questEditRewardItems.value : (questBeingEdited.rewardItems || []),
+                        rewardFactionReputation: questEditRewardFactionReputation
+                            ? questEditRewardFactionReputation.value
+                            : (questBeingEdited.rewardFactionReputation || {}),
                         objectives
                     };
 
@@ -18119,6 +18335,7 @@
             const createDescriptionInput = document.getElementById('factionCreateDescription');
             const createTagsInput = document.getElementById('factionCreateTags');
             const createGoalsInput = document.getElementById('factionCreateGoals');
+            const createGenerationNotesInput = document.getElementById('factionCreateGenerationNotes');
             const createAssetsList = document.getElementById('factionCreateAssetsList');
             const createRelationsList = document.getElementById('factionCreateRelationsList');
             const createTiersList = document.getElementById('factionCreateTiersList');
@@ -18594,14 +18811,17 @@
                 ].some(field => isEmptyFactionFieldValue(payload[field]));
             };
 
-            const fillMissingCreatePayload = async (payload) => {
+            const fillMissingCreatePayload = async (payload, generationNotes = '') => {
                 if (!createPayloadNeedsAutofill(payload)) {
                     return payload;
                 }
                 const response = await fetch('/api/factions/fill-missing', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ faction: payload })
+                    body: JSON.stringify({
+                        faction: payload,
+                        generationNotes: generationNotes || ''
+                    })
                 });
                 const data = await response.json().catch(() => ({}));
                 if (!response.ok || !data?.success || !data?.faction) {
@@ -18740,7 +18960,8 @@
                     event.preventDefault();
                     try {
                         const rawPayload = gatherCreateFactionPayload();
-                        const payload = await fillMissingCreatePayload(rawPayload);
+                        const generationNotes = createGenerationNotesInput ? createGenerationNotesInput.value.trim() : '';
+                        const payload = await fillMissingCreatePayload(rawPayload, generationNotes);
                         const response = await fetch('/api/factions', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
@@ -18918,6 +19139,7 @@
                 floatingTooltip.classList.remove('visible');
                 floatingTooltip.setAttribute('hidden', '');
             }
+            window.hidePartyTooltip = hideTooltip;
 
             function positionTooltip(event) {
                 if (!floatingTooltip) return;
@@ -19067,7 +19289,10 @@
                     const description = member.description || member.shortDescription || 'No description provided.';
 
                     card.addEventListener('mouseenter', (event) => {
-                        if (!floatingTooltip || !description) return;
+                        if (!floatingTooltip || !description || shouldSuppressContextTooltips()) {
+                            hideTooltip();
+                            return;
+                        }
                         floatingTooltip.textContent = description;
                         floatingTooltip.removeAttribute('hidden');
                         floatingTooltip.classList.add('visible');
@@ -19075,6 +19300,10 @@
                     });
 
                     card.addEventListener('mousemove', (event) => {
+                        if (shouldSuppressContextTooltips()) {
+                            hideTooltip();
+                            return;
+                        }
                         if (!floatingTooltip || floatingTooltip.hasAttribute('hidden')) return;
                         positionTooltip(event);
                     });
@@ -19131,6 +19360,287 @@
                 partyPanel.addEventListener('scroll', hideTooltip);
             }
             window.addEventListener('scroll', hideTooltip, { passive: true });
+        }
+
+        function initStoryToolsPanel() {
+            const pageSize = 250;
+            const countLabel = document.getElementById('storyToolsCount');
+            const pageList = document.getElementById('storyToolsPageList');
+            const entriesContainer = document.getElementById('storyToolsEntries');
+            const emptyState = document.getElementById('storyToolsEmpty');
+
+            if (!countLabel || !pageList || !entriesContainer || !emptyState) {
+                return;
+            }
+
+            const hiddenEntryTypes = new Set([
+                'supplemental-story-info',
+                'offscreen-npc-activity-daily',
+                'offscreen-npc-activity-weekly',
+                'plot-summary',
+                'plot-expander'
+            ]);
+
+            const state = {
+                entries: [],
+                pageSize,
+                selectedPageIndex: 0
+            };
+
+            const formatTimestamp = (timestamp) => {
+                if (!timestamp) {
+                    return 'Unknown time';
+                }
+                const chatClient = window.AIRPG_CHAT;
+                if (chatClient && typeof chatClient.formatTimestamp === 'function') {
+                    return chatClient.formatTimestamp(timestamp);
+                }
+                return String(timestamp).replace('T', ' ').replace('Z', '');
+            };
+
+            const getPageCount = () => Math.ceil(state.entries.length / state.pageSize);
+
+            const buildPageLabel = (pageIndex) => {
+                const start = pageIndex * state.pageSize + 1;
+                const end = Math.min(state.entries.length, start + state.pageSize - 1);
+                return `${start}-${end}`;
+            };
+
+            const getRoleLabel = (entry) => {
+                const role = typeof entry?.role === 'string' ? entry.role.trim() : '';
+                return role || 'unknown';
+            };
+
+            const getTypeLabel = (entry) => {
+                const type = typeof entry?.type === 'string' ? entry.type.trim() : '';
+                return type || 'default';
+            };
+
+            const isHiddenEntry = (entry) => {
+                const entryType = typeof entry?.type === 'string' ? entry.type.trim() : '';
+                return hiddenEntryTypes.has(entryType);
+            };
+
+            const getEntryContentForDisplay = (entry) => {
+                if (!entry || typeof entry !== 'object') {
+                    return '';
+                }
+
+                if (entry.type === 'event-summary' && Array.isArray(entry.summaryItems) && entry.summaryItems.length) {
+                    const lines = [];
+                    const summaryTitle = typeof entry.summaryTitle === 'string' ? entry.summaryTitle.trim() : '';
+                    if (summaryTitle) {
+                        lines.push(summaryTitle);
+                    }
+
+                    entry.summaryItems.forEach(item => {
+                        if (!item || typeof item.text !== 'string' || !item.text.trim()) {
+                            return;
+                        }
+                        const icon = typeof item.icon === 'string' && item.icon.trim() ? item.icon.trim() : '•';
+                        lines.push(`${icon} ${item.text.trim()}`);
+                    });
+                    return lines.join('\n');
+                }
+
+                if (typeof entry.content === 'string') {
+                    return entry.content;
+                }
+                return '';
+            };
+
+            const setCountLabel = () => {
+                const count = state.entries.length;
+                countLabel.textContent = `${count} ${count === 1 ? 'entry' : 'entries'}`;
+            };
+
+            const renderPageList = () => {
+                pageList.innerHTML = '';
+                const pageCount = getPageCount();
+                if (!pageCount) {
+                    return;
+                }
+
+                for (let index = 0; index < pageCount; index += 1) {
+                    const button = document.createElement('button');
+                    button.type = 'button';
+                    button.className = 'story-tools-page-button';
+                    if (index === state.selectedPageIndex) {
+                        button.classList.add('active');
+                    }
+                    button.textContent = buildPageLabel(index);
+                    button.title = `Entries ${buildPageLabel(index)}`;
+                    button.addEventListener('click', () => {
+                        state.selectedPageIndex = index;
+                        renderPageList();
+                        renderEntryPage({ scrollToBottom: false });
+                    });
+                    pageList.appendChild(button);
+                }
+            };
+
+            const renderEntryPage = ({ scrollToBottom = false } = {}) => {
+                entriesContainer.innerHTML = '';
+
+                if (!state.entries.length) {
+                    emptyState.textContent = 'No story entries found.';
+                    emptyState.hidden = false;
+                    entriesContainer.hidden = true;
+                    return;
+                }
+
+                const pageStart = state.selectedPageIndex * state.pageSize;
+                const pageEntries = state.entries.slice(pageStart, pageStart + state.pageSize);
+
+                if (!pageEntries.length) {
+                    emptyState.textContent = 'No entries on this page.';
+                    emptyState.hidden = false;
+                    entriesContainer.hidden = true;
+                    return;
+                }
+
+                emptyState.hidden = true;
+                entriesContainer.hidden = false;
+
+                pageEntries.forEach((entry, entryIndex) => {
+                    const article = document.createElement('article');
+                    article.className = 'story-tools-entry';
+
+                    const header = document.createElement('header');
+                    header.className = 'story-tools-entry-header';
+
+                    const title = document.createElement('h3');
+                    title.className = 'story-tools-entry-title';
+                    title.textContent = `Entry #${pageStart + entryIndex + 1}`;
+
+                    const controls = document.createElement('div');
+                    controls.className = 'story-tools-entry-controls';
+
+                    const editButton = document.createElement('button');
+                    editButton.type = 'button';
+                    editButton.className = 'story-tools-entry-edit';
+                    editButton.textContent = 'Edit';
+
+                    const canEdit = Boolean(
+                        (typeof entry?.id === 'string' && entry.id.trim())
+                        || (typeof entry?.timestamp === 'string' && entry.timestamp.trim())
+                    );
+
+                    if (!canEdit) {
+                        editButton.disabled = true;
+                        editButton.title = 'Entry cannot be edited (missing id and timestamp).';
+                    } else {
+                        editButton.addEventListener('click', () => {
+                            const chatClient = window.AIRPG_CHAT;
+                            if (!chatClient || typeof chatClient.openEditModal !== 'function') {
+                                window.alert('Chat edit modal is not ready yet.');
+                                return;
+                            }
+                            chatClient.openEditModal(entry);
+                        });
+                    }
+
+                    controls.appendChild(editButton);
+                    header.appendChild(title);
+                    header.appendChild(controls);
+                    article.appendChild(header);
+
+                    const meta = document.createElement('div');
+                    meta.className = 'story-tools-entry-meta';
+
+                    const roleTag = document.createElement('span');
+                    roleTag.className = 'story-tools-tag';
+                    roleTag.textContent = `Role: ${getRoleLabel(entry)}`;
+                    meta.appendChild(roleTag);
+
+                    const typeTag = document.createElement('span');
+                    typeTag.className = 'story-tools-tag';
+                    typeTag.textContent = `Type: ${getTypeLabel(entry)}`;
+                    meta.appendChild(typeTag);
+
+                    const visibilityTag = document.createElement('span');
+                    visibilityTag.className = `story-tools-tag ${isHiddenEntry(entry) ? 'is-hidden' : 'is-visible'}`;
+                    visibilityTag.textContent = isHiddenEntry(entry) ? 'Hidden' : 'Visible';
+                    meta.appendChild(visibilityTag);
+
+                    const timeTag = document.createElement('span');
+                    timeTag.className = 'story-tools-tag';
+                    timeTag.textContent = `Time: ${formatTimestamp(entry?.timestamp)}`;
+                    meta.appendChild(timeTag);
+
+                    if (typeof entry?.locationId === 'string' && entry.locationId.trim()) {
+                        const locationTag = document.createElement('span');
+                        locationTag.className = 'story-tools-tag';
+                        locationTag.textContent = `Location: ${entry.locationId.trim()}`;
+                        meta.appendChild(locationTag);
+                    }
+
+                    if (typeof entry?.parentId === 'string' && entry.parentId.trim()) {
+                        const parentTag = document.createElement('span');
+                        parentTag.className = 'story-tools-tag';
+                        parentTag.textContent = `Parent: ${entry.parentId.trim()}`;
+                        meta.appendChild(parentTag);
+                    }
+
+                    article.appendChild(meta);
+
+                    const contentBlock = document.createElement('pre');
+                    contentBlock.className = 'story-tools-entry-content';
+                    contentBlock.textContent = getEntryContentForDisplay(entry);
+                    article.appendChild(contentBlock);
+
+                    entriesContainer.appendChild(article);
+                });
+
+                if (scrollToBottom) {
+                    requestAnimationFrame(() => {
+                        entriesContainer.scrollTop = entriesContainer.scrollHeight;
+                    });
+                    return;
+                }
+
+                entriesContainer.scrollTop = 0;
+            };
+
+            const refreshStoryTools = async ({ preserveSelection = false, scrollToLatest = false } = {}) => {
+                const previousPageIndex = state.selectedPageIndex;
+
+                try {
+                    const response = await fetch('/api/chat/history?includeAllEntries=true', { cache: 'no-store' });
+                    const data = await response.json().catch(() => ({}));
+                    if (!response.ok) {
+                        throw new Error(data?.error || `HTTP ${response.status}`);
+                    }
+
+                    state.entries = Array.isArray(data.history) ? data.history : [];
+                    setCountLabel();
+
+                    const pageCount = getPageCount();
+                    if (!pageCount) {
+                        state.selectedPageIndex = 0;
+                    } else if (preserveSelection) {
+                        state.selectedPageIndex = Math.min(Math.max(previousPageIndex, 0), pageCount - 1);
+                    } else {
+                        state.selectedPageIndex = pageCount - 1;
+                    }
+
+                    renderPageList();
+                    const shouldScrollToBottom = Boolean(scrollToLatest || (!preserveSelection && pageCount > 0));
+                    renderEntryPage({ scrollToBottom: shouldScrollToBottom });
+                } catch (error) {
+                    console.warn('Failed to refresh Story Tools entries:', error);
+                    state.entries = [];
+                    setCountLabel();
+                    renderPageList();
+                    entriesContainer.innerHTML = '';
+                    entriesContainer.hidden = true;
+                    emptyState.textContent = `Failed to load story entries: ${error?.message || error}`;
+                    emptyState.hidden = false;
+                }
+            };
+
+            window.refreshStoryTools = refreshStoryTools;
+            refreshStoryTools({ preserveSelection: false, scrollToLatest: true });
         }
 
         async function loadCurrentLocation() {

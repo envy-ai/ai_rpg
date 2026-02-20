@@ -186,7 +186,7 @@ offscreen_npc_activity_weekly_max_turns_between_prompts: 100
 
 ## World time
 
-`time` controls the canonical world clock configuration. Internally, the server tracks world time in decimal hours (`worldTime.timeHours`), while config inputs are minute-based.
+`time` controls the canonical world clock configuration. Internally, the server tracks world time in minutes (`worldTime.timeMinutes`), and config inputs are also minute-based.
 
 ```yaml
 time:

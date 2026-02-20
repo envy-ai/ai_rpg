@@ -12,6 +12,7 @@ const SlashCommandRegistry = require('./SlashCommandRegistry.js');
 const SanitizedStringSet = require('./SanitizedStringSet.js');
 const Events = require('./Events.js');
 const Quest = require('./Quest.js');
+const Faction = require('./Faction.js');
 const FormulaEvaluator = require('./public/js/formula-evaluator.js');
 const { resolvePointPoolFormulas } = require('./utils/point-pool-formulas.js');
 const {
@@ -574,8 +575,8 @@ module.exports = function registerApiRoutes(scope) {
         };
 
         const shortDescriptionBackfillByClient = new Map();
-        const OFFSCREEN_NPC_ACTIVITY_DAILY_HOURS = [7, 19];
-        const OFFSCREEN_NPC_ACTIVITY_WEEKLY_HOUR = 7;
+        const OFFSCREEN_NPC_ACTIVITY_DAILY_MINUTES = [7 * 60, 19 * 60];
+        const OFFSCREEN_NPC_ACTIVITY_WEEKLY_MINUTE = 7 * 60;
         const OFFSCREEN_NPC_ACTIVITY_WEEKLY_COUNT = 15;
         const OFFSCREEN_NPC_ACTIVITY_DEFAULT_DAILY_COUNT = 5;
         const OFFSCREEN_NPC_ACTIVITY_DEFAULT_DAILY_MAX_TURNS_BETWEEN_PROMPTS = 20;
@@ -1343,7 +1344,7 @@ module.exports = function registerApiRoutes(scope) {
                 const normalized = normalizeWorldTimeForSchedule(rawValue, `offscreenNpcActivityState.${label}`);
                 return {
                     dayIndex: normalized.dayIndex,
-                    timeHours: Number(normalized.timeHours.toFixed(4))
+                    timeMinutes: normalized.timeMinutes
                 };
             };
             const lastDailyPromptWorldTime = normalizeWorldTimeSnapshot(
@@ -1497,15 +1498,15 @@ module.exports = function registerApiRoutes(scope) {
             return numericValue;
         }
 
-        function resolveWorldTimeCycleLengthHours() {
+        function resolveWorldTimeCycleLengthMinutes() {
             const timeConfig = typeof Globals?.getTimeConfig === 'function'
                 ? Globals.getTimeConfig()
                 : null;
-            const cycleLengthHours = Number(timeConfig?.cycleLengthHours);
-            if (!Number.isFinite(cycleLengthHours) || cycleLengthHours <= 0) {
+            const cycleLengthMinutes = Number(timeConfig?.cycleLengthMinutes);
+            if (!Number.isFinite(cycleLengthMinutes) || cycleLengthMinutes <= 0) {
                 throw new Error('World time cycle length is invalid for offscreen NPC activity scheduling.');
             }
-            return cycleLengthHours;
+            return cycleLengthMinutes;
         }
 
         function normalizeWorldTimeForSchedule(worldTime, label = 'worldTime') {
@@ -1513,61 +1514,64 @@ module.exports = function registerApiRoutes(scope) {
                 throw new TypeError(`${label} must be an object.`);
             }
             const dayIndex = Number(worldTime.dayIndex);
-            const timeHours = Number(worldTime.timeHours);
+            const hasTimeMinutes = Object.prototype.hasOwnProperty.call(worldTime, 'timeMinutes');
+            const timeMinutes = hasTimeMinutes
+                ? Number(worldTime.timeMinutes)
+                : (Number(worldTime.timeHours) * 60);
             if (!Number.isFinite(dayIndex) || dayIndex < 0) {
                 throw new RangeError(`${label}.dayIndex must be a non-negative number.`);
             }
-            if (!Number.isFinite(timeHours) || timeHours < 0) {
-                throw new RangeError(`${label}.timeHours must be a non-negative number.`);
+            if (!Number.isFinite(timeMinutes) || timeMinutes < 0) {
+                throw new RangeError(`${label}.timeMinutes must be a non-negative number.`);
             }
-            const cycleLengthHours = resolveWorldTimeCycleLengthHours();
+            const cycleLengthMinutes = resolveWorldTimeCycleLengthMinutes();
             let normalizedDayIndex = Math.floor(dayIndex);
-            let normalizedTimeHours = timeHours;
-            while (normalizedTimeHours >= cycleLengthHours) {
+            let normalizedTimeMinutes = Math.round(timeMinutes);
+            while (normalizedTimeMinutes >= cycleLengthMinutes) {
                 normalizedDayIndex += 1;
-                normalizedTimeHours -= cycleLengthHours;
+                normalizedTimeMinutes -= cycleLengthMinutes;
             }
             return {
                 dayIndex: normalizedDayIndex,
-                timeHours: normalizedTimeHours
+                timeMinutes: normalizedTimeMinutes
             };
         }
 
         function collectCrossedDailyPromptPoints({ startWorldTime, endWorldTime }) {
-            const cycleLengthHours = resolveWorldTimeCycleLengthHours();
+            const cycleLengthMinutes = resolveWorldTimeCycleLengthMinutes();
             const start = normalizeWorldTimeForSchedule(startWorldTime, 'startWorldTime');
             const end = normalizeWorldTimeForSchedule(endWorldTime, 'endWorldTime');
-            const startAbsolute = start.dayIndex * cycleLengthHours + start.timeHours;
-            const endAbsolute = end.dayIndex * cycleLengthHours + end.timeHours;
+            const startAbsolute = start.dayIndex * cycleLengthMinutes + start.timeMinutes;
+            const endAbsolute = end.dayIndex * cycleLengthMinutes + end.timeMinutes;
             if (endAbsolute <= startAbsolute) {
                 return [];
             }
             const points = [];
             for (let day = start.dayIndex; day <= end.dayIndex; day += 1) {
-                for (const hour of OFFSCREEN_NPC_ACTIVITY_DAILY_HOURS) {
-                    const absoluteHours = day * cycleLengthHours + hour;
-                    if (absoluteHours <= startAbsolute || absoluteHours > endAbsolute) {
+                for (const minute of OFFSCREEN_NPC_ACTIVITY_DAILY_MINUTES) {
+                    const absoluteMinutes = day * cycleLengthMinutes + minute;
+                    if (absoluteMinutes <= startAbsolute || absoluteMinutes > endAbsolute) {
                         continue;
                     }
                     points.push({
                         mode: 'daily',
                         dayIndex: day,
-                        hour,
-                        absoluteHours,
+                        minute,
+                        absoluteMinutes,
                         weekIndex: Math.floor(day / 7)
                     });
                 }
             }
-            points.sort((a, b) => a.absoluteHours - b.absoluteHours);
+            points.sort((a, b) => a.absoluteMinutes - b.absoluteMinutes);
             return points;
         }
 
         function collectCrossedWeeklyPromptPoints({ startWorldTime, endWorldTime }) {
-            const cycleLengthHours = resolveWorldTimeCycleLengthHours();
+            const cycleLengthMinutes = resolveWorldTimeCycleLengthMinutes();
             const start = normalizeWorldTimeForSchedule(startWorldTime, 'startWorldTime');
             const end = normalizeWorldTimeForSchedule(endWorldTime, 'endWorldTime');
-            const startAbsolute = start.dayIndex * cycleLengthHours + start.timeHours;
-            const endAbsolute = end.dayIndex * cycleLengthHours + end.timeHours;
+            const startAbsolute = start.dayIndex * cycleLengthMinutes + start.timeMinutes;
+            const endAbsolute = end.dayIndex * cycleLengthMinutes + end.timeMinutes;
             if (endAbsolute <= startAbsolute) {
                 return [];
             }
@@ -1576,19 +1580,19 @@ module.exports = function registerApiRoutes(scope) {
                 if (day % 7 !== 0) {
                     continue;
                 }
-                const absoluteHours = day * cycleLengthHours + OFFSCREEN_NPC_ACTIVITY_WEEKLY_HOUR;
-                if (absoluteHours <= startAbsolute || absoluteHours > endAbsolute) {
+                const absoluteMinutes = day * cycleLengthMinutes + OFFSCREEN_NPC_ACTIVITY_WEEKLY_MINUTE;
+                if (absoluteMinutes <= startAbsolute || absoluteMinutes > endAbsolute) {
                     continue;
                 }
                 points.push({
                     mode: 'weekly',
                     dayIndex: day,
-                    hour: OFFSCREEN_NPC_ACTIVITY_WEEKLY_HOUR,
-                    absoluteHours,
+                    minute: OFFSCREEN_NPC_ACTIVITY_WEEKLY_MINUTE,
+                    absoluteMinutes,
                     weekIndex: Math.floor(day / 7)
                 });
             }
-            points.sort((a, b) => a.absoluteHours - b.absoluteHours);
+            points.sort((a, b) => a.absoluteMinutes - b.absoluteMinutes);
             return points;
         }
 
@@ -1670,19 +1674,19 @@ module.exports = function registerApiRoutes(scope) {
             );
             return {
                 dayIndex: normalized.dayIndex,
-                timeHours: Number(normalized.timeHours.toFixed(4))
+                timeMinutes: normalized.timeMinutes
             };
         }
 
-        function resolveElapsedOffscreenWorldHours(startWorldTime, endWorldTime) {
+        function resolveElapsedOffscreenWorldMinutes(startWorldTime, endWorldTime) {
             if (!startWorldTime || !endWorldTime) {
                 return null;
             }
             const start = normalizeWorldTimeForSchedule(startWorldTime, 'offscreenElapsedStart');
             const end = normalizeWorldTimeForSchedule(endWorldTime, 'offscreenElapsedEnd');
-            const cycleLengthHours = resolveWorldTimeCycleLengthHours();
-            const startAbsolute = (start.dayIndex * cycleLengthHours) + start.timeHours;
-            const endAbsolute = (end.dayIndex * cycleLengthHours) + end.timeHours;
+            const cycleLengthMinutes = resolveWorldTimeCycleLengthMinutes();
+            const startAbsolute = (start.dayIndex * cycleLengthMinutes) + start.timeMinutes;
+            const endAbsolute = (end.dayIndex * cycleLengthMinutes) + end.timeMinutes;
             const elapsed = endAbsolute - startAbsolute;
             if (!Number.isFinite(elapsed) || elapsed < 0) {
                 return null;
@@ -2237,23 +2241,23 @@ module.exports = function registerApiRoutes(scope) {
                 }
                 resetOffscreenNpcActivityTurnCounter(mode);
                 const currentWorldTimeSnapshot = resolveCurrentWorldTimeSnapshotForOffscreenActivity();
-                let elapsedHoursSinceLastRun = null;
+                let elapsedMinutesSinceLastRun = null;
                 if (mode === 'daily') {
-                    elapsedHoursSinceLastRun = resolveElapsedOffscreenWorldHours(
+                    elapsedMinutesSinceLastRun = resolveElapsedOffscreenWorldMinutes(
                         normalizedState.lastDailyPromptWorldTime,
                         currentWorldTimeSnapshot
                     );
                     normalizedState.lastDailyPromptWorldTime = currentWorldTimeSnapshot;
                 } else if (mode === 'weekly') {
-                    elapsedHoursSinceLastRun = resolveElapsedOffscreenWorldHours(
+                    elapsedMinutesSinceLastRun = resolveElapsedOffscreenWorldMinutes(
                         normalizedState.lastWeeklyPromptWorldTime,
                         currentWorldTimeSnapshot
                     );
                     normalizedState.lastWeeklyPromptWorldTime = currentWorldTimeSnapshot;
                 }
 
-                const heading = Number.isFinite(elapsedHoursSinceLastRun)
-                    ? `**Offscreen NPC Activity (${elapsedHoursSinceLastRun.toFixed(1)} hours since last run)**`
+                const heading = Number.isFinite(elapsedMinutesSinceLastRun)
+                    ? `**Offscreen NPC Activity (${Math.round(elapsedMinutesSinceLastRun)} minutes since last run)**`
                     : (mode === 'weekly'
                         ? '**Offscreen NPC Activity (Weekly)**'
                         : '**Offscreen NPC Activity (Twice Daily)**');
@@ -2685,19 +2689,22 @@ module.exports = function registerApiRoutes(scope) {
             }
 
             const dayIndex = Number(worldTimeContext?.dayIndex);
-            const timeHours = Number(worldTimeContext?.timeHours);
-            if (!Number.isFinite(dayIndex) || dayIndex < 0 || !Number.isFinite(timeHours) || timeHours < 0) {
+            const timeMinutes = Number(worldTimeContext?.timeMinutes);
+            if (!Number.isFinite(dayIndex) || dayIndex < 0 || !Number.isFinite(timeMinutes) || timeMinutes < 0) {
                 throw new Error('World time context is invalid while resolving weather for payload.');
             }
-            const cycleLengthHoursRaw = Number(config?.time?.cycle_length_hours);
-            const cycleLengthHours = Number.isFinite(cycleLengthHoursRaw) && cycleLengthHoursRaw > 0
-                ? cycleLengthHoursRaw
-                : 24;
-            const totalHours = (dayIndex * cycleLengthHours) + timeHours;
+            const timeConfig = typeof Globals?.getTimeConfig === 'function'
+                ? Globals.getTimeConfig()
+                : null;
+            const cycleLengthMinutes = Number(timeConfig?.cycleLengthMinutes);
+            if (!Number.isFinite(cycleLengthMinutes) || cycleLengthMinutes <= 0) {
+                throw new Error('World time cycle length is invalid while resolving weather for payload.');
+            }
+            const totalMinutes = (dayIndex * cycleLengthMinutes) + timeMinutes;
 
             const resolved = region.resolveCurrentWeather({
                 seasonName: worldTimeContext?.season || null,
-                totalHours
+                totalMinutes
             }) || {};
             const weatherName = typeof resolved.name === 'string' && resolved.name.trim()
                 ? resolved.name.trim()
@@ -2892,37 +2899,22 @@ module.exports = function registerApiRoutes(scope) {
             }
         }
 
-        const MIN_CRAFT_TIME_ADVANCE_HOURS = 1 / 60;
+        const MIN_CRAFT_TIME_ADVANCE_MINUTES = 1;
 
-        function parseCraftResultTimeTakenHours(rawTimeTaken, { resultLevel = 'unknown' } = {}) {
+        function parseCraftResultTimeTakenMinutes(rawTimeTaken, { resultLevel = 'unknown' } = {}) {
             const levelLabel = typeof resultLevel === 'string' && resultLevel.trim()
                 ? resultLevel.trim().toLowerCase()
                 : 'unknown';
 
             if (typeof rawTimeTaken !== 'string' || !rawTimeTaken.trim()) {
-                console.error(`Crafting result "${levelLabel}" is missing <timeTaken>; defaulting to ${MIN_CRAFT_TIME_ADVANCE_HOURS}h.`);
-                return MIN_CRAFT_TIME_ADVANCE_HOURS;
+                throw new Error(`Crafting result "${levelLabel}" is missing <timeTaken>.`);
             }
 
             const trimmed = rawTimeTaken.trim();
-            const directNumber = Number(trimmed);
-            if (Number.isFinite(directNumber) && directNumber >= 0) {
-                return directNumber > 0 ? directNumber : MIN_CRAFT_TIME_ADVANCE_HOURS;
-            }
-
-            console.error(`Crafting result "${levelLabel}" has invalid <timeTaken> value "${trimmed}". Attempting units-stripped fallback.`);
-
-            const numericToken = trimmed.match(/[-+]?\d*\.?\d+/)?.[0] || '';
-            const strippedNumber = numericToken ? Number(numericToken) : NaN;
-            if (Number.isFinite(strippedNumber) && strippedNumber >= 0) {
-                const convertedHours = strippedNumber / 60;
-                if (convertedHours > 0) {
-                    return convertedHours;
-                }
-            }
-
-            console.error(`Crafting result "${levelLabel}" fallback parse failed for <timeTaken>="${trimmed}". Defaulting to ${MIN_CRAFT_TIME_ADVANCE_HOURS}h.`);
-            return MIN_CRAFT_TIME_ADVANCE_HOURS;
+            const parsedMinutes = Utils.parseDurationToMinutes(trimmed, {
+                fieldName: `crafting result "${levelLabel}" <timeTaken>`
+            });
+            return parsedMinutes > 0 ? parsedMinutes : MIN_CRAFT_TIME_ADVANCE_MINUTES;
         }
 
         async function parseCraftingResultsResponse(xmlContent) {
@@ -3036,7 +3028,16 @@ module.exports = function registerApiRoutes(scope) {
                     const timeTakenRaw = timeTakenNode && typeof timeTakenNode.textContent === 'string'
                         ? timeTakenNode.textContent.trim()
                         : null;
-                    const timeTakenHours = parseCraftResultTimeTakenHours(timeTakenRaw, { resultLevel: level });
+                    let timeTakenMinutes = null;
+                    try {
+                        timeTakenMinutes = parseCraftResultTimeTakenMinutes(timeTakenRaw, { resultLevel: level });
+                    } catch (error) {
+                        console.warn(
+                            `Skipping crafting result "${level}" due to invalid <timeTaken>:`,
+                            error?.message || error
+                        );
+                        continue;
+                    }
 
                     results.set(level, {
                         rawXml: serializedResult || null,
@@ -3046,12 +3047,11 @@ module.exports = function registerApiRoutes(scope) {
                         other: other && other.toLowerCase() !== 'n/a' ? other : null,
                         abilities: parseAbilityEffects(serializedResult),
                         timeTakenRaw,
-                        timeTakenHours
+                        timeTakenMinutes
                     });
                 }
             } catch (error) {
-                console.warn('Failed to parse crafting results response:', error?.message || error);
-                console.warn(error);
+                throw new Error(`Failed to parse crafting results response: ${error?.message || error}`);
             }
             return results;
         }
@@ -4520,7 +4520,9 @@ module.exports = function registerApiRoutes(scope) {
             experienceAwards = [],
             currencyChanges = [],
             environmentalDamageEvents = [],
-            needBarChanges = []
+            needBarChanges = [],
+            dispositionChanges = [],
+            factionReputationChanges = []
         } = {}) {
             const bundle = [];
             let shouldRefresh = false;
@@ -4963,6 +4965,73 @@ module.exports = function registerApiRoutes(scope) {
                 shouldRefresh = true;
             }
 
+            if (Array.isArray(dispositionChanges)) {
+                dispositionChanges.forEach(entry => {
+                    if (!entry) {
+                        return;
+                    }
+                    const npcName = safeSummaryName(entry.npcName || entry.name || 'Someone');
+                    const typeLabel = safeSummaryItem(entry.typeLabel || entry.typeKey || 'Disposition', 'Disposition');
+                    const deltaRaw = Number(entry.delta);
+                    const previousValueRaw = Number(entry.previousValue);
+                    const newValueRaw = Number(entry.newValue);
+                    const resolvedDelta = Number.isFinite(deltaRaw)
+                        ? deltaRaw
+                        : (Number.isFinite(newValueRaw) && Number.isFinite(previousValueRaw)
+                            ? (newValueRaw - previousValueRaw)
+                            : 0);
+                    if (!resolvedDelta) {
+                        return;
+                    }
+
+                    const sign = resolvedDelta > 0 ? '+' : '';
+                    const beforeText = entry.before ? String(entry.before).trim() : '';
+                    const afterText = entry.after ? String(entry.after).trim() : '';
+                    let text = `${npcName}'s ${typeLabel} disposition Δ ${sign}${Math.round(resolvedDelta)}`;
+                    if (beforeText || afterText) {
+                        text += ` (${beforeText || '?'} -> ${afterText || '?'})`;
+                    }
+                    const reason = entry.reason ? String(entry.reason).trim() : '';
+                    if (reason) {
+                        text += ` - ${reason}`;
+                    }
+                    add('💞', text);
+                });
+                shouldRefresh = true;
+            }
+
+            if (Array.isArray(factionReputationChanges)) {
+                factionReputationChanges.forEach(entry => {
+                    if (!entry) {
+                        return;
+                    }
+                    const beforeRaw = Number(entry.before);
+                    const afterRaw = Number(entry.after);
+                    const amountRaw = Number(entry.amount);
+                    const resolvedAmount = Number.isFinite(amountRaw)
+                        ? amountRaw
+                        : (Number.isFinite(afterRaw) && Number.isFinite(beforeRaw)
+                            ? (afterRaw - beforeRaw)
+                            : 0);
+                    if (!resolvedAmount) {
+                        return;
+                    }
+
+                    const factionName = safeSummaryItem(entry.factionName || entry.factionId || 'a faction', 'a faction');
+                    const sign = resolvedAmount > 0 ? '+' : '';
+                    let text = `Reputation with ${factionName} ${sign}${Math.round(resolvedAmount)}`;
+                    if (Number.isFinite(afterRaw)) {
+                        text += ` (now ${Math.round(afterRaw)})`;
+                    }
+                    const reason = entry.reason ? String(entry.reason).trim() : '';
+                    if (reason) {
+                        text += ` - ${reason}`;
+                    }
+                    add('🏳️', text);
+                });
+                shouldRefresh = true;
+            }
+
             return {
                 items: bundle,
                 shouldRefresh
@@ -5055,6 +5124,8 @@ module.exports = function registerApiRoutes(scope) {
             currencyChanges = null,
             environmentalDamageEvents = null,
             needBarChanges = null,
+            dispositionChanges = null,
+            factionReputationChanges = null,
             timestamp = null,
             parentId = null,
             locationId = null
@@ -5068,7 +5139,9 @@ module.exports = function registerApiRoutes(scope) {
                 experienceAwards,
                 currencyChanges,
                 environmentalDamageEvents,
-                needBarChanges
+                needBarChanges,
+                dispositionChanges,
+                factionReputationChanges
             });
 
             if (!bundle.items.length) {
@@ -5227,6 +5300,8 @@ module.exports = function registerApiRoutes(scope) {
             currencyChanges = null,
             environmentalDamageEvents = null,
             needBarChanges = null,
+            dispositionChanges = null,
+            factionReputationChanges = null,
             plausibility = null,
             timestamp = null,
             parentId = null,
@@ -5239,6 +5314,8 @@ module.exports = function registerApiRoutes(scope) {
                 currencyChanges,
                 environmentalDamageEvents,
                 needBarChanges,
+                dispositionChanges,
+                factionReputationChanges,
                 timestamp,
                 parentId,
                 locationId
@@ -5376,6 +5453,12 @@ module.exports = function registerApiRoutes(scope) {
                             ? result.environmentalDamageEvents.slice()
                             : [],
                         needBarChanges: Array.isArray(result.needBarChanges) ? result.needBarChanges.slice() : [],
+                        dispositionChanges: Array.isArray(result.dispositionChanges)
+                            ? result.dispositionChanges.slice()
+                            : [],
+                        factionReputationChanges: Array.isArray(result.factionReputationChanges)
+                            ? result.factionReputationChanges.slice()
+                            : [],
                         npcUpdates: result.npcUpdates ? mergeNpcUpdates(null, result.npcUpdates) : null,
                         locationRefreshRequested: Boolean(result.locationRefreshRequested),
                         questObjectivesCompleted: Array.isArray(result.questObjectivesCompleted)
@@ -5401,6 +5484,8 @@ module.exports = function registerApiRoutes(scope) {
                 merged.currencyChanges = mergeEventArrays(merged.currencyChanges, result.currencyChanges);
                 merged.environmentalDamageEvents = mergeEventArrays(merged.environmentalDamageEvents, result.environmentalDamageEvents);
                 merged.needBarChanges = mergeEventArrays(merged.needBarChanges, result.needBarChanges);
+                merged.dispositionChanges = mergeEventArrays(merged.dispositionChanges, result.dispositionChanges);
+                merged.factionReputationChanges = mergeEventArrays(merged.factionReputationChanges, result.factionReputationChanges);
                 merged.questObjectivesCompleted = mergeEventArrays(merged.questObjectivesCompleted, result.questObjectivesCompleted);
                 merged.questRewards = mergeEventArrays(merged.questRewards, result.questRewards);
                 merged.questsAwarded = mergeEventArrays(merged.questsAwarded, result.questsAwarded);
@@ -5937,6 +6022,12 @@ module.exports = function registerApiRoutes(scope) {
                 if (Array.isArray(eventChecks?.needBarChanges) && eventChecks.needBarChanges.length) {
                     summary.needBarChanges = eventChecks.needBarChanges;
                 }
+                if (Array.isArray(eventChecks?.dispositionChanges) && eventChecks.dispositionChanges.length) {
+                    summary.dispositionChanges = eventChecks.dispositionChanges;
+                }
+                if (Array.isArray(eventChecks?.factionReputationChanges) && eventChecks.factionReputationChanges.length) {
+                    summary.factionReputationChanges = eventChecks.factionReputationChanges;
+                }
 
                 if (originEventResult || destinationEventResult) {
                     if (originEventResult) {
@@ -5948,6 +6039,8 @@ module.exports = function registerApiRoutes(scope) {
                             currencyChanges: originEventResult.currencyChanges || [],
                             environmentalDamageEvents: originEventResult.environmentalDamageEvents || [],
                             needBarChanges: originEventResult.needBarChanges || [],
+                            dispositionChanges: originEventResult.dispositionChanges || [],
+                            factionReputationChanges: originEventResult.factionReputationChanges || [],
                             timestamp: summary.timestamp,
                             parentId: randomEventEntry?.id || null,
                             locationId: randomEventLocationId
@@ -5962,6 +6055,8 @@ module.exports = function registerApiRoutes(scope) {
                             currencyChanges: destinationEventResult.currencyChanges || [],
                             environmentalDamageEvents: destinationEventResult.environmentalDamageEvents || [],
                             needBarChanges: destinationEventResult.needBarChanges || [],
+                            dispositionChanges: destinationEventResult.dispositionChanges || [],
+                            factionReputationChanges: destinationEventResult.factionReputationChanges || [],
                             timestamp: summary.timestamp,
                             parentId: randomEventEntry?.id || null,
                             locationId: randomEventLocationId
@@ -5975,6 +6070,8 @@ module.exports = function registerApiRoutes(scope) {
                         currencyChanges: summary.currencyChanges,
                         environmentalDamageEvents: summary.environmentalDamageEvents,
                         needBarChanges: summary.needBarChanges,
+                        dispositionChanges: summary.dispositionChanges,
+                        factionReputationChanges: summary.factionReputationChanges,
                         timestamp: summary.timestamp,
                         parentId: randomEventEntry?.id || null,
                         locationId: randomEventLocationId
@@ -8204,6 +8301,34 @@ module.exports = function registerApiRoutes(scope) {
             return appliedChanges;
         }
 
+        function recordDispositionPromptSummary({
+            actorName = null,
+            dispositionChanges = [],
+            timestamp = null,
+            parentId = null,
+            locationId = null
+        } = {}, collector = null) {
+            if (!Array.isArray(dispositionChanges) || !dispositionChanges.length) {
+                return null;
+            }
+
+            const resolvedLocationId = requireLocationId(
+                locationId || currentPlayer?.currentLocation,
+                'recordDispositionPromptSummary'
+            );
+
+            const safeActorName = safeSummaryName(actorName || 'NPC');
+            const label = `📋 Events – Disposition Check (${safeActorName})`;
+
+            return recordEventSummaryEntry({
+                label,
+                dispositionChanges,
+                timestamp: timestamp || new Date().toISOString(),
+                parentId: parentId || null,
+                locationId: resolvedLocationId
+            }, collector);
+        }
+
         function mapNpcActionPlanToPlausibility(actionPlan) {
             if (!actionPlan) {
                 return null;
@@ -8605,7 +8730,14 @@ module.exports = function registerApiRoutes(scope) {
             }
         }
 
-        async function generateNpcMemoriesForLocationChange({ previousLocationId, newLocationId, player, isNonEventTravel = true } = {}) {
+        async function generateNpcMemoriesForLocationChange({
+            previousLocationId,
+            newLocationId,
+            player,
+            isNonEventTravel = true,
+            entryCollector = null,
+            clientId = null
+        } = {}) {
             if (!previousLocationId || !player) {
                 return;
             }
@@ -8678,6 +8810,7 @@ module.exports = function registerApiRoutes(scope) {
             }
 
             const lowercaseCache = new Map();
+            let dispositionSummaryRecorded = false;
 
             const memoryTasks = [];
             const totalCandidates = candidateIds.size
@@ -8752,7 +8885,15 @@ module.exports = function registerApiRoutes(scope) {
                         }
 
                         if (Array.isArray(result?.dispositions) && result.dispositions.length) {
-                            applyDispositionChanges(result.dispositions);
+                            const dispositionChanges = applyDispositionChanges(result.dispositions);
+                            const summary = recordDispositionPromptSummary({
+                                actorName: actor.name || actor.id || 'NPC',
+                                dispositionChanges,
+                                locationId: previousLocation.id
+                            }, entryCollector);
+                            if (summary) {
+                                dispositionSummaryRecorded = true;
+                            }
                         }
                     } catch (error) {
                         console.warn(`Error while generating memories for ${actor.name}:`, error.message);
@@ -8837,7 +8978,15 @@ module.exports = function registerApiRoutes(scope) {
                             }
 
                             if (Array.isArray(result?.dispositions) && result.dispositions.length) {
-                                applyDispositionChanges(result.dispositions);
+                                const dispositionChanges = applyDispositionChanges(result.dispositions);
+                                const summary = recordDispositionPromptSummary({
+                                    actorName: member.name || member.id || 'NPC',
+                                    dispositionChanges,
+                                    locationId: previousLocation.id
+                                }, entryCollector);
+                                if (summary) {
+                                    dispositionSummaryRecorded = true;
+                                }
                             }
                         } catch (error) {
                             console.warn(`Error while generating party memories for ${member.name}:`, error.message);
@@ -8902,7 +9051,15 @@ module.exports = function registerApiRoutes(scope) {
                             }
 
                             if (Array.isArray(result?.dispositions) && result.dispositions.length) {
-                                applyDispositionChanges(result.dispositions);
+                                const dispositionChanges = applyDispositionChanges(result.dispositions);
+                                const summary = recordDispositionPromptSummary({
+                                    actorName: member.name || member.id || 'NPC',
+                                    dispositionChanges,
+                                    locationId: previousLocation.id
+                                }, entryCollector);
+                                if (summary) {
+                                    dispositionSummaryRecorded = true;
+                                }
                             }
                         } catch (error) {
                             console.warn(`Error while generating memories for departed party member ${member.name}:`, error.message);
@@ -8922,12 +9079,28 @@ module.exports = function registerApiRoutes(scope) {
                 await Promise.allSettled(memoryTasks);
             }
 
+            if (dispositionSummaryRecorded && clientId) {
+                try {
+                    Globals.emitToClient(clientId, 'chat_history_updated', {
+                        reason: 'disposition_check'
+                    });
+                } catch (error) {
+                    console.warn('Failed to notify client about disposition summary updates:', error.message || error);
+                }
+            }
+
             if (typeof player.clearPartyMembershipChangeTracking === 'function') {
                 player.clearPartyMembershipChangeTracking();
             }
         }
 
-        async function processPartyMemoriesForCurrentTurn({ player, historyEntries, locationOverride = null, isNonEventTravel = true } = {}) {
+        async function processPartyMemoriesForCurrentTurn({
+            player,
+            historyEntries,
+            locationOverride = null,
+            isNonEventTravel = true,
+            entryCollector = null
+        } = {}) {
             if (!player) {
                 return;
             }
@@ -9069,7 +9242,12 @@ module.exports = function registerApiRoutes(scope) {
                             }
 
                             if (Array.isArray(result?.dispositions) && result.dispositions.length) {
-                                applyDispositionChanges(result.dispositions);
+                                const dispositionChanges = applyDispositionChanges(result.dispositions);
+                                recordDispositionPromptSummary({
+                                    actorName: member.name || member.id || 'NPC',
+                                    dispositionChanges,
+                                    locationId: locationOverride?.id || player?.currentLocation
+                                }, entryCollector);
                             }
                         } catch (error) {
                             console.warn(`Error while generating party memories for ${memberName}:`, error.message);
@@ -9131,7 +9309,12 @@ module.exports = function registerApiRoutes(scope) {
                             }
 
                             if (Array.isArray(result?.dispositions) && result.dispositions.length) {
-                                applyDispositionChanges(result.dispositions);
+                                const dispositionChanges = applyDispositionChanges(result.dispositions);
+                                recordDispositionPromptSummary({
+                                    actorName: member.name || member.id || 'NPC',
+                                    dispositionChanges,
+                                    locationId: locationOverride?.id || player?.currentLocation
+                                }, entryCollector);
                             }
                         } catch (error) {
                             console.warn(`Error while generating memories for departed party member ${memberName}:`, error.message);
@@ -9517,6 +9700,12 @@ module.exports = function registerApiRoutes(scope) {
                     if (Array.isArray(npcEventResult?.needBarChanges) && npcEventResult.needBarChanges.length) {
                         npcTurnResult.needBarChanges = npcEventResult.needBarChanges;
                     }
+                    if (Array.isArray(npcEventResult?.dispositionChanges) && npcEventResult.dispositionChanges.length) {
+                        npcTurnResult.dispositionChanges = npcEventResult.dispositionChanges;
+                    }
+                    if (Array.isArray(npcEventResult?.factionReputationChanges) && npcEventResult.factionReputationChanges.length) {
+                        npcTurnResult.factionReputationChanges = npcEventResult.factionReputationChanges;
+                    }
                     if (npcEventResult?.npcUpdates) {
                         npcTurnResult.npcUpdates = npcEventResult.npcUpdates;
                     }
@@ -9536,6 +9725,8 @@ module.exports = function registerApiRoutes(scope) {
                         currencyChanges: npcTurnResult.currencyChanges,
                         environmentalDamageEvents: npcTurnResult.environmentalDamageEvents,
                         needBarChanges: npcTurnResult.needBarChanges,
+                        dispositionChanges: npcTurnResult.dispositionChanges,
+                        factionReputationChanges: npcTurnResult.factionReputationChanges,
                         timestamp: npcTurnTimestamp,
                         parentId: npcTurnEntry?.id || null,
                         locationId: npcTurnLocationId
@@ -9936,7 +10127,9 @@ module.exports = function registerApiRoutes(scope) {
                     previousLocationId: initialPlayerLocationId,
                     newLocationId: currentLocationId,
                     player,
-                    isNonEventTravel: !(currentActionIsTravel && travelMetadataIsEventDriven)
+                    isNonEventTravel: !(currentActionIsTravel && travelMetadataIsEventDriven),
+                    entryCollector: newChatEntries,
+                    clientId: stream?.clientId || null
                 }).catch(error => {
                     console.warn('Failed to update NPC memories after travel:', error.message || error);
                 });
@@ -9956,7 +10149,8 @@ module.exports = function registerApiRoutes(scope) {
                         player: currentPlayer,
                         historyEntries: newChatEntries,
                         locationOverride: location,
-                        isNonEventTravel
+                        isNonEventTravel,
+                        entryCollector: newChatEntries
                     });
                 } catch (error) {
                     console.warn('Failed during party memory interval processing:', error.message || error);
@@ -10084,6 +10278,8 @@ module.exports = function registerApiRoutes(scope) {
                 delete payload.currencyChanges;
                 delete payload.environmentalDamageEvents;
                 delete payload.needBarChanges;
+                delete payload.dispositionChanges;
+                delete payload.factionReputationChanges;
 
                 if (Array.isArray(payload.npcTurns)) {
                     payload.npcTurns.forEach(turn => stripStreamedEventArtifacts(turn));
@@ -10966,6 +11162,12 @@ module.exports = function registerApiRoutes(scope) {
                         if (Array.isArray(forcedEventResult.needBarChanges) && forcedEventResult.needBarChanges.length) {
                             responseData.needBarChanges = forcedEventResult.needBarChanges;
                         }
+                        if (Array.isArray(forcedEventResult.dispositionChanges) && forcedEventResult.dispositionChanges.length) {
+                            responseData.dispositionChanges = forcedEventResult.dispositionChanges;
+                        }
+                        if (Array.isArray(forcedEventResult.factionReputationChanges) && forcedEventResult.factionReputationChanges.length) {
+                            responseData.factionReputationChanges = forcedEventResult.factionReputationChanges;
+                        }
                         if (forcedEventResult.npcUpdates) {
                             responseData.npcUpdates = forcedEventResult.npcUpdates;
                         }
@@ -10999,6 +11201,8 @@ module.exports = function registerApiRoutes(scope) {
                         currencyChanges: responseData.currencyChanges,
                         environmentalDamageEvents: responseData.environmentalDamageEvents,
                         needBarChanges: responseData.needBarChanges,
+                        dispositionChanges: responseData.dispositionChanges,
+                        factionReputationChanges: responseData.factionReputationChanges,
                         timestamp: forcedEventEntry?.timestamp || new Date().toISOString(),
                         parentId: forcedEventEntry?.id || null,
                         locationId: forcedEventLocationId
@@ -11186,7 +11390,7 @@ module.exports = function registerApiRoutes(scope) {
                     }
 
                     let slopRemovalInfo = null;
-                    if (Globals.config?.slop_buster === true && !isQuestionAction) {
+                    if (Globals.config?.slop_buster === true && !isQuestionAction && !isGenericPromptAction) {
                         const slopResult = await applySlopRemoval(aiResponse, { returnDiagnostics: true });
                         aiResponse = slopResult.text;
                         if (slopResult.ran) {
@@ -11457,6 +11661,12 @@ module.exports = function registerApiRoutes(scope) {
                         if (Array.isArray(eventResult.needBarChanges) && eventResult.needBarChanges.length) {
                             responseData.needBarChanges = eventResult.needBarChanges;
                         }
+                        if (Array.isArray(eventResult.dispositionChanges) && eventResult.dispositionChanges.length) {
+                            responseData.dispositionChanges = eventResult.dispositionChanges;
+                        }
+                        if (Array.isArray(eventResult.factionReputationChanges) && eventResult.factionReputationChanges.length) {
+                            responseData.factionReputationChanges = eventResult.factionReputationChanges;
+                        }
                         if (eventResult.npcUpdates) {
                             responseData.npcUpdates = eventResult.npcUpdates;
                         }
@@ -11542,6 +11752,8 @@ module.exports = function registerApiRoutes(scope) {
                                     currencyChanges: [],
                                     environmentalDamageEvents: [],
                                     needBarChanges: [],
+                                    dispositionChanges: [],
+                                    factionReputationChanges: [],
                                     questCompletionRewards: [],
                                     completedQuestObjectives: [],
                                     followupResults: [],
@@ -11575,6 +11787,8 @@ module.exports = function registerApiRoutes(scope) {
                                 appendArray('currencyChanges', questProcessingContext.currencyChanges);
                                 appendArray('environmentalDamageEvents', questProcessingContext.environmentalDamageEvents);
                                 appendArray('needBarChanges', questProcessingContext.needBarChanges);
+                                appendArray('dispositionChanges', questProcessingContext.dispositionChanges);
+                                appendArray('factionReputationChanges', questProcessingContext.factionReputationChanges);
 
                                 if (Array.isArray(questProcessingContext.followupResults) && questProcessingContext.followupResults.length) {
                                     if (!Array.isArray(responseData.followupEventChecks)) {
@@ -11751,6 +11965,8 @@ module.exports = function registerApiRoutes(scope) {
                                 currencyChanges: originEventResult.currencyChanges || [],
                                 environmentalDamageEvents: originEventResult.environmentalDamageEvents || [],
                                 needBarChanges: originEventResult.needBarChanges || [],
+                                dispositionChanges: originEventResult.dispositionChanges || [],
+                                factionReputationChanges: originEventResult.factionReputationChanges || [],
                                 plausibility: responseData.plausibility,
                                 timestamp: aiResponseEntry?.timestamp || new Date().toISOString(),
                                 parentId: aiResponseEntry?.id || null,
@@ -11766,6 +11982,8 @@ module.exports = function registerApiRoutes(scope) {
                                 currencyChanges: destinationEventResult.currencyChanges || [],
                                 environmentalDamageEvents: destinationEventResult.environmentalDamageEvents || [],
                                 needBarChanges: destinationEventResult.needBarChanges || [],
+                                dispositionChanges: destinationEventResult.dispositionChanges || [],
+                                factionReputationChanges: destinationEventResult.factionReputationChanges || [],
                                 plausibility: null,
                                 timestamp: aiResponseEntry?.timestamp || new Date().toISOString(),
                                 parentId: aiResponseEntry?.id || null,
@@ -11781,6 +11999,8 @@ module.exports = function registerApiRoutes(scope) {
                             currencyChanges: responseData.currencyChanges,
                             environmentalDamageEvents: responseData.environmentalDamageEvents,
                             needBarChanges: responseData.needBarChanges,
+                            dispositionChanges: responseData.dispositionChanges,
+                            factionReputationChanges: responseData.factionReputationChanges,
                             plausibility: responseData.plausibility,
                             timestamp: aiResponseEntry?.timestamp || new Date().toISOString(),
                             parentId: aiResponseEntry?.id || null,
@@ -12370,18 +12590,52 @@ module.exports = function registerApiRoutes(scope) {
             }
         });
 
+        const parseBooleanQueryParam = (value, paramName) => {
+            if (value === undefined || value === null) {
+                return false;
+            }
+            if (typeof value === 'boolean') {
+                return value;
+            }
+
+            const normalized = String(value).trim().toLowerCase();
+            if (['1', 'true', 'yes', 'on'].includes(normalized)) {
+                return true;
+            }
+            if (['0', 'false', 'no', 'off', ''].includes(normalized)) {
+                return false;
+            }
+
+            throw new Error(
+                `Invalid query value for "${paramName}". Expected one of: true, false, 1, 0, yes, no, on, off.`
+            );
+        };
+
         app.get('/api/chat/history', (req, res) => {
-            const clientMessageHistory = resolveClientMessageHistoryConfig(config);
-            const prunedHistory = pruneClientMessageHistory(chatHistory, {
-                ...clientMessageHistory,
-                mode: 'max'
-            });
-            const filteredHistory = filterOrphanedChatEntries(prunedHistory);
-            res.json({
-                history: filteredHistory,
-                count: chatHistory.length,
-                worldTime: buildWorldTimePayload()
-            });
+            try {
+                const includeAllEntries = parseBooleanQueryParam(req.query?.includeAllEntries, 'includeAllEntries');
+
+                const historyForClient = includeAllEntries
+                    ? chatHistory.slice()
+                    : (() => {
+                        const clientMessageHistory = resolveClientMessageHistoryConfig(config);
+                        const prunedHistory = pruneClientMessageHistory(chatHistory, {
+                            ...clientMessageHistory,
+                            mode: 'max'
+                        });
+                        return filterOrphanedChatEntries(prunedHistory);
+                    })();
+
+                res.json({
+                    history: historyForClient,
+                    count: chatHistory.length,
+                    worldTime: buildWorldTimePayload()
+                });
+            } catch (error) {
+                res.status(400).json({
+                    error: error?.message || 'Failed to load chat history.'
+                });
+            }
         });
 
         // Clear chat history API endpoint (for testing/reset)
@@ -12659,6 +12913,115 @@ module.exports = function registerApiRoutes(scope) {
                     }
                     return Array.isArray(quest.rewardItems) ? quest.rewardItems.slice() : [];
                 })();
+                const rewardFactionReputation = (() => {
+                    const hasInput = Object.prototype.hasOwnProperty.call(payload, 'rewardFactionReputation');
+                    const source = hasInput
+                        ? payload.rewardFactionReputation
+                        : (quest.rewardFactionReputation || {});
+
+                    if (!hasInput) {
+                        if (!source || typeof source !== 'object') {
+                            return {};
+                        }
+                        return { ...source };
+                    }
+
+                    if (source === null || source === undefined || source === '') {
+                        return {};
+                    }
+
+                    const resolveFactionId = (rawKey) => {
+                        if (typeof rawKey !== 'string') {
+                            throw new Error('rewardFactionReputation faction keys must be strings.');
+                        }
+                        const trimmed = rawKey.trim();
+                        if (!trimmed) {
+                            throw new Error('rewardFactionReputation faction keys must be non-empty.');
+                        }
+                        const byId = typeof Faction?.getById === 'function' ? Faction.getById(trimmed) : null;
+                        if (byId?.id) {
+                            return byId.id;
+                        }
+                        const byName = typeof Faction?.getByName === 'function' ? Faction.getByName(trimmed) : null;
+                        if (byName?.id) {
+                            return byName.id;
+                        }
+                        throw new Error(`Unknown faction "${trimmed}" in rewardFactionReputation.`);
+                    };
+
+                    const normalizeDelta = (value, factionLabel) => {
+                        const numeric = Number(value);
+                        if (!Number.isFinite(numeric) || !Number.isInteger(numeric)) {
+                            throw new Error(`rewardFactionReputation for "${factionLabel}" must be an integer.`);
+                        }
+                        return numeric;
+                    };
+
+                    const mergeEntry = (target, factionKeyRaw, deltaRaw) => {
+                        const resolvedFactionId = resolveFactionId(factionKeyRaw);
+                        const delta = normalizeDelta(deltaRaw, factionKeyRaw);
+                        if (delta === 0) {
+                            return;
+                        }
+                        const current = Number(target[resolvedFactionId]) || 0;
+                        const merged = current + delta;
+                        if (merged === 0) {
+                            delete target[resolvedFactionId];
+                            return;
+                        }
+                        target[resolvedFactionId] = merged;
+                    };
+
+                    const normalized = {};
+                    if (typeof source === 'string') {
+                        const lines = source
+                            .split(/\r?\n/)
+                            .map(line => line.trim())
+                            .filter(Boolean);
+                        for (const line of lines) {
+                            const match = line.match(/^(.+?)\s*[:=]\s*(-?\d+)\s*$/);
+                            if (!match) {
+                                throw new Error(
+                                    `Invalid rewardFactionReputation line "${line}". Use "Faction Name or ID: +/-points".`,
+                                );
+                            }
+                            mergeEntry(normalized, match[1], match[2]);
+                        }
+                        return normalized;
+                    }
+
+                    if (source instanceof Map) {
+                        for (const [rawKey, rawValue] of source.entries()) {
+                            mergeEntry(normalized, rawKey, rawValue);
+                        }
+                        return normalized;
+                    }
+
+                    if (Array.isArray(source)) {
+                        for (const entry of source) {
+                            if (Array.isArray(entry) && entry.length >= 2) {
+                                mergeEntry(normalized, entry[0], entry[1]);
+                                continue;
+                            }
+                            if (!entry || typeof entry !== 'object') {
+                                throw new Error('rewardFactionReputation array entries must be objects or [key, value] tuples.');
+                            }
+                            const factionKey = entry.factionId ?? entry.faction ?? entry.name;
+                            const delta = entry.amount ?? entry.delta ?? entry.points ?? entry.value;
+                            mergeEntry(normalized, factionKey, delta);
+                        }
+                        return normalized;
+                    }
+
+                    if (typeof source === 'object') {
+                        for (const [rawKey, rawValue] of Object.entries(source)) {
+                            mergeEntry(normalized, rawKey, rawValue);
+                        }
+                        return normalized;
+                    }
+
+                    throw new Error('rewardFactionReputation must be an object, array, map, or formatted string.');
+                })();
 
                 let updatedPaused = quest.paused;
                 if (Object.prototype.hasOwnProperty.call(payload, 'paused')) {
@@ -12697,6 +13060,7 @@ module.exports = function registerApiRoutes(scope) {
                 quest.rewardCurrency = updatedRewardCurrency;
                 quest.rewardXp = updatedRewardXp;
                 quest.rewardItems = rewardItems;
+                quest.rewardFactionReputation = rewardFactionReputation;
                 if (updatedObjectives !== null) {
                     quest.objectives = updatedObjectives;
                 }
@@ -13482,7 +13846,8 @@ module.exports = function registerApiRoutes(scope) {
                     shortDescription,
                     parentRegionId: parentRegionIdRaw,
                     averageLevel: averageLevelRaw,
-                    controllingFactionId: controllingFactionIdRaw
+                    controllingFactionId: controllingFactionIdRaw,
+                    secrets: secretsRaw
                 } = body;
 
                 if (typeof name !== 'string') {
@@ -13550,6 +13915,32 @@ module.exports = function registerApiRoutes(scope) {
                     }
                 }
 
+                const hasSecrets = Object.prototype.hasOwnProperty.call(body, 'secrets');
+                let normalizedSecrets = [];
+                if (hasSecrets) {
+                    if (!Array.isArray(secretsRaw)) {
+                        return res.status(400).json({
+                            success: false,
+                            error: 'Region secrets must be an array of strings.'
+                        });
+                    }
+                    try {
+                        normalizedSecrets = secretsRaw
+                            .map((entry, index) => {
+                                if (typeof entry !== 'string') {
+                                    throw new Error(`Region secret at index ${index} must be a string.`);
+                                }
+                                return entry.trim();
+                            })
+                            .filter(Boolean);
+                    } catch (validationError) {
+                        return res.status(400).json({
+                            success: false,
+                            error: validationError?.message || 'Invalid region secrets value'
+                        });
+                    }
+                }
+
                 try {
                     const trimmedName = name.trim();
                     const trimmedDescription = description.trim();
@@ -13613,6 +14004,17 @@ module.exports = function registerApiRoutes(scope) {
                     }
                 }
 
+                if (hasSecrets) {
+                    try {
+                        region.secrets = normalizedSecrets;
+                    } catch (validationError) {
+                        return res.status(400).json({
+                            success: false,
+                            error: validationError?.message || 'Invalid region secrets value'
+                        });
+                    }
+                }
+
                 const parentOptions = buildRegionParentOptions({ excludeId: regionId });
                 const payload = {
                     id: region.id,
@@ -13621,7 +14023,8 @@ module.exports = function registerApiRoutes(scope) {
                     shortDescription: region.shortDescription || null,
                     parentRegionId: region.parentRegionId || null,
                     averageLevel: Number.isFinite(region.averageLevel) ? region.averageLevel : null,
-                    controllingFactionId: region.controllingFactionId || null
+                    controllingFactionId: region.controllingFactionId || null,
+                    secrets: Array.isArray(region.secrets) ? [...region.secrets] : []
                 };
 
                 let parentRegionName = null;
@@ -16131,6 +16534,203 @@ module.exports = function registerApiRoutes(scope) {
             return relationMap;
         };
 
+        const parseFactionInboundRelationsResponse = (xmlContent, {
+            existingFactionsByName = new Map(),
+            existingFactionIds = [],
+            newFactionName = ''
+        } = {}) => {
+            if (!xmlContent || typeof xmlContent !== 'string' || !xmlContent.trim()) {
+                throw new Error('AI response for inbound faction relations was empty.');
+            }
+            if (!(existingFactionsByName instanceof Map)) {
+                throw new Error('parseFactionInboundRelationsResponse requires existingFactionsByName map.');
+            }
+
+            const wrapped = sanitizeFactionAutofillXml(xmlContent.trim());
+            const doc = Utils.parseXmlDocument(wrapped, 'text/xml');
+            const parserError = doc.getElementsByTagName('parsererror')[0];
+            if (parserError) {
+                throw new Error(`AI inbound relation XML parsing error: ${parserError.textContent}`);
+            }
+
+            const root = doc.getElementsByTagName('factionRelationships')[0];
+            if (!root) {
+                throw new Error('AI inbound relation response is missing <factionRelationships>.');
+            }
+
+            const factionNodes = Array.from(root.getElementsByTagName('faction'));
+            if (!factionNodes.length) {
+                throw new Error('AI inbound relation response has no <faction> entries.');
+            }
+
+            const readText = (node, tagName) => {
+                if (!node) {
+                    return '';
+                }
+                const child = node.getElementsByTagName(tagName)[0];
+                if (!child || typeof child.textContent !== 'string') {
+                    return '';
+                }
+                return child.textContent.trim();
+            };
+
+            const validStatuses = new Set(['allied', 'neutral', 'hostile', 'rival']);
+            const expectedTargetKey = normalizeFactionRelationNameKey(newFactionName);
+            if (!expectedTargetKey) {
+                throw new Error('Cannot parse inbound faction relations without a valid new faction name.');
+            }
+
+            const relationMap = {};
+            for (const factionNode of factionNodes) {
+                const sourceNameRaw = readText(factionNode, 'name');
+                if (!sourceNameRaw) {
+                    throw new Error('Inbound faction relation entry is missing source faction <name>.');
+                }
+
+                const sourceKeyExact = sourceNameRaw.toLowerCase();
+                const sourceKeyNormalized = normalizeFactionRelationNameKey(sourceNameRaw);
+                const sourceId = existingFactionsByName.get(sourceKeyExact)
+                    || (sourceKeyNormalized ? existingFactionsByName.get(sourceKeyNormalized) : null);
+                if (!sourceId) {
+                    throw new Error(`Inbound faction relation source "${sourceNameRaw}" does not match an existing faction.`);
+                }
+                if (relationMap[sourceId]) {
+                    throw new Error(`Inbound faction relation source "${sourceNameRaw}" is duplicated.`);
+                }
+
+                const relationsNode = factionNode.getElementsByTagName('relations')[0];
+                if (!relationsNode) {
+                    throw new Error(`Inbound faction relation for "${sourceNameRaw}" is missing <relations>.`);
+                }
+                const relationNodes = Array.from(relationsNode.getElementsByTagName('relation'));
+                if (relationNodes.length !== 1) {
+                    throw new Error(`Inbound faction relation for "${sourceNameRaw}" must contain exactly one <relation>.`);
+                }
+
+                const relationNode = relationNodes[0];
+                const targetNameRaw = readText(relationNode, 'factionName');
+                const targetKey = normalizeFactionRelationNameKey(targetNameRaw);
+                if (!targetKey) {
+                    throw new Error(`Inbound faction relation for "${sourceNameRaw}" is missing <factionName>.`);
+                }
+                if (targetKey !== expectedTargetKey) {
+                    throw new Error(
+                        `Inbound faction relation for "${sourceNameRaw}" targets "${targetNameRaw}", expected "${newFactionName}".`
+                    );
+                }
+
+                const statusRaw = readText(relationNode, 'status').toLowerCase();
+                if (!validStatuses.has(statusRaw)) {
+                    throw new Error(`Inbound faction relation for "${sourceNameRaw}" has invalid status "${statusRaw}".`);
+                }
+
+                const notes = readText(relationNode, 'notes');
+                if (!notes) {
+                    throw new Error(`Inbound faction relation for "${sourceNameRaw}" is missing notes.`);
+                }
+
+                relationMap[sourceId] = {
+                    status: statusRaw,
+                    notes
+                };
+            }
+
+            const missing = (Array.isArray(existingFactionIds) ? existingFactionIds : [])
+                .filter(id => typeof id === 'string' && id.trim())
+                .filter(id => !relationMap[id]);
+            if (missing.length) {
+                throw new Error(`Inbound faction relations missing entries for ${missing.length} existing faction(s).`);
+            }
+
+            return relationMap;
+        };
+
+        const generateInboundRelationsForNewFaction = async ({ factionDraft, existingFactions = [] } = {}) => {
+            if (!factionDraft || typeof factionDraft !== 'object') {
+                throw new Error('generateInboundRelationsForNewFaction requires a factionDraft object.');
+            }
+            if (!Array.isArray(existingFactions) || !existingFactions.length) {
+                return {};
+            }
+
+            const renderedTemplate = promptEnv.render('faction-inbound-relationships-generator.xml.njk', {
+                newFaction: factionDraft,
+                existingFactions,
+                settingDescription: currentSetting?.description || ''
+            });
+
+            const promptData = parseXMLTemplate(renderedTemplate);
+            const systemPrompt = promptData.systemPrompt ? promptData.systemPrompt.trim() : '';
+            const generationPrompt = promptData.generationPrompt ? promptData.generationPrompt.trim() : '';
+
+            if (!generationPrompt) {
+                throw new Error('Failed to build inbound faction relationship prompt from template.');
+            }
+            if (!config?.ai) {
+                throw new Error('AI configuration is incomplete. Please update config.yaml.');
+            }
+
+            const messages = [];
+            if (systemPrompt) {
+                messages.push({ role: 'system', content: systemPrompt });
+            }
+            messages.push({ role: 'user', content: generationPrompt });
+
+            const requestOptions = {
+                messages,
+                metadataLabel: 'faction_inbound_relationship_generation'
+            };
+            if (typeof promptData.temperature === 'number') {
+                requestOptions.temperature = promptData.temperature;
+            } else {
+                const configTemperature = Number(config.ai.temperature);
+                if (Number.isFinite(configTemperature)) {
+                    requestOptions.temperature = configTemperature;
+                }
+            }
+
+            const aiMessage = await LLMClient.chatCompletion(requestOptions);
+            if (!aiMessage || typeof aiMessage !== 'string') {
+                throw new Error('AI did not return a usable inbound relationship response.');
+            }
+
+            LLMClient.logPrompt({
+                prefix: 'faction_inbound_relationship_generation',
+                metadataLabel: 'faction_inbound_relationship_generation',
+                systemPrompt,
+                generationPrompt,
+                response: aiMessage
+            });
+
+            const existingFactionsByName = new Map();
+            const existingFactionIds = [];
+            for (const entry of existingFactions) {
+                if (typeof entry?.id !== 'string' || typeof entry?.name !== 'string') {
+                    continue;
+                }
+                const id = entry.id.trim();
+                const name = entry.name.trim();
+                if (!id || !name) {
+                    continue;
+                }
+                existingFactionIds.push(id);
+                existingFactionsByName.set(name.toLowerCase(), id);
+                const normalizedName = normalizeFactionRelationNameKey(name);
+                if (normalizedName) {
+                    existingFactionsByName.set(normalizedName, id);
+                }
+            }
+            if (!existingFactionIds.length) {
+                return {};
+            }
+
+            return parseFactionInboundRelationsResponse(aiMessage, {
+                existingFactionsByName,
+                existingFactionIds,
+                newFactionName: factionDraft.name
+            });
+        };
+
         app.get('/api/factions', (req, res) => {
             try {
                 const list = Array.from(factions.values())
@@ -16171,6 +16771,16 @@ module.exports = function registerApiRoutes(scope) {
                         error: 'Request body must include a faction object.'
                     });
                 }
+                const rawGenerationNotes = req.body?.generationNotes;
+                if (rawGenerationNotes !== undefined && rawGenerationNotes !== null && typeof rawGenerationNotes !== 'string') {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'generationNotes must be a string when provided.'
+                    });
+                }
+                const generationNotes = typeof rawGenerationNotes === 'string'
+                    ? rawGenerationNotes.trim()
+                    : '';
 
                 const normalizedFaction = normalizeFactionAutofillPayload(incomingFaction);
                 const existingFactions = Array.from(factions.values())
@@ -16212,7 +16822,8 @@ module.exports = function registerApiRoutes(scope) {
                         relationEntries
                     },
                     existingFactions,
-                    settingDescription: currentSetting?.description || ''
+                    settingDescription: currentSetting?.description || '',
+                    generationNotes
                 });
 
                 const promptData = parseXMLTemplate(renderedTemplate);
@@ -16333,7 +16944,7 @@ module.exports = function registerApiRoutes(scope) {
             }
         });
 
-        app.post('/api/factions', (req, res) => {
+        app.post('/api/factions', async (req, res) => {
             try {
                 const body = req.body || {};
                 const rawName = typeof body.name === 'string' ? body.name.trim() : '';
@@ -16372,6 +16983,24 @@ module.exports = function registerApiRoutes(scope) {
                     ? normalizeOptionalFactionText(body.shortDescription, 'Faction short description')
                     : null;
 
+                const existingFactions = Array.from(factions.values())
+                    .filter(Boolean)
+                    .map(serializeFactionForClient)
+                    .filter(entry => entry && typeof entry.id === 'string' && typeof entry.name === 'string');
+
+                const factionDraft = {
+                    name: rawName,
+                    shortDescription: shortDescription || '',
+                    description: description || '',
+                    tags,
+                    goals
+                };
+
+                const inboundRelations = await generateInboundRelationsForNewFaction({
+                    factionDraft,
+                    existingFactions
+                });
+
                 const faction = new Faction({
                     name: rawName,
                     tags,
@@ -16383,6 +17012,17 @@ module.exports = function registerApiRoutes(scope) {
                     relations: relations || {},
                     reputationTiers
                 });
+
+                for (const [sourceFactionId, relation] of Object.entries(inboundRelations || {})) {
+                    const sourceFaction = factions.get(sourceFactionId);
+                    if (!sourceFaction) {
+                        throw new Error(`Inbound relation source faction "${sourceFactionId}" was not found.`);
+                    }
+                    if (typeof sourceFaction.setRelation !== 'function') {
+                        throw new Error(`Faction "${sourceFactionId}" cannot accept relation updates.`);
+                    }
+                    sourceFaction.setRelation(faction.id, relation);
+                }
 
                 factions.set(faction.id, faction);
 
@@ -19964,6 +20604,8 @@ module.exports = function registerApiRoutes(scope) {
                                     || (Array.isArray(additionalEvents.currencyChanges) && additionalEvents.currencyChanges.length)
                                     || (Array.isArray(additionalEvents.environmentalDamageEvents) && additionalEvents.environmentalDamageEvents.length)
                                     || (Array.isArray(additionalEvents.needBarChanges) && additionalEvents.needBarChanges.length)
+                                    || (Array.isArray(additionalEvents.dispositionChanges) && additionalEvents.dispositionChanges.length)
+                                    || (Array.isArray(additionalEvents.factionReputationChanges) && additionalEvents.factionReputationChanges.length)
                                 );
                             if (hasAdditionalEvents) {
                                 recordEventSummaryEntry({
@@ -19973,6 +20615,8 @@ module.exports = function registerApiRoutes(scope) {
                                     currencyChanges: additionalEvents.currencyChanges || null,
                                     environmentalDamageEvents: additionalEvents.environmentalDamageEvents || null,
                                     needBarChanges: additionalEvents.needBarChanges || null,
+                                    dispositionChanges: additionalEvents.dispositionChanges || null,
+                                    factionReputationChanges: additionalEvents.factionReputationChanges || null,
                                     parentId: (additionalEffectEntry && additionalEffectEntry.id) || (chatEntry ? chatEntry.id : null),
                                     locationId: resolvedLocationId
                                 });
@@ -20006,6 +20650,8 @@ module.exports = function registerApiRoutes(scope) {
                                 currencyChanges: [],
                                 environmentalDamageEvents: [],
                                 needBarChanges: [],
+                                dispositionChanges: [],
+                                factionReputationChanges: [],
                                 questCompletionRewards: [],
                                 completedQuestObjectives: [],
                                 followupResults: [],
@@ -20100,11 +20746,11 @@ module.exports = function registerApiRoutes(scope) {
                     }
                 }
 
-                const selectedTimeTakenHours = Number(selectedResult.timeTakenHours);
-                const appliedTimeTakenHours = Number.isFinite(selectedTimeTakenHours) && selectedTimeTakenHours > 0
-                    ? selectedTimeTakenHours
-                    : MIN_CRAFT_TIME_ADVANCE_HOURS;
-                const craftingTimeProgress = Globals.advanceTime(appliedTimeTakenHours, { source: 'craft_action' });
+                const selectedTimeTakenMinutes = Number(selectedResult.timeTakenMinutes);
+                const appliedTimeTakenMinutes = Number.isFinite(selectedTimeTakenMinutes) && selectedTimeTakenMinutes > 0
+                    ? Math.round(selectedTimeTakenMinutes)
+                    : MIN_CRAFT_TIME_ADVANCE_MINUTES;
+                const craftingTimeProgress = Globals.advanceTime(appliedTimeTakenMinutes, { source: 'craft_action' });
 
                 res.json({
                     success: true,
@@ -20123,7 +20769,7 @@ module.exports = function registerApiRoutes(scope) {
                         reason: plausibility.reason || null
                     },
                     unmatchedConsumedNames,
-                    timeTakenHours: appliedTimeTakenHours,
+                    timeTakenMinutes: appliedTimeTakenMinutes,
                     timeProgress: craftingTimeProgress,
                     worldTime: buildWorldTimePayload({
                         transitions: Array.isArray(craftingTimeProgress?.transitions)
@@ -22873,7 +23519,7 @@ module.exports = function registerApiRoutes(scope) {
                     settingName: activeSetting?.name || null,
                     calendarDefinition
                 });
-                Globals.elapsedTime = resolvedStartTime;
+                Globals.elapsedTime = resolvedStartTime * 60;
 
                 console.log('🎮 Starting new game...');
                 report('new_game:reset_complete', 'Game state cleared. Preparing skills...');
@@ -25437,6 +26083,61 @@ module.exports = function registerApiRoutes(scope) {
             }
 
             res.json(response);
+        });
+
+        app.post('/api/prompts/cancel-all', async (req, res) => {
+            try {
+                const body = (req.body && typeof req.body === 'object') ? req.body : {};
+                const hasWaitForDrain = Object.prototype.hasOwnProperty.call(body, 'waitForDrain');
+                const hasTimeoutMs = Object.prototype.hasOwnProperty.call(body, 'timeoutMs');
+
+                let waitForDrain = true;
+                if (hasWaitForDrain) {
+                    if (typeof body.waitForDrain !== 'boolean') {
+                        return res.status(400).json({
+                            success: false,
+                            error: 'waitForDrain must be a boolean when provided.'
+                        });
+                    }
+                    waitForDrain = body.waitForDrain;
+                }
+
+                let timeoutMs = 5000;
+                if (hasTimeoutMs) {
+                    const parsedTimeout = Number(body.timeoutMs);
+                    if (!Number.isFinite(parsedTimeout) || parsedTimeout < 0) {
+                        return res.status(400).json({
+                            success: false,
+                            error: 'timeoutMs must be a finite number >= 0.'
+                        });
+                    }
+                    timeoutMs = Math.floor(parsedTimeout);
+                }
+
+                const cancellation = LLMClient.cancelAllPrompts('Prompt canceled by user (cancel-all).');
+                let drain = null;
+                if (waitForDrain) {
+                    drain = await LLMClient.waitForPromptDrain({ timeoutMs });
+                }
+
+                return res.json({
+                    success: true,
+                    message: cancellation.canceledCount > 0
+                        ? `Canceled ${cancellation.canceledCount} prompt(s).`
+                        : 'No active prompts to cancel.',
+                    waitForDrain,
+                    timeoutMs,
+                    cancellation,
+                    drain
+                });
+            } catch (error) {
+                const message = error?.message || 'Failed to cancel prompts.';
+                const status = message.includes('Timed out waiting for prompt drain') ? 408 : 400;
+                return res.status(status).json({
+                    success: false,
+                    error: message
+                });
+            }
         });
 
         app.post('/api/prompts/:promptId/cancel', (req, res) => {

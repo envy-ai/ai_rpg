@@ -4,6 +4,7 @@ const Thing = require("./Thing.js");
 const Globals = require("./Globals.js");
 const Player = require("./Player.js");
 const Quest = require("./Quest.js");
+const Faction = require("./Faction.js");
 const LLMClient = require("./LLMClient.js");
 const StatusEffect = require("./StatusEffect.js");
 
@@ -191,9 +192,13 @@ const EVENT_PROMPT_ORDER = [
             key: "experience_check",
             prompt: `Did the player do something (other than defeating an enemy) that would cause them to gain experience points? If so, respond with "[integer from 1-100] -> [reason in one sentence]" (note that experience cannot be gained just because something happened to the player; the player must have taken a specific action that contributes to their growth or development). Otherwise, respond N/A. See the sampleExperiencePointValues section for examples of actions that might grant experience points and how much.`,
         },
-        {
+        /*{
             key: "disposition_check",
             prompt: `Did any NPC's disposition toward the player change in a significant way? If so, respond with "[exact name of NPC] -> [how they felt before] -> [how they feel now] -> [reason in one sentence]". If multiple NPCs' dispositions changed, separate multiple entries with vertical bars. Otherwise, respond N/A.  If they feel the same way as they did before, the change isn't significant and shouldn't be listed here.`,
+        },*/
+        {
+            key: "faction_reputation_change",
+            prompt: `Would the player's reputation with any factions increase or decrease in a significant way (whether due to their own actions or events beyond their control)? If so, respond with "[exact name of faction] -> [increased/decreased] [a little/a lot] -> [reason in one sentence]". If multiple factions' reputations changed, separate multiple entries with vertical bars. Otherwise, respond N/A. If the reputation change is very minor and doesn't have a meaningful impact on how that faction would treat the player, it may not be necessary to list it here.`,
         },
         {
             key: "dummy_event",
@@ -201,7 +206,7 @@ const EVENT_PROMPT_ORDER = [
         },
         {
             key: "time_passed",
-            prompt: `In decimal hours, how much time passed this turn (e.g., 0.5 for half an hour, 1.25 for one hour and fifteen minutes) 8.0 for eight hours, 24.0 for a day, etc.)? If no time has passed, answer 0. Do not specify units.`,
+            prompt: `How much time passed this turn? Answer using one of: HH:MM (duration), integer minutes (e.g., 15), or explicit units (e.g., "1 day, 2 hours, 30 minutes", "45 minutes", "2 hours"). If no time has passed, answer 0.`,
         },
         {
             key: "triggered_abilities",
@@ -221,6 +226,64 @@ const EVENT_PROMPT_ORDER = [
 const EVENT_PROMPT_ORDER_FLAT = EVENT_PROMPT_ORDER.flat();
 
 const NO_EVENT_TOKENS = new Set(["n/a", "na", "none", "nothing"]);
+const FACTION_REPUTATION_DELTA_SMALL = 1;
+const FACTION_REPUTATION_DELTA_LARGE = 4;
+
+const DISPOSITION_POSITIVE_KEYWORDS = new Set([
+    "ally",
+    "allied",
+    "appreciative",
+    "approving",
+    "calm",
+    "comfortable",
+    "cooperative",
+    "fond",
+    "friendly",
+    "grateful",
+    "happy",
+    "helpful",
+    "kind",
+    "liked",
+    "likes",
+    "loyal",
+    "neutral",
+    "respectful",
+    "safe",
+    "supportive",
+    "sympathetic",
+    "trust",
+    "trusted",
+    "trusting",
+    "warm",
+]);
+
+const DISPOSITION_NEGATIVE_KEYWORDS = new Set([
+    "afraid",
+    "aggressive",
+    "angry",
+    "annoyed",
+    "cold",
+    "contempt",
+    "contemptuous",
+    "distrust",
+    "distrustful",
+    "fear",
+    "fearful",
+    "frustrated",
+    "furious",
+    "hateful",
+    "hostile",
+    "intimidated",
+    "resentful",
+    "rude",
+    "scared",
+    "suspicious",
+    "tense",
+    "threatened",
+    "unfriendly",
+    "upset",
+    "wary",
+]);
 
 function isBlank(value) {
     return !value || (typeof value === "string" && !value.trim());
@@ -228,60 +291,6 @@ function isBlank(value) {
 
 function normalizeString(value) {
     return typeof value === "string" ? value.trim() : "";
-}
-
-function parsePositiveDecimal(value) {
-    if (value === null || value === undefined) {
-        return null;
-    }
-    if (typeof value === "number") {
-        if (!Number.isFinite(value) || value <= 0) {
-            return null;
-        }
-        return value;
-    }
-    if (typeof value !== "string") {
-        return null;
-    }
-    const trimmed = value.trim();
-    if (!trimmed) {
-        return null;
-    }
-    if (!/^(?:\d+(?:\.\d+)?|\.\d+)$/.test(trimmed)) {
-        return null;
-    }
-    const numeric = Number(trimmed);
-    if (!Number.isFinite(numeric) || numeric <= 0) {
-        return null;
-    }
-    return numeric;
-}
-
-function parseNonNegativeDecimal(value) {
-    if (value === null || value === undefined) {
-        return null;
-    }
-    if (typeof value === "number") {
-        if (!Number.isFinite(value) || value < 0) {
-            return null;
-        }
-        return value;
-    }
-    if (typeof value !== "string") {
-        return null;
-    }
-    const trimmed = value.trim();
-    if (!trimmed) {
-        return null;
-    }
-    if (!/^(?:\d+(?:\.\d+)?|\.\d+)$/.test(trimmed)) {
-        return null;
-    }
-    const numeric = Number(trimmed);
-    if (!Number.isFinite(numeric) || numeric < 0) {
-        return null;
-    }
-    return numeric;
 }
 
 function splitPipeList(raw) {
@@ -754,6 +763,102 @@ function makeStatusEffect(description, duration = null) {
     });
 }
 
+function resolveFactionByReference(rawValue) {
+    const key = normalizeString(rawValue);
+    if (!key) {
+        return null;
+    }
+
+    if (typeof Faction.getById === "function") {
+        const byId = Faction.getById(key);
+        if (byId) {
+            return byId;
+        }
+    }
+
+    if (typeof Faction.getByName === "function") {
+        const byName = Faction.getByName(key);
+        if (byName) {
+            return byName;
+        }
+    }
+
+    return null;
+}
+
+function scoreDispositionText(rawValue) {
+    const normalized = normalizeString(rawValue).toLowerCase();
+    if (!normalized) {
+        return 0;
+    }
+
+    const tokens = normalized
+        .replace(/[^a-z0-9\s-]/g, " ")
+        .split(/\s+/)
+        .map((token) => token.trim())
+        .filter(Boolean);
+
+    if (!tokens.length) {
+        return 0;
+    }
+
+    let score = 0;
+    for (const token of tokens) {
+        if (DISPOSITION_POSITIVE_KEYWORDS.has(token)) {
+            score += 1;
+            continue;
+        }
+        if (DISPOSITION_NEGATIVE_KEYWORDS.has(token)) {
+            score -= 1;
+        }
+    }
+
+    return score;
+}
+
+function resolveDispositionDirection(beforeText, afterText) {
+    const beforeNormalized = normalizeString(beforeText).toLowerCase();
+    const afterNormalized = normalizeString(afterText).toLowerCase();
+    if (!beforeNormalized && !afterNormalized) {
+        return 0;
+    }
+    if (beforeNormalized === afterNormalized) {
+        return 0;
+    }
+
+    const beforeScore = scoreDispositionText(beforeNormalized);
+    const afterScore = scoreDispositionText(afterNormalized);
+    if (afterScore > beforeScore) {
+        return 1;
+    }
+    if (afterScore < beforeScore) {
+        return -1;
+    }
+
+    // Handle phrasing like "less suspicious", "no longer hostile", "more trusting".
+    const hasLessQualifier =
+        /\bless\b/.test(afterNormalized) || /\bno longer\b/.test(afterNormalized);
+    const hasMoreQualifier =
+        /\bmore\b/.test(afterNormalized) || /\bincreasingly\b/.test(afterNormalized);
+    if (beforeScore !== 0) {
+        if (hasLessQualifier) {
+            return -Math.sign(beforeScore);
+        }
+        if (hasMoreQualifier) {
+            return Math.sign(beforeScore);
+        }
+    }
+
+    if (/\bbetter\b|\bfriendlier\b|\bwarmer\b/.test(afterNormalized)) {
+        return 1;
+    }
+    if (/\bworse\b|\bhostile\b|\bangrier\b|\bcolder\b/.test(afterNormalized)) {
+        return -1;
+    }
+
+    return 0;
+}
+
 class Events {
     static DEFAULT_STATUS_DURATION = DEFAULT_STATUS_DURATION;
     static MAJOR_STATUS_DURATION = MAJOR_STATUS_DURATION;
@@ -889,6 +994,11 @@ class Events {
         mergeArray("currencyChanges", followup.currencyChanges);
         mergeArray("environmentalDamageEvents", followup.environmentalDamageEvents);
         mergeArray("needBarChanges", followup.needBarChanges);
+        mergeArray("dispositionChanges", followup.dispositionChanges);
+        mergeArray(
+            "factionReputationChanges",
+            followup.factionReputationChanges,
+        );
         mergeArray("questsAwarded", followup.questsAwarded);
         mergeArray("questCompletionRewards", followup.questRewards);
         mergeArray("completedQuestObjectives", followup.questObjectivesCompleted);
@@ -1380,6 +1490,8 @@ class Events {
         let currencyChanges = [];
         let environmentalDamageEvents = [];
         let needBarChanges = [];
+        let dispositionChanges = [];
+        let factionReputationChanges = [];
         let questsAwarded = [];
         let questRewards = [];
         let questObjectivesCompleted = [];
@@ -1394,6 +1506,8 @@ class Events {
                 currencyChanges: [],
                 environmentalDamageEvents: [],
                 needBarChanges: [],
+                dispositionChanges: [],
+                factionReputationChanges: [],
                 allowEnvironmentalEffects: Boolean(allowEnvironmentalEffects),
                 isNpcTurn: Boolean(isNpcTurn),
                 suppressMoveEvents: Boolean(suppressMoveEvents),
@@ -1427,6 +1541,18 @@ class Events {
                 outcomeContext.needBarChanges.length
             ) {
                 needBarChanges = outcomeContext.needBarChanges;
+            }
+            if (
+                Array.isArray(outcomeContext?.dispositionChanges) &&
+                outcomeContext.dispositionChanges.length
+            ) {
+                dispositionChanges = outcomeContext.dispositionChanges;
+            }
+            if (
+                Array.isArray(outcomeContext?.factionReputationChanges) &&
+                outcomeContext.factionReputationChanges.length
+            ) {
+                factionReputationChanges = outcomeContext.factionReputationChanges;
             }
             if (
                 Array.isArray(outcomeContext?.questsAwarded) &&
@@ -1500,7 +1626,7 @@ class Events {
             movedLocations: movedLocationNames,
         };
 
-        const locationRefreshRequested = Boolean(
+        let locationRefreshRequested = Boolean(
             (addedCharacters && addedCharacters.length) ||
             (departedCharacters && departedCharacters.length) ||
             (movedLocationNames && movedLocationNames.length),
@@ -1574,6 +1700,20 @@ class Events {
                             needBarChanges.push(...followup.needBarChanges);
                         }
                         if (
+                            Array.isArray(followup.dispositionChanges) &&
+                            followup.dispositionChanges.length
+                        ) {
+                            dispositionChanges.push(...followup.dispositionChanges);
+                        }
+                        if (
+                            Array.isArray(followup.factionReputationChanges) &&
+                            followup.factionReputationChanges.length
+                        ) {
+                            factionReputationChanges.push(
+                                ...followup.factionReputationChanges,
+                            );
+                        }
+                        if (
                             Array.isArray(followup.questsAwarded) &&
                             followup.questsAwarded.length
                         ) {
@@ -1645,6 +1785,8 @@ class Events {
             currencyChanges,
             environmentalDamageEvents,
             needBarChanges,
+            dispositionChanges,
+            factionReputationChanges,
             npcUpdates,
             locationRefreshRequested,
             questObjectivesCompleted,
@@ -1685,6 +1827,17 @@ class Events {
                 items: Array.isArray(reward.items) ? reward.items.slice() : [],
                 xp: Number.isFinite(reward.xp) ? reward.xp : 0,
                 currency: Number.isFinite(reward.currency) ? reward.currency : 0,
+                factionReputation: Array.isArray(reward.factionReputation)
+                    ? reward.factionReputation
+                        .map((entry) => ({
+                            factionId: entry?.factionId || null,
+                            factionName: entry?.factionName || null,
+                            amount: Number.isFinite(entry?.amount) ? entry.amount : 0,
+                            before: Number.isFinite(entry?.before) ? entry.before : null,
+                            after: Number.isFinite(entry?.after) ? entry.after : null,
+                        }))
+                        .filter((entry) => entry.amount !== 0)
+                    : [],
                 message: reward.message || null,
             }));
             if (Array.isArray(parsedContainer.quest_rewards)) {
@@ -1777,6 +1930,9 @@ class Events {
         }
         if (!Array.isArray(context.currencyChanges)) {
             context.currencyChanges = [];
+        }
+        if (!Array.isArray(context.factionStandingChanges)) {
+            context.factionStandingChanges = [];
         }
         if (!Array.isArray(context.followupQueue)) {
             context.followupQueue = [];
@@ -1893,6 +2049,22 @@ class Events {
             const rewardXp = Number.isFinite(quest.rewardXp)
                 ? Math.max(0, quest.rewardXp)
                 : 0;
+            const rewardFactionReputationRaw =
+                quest.rewardFactionReputation && typeof quest.rewardFactionReputation === "object"
+                    ? quest.rewardFactionReputation
+                    : {};
+            const rewardFactionReputation = {};
+            for (const [rawFactionId, rawAmount] of Object.entries(rewardFactionReputationRaw)) {
+                const factionId = typeof rawFactionId === "string" ? rawFactionId.trim() : "";
+                if (!factionId) {
+                    continue;
+                }
+                const amount = Number(rawAmount);
+                if (!Number.isFinite(amount) || !Number.isInteger(amount) || amount === 0) {
+                    continue;
+                }
+                rewardFactionReputation[factionId] = amount;
+            }
 
             const grantedItems = [];
             grantedItems.push(...rewardItems);
@@ -1938,6 +2110,54 @@ class Events {
                 });
             }
 
+            const appliedFactionStandingChanges = [];
+            for (const [factionId, delta] of Object.entries(rewardFactionReputation)) {
+                const normalizedFactionId = typeof factionId === "string" ? factionId.trim() : "";
+                if (!normalizedFactionId) {
+                    continue;
+                }
+                const faction = typeof Faction.getById === "function"
+                    ? Faction.getById(normalizedFactionId)
+                    : null;
+                if (!faction) {
+                    console.warn(
+                        `Quest "${quest.name}" has reputation reward for unknown faction "${normalizedFactionId}"; skipping entry.`,
+                    );
+                    continue;
+                }
+                if (typeof player.getFactionStanding !== "function" || typeof player.setFactionStanding !== "function") {
+                    console.warn(
+                        `Quest "${quest.name}" has faction reputation rewards, but player standing helpers are unavailable.`,
+                    );
+                    break;
+                }
+
+                const beforeRaw = player.getFactionStanding(normalizedFactionId);
+                const before = Number.isFinite(beforeRaw) ? beforeRaw : 0;
+                const after = before + delta;
+                try {
+                    player.setFactionStanding(normalizedFactionId, after);
+                } catch (error) {
+                    console.warn(
+                        `Failed to apply quest faction standing reward for faction "${normalizedFactionId}":`,
+                        error?.message || error,
+                    );
+                    continue;
+                }
+
+                appliedFactionStandingChanges.push({
+                    factionId: normalizedFactionId,
+                    factionName: faction.name || normalizedFactionId,
+                    amount: delta,
+                    before,
+                    after
+                });
+            }
+
+            if (appliedFactionStandingChanges.length) {
+                context.factionStandingChanges.push(...appliedFactionStandingChanges);
+            }
+
             const rewardLines = [];
             grantedItems.filter(Boolean).forEach((itemName) => {
                 rewardLines.push(itemName);
@@ -1947,6 +2167,11 @@ class Events {
             }
             if (rewardCurrency > 0) {
                 rewardLines.push(`${rewardCurrency} ${rewardLabel(rewardCurrency)}`);
+            }
+            for (const change of appliedFactionStandingChanges) {
+                const amount = Number(change.amount);
+                const signed = amount > 0 ? `+${amount}` : `${amount}`;
+                rewardLines.push(`${signed} reputation with ${change.factionName}`);
             }
 
             if (!rewardLines.length) {
@@ -2028,6 +2253,13 @@ class Events {
                 items: [],
                 xp: rewardXp,
                 currency: rewardCurrency,
+                factionReputation: appliedFactionStandingChanges.map((entry) => ({
+                    factionId: entry.factionId,
+                    factionName: entry.factionName,
+                    amount: entry.amount,
+                    before: entry.before,
+                    after: entry.after
+                })),
                 message: rewardProse,
                 rewards: rewardLines.slice(),
             });
@@ -2389,6 +2621,7 @@ class Events {
         registerFromArray(parsed.status_effect_change, (entry) => entry?.entity);
         registerFromArray(parsed.environmental_status_damage, (entry) => entry?.name);
         registerFromArray(parsed.needbar_change, (entry) => entry?.character);
+        registerFromArray(parsed.disposition_check, (entry) => entry?.npcName);
         registerFromArray(parsed.heal_recover, (entry) => [
             entry?.character,
             entry?.healer,
@@ -2500,6 +2733,9 @@ class Events {
         });
         updateArrayEntries(parsed.needbar_change, (entry) => {
             entry.character = resolveName(entry.character);
+        });
+        updateArrayEntries(parsed.disposition_check, (entry) => {
+            entry.npcName = resolveName(entry.npcName);
         });
         updateArrayEntries(parsed.heal_recover, (entry) => {
             if (entry.character) {
@@ -2678,8 +2914,22 @@ class Events {
                 return Number.isFinite(amount) ? amount : null;
             },
             time_passed: (raw) => {
-                const value = parseNonNegativeDecimal(raw);
-                return value !== null ? value : null;
+                if (raw === null || raw === undefined) {
+                    return null;
+                }
+                const text = typeof raw === "string" ? raw.trim() : String(raw).trim();
+                if (!text || NO_EVENT_TOKENS.has(text.toLowerCase())) {
+                    return null;
+                }
+                try {
+                    return Utils.parseDurationToMinutes(text, { fieldName: "time_passed" });
+                } catch (error) {
+                    console.warn("Skipping invalid time_passed duration entry:", {
+                        value: text,
+                        error: error?.message || error
+                    });
+                    return null;
+                }
             },
             in_combat: (raw) => {
                 if (typeof raw !== "string") {
@@ -3105,6 +3355,77 @@ class Events {
                             return null;
                         }
                         return { amount: value, reason: reason ? reason.trim() : "" };
+                    })
+                    .filter(Boolean),
+            disposition_check: (raw) =>
+                splitPipeList(raw)
+                    .map((entry) => {
+                        const [npcName, before, after, reason] = splitArrowParts(
+                            entry,
+                            4,
+                        );
+                        if (!npcName || !before || !after) {
+                            return null;
+                        }
+                        return {
+                            npcName: npcName.trim(),
+                            before: before.trim(),
+                            after: after.trim(),
+                            reason: reason ? reason.trim() : null,
+                        };
+                    })
+                    .filter(Boolean),
+            faction_reputation_change: (raw) =>
+                splitPipeList(raw)
+                    .map((entry) => {
+                        const [rawFaction, rawDirectionMagnitude, reason] =
+                            splitArrowParts(entry, 3);
+                        if (!rawFaction || !rawDirectionMagnitude) {
+                            return null;
+                        }
+
+                        const normalizedDirectionMagnitude = rawDirectionMagnitude
+                            .trim()
+                            .toLowerCase()
+                            .replace(/\s+/g, " ");
+                        let sign = 0;
+                        if (
+                            normalizedDirectionMagnitude.includes("increased") ||
+                            normalizedDirectionMagnitude.includes("increase")
+                        ) {
+                            sign = 1;
+                        } else if (
+                            normalizedDirectionMagnitude.includes("decreased") ||
+                            normalizedDirectionMagnitude.includes("decrease")
+                        ) {
+                            sign = -1;
+                        }
+                        if (sign === 0) {
+                            return null;
+                        }
+
+                        let absoluteAmount = 0;
+                        if (normalizedDirectionMagnitude.includes("a lot")) {
+                            absoluteAmount = FACTION_REPUTATION_DELTA_LARGE;
+                        } else if (
+                            normalizedDirectionMagnitude.includes("a little")
+                        ) {
+                            absoluteAmount = FACTION_REPUTATION_DELTA_SMALL;
+                        }
+                        if (!absoluteAmount) {
+                            return null;
+                        }
+
+                        const faction = resolveFactionByReference(rawFaction);
+                        return {
+                            factionId: faction?.id || null,
+                            factionName:
+                                faction?.name || normalizeString(rawFaction) || null,
+                            amount: sign * absoluteAmount,
+                            reason: reason ? reason.trim() : null,
+                            rawFaction: rawFaction.trim(),
+                            rawDirectionMagnitude: rawDirectionMagnitude.trim(),
+                        };
                     })
                     .filter(Boolean),
             move_location: (raw) => {
@@ -3969,6 +4290,9 @@ class Events {
                     const rewardXp = Number.isFinite(questData.rewardXp)
                         ? Math.max(0, questData.rewardXp)
                         : 0;
+                    const rewardFactionReputation = Events._resolveQuestFactionRewardMap(
+                        questData.rewardFactionReputation,
+                    );
 
                     const questOptions = {
                         name: questName,
@@ -3977,6 +4301,7 @@ class Events {
                         rewardItems,
                         rewardCurrency,
                         rewardXp,
+                        rewardFactionReputation,
                     };
 
                     const effectiveGiverName = questData.giver || questGiverName;
@@ -4022,6 +4347,9 @@ class Events {
                         existingQuest.rewardItems = rewardItems.slice();
                         existingQuest.rewardCurrency = rewardCurrency;
                         existingQuest.rewardXp = rewardXp;
+                        existingQuest.rewardFactionReputation = {
+                            ...rewardFactionReputation,
+                        };
                         if (questOptions.giver) {
                             existingQuest.giver = questOptions.giver;
                         } else if (questOptions.giverName) {
@@ -4161,6 +4489,9 @@ class Events {
                         rewardItems,
                         rewardCurrency,
                         rewardXp,
+                        rewardFactionReputation: Events._toQuestFactionRewardPreviewEntries(
+                            rewardFactionReputation,
+                        ),
                         objectives: Array.isArray(quest.objectives)
                             ? quest.objectives
                                 .map((entry) => ({
@@ -4232,7 +4563,7 @@ class Events {
             },
             time_passed: function (value, context = {}) {
                 const amount = Number(value);
-                if (!Number.isFinite(amount) || amount < 0) {
+                if (!Number.isFinite(amount) || amount < 0 || !Number.isInteger(amount)) {
                     console.warn("Invalid time_passed value:", value);
                     console.trace();
                     return;
@@ -4241,7 +4572,7 @@ class Events {
                     return;
                 }
 
-                const advancementAmount = amount === 0 ? (1 / 60) : amount;
+                const advancementAmount = amount === 0 ? 1 : amount;
                 const advancement = Globals.advanceTime(advancementAmount, { source: "event_check" });
                 context.timeProgress = advancement;
             },
@@ -5511,6 +5842,231 @@ class Events {
                     }
                 }
             },
+            disposition_check: function (entries = [], context = {}) {
+                if (!Array.isArray(entries) || !entries.length) {
+                    return;
+                }
+
+                const { findActorByName } = this._deps;
+                if (typeof findActorByName !== "function") {
+                    throw new Error(
+                        "disposition_check handler requires findActorByName dependency.",
+                    );
+                }
+
+                const definitions = Player.getDispositionDefinitions?.();
+                const range = definitions?.range || {};
+                const typeDefinitions = Object.values(
+                    definitions?.types || {},
+                ).filter(Boolean);
+                const defaultType =
+                    typeDefinitions.find((entry) => entry?.key === "platonic") ||
+                    typeDefinitions.find((entry) => entry?.key === "default") ||
+                    typeDefinitions[0] ||
+                    null;
+                if (!defaultType?.key) {
+                    throw new Error(
+                        "disposition_check handler requires disposition definitions.",
+                    );
+                }
+
+                const minRange = Number.isFinite(Number(range.min))
+                    ? Number(range.min)
+                    : null;
+                const maxRange = Number.isFinite(Number(range.max))
+                    ? Number(range.max)
+                    : null;
+                const typicalStep = Number.isFinite(Number(range.typicalStep))
+                    ? Math.max(1, Math.round(Number(range.typicalStep)))
+                    : 1;
+
+                if (!Array.isArray(context.dispositionChanges)) {
+                    context.dispositionChanges = [];
+                }
+
+                const appliedEntries = [];
+                for (const entry of entries) {
+                    const npcName = normalizeString(entry?.npcName);
+                    const beforeFeeling = normalizeString(entry?.before);
+                    const afterFeeling = normalizeString(entry?.after);
+                    if (!npcName || !beforeFeeling || !afterFeeling) {
+                        continue;
+                    }
+
+                    const direction = resolveDispositionDirection(
+                        beforeFeeling,
+                        afterFeeling,
+                    );
+                    if (direction === 0) {
+                        continue;
+                    }
+
+                    const npc = findActorByName(npcName);
+                    if (!npc || npc === (context.player || this.currentPlayer)) {
+                        continue;
+                    }
+                    if (
+                        typeof npc.getDispositionTowardsCurrentPlayer !== "function" ||
+                        typeof npc.setDispositionTowardsCurrentPlayer !== "function"
+                    ) {
+                        throw new Error(
+                            `disposition_check handler requires disposition methods for ${npc.name || npcName}.`,
+                        );
+                    }
+
+                    const previousRaw = npc.getDispositionTowardsCurrentPlayer(
+                        defaultType.key,
+                    );
+                    const previousValue = Number.isFinite(Number(previousRaw))
+                        ? Number(previousRaw)
+                        : 0;
+                    let newValue = previousValue + direction * typicalStep;
+                    if (Number.isFinite(minRange)) {
+                        newValue = Math.max(minRange, newValue);
+                    }
+                    if (Number.isFinite(maxRange)) {
+                        newValue = Math.min(maxRange, newValue);
+                    }
+
+                    npc.setDispositionTowardsCurrentPlayer(defaultType.key, newValue);
+
+                    const delta = newValue - previousValue;
+                    if (!delta) {
+                        continue;
+                    }
+
+                    const applied = {
+                        npcId: npc.id || null,
+                        npcName: npc.name || npcName,
+                        typeKey: defaultType.key,
+                        typeLabel: defaultType.label || defaultType.key,
+                        before: beforeFeeling,
+                        after: afterFeeling,
+                        reason: entry?.reason ? String(entry.reason).trim() : null,
+                        delta,
+                        previousValue,
+                        newValue,
+                    };
+                    context.dispositionChanges.push(applied);
+                    appliedEntries.push({
+                        ...entry,
+                        npcName: applied.npcName,
+                        delta,
+                        previousValue,
+                        newValue,
+                        typeKey: applied.typeKey,
+                        typeLabel: applied.typeLabel,
+                    });
+                }
+
+                entries.length = 0;
+                if (appliedEntries.length) {
+                    entries.push(...appliedEntries);
+                }
+            },
+            faction_reputation_change: function (entries = [], context = {}) {
+                if (!Array.isArray(entries) || !entries.length) {
+                    return;
+                }
+
+                const player = context.player || this.currentPlayer;
+                if (
+                    !player ||
+                    typeof player.getFactionStanding !== "function" ||
+                    typeof player.setFactionStanding !== "function"
+                ) {
+                    throw new Error(
+                        "faction_reputation_change handler requires player faction standing helpers.",
+                    );
+                }
+
+                if (!Array.isArray(context.factionReputationChanges)) {
+                    context.factionReputationChanges = [];
+                }
+
+                const witnessByFaction = new Map();
+                const addWitnessToMap = (actor) => {
+                    if (!actor || typeof actor !== "object") {
+                        return;
+                    }
+                    const factionId =
+                        typeof actor.factionId === "string"
+                            ? actor.factionId.trim()
+                            : "";
+                    if (!factionId) {
+                        return;
+                    }
+                    witnessByFaction.set(factionId, true);
+                };
+
+                addWitnessToMap(player);
+                const partyMemberIdsRaw =
+                    typeof player.getPartyMembers === "function"
+                        ? player.getPartyMembers()
+                        : [];
+                const partyMemberIds = Array.isArray(partyMemberIdsRaw)
+                    ? partyMemberIdsRaw
+                    : [];
+                partyMemberIds.forEach((memberId) => {
+                    const partyMember = Player.get(memberId);
+                    addWitnessToMap(partyMember);
+                });
+
+                const location = context.location || null;
+                if (location && typeof location.getNPCs === "function") {
+                    location.getNPCs().forEach((npc) => addWitnessToMap(npc));
+                }
+
+                const appliedEntries = [];
+                for (const entry of entries) {
+                    const amount = Number(entry?.amount);
+                    if (!Number.isFinite(amount) || amount === 0) {
+                        continue;
+                    }
+
+                    const faction =
+                        resolveFactionByReference(entry?.factionId) ||
+                        resolveFactionByReference(entry?.factionName) ||
+                        resolveFactionByReference(entry?.rawFaction);
+                    if (!faction?.id) {
+                        console.warn(
+                            `faction_reputation_change references unknown faction "${entry?.rawFaction || entry?.factionName || ""}"; skipping.`,
+                        );
+                        continue;
+                    }
+
+                    if (!witnessByFaction.has(faction.id)) {
+                        continue;
+                    }
+
+                    const beforeRaw = player.getFactionStanding(faction.id);
+                    const before = Number.isFinite(beforeRaw) ? beforeRaw : 0;
+                    const after = before + amount;
+                    player.setFactionStanding(faction.id, after);
+
+                    const applied = {
+                        factionId: faction.id,
+                        factionName: faction.name || faction.id,
+                        amount,
+                        before,
+                        after,
+                        reason: entry?.reason ? String(entry.reason).trim() : null,
+                    };
+                    context.factionReputationChanges.push(applied);
+                    appliedEntries.push({
+                        ...entry,
+                        factionId: applied.factionId,
+                        factionName: applied.factionName,
+                        before,
+                        after,
+                    });
+                }
+
+                entries.length = 0;
+                if (appliedEntries.length) {
+                    entries.push(...appliedEntries);
+                }
+            },
             hostile_to_friendly: function (entries = [], context = {}) {
                 if (!Array.isArray(entries) || !entries.length) {
                     return;
@@ -6376,11 +6932,7 @@ class Events {
                     }
                     let normalizedDuration = null;
                     if (effect.duration !== null && effect.duration !== undefined) {
-                        try {
-                            normalizedDuration = StatusEffect.normalizeDuration(effect.duration);
-                        } catch (_) {
-                            normalizedDuration = effect.duration;
-                        }
+                        normalizedDuration = StatusEffect.normalizeDuration(effect.duration);
                     }
                     return {
                         description: effect.description || String(effect).trim(),
@@ -6725,6 +7277,82 @@ class Events {
         }
     }
 
+    static _resolveQuestFactionRewardMap(rawRewards) {
+        if (!rawRewards || typeof rawRewards !== "object") {
+            return {};
+        }
+
+        const entries = rawRewards instanceof Map
+            ? Array.from(rawRewards.entries())
+            : Object.entries(rawRewards);
+        const resolvedRewards = {};
+
+        for (const [rawFactionKey, rawPoints] of entries) {
+            const factionKey = typeof rawFactionKey === "string" ? rawFactionKey.trim() : "";
+            if (!factionKey) {
+                console.warn("Quest faction reputation reward entry had an empty faction key; skipping.");
+                continue;
+            }
+
+            const points = Number(rawPoints);
+            if (!Number.isFinite(points) || !Number.isInteger(points)) {
+                console.warn(
+                    `Quest faction reputation reward for "${factionKey}" must be a finite integer; skipping entry.`,
+                );
+                continue;
+            }
+            if (points === 0) {
+                continue;
+            }
+
+            const faction =
+                (typeof Faction.getById === "function" ? Faction.getById(factionKey) : null) ||
+                (typeof Faction.getByName === "function" ? Faction.getByName(factionKey) : null);
+            if (!faction || !faction.id) {
+                console.warn(
+                    `Quest faction reputation reward references unknown faction "${factionKey}"; skipping entry.`,
+                );
+                continue;
+            }
+
+            const existing = Number(resolvedRewards[faction.id]) || 0;
+            const merged = existing + points;
+            if (merged === 0) {
+                delete resolvedRewards[faction.id];
+            } else {
+                resolvedRewards[faction.id] = merged;
+            }
+        }
+
+        return resolvedRewards;
+    }
+
+    static _toQuestFactionRewardPreviewEntries(rewardMap) {
+        if (!rewardMap || typeof rewardMap !== "object") {
+            return [];
+        }
+        return Object.entries(rewardMap)
+            .map(([factionId, points]) => {
+                const normalizedFactionId = typeof factionId === "string" ? factionId.trim() : "";
+                if (!normalizedFactionId) {
+                    return null;
+                }
+                const numericPoints = Number(points);
+                if (!Number.isFinite(numericPoints) || !Number.isInteger(numericPoints) || numericPoints === 0) {
+                    return null;
+                }
+                const faction = typeof Faction.getById === "function"
+                    ? Faction.getById(normalizedFactionId)
+                    : null;
+                return {
+                    factionId: normalizedFactionId,
+                    factionName: faction?.name || normalizedFactionId,
+                    points: numericPoints
+                };
+            })
+            .filter(Boolean);
+    }
+
     static _parseQuestXml(xmlContent) {
         if (typeof xmlContent !== "string" || !xmlContent.trim()) {
             return null;
@@ -6785,6 +7413,49 @@ class Events {
                 }
             }
 
+            const rewardFactionReputation = {};
+            if (rewardsNode) {
+                const factionReputationNode =
+                    rewardsNode.getElementsByTagName("factionReputation")[0] ||
+                    rewardsNode.getElementsByTagName("faction_reputation")[0];
+                const factionRewardNodes = factionReputationNode
+                    ? Array.from(factionReputationNode.getElementsByTagName("faction"))
+                    : [];
+
+                for (const factionNode of factionRewardNodes) {
+                    const nameText = factionNode.getElementsByTagName("name")[0]?.textContent?.trim() || "";
+                    if (!nameText) {
+                        console.warn("Quest reward faction entry missing <name>; skipping.");
+                        continue;
+                    }
+
+                    const pointsNode =
+                        factionNode.getElementsByTagName("points")[0] ||
+                        factionNode.getElementsByTagName("reputation")[0] ||
+                        factionNode.getElementsByTagName("standing")[0];
+                    const pointsText = pointsNode?.textContent?.trim() || "";
+                    const pointsMatch = pointsText.match(/-?\d+/);
+                    if (!pointsMatch) {
+                        console.warn(
+                            `Quest reward faction "${nameText}" missing numeric points; skipping.`,
+                        );
+                        continue;
+                    }
+                    const points = Number.parseInt(pointsMatch[0], 10);
+                    if (!Number.isFinite(points) || points === 0) {
+                        continue;
+                    }
+
+                    const existing = Number(rewardFactionReputation[nameText]) || 0;
+                    const merged = existing + points;
+                    if (merged === 0) {
+                        delete rewardFactionReputation[nameText];
+                    } else {
+                        rewardFactionReputation[nameText] = merged;
+                    }
+                }
+            }
+
             const objectives = Array.from(questNode.getElementsByTagName("objective"))
                 .map((node) => {
                     const descriptionNode = node.getElementsByTagName("description")[0];
@@ -6815,6 +7486,7 @@ class Events {
                 rewardItems: Array.from(new Set(rewardItems)),
                 rewardCurrency,
                 rewardXp,
+                rewardFactionReputation,
             };
         } catch (error) {
             console.warn("Failed to parse quest XML:", error.message);
@@ -7022,11 +7694,7 @@ class Events {
                             ?.textContent?.trim() || "";
                     let normalizedDuration = null;
                     if (durationText) {
-                        try {
-                            normalizedDuration = StatusEffect.normalizeDuration(durationText);
-                        } catch (_) {
-                            normalizedDuration = durationText;
-                        }
+                        normalizedDuration = StatusEffect.normalizeDuration(durationText);
                     }
                     statusEffects.push({
                         description,

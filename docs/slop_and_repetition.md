@@ -99,6 +99,10 @@ Quick refresher on where these systems live and how they're wired.
 - Crafting narrative text: `api.js` → craft flow
 - Game intro prose (`<introProse>`): `api.js` → `runGameIntroPrompt` (new-game intro and `/game_intro` slash command path)
 
+### Explicit bypasses
+- `/api/chat` question actions (`?`) bypass slop-remover processing.
+- `/api/chat` generic prompt actions (`@`, `@@`, `@@@`) bypass slop-remover processing.
+
 ### UI + logging
 - Chat insight icon: 🧹, rendered from `public/js/chat.js`.
 - Slop removal records:

@@ -18,6 +18,8 @@ Centralized client for LLM chat completions with concurrency limits, streaming p
 ## Public API (Static)
 - `cancelPrompt(streamId, reason)`: aborts an in-flight request.
 - `retryPrompt(streamId, reason)`: aborts the current attempt and restarts the same prompt call.
+- `cancelAllPrompts(reason)`: aborts all currently tracked in-flight prompt attempts.
+- `waitForPromptDrain({ timeoutMs, pollIntervalMs })`: waits until tracked prompt activity is fully drained.
 - `ensureAiConfig()`: validates `Globals.config.ai`.
 - `getMaxConcurrent(aiConfigOverride)`: reads `max_concurrent_requests`.
 - `writeLogFile({ prefix, metadataLabel, payload, serializeJson, onFailureMessage, error, append })`: writes error logs.

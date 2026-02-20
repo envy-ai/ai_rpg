@@ -56,6 +56,7 @@ class AIRPGChat {
         this.latestPlayerActionEntryKey = null;
         this.pendingRedoStorageKey = 'airpg:pendingRedoPlayerAction';
         this.pendingRedoInProgress = false;
+        this.emergencyResetInProgress = false;
         this.shortDescriptionPrompted = false;
 
         this.ensureTemplateEnvironment();
@@ -294,6 +295,46 @@ class AIRPGChat {
         const rewardXp = Number.isFinite(questSource.rewardXp)
             ? Math.max(0, Math.round(questSource.rewardXp))
             : 0;
+        const rewardFactionReputation = (() => {
+            const source = questSource.rewardFactionReputation;
+            if (!source) {
+                return [];
+            }
+            if (Array.isArray(source)) {
+                return source
+                    .map(entry => {
+                        if (!entry || typeof entry !== 'object') {
+                            return null;
+                        }
+                        const factionName = safeText(entry.factionName || entry.factionId || entry.name);
+                        const points = Number(entry.points ?? entry.amount ?? entry.delta ?? entry.value);
+                        if (!factionName || !Number.isFinite(points) || !Number.isInteger(points) || points === 0) {
+                            return null;
+                        }
+                        return {
+                            factionName,
+                            points
+                        };
+                    })
+                    .filter(Boolean);
+            }
+            if (typeof source === 'object') {
+                return Object.entries(source)
+                    .map(([factionKey, value]) => {
+                        const factionName = safeText(factionKey);
+                        const points = Number(value);
+                        if (!factionName || !Number.isFinite(points) || !Number.isInteger(points) || points === 0) {
+                            return null;
+                        }
+                        return {
+                            factionName,
+                            points
+                        };
+                    })
+                    .filter(Boolean);
+            }
+            return [];
+        })();
 
         return {
             confirmationId,
@@ -306,7 +347,8 @@ class AIRPGChat {
                 objectives,
                 rewardItems,
                 rewardCurrency,
-                rewardXp
+                rewardXp,
+                rewardFactionReputation
             }
         };
     }
@@ -472,6 +514,16 @@ class AIRPGChat {
                         ? `${entry.quantity} × ${entry.name}`
                         : entry.name;
                     rewardLines.push(line);
+                });
+            }
+            if (Array.isArray(quest.rewardFactionReputation) && quest.rewardFactionReputation.length) {
+                quest.rewardFactionReputation.forEach(entry => {
+                    const points = Number(entry.points);
+                    if (!Number.isFinite(points) || !Number.isInteger(points) || points === 0) {
+                        return;
+                    }
+                    const signed = points > 0 ? `+${points}` : `${points}`;
+                    rewardLines.push(`${signed} reputation with ${entry.factionName}`);
                 });
             }
             if (!rewardLines.length) {
@@ -688,7 +740,7 @@ class AIRPGChat {
                 return;
             }
 
-            const key = `${type}:${from}:${to}:${transition.atDayIndex ?? ''}:${transition.atTimeHours ?? ''}:${index}`;
+            const key = `${type}:${from}:${to}:${transition.atDayIndex ?? ''}:${transition.atTimeMinutes ?? ''}:${index}`;
             if (seen && seen.has(key)) {
                 return;
             }
@@ -1797,6 +1849,59 @@ class AIRPGChat {
         }
     }
 
+    async cancelAllPrompts({ waitForDrain = true, timeoutMs = 12000 } = {}) {
+        if (typeof waitForDrain !== 'boolean') {
+            throw new Error('waitForDrain must be a boolean.');
+        }
+
+        const normalizedTimeoutMs = Number(timeoutMs);
+        if (!Number.isFinite(normalizedTimeoutMs) || normalizedTimeoutMs < 0) {
+            throw new Error('timeoutMs must be a finite number >= 0.');
+        }
+
+        const response = await fetch('/api/prompts/cancel-all', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                waitForDrain,
+                timeoutMs: Math.floor(normalizedTimeoutMs)
+            })
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data?.success) {
+            const errorMessage = data?.error || `HTTP ${response.status}`;
+            throw new Error(`Failed to cancel prompts: ${errorMessage}`);
+        }
+        return data;
+    }
+
+    async cancelAllPromptsAndLoadLatestAutosave({ triggerButton = null } = {}) {
+        if (this.emergencyResetInProgress) {
+            throw new Error('Prompt reset already in progress.');
+        }
+
+        this.emergencyResetInProgress = true;
+        const originalLabel = triggerButton ? triggerButton.textContent : null;
+        if (triggerButton) {
+            triggerButton.disabled = true;
+            triggerButton.textContent = 'Resetting...';
+        }
+
+        try {
+            await this.cancelAllPrompts({ waitForDrain: true, timeoutMs: 12000 });
+            const autosaveName = await this.fetchLatestAutosaveName();
+            await this.loadAutosave(autosaveName);
+        } finally {
+            this.emergencyResetInProgress = false;
+            if (triggerButton && triggerButton.isConnected) {
+                triggerButton.disabled = false;
+                if (originalLabel !== null) {
+                    triggerButton.textContent = originalLabel;
+                }
+            }
+        }
+    }
+
     async fetchLatestAutosaveName() {
         const response = await fetch('/api/saves?type=autosaves', { cache: 'no-store' });
         const data = await response.json().catch(() => ({}));
@@ -1837,8 +1942,8 @@ class AIRPGChat {
         if (this.pendingRedoInProgress) {
             throw new Error('Redo already in progress.');
         }
-        if (this.pendingRequests && this.pendingRequests.size > 0) {
-            throw new Error('Wait for the current action to finish before redoing.');
+        if (this.emergencyResetInProgress) {
+            throw new Error('Prompt reset already in progress.');
         }
         if (!this.shouldShowRedoAction(entry)) {
             throw new Error('Only the most recent player action can be redone.');
@@ -1861,6 +1966,7 @@ class AIRPGChat {
                 sourceTimestamp: entry.timestamp || null
             });
 
+            await this.cancelAllPrompts({ waitForDrain: true, timeoutMs: 12000 });
             const autosaveName = await this.fetchLatestAutosaveName();
             await this.loadAutosave(autosaveName);
         } catch (error) {
@@ -2043,6 +2149,11 @@ class AIRPGChat {
             }
             this.closeEditModal();
             await this.refreshChatHistory();
+            try {
+                await window.refreshStoryTools?.({ preserveSelection: true });
+            } catch (refreshError) {
+                console.debug('Story Tools refresh skipped after edit:', refreshError);
+            }
         } catch (error) {
             console.warn('Failed to edit message:', error);
             alert(`Failed to edit message: ${error.message || error}`);
@@ -2077,6 +2188,11 @@ class AIRPGChat {
                 throw new Error(data?.error || `HTTP ${response.status}`);
             }
             await this.refreshChatHistory();
+            try {
+                await window.refreshStoryTools?.({ preserveSelection: true });
+            } catch (refreshError) {
+                console.debug('Story Tools refresh skipped after delete:', refreshError);
+            }
         } catch (error) {
             console.warn('Failed to delete message:', error);
             alert(`Failed to delete message: ${error.message || error}`);
@@ -2095,6 +2211,7 @@ class AIRPGChat {
 
     handleChatHistoryUpdated() {
         this.refreshChatHistory();
+        window.refreshStoryTools?.({ preserveSelection: true });
         try {
             window.refreshQuestPanel?.();
         } catch (error) {
@@ -2363,6 +2480,9 @@ class AIRPGChat {
             if (toggleButton && toggleButton.contains(event.target)) {
                 return;
             }
+            if (event.target && event.target.closest('.prompt-progress-overlay__actions')) {
+                return;
+            }
             const rect = overlay.getBoundingClientRect();
             this.promptProgressDragState.active = true;
             this.promptProgressDragState.pointerId = event.pointerId;
@@ -2531,6 +2651,27 @@ class AIRPGChat {
             timestampDiv.className = 'prompt-progress-overlay__timestamp';
             timestampDiv.textContent = renderTimestamp();
 
+            const actionDiv = document.createElement('div');
+            actionDiv.className = 'prompt-progress-overlay__actions';
+
+            const resetButton = document.createElement('button');
+            resetButton.type = 'button';
+            resetButton.className = 'prompt-progress-overlay__reset';
+            resetButton.textContent = 'Abort + Reload';
+            resetButton.title = 'Cancel all prompts and reload latest autosave';
+            resetButton.setAttribute('aria-label', 'Cancel all prompts and reload latest autosave');
+            resetButton.addEventListener('click', async () => {
+                if (resetButton.disabled) {
+                    return;
+                }
+                try {
+                    await this.cancelAllPromptsAndLoadLatestAutosave({ triggerButton: resetButton });
+                } catch (error) {
+                    const message = error?.message || String(error);
+                    this.addMessage('system', `Cancel/reload failed: ${message}`, true);
+                }
+            });
+
             const toggleButton = document.createElement('button');
             toggleButton.type = 'button';
             toggleButton.className = 'prompt-progress-overlay__toggle';
@@ -2553,7 +2694,9 @@ class AIRPGChat {
             metaDiv.appendChild(titleDiv);
             metaDiv.appendChild(timestampDiv);
             headerDiv.appendChild(metaDiv);
-            headerDiv.appendChild(toggleButton);
+            actionDiv.appendChild(resetButton);
+            actionDiv.appendChild(toggleButton);
+            headerDiv.appendChild(actionDiv);
             overlay.appendChild(headerDiv);
             overlay.appendChild(contentDiv);
             this.bindPromptProgressOverlayInteractions(overlay, headerDiv, toggleButton);
@@ -3338,6 +3481,123 @@ class AIRPGChat {
 
         this.chatLog.appendChild(messageDiv);
         this.scrollToBottom();
+    }
+
+    addDispositionChanges(changes) {
+        if (!Array.isArray(changes) || !changes.length) {
+            return;
+        }
+
+        const items = changes.filter(Boolean);
+        if (!items.length) {
+            return;
+        }
+
+        const toSummaryText = (change) => {
+            const npcName = change.npcName || change.name || 'Someone';
+            const typeLabel = change.typeLabel || change.typeKey || 'Disposition';
+            const deltaRaw = Number(change.delta);
+            const previousRaw = Number(change.previousValue);
+            const newRaw = Number(change.newValue);
+            const delta = Number.isFinite(deltaRaw)
+                ? deltaRaw
+                : (Number.isFinite(newRaw) && Number.isFinite(previousRaw)
+                    ? (newRaw - previousRaw)
+                    : 0);
+            if (!delta) {
+                return '';
+            }
+
+            const sign = delta > 0 ? '+' : '';
+            const beforeText = change.before ? String(change.before).trim() : '';
+            const afterText = change.after ? String(change.after).trim() : '';
+            let summary = `${npcName}'s ${typeLabel} disposition Δ ${sign}${Math.round(delta)}`;
+            if (beforeText || afterText) {
+                summary += ` (${beforeText || '?'} -> ${afterText || '?'})`;
+            }
+            const reason = change.reason ? String(change.reason).trim() : '';
+            if (reason) {
+                summary += ` - ${reason}`;
+            }
+            return summary;
+        };
+
+        if (this.activeEventBundle) {
+            items.forEach(change => {
+                const summary = toSummaryText(change);
+                if (summary) {
+                    this.addEventSummary('💞', summary);
+                }
+            });
+            this.markEventBundleRefresh();
+            return;
+        }
+
+        const lines = items
+            .map(toSummaryText)
+            .filter(Boolean)
+            .join('\n');
+        if (!lines) {
+            return;
+        }
+        this.renderStandaloneEventSummary('💞', lines);
+    }
+
+    addFactionReputationChanges(changes) {
+        if (!Array.isArray(changes) || !changes.length) {
+            return;
+        }
+
+        const items = changes.filter(Boolean);
+        if (!items.length) {
+            return;
+        }
+
+        const toSummaryText = (change) => {
+            const beforeRaw = Number(change.before);
+            const afterRaw = Number(change.after);
+            const amountRaw = Number(change.amount);
+            const amount = Number.isFinite(amountRaw)
+                ? amountRaw
+                : (Number.isFinite(afterRaw) && Number.isFinite(beforeRaw)
+                    ? (afterRaw - beforeRaw)
+                    : 0);
+            if (!amount) {
+                return '';
+            }
+
+            const factionName = change.factionName || change.factionId || 'a faction';
+            const sign = amount > 0 ? '+' : '';
+            let summary = `Reputation with ${factionName} ${sign}${Math.round(amount)}`;
+            if (Number.isFinite(afterRaw)) {
+                summary += ` (now ${Math.round(afterRaw)})`;
+            }
+            const reason = change.reason ? String(change.reason).trim() : '';
+            if (reason) {
+                summary += ` - ${reason}`;
+            }
+            return summary;
+        };
+
+        if (this.activeEventBundle) {
+            items.forEach(change => {
+                const summary = toSummaryText(change);
+                if (summary) {
+                    this.addEventSummary('🏳️', summary);
+                }
+            });
+            this.markEventBundleRefresh();
+            return;
+        }
+
+        const lines = items
+            .map(toSummaryText)
+            .filter(Boolean)
+            .join('\n');
+        if (!lines) {
+            return;
+        }
+        this.renderStandaloneEventSummary('🏳️', lines);
     }
 
     addEnvironmentalDamageEvents(events) {
@@ -5075,6 +5335,14 @@ class AIRPGChat {
             this.addNeedBarChanges(payload.needBarChanges);
             shouldRefreshLocation = true;
         }
+        if (Array.isArray(payload.dispositionChanges) && payload.dispositionChanges.length) {
+            this.addDispositionChanges(payload.dispositionChanges);
+            shouldRefreshLocation = true;
+        }
+        if (Array.isArray(payload.factionReputationChanges) && payload.factionReputationChanges.length) {
+            this.addFactionReputationChanges(payload.factionReputationChanges);
+            shouldRefreshLocation = true;
+        }
 
         if (Array.isArray(payload.corpseCountdownUpdates) && payload.corpseCountdownUpdates.length) {
             window.updateNpcCorpseVisuals?.(payload.corpseCountdownUpdates);
@@ -5159,6 +5427,12 @@ class AIRPGChat {
         }
         if (Array.isArray(turn.needBarChanges) && turn.needBarChanges.length) {
             this.addNeedBarChanges(turn.needBarChanges);
+        }
+        if (Array.isArray(turn.dispositionChanges) && turn.dispositionChanges.length) {
+            this.addDispositionChanges(turn.dispositionChanges);
+        }
+        if (Array.isArray(turn.factionReputationChanges) && turn.factionReputationChanges.length) {
+            this.addFactionReputationChanges(turn.factionReputationChanges);
         }
         if (Array.isArray(turn.corpseCountdownUpdates) && turn.corpseCountdownUpdates.length) {
             window.updateNpcCorpseVisuals?.(turn.corpseCountdownUpdates);

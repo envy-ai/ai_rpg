@@ -53,6 +53,7 @@ class Quest {
   rewardItems = [];
   rewardCurrency = 0;
   rewardXp = 0;
+  rewardFactionReputation = {};
   rewardClaimed = false;
   secretNotes = '';
   giverId = null;
@@ -62,6 +63,55 @@ class Quest {
 
   static #indexByName = new SanitizedStringMap();
   static #indexById = new Map();
+
+  static #normalizeRewardFactionReputation(value) {
+    if (value === null || value === undefined) {
+      return {};
+    }
+
+    let entries = null;
+    if (value instanceof Map) {
+      entries = Array.from(value.entries());
+    } else if (Array.isArray(value)) {
+      entries = value
+        .map((entry) => {
+          if (!entry || typeof entry !== 'object') {
+            return null;
+          }
+          const rawFactionId = typeof entry.factionId === 'string'
+            ? entry.factionId
+            : (typeof entry.name === 'string' ? entry.name : '');
+          const rawDelta = entry.delta ?? entry.amount ?? entry.value;
+          return [rawFactionId, rawDelta];
+        })
+        .filter(Boolean);
+    } else if (typeof value === 'object') {
+      entries = Object.entries(value);
+    } else {
+      throw new Error('rewardFactionReputation must be an object, array, or Map.');
+    }
+
+    const normalized = {};
+    for (const [rawFactionId, rawDelta] of entries) {
+      if (typeof rawFactionId !== 'string') {
+        throw new Error('rewardFactionReputation keys must be strings.');
+      }
+      const factionId = rawFactionId.trim();
+      if (!factionId) {
+        throw new Error('rewardFactionReputation keys must be non-empty strings.');
+      }
+      const delta = Number(rawDelta);
+      if (!Number.isFinite(delta) || !Number.isInteger(delta)) {
+        throw new Error(`rewardFactionReputation["${factionId}"] must be a finite integer.`);
+      }
+      if (delta === 0) {
+        continue;
+      }
+      normalized[factionId] = delta;
+    }
+
+    return normalized;
+  }
 
   constructor(options = {}) {
     const generatedId = `quest_${Math.random().toString(36).substr(2, 9)}`;
@@ -113,6 +163,9 @@ class Quest {
 
     const xpValue = Number(options.rewardXp);
     this.rewardXp = Number.isFinite(xpValue) ? Math.max(0, Math.floor(xpValue)) : 0;
+    this.rewardFactionReputation = Quest.#normalizeRewardFactionReputation(
+      options.rewardFactionReputation,
+    );
 
     this.rewardClaimed = Boolean(options.rewardClaimed);
     this.paused = Boolean(options.paused);
@@ -200,6 +253,7 @@ class Quest {
       rewardItems: Array.isArray(this.rewardItems) ? this.rewardItems.slice() : [],
       rewardCurrency: this.rewardCurrency,
       rewardXp: this.rewardXp,
+      rewardFactionReputation: { ...this.rewardFactionReputation },
       secretNotes: this.secretNotes || null,
       rewardClaimed: Boolean(this.rewardClaimed),
       paused: Boolean(this.paused),
@@ -240,6 +294,7 @@ class Quest {
       rewardItems,
       rewardCurrency: data.rewardCurrency,
       rewardXp: data.rewardXp,
+      rewardFactionReputation: data.rewardFactionReputation,
       secretNotes: typeof data.secretNotes === 'string' ? data.secretNotes : '',
       giverId,
       giverName,

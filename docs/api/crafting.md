@@ -18,7 +18,7 @@ Request:
   - Harvest info (used for harvest): `harvestItemId`, `harvestItemName`, `harvestItemDescription`, `harvestNotes`
 
 Response:
-- 200: `{ success: true, outcome, resultLevel, craftedItem, craftedItems, recoveredItems, consumedThingIds, narrative, plausibility, unmatchedConsumedNames, timeTakenHours, timeProgress, worldTime }`
+- 200: `{ success: true, outcome, resultLevel, craftedItem, craftedItems, recoveredItems, consumedThingIds, narrative, plausibility, unmatchedConsumedNames, timeTakenMinutes, timeProgress, worldTime }`
   - `outcome`: ActionResolution
   - `resultLevel`: string mapping the success degree (e.g., `success`, `failure`, `major_success`)
   - `craftedItem`: Thing | null
@@ -28,7 +28,7 @@ Response:
   - `narrative`: `{ description: string, otherEffect: string | null }`
   - `plausibility`: `{ type, reason }`
   - `unmatchedConsumedNames`: string[]
-  - `timeTakenHours`: number (hours applied to world-time advancement for this craft action)
+  - `timeTakenMinutes`: number (minutes applied to world-time advancement for this craft action)
   - `timeProgress`: object (world-time advancement result; shape mirrors chat/event time progression)
   - `worldTime`: object (updated serialized world-time payload)
 - 400: `{ success: false, error }` (invalid payload, implausible crafting, missing slots)
@@ -43,4 +43,4 @@ Notes:
   - Craft/process lines use `using <inputs>`.
 - Crafting/harvest prompts omit prior craft/harvest/process entries from base-context history to reduce duplicate actions.
 - Player-action prose generation uses `_includes/player-action-craft.njk` via `promptType=player-action-craft` and expects XML in `<result><description>...</description></result>` (with optional `<otherEffectDescription>`).
-- `timeTaken` is parsed from the selected crafting/salvage/harvest `<result>`. If invalid, the server logs an error, strips units and interprets the numeric portion as minutes (`value / 60`), and if still invalid defaults to `1/60` hour. A minimum of `1/60` hour is always advanced (including `timeTaken = 0`).
+- `timeTaken` is parsed from each crafting/salvage/harvest `<result>` using the shared duration parser (`HH:MM`, integer minutes, or explicit day/hour/minute units). If a result has an invalid `timeTaken`, the server logs a warning, skips that result entry, and continues parsing the others. A minimum of 1 minute is always advanced (including `timeTaken = 0`).

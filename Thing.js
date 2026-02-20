@@ -1719,16 +1719,7 @@ class Thing {
         }
         const attributes = Array.isArray(entry.attributes) ? entry.attributes : undefined;
         const skills = Array.isArray(entry.skills) ? entry.skills : undefined;
-        const duration = (() => {
-          if (entry.duration === undefined) {
-            return null;
-          }
-          const hasAppliedAt = Object.prototype.hasOwnProperty.call(entry, 'appliedAt');
-          if (hasAppliedAt && Number.isFinite(Number(entry.duration))) {
-            return `${Number(entry.duration)} hours`;
-          }
-          return entry.duration;
-        })();
+        const duration = entry.duration === undefined ? null : entry.duration;
         const name = typeof entry.name === 'string' ? entry.name : undefined;
         const appliedAt = Object.prototype.hasOwnProperty.call(entry, 'appliedAt')
           ? entry.appliedAt
@@ -1858,11 +1849,11 @@ class Thing {
         retained.push(effect);
         continue;
       }
-      const remainingMinutes = Math.max(0, Math.round(effect.duration * 60));
+      const remainingMinutes = Math.max(0, Math.round(effect.duration));
       const nextRemainingMinutes = Math.max(0, remainingMinutes - roundedMinutes);
       retained.push(new StatusEffect({
         ...effect.toJSON(),
-        duration: nextRemainingMinutes / 60,
+        duration: nextRemainingMinutes,
         appliedAt: Number.isFinite(effect.appliedAt) ? effect.appliedAt : null
       }));
       changed = true;

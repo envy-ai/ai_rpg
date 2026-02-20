@@ -3617,9 +3617,9 @@ function pruneAndDecrementStatusEffects(entity) {
                 if (!Number.isFinite(effect.duration) || effect.duration <= 0) {
                     return effect;
                 }
-                const remainingMinutes = Math.max(0, Math.round(effect.duration * 60));
+                const remainingMinutes = Math.max(0, Math.round(effect.duration));
                 const nextRemainingMinutes = Math.max(0, remainingMinutes - 1);
-                return { ...effect, duration: nextRemainingMinutes / 60 };
+                return { ...effect, duration: nextRemainingMinutes };
             });
             entity.setStatusEffects(ticked);
         }
@@ -3821,14 +3821,14 @@ function resolveRegionWeatherForPrompt({ region, location, worldTimeContext }) {
 
     const timeConfig = Globals.getTimeConfig();
     const dayIndex = Number(worldTimeContext?.dayIndex);
-    const timeHours = Number(worldTimeContext?.timeHours);
-    if (!Number.isFinite(dayIndex) || dayIndex < 0 || !Number.isFinite(timeHours) || timeHours < 0) {
+    const timeMinutes = Number(worldTimeContext?.timeMinutes);
+    if (!Number.isFinite(dayIndex) || dayIndex < 0 || !Number.isFinite(timeMinutes) || timeMinutes < 0) {
         throw new Error('World time context is invalid while resolving regional weather.');
     }
-    const totalHours = (dayIndex * timeConfig.cycleLengthHours) + timeHours;
+    const totalMinutes = (dayIndex * timeConfig.cycleLengthMinutes) + timeMinutes;
     return region.resolveCurrentWeather({
         seasonName: worldTimeContext?.season || null,
-        totalHours
+        totalMinutes
     });
 }
 
@@ -4013,7 +4013,7 @@ function buildBasePromptContext({
             if (typeof entry === 'string') {
                 const description = entry.trim();
                 if (!description) continue;
-                normalized.push({ description, duration: 1 / 60 });
+                normalized.push({ description, duration: 1 });
                 continue;
             }
 
@@ -4031,14 +4031,7 @@ function buildBasePromptContext({
                 if (rawDuration === null || rawDuration === undefined || rawDuration === '') {
                     duration = null;
                 } else {
-                    const hasAppliedAt = Object.prototype.hasOwnProperty.call(entry, 'appliedAt');
-                    try {
-                        duration = (hasAppliedAt && Number.isFinite(Number(rawDuration)))
-                            ? Number(rawDuration)
-                            : StatusEffect.normalizeDuration(rawDuration);
-                    } catch (_) {
-                        duration = 1 / 60;
-                    }
+                    duration = StatusEffect.normalizeDuration(rawDuration);
                 }
 
                 const effect = {
@@ -8997,6 +8990,61 @@ async function finalizeRegionEntry({ stubLocation, entranceLocation, region, ori
         // ensureExitConnection already handled replacement; no explicit removal required.
     }
 
+    // Defensive sweep: multiple locations can point at the same region-entry stub
+    // (for example when a pending stub is reused by name). Repoint all inbound
+    // exits before deleting the stub so no location keeps a stale destination.
+    for (const [sourceLocationId, sourceLocation] of gameLocations.entries()) {
+        if (!sourceLocation || sourceLocationId === stubLocation.id) {
+            continue;
+        }
+        if (
+            typeof sourceLocation.getAvailableDirections !== 'function'
+            || typeof sourceLocation.getExit !== 'function'
+        ) {
+            continue;
+        }
+
+        const directions = sourceLocation.getAvailableDirections();
+        for (const direction of directions) {
+            const sourceExit = sourceLocation.getExit(direction);
+            if (!sourceExit || sourceExit.destination !== stubLocation.id) {
+                continue;
+            }
+
+            // Avoid creating a self-referential loop on the entrance location.
+            if (sourceLocation.id === entranceLocation.id) {
+                if (typeof sourceLocation.removeExit === 'function') {
+                    sourceLocation.removeExit(direction);
+                }
+                if (sourceExit.id) {
+                    gameLocationExits.delete(sourceExit.id);
+                }
+                continue;
+            }
+
+            try {
+                sourceExit.destination = entranceLocation.id;
+            } catch (_) {
+                sourceExit.update({ destination: entranceLocation.id });
+            }
+
+            if (sourceExit.bidirectional === true) {
+                const reverseDestinationRegion = findRegionByLocationId(sourceLocation.id)?.id
+                    || sourceLocation.regionId
+                    || sourceLocation.stubMetadata?.regionId
+                    || null;
+
+                ensureExitConnection(entranceLocation, sourceLocation, {
+                    description: `Path back to ${sourceLocation.name || sourceLocation.id}`,
+                    bidirectional: false,
+                    destinationRegion: reverseDestinationRegion,
+                    isVehicle: Boolean(sourceExit.isVehicle),
+                    vehicleType: sourceExit.vehicleType || null
+                });
+            }
+        }
+    }
+
     const entranceMetadata = entranceLocation.stubMetadata ? { ...entranceLocation.stubMetadata } : {};
     if (metadata.originLocationId) {
         entranceMetadata.originLocationId = metadata.originLocationId;
@@ -9735,7 +9783,24 @@ function restoreCharacterHealthToMaximum(character) {
     }
 }
 
-async function generateItemsByNames({ itemNames = [], location = null, owner = null, region = null, seeds = [] } = {}) {
+async function generateItemsByNames({
+    itemNames = [],
+    location = null,
+    owner = null,
+    region = null,
+    seeds = [],
+    options = {}
+} = {}) {
+    const normalizedOptions = options && typeof options === 'object' && !Array.isArray(options)
+        ? options
+        : {};
+    const treatAsScenery = normalizedOptions.treatAsScenery === true;
+    const treatAsResource = normalizedOptions.treatAsResource === true;
+    const forcedThingType = (treatAsScenery || treatAsResource) ? 'scenery' : null;
+    if (forcedThingType === 'scenery' && owner) {
+        throw new Error('generateItemsByNames cannot create scenery directly into an inventory owner.');
+    }
+
     const normalized = Array.from(new Set(
         (itemNames || [])
             .map(name => (typeof name === 'string' ? name.trim() : ''))
@@ -9922,14 +9987,18 @@ async function generateItemsByNames({ itemNames = [], location = null, owner = n
             const requestLabel = (typeof requestedName === 'string' && requestedName.trim())
                 ? requestedName.trim()
                 : `auto_${index + 1}`;
-            const requestedThingType = typeof seed.itemOrScenery === 'string'
+            const seedThingType = typeof seed.itemOrScenery === 'string'
                 ? seed.itemOrScenery.trim().toLowerCase()
                 : null;
+            const requestedThingType = forcedThingType || (seedThingType === 'scenery' ? 'scenery' : (seedThingType === 'item' ? 'item' : null));
 
             const thingSeed = {
                 ...seed,
                 itemOrScenery: requestedThingType
             };
+            if (treatAsResource && thingSeed.isHarvestable === undefined) {
+                thingSeed.isHarvestable = true;
+            }
             if (requestedName) {
                 thingSeed.name = requestedName;
             } else {
@@ -9972,7 +10041,7 @@ async function generateItemsByNames({ itemNames = [], location = null, owner = n
 
                 const apiDurationSeconds = (Date.now() - requestStart) / 1000;
                 const parsedItems = await parseThingsXml(inventoryContent, {
-                    isInventory: true,
+                    isInventory: Boolean(owner),
                     promptEnv,
                     parseXMLTemplate,
                     prepareBasePromptContext
@@ -9980,6 +10049,18 @@ async function generateItemsByNames({ itemNames = [], location = null, owner = n
                 const itemData = parsedItems.find(it => it?.name) || parsedItems[0] || null;
                 if (!itemData) {
                     throw new Error('No item data returned by AI');
+                }
+                const parsedThingType = typeof itemData.itemOrScenery === 'string'
+                    ? itemData.itemOrScenery.trim().toLowerCase()
+                    : (typeof itemData.thingType === 'string' ? itemData.thingType.trim().toLowerCase() : '');
+                const effectiveThingType = forcedThingType || (parsedThingType === 'scenery' ? 'scenery' : 'item');
+                itemData.itemOrScenery = effectiveThingType;
+                itemData.thingType = effectiveThingType;
+
+                if (owner && effectiveThingType !== 'item') {
+                    throw new Error(
+                        `generateItemsByNames received non-item output "${effectiveThingType}" for owner-bound generation.`,
+                    );
                 }
 
                 const finalName = (() => {
@@ -10037,7 +10118,7 @@ async function generateItemsByNames({ itemNames = [], location = null, owner = n
                         : (resolvedRegion?.averageLevel || currentPlayer?.level || 1));
                 const computedLevel = clampLevel(baseReference + relativeLevel, baseReference);
 
-                const scaledAttributeBonuses = itemData?.itemOrScenery === 'item'
+                const scaledAttributeBonuses = effectiveThingType === 'item'
                     ? scaleAttributeBonusesForItem(
                         Array.isArray(itemData?.attributeBonuses) ? itemData.attributeBonuses : [],
                         { level: computedLevel, rarity: itemData?.rarity }
@@ -10061,7 +10142,7 @@ async function generateItemsByNames({ itemNames = [], location = null, owner = n
                 if (detailParts.length) {
                     descriptionParts.push(detailParts.join(' | '));
                 }
-                const composedDescription = descriptionParts.join(' ') || `An item named ${finalName}.`;
+                const composedDescription = descriptionParts.join(' ') || `A thing named ${finalName}.`;
 
                 const metadata = sanitizeMetadataObject({
                     rarity: itemData?.rarity || null,
@@ -10083,7 +10164,7 @@ async function generateItemsByNames({ itemNames = [], location = null, owner = n
                     name: finalName,
                     description: composedDescription,
                     shortDescription: itemData?.shortDescription ?? null,
-                    thingType: itemData?.thingType,
+                    thingType: effectiveThingType,
                     rarity: itemData?.rarity,
                     type: itemData?.type,
                     slot: itemData?.slot,

@@ -30,6 +30,19 @@ Response:
 - 200: `{ success: true, message }`
 - 400/404: `{ success: false, error }`
 
+## POST /api/prompts/cancel-all
+Cancel all tracked in-flight LLM prompts, with optional drain-wait.
+
+Request (optional):
+- Body: `{ waitForDrain?: boolean, timeoutMs?: number }`
+  - `waitForDrain` defaults to `true`.
+  - `timeoutMs` defaults to `5000` and is only used when `waitForDrain` is `true`.
+
+Response:
+- 200: `{ success: true, message, waitForDrain, timeoutMs, cancellation, drain }`
+- 400: `{ success: false, error }`
+- 408: `{ success: false, error }` (drain wait timed out)
+
 ## POST /api/prompts/:promptId/retry
 Abort the current in-flight LLM prompt attempt and immediately retry the same prompt call.
 

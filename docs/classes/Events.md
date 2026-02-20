@@ -11,11 +11,11 @@ Runs LLM-based event checks on narrative text, parses structured outcomes, and a
 
 ## Public API (Static)
 - `initialize(deps)`: registers dependencies and builds parsers/aggregators/handlers.
-- `runEventChecks({ textToCheck, stream, allowEnvironmentalEffects, isNpcTurn, suppressMoveEvents, allowMoveTurnAppearances, _depth, followupQueue })`:
+- `runEventChecks({ textToCheck, actionText, stream, allowEnvironmentalEffects, isNpcTurn, suppressMoveEvents, allowMoveTurnAppearances, _depth, followupQueue })`:
     - Renders event-check prompts, calls `LLMClient.chatCompletion`, parses `<final>` block responses, applies results.
 - `runQuestChecks({ allowWithoutEventChecks })`: LLM check for quest objective completion.
 - `applyEventOutcomes(parsedEvents, context)`: applies structured changes to world state.
-- `processQuestObjectiveCompletionEntries(entries, context)`: applies quest objective completion and rewards.
+- `processQuestObjectiveCompletionEntries(entries, context)`: applies quest objective completion and rewards (items/xp/currency plus per-faction reputation deltas when configured on the quest).
 - `mergeQuestOutcomesIntoStructured(parsedEvents, questOutcomes)`.
 - `extractItemAndSceneryNames(rawEvents)`.
 - `resolveLocationCandidate(candidate)`.
@@ -54,5 +54,9 @@ Runs LLM-based event checks on narrative text, parses structured outcomes, and a
 - `death_incapacitation` skips `dead` outcomes for NPCs already marked dead, preventing duplicate death application.
 - `suppressMoveEvents` skips applying `move_location` and `move_new_location` outcomes (useful for event-driven travel where movement is handled separately).
 - `allowMoveTurnAppearances` allows `item_appear` / `scenery_appear` handlers to run even when `Globals.processedMove` is true (used for `<travelProse>` event-check passes).
-- `time_passed` accepts `0` from event checks; when this occurs, Events still advances canonical world time by `1/60` hour (1 minute) to avoid fully static clocks on zero-time turns.
+- `_generateItemsIntoWorld` passes generation `options` to `generateItemsByNames`; `treatAsScenery` / `treatAsResource` now preserve scenery classification in generated `Thing` records.
+- `time_passed` parsing uses `Utils.parseDurationToMinutes` (`HH:MM`, integer minutes, or day/hour/minute units); malformed values are logged and skipped.
+- `time_passed` accepts `0` from event checks; when this occurs, Events still advances canonical world time by 1 minute to avoid fully static clocks on zero-time turns.
 - Arrow-delimited event parsing accepts both ASCII `->` and unicode arrows (for example `→`), preventing malformed NPC/item names when models emit typographic arrows.
+- `disposition_check` is parsed and applied directly to NPC disposition toward the current player, and applied deltas are emitted as `dispositionChanges`.
+- `faction_reputation_change` is parsed and applied to player faction standings with fixed magnitudes (`a little` = `1`, `a lot` = `4`, signed by increase/decrease); entries are ignored unless a witness from that faction is present at the current location or in the party, and applied deltas are emitted as `factionReputationChanges`.

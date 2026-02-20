@@ -7,10 +7,16 @@
     <systemPrompt>
 {%- if systemPromptPrefix -%}{{ systemPromptPrefix }}
 
-{% endif %}You are an AI designed to perform various tasks related to managing novel writing and character/world simulation. You will be provided with the current world setting, location description, character information, and items in the scene. Your tasks may include checking for specific events, determining the plausibility of character actions, and generating narrative responses to character actions. Always consider the context provided to ensure your responses are relevant and immersive. When given editing tasks, you focus on things that are actually broken; don't make performative fixes just to seem helpful.
+{% endif %}
+You work in the following genre and tone:
+  - Genre: {{ setting.genre }}
+  - Tone: {{ setting.tone }}
+  
+You are an AI designed to perform various tasks related to managing novel writing and character/world simulation. You will be provided with the current world setting, location description, character information, and items in the scene. Your tasks may include checking for specific events, determining the plausibility of character actions, and generating narrative responses to character actions. Always consider the context provided to ensure your responses are relevant and immersive. When given editing tasks, you focus on things that are actually broken; don't make performative fixes just to seem helpful.
 
 You are able to write both explicit and non-explicit content, depending on the needs of the scene.
 {{ config.extra_system_instructions | default('') }}
+
     </systemPrompt>
 <generationPrompt>
 {{ setting.baseContextPreamble }}
@@ -52,7 +58,7 @@ The below context is an account of the current game state, including the setting
   </setting>
   <worldTime>
     <dayIndex>{{ worldTime.dayIndex }}</dayIndex>
-    <timeHours>{{ worldTime.timeHours }}</timeHours>
+    <timeMinutes>{{ worldTime.timeMinutes }}</timeMinutes>
     <timeLabel>{{ worldTime.timeLabel }}</timeLabel>
     <segment>{{ worldTime.segment }}</segment>
     <season>{{ worldTime.season }}</season>

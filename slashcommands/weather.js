@@ -21,30 +21,36 @@ function renderTable(headers, rows) {
   return [headerLine, separatorLine, ...bodyLines].join('\n');
 }
 
-function formatHours(value) {
+function formatMinutes(value) {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) {
     return '-';
   }
-  if (Number.isInteger(numeric)) {
-    return String(numeric);
+  const rounded = Math.round(numeric);
+  if (rounded < 60) {
+    return `${rounded}m`;
   }
-  return numeric.toFixed(2).replace(/\.?0+$/, '');
+  const hours = Math.floor(rounded / 60);
+  const minutes = rounded % 60;
+  if (minutes === 0) {
+    return `${hours}h`;
+  }
+  return `${hours}h ${minutes}m`;
 }
 
 function formatDurationRange(range) {
   if (!range || typeof range !== 'object') {
     return '-';
   }
-  const minHours = Number(range.minHours);
-  const maxHours = Number(range.maxHours);
-  if (!Number.isFinite(minHours) || !Number.isFinite(maxHours)) {
+  const minMinutes = Number(range.minMinutes ?? (Number(range.minHours) * 60));
+  const maxMinutes = Number(range.maxMinutes ?? (Number(range.maxHours) * 60));
+  if (!Number.isFinite(minMinutes) || !Number.isFinite(maxMinutes)) {
     return '-';
   }
-  if (minHours === maxHours) {
-    return `${formatHours(minHours)}h`;
+  if (minMinutes === maxMinutes) {
+    return formatMinutes(minMinutes);
   }
-  return `${formatHours(minHours)}-${formatHours(maxHours)}h`;
+  return `${formatMinutes(minMinutes)}-${formatMinutes(maxMinutes)}`;
 }
 
 function resolveCurrentRegion() {

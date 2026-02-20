@@ -8,6 +8,7 @@ Start a new game session.
 Request:
 - Body supports: `playerName`, `playerDescription`, `playerClass`, `playerRace`, `playerLevel`, `startTime`, `startingLocation`, `startingCurrency`, `attributes`, `skills`, `clientId`, `requestId`
   - `startTime` is a 24-hour integer hour (`0`-`23`) and defaults to `9` when omitted.
+  - The selected `startTime` hour is converted to canonical world minutes at initialization (`hour * 60`).
 - Rejects `unspentSkillPoints` and `unspentAttributePoints` (400) because pools are formula-derived at read time.
 
 Response:

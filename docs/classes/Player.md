@@ -12,7 +12,7 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
 - Social: `#dispositions`, `#personalityType`, `#personalityTraits`, `#personalityNotes`.
 - Factions: `#factionId`, `#factionStandings` (map of `factionId -> number`).
 - Party/quests: `#partyMembers`, `#quests`, `#goals`, `#characterArc`.
-- Movement/turns: `#currentLocation`, `#previousLocationId`, `#elapsedTime`, `#lastVisitedTime`, `#inCombat`, `#lastActionWasTravel`, `#consecutiveTravelActions`.
+- Movement/turns: `#currentLocation`, `#previousLocationId`, `#elapsedTime` (minutes), `#lastVisitedTime` (minutes), `#inCombat`, `#lastActionWasTravel`, `#consecutiveTravelActions`.
 - Lifecycle: `#isDead`, `#corpseCountdown`.
 - Static indexes: `#indexById`, `#indexByName`.
 
@@ -31,7 +31,7 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
   - `getNeedBarDefinitionsForContext()`.
   - `setAvailableSkills(skillsInput)`, `getAvailableSkills()`.
 - Global behaviors:
-  - `applyStatusEffectNeedBarsToAll()` (applies need-bar deltas once per elapsed in-game minute and decrements finite status-effect durations by elapsed minutes, capped to remaining time).
+  - `applyStatusEffectNeedBarsToAll()` (uses canonical world minutes, initializes missing `appliedAt` stamps, applies need-bar deltas once per elapsed minute, and decrements finite status-effect durations by elapsed minutes capped to remaining time).
   - `updatePreviousLocationsForAll()`.
   - `setExperienceRolloverMultiplier(value)`.
 - Handlers:
@@ -122,6 +122,7 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
 - The class supports NPCs and players; many behaviors are shared with `isNPC` gating certain flows.
 - Gear and inventory are tightly coupled; equip/unequip flows update health and modifiers.
 - Need bar logic includes per-turn decay and magnitude-based adjustments.
+- `elapsedTime` is minute-canonical; setter validation requires non-negative integer minutes, and load paths normalize to integer minutes.
 - Unspent skill/attribute points are formula-derived at read time from current level + assigned stats/skills.
 - Party members are treated as off-location actors: joining party removes them from all location `npcIds` and clears `currentLocation`.
 - Direct unspent-point mutators (`setUnspent*`/`adjustUnspent*`) now throw by design.

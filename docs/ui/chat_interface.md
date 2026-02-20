@@ -4,12 +4,14 @@ The main UI is rendered by `views/index.njk` and powered by `public/js/chat.js` 
 
 ## Layout and tabs
 
-- Tab bar controls panels with ids `tab-adventure`, `tab-map`, `tab-world-map`, `tab-character`, `tab-quests`, `tab-factions`, `tab-party`.
+- Tab bar controls panels with ids `tab-adventure`, `tab-map`, `tab-world-map`, `tab-character`, `tab-quests`, `tab-factions`, `tab-party`, `tab-story-tools`.
+- On mobile (`max-width: 768px`), the tab bar itself (`.tab-bar`) scrolls horizontally with nowrap tab buttons so labels stay readable.
 - `initTabs()` in `views/index.njk` handles tab switching and updates `window.location.hash` as `#tab-{name}`.
 - Tab activation triggers:
   - `map` -> `window.loadRegionMap()`.
   - `world-map` -> `window.loadWorldMap()`.
   - `party` -> `window.refreshParty()`.
+  - `story-tools` -> `window.refreshStoryTools({ preserveSelection: true })`.
   - `factions` -> `window.refreshFactions()`.
 
 ## Adventure tab structure
@@ -17,6 +19,8 @@ The main UI is rendered by `views/index.njk` and powered by `public/js/chat.js` 
 - **Location panel** (`.location-block`):
   - Compact world-time chip at the top (`#worldTimeIndicator`) showing `HH:MM`, date label, and segment/season.
   - Image + context menu for edit/summon/regenerate.
+  - On mobile (`max-width: 768px`), item/NPC/location tooltips are constrained to `80vw` for readability.
+  - On touch/coarse-pointer devices, tapping any entity `•••` context-menu button temporarily suppresses floating tooltips so the menu remains reachable.
   - Exits list + "New Exit" button.
   - NPC list + "Add NPC" button.
   - Items/Scenery grids + "Craft" and "New Item/Scenery" buttons.
@@ -68,18 +72,19 @@ The chat client listens on `/ws?clientId=...` and handles:
 - `generation_status`, `region_generated`, `location_generated` (world generation status).
 - `location_exit_created`, `location_exit_deleted` (refresh location + map).
 - `image_job_update` (image job completion via `ImageGenerationManager`).
-- `chat_history_updated` (refresh history and quest panel).
-- `prompt_progress`, `prompt_progress_cleared` (floating top-left prompt-progress overlay with cancel/retry controls, contract/expand toggle, drag handle on the header, native resize handle, and a 3.5-second hidden-placeholder-row debounce before the empty table state is hidden).
+- `chat_history_updated` (refresh history, quest panel, and Story Tools data).
+- `prompt_progress`, `prompt_progress_cleared` (floating top-left prompt-progress overlay with per-prompt cancel/retry controls plus a header-level "Abort + Reload" action that cancels all tracked prompts and reloads the latest autosave; includes contract/expand toggle, drag handle on the header, native resize handle, and a 3.5-second hidden-placeholder-row debounce before the empty table state is hidden).
 - `quest_confirmation_request` (modal prompt).
 
 `processChatPayload()` also consumes `payload.worldTime` from streamed/final chat responses, updates the world-time chip, and emits transition summaries (`segment`/`season`) into the event-summary flow.
+It also renders `needBarChanges`, `dispositionChanges`, and `factionReputationChanges` into the same event-summary bundle box so they appear together.
 
 ## Key API calls from the chat UI
 
 Not exhaustive, but the core UI calls include:
 
 - `/api/chat` (send a new action).
-- `/api/chat/history` (reload server history).
+- `/api/chat/history` (reload server history; Story Tools uses `?includeAllEntries=true` to fetch unpruned/unfiltered entries, including hidden server-only entries).
 - `/api/chat/message` (edit/delete chat entries).
 - `/api/slash-command` (slash command execution).
 - `/api/quests/confirm` (quest confirmation).
@@ -126,11 +131,26 @@ Chat entries can include attachments rendered as inline "insights":
 Inline script functions in `views/index.njk` render these tabs:
 
 - `initQuestPanel()` uses `/api/quest/edit` and `/api/player/quests/:id`.
+  - Quest edit modal supports per-faction reputation reward deltas via multiline `faction name or id: +/-points` input.
 - `initFactionPanel()` uses `/api/factions` and `/api/player/factions/:id/standing`.
 - The faction form includes fields for name, home region, short description, description, tags, goals, assets, relations, reputation tiers, and player standing.
 - New faction creation now uses a dedicated modal (not `window.prompt`) with full faction fields (including assets/relations/reputation tiers).
+- The new-faction modal includes an optional "Generation Notes (AI Guidance)" field that is sent only to `/api/factions/fill-missing` to steer autofill.
 - On create submit, if any relevant faction fields are blank, the UI calls `/api/factions/fill-missing` before posting to `/api/factions`.
 - `initPartyDisplay()` renders party cards and ties into the chat sidebar.
+
+## Story Tools tab
+
+- `initStoryToolsPanel()` renders an editor-friendly history view for all chat entries.
+- Uses `GET /api/chat/history?includeAllEntries=true` to include hidden entries and entries that are normally omitted from client chat history.
+- Paging:
+  - Entries are ordered oldest-first.
+  - Pages are fixed at 250 entries each.
+  - Page tabs are shown in a vertical list on the left.
+  - Initial load defaults to the last page and auto-scrolls to the bottom so the latest entry is visible.
+- Each entry card shows metadata (`role`, `type`, visibility, timestamp, optional `locationId`/`parentId`) and an `Edit` action.
+- `Edit` reuses the shared chat edit modal by calling `window.AIRPG_CHAT.openEditModal(entry)`.
+- `window.refreshStoryTools()` is exposed globally and is triggered on tab activation and after edit/delete/chat-history updates.
 
 ## Player overview sync
 

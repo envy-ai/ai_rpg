@@ -20,14 +20,17 @@ Response:
 
 Notes:
 - Faction name `"None"` is reserved and cannot be created.
+- When at least one existing faction already exists, creation also runs `prompts/faction-inbound-relationships-generator.xml.njk` and applies generated inbound relations from existing factions toward the new faction (one generated relation per existing faction).
+- If inbound-relation generation/parsing fails, the create request fails with `500` (no silent fallback).
 
 ## POST /api/factions/fill-missing
 Auto-fill missing faction fields using AI while preserving provided values.
 
 Request:
-- Body: `{ faction: PartialFaction }`
+- Body: `{ faction: PartialFaction, generationNotes?: string }`
   - Supported faction fields: `name`, `homeRegionName`, `shortDescription`, `description`, `tags`, `goals`, `assets`, `relations`, `reputationTiers`.
   - `relations` may be an id-keyed relation object (same shape as `/api/factions`).
+  - `generationNotes` is optional free-text guidance forwarded into the AI autofill prompt.
 
 Behavior:
 - If no relevant fields are missing, the endpoint returns the normalized input payload unchanged.

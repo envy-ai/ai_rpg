@@ -8,13 +8,13 @@ Represents a temporary or permanent modifier applied to an entity, including att
   - `description` is required and must be a non-empty string.
   - `attributes` and `skills` are arrays of `{ attribute|skill, modifier }`.
   - `needBars` is an array of `{ name, delta }`.
-  - `duration` is normalized to **decimal hours**:
-    - Strings with units are converted (`"30 minutes"` -> `0.5`, `"2 hours"` -> `2`).
-    - Bare numeric strings and numeric inputs are treated as **minutes** (`5` -> `0.0833...`).
-    - `'instant'` -> `1/60`, `'permanent'`/`'continuous'` -> `-1`.
-    - When deserializing objects that already carry an `appliedAt` field, numeric durations are interpreted as already-normalized hours.
+  - `duration` is normalized to **minutes**:
+    - Accepted formats include `HH:MM`, integer minutes, and explicit day/hour/minute units.
+    - Bare numeric strings and numeric inputs are treated as **minutes**.
+    - `'instant'` -> `1`, `'permanent'`/`'continuous'` -> `-1`, `'none'`/`'n/a'` -> `null`.
+    - Numeric values must be integer minute counts (non-integer values throw).
   - Any negative duration is treated as infinite and does not decrement; `0` means expired.
-  - `appliedAt` is an optional non-negative world-time hour stamp used to compute elapsed minute ticks.
+  - `appliedAt` is an optional non-negative world-time minute stamp used to compute elapsed minute ticks.
   - Invalid duration strings raise a clear error so malformed prompts are surfaced.
 
 ## Instance API
@@ -32,9 +32,10 @@ Represents a temporary or permanent modifier applied to an entity, including att
 ## Private Helpers
 - `#normalizeModifiers(list, keyName)`: validates and normalizes attribute/skill modifier lists.
 - `#normalizeNeedBars(list)`: validates and normalizes need bar deltas.
-- `#normalizeDuration(value)`: converts duration inputs to decimal hours or null (throws on invalid inputs).
+- `#normalizeDuration(value)`: converts duration inputs to canonical minutes or null (throws on invalid inputs).
 - `#normalizeAppliedAt(value)`: validates optional world-time application timestamp.
 
 ## Notes
 - All normalizers throw clear errors on invalid structures or missing data.
+- Legacy save hour-to-minute conversion is handled at load migration time (`Utils.hydrateGameState`), not in `StatusEffect.fromJSON`.
 - `generateFromDescriptions` fails loudly on malformed XML or missing effect elements.

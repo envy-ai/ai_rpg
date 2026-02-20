@@ -11,7 +11,7 @@ Represents a game location, including description, exits, NPCs, items/scenery, a
 - Status effects: `#statusEffects`.
 - Stub support: `#isStub`, `#stubMetadata`, `#hasGeneratedStubs`, `#generationHints`.
 - Random events: `#randomEvents`.
-- Visit tracking: `#visited`, `#lastVisitedTime`.
+- Visit tracking: `#visited`, `#lastVisitedTime` (minute timestamp).
 - Concept tags: `#characterConcepts`, `#enemyConcepts`.
 - Static indexes: `#indexById`, `#indexByName`.
 
@@ -29,7 +29,7 @@ Represents a game location, including description, exits, NPCs, items/scenery, a
 - `regionId` (get/set) and `region` (get).
 - `controllingFactionId` (get/set).
 - Basic fields: `id`, `name`, `description`, `shortDescription`, `baseLevel`, `imageId`, `createdAt`, `lastUpdated`.
-- Visit tracking: `visited` (get/set), `lastVisitedTime` (get/set), `hoursSinceLastVisit()`.
+- Visit tracking: `visited` (get/set), `lastVisitedTime` (get/set, minutes), `hoursSinceLastVisit()` (legacy name; returns elapsed minutes).
 - Stub metadata: `isStub`, `stubMetadata` (get/set), `hasGeneratedStubs` (get/set).
 - `generationHints` (get/set).
 - Random events: `randomEvents` (get/set).

@@ -50,6 +50,100 @@ class Utils {
     return value > 0 ? Math.ceil(value) : Math.floor(value);
   }
 
+  static parseDurationToMinutes(value, { fieldName = 'duration' } = {}) {
+    const label = typeof fieldName === 'string' && fieldName.trim()
+      ? fieldName.trim()
+      : 'duration';
+    const throwWithTrace = (message) => {
+      console.trace(message);
+      throw new Error(message);
+    };
+
+    if (value === null || value === undefined) {
+      throwWithTrace(`${label} is required.`);
+    }
+
+    if (typeof value === 'number') {
+      if (!Number.isFinite(value) || value < 0 || !Number.isInteger(value)) {
+        throwWithTrace(`${label} must be a non-negative integer minute value.`);
+      }
+      return value;
+    }
+
+    if (typeof value !== 'string') {
+      throwWithTrace(`${label} must be a string or number.`);
+    }
+
+    const trimmed = value.trim();
+    if (!trimmed) {
+      throwWithTrace(`${label} must not be empty.`);
+    }
+
+    if (/^\d+$/.test(trimmed)) {
+      return Number(trimmed);
+    }
+
+    const hhmmMatch = trimmed.match(/^(\d+):([0-5]\d)$/);
+    if (hhmmMatch) {
+      const hours = Number(hhmmMatch[1]);
+      const minutes = Number(hhmmMatch[2]);
+      return (hours * 60) + minutes;
+    }
+
+    const normalized = trimmed
+      .toLowerCase()
+      .replace(/,/g, ' ')
+      .replace(/\band\b/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    const unitPattern = /(\d+)\s*(days?|d|hours?|hrs?|hr|h|minutes?|mins?|min|m)\b/g;
+    let cursor = 0;
+    let matched = false;
+    let totalMinutes = 0;
+
+    for (const match of normalized.matchAll(unitPattern)) {
+      matched = true;
+      const [segment, numericText, unitRaw] = match;
+      const segmentIndex = Number(match.index);
+      const between = normalized.slice(cursor, segmentIndex);
+      if (between.trim()) {
+        throwWithTrace(`${label} contains malformed separators or unknown units: "${value}".`);
+      }
+      if (cursor !== 0 && between.length === 0) {
+        throwWithTrace(`${label} must separate duration parts with spaces or commas: "${value}".`);
+      }
+
+      const amount = Number(numericText);
+      if (!Number.isFinite(amount)) {
+        throwWithTrace(`${label} contains an invalid numeric value: "${value}".`);
+      }
+
+      const unit = unitRaw.toLowerCase();
+      if (unit === 'day' || unit === 'days' || unit === 'd') {
+        totalMinutes += amount * 1440;
+      } else if (unit === 'hour' || unit === 'hours' || unit === 'hr' || unit === 'hrs' || unit === 'h') {
+        totalMinutes += amount * 60;
+      } else if (unit === 'minute' || unit === 'minutes' || unit === 'min' || unit === 'mins' || unit === 'm') {
+        totalMinutes += amount;
+      } else {
+        throwWithTrace(`${label} contains an unsupported unit "${unitRaw}".`);
+      }
+
+      cursor = segmentIndex + segment.length;
+    }
+
+    if (!matched) {
+      throwWithTrace(`${label} is invalid ('${value}'). Expected HH:MM, integer minutes, or day/hour/minute units.`);
+    }
+
+    if (normalized.slice(cursor).trim()) {
+      throwWithTrace(`${label} contains malformed separators or unknown units: "${value}".`);
+    }
+
+    return totalMinutes;
+  }
+
   static getMinimumUnmitigatedWeaponDamage(rarity, level) {
     const normalizedRarity = typeof rarity === 'string' ? rarity.trim() : '';
     if (!normalizedRarity) {
@@ -774,9 +868,243 @@ class Utils {
     return serialized;
   }
 
+  static #migrateLegacyHourValueToMinutes(value, { allowNegative = false } = {}) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) {
+      return value;
+    }
+    if (numeric < 0) {
+      return allowNegative ? numeric : value;
+    }
+    return Math.round(numeric * 60);
+  }
+
+  static #migrateLegacyWorldTimeSnapshotToMinutes(snapshot) {
+    if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) {
+      return;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(snapshot, 'timeMinutes')) {
+      const timeMinutes = Number(snapshot.timeMinutes);
+      if (Number.isFinite(timeMinutes) && timeMinutes >= 0) {
+        snapshot.timeMinutes = Math.round(timeMinutes);
+      }
+      return;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(snapshot, 'timeHours')) {
+      const timeMinutes = Utils.#migrateLegacyHourValueToMinutes(snapshot.timeHours);
+      if (Number.isFinite(Number(timeMinutes))) {
+        snapshot.timeMinutes = Number(timeMinutes);
+        delete snapshot.timeHours;
+      }
+    }
+  }
+
+  static #migrateLegacyStatusEffectEntryToMinutes(entry) {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+      return;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(entry, 'duration')) {
+      const duration = Number(entry.duration);
+      if (Number.isFinite(duration)) {
+        entry.duration = duration < 0 ? -1 : Math.round(duration * 60);
+      }
+    }
+
+    if (Object.prototype.hasOwnProperty.call(entry, 'appliedAt')) {
+      const appliedAt = Number(entry.appliedAt);
+      if (Number.isFinite(appliedAt) && appliedAt >= 0) {
+        entry.appliedAt = Math.round(appliedAt * 60);
+      }
+    }
+  }
+
+  static #migrateLegacyStatusEffectCollectionToMinutes(collection) {
+    if (!collection) {
+      return;
+    }
+    if (Array.isArray(collection)) {
+      for (const entry of collection) {
+        if (!entry || typeof entry !== 'object') {
+          continue;
+        }
+        Utils.#migrateLegacyStatusEffectEntryToMinutes(entry);
+        if (entry.effect && typeof entry.effect === 'object') {
+          Utils.#migrateLegacyStatusEffectEntryToMinutes(entry.effect);
+        }
+      }
+      return;
+    }
+    if (typeof collection === 'object') {
+      Utils.#migrateLegacyStatusEffectEntryToMinutes(collection);
+      if (collection.effect && typeof collection.effect === 'object') {
+        Utils.#migrateLegacyStatusEffectEntryToMinutes(collection.effect);
+      }
+    }
+  }
+
+  static #migrateLegacyWeatherDefinitionToMinutes(weather) {
+    if (!weather || typeof weather !== 'object' || Array.isArray(weather)) {
+      return;
+    }
+    const seasonWeather = Array.isArray(weather.seasonWeather) ? weather.seasonWeather : [];
+    for (const seasonEntry of seasonWeather) {
+      if (!seasonEntry || typeof seasonEntry !== 'object' || Array.isArray(seasonEntry)) {
+        continue;
+      }
+      const weatherTypes = Array.isArray(seasonEntry.weatherTypes) ? seasonEntry.weatherTypes : [];
+      for (const weatherType of weatherTypes) {
+        if (!weatherType || typeof weatherType !== 'object' || Array.isArray(weatherType)) {
+          continue;
+        }
+        const range = weatherType.durationRange;
+        if (!range || typeof range !== 'object' || Array.isArray(range)) {
+          continue;
+        }
+        const hasMinutes = Object.prototype.hasOwnProperty.call(range, 'minMinutes')
+          || Object.prototype.hasOwnProperty.call(range, 'maxMinutes');
+        if (hasMinutes) {
+          continue;
+        }
+        const minMinutes = Utils.#migrateLegacyHourValueToMinutes(range.minHours);
+        const maxMinutes = Utils.#migrateLegacyHourValueToMinutes(range.maxHours);
+        if (Number.isFinite(Number(minMinutes)) && Number.isFinite(Number(maxMinutes))) {
+          range.minMinutes = Number(minMinutes);
+          range.maxMinutes = Number(maxMinutes);
+          delete range.minHours;
+          delete range.maxHours;
+        }
+      }
+    }
+  }
+
+  static #migrateLegacyWeatherStateToMinutes(weatherState) {
+    if (!weatherState || typeof weatherState !== 'object' || Array.isArray(weatherState)) {
+      return;
+    }
+    const hasMinutes = Object.prototype.hasOwnProperty.call(weatherState, 'nextChangeMinutes')
+      || Object.prototype.hasOwnProperty.call(weatherState, 'durationMinutes');
+    if (hasMinutes) {
+      return;
+    }
+    const nextChangeMinutes = Utils.#migrateLegacyHourValueToMinutes(weatherState.nextChangeHours);
+    const durationMinutes = Utils.#migrateLegacyHourValueToMinutes(weatherState.durationHours);
+    if (Number.isFinite(Number(nextChangeMinutes)) && Number.isFinite(Number(durationMinutes))) {
+      weatherState.nextChangeMinutes = Number(nextChangeMinutes);
+      weatherState.durationMinutes = Number(durationMinutes);
+      delete weatherState.nextChangeHours;
+      delete weatherState.durationHours;
+    }
+  }
+
+  static #migrateLegacyHourBasedSaveToMinutes(serialized) {
+    if (!serialized || typeof serialized !== 'object' || Array.isArray(serialized)) {
+      return false;
+    }
+
+    const worldTime = serialized.worldTime;
+    const isLegacyWorldTime = Boolean(
+      worldTime
+      && typeof worldTime === 'object'
+      && !Array.isArray(worldTime)
+      && !Object.prototype.hasOwnProperty.call(worldTime, 'timeMinutes')
+      && Object.prototype.hasOwnProperty.call(worldTime, 'timeHours')
+    );
+
+    if (!isLegacyWorldTime) {
+      return false;
+    }
+
+    Utils.#migrateLegacyWorldTimeSnapshotToMinutes(serialized.worldTime);
+
+    const playersData = serialized.players && typeof serialized.players === 'object'
+      ? serialized.players
+      : {};
+    for (const payload of Object.values(playersData)) {
+      if (!payload || typeof payload !== 'object') {
+        continue;
+      }
+      if (Number.isFinite(Number(payload.elapsedTime)) && Number(payload.elapsedTime) >= 0) {
+        payload.elapsedTime = Utils.#migrateLegacyHourValueToMinutes(payload.elapsedTime);
+      }
+      if (Number.isFinite(Number(payload.lastVisitedTime)) && Number(payload.lastVisitedTime) >= 0) {
+        payload.lastVisitedTime = Utils.#migrateLegacyHourValueToMinutes(payload.lastVisitedTime);
+      }
+      Utils.#migrateLegacyStatusEffectCollectionToMinutes(payload.statusEffects);
+    }
+
+    const thingsData = serialized.things && typeof serialized.things === 'object'
+      ? serialized.things
+      : {};
+    for (const payload of Object.values(thingsData)) {
+      if (!payload || typeof payload !== 'object') {
+        continue;
+      }
+      Utils.#migrateLegacyStatusEffectCollectionToMinutes(payload.statusEffects);
+      Utils.#migrateLegacyStatusEffectCollectionToMinutes(payload.causeStatusEffect);
+      Utils.#migrateLegacyStatusEffectCollectionToMinutes(payload.causeStatusEffectOnTarget);
+      Utils.#migrateLegacyStatusEffectCollectionToMinutes(payload.causeStatusEffectOnEquipper);
+      const metadata = payload.metadata && typeof payload.metadata === 'object' ? payload.metadata : null;
+      if (metadata) {
+        Utils.#migrateLegacyStatusEffectCollectionToMinutes(metadata.causeStatusEffect);
+        Utils.#migrateLegacyStatusEffectCollectionToMinutes(metadata.causeStatusEffectOnTarget);
+        Utils.#migrateLegacyStatusEffectCollectionToMinutes(metadata.causeStatusEffectOnEquipper);
+      }
+    }
+
+    const worldData = serialized.gameWorld && typeof serialized.gameWorld === 'object'
+      ? serialized.gameWorld
+      : {};
+    const locationEntries = worldData.locations && typeof worldData.locations === 'object'
+      ? worldData.locations
+      : {};
+    for (const payload of Object.values(locationEntries)) {
+      if (!payload || typeof payload !== 'object') {
+        continue;
+      }
+      if (Number.isFinite(Number(payload.lastVisitedTime)) && Number(payload.lastVisitedTime) >= 0) {
+        payload.lastVisitedTime = Utils.#migrateLegacyHourValueToMinutes(payload.lastVisitedTime);
+      }
+      Utils.#migrateLegacyStatusEffectCollectionToMinutes(payload.statusEffects);
+    }
+
+    const regionEntries = worldData.regions && typeof worldData.regions === 'object'
+      ? worldData.regions
+      : {};
+    for (const payload of Object.values(regionEntries)) {
+      if (!payload || typeof payload !== 'object') {
+        continue;
+      }
+      if (Number.isFinite(Number(payload.lastVisitedTime)) && Number(payload.lastVisitedTime) >= 0) {
+        payload.lastVisitedTime = Utils.#migrateLegacyHourValueToMinutes(payload.lastVisitedTime);
+      }
+      Utils.#migrateLegacyStatusEffectCollectionToMinutes(payload.statusEffects);
+      Utils.#migrateLegacyWeatherDefinitionToMinutes(payload.weather);
+      Utils.#migrateLegacyWeatherStateToMinutes(payload.weatherState);
+    }
+
+    const metadata = serialized.metadata && typeof serialized.metadata === 'object'
+      ? serialized.metadata
+      : null;
+    if (metadata && metadata.offscreenNpcActivityState && typeof metadata.offscreenNpcActivityState === 'object') {
+      const offscreen = metadata.offscreenNpcActivityState;
+      Utils.#migrateLegacyWorldTimeSnapshotToMinutes(offscreen.lastDailyPromptWorldTime);
+      Utils.#migrateLegacyWorldTimeSnapshotToMinutes(offscreen.lastWeeklyPromptWorldTime);
+    }
+
+    return true;
+  }
+
   static hydrateGameState(serialized, context = {}) {
     if (!serialized || typeof serialized !== 'object') {
       throw new Error('hydrateGameState requires serialized data');
+    }
+
+    const migratedLegacyTimeData = Utils.#migrateLegacyHourBasedSaveToMinutes(serialized);
+    if (migratedLegacyTimeData) {
+      console.log('⏱️ Migrated legacy hour-based save fields to minute-based canonical values.');
     }
 
     const {
@@ -953,7 +1281,10 @@ class Utils {
         statusEffects: locationData.statusEffects || [],
         npcIds: locationData.npcIds || [],
         thingIds: locationData.thingIds || [],
-        randomEvents: Array.isArray(locationData.randomEvents) ? locationData.randomEvents : []
+        randomEvents: Array.isArray(locationData.randomEvents) ? locationData.randomEvents : [],
+        lastVisitedTime: Number.isFinite(Number(locationData.lastVisitedTime))
+          ? Number(locationData.lastVisitedTime)
+          : null
       });
 
       if (Object.prototype.hasOwnProperty.call(locationData, 'visited')) {

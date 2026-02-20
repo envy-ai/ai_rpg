@@ -10,8 +10,8 @@ Represents a region containing multiple locations, with metadata like average le
 - `#entranceLocationId`, `#parentRegionId`, `#controllingFactionId`.
 - `#statusEffects`, `#randomEvents`, `#averageLevel`, `#relativeLevel`.
 - `#numImportantNPCs`, `#characterConcepts`, `#enemyConcepts`, `#secrets`.
-- `#weather`, `#weatherState` for region-level dynamic weather definitions/state.
-- `#lastVisitedTime`.
+- `#weather`, `#weatherState` for region-level dynamic weather definitions/state (minute duration fields).
+- `#lastVisitedTime` (minutes).
 
 ## Construction
 - `new Region({...})` validates name/description and normalizes blueprints, events, levels, and status effects. Adds to static indexes.
@@ -29,12 +29,12 @@ Represents a region containing multiple locations, with metadata like average le
 - `locationBlueprints`, `locationIds` (get/set).
 - `entranceLocationId`, `parentRegionId` (get/set).
 - `controllingFactionId` (get/set).
-- `weather` (get/set), `weatherState` (get/set), `resolveCurrentWeather({ seasonName, totalHours })`.
+- `weather` (get/set), `weatherState` (get/set), `resolveCurrentWeather({ seasonName, totalMinutes })` (`totalHours` is still accepted as a compatibility fallback).
 - `randomEvents` (get/set), `addRandomEvent`, `removeRandomEvent`.
 - `numImportantNPCs` (get/set).
 - `relativeLevel` (get/set), `averageLevel` (get) with `setAverageLevel(level)`.
 - `characterConcepts`, `enemyConcepts`, `secrets` (get/set).
-- `lastVisitedTime` (get/set), `hoursSinceLastVisit(currentTime)`.
+- `lastVisitedTime` (get/set, minutes), `hoursSinceLastVisit(currentTime)` (legacy name; returns elapsed minutes).
 - Relationship helpers: `childRegions`, `siblingRegions`, `parentRegion`, `parentHierarchy`.
 
 ## Instance API
@@ -57,3 +57,5 @@ Represents a region containing multiple locations, with metadata like average le
 - `parentHierarchy` throws on circular references to surface data errors early.
 - Location blueprints now include both a two-paragraph `<description>` and one-sentence `<shortDescription>`; these are carried into stub metadata as `stubDescription`/`stubShortDescription`, including region stub expansions.
 - Region XML weather definitions (`<weather>`, `<seasonWeather>`, `<weatherType>`) are persisted and can drive dynamic per-season weather selection over elapsed world time.
+- Weather duration data is minute-canonical (`minMinutes`/`maxMinutes`, `durationMinutes`, `nextChangeMinutes`) with legacy hour fields accepted during load normalization.
+- If a weather type has an invalid duration string, Region logs a warning, skips that weather-type entry, and continues parsing remaining entries.

@@ -45,7 +45,7 @@ Response (200):
   - `eventChecksOrigin`, `eventChecksDestination`: string (HTML summaries when travel prose is split)
   - `events`: object | array
   - `eventsOrigin`, `eventsDestination`: object | array (structured events when travel prose is split)
-  - `experienceAwards`, `currencyChanges`, `environmentalDamageEvents`, `needBarChanges`: arrays
+  - `experienceAwards`, `currencyChanges`, `environmentalDamageEvents`, `needBarChanges`, `dispositionChanges`, `factionReputationChanges`: arrays
   - `questsAwarded`, `questRewards`, `questObjectivesCompleted`, `followupEventChecks`: arrays
   - `npcTurns`: array (NPC turn payloads)
   - `npcUpdates`: `{ added: string[], departed: string[], movedLocations: string[] }`
@@ -53,7 +53,7 @@ Response (200):
   - `corpseRemovals`, `corpseCountdownUpdates`: arrays
   - `worldTime`: object
     - `dayIndex`: number
-    - `timeHours`: number (decimal hours, internal canonical value)
+    - `timeMinutes`: number (canonical minute-of-day value)
     - `timeLabel`: string (`HH:MM`)
     - `dateLabel`: string
     - `segment`: string
@@ -81,6 +81,7 @@ Variants:
   - `@...`: saved normally in chat history as `user-generic-prompt` + `generic-prompt-response`.
   - `@@...`: saved in chat history, but marked so those entries are excluded from base-context history assembly.
   - `@@@...`: not persisted in server chat history at all (ephemeral display only), and skipped in future base-context history.
+  - All three generic prompt variants bypass slop-remover processing for that response.
 - When realtime streaming is enabled, the final response may omit `eventChecks`, `events`, and other event artifacts (they are stripped for streaming clients).
 - When travel prose is returned, event checks are split into origin/destination; the response includes `eventChecksOrigin`/`eventsOrigin` and `eventChecksDestination`/`eventsDestination`.
 - For `<travelProse>` turns, origin/destination event-check passes allow `item_appear` and `scenery_appear` outcomes to be applied even after movement is marked processed.
@@ -92,8 +93,8 @@ Variants:
 - Plot expander prompts append hidden `plot-expander` entries linked to the main turn entry. They are scheduled on eligible player action turns using `plot_expander_prompt_frequency` (default `10`, `0` disables), run asynchronously (fire-and-forget), and do not block event checks or response delivery. Old entries remain in saved chat history but are hidden from client history and excluded from normal base-context history assembly.
 - Offscreen NPC activity prompts also append hidden server-side entries (`offscreen-npc-activity-daily`, `offscreen-npc-activity-weekly`) linked to the main turn entry:
   - Twice daily when world time crosses `07:00` or `19:00`, requesting `offscreen_npc_activity_prompt_count` non-present NPC updates since last mention.
-  - For daily runs, the hidden heading reports elapsed in-game hours since the previous successful daily run (rounded to 1 decimal); first run uses the standard twice-daily heading.
-  - For weekly runs, the hidden heading reports elapsed in-game hours since the previous successful weekly run (rounded to 1 decimal); first run uses the standard weekly heading.
+  - For daily runs, the hidden heading reports elapsed in-game minutes since the previous successful daily run; first run uses the standard twice-daily heading.
+  - For weekly runs, the hidden heading reports elapsed in-game minutes since the previous successful weekly run; first run uses the standard weekly heading.
   - Weekly when world time crosses the weekly checkpoint (`dayIndex % 7 == 0` at `07:00`), requesting 15 non-present NPC updates over the past week, excluding names already surfaced by twice-daily prompts during that week.
   - If elapsed time crosses multiple offscreen checkpoints in one turn, only one offscreen NPC activity prompt runs for that turn.
   - When an offscreen entry marks an NPC as moved (`<moved>true</moved>`), the server attempts to update that NPC's `currentLocation` and location NPC lists using the reported region/location, and logs the result server-side only (no client-facing movement notification).
@@ -111,9 +112,15 @@ Returns pruned chat history (system entries and some summaries filtered).
 Notes:
 - Uses `client_message_history.max_messages` as a turn-based visibility cap for client history.
 - This is independent from `recent_history_turns`, which only affects base-context prompt construction.
+- Query options:
+  - `includeAllEntries=true|false` (default `false`): when `true`, returns the full stored `chatHistory` in oldest-first order with no pruning and no hidden/orphan filtering. Intended for Story Tools/admin-style views.
+  - Accepted boolean values: `true`, `false`, `1`, `0`, `yes`, `no`, `on`, `off`.
 
 Response (200):
 - `{ history: ChatEntry[], count: number, worldTime: object }` (no `success` flag)
+
+Errors:
+- 400: `{ error: string }` when `includeAllEntries` is provided but not a valid boolean value.
 
 ## DELETE /api/chat/history
 Clears chat history.

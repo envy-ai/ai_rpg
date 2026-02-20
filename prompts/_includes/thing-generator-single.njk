@@ -13,7 +13,7 @@
 {% endfor %}
 </equipmentSlots>
 
-<task>Generate a single item that's appropriate to the current setting, location and region. Strictly keep already filled in fields as they are, and fill in the rest of the fields in a way that makes sense with the existing ones.  Return it in this format:</task>
+<task>Generate a single thing (item or scenery) that's appropriate to the current setting, location and region. Strictly keep already filled in fields as they are, and fill in the rest of the fields in a way that makes sense with the existing ones.  Return it in this format:</task>
 
 {% if thingSeed.notes %}Additional instructions from the user:
 {{ thingSeed.notes }}
@@ -24,15 +24,15 @@
 </items>
 
 {% if thingSeed.rarity %}
-The item's rarity is {{ thingSeed.rarity }}: {{ thingSeed.rarityDescription }}
+The thing's rarity is {{ thingSeed.rarity }}: {{ thingSeed.rarityDescription }}
 {% else %}
-Choose the item's rarity from the defined rarity levels.
+Choose the thing's rarity from the defined rarity levels.
 {% endif %}
 
 Note that bonuses will be normalized to the rarity after generation, so use the full range of bonuses (-4 to +4) as needed.
 
 {% if thingSeed.name %}
-The item's name should be "{{ thingSeed.name }}".
+The thing's name should be "{{ thingSeed.name }}".
 {% else %}
-Choose an appropriate item name and include it in the <name> field.
+Choose an appropriate thing name and include it in the <name> field.
 {% endif %}

@@ -74,7 +74,7 @@ class Player {
     #partyMembersAddedThisTurn = new Set();
     #partyMembersRemovedThisTurn = new Set();
     #elapsedTime = 0;
-    #lastVisitedTime = 0; // Decimal hours since last visit by player.
+    #lastVisitedTime = 0; // Minutes since last visit by player.
     #inCombat = false;
     #checkEquipment = false;
     #characterArc = { shortTerm: '', longTerm: '' };
@@ -834,25 +834,17 @@ class Player {
      */
     static applyStatusEffectNeedBarsToAll() {
         const adjustments = [];
-        let currentWorldHours = null;
+        let currentWorldMinutes = null;
         try {
-            if (typeof Globals?.getTotalWorldHours === 'function') {
-                const resolved = Number(Globals.getTotalWorldHours());
+            if (typeof Globals?.getTotalWorldMinutes === 'function') {
+                const resolved = Number(Globals.getTotalWorldMinutes());
                 if (Number.isFinite(resolved) && resolved >= 0) {
-                    currentWorldHours = resolved;
+                    currentWorldMinutes = resolved;
                 }
             }
         } catch (error) {
             console.warn('Failed to resolve current world time for status effect processing:', error?.message || error);
         }
-
-        const minutesFromHours = (hours) => {
-            const numeric = Number(hours);
-            if (!Number.isFinite(numeric)) {
-                return null;
-            }
-            return Math.max(0, Math.round(numeric * 60));
-        };
 
         for (const player of this.#instances) {
             if (!player || !Array.isArray(player.#statusEffects) || !player.#statusEffects.length) {
@@ -865,8 +857,8 @@ class Player {
                     continue;
                 }
 
-                const baselineHours = Number.isFinite(currentWorldHours) && currentWorldHours >= 0
-                    ? currentWorldHours
+                const baselineMinutes = Number.isFinite(currentWorldMinutes) && currentWorldMinutes >= 0
+                    ? currentWorldMinutes
                     : (() => {
                         try {
                             if (!player.isNPC) {
@@ -877,28 +869,27 @@ class Player {
                         }
                         return null;
                     })();
-                if (!Number.isFinite(baselineHours) || baselineHours < 0) {
+                if (!Number.isFinite(baselineMinutes) || baselineMinutes < 0) {
                     continue;
                 }
 
                 // Initialize missing application timestamp without backfilling past time.
                 const hasAppliedAt = Number.isFinite(effect.appliedAt) && effect.appliedAt >= 0;
                 if (!hasAppliedAt) {
-                    effect.appliedAt = baselineHours;
+                    effect.appliedAt = baselineMinutes;
                     playerChanged = true;
                     continue;
                 }
 
-                let elapsedHours = baselineHours - effect.appliedAt;
-                if (!Number.isFinite(elapsedHours) || elapsedHours <= 0) {
-                    if (Number.isFinite(elapsedHours) && elapsedHours < 0) {
-                        effect.appliedAt = baselineHours;
+                let elapsedMinutes = Math.floor(baselineMinutes - effect.appliedAt);
+                if (!Number.isFinite(elapsedMinutes) || elapsedMinutes <= 0) {
+                    if (Number.isFinite(elapsedMinutes) && elapsedMinutes < 0) {
+                        effect.appliedAt = baselineMinutes;
                         playerChanged = true;
                     }
                     continue;
                 }
 
-                let elapsedMinutes = Math.floor(elapsedHours * 60);
                 // If a tiny positive elapsed duration gets floored to 0, force one tick.
                 if (elapsedMinutes <= 0) {
                     elapsedMinutes = 1;
@@ -906,19 +897,18 @@ class Player {
 
                 let ticksToApply = elapsedMinutes;
                 if (Number.isFinite(effect.duration) && effect.duration >= 0) {
-                    const remainingMinutes = minutesFromHours(effect.duration) ?? 0;
+                    const remainingMinutes = Math.max(0, Math.round(effect.duration));
                     if (remainingMinutes <= 0) {
                         effect.duration = 0;
-                        effect.appliedAt = baselineHours;
+                        effect.appliedAt = baselineMinutes;
                         playerChanged = true;
                         continue;
                     }
 
                     ticksToApply = Math.min(ticksToApply, remainingMinutes);
                     const nextRemainingMinutes = Math.max(0, remainingMinutes - ticksToApply);
-                    const nextDurationHours = nextRemainingMinutes / 60;
-                    if (effect.duration !== nextDurationHours) {
-                        effect.duration = nextDurationHours;
+                    if (effect.duration !== nextRemainingMinutes) {
+                        effect.duration = nextRemainingMinutes;
                         playerChanged = true;
                     }
                 }
@@ -977,7 +967,7 @@ class Player {
                     }
                 }
 
-                effect.appliedAt = baselineHours;
+                effect.appliedAt = baselineMinutes;
                 playerChanged = true;
             }
 
@@ -1279,7 +1269,7 @@ class Player {
         this.#factionId = Player.#normalizeFactionId(options.factionId);
         this.#factionStandings = Player.#normalizeFactionStandings(options.factionStandings);
         this.#elapsedTime = Number.isFinite(options.elapsedTime) && options.elapsedTime > 0
-            ? options.elapsedTime
+            ? Math.round(options.elapsedTime)
             : 0;
 
         const personalityOption = options.personality && typeof options.personality === 'object'
@@ -2689,8 +2679,8 @@ class Player {
         if (this.#isNPC) {
             throw new Error('Elapsed time cannot be set for NPCs');
         }
-        if (!Number.isFinite(value) || value < 0) {
-            throw new Error('Elapsed time must be a non-negative number');
+        if (!Number.isFinite(value) || value < 0 || !Number.isInteger(value)) {
+            throw new Error('Elapsed time must be a non-negative integer minute value');
         }
         this.#elapsedTime = value;
         this.#lastUpdated = new Date().toISOString();
@@ -3300,10 +3290,10 @@ class Player {
             }
 
             try {
-                if (typeof Globals?.getTotalWorldHours === 'function') {
-                    const worldHours = Number(Globals.getTotalWorldHours());
-                    if (Number.isFinite(worldHours) && worldHours >= 0) {
-                        return worldHours;
+                if (typeof Globals?.getTotalWorldMinutes === 'function') {
+                    const worldMinutes = Number(Globals.getTotalWorldMinutes());
+                    if (Number.isFinite(worldMinutes) && worldMinutes >= 0) {
+                        return worldMinutes;
                     }
                 }
             } catch (_) {
@@ -3347,16 +3337,7 @@ class Player {
                 const attributes = Array.isArray(entry.attributes) ? entry.attributes : undefined;
                 const skills = Array.isArray(entry.skills) ? entry.skills : undefined;
                 const needBars = Array.isArray(entry.needBars) ? entry.needBars : undefined;
-                const duration = (() => {
-                    if (entry.duration === undefined) {
-                        return null;
-                    }
-                    const hasAppliedAt = Object.prototype.hasOwnProperty.call(entry, 'appliedAt');
-                    if (hasAppliedAt && Number.isFinite(Number(entry.duration))) {
-                        return `${Number(entry.duration)} hours`;
-                    }
-                    return entry.duration;
-                })();
+                const duration = entry.duration === undefined ? null : entry.duration;
                 const appliedAt = entry.appliedAt !== undefined ? entry.appliedAt : defaultAppliedAt;
 
                 normalized.push(new StatusEffect({
@@ -3582,9 +3563,9 @@ class Player {
                 continue;
             }
 
-            const remainingMinutes = Math.max(0, Math.round(effect.duration * 60));
+            const remainingMinutes = Math.max(0, Math.round(effect.duration));
             const nextRemainingMinutes = Math.max(0, remainingMinutes - roundedMinutes);
-            const nextDuration = nextRemainingMinutes / 60;
+            const nextDuration = nextRemainingMinutes;
 
             retained.push(new StatusEffect({
                 ...effect.toJSON(),
@@ -4526,7 +4507,7 @@ class Player {
         });
 
         if (Number.isFinite(data.elapsedTime)) {
-            player.#elapsedTime = Math.max(0, data.elapsedTime);
+            player.#elapsedTime = Math.max(0, Math.round(data.elapsedTime));
         } else {
             player.#elapsedTime = 0;
         }

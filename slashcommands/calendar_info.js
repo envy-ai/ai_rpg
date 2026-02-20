@@ -101,7 +101,7 @@ class CalendarInfoCommand extends SlashCommandBase {
       '',
       `- Year Name: **${escapeMarkdownCell(calendar.yearName || '-')}**`,
       `- Day Index: **${escapeMarkdownCell(worldTime.dayIndex)}**`,
-      `- Time: **${escapeMarkdownCell(worldTime.timeLabel)}** (${escapeMarkdownCell(worldTime.timeHours)}h)`,
+      `- Time: **${escapeMarkdownCell(worldTime.timeLabel)}** (${escapeMarkdownCell(worldTime.timeMinutes)} minutes)`,
       `- Date: **${escapeMarkdownCell(worldTime.dateLabel)}**`,
       `- Segment: **${escapeMarkdownCell(worldTime.segment)}**`,
       `- Season: **${escapeMarkdownCell(worldTime.season)}**`,
@@ -128,4 +128,3 @@ class CalendarInfoCommand extends SlashCommandBase {
 }
 
 module.exports = CalendarInfoCommand;
-

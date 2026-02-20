@@ -209,6 +209,80 @@ class LLMClient {
         });
     }
 
+    static cancelAllPrompts(reason = 'Prompt canceled by user') {
+        const resolvedReason = typeof reason === 'string' && reason.trim()
+            ? reason.trim()
+            : 'Prompt canceled by user';
+        const entries = Array.from(LLMClient.#abortControllers.entries());
+        const canceledPromptIds = [];
+        const cancellationErrors = [];
+
+        for (const [streamId, controller] of entries) {
+            if (!controller) {
+                cancellationErrors.push(`Prompt '${streamId}' has no abort controller.`);
+                continue;
+            }
+
+            LLMClient.#controllerAbortIntents.set(controller, 'cancel');
+            LLMClient.#abortControllers.delete(streamId);
+            try {
+                controller.abort(new Error(resolvedReason));
+                canceledPromptIds.push(streamId);
+            } catch (error) {
+                const message = error?.message || String(error);
+                cancellationErrors.push(`Prompt '${streamId}' failed to cancel: ${message}`);
+            }
+        }
+
+        if (cancellationErrors.length) {
+            throw new Error(cancellationErrors.join(' '));
+        }
+
+        return {
+            canceledCount: canceledPromptIds.length,
+            canceledPromptIds,
+            trackedBefore: entries.length,
+            trackedAfter: LLMClient.#abortControllers.size,
+            activeAfterRequest: LLMClient.#streamProgress.active.size
+        };
+    }
+
+    static async waitForPromptDrain({ timeoutMs = 5000, pollIntervalMs = 50 } = {}) {
+        const normalizedTimeoutMs = Number(timeoutMs);
+        if (!Number.isFinite(normalizedTimeoutMs) || normalizedTimeoutMs < 0) {
+            throw new Error('waitForPromptDrain timeoutMs must be a finite number >= 0.');
+        }
+
+        const normalizedPollIntervalMs = Number(pollIntervalMs);
+        if (!Number.isFinite(normalizedPollIntervalMs) || normalizedPollIntervalMs <= 0) {
+            throw new Error('waitForPromptDrain pollIntervalMs must be a finite number > 0.');
+        }
+
+        const startedAt = Date.now();
+        const timeoutAt = startedAt + Math.floor(normalizedTimeoutMs);
+
+        while (true) {
+            const activeCount = LLMClient.#streamProgress.active.size;
+            const trackedCount = LLMClient.#abortControllers.size;
+            if (activeCount === 0 && trackedCount === 0) {
+                return {
+                    elapsedMs: Date.now() - startedAt,
+                    activeCount,
+                    trackedCount
+                };
+            }
+
+            if (Date.now() >= timeoutAt) {
+                throw new Error(
+                    `Timed out waiting for prompt drain after ${Math.floor(normalizedTimeoutMs)}ms `
+                    + `(active=${activeCount}, tracked=${trackedCount}).`
+                );
+            }
+
+            await new Promise(resolve => setTimeout(resolve, Math.floor(normalizedPollIntervalMs)));
+        }
+    }
+
     static #abortPrompt(streamId, { reason = 'Prompt canceled by user', mode = 'cancel' } = {}) {
         const resolvedId = typeof streamId === 'string' ? streamId.trim() : '';
         if (!resolvedId) {

@@ -26,7 +26,8 @@ Centralized static state and helpers used across the server. Provides access to 
   - `ensureWorldTimeInitialized({ settingName })`
   - `resetWorldTime({ settingName, calendarDefinition })`
   - `hydrateWorldTime({ worldTime, calendarDefinition, settingName })`
-  - `advanceTime(hours, { source })`
+  - `getTotalWorldMinutes()`
+  - `advanceTime(minutes, { source })`
   - `getTimeSegment(worldTime?)` / `getSeason(worldTime?)`
   - `getCalendarDate(worldTime?)`
   - `getLightLevelDescription(worldTime?)`
@@ -44,6 +45,7 @@ Centralized static state and helpers used across the server. Provides access to 
 ## Notes
 - Many getters warn if `Globals.config` is missing to avoid silent failures.
 - `currentPlayer` setter also installs a resolver in `Player` when available.
+- Canonical world time is minute-based: `worldTime = { dayIndex, timeMinutes }`.
 - World-time init/context helpers now use an internal non-recursive path (`skipEnsure`)
   so `ensureWorldTimeInitialized()` can safely return full time context.
 - Built-in calendar generation is Gregorian (no leap-year/day handling) and acts as
