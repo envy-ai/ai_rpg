@@ -34,6 +34,10 @@ Respond in the below format, making sure that <npcInfo> is the root tag and encl
             <faction><!-- Full faction name from the list or "None" --></faction>
             <race>{% if npc.race %}{{ npc.race }}{% else %}<!--Species or origin.-->{% endif %}</race>
 
+            <!-- Only list things for resistances and vulnerabilities if they would differ significantly from a typical human. For example, if the NPC is a fire elemental, you might list "fire" under resistances and "cold" under vulnerabilities. If the NPC is a normal human with no particular resistances or vulnerabilities, leave these blank. For instance, humans aren't considered vulnerable to fire, as they take standard damage from it.-->
+            <resistances>{% if npc.resistances %}{{ npc.resistances }}{% else %}<!--Any specific resistances, immunities, or things that are ineffective against them. Leave blank if none. Example: "slashing (resistant), cold (immune), charm effects (resistant)" -->{% endif %}</resistances>
+            <vulnerabilities>{% if npc.vulnerabilities %}{{ npc.vulnerabilities }}{% else %}<!--Any specific vulnerabilities, weaknesses, or things that can be used against them. Leave blank if none. Example: "fire (extremely vulnerable), light (vulnerable), any magic (vulnerable)" -->{% endif %}</vulnerabilities>
+
             <gender>{% if npc.gender %}{{ npc.gender }}{% else %}<!--male, female, none, or other-->{% endif %}</gender>
             <isHostile>{% if npc.isHostile is defined -%}{% if npc.isHostile in [true, 'true', 'True', 1, '1', 'yes', 'Yes', 'hostile', 'Hostile'] %}true{% else %}false{% endif %}{%- else -%}<!--true or false-->{%- endif %}</isHostile>
             <relativeLevel>{% if npc.relativeLevel %}{{ npc.relativeLevel }}{% else %}<!--Integer from -3 to +3-->{% endif %}</relativeLevel>
@@ -43,7 +47,7 @@ Respond in the below format, making sure that <npcInfo> is the root tag and encl
         {% endfor %}
             </attributes>
             <personality>
-                <type><!-- Myers-Briggs type, -dere archetype, Enneagram type, Expanded 5x5 DnD alignment, or "automaton", as appropriate - whatever works best. Optionally, 2 types separated by commas, so long as they make sense together. --></type>
+                <type><!-- -dere archetype, Enneagram type, Expanded 5x5 DnD alignment, or similar short description. Optionally, 2 types separated by commas, so long as they make sense together. Then a short 2 sentence description of how they aren't just the stereotype of that personality. --></type>
                 <traits><!-- optionally, any neurodivergences or mental health conditions (e.g. ADHD, autism, anxiety, depression, bipolar, PTSD, sociopathy, psychopathy, mania, any phobias, etc). Comma separated, usually none, no more than 3 --></traits>
                 <characterArc>
                     <shortTerm><!-- A brief description of the NPC's short-term active personal growth arc --></shortTerm>  

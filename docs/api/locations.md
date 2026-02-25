@@ -105,12 +105,15 @@ Responses:
 ## POST /api/locations/:id/npcs
 
 Request:
-- Body supports seed fields: `name` (required), `description`, `shortDescription`, `role`, `class`, `race`,
+- Body supports seed fields: `name` (optional), `description`, `shortDescription`, `role`, `class`, `race`,
   `currency`, `level`, `isHostile`, `notes`, plus optional `imageDataUrl` + `imageDataUrlOriginal` (PNG data URLs)
 
 Responses:
 - 200: `{ success: true, npc: NpcProfile, location: LocationResponse, message }`
 - 400/404/500: `{ success: false, error }`
+
+Notes:
+- Concurrent requests are supported. In-flight dedupe only applies when an explicit non-empty `name` is provided.
 
 ## POST /api/locations/:id/things
 

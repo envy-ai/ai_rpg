@@ -6,6 +6,7 @@
   margin: 0;
   padding: 0;
   box-sizing: border-box;
+  @include themed-scrollbar();
 }
 
 body {
@@ -246,14 +247,7 @@ p:not(:last-child) {
 }
 
 .npc-selection-body {
-  &::-webkit-scrollbar {
-    width: 8px;
-  }
-
-  &::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.15);
-    border-radius: 999px;
-  }
+  @include themed-scrollbar();
 }
 
 .quest-panel {
@@ -1190,19 +1184,7 @@ p:not(:last-child) {
   }
 
   // Custom scrollbar for location block
-  &::-webkit-scrollbar {
-    width: 8px;
-  }
-
-  &::-webkit-scrollbar-track {
-    background: $glass-bg;
-    border-radius: 4px;
-  }
-
-  &::-webkit-scrollbar-thumb {
-    background: $white-30;
-    border-radius: 4px;
-  }
+  @include themed-scrollbar();
 
   img {
     max-width: 100%;
@@ -2586,20 +2568,7 @@ body.dark .thing-toggle-hint {
   overflow-y: auto;
   max-height: 100%;
   padding-right: 4px;
-
-  &::-webkit-scrollbar {
-    width: 8px;
-  }
-
-  &::-webkit-scrollbar-track {
-    background: rgba(15, 23, 42, 0.3);
-    border-radius: 999px;
-  }
-
-  &::-webkit-scrollbar-thumb {
-    background: rgba(148, 163, 184, 0.45);
-    border-radius: 999px;
-  }
+  @include themed-scrollbar();
 }
 
 .story-tools-page-button {
@@ -2658,20 +2627,7 @@ body.dark .thing-toggle-hint {
   min-height: 0;
   flex: 1;
   padding-right: 6px;
-
-  &::-webkit-scrollbar {
-    width: 8px;
-  }
-
-  &::-webkit-scrollbar-track {
-    background: rgba(15, 23, 42, 0.35);
-    border-radius: 999px;
-  }
-
-  &::-webkit-scrollbar-thumb {
-    background: rgba(148, 163, 184, 0.45);
-    border-radius: 999px;
-  }
+  @include themed-scrollbar();
 }
 
 .story-tools-entry {
@@ -3623,19 +3579,7 @@ body.dark .thing-toggle-hint {
   line-height: 1.6;
 
   // Custom scrollbar
-  &::-webkit-scrollbar {
-    width: 8px;
-  }
-
-  &::-webkit-scrollbar-track {
-    background: $glass-bg;
-    border-radius: 4px;
-  }
-
-  &::-webkit-scrollbar-thumb {
-    background: $white-30;
-    border-radius: 4px;
-  }
+  @include themed-scrollbar();
 }
 
 // Messages
@@ -4051,7 +3995,7 @@ body.dark .thing-toggle-hint {
     overflow-x: auto;
     overflow-y: hidden;
     -webkit-overflow-scrolling: touch;
-    scrollbar-width: thin;
+    @include themed-scrollbar();
   }
 
   .tab-button {
@@ -4889,20 +4833,7 @@ body.dark .thing-toggle-hint {
       max-height: 200px;
       overflow-y: auto;
       color: $white-70;
-
-      &::-webkit-scrollbar {
-        width: 4px;
-      }
-
-      &::-webkit-scrollbar-track {
-        background: rgba(255, 255, 255, 0.1);
-        border-radius: 2px;
-      }
-
-      &::-webkit-scrollbar-thumb {
-        background: $white-30;
-        border-radius: 2px;
-      }
+      @include themed-scrollbar();
     }
   }
 }

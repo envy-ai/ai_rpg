@@ -61,7 +61,12 @@ This page maps routes to templates and the client scripts/styles they load.
   - `currentPage` only. Data is loaded via `/api/settings` calls.
 - Notes: uses a master-detail layout with a left settings library and a right editor panel.
 - Notes: the left panel includes search (`name/theme/genre/tone/difficulty`), sort controls, and selection-scoped actions (`Edit`, `Apply`, `Clone`, `Delete`), instead of per-row action buttons.
-- Notes: editor fields are grouped into tabbed sections (`Basics`, `New Game Defaults`, `Character Options`, `Prompt Guidance`, `Image Prefixes`) and a sticky action bar keeps `Clear`, `Create/Update`, and `Auto-Fill Blank Fields` visible while scrolling.
+- Notes: editor fields are grouped into tabbed sections (`Basics`, `New Game Defaults`, `Factions`, `Character Options`, `Prompt Guidance`, `Image Prefixes`) and a sticky action bar keeps `Clear`, `Create/Update`, and `Auto-Fill Blank Fields` visible while scrolling.
+- Notes: the `Factions` tab includes:
+  - `Number of Factions` input (`defaultFactionCount`) for new-game faction target count.
+  - A settings-local faction editor (list/detail, assets/relations/tiers, add/delete/apply).
+  - `Pre-Generate Factions` using `/api/settings/factions/generate`.
+  - `Auto-Fill Selected` using `/api/settings/factions/fill-missing`.
 - Notes: tab buttons use fixed pill sizing in CSS so they do not vertically stretch/shrink with container height changes.
 - Notes: library/editor scrolling is container-scoped within the settings workspace (instead of raw viewport-height caps) so bottom actions stay reachable.
 - Notes: the default Starting Location Generation Instructions field mirrors the multiline placeholder used on the New Game form.

@@ -50,9 +50,13 @@ Runs LLM-based event checks on narrative text, parses structured outcomes, and a
 - `LLMClient.logPrompt` is always used for event-check logging; failures should surface loudly.
 - Many helpers are defensive and throw on missing dependencies to avoid silent corruption.
 - Item alteration updates `Thing.shortDescription` when provided by the alteration prompt, otherwise preserving the existing value.
-- `item_inflict` events ignore the prompt-provided status effect text and instead apply the item's inflict effect (`causeStatusEffectOnTarget`) to the target when available.
+- `item_inflict` events ignore the prompt-provided status effect text and always apply the item's configured target inflict effect (`causeStatusEffectOnTarget`) to the target when available.
+- When `item_inflict` applies a status, Events emits a synthesized `status_effect_change` entry so status summaries are delivered to the client even if no separate NPC-group status entry is present.
+- `status_effect_change` de-duplicates gained effects against same-turn `item_inflict` applications for the same entity; duplicate gain entries are skipped when names match exactly or when the status-change name starts with the item-inflict effect name.
 - `death_incapacitation` skips `dead` outcomes for NPCs already marked dead, preventing duplicate death application.
-- `suppressMoveEvents` skips applying `move_location` and `move_new_location` outcomes (useful for event-driven travel where movement is handled separately).
+- `suppressMoveEvents` skips applying `move_location` and `move_new_location` outcomes; this is primarily used for split `<travelProse>` origin/destination checks where movement is handled by the travel pipeline.
+- Non-`<travelProse>` turns should generally leave move suppression disabled so narrated movement in event checks can still move the player.
+- Follow-up event-check passes inherit `suppressMoveEvents`/`allowMoveTurnAppearances` from the parent check to keep move-handling behavior consistent across queued reward/follow-up prose.
 - `allowMoveTurnAppearances` allows `item_appear` / `scenery_appear` handlers to run even when `Globals.processedMove` is true (used for `<travelProse>` event-check passes).
 - `_generateItemsIntoWorld` passes generation `options` to `generateItemsByNames`; `treatAsScenery` / `treatAsResource` now preserve scenery classification in generated `Thing` records.
 - `time_passed` parsing uses `Utils.parseDurationToMinutes` (`HH:MM`, integer minutes, or day/hour/minute units); malformed values are logged and skipped.

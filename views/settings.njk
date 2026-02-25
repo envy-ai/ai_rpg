@@ -79,6 +79,7 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                 <div class="editor-tabs" role="tablist" aria-label="Setting editor sections">
                     <button type="button" class="editor-tab-btn is-active" data-editor-tab="basics" aria-selected="true">Basics</button>
                     <button type="button" class="editor-tab-btn" data-editor-tab="defaults" aria-selected="false">New Game Defaults</button>
+                    <button type="button" class="editor-tab-btn" data-editor-tab="factions" aria-selected="false">Factions</button>
                     <button type="button" class="editor-tab-btn" data-editor-tab="characters" aria-selected="false">Character Options</button>
                     <button type="button" class="editor-tab-btn" data-editor-tab="prompts" aria-selected="false">Prompt Guidance</button>
                     <button type="button" class="editor-tab-btn" data-editor-tab="images" aria-selected="false">Image Prefixes</button>
@@ -86,6 +87,7 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
 
                 <form id="settingForm">
                     <input type="hidden" id="settingId" name="id">
+                    <input type="hidden" id="defaultFactions" name="defaultFactions" value="[]">
 
                     <section class="editor-tab-panel is-active" data-editor-panel="basics">
                         <div class="field-grid">
@@ -192,6 +194,100 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                                 <label for="defaultExistingSkills">Default Existing Skills (one per line)</label>
                                 <textarea id="defaultExistingSkills" name="defaultExistingSkills" rows="7" placeholder="Enter skill names..."></textarea>
                                 <div class="help-text">These skills become the default skill list for new games.</div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section class="editor-tab-panel" data-editor-panel="factions">
+                        <div class="field-grid">
+                            <div class="form-group">
+                                <label for="defaultFactionCount">Number of Factions</label>
+                                <input type="number" id="defaultFactionCount" name="defaultFactionCount" min="0" step="1" value="{{ defaultFactionCountFallback | default(5) }}">
+                                <div class="help-text">Used when generating factions for a new game from this setting.</div>
+                            </div>
+
+                            <div class="form-group full-width">
+                                <div class="settings-faction-toolbar">
+                                    <button type="button" class="btn btn-secondary small" id="settingsFactionGenerateBtn">Pre-Generate Factions</button>
+                                    <button type="button" class="btn btn-secondary small" id="settingsFactionAddBtn">Add Faction</button>
+                                    <button type="button" class="btn btn-secondary small" id="settingsFactionDeleteBtn">Delete Selected</button>
+                                    <button type="button" class="btn btn-secondary small" id="settingsFactionApplyBtn">Apply Edits</button>
+                                    <button type="button" class="btn btn-accent small" id="settingsFactionAutofillBtn">✨ Auto-Fill Selected</button>
+                                </div>
+                                <div class="help-text">Use pre-generation to create a baseline list, then edit each faction before saving the setting.</div>
+                            </div>
+
+                            <div class="form-group full-width">
+                                <label for="settingsFactionGenerationNotes">Faction Generation Notes (AI Guidance)</label>
+                                <textarea id="settingsFactionGenerationNotes" rows="3" placeholder="Optional guidance for faction generation/autofill in this setting..."></textarea>
+                            </div>
+
+                            <div class="form-group full-width">
+                                <div class="settings-faction-layout">
+                                    <aside class="settings-faction-sidebar">
+                                        <h3>Faction List</h3>
+                                        <div id="settingsFactionList" class="faction-list"></div>
+                                        <div id="settingsFactionEmpty" class="faction-empty">No factions configured yet.</div>
+                                    </aside>
+                                    <div class="settings-faction-main">
+                                        <div id="settingsFactionDetailPlaceholder" class="faction-detail-placeholder">
+                                            Select a faction from the list, or add one.
+                                        </div>
+                                        <div id="settingsFactionDetail" hidden>
+                                            <div class="faction-detail-header">
+                                                <h3 id="settingsFactionDetailTitle">Faction</h3>
+                                                <span class="faction-detail-meta" id="settingsFactionDetailMeta"></span>
+                                            </div>
+                                            <div class="field-grid">
+                                                <div class="form-group">
+                                                    <label for="settingsFactionName">Name</label>
+                                                    <input type="text" id="settingsFactionName" placeholder="Faction name">
+                                                </div>
+                                                <div class="form-group">
+                                                    <label for="settingsFactionHomeRegion">Home Region</label>
+                                                    <input type="text" id="settingsFactionHomeRegion" placeholder="Optional region anchor">
+                                                </div>
+                                                <div class="form-group full-width">
+                                                    <label for="settingsFactionShortDescription">Short Description</label>
+                                                    <textarea id="settingsFactionShortDescription" rows="2" placeholder="One-sentence summary"></textarea>
+                                                </div>
+                                                <div class="form-group full-width">
+                                                    <label for="settingsFactionDescription">Description</label>
+                                                    <textarea id="settingsFactionDescription" rows="4" placeholder="Longer faction overview"></textarea>
+                                                </div>
+                                                <div class="form-group full-width">
+                                                    <label for="settingsFactionTags">Tags</label>
+                                                    <textarea id="settingsFactionTags" rows="2" placeholder="ideology, archetype, focus"></textarea>
+                                                </div>
+                                                <div class="form-group full-width">
+                                                    <label for="settingsFactionGoals">Goals</label>
+                                                    <textarea id="settingsFactionGoals" rows="3" placeholder="Primary goals and ambitions"></textarea>
+                                                </div>
+                                            </div>
+
+                                            <div class="config-section">
+                                                <div class="faction-section-header">
+                                                    <h2>Assets</h2>
+                                                    <button type="button" class="btn btn-secondary small" id="settingsFactionAssetAddButton">Add Asset</button>
+                                                </div>
+                                                <div class="faction-assets" id="settingsFactionAssetsList"></div>
+                                            </div>
+
+                                            <div class="config-section">
+                                                <h2>Relations</h2>
+                                                <div class="faction-relations" id="settingsFactionRelationsList"></div>
+                                            </div>
+
+                                            <div class="config-section">
+                                                <div class="faction-section-header">
+                                                    <h2>Reputation Tiers</h2>
+                                                    <button type="button" class="btn btn-secondary small" id="settingsFactionTierAddButton">Add Tier</button>
+                                                </div>
+                                                <div class="faction-tiers" id="settingsFactionTiersList"></div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </section>
@@ -325,8 +421,10 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
         let settingsSearchQuery = '';
         let settingsSortMode = 'applied-first';
         let activeEditorTab = 'basics';
+        let settingsFactionEditor = null;
         const defaultExistingSkillsList = {{ (defaultExistingSkills or []) | dump | safe }};
         const defaultExistingSkillsLoadError = {{ (defaultExistingSkillsError or '') | dump | safe }};
+        const defaultFactionCountFallback = {{ (defaultFactionCountFallback or 5) | dump | safe }};
         const autofillInstructionsModal = document.getElementById('autofillInstructionsModal');
         const autofillInstructionsInput = document.getElementById('autofillInstructionsInput');
         const autofillImageInput = document.getElementById('autofillImageInput');
@@ -421,6 +519,7 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                 console.warn('Auto-load saved settings failed:', e.message);
             }
 
+            settingsFactionEditor = initSettingsFactionEditor();
             await loadCurrentSetting();
             await refreshSettingsList();
             setupEventListeners();
@@ -745,6 +844,13 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
             assignValue('defaultPlayerName', setting.defaultPlayerName || '');
             assignValue('defaultPlayerDescription', setting.defaultPlayerDescription || '');
             assignValue('defaultStartingLocation', setting.defaultStartingLocation || '');
+            const defaultFactionCountParsed = Number.parseInt(setting.defaultFactionCount, 10);
+            assignValue(
+                'defaultFactionCount',
+                Number.isFinite(defaultFactionCountParsed)
+                    ? String(defaultFactionCountParsed)
+                    : String(defaultFactionCountFallback)
+            );
 
             const joinLines = (value) => {
                 if (Array.isArray(value)) {
@@ -768,6 +874,9 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
             assignValue('imagePromptPrefixLocation', setting.imagePromptPrefixLocation || '');
             assignValue('imagePromptPrefixItem', setting.imagePromptPrefixItem || '');
             assignValue('imagePromptPrefixScenery', setting.imagePromptPrefixScenery || '');
+            if (settingsFactionEditor) {
+                settingsFactionEditor.load(Array.isArray(setting.defaultFactions) ? setting.defaultFactions : []);
+            }
 
             if (markAsSelected && setting.id) {
                 selectedSettingId = setting.id;
@@ -960,6 +1069,17 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
             if (defaultStartingCurrencyField) {
                 defaultStartingCurrencyField.value = '0';
             }
+            const defaultFactionCountField = document.getElementById('defaultFactionCount');
+            if (defaultFactionCountField) {
+                defaultFactionCountField.value = String(defaultFactionCountFallback);
+            }
+            const defaultFactionsField = document.getElementById('defaultFactions');
+            if (defaultFactionsField) {
+                defaultFactionsField.value = '[]';
+            }
+            if (settingsFactionEditor) {
+                settingsFactionEditor.clear();
+            }
             setActiveEditorTab('basics');
             renderSettingsList();
             updateSelectedSettingPanel();
@@ -989,15 +1109,20 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
             const techLevel = formData.get('techLevel') || 'Not set';
             const classesText = formData.get('availableClasses') || '';
             const racesText = formData.get('availableRaces') || '';
+            const factionCountRaw = formData.get('defaultFactionCount') || '';
 
             const classesCount = splitLines(classesText).length;
             const racesCount = splitLines(racesText).length;
+            const parsedFactionCount = Number.parseInt(factionCountRaw, 10);
             const extraLines = [];
             if (classesCount > 0) {
                 extraLines.push(`Classes: ${classesCount}`);
             }
             if (racesCount > 0) {
                 extraLines.push(`Races: ${racesCount}`);
+            }
+            if (Number.isFinite(parsedFactionCount) && parsedFactionCount >= 0) {
+                extraLines.push(`Factions: ${parsedFactionCount}`);
             }
             
             content.innerHTML = `
@@ -1012,6 +1137,684 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                 .split(/\r?\n/)
                 .map(line => line.trim())
                 .filter(line => line.length > 0);
+        }
+
+        function parseDefaultFactionsValue(rawValue) {
+            if (rawValue === null || rawValue === undefined || rawValue === '') {
+                return [];
+            }
+            if (Array.isArray(rawValue)) {
+                return rawValue;
+            }
+            if (typeof rawValue !== 'string') {
+                throw new Error('Default factions must be a JSON array string.');
+            }
+            const trimmed = rawValue.trim();
+            if (!trimmed) {
+                return [];
+            }
+            let parsed;
+            try {
+                parsed = JSON.parse(trimmed);
+            } catch (error) {
+                throw new Error(`Default factions JSON is invalid: ${error.message}`);
+            }
+            if (!Array.isArray(parsed)) {
+                throw new Error('Default factions JSON must decode to an array.');
+            }
+            return parsed;
+        }
+
+        function initSettingsFactionEditor() {
+            const hiddenInput = document.getElementById('defaultFactions');
+            const countInput = document.getElementById('defaultFactionCount');
+            const listEl = document.getElementById('settingsFactionList');
+            const emptyEl = document.getElementById('settingsFactionEmpty');
+            const detailEl = document.getElementById('settingsFactionDetail');
+            const placeholderEl = document.getElementById('settingsFactionDetailPlaceholder');
+            const titleEl = document.getElementById('settingsFactionDetailTitle');
+            const metaEl = document.getElementById('settingsFactionDetailMeta');
+            const addButton = document.getElementById('settingsFactionAddBtn');
+            const deleteButton = document.getElementById('settingsFactionDeleteBtn');
+            const applyButton = document.getElementById('settingsFactionApplyBtn');
+            const autofillButton = document.getElementById('settingsFactionAutofillBtn');
+            const generateButton = document.getElementById('settingsFactionGenerateBtn');
+            const generationNotesInput = document.getElementById('settingsFactionGenerationNotes');
+            const nameInput = document.getElementById('settingsFactionName');
+            const homeInput = document.getElementById('settingsFactionHomeRegion');
+            const shortDescriptionInput = document.getElementById('settingsFactionShortDescription');
+            const descriptionInput = document.getElementById('settingsFactionDescription');
+            const tagsInput = document.getElementById('settingsFactionTags');
+            const goalsInput = document.getElementById('settingsFactionGoals');
+            const assetsList = document.getElementById('settingsFactionAssetsList');
+            const relationsList = document.getElementById('settingsFactionRelationsList');
+            const tiersList = document.getElementById('settingsFactionTiersList');
+            const assetAddButton = document.getElementById('settingsFactionAssetAddButton');
+            const tierAddButton = document.getElementById('settingsFactionTierAddButton');
+
+            if (!hiddenInput || !countInput || !listEl || !emptyEl || !detailEl || !placeholderEl
+                || !addButton || !deleteButton || !applyButton || !autofillButton || !generateButton
+                || !nameInput || !homeInput || !shortDescriptionInput || !descriptionInput
+                || !tagsInput || !goalsInput || !assetsList || !relationsList || !tiersList
+                || !assetAddButton || !tierAddButton || !titleEl || !metaEl || !generationNotesInput) {
+                throw new Error('Settings faction editor is missing required elements.');
+            }
+
+            const state = {
+                factions: [],
+                selectedId: null
+            };
+
+            let factionIdCounter = 0;
+            const nextFactionId = () => {
+                factionIdCounter += 1;
+                return `setting_faction_${Date.now()}_${factionIdCounter}`;
+            };
+
+            const splitListValue = (value) => {
+                if (typeof value !== 'string') {
+                    return [];
+                }
+                return value
+                    .split(/[\n,]+/)
+                    .map(entry => entry.trim())
+                    .filter(Boolean);
+            };
+
+            const joinListValue = (entries) => {
+                if (!Array.isArray(entries)) {
+                    return '';
+                }
+                return entries.join('\n');
+            };
+
+            const normalizeRelationStatus = (value) => {
+                const status = typeof value === 'string' ? value.trim().toLowerCase() : '';
+                if (!status) {
+                    return '';
+                }
+                if (!['allied', 'neutral', 'hostile', 'rival'].includes(status)) {
+                    throw new Error(`Invalid relation status "${value}".`);
+                }
+                return status;
+            };
+
+            const syncHiddenValue = () => {
+                hiddenInput.value = JSON.stringify(state.factions);
+            };
+
+            const sanitizeRelationsForCurrentFactions = () => {
+                const validIds = new Set(state.factions.map(faction => faction.id));
+                for (const faction of state.factions) {
+                    const relationMap = faction && faction.relations && typeof faction.relations === 'object'
+                        ? faction.relations
+                        : {};
+                    const cleaned = {};
+                    for (const [targetId, relation] of Object.entries(relationMap)) {
+                        if (!validIds.has(targetId) || targetId === faction.id) {
+                            continue;
+                        }
+                        const status = normalizeRelationStatus(relation?.status);
+                        const notes = typeof relation?.notes === 'string' ? relation.notes.trim() : '';
+                        if (!status || !notes) {
+                            continue;
+                        }
+                        cleaned[targetId] = { status, notes };
+                    }
+                    faction.relations = cleaned;
+                }
+            };
+
+            const buildAssetRow = (asset = {}) => {
+                const row = document.createElement('div');
+                row.className = 'faction-asset-row';
+
+                const nameField = document.createElement('input');
+                nameField.type = 'text';
+                nameField.placeholder = 'Asset name';
+                nameField.value = asset.name || '';
+                nameField.className = 'faction-asset-name';
+
+                const typeField = document.createElement('input');
+                typeField.type = 'text';
+                typeField.placeholder = 'Type';
+                typeField.value = asset.type || '';
+                typeField.className = 'faction-asset-type';
+
+                const descField = document.createElement('textarea');
+                descField.rows = 2;
+                descField.placeholder = 'Short description';
+                descField.value = asset.description || '';
+                descField.className = 'faction-asset-description';
+
+                const removeButton = document.createElement('button');
+                removeButton.type = 'button';
+                removeButton.className = 'btn btn-link btn-sm';
+                removeButton.textContent = 'Remove';
+                removeButton.addEventListener('click', () => row.remove());
+
+                row.appendChild(nameField);
+                row.appendChild(typeField);
+                row.appendChild(descField);
+                row.appendChild(removeButton);
+                return row;
+            };
+
+            const buildTierRow = (tier = {}) => {
+                const row = document.createElement('div');
+                row.className = 'faction-tier-row';
+
+                const thresholdField = document.createElement('input');
+                thresholdField.type = 'number';
+                thresholdField.placeholder = 'Threshold';
+                thresholdField.value = Number.isFinite(Number(tier.threshold)) ? tier.threshold : '';
+                thresholdField.className = 'faction-tier-threshold';
+
+                const labelField = document.createElement('input');
+                labelField.type = 'text';
+                labelField.placeholder = 'Label';
+                labelField.value = tier.label || '';
+                labelField.className = 'faction-tier-label';
+
+                const perksField = document.createElement('textarea');
+                perksField.rows = 2;
+                perksField.placeholder = 'Perks (one per line)';
+                perksField.value = joinListValue(tier.perks || []);
+                perksField.className = 'faction-tier-perks';
+
+                const penaltiesField = document.createElement('textarea');
+                penaltiesField.rows = 2;
+                penaltiesField.placeholder = 'Penalties (one per line)';
+                penaltiesField.value = joinListValue(tier.penalties || []);
+                penaltiesField.className = 'faction-tier-penalties';
+
+                const removeButton = document.createElement('button');
+                removeButton.type = 'button';
+                removeButton.className = 'btn btn-link btn-sm';
+                removeButton.textContent = 'Remove';
+                removeButton.addEventListener('click', () => row.remove());
+
+                row.appendChild(thresholdField);
+                row.appendChild(labelField);
+                row.appendChild(perksField);
+                row.appendChild(penaltiesField);
+                row.appendChild(removeButton);
+                return row;
+            };
+
+            const buildRelationRow = (targetFaction, relation) => {
+                const row = document.createElement('div');
+                row.className = 'faction-relation-row';
+                row.dataset.targetId = targetFaction.id;
+
+                const nameField = document.createElement('div');
+                nameField.className = 'faction-relation-name';
+                nameField.textContent = targetFaction.name || targetFaction.id;
+
+                const statusField = document.createElement('select');
+                statusField.className = 'faction-relation-status';
+                [
+                    { value: '', label: 'None' },
+                    { value: 'allied', label: 'Allied' },
+                    { value: 'neutral', label: 'Neutral' },
+                    { value: 'hostile', label: 'Hostile' },
+                    { value: 'rival', label: 'Rival' }
+                ].forEach(option => {
+                    const opt = document.createElement('option');
+                    opt.value = option.value;
+                    opt.textContent = option.label;
+                    statusField.appendChild(opt);
+                });
+                statusField.value = relation?.status || '';
+
+                const notesField = document.createElement('textarea');
+                notesField.rows = 2;
+                notesField.placeholder = 'Relationship notes';
+                notesField.className = 'faction-relation-notes';
+                notesField.value = relation?.notes || '';
+                notesField.disabled = !statusField.value;
+
+                statusField.addEventListener('change', () => {
+                    const hasStatus = Boolean(statusField.value);
+                    notesField.disabled = !hasStatus;
+                    if (!hasStatus) {
+                        notesField.value = '';
+                    }
+                });
+
+                const clearButton = document.createElement('button');
+                clearButton.type = 'button';
+                clearButton.className = 'btn btn-link btn-sm';
+                clearButton.textContent = 'Clear';
+                clearButton.addEventListener('click', () => {
+                    statusField.value = '';
+                    notesField.value = '';
+                    notesField.disabled = true;
+                });
+
+                row.appendChild(nameField);
+                row.appendChild(statusField);
+                row.appendChild(notesField);
+                row.appendChild(clearButton);
+                return row;
+            };
+
+            const renderList = () => {
+                listEl.innerHTML = '';
+                if (!Array.isArray(state.factions) || state.factions.length === 0) {
+                    emptyEl.style.display = 'block';
+                    return;
+                }
+                emptyEl.style.display = 'none';
+
+                state.factions.forEach(faction => {
+                    const button = document.createElement('button');
+                    button.type = 'button';
+                    button.className = 'faction-list-item';
+                    if (faction.id === state.selectedId) {
+                        button.classList.add('active');
+                    }
+
+                    const name = document.createElement('div');
+                    name.className = 'faction-list-name';
+                    name.textContent = faction.name || 'Unnamed Faction';
+
+                    const tags = document.createElement('div');
+                    tags.className = 'faction-list-tags';
+                    tags.textContent = Array.isArray(faction.tags) && faction.tags.length
+                        ? faction.tags.join(' · ')
+                        : 'No tags';
+
+                    button.appendChild(name);
+                    button.appendChild(tags);
+                    button.addEventListener('click', () => {
+                        state.selectedId = faction.id;
+                        renderList();
+                        renderDetail();
+                    });
+                    listEl.appendChild(button);
+                });
+            };
+
+            const renderDetail = () => {
+                const selected = state.factions.find(faction => faction.id === state.selectedId) || null;
+                if (!selected) {
+                    detailEl.setAttribute('hidden', '');
+                    placeholderEl.removeAttribute('hidden');
+                    if (titleEl) titleEl.textContent = 'Faction';
+                    if (metaEl) metaEl.textContent = '';
+                    return;
+                }
+
+                placeholderEl.setAttribute('hidden', '');
+                detailEl.removeAttribute('hidden');
+
+                titleEl.textContent = selected.name || 'Faction';
+                metaEl.textContent = selected.id ? `ID: ${selected.id}` : '';
+
+                nameInput.value = selected.name || '';
+                homeInput.value = selected.homeRegionName || '';
+                shortDescriptionInput.value = selected.shortDescription || '';
+                descriptionInput.value = selected.description || '';
+                tagsInput.value = joinListValue(selected.tags || []);
+                goalsInput.value = joinListValue(selected.goals || []);
+
+                assetsList.innerHTML = '';
+                if (Array.isArray(selected.assets) && selected.assets.length > 0) {
+                    selected.assets.forEach(asset => assetsList.appendChild(buildAssetRow(asset)));
+                } else {
+                    assetsList.appendChild(buildAssetRow());
+                }
+
+                relationsList.innerHTML = '';
+                const others = state.factions.filter(faction => faction.id !== selected.id);
+                if (!others.length) {
+                    const empty = document.createElement('div');
+                    empty.className = 'faction-relation-empty';
+                    empty.textContent = 'No other factions to relate to yet.';
+                    relationsList.appendChild(empty);
+                } else {
+                    const relationMap = selected.relations && typeof selected.relations === 'object'
+                        ? selected.relations
+                        : {};
+                    others.forEach(other => {
+                        relationsList.appendChild(buildRelationRow(other, relationMap[other.id] || null));
+                    });
+                }
+
+                tiersList.innerHTML = '';
+                if (Array.isArray(selected.reputationTiers) && selected.reputationTiers.length > 0) {
+                    selected.reputationTiers.forEach(tier => tiersList.appendChild(buildTierRow(tier)));
+                } else {
+                    tiersList.appendChild(buildTierRow());
+                }
+            };
+
+            const collectAssetsFrom = (container) => {
+                const rows = Array.from(container.querySelectorAll('.faction-asset-row'));
+                return rows.map(row => {
+                    const name = row.querySelector('.faction-asset-name')?.value?.trim() || '';
+                    const type = row.querySelector('.faction-asset-type')?.value?.trim() || '';
+                    const description = row.querySelector('.faction-asset-description')?.value?.trim() || '';
+                    if (!name && !type && !description) {
+                        return null;
+                    }
+                    if (!name) {
+                        throw new Error('All faction assets must include a name.');
+                    }
+                    const asset = { name };
+                    if (type) asset.type = type;
+                    if (description) asset.description = description;
+                    return asset;
+                }).filter(Boolean);
+            };
+
+            const collectRelationsFrom = (container) => {
+                const rows = Array.from(container.querySelectorAll('.faction-relation-row'));
+                const relations = {};
+                rows.forEach(row => {
+                    const targetId = row.dataset.targetId || '';
+                    const statusRaw = row.querySelector('.faction-relation-status')?.value || '';
+                    const status = normalizeRelationStatus(statusRaw);
+                    const notes = row.querySelector('.faction-relation-notes')?.value?.trim() || '';
+                    if (!status) {
+                        return;
+                    }
+                    if (!notes) {
+                        throw new Error('All faction relations with a status require notes.');
+                    }
+                    relations[targetId] = { status, notes };
+                });
+                return relations;
+            };
+
+            const collectTiersFrom = (container) => {
+                const rows = Array.from(container.querySelectorAll('.faction-tier-row'));
+                return rows.map(row => {
+                    const thresholdRaw = row.querySelector('.faction-tier-threshold')?.value?.trim() || '';
+                    const label = row.querySelector('.faction-tier-label')?.value?.trim() || '';
+                    const perks = splitListValue(row.querySelector('.faction-tier-perks')?.value || '');
+                    const penalties = splitListValue(row.querySelector('.faction-tier-penalties')?.value || '');
+                    if (!thresholdRaw && !label && perks.length === 0 && penalties.length === 0) {
+                        return null;
+                    }
+                    const threshold = Number(thresholdRaw);
+                    if (!Number.isFinite(threshold)) {
+                        throw new Error('Faction reputation tier thresholds must be numeric.');
+                    }
+                    return {
+                        threshold,
+                        label,
+                        perks,
+                        penalties
+                    };
+                }).filter(Boolean);
+            };
+
+            const buildSelectedPayload = ({ allowBlankName = false } = {}) => {
+                const rawName = nameInput.value.trim();
+                if (!allowBlankName && !rawName) {
+                    throw new Error('Faction name is required.');
+                }
+                const shortDescription = shortDescriptionInput.value.trim();
+                const description = descriptionInput.value.trim();
+                return {
+                    name: rawName,
+                    homeRegionName: homeInput.value.trim() || null,
+                    shortDescription: shortDescription || null,
+                    description: description || null,
+                    tags: splitListValue(tagsInput.value),
+                    goals: splitListValue(goalsInput.value),
+                    assets: collectAssetsFrom(assetsList),
+                    relations: collectRelationsFrom(relationsList),
+                    reputationTiers: collectTiersFrom(tiersList)
+                };
+            };
+
+            const commitCurrentFaction = ({ allowBlankName = false } = {}) => {
+                if (!state.selectedId) {
+                    return null;
+                }
+                const index = state.factions.findIndex(entry => entry.id === state.selectedId);
+                if (index < 0) {
+                    return null;
+                }
+                const payload = buildSelectedPayload({ allowBlankName });
+                state.factions[index] = {
+                    id: state.selectedId,
+                    ...payload
+                };
+                sanitizeRelationsForCurrentFactions();
+                syncHiddenValue();
+                renderList();
+                renderDetail();
+                updatePreview();
+                return state.factions[index];
+            };
+
+            const load = (factions) => {
+                const incoming = parseDefaultFactionsValue(factions);
+                const seenIds = new Set();
+                state.factions = incoming
+                    .filter(entry => entry && typeof entry === 'object' && !Array.isArray(entry))
+                    .map((entry, index) => {
+                        const providedId = typeof entry.id === 'string' ? entry.id.trim() : '';
+                        let id = providedId || nextFactionId();
+                        while (seenIds.has(id)) {
+                            id = nextFactionId();
+                        }
+                        seenIds.add(id);
+                        const name = typeof entry.name === 'string' ? entry.name.trim() : '';
+                        const shortDescription = typeof entry.shortDescription === 'string' ? entry.shortDescription.trim() : '';
+                        const description = typeof entry.description === 'string' ? entry.description.trim() : '';
+                        const homeRegionName = typeof entry.homeRegionName === 'string' ? entry.homeRegionName.trim() : '';
+
+                        return {
+                            id,
+                            name: name || `Faction ${index + 1}`,
+                            homeRegionName: homeRegionName || null,
+                            shortDescription: shortDescription || null,
+                            description: description || null,
+                            tags: Array.isArray(entry.tags)
+                                ? splitListValue(entry.tags.join('\n'))
+                                : splitListValue(typeof entry.tags === 'string' ? entry.tags : ''),
+                            goals: Array.isArray(entry.goals)
+                                ? splitListValue(entry.goals.join('\n'))
+                                : splitListValue(typeof entry.goals === 'string' ? entry.goals : ''),
+                            assets: Array.isArray(entry.assets) ? entry.assets : [],
+                            relations: entry.relations && typeof entry.relations === 'object' ? { ...entry.relations } : {},
+                            reputationTiers: Array.isArray(entry.reputationTiers) ? entry.reputationTiers : []
+                        };
+                    });
+
+                sanitizeRelationsForCurrentFactions();
+                state.selectedId = state.factions.length ? state.factions[0].id : null;
+                syncHiddenValue();
+                renderList();
+                renderDetail();
+                updatePreview();
+            };
+
+            const clear = () => load([]);
+
+            addButton.addEventListener('click', () => {
+                const nextNumber = state.factions.length + 1;
+                const faction = {
+                    id: nextFactionId(),
+                    name: `Faction ${nextNumber}`,
+                    homeRegionName: null,
+                    shortDescription: null,
+                    description: null,
+                    tags: [],
+                    goals: [],
+                    assets: [],
+                    relations: {},
+                    reputationTiers: []
+                };
+                state.factions.push(faction);
+                state.selectedId = faction.id;
+                sanitizeRelationsForCurrentFactions();
+                syncHiddenValue();
+                renderList();
+                renderDetail();
+                updatePreview();
+            });
+
+            deleteButton.addEventListener('click', () => {
+                if (!state.selectedId) {
+                    showMessage('Select a faction first.', 'error');
+                    return;
+                }
+                const selected = state.factions.find(entry => entry.id === state.selectedId);
+                if (!selected) {
+                    return;
+                }
+                const confirmed = window.confirm(`Delete faction "${selected.name || selected.id}"?`);
+                if (!confirmed) {
+                    return;
+                }
+                state.factions = state.factions.filter(entry => entry.id !== state.selectedId);
+                sanitizeRelationsForCurrentFactions();
+                state.selectedId = state.factions.length ? state.factions[0].id : null;
+                syncHiddenValue();
+                renderList();
+                renderDetail();
+                updatePreview();
+            });
+
+            applyButton.addEventListener('click', () => {
+                try {
+                    commitCurrentFaction();
+                    showMessage('Faction edits applied.', 'success');
+                } catch (error) {
+                    showMessage(error?.message || 'Failed to apply faction edits.', 'error');
+                }
+            });
+
+            assetAddButton.addEventListener('click', () => {
+                assetsList.appendChild(buildAssetRow());
+            });
+
+            tierAddButton.addEventListener('click', () => {
+                tiersList.appendChild(buildTierRow());
+            });
+
+            autofillButton.addEventListener('click', async () => {
+                if (!state.selectedId) {
+                    showMessage('Select a faction first.', 'error');
+                    return;
+                }
+                const selectedIndex = state.factions.findIndex(entry => entry.id === state.selectedId);
+                if (selectedIndex < 0) {
+                    showMessage('Selected faction no longer exists.', 'error');
+                    return;
+                }
+
+                const selectedFactionId = state.selectedId;
+                const selectedFactionName = state.factions[selectedIndex]?.name || 'Faction';
+                let draftPayload;
+                try {
+                    draftPayload = buildSelectedPayload({ allowBlankName: true });
+                } catch (error) {
+                    showMessage(error?.message || 'Failed to read faction draft.', 'error');
+                    return;
+                }
+
+                const settingDescription = document.getElementById('description')?.value?.trim() || '';
+                const existingFactions = state.factions
+                    .filter(entry => entry.id !== selectedFactionId)
+                    .map(entry => ({
+                        id: entry.id,
+                        name: entry.name,
+                        shortDescription: entry.shortDescription || ''
+                    }));
+                const generationNotes = generationNotesInput.value.trim();
+
+                autofillButton.disabled = true;
+                const originalText = autofillButton.textContent;
+                autofillButton.textContent = '✨ Filling...';
+                try {
+                    const response = await fetch('/api/settings/factions/fill-missing', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            faction: draftPayload,
+                            existingFactions,
+                            settingDescription,
+                            generationNotes
+                        })
+                    });
+                    const data = await response.json().catch(() => ({}));
+                    if (!response.ok || !data?.success || !data?.faction) {
+                        throw new Error(data?.error || 'Failed to auto-fill faction fields.');
+                    }
+                    state.factions[selectedIndex] = {
+                        id: selectedFactionId,
+                        ...data.faction
+                    };
+                    sanitizeRelationsForCurrentFactions();
+                    syncHiddenValue();
+                    renderList();
+                    renderDetail();
+                    showMessage(`Auto-filled missing fields for "${selectedFactionName}".`, 'success');
+                } catch (error) {
+                    showMessage(error?.message || 'Failed to auto-fill faction fields.', 'error');
+                } finally {
+                    autofillButton.disabled = false;
+                    autofillButton.textContent = originalText;
+                }
+            });
+
+            generateButton.addEventListener('click', async () => {
+                const rawCount = countInput.value.trim();
+                const parsedCount = Number.parseInt(rawCount, 10);
+                if (!Number.isFinite(parsedCount) || parsedCount < 0) {
+                    showMessage('Default faction count must be a non-negative integer.', 'error');
+                    return;
+                }
+
+                generateButton.disabled = true;
+                const originalText = generateButton.textContent;
+                generateButton.textContent = 'Generating...';
+                try {
+                    const settingDescription = document.getElementById('description')?.value?.trim() || '';
+                    const generationNotes = generationNotesInput.value.trim();
+                    const response = await fetch('/api/settings/factions/generate', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            count: parsedCount,
+                            settingDescription,
+                            generationNotes
+                        })
+                    });
+                    const data = await response.json().catch(() => ({}));
+                    if (!response.ok || !data?.success || !Array.isArray(data.factions)) {
+                        throw new Error(data?.error || 'Failed to generate factions.');
+                    }
+                    load(data.factions);
+                    showMessage(`Generated ${data.factions.length} faction(s) for this setting.`, 'success');
+                } catch (error) {
+                    showMessage(error?.message || 'Failed to generate factions.', 'error');
+                } finally {
+                    generateButton.disabled = false;
+                    generateButton.textContent = originalText;
+                }
+            });
+
+            if (!countInput.value || !countInput.value.trim()) {
+                countInput.value = String(defaultFactionCountFallback);
+            }
+            load(parseDefaultFactionsValue(hiddenInput.value));
+
+            return {
+                load,
+                clear,
+                commitCurrentFaction,
+                getFactionCount() {
+                    return state.factions.length;
+                }
+            };
         }
 
         function setupEventListeners() {
@@ -1038,6 +1841,15 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
 
             settingForm.addEventListener('submit', async function(e) {
                 e.preventDefault();
+
+                if (settingsFactionEditor) {
+                    try {
+                        settingsFactionEditor.commitCurrentFaction();
+                    } catch (error) {
+                        showMessage(error?.message || 'Fix faction fields before saving this setting.', 'error');
+                        return;
+                    }
+                }
                 
                 const formData = new FormData(e.target);
                 const settingData = Object.fromEntries(formData.entries());
@@ -1051,6 +1863,21 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                 settingData.availableClasses = splitLines(settingData.availableClasses);
                 settingData.availableRaces = splitLines(settingData.availableRaces);
                 settingData.customSlopWords = splitLines(settingData.customSlopWords);
+                const parsedDefaultFactionCount = parseInt(settingData.defaultFactionCount, 10);
+                if ((settingData.defaultFactionCount || '').trim() === '') {
+                    settingData.defaultFactionCount = '';
+                } else if (Number.isFinite(parsedDefaultFactionCount) && parsedDefaultFactionCount >= 0) {
+                    settingData.defaultFactionCount = parsedDefaultFactionCount;
+                } else {
+                    showMessage('Default faction count must be a non-negative integer.', 'error');
+                    return;
+                }
+                try {
+                    settingData.defaultFactions = parseDefaultFactionsValue(settingData.defaultFactions);
+                } catch (error) {
+                    showMessage(error?.message || 'Default factions JSON is invalid.', 'error');
+                    return;
+                }
                 
                 try {
                     let response;
@@ -1318,6 +2145,9 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                 const form = document.getElementById('settingForm');
                 const formData = new FormData(form);
                 const settingPayload = Object.fromEntries(formData.entries());
+                if (settingsFactionEditor) {
+                    settingsFactionEditor.commitCurrentFaction({ allowBlankName: true });
+                }
                 settingPayload.playerStartingLevel = settingPayload.playerStartingLevel || '';
                 const rawSkillsText = settingPayload.defaultExistingSkills || '';
                 const currentSkills = splitLines(rawSkillsText);
@@ -1341,6 +2171,11 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                 settingPayload.defaultStartingCurrency = Number.isFinite(parsedDefaultCurrency)
                     ? Math.max(0, parsedDefaultCurrency)
                     : '';
+                const parsedDefaultFactionCount = parseInt(settingPayload.defaultFactionCount, 10);
+                settingPayload.defaultFactionCount = Number.isFinite(parsedDefaultFactionCount) && parsedDefaultFactionCount >= 0
+                    ? parsedDefaultFactionCount
+                    : '';
+                settingPayload.defaultFactions = parseDefaultFactionsValue(settingPayload.defaultFactions);
 
                 const requestBody = {
                     setting: settingPayload,
@@ -1398,6 +2233,7 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                     defaultStartingLocation: filled.defaultStartingLocation,
                     defaultStartingCurrency: filled.defaultStartingCurrency,
                     defaultExistingSkills: filled.defaultExistingSkills,
+                    defaultFactionCount: filled.defaultFactionCount,
                     availableClasses: filled.availableClasses,
                     availableRaces: filled.availableRaces,
                     currencyValueNotes: filled.currencyValueNotes,
@@ -1410,6 +2246,9 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                     imagePromptPrefixItem: filled.imagePromptPrefixItem,
                     imagePromptPrefixScenery: filled.imagePromptPrefixScenery
                 }).forEach(([fieldId, value]) => applyText(fieldId, value));
+                if (settingsFactionEditor && Array.isArray(filled.defaultFactions)) {
+                    settingsFactionEditor.load(filled.defaultFactions);
+                }
 
                 showMessage('Blank fields populated successfully.', 'success');
                 updatePreview();

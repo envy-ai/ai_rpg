@@ -67,7 +67,7 @@ The chat client listens on `/ws?clientId=...` and handles:
 - `connection_ack` (client id sync, image realtime enabled).
 - `chat_status` (spinner / progress messages).
 - `player_action`, `npc_turn` (streamed partial messages).
-- `chat_complete` (final response).
+- `chat_complete` (final response; may include `completionSoundPath`, which the client plays as an audio cue for non-travel actions; travel actions defer playback until travel completion).
 - `chat_error` (display errors).
 - `generation_status`, `region_generated`, `location_generated` (world generation status).
 - `location_exit_created`, `location_exit_deleted` (refresh location + map).
@@ -102,9 +102,9 @@ History window note:
 
 ## LLM prompt modals (immediate close)
 
-LLM-backed modal submits close immediately (no visible waiting state) and rely on an internal in-flight guard; errors surface via `alert()` after the modal closes:
+LLM-backed modal submits close immediately (no visible waiting state); errors surface via `alert()` after the modal closes. Most listed flows keep an internal in-flight guard, while Add NPC intentionally allows concurrent submits.
 
-- `#addNpcModal` (adds an NPC via `/api/locations/:id/npcs`).
+- `#addNpcModal` (adds an NPC via `/api/locations/:id/npcs`; supports concurrent submissions when the modal is reopened during an in-flight request).
 - `#thingEditModal` create mode (adds item/scenery via `/api/locations/:id/things`; name is optional and can be generated).
 - `#newExitModal` (creates/edits exits via `/api/locations/:id/exits`).
 - `#craftingModal` (crafting/processing via `/api/craft`, including a no-prose submit path for craft/process).
@@ -132,6 +132,7 @@ Inline script functions in `views/index.njk` render these tabs:
 
 - `initQuestPanel()` uses `/api/quest/edit` and `/api/player/quests/:id`.
   - Quest edit modal supports per-faction reputation reward deltas via multiline `faction name or id: +/-points` input.
+  - Quest reward lists resolve faction reputation reward IDs to faction names when rendering.
 - `initFactionPanel()` uses `/api/factions` and `/api/player/factions/:id/standing`.
 - The faction form includes fields for name, home region, short description, description, tags, goals, assets, relations, reputation tiers, and player standing.
 - New faction creation now uses a dedicated modal (not `window.prompt`) with full faction fields (including assets/relations/reputation tiers).

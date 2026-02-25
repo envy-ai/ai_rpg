@@ -52,5 +52,7 @@ Loaded on the chat page:
   `.skill-remove-btn` for the compact remove button styling.
 - Faction reputation tier thresholds in the faction editor use `.faction-tier-threshold`
   with a fixed input width of `6em` in `public/css/main.scss`.
+- Settings editor tabs use `.editor-tabs` with a fixed height of `80px` in `public/css/settings.scss`.
 - `.points-warning` reserves space for pool warning text so layout doesn't jump.
 - Pool warning visibility is toggled with `visibility` (not `display`) so that reserved help-text height remains stable.
+- Scrollbars are themed via the shared `@mixin themed-scrollbar` in `public/css/_globals.scss`; target width/height is `1ex`, with a rounded gradient thumb matching the primary blue/purple UI palette.

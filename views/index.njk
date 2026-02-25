@@ -5399,7 +5399,6 @@
         const addNpcCloseBtn = document.getElementById('addNpcCloseBtn');
         const addNpcButton = document.getElementById('addNpcButton');
         const addThingButton = document.getElementById('addThingButton');
-        let addNpcSubmitting = false;
         const craftSceneryButton = document.getElementById('craftSceneryButton');
         const craftItemButton = document.getElementById('craftItemButton');
         const loadGameModal = document.getElementById('loadGameModal');
@@ -9537,11 +9536,6 @@
                 event.preventDefault();
             }
 
-            if (addNpcSubmitting) {
-                alert('NPC creation is already in progress.');
-                return;
-            }
-
             if (!addNpcForm || !addNpcSaveBtn) {
                 return;
             }
@@ -9603,7 +9597,6 @@
             }
 
             const imageFile = addNpcImageInput?.files?.[0] || null;
-            addNpcSubmitting = true;
             closeAddNpcModal({ focusTrigger: false });
             try {
                 if (imageFile) {
@@ -9633,8 +9626,6 @@
             } catch (error) {
                 console.warn('Failed to create NPC:', error);
                 alert(`Failed to create NPC: ${error?.message || 'Unknown error'}`);
-            } finally {
-                addNpcSubmitting = false;
             }
         }
 
@@ -17406,7 +17397,10 @@
         if (window.AIRPG_CHAT && typeof window.AIRPG_CHAT.dispatchAutomatedMessage === 'function') {
             try {
                 showMoveOverlay();
-                await window.AIRPG_CHAT.dispatchAutomatedMessage(`# ${message}`, { travel: true });
+                await window.AIRPG_CHAT.dispatchAutomatedMessage(`# ${message}`, {
+                    travel: true,
+                    suppressTravelCompletionSound: true
+                });
             } catch (error) {
                 console.error('Failed to dispatch move via chat:', error);
                 hideLocationOverlay();
@@ -17415,12 +17409,19 @@
             }
         }
 
-        await performDirectMove(exit.destination, destinationName);
+        const moveSucceeded = await performDirectMove(exit.destination, destinationName);
+        if (moveSucceeded) {
+            try {
+                window.AIRPG_CHAT?.playDeferredTravelCompletionSound?.({ waitForNext: true });
+            } catch (soundError) {
+                console.warn('Failed to play deferred travel completion sound:', soundError);
+            }
+        }
     }
 
             async function performDirectMove(destinationId, destinationName) {
                 if (!destinationId) {
-                    return;
+                    return false;
                 }
 
                 const resolvedDestinationName = (destinationName && destinationName.toString().trim()) || null;
@@ -17429,6 +17430,7 @@
                 }
 
                 showLocationOverlay(`Moving to ${resolvedDestinationName}...`);
+                let moveSucceeded = false;
                 try {
                     const expectedOriginLocationId = typeof window.currentPlayerData?.currentLocation === 'string'
                         ? window.currentPlayerData.currentLocation.trim()
@@ -17462,6 +17464,7 @@
                             });
                         }
                         await window.updateLocationDisplay(result.location);
+                        moveSucceeded = true;
                         if (document.querySelector('[data-tab="map"]').classList.contains('active')) {
                             window.loadRegionMap?.();
                         }
@@ -17473,7 +17476,9 @@
                     console.error('Move failed:', error);
                     hideLocationOverlay();
                     alert(`Move failed: ${error.message}`);
+                    return false;
                 }
+                return moveSucceeded;
             }
 
             function collectExitEntries(location) {
@@ -17572,7 +17577,10 @@
 
                     if (window.AIRPG_CHAT && typeof window.AIRPG_CHAT.dispatchAutomatedMessage === 'function') {
                         try {
-                            await window.AIRPG_CHAT.dispatchAutomatedMessage(`# ${message}`, { travel: true });
+                            await window.AIRPG_CHAT.dispatchAutomatedMessage(`# ${message}`, {
+                                travel: true,
+                                suppressTravelCompletionSound: true
+                            });
                         } catch (chatError) {
                             console.warn('Failed to log travel message:', chatError);
                         }
@@ -17595,6 +17603,12 @@
                         } catch (mapError) {
                             console.warn('Failed to refresh map after teleport:', mapError);
                         }
+                    }
+
+                    try {
+                        window.AIRPG_CHAT?.playDeferredTravelCompletionSound?.({ waitForNext: true });
+                    } catch (soundError) {
+                        console.warn('Failed to play deferred travel completion sound after teleport:', soundError);
                     }
 
                     return true;
@@ -17736,6 +17750,24 @@
                         };
                     })
                     .filter(Boolean);
+            };
+
+            const resolveQuestFactionRewardName = (factionId) => {
+                const normalizedFactionId = normalizeFactionId(factionId);
+                if (!normalizedFactionId) {
+                    return 'Unknown faction';
+                }
+
+                const factionMap = factionOptionsCache?.map;
+                if (factionMap instanceof Map && factionMap.has(normalizedFactionId)) {
+                    const faction = factionMap.get(normalizedFactionId);
+                    const factionName = typeof faction?.name === 'string' ? faction.name.trim() : '';
+                    if (factionName) {
+                        return factionName;
+                    }
+                }
+
+                return `Unknown faction (${normalizedFactionId})`;
             };
 
             async function handleAbandonQuest(quest, trigger) {
@@ -18068,7 +18100,7 @@
                     rewardFactionReputation.forEach(entry => {
                         const item = document.createElement('li');
                         const signed = entry.amount > 0 ? `+${entry.amount}` : `${entry.amount}`;
-                        item.textContent = `${signed} reputation (${entry.factionId})`;
+                        item.textContent = `${signed} reputation (${resolveQuestFactionRewardName(entry.factionId)})`;
                         list.appendChild(item);
                     });
 
@@ -18197,6 +18229,11 @@
 
             async function refreshQuestPanel() {
                 try {
+                    try {
+                        await loadFactionOptions();
+                    } catch (factionError) {
+                        console.warn('Failed to load faction names for quest rewards:', factionError);
+                    }
                     const response = await fetch('/api/player', { cache: 'no-store' });
                     const data = await response.json();
                     if (data.success && data.player) {

@@ -36,6 +36,8 @@ class SettingInfo {
   #defaultPlayerDescription;
   #defaultStartingLocation;
   #defaultExistingSkills;
+  #defaultFactionCount;
+  #defaultFactions;
   #createdAt;
   #lastUpdated;
   #availableClasses;
@@ -45,6 +47,7 @@ class SettingInfo {
   // Static indexing maps
   static #indexByID = new Map();
   static #indexByName = new Map();
+  static #validFactionRelationStatuses = new Set(['allied', 'neutral', 'hostile', 'rival']);
 
   static #normalizeExistingSkills(value) {
     return SettingInfo.#normalizeStringList(value);
@@ -58,6 +61,205 @@ class SettingInfo {
     return entries
       .map(entry => (typeof entry === 'string' ? entry.trim() : ''))
       .filter(entry => entry.length > 0);
+  }
+
+  static #normalizeFactionCount(value) {
+    if (value === null || value === undefined || value === '') {
+      return null;
+    }
+    const parsed = Number.parseInt(value, 10);
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      throw new Error('defaultFactionCount must be a non-negative integer or null.');
+    }
+    return parsed;
+  }
+
+  static #generateSettingFactionId() {
+    const random = crypto.randomBytes(6).toString('hex');
+    return `setting_faction_${Date.now()}_${random}`;
+  }
+
+  static #normalizeFactionAssets(value, indexLabel = '') {
+    if (value === null || value === undefined) {
+      return [];
+    }
+    if (!Array.isArray(value)) {
+      throw new Error(`defaultFactions${indexLabel}.assets must be an array.`);
+    }
+
+    return value.map((asset, assetIndex) => {
+      if (!asset || typeof asset !== 'object' || Array.isArray(asset)) {
+        throw new Error(`defaultFactions${indexLabel}.assets[${assetIndex}] must be an object.`);
+      }
+      const name = typeof asset.name === 'string' ? asset.name.trim() : '';
+      if (!name) {
+        throw new Error(`defaultFactions${indexLabel}.assets[${assetIndex}].name is required.`);
+      }
+      const type = typeof asset.type === 'string' ? asset.type.trim() : '';
+      const description = typeof asset.description === 'string' ? asset.description.trim() : '';
+      const normalized = { name };
+      if (type) normalized.type = type;
+      if (description) normalized.description = description;
+      return normalized;
+    });
+  }
+
+  static #normalizeFactionTiers(value, indexLabel = '') {
+    if (value === null || value === undefined) {
+      return [];
+    }
+    if (!Array.isArray(value)) {
+      throw new Error(`defaultFactions${indexLabel}.reputationTiers must be an array.`);
+    }
+
+    const normalized = value.map((tier, tierIndex) => {
+      if (!tier || typeof tier !== 'object' || Array.isArray(tier)) {
+        throw new Error(`defaultFactions${indexLabel}.reputationTiers[${tierIndex}] must be an object.`);
+      }
+      const threshold = Number(tier.threshold);
+      if (!Number.isFinite(threshold)) {
+        throw new Error(`defaultFactions${indexLabel}.reputationTiers[${tierIndex}].threshold must be numeric.`);
+      }
+      const label = typeof tier.label === 'string' ? tier.label.trim() : '';
+      const perks = SettingInfo.#normalizeStringList(tier.perks || []);
+      const penalties = SettingInfo.#normalizeStringList(tier.penalties || []);
+      return {
+        threshold,
+        label,
+        perks,
+        penalties
+      };
+    });
+
+    normalized.sort((a, b) => a.threshold - b.threshold);
+    return normalized;
+  }
+
+  static #normalizeFactionRelations(value, { validFactionIds = null, currentFactionId = null, indexLabel = '' } = {}) {
+    if (value === null || value === undefined) {
+      return {};
+    }
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      throw new Error(`defaultFactions${indexLabel}.relations must be an object keyed by faction id.`);
+    }
+
+    const normalized = {};
+    for (const [rawTargetId, relation] of Object.entries(value)) {
+      const targetId = typeof rawTargetId === 'string' ? rawTargetId.trim() : '';
+      if (!targetId) {
+        throw new Error(`defaultFactions${indexLabel}.relations contains an empty target id.`);
+      }
+      if (currentFactionId && targetId === currentFactionId) {
+        throw new Error(`defaultFactions${indexLabel}.relations cannot target itself (${currentFactionId}).`);
+      }
+      if (validFactionIds instanceof Set && !validFactionIds.has(targetId)) {
+        throw new Error(`defaultFactions${indexLabel}.relations references unknown faction id "${targetId}".`);
+      }
+      if (!relation || typeof relation !== 'object' || Array.isArray(relation)) {
+        throw new Error(`defaultFactions${indexLabel}.relations["${targetId}"] must be an object.`);
+      }
+      const status = typeof relation.status === 'string' ? relation.status.trim().toLowerCase() : '';
+      if (!status) {
+        throw new Error(`defaultFactions${indexLabel}.relations["${targetId}"].status is required.`);
+      }
+      if (!SettingInfo.#validFactionRelationStatuses.has(status)) {
+        throw new Error(`defaultFactions${indexLabel}.relations["${targetId}"].status must be allied, neutral, hostile, or rival.`);
+      }
+      const notes = typeof relation.notes === 'string' ? relation.notes.trim() : '';
+      if (!notes) {
+        throw new Error(`defaultFactions${indexLabel}.relations["${targetId}"].notes is required.`);
+      }
+      normalized[targetId] = { status, notes };
+    }
+
+    return normalized;
+  }
+
+  static #normalizeSingleFaction(value, index) {
+    const indexLabel = `[${index}]`;
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      throw new Error(`defaultFactions${indexLabel} must be an object.`);
+    }
+
+    const idSource = typeof value.id === 'string' ? value.id.trim() : '';
+    const id = idSource || SettingInfo.#generateSettingFactionId();
+    const name = typeof value.name === 'string' ? value.name.trim() : '';
+    if (!name) {
+      throw new Error(`defaultFactions${indexLabel}.name is required.`);
+    }
+    if (name.toLowerCase() === 'none') {
+      throw new Error(`defaultFactions${indexLabel}.name cannot be "None".`);
+    }
+
+    const shortDescription = typeof value.shortDescription === 'string' && value.shortDescription.trim()
+      ? value.shortDescription.trim()
+      : null;
+    const description = typeof value.description === 'string' && value.description.trim()
+      ? value.description.trim()
+      : null;
+    const homeRegionName = typeof value.homeRegionName === 'string' && value.homeRegionName.trim()
+      ? value.homeRegionName.trim()
+      : null;
+
+    return {
+      id,
+      name,
+      shortDescription,
+      description,
+      homeRegionName,
+      tags: SettingInfo.#normalizeStringList(value.tags || []),
+      goals: SettingInfo.#normalizeStringList(value.goals || []),
+      assets: SettingInfo.#normalizeFactionAssets(value.assets, indexLabel),
+      relations: SettingInfo.#normalizeFactionRelations(value.relations || {}, { indexLabel }),
+      reputationTiers: SettingInfo.#normalizeFactionTiers(value.reputationTiers || [], indexLabel)
+    };
+  }
+
+  static #normalizeFactions(value) {
+    if (value === null || value === undefined || value === '') {
+      return [];
+    }
+
+    let entries = value;
+    if (typeof entries === 'string') {
+      const trimmed = entries.trim();
+      if (!trimmed) {
+        return [];
+      }
+      try {
+        entries = JSON.parse(trimmed);
+      } catch (error) {
+        throw new Error(`defaultFactions must be valid JSON when passed as a string: ${error.message}`);
+      }
+    }
+
+    if (!Array.isArray(entries)) {
+      throw new Error('defaultFactions must be an array.');
+    }
+
+    const normalized = entries.map((entry, index) => SettingInfo.#normalizeSingleFaction(entry, index));
+    const idSet = new Set();
+    const nameSet = new Set();
+    for (const faction of normalized) {
+      if (idSet.has(faction.id)) {
+        throw new Error(`defaultFactions contains duplicate id "${faction.id}".`);
+      }
+      idSet.add(faction.id);
+      const nameKey = faction.name.toLowerCase();
+      if (nameSet.has(nameKey)) {
+        throw new Error(`defaultFactions contains duplicate name "${faction.name}".`);
+      }
+      nameSet.add(nameKey);
+    }
+
+    return normalized.map((faction, index) => ({
+      ...faction,
+      relations: SettingInfo.#normalizeFactionRelations(faction.relations || {}, {
+        validFactionIds: idSet,
+        currentFactionId: faction.id,
+        indexLabel: `[${index}]`
+      })
+    }));
   }
 
   // Static private method for generating unique IDs
@@ -138,6 +340,8 @@ class SettingInfo {
     this.#defaultPlayerDescription = typeof options.defaultPlayerDescription === 'string' ? options.defaultPlayerDescription : '';
     this.#defaultStartingLocation = typeof options.defaultStartingLocation === 'string' ? options.defaultStartingLocation : '';
     this.#defaultExistingSkills = SettingInfo.#normalizeExistingSkills(options.defaultExistingSkills);
+    this.#defaultFactionCount = SettingInfo.#normalizeFactionCount(options.defaultFactionCount);
+    this.#defaultFactions = SettingInfo.#normalizeFactions(options.defaultFactions);
     this.#availableClasses = SettingInfo.#normalizeStringList(options.availableClasses);
     this.#availableRaces = SettingInfo.#normalizeStringList(options.availableRaces);
     this.#customSlopWords = SettingInfo.#normalizeStringList(options.customSlopWords);
@@ -183,6 +387,8 @@ class SettingInfo {
   get defaultPlayerDescription() { return this.#defaultPlayerDescription; }
   get defaultStartingLocation() { return this.#defaultStartingLocation; }
   get defaultExistingSkills() { return [...this.#defaultExistingSkills]; }
+  get defaultFactionCount() { return this.#defaultFactionCount; }
+  get defaultFactions() { return this.#defaultFactions.map(faction => JSON.parse(JSON.stringify(faction))); }
   get createdAt() { return this.#createdAt; }
   get lastUpdated() { return this.#lastUpdated; }
   get availableClasses() { return [...this.#availableClasses]; }
@@ -344,6 +550,16 @@ class SettingInfo {
     this.#updateTimestamp();
   }
 
+  set defaultFactionCount(value) {
+    this.#defaultFactionCount = SettingInfo.#normalizeFactionCount(value);
+    this.#updateTimestamp();
+  }
+
+  set defaultFactions(value) {
+    this.#defaultFactions = SettingInfo.#normalizeFactions(value);
+    this.#updateTimestamp();
+  }
+
   set availableClasses(value) {
     this.#availableClasses = SettingInfo.#normalizeStringList(value);
     this.#updateTimestamp();
@@ -453,6 +669,8 @@ class SettingInfo {
       defaultPlayerDescription: this.#defaultPlayerDescription,
       defaultStartingLocation: this.#defaultStartingLocation,
       defaultExistingSkills: [...this.#defaultExistingSkills],
+      defaultFactionCount: this.#defaultFactionCount,
+      defaultFactions: this.#defaultFactions.map(faction => JSON.parse(JSON.stringify(faction))),
       availableClasses: [...this.#availableClasses],
       availableRaces: [...this.#availableRaces],
       customSlopWords: [...this.#customSlopWords],

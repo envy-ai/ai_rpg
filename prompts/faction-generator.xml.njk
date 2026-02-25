@@ -18,6 +18,11 @@ You are an AI game designer creating a faction roster for a tabletop-style RPG. 
     <generationPrompt>
 Setting Overview:
 {{ settingDescription }}
+{% if generationNotes %}
+
+Faction generation guidance:
+{{ generationNotes }}
+{% endif %}
 
 Step 1: Generate exactly {{ numFactions }} factions for this setting in whatever format you are most comfortable with, thinking about their unique identities and goals.
 

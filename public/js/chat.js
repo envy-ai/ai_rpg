@@ -34,6 +34,10 @@ class AIRPGChat {
         this.streamingStatusElements = new Map();
         this.wsReadyWaiters = [];
         this.wsReady = false;
+        this.chatCompletionAudio = null;
+        this.chatCompletionAudioSource = null;
+        this.deferredTravelCompletionSoundQueue = [];
+        this.awaitingDeferredTravelCompletionSound = false;
         window.AIRPG_CLIENT_ID = this.clientId;
 
         this.pendingMoveOverlay = false;
@@ -2364,6 +2368,106 @@ class AIRPGChat {
         }
     }
 
+    resolveChatCompletionSoundSource(rawPath) {
+        if (rawPath === null || rawPath === false || typeof rawPath === 'undefined') {
+            return null;
+        }
+        if (typeof rawPath !== 'string') {
+            console.warn('Ignoring invalid chat completion sound path value from server.');
+            return null;
+        }
+
+        const trimmed = rawPath.trim();
+        if (!trimmed) {
+            return null;
+        }
+
+        if (/^https?:\/\//i.test(trimmed)) {
+            return trimmed;
+        }
+
+        return trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
+    }
+
+    playChatCompletionSound(rawPath) {
+        const source = this.resolveChatCompletionSoundSource(rawPath);
+        if (!source) {
+            return;
+        }
+
+        if (!this.chatCompletionAudio || this.chatCompletionAudioSource !== source) {
+            this.chatCompletionAudio = new Audio(source);
+            this.chatCompletionAudio.preload = 'auto';
+            this.chatCompletionAudioSource = source;
+        }
+
+        try {
+            this.chatCompletionAudio.currentTime = 0;
+            const playResult = this.chatCompletionAudio.play();
+            if (playResult && typeof playResult.catch === 'function') {
+                playResult.catch((error) => {
+                    console.warn('Failed to play chat completion sound:', error?.message || error);
+                });
+            }
+        } catch (error) {
+            console.warn('Failed to play chat completion sound:', error?.message || error);
+        }
+    }
+
+    setTravelCompletionSoundSource(context, rawPath) {
+        if (!context) {
+            return null;
+        }
+        const source = this.resolveChatCompletionSoundSource(rawPath);
+        if (!source) {
+            return null;
+        }
+        context.travelCompletionSoundSource = source;
+        return source;
+    }
+
+    queueDeferredTravelCompletionSound(source) {
+        if (!source) {
+            return;
+        }
+        this.deferredTravelCompletionSoundQueue.push(source);
+        if (!this.awaitingDeferredTravelCompletionSound) {
+            return;
+        }
+        const nextSound = this.deferredTravelCompletionSoundQueue.shift();
+        this.awaitingDeferredTravelCompletionSound = false;
+        if (nextSound) {
+            this.playChatCompletionSound(nextSound);
+        }
+    }
+
+    playDeferredTravelCompletionSound({ waitForNext = false } = {}) {
+        const nextSound = this.deferredTravelCompletionSoundQueue.shift();
+        if (nextSound) {
+            this.awaitingDeferredTravelCompletionSound = false;
+            this.playChatCompletionSound(nextSound);
+            return true;
+        }
+        this.awaitingDeferredTravelCompletionSound = Boolean(waitForNext);
+        return false;
+    }
+
+    tryPlayTravelCompletionSound(context) {
+        if (!context || !context.isTravelRequest || context.travelCompletionPlayed) {
+            return false;
+        }
+        if (!context.travelCompletionReady) {
+            return false;
+        }
+        const source = context.travelCompletionSoundSource;
+        if (!source) {
+            return false;
+        }
+        this.playChatCompletionSound(source);
+        context.travelCompletionPlayed = true;
+        return true;
+    }
+
     handleWebSocketMessage(event) {
         if (!event || typeof event.data !== 'string') {
             return;
@@ -2850,7 +2954,12 @@ class AIRPGChat {
                 statusElement: null,
                 httpResolved: false,
                 streamComplete: false,
-                streamMeta: null
+                streamMeta: null,
+                isTravelRequest: false,
+                suppressTravelCompletionSound: false,
+                travelCompletionSoundSource: null,
+                travelCompletionReady: false,
+                travelCompletionPlayed: false
             };
             this.pendingRequests.set(requestId, context);
         }
@@ -5532,6 +5641,20 @@ class AIRPGChat {
             return;
         }
         const context = this.ensureRequestContext(payload.requestId);
+        if (context?.isTravelRequest) {
+            this.setTravelCompletionSoundSource(context, payload.completionSoundPath);
+            if (context.suppressTravelCompletionSound) {
+                const source = context.travelCompletionSoundSource;
+                if (source && !context.travelCompletionPlayed) {
+                    this.queueDeferredTravelCompletionSound(source);
+                    context.travelCompletionPlayed = true;
+                }
+            } else {
+                this.tryPlayTravelCompletionSound(context);
+            }
+        } else {
+            this.playChatCompletionSound(payload.completionSoundPath);
+        }
         if (context) {
             context.streamComplete = true;
             if (context.httpResolved) {
@@ -5726,7 +5849,7 @@ class AIRPGChat {
         }
     }
 
-    async submitChatMessage(rawContent, { setButtonLoading = false, travel = false, travelMetadata = null } = {}) {
+    async submitChatMessage(rawContent, { setButtonLoading = false, travel = false, travelMetadata = null, suppressTravelCompletionSound = false } = {}) {
         const content = typeof rawContent === 'string' ? rawContent : '';
         const trimmed = content.trim();
         if (!trimmed) {
@@ -5802,6 +5925,13 @@ class AIRPGChat {
 
         const requestId = this.generateRequestId();
         const context = this.ensureRequestContext(requestId);
+        if (context) {
+            context.isTravelRequest = Boolean(travel);
+            context.suppressTravelCompletionSound = Boolean(suppressTravelCompletionSound);
+            context.travelCompletionSoundSource = null;
+            context.travelCompletionReady = false;
+            context.travelCompletionPlayed = false;
+        }
 
         if (setButtonLoading) {
             this.setSendButtonLoading(true);
@@ -5831,6 +5961,7 @@ class AIRPGChat {
 
             const data = await response.json();
             context.httpResolved = true;
+            this.setTravelCompletionSoundSource(context, data?.completionSoundPath);
 
             if (data.error) {
                 this.hideLoading(requestId);
@@ -5860,6 +5991,11 @@ class AIRPGChat {
             } catch (refreshError) {
                 console.warn('Failed to refresh location after chat response:', refreshError);
             }
+        }
+
+        if (context?.isTravelRequest && !context.suppressTravelCompletionSound) {
+            context.travelCompletionReady = true;
+            this.tryPlayTravelCompletionSound(context);
         }
 
         if (finalizeMode === 'immediate' || finalizeMode === 'afterRefresh') {
@@ -5893,11 +6029,12 @@ class AIRPGChat {
         await this.submitChatMessage(rawInput, { setButtonLoading: true, travel: false });
     }
 
-    async dispatchAutomatedMessage(message, { travel = false, travelMetadata = null } = {}) {
+    async dispatchAutomatedMessage(message, { travel = false, travelMetadata = null, suppressTravelCompletionSound = false } = {}) {
         await this.submitChatMessage(message, {
             setButtonLoading: Boolean(travel),
             travel: Boolean(travel),
-            travelMetadata: travelMetadata || null
+            travelMetadata: travelMetadata || null,
+            suppressTravelCompletionSound: Boolean(suppressTravelCompletionSound)
         });
     }
 

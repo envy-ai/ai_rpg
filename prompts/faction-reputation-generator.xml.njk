@@ -19,6 +19,11 @@ Rules:
     <generationPrompt>
 Setting Overview:
 {{ settingDescription }}
+{% if generationNotes %}
+
+Faction reputation guidance:
+{{ generationNotes }}
+{% endif %}
 
 Faction roster:
 <factions>

@@ -228,7 +228,12 @@ quests:
 quest_checks:
   enabled: true
 factions:
-  count: 5
+  count: 7
+
+# Optional chat completion sound played by clients on realtime `chat_complete`.
+# Set to null or false to disable.
+chat_completion_sound: assets/audio/bleep.mp3
+
 combat_npc_turns:
   enabled: true
   maxNpcsToAct: 2

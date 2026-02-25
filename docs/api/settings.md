@@ -14,6 +14,7 @@ Create a new setting.
 
 Request:
 - Body: SettingInfo fields (at minimum `name`)
+  - Includes `defaultFactionCount` (non-negative integer or empty) and `defaultFactions` (array of faction drafts) for settings-scoped faction defaults.
 
 Response:
 - 201: `{ success: true, setting: SettingInfo, message }`
@@ -33,6 +34,7 @@ Notes:
 - When autofilling `baseContextPreamble`, the AI is guided to use a single-line bracketed format (e.g., `[Title: ...; Tags: ...; Genre: ...]`).
 - When autofilling `defaultExistingSkills` (and the list is empty or baseline-only), the AI is asked to add up to ~10 setting-specific skills to complement the baseline list.
 - `customSlopWords` is accepted as a list (or newline-delimited string) and round-trips through autofill as `<customSlopWords><word>...</word></customSlopWords>`.
+- `defaultFactionCount` and `defaultFactions` are accepted in the payload and preserved through merge behavior; setting autofill does not currently synthesize faction drafts directly.
 
 Response:
 - 200: `{ success: true, setting, raw }` (merged setting values and raw AI XML)
@@ -57,6 +59,7 @@ Update a setting.
 
 Request:
 - Body: SettingInfo fields
+  - Supports `defaultFactionCount` and `defaultFactions` updates.
 
 Response:
 - 200: `{ success: true, setting: SettingInfo, message }`
@@ -122,6 +125,40 @@ Apply a setting as current.
 Response:
 - 200: `{ success: true, setting: SettingInfo, message, promptVariables }`
 - 404/500 with `{ success: false, error }`
+
+## POST /api/settings/factions/fill-missing
+Fill missing fields for a single setting-local faction draft via AI.
+
+Request:
+- Body:
+  - `faction` (required object): partial faction draft to complete
+  - `existingFactions` (optional array): sibling faction drafts used for relation targets and duplicate-name avoidance
+  - `settingDescription` (optional string): contextual setting summary/description
+  - `generationNotes` (optional string): additional user guidance for this autofill call
+
+Response:
+- 200: `{ success: true, faction, raw }`
+- 400/500 with `{ success: false, error }`
+
+Notes:
+- Reuses the same `fill-faction-form.xml.njk` autofill pipeline as world faction creation.
+- Relation targets are validated against the provided `existingFactions` ids.
+
+## POST /api/settings/factions/generate
+Generate a settings-local faction draft list using the existing multi-stage faction generation queries.
+
+Request:
+- Body:
+  - `count` (required non-negative integer)
+  - `settingDescription` (optional string)
+  - `generationNotes` (optional string): additional guidance applied during faction pre-generation
+
+Response:
+- 200: `{ success: true, factions }`
+- 400/500 with `{ success: false, error }`
+
+Notes:
+- Returns faction drafts (plain objects with ids/relations/tiers), not live world factions.
 
 ## DELETE /api/settings/current
 Clear the current setting.

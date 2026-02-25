@@ -763,6 +763,36 @@ function makeStatusEffect(description, duration = null) {
     });
 }
 
+function extractStatusEffectDescription(effectLike) {
+    if (!effectLike || typeof effectLike !== "object") {
+        return "";
+    }
+    if (
+        typeof effectLike.description === "string" &&
+        effectLike.description.trim()
+    ) {
+        return effectLike.description.trim();
+    }
+    if (typeof effectLike.name === "string" && effectLike.name.trim()) {
+        return effectLike.name.trim();
+    }
+    if (typeof effectLike.text === "string" && effectLike.text.trim()) {
+        return effectLike.text.trim();
+    }
+    return "";
+}
+
+function normalizeStatusEffectDescription(value) {
+    if (typeof value !== "string") {
+        return "";
+    }
+    const trimmed = value.trim();
+    if (!trimmed) {
+        return "";
+    }
+    return trimmed.replace(/\s+/g, " ").toLowerCase();
+}
+
 function resolveFactionByReference(rawValue) {
     const key = normalizeString(rawValue);
     if (!key) {
@@ -968,6 +998,8 @@ class Events {
             stream: context.stream || null,
             allowEnvironmentalEffects,
             isNpcTurn: Boolean(context.isNpcTurn),
+            suppressMoveEvents: Boolean(context.suppressMoveEvents),
+            allowMoveTurnAppearances: Boolean(context.allowMoveTurnAppearances),
             suppressTimeAdvance: true,
             _depth: 1,
         });
@@ -1495,6 +1527,7 @@ class Events {
         let questsAwarded = [];
         let questRewards = [];
         let questObjectivesCompleted = [];
+        let itemInflictStatusChanges = [];
         let timeProgress = null;
 
         try {
@@ -1567,6 +1600,12 @@ class Events {
                 questRewards = outcomeContext.questCompletionRewards;
             }
             if (
+                Array.isArray(outcomeContext?.itemInflictStatusChanges) &&
+                outcomeContext.itemInflictStatusChanges.length
+            ) {
+                itemInflictStatusChanges = outcomeContext.itemInflictStatusChanges;
+            }
+            if (
                 Array.isArray(outcomeContext?.completedQuestObjectives) &&
                 outcomeContext.completedQuestObjectives.length
             ) {
@@ -1578,6 +1617,11 @@ class Events {
         } catch (error) {
             console.warn("Failed to apply event outcomes:", error.message);
         }
+
+        this._mergeItemInflictStatusChangesIntoStructured(
+            structured,
+            itemInflictStatusChanges,
+        );
 
         this.mergeQuestOutcomesIntoStructured(structured, {
             questRewards,
@@ -1659,6 +1703,8 @@ class Events {
                             stream,
                             allowEnvironmentalEffects,
                             isNpcTurn,
+                            suppressMoveEvents,
+                            allowMoveTurnAppearances,
                             suppressTimeAdvance: true,
                             _depth: depth + 1,
                             followupQueue: activeFollowupQueue,
@@ -1900,6 +1946,83 @@ class Events {
             if (rawSegments.length) {
                 rawEntries.completed_quest_objective = rawSegments.join(" | ");
             }
+        }
+    }
+
+    static _mergeItemInflictStatusChangesIntoStructured(
+        structured,
+        itemInflictStatusChanges = [],
+    ) {
+        if (
+            !structured ||
+            typeof structured !== "object" ||
+            !Array.isArray(itemInflictStatusChanges) ||
+            !itemInflictStatusChanges.length
+        ) {
+            return;
+        }
+
+        if (!structured.parsed || typeof structured.parsed !== "object") {
+            structured.parsed = {};
+        }
+
+        const statusEntries = Array.isArray(structured.parsed.status_effect_change)
+            ? structured.parsed.status_effect_change
+            : [];
+        structured.parsed.status_effect_change = statusEntries;
+
+        const existingKeys = new Set(
+            statusEntries
+                .map((entry) => {
+                    const entity = normalizeString(entry?.entity).toLowerCase();
+                    const action = normalizeString(entry?.action).toLowerCase() || "gained";
+                    const detail = normalizeStatusEffectDescription(
+                        entry?.description || entry?.detail,
+                    );
+                    if (!entity || !detail) {
+                        return "";
+                    }
+                    return `${entity}|${action}|${detail}`;
+                })
+                .filter(Boolean),
+        );
+
+        for (const change of itemInflictStatusChanges) {
+            const entity = normalizeString(change?.entity);
+            const action =
+                normalizeString(change?.action).toLowerCase() || "gained";
+            const detail = normalizeString(change?.description || change?.detail);
+            const detailKey = normalizeStatusEffectDescription(detail);
+            const entityKey = entity.toLowerCase();
+            if (!entity || !detail || !detailKey) {
+                continue;
+            }
+
+            const key = `${entityKey}|${action}|${detailKey}`;
+            if (existingKeys.has(key)) {
+                continue;
+            }
+
+            const entry = {
+                entity,
+                detail,
+                description: detail,
+                action,
+                source: "item_inflict",
+            };
+
+            if (Number.isFinite(change?.level)) {
+                entry.level = change.level;
+            } else {
+                entry.level = null;
+            }
+
+            if (typeof change?.itemName === "string" && change.itemName.trim()) {
+                entry.item = change.itemName.trim();
+            }
+
+            statusEntries.push(entry);
+            existingKeys.add(key);
         }
     }
 
@@ -4802,9 +4925,54 @@ class Events {
                         continue;
                     }
 
+                    const effectDescription = extractStatusEffectDescription(effect);
+                    if (!effectDescription) {
+                        console.warn(
+                            `[item_inflict] "${entry.itemName}" has no target status effect description; skipping application to "${entry.targetName}".`,
+                        );
+                        continue;
+                    }
+
                     try {
-                        target.addStatusEffect(effect, effect.duration ?? 1);
+                        const appliedEffect = target.addStatusEffect(
+                            effect,
+                            effect.duration ?? 1,
+                        );
                         this.alteredCharacters.add(entry.targetName);
+
+                        if (!Array.isArray(context.itemInflictStatusChanges)) {
+                            context.itemInflictStatusChanges = [];
+                        }
+                        if (!(context.itemInflictStatusChangeKeys instanceof Set)) {
+                            context.itemInflictStatusChangeKeys = new Set();
+                        }
+
+                        const resolvedTargetName =
+                            typeof target.name === "string" && target.name.trim()
+                                ? target.name.trim()
+                                : entry.targetName;
+                        const resolvedDescription =
+                            extractStatusEffectDescription(appliedEffect) ||
+                            effectDescription;
+                        const changeKey = `${normalizeString(
+                            resolvedTargetName,
+                        ).toLowerCase()}|gained|${normalizeStatusEffectDescription(
+                            resolvedDescription,
+                        )}`;
+
+                        if (
+                            !context.itemInflictStatusChangeKeys.has(changeKey)
+                        ) {
+                            context.itemInflictStatusChangeKeys.add(changeKey);
+                            context.itemInflictStatusChanges.push({
+                                entity: resolvedTargetName,
+                                action: "gained",
+                                detail: resolvedDescription,
+                                description: resolvedDescription,
+                                itemName: entry.itemName,
+                                source: "item_inflict",
+                            });
+                        }
                     } catch (error) {
                         console.warn(
                             `Failed to apply item_inflict status effect from "${entry.itemName}" to "${entry.targetName}":`,
@@ -6143,6 +6311,79 @@ class Events {
                     prepareBasePromptContext,
                 } = this._deps;
                 console.log("Processing status_effect_change entries:", entries);
+
+                const itemInflictByEntity = new Map();
+                if (Array.isArray(context.itemInflictStatusChanges)) {
+                    for (const statusChange of context.itemInflictStatusChanges) {
+                        const entityKey = normalizeString(
+                            statusChange?.entity,
+                        ).toLowerCase();
+                        const detailKey = normalizeStatusEffectDescription(
+                            statusChange?.description || statusChange?.detail,
+                        );
+                        if (!entityKey || !detailKey) {
+                            continue;
+                        }
+                        if (!itemInflictByEntity.has(entityKey)) {
+                            itemInflictByEntity.set(entityKey, []);
+                        }
+                        const bucket = itemInflictByEntity.get(entityKey);
+                        if (!bucket.includes(detailKey)) {
+                            bucket.push(detailKey);
+                        }
+                    }
+                }
+
+                if (itemInflictByEntity.size) {
+                    const filteredEntries = [];
+                    for (const entry of entries) {
+                        const action =
+                            normalizeString(entry?.action).toLowerCase() || "";
+                        if (action !== "gained") {
+                            filteredEntries.push(entry);
+                            continue;
+                        }
+
+                        const entityKey = normalizeString(entry?.entity).toLowerCase();
+                        const detailKey = normalizeStatusEffectDescription(
+                            entry?.detail,
+                        );
+                        const itemInflictDescriptions =
+                            itemInflictByEntity.get(entityKey) || null;
+                        if (
+                            !entityKey ||
+                            !detailKey ||
+                            !Array.isArray(itemInflictDescriptions) ||
+                            !itemInflictDescriptions.length
+                        ) {
+                            filteredEntries.push(entry);
+                            continue;
+                        }
+
+                        const isDuplicate = itemInflictDescriptions.some(
+                            (itemInflictDetail) =>
+                                detailKey === itemInflictDetail ||
+                                detailKey.startsWith(itemInflictDetail),
+                        );
+
+                        if (isDuplicate) {
+                            console.debug(
+                                `[status_effect_change] Skipping duplicate "${entry.detail}" for "${entry.entity}" because item_inflict already applied the effect.`,
+                            );
+                            continue;
+                        }
+
+                        filteredEntries.push(entry);
+                    }
+
+                    entries.length = 0;
+                    if (filteredEntries.length) {
+                        entries.push(...filteredEntries);
+                    }
+                    if (!entries.length) {
+                        return;
+                    }
+                }
 
                 const gainEntries = entries.filter(
                     (entry) => entry?.action === "gained" && entry.detail,

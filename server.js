@@ -1781,7 +1781,9 @@ function buildNewGameDefaults(settingSnapshot = null) {
         availableRaces: [],
         playerClass: '',
         playerRace: '',
-        startingCurrency: 0
+        startingCurrency: 0,
+        factionCount: null,
+        factions: []
     };
 
     if (!settingSnapshot) {
@@ -1825,6 +1827,18 @@ function buildNewGameDefaults(settingSnapshot = null) {
     if (Number.isFinite(parsedDefaultCurrency)) {
         defaults.startingCurrency = Math.max(0, parsedDefaultCurrency);
     }
+
+    const parsedFactionCount = Number.parseInt(settingSnapshot.defaultFactionCount, 10);
+    if (Number.isFinite(parsedFactionCount) && parsedFactionCount >= 0) {
+        defaults.factionCount = parsedFactionCount;
+    }
+
+    if (Array.isArray(settingSnapshot.defaultFactions)) {
+        defaults.factions = settingSnapshot.defaultFactions
+            .filter(entry => entry && typeof entry === 'object' && !Array.isArray(entry))
+            .map(entry => JSON.parse(JSON.stringify(entry)));
+    }
+
     defaults.playerClass = classList.length ? classList[0] : '';
     defaults.playerRace = raceList.length ? raceList[0] : '';
 
@@ -2016,7 +2030,7 @@ const gameLocationExits = new Map(); // Store LocationExit instances by ID
 const regions = new Map(); // Store Region instances by ID
 const pendingRegionStubs = new Map(); // Store region definitions awaiting full generation
 const pendingLocationImages = new Map(); // Store active image job IDs per location
-const npcGenerationPromises = new Map(); // Track in-flight NPC generations by normalized name
+const npcGenerationPromises = new Map(); // Track in-flight NPC generations by normalized explicit name
 const levelUpAbilityPromises = new Map(); // Track in-flight level-up ability generations per character
 
 function generateChatMessageId() {
@@ -8921,6 +8935,141 @@ function assertRegionEntryFinalizationIntegrity({
     }
 }
 
+function cleanupRegionEntryStubRegionReferences({
+    removedStubId,
+    replacementLocationId,
+    targetRegionId = null,
+    context = 'region entry finalization'
+} = {}) {
+    const contextLabel = typeof context === 'string' && context.trim()
+        ? context.trim()
+        : 'region entry finalization';
+    const normalizedRemovedId = typeof removedStubId === 'string'
+        ? removedStubId.trim()
+        : '';
+    const normalizedReplacementId = typeof replacementLocationId === 'string'
+        ? replacementLocationId.trim()
+        : '';
+    const normalizedTargetRegionId = typeof targetRegionId === 'string'
+        ? targetRegionId.trim()
+        : '';
+
+    if (!normalizedRemovedId) {
+        throw new Error(`[${contextLabel}] Missing removed stub location id for region cleanup.`);
+    }
+    if (!normalizedReplacementId) {
+        throw new Error(`[${contextLabel}] Missing replacement location id for region cleanup.`);
+    }
+    if (!gameLocations.has(normalizedReplacementId)) {
+        throw new Error(`[${contextLabel}] Replacement location '${normalizedReplacementId}' is missing from gameLocations during region cleanup.`);
+    }
+
+    for (const [candidateRegionId, candidateRegion] of regions.entries()) {
+        if (!candidateRegion) {
+            continue;
+        }
+
+        const locationIds = Array.isArray(candidateRegion.locationIds)
+            ? candidateRegion.locationIds
+            : [];
+        const normalizedLocationIds = [];
+        for (let index = 0; index < locationIds.length; index += 1) {
+            const rawId = locationIds[index];
+            if (typeof rawId !== 'string') {
+                throw new Error(
+                    `[${contextLabel}] Region '${candidateRegionId}' has non-string location id at index ${index}.`,
+                );
+            }
+            const trimmedId = rawId.trim();
+            if (!trimmedId) {
+                throw new Error(
+                    `[${contextLabel}] Region '${candidateRegionId}' has empty location id at index ${index}.`,
+                );
+            }
+            normalizedLocationIds.push(trimmedId);
+        }
+        const filteredLocationIds = normalizedLocationIds.filter(
+            id => id !== normalizedRemovedId,
+        );
+
+        if (filteredLocationIds.length !== normalizedLocationIds.length) {
+            candidateRegion.locationIds = filteredLocationIds;
+            console.warn(
+                `[${contextLabel}] Removed stale stub '${normalizedRemovedId}' from region '${candidateRegionId}' locationIds.`,
+            );
+        } else if (
+            filteredLocationIds.length !== locationIds.length
+            || filteredLocationIds.some((id, index) => id !== locationIds[index])
+        ) {
+            candidateRegion.locationIds = filteredLocationIds;
+        }
+
+        if (normalizedTargetRegionId && candidateRegionId === normalizedTargetRegionId) {
+            const targetIds = Array.isArray(candidateRegion.locationIds)
+                ? candidateRegion.locationIds
+                : [];
+            if (!targetIds.includes(normalizedReplacementId)) {
+                candidateRegion.locationIds = [...targetIds, normalizedReplacementId];
+            }
+        }
+
+        const currentEntranceId = typeof candidateRegion.entranceLocationId === 'string'
+            ? candidateRegion.entranceLocationId.trim()
+            : '';
+        if (currentEntranceId !== normalizedRemovedId) {
+            continue;
+        }
+
+        if (normalizedTargetRegionId && candidateRegionId === normalizedTargetRegionId) {
+            candidateRegion.entranceLocationId = normalizedReplacementId;
+            continue;
+        }
+
+        const candidateIds = Array.isArray(candidateRegion.locationIds)
+            ? candidateRegion.locationIds
+            : [];
+        const fallbackEntranceId = candidateIds.find(
+            id => typeof id === 'string' && id.trim() && gameLocations.has(id.trim()),
+        ) || null;
+
+        if (fallbackEntranceId) {
+            candidateRegion.entranceLocationId = fallbackEntranceId;
+            console.warn(
+                `[${contextLabel}] Region '${candidateRegionId}' entrance pointed at removed stub '${normalizedRemovedId}'. Repointed to '${fallbackEntranceId}'.`,
+            );
+        } else {
+            candidateRegion.entranceLocationId = null;
+            console.warn(
+                `[${contextLabel}] Region '${candidateRegionId}' entrance pointed at removed stub '${normalizedRemovedId}' and had no valid fallback; cleared entrance.`,
+            );
+        }
+    }
+
+    if (normalizedTargetRegionId) {
+        const targetRegion = regions.get(normalizedTargetRegionId);
+        if (!targetRegion) {
+            throw new Error(
+                `[${contextLabel}] Target region '${normalizedTargetRegionId}' is missing after region cleanup.`,
+            );
+        }
+        const targetLocationIds = Array.isArray(targetRegion.locationIds)
+            ? targetRegion.locationIds
+            : [];
+        if (!targetLocationIds.includes(normalizedReplacementId)) {
+            throw new Error(
+                `[${contextLabel}] Target region '${normalizedTargetRegionId}' is missing replacement location '${normalizedReplacementId}' after region cleanup.`,
+            );
+        }
+        if (
+            typeof targetRegion.entranceLocationId !== 'string'
+            || !targetRegion.entranceLocationId.trim()
+            || targetRegion.entranceLocationId.trim() === normalizedRemovedId
+        ) {
+            targetRegion.entranceLocationId = normalizedReplacementId;
+        }
+    }
+}
+
 async function finalizeRegionEntry({ stubLocation, entranceLocation, region, originDescription }) {
     if (!stubLocation || !entranceLocation) {
         return entranceLocation || null;
@@ -9187,18 +9336,12 @@ async function finalizeRegionEntry({ stubLocation, entranceLocation, region, ori
         }
     }
 
-    const currentRegionLocationIds = region.locationIds || [];
-    if (Array.isArray(currentRegionLocationIds) && currentRegionLocationIds.includes(stubLocation.id)) {
-        region.locationIds = currentRegionLocationIds.filter(id => id !== stubLocation.id);
-    }
-
-    if (region && typeof region.addLocationId === 'function') {
-        region.addLocationId(entranceLocation.id);
-    }
-
-    if (Array.isArray(region.locationIds) && !region.locationIds.includes(entranceLocation.id)) {
-        region.locationIds.push(entranceLocation.id);
-    }
+    cleanupRegionEntryStubRegionReferences({
+        removedStubId: stubLocation.id,
+        replacementLocationId: entranceLocation.id,
+        targetRegionId: region?.id || null,
+        context: 'region entry finalization'
+    });
 
     if (originLocation && typeof originLocation.removeNpcId === 'function') {
         // no-op, placeholder in case stub stored NPCs
@@ -11949,8 +12092,9 @@ async function generateNpcFromEvent({
     }
 
     const normalizedKey = trimmedName.toLowerCase();
-    if (npcGenerationPromises.has(normalizedKey)) {
-        return npcGenerationPromises.get(normalizedKey);
+    const dedupeKey = normalizedKey || null;
+    if (dedupeKey && npcGenerationPromises.has(dedupeKey)) {
+        return npcGenerationPromises.get(dedupeKey);
     }
 
     const generationPromise = (async () => {
@@ -12292,10 +12436,14 @@ async function generateNpcFromEvent({
             return null;
         }
     }).finally(() => {
-        npcGenerationPromises.delete(normalizedKey);
+        if (dedupeKey) {
+            npcGenerationPromises.delete(dedupeKey);
+        }
     });
 
-    npcGenerationPromises.set(normalizedKey, generationPromise);
+    if (dedupeKey) {
+        npcGenerationPromises.set(dedupeKey, generationPromise);
+    }
     return generationPromise;
 }
 
@@ -16236,6 +16384,7 @@ function renderFactionsPrompt(context = {}) {
 
         return promptEnv.render(templateName, {
             settingDescription: context.settingDescription || 'A vibrant world of adventure.',
+            generationNotes: typeof context.generationNotes === 'string' ? context.generationNotes.trim() : '',
             numFactions: requestedCount
         });
     } catch (error) {
@@ -16258,6 +16407,7 @@ function renderFactionRelationshipsPrompt(context = {}) {
 
         return promptEnv.render(templateName, {
             settingDescription: context.settingDescription || 'A vibrant world of adventure.',
+            generationNotes: typeof context.generationNotes === 'string' ? context.generationNotes.trim() : '',
             factions
         });
     } catch (error) {
@@ -16281,6 +16431,7 @@ function renderFactionReputationPrompt(context = {}) {
 
         return promptEnv.render(templateName, {
             settingDescription: context.settingDescription || 'A vibrant world of adventure.',
+            generationNotes: typeof context.generationNotes === 'string' ? context.generationNotes.trim() : '',
             factions
         });
     } catch (error) {
@@ -17781,7 +17932,7 @@ async function generateSkillsList({ count, settingDescription, existingSkills = 
     }
 }
 
-async function generateFactionsList({ count, settingDescription }) {
+async function generateFactionsList({ count, settingDescription, generationNotes = '', asDraft = false } = {}) {
     const numericCount = Number(count);
     let safeCount = Number.isInteger(numericCount) && numericCount >= 0
         ? numericCount
@@ -17858,6 +18009,7 @@ async function generateFactionsList({ count, settingDescription }) {
         metadataLabel: 'faction_generation',
         renderTemplate: () => renderFactionsPrompt({
             settingDescription: resolvedSettingDescription,
+            generationNotes,
             numFactions: safeCount
         }),
         parseResponse: parseFactionCoreXml,
@@ -17887,6 +18039,7 @@ async function generateFactionsList({ count, settingDescription }) {
         metadataLabel: 'faction_relationship_generation',
         renderTemplate: () => renderFactionRelationshipsPrompt({
             settingDescription: resolvedSettingDescription,
+            generationNotes,
             factions: parsedCoreFactions
         }),
         parseResponse: parseFactionRelationsXml,
@@ -17903,6 +18056,7 @@ async function generateFactionsList({ count, settingDescription }) {
         metadataLabel: 'faction_reputation_generation',
         renderTemplate: () => renderFactionReputationPrompt({
             settingDescription: resolvedSettingDescription,
+            generationNotes,
             factions: parsedCoreFactions
         }),
         parseResponse: parseFactionReputationTiersXml,
@@ -17949,17 +18103,45 @@ async function generateFactionsList({ count, settingDescription }) {
         }
     });
 
-    const created = parsedFactions.map(entry => new Faction({
-        name: entry.name,
-        tags: entry.tags,
-        goals: entry.goals,
-        description: entry.description,
-        shortDescription: entry.shortDescription,
-        homeRegionName: entry.homeRegionName,
-        assets: entry.assets,
-        relations: {},
-        reputationTiers: entry.reputationTiers
-    }));
+    const createDraftFactionId = (() => {
+        let counter = 0;
+        return () => {
+            counter += 1;
+            return `setting_faction_${Date.now()}_${counter}`;
+        };
+    })();
+
+    const created = asDraft
+        ? parsedFactions.map(entry => ({
+            id: createDraftFactionId(),
+            name: entry.name,
+            tags: Array.isArray(entry.tags) ? entry.tags.slice() : [],
+            goals: Array.isArray(entry.goals) ? entry.goals.slice() : [],
+            description: entry.description || null,
+            shortDescription: entry.shortDescription || null,
+            homeRegionName: entry.homeRegionName || null,
+            assets: Array.isArray(entry.assets) ? entry.assets.map(asset => ({ ...asset })) : [],
+            relations: {},
+            reputationTiers: Array.isArray(entry.reputationTiers)
+                ? entry.reputationTiers.map(tier => ({
+                    threshold: Number(tier.threshold),
+                    label: tier.label || '',
+                    perks: Array.isArray(tier.perks) ? tier.perks.slice() : [],
+                    penalties: Array.isArray(tier.penalties) ? tier.penalties.slice() : []
+                }))
+                : []
+        }))
+        : parsedFactions.map(entry => new Faction({
+            name: entry.name,
+            tags: entry.tags,
+            goals: entry.goals,
+            description: entry.description,
+            shortDescription: entry.shortDescription,
+            homeRegionName: entry.homeRegionName,
+            assets: entry.assets,
+            relations: {},
+            reputationTiers: entry.reputationTiers
+        }));
 
     const nameToId = new Map();
     created.forEach(faction => {
@@ -18002,7 +18184,11 @@ async function generateFactionsList({ count, settingDescription }) {
                 notes: relation.notes || defaultRelationNotes
             });
         }
-        faction.relations = relationMap;
+        if (asDraft) {
+            faction.relations = Object.fromEntries(relationMap.entries());
+        } else {
+            faction.relations = relationMap;
+        }
     });
 
     return created;
@@ -21930,6 +22116,7 @@ async function generateRegionFromPrompt(options = {}) {
 // Middleware
 app.use(bodyParser.json({ limit: '20mb' }));
 app.use(bodyParser.urlencoded({ extended: true, limit: '20mb' }));
+app.use('/assets', express.static(path.join(__dirname, 'assets')));
 app.use(express.static('public'));
 
 // Route for AI RPG Chat Interface
@@ -22310,11 +22497,16 @@ app.post('/config', (req, res) => {
 // Settings management page
 app.get('/settings', (req, res) => {
     const { skills: defaultExistingSkills, error: defaultExistingSkillsError } = loadDefaultSkillsForSettings();
+    const parsedFactionCount = Number.parseInt(config?.factions?.count, 10);
+    const defaultFactionCountFallback = Number.isFinite(parsedFactionCount) && parsedFactionCount >= 0
+        ? parsedFactionCount
+        : 5;
     res.render('settings.njk', {
         title: 'Game Settings Manager',
         currentPage: 'settings',
         defaultExistingSkills,
-        defaultExistingSkillsError
+        defaultExistingSkillsError,
+        defaultFactionCountFallback
     });
 });
 

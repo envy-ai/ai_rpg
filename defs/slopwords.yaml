@@ -10,6 +10,9 @@ slopwords:
   resonance: default
   harmonic: default
   consent: default
+  transaction: default
+  transactional: default
+  transactions: default
   ozone: 0
   Elara: 0
   Aris: 0
@@ -53,6 +56,7 @@ slopwords:
   Elowen: 0
   Jinx: 0
   Vane: 0
+  Poppy: 0
 
   # Alphabetical list:
   absently: default

@@ -20,6 +20,11 @@ Rules:
     <generationPrompt>
 Setting Overview:
 {{ settingDescription }}
+{% if generationNotes %}
+
+Faction generation guidance (may include specific instructions for relationships):
+{{ generationNotes }}
+{% endif %}
 
 Faction roster:
 <factions>

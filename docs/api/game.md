@@ -25,6 +25,11 @@ Response:
 Notes:
 - When `clientId` is provided, realtime status events are emitted during generation.
 - Skills are sourced from the active setting (`defaultExistingSkills`) and are not accepted in the request body.
+- Faction setup now prefers active-setting defaults when present:
+  - `defaultFactions` are loaded first.
+  - `defaultFactionCount` determines the total target count when provided.
+  - If count exceeds preconfigured drafts, the remainder is generated via faction generation prompts.
+  - If `defaultFactionCount` is unset and drafts exist, draft length is used; otherwise `config.factions.count` is used as fallback.
 - World calendar generation runs during new-game setup via an LLM prompt (`calendar_generation`).
 - The prompt explicitly instructs Earth-like settings to use a Gregorian calendar (standard month/day names and lengths, no leap-year handling).
 - The prompt requests season descriptions, per-season time-of-day lighting descriptions, and 10 holiday entries (with descriptions).

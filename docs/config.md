@@ -248,13 +248,29 @@ random_event_frequency:
 
 ```yaml
 factions:
-  count: 5
+  count: 7
 ```
 
 - `0` disables faction generation.
 - Positive integers request that many factions from the generator.
 - If the generator returns more factions than requested, extras are accepted.
 - If the generator returns fewer factions than requested, new-game setup fails with an error.
+- Active-setting overrides:
+  - If the applied setting defines `defaultFactionCount`, that value is used instead of `factions.count`.
+  - If `defaultFactionCount` is unset and the setting has `defaultFactions`, the draft count is used.
+  - `factions.count` remains the fallback when the applied setting has neither.
+
+## Chat completion sound
+
+`chat_completion_sound` controls the optional realtime sound cue clients play when `/api/chat` completes.
+
+```yaml
+chat_completion_sound: assets/audio/bleep.mp3
+```
+
+- `null` or `false` disables playback.
+- Any non-empty string is treated as the client-playback path.
+- The default path resolves to `/assets/audio/bleep.mp3` and requires static serving from the server.
 
 ## History windows (`recent_history_turns` vs `client_message_history`)
 

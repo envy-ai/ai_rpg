@@ -6,13 +6,13 @@ Represents a game setting/world configuration, including theme, genre, prompts, 
 ## Key State
 - Core fields: `#id`, `#name`, `#description`, `#theme`, `#genre`, `#tone`, `#difficulty`, `#startingLocationType`.
 - Prompt and style fields: `#currencyName`, `#currencyNamePlural`, `#currencyValueNotes`, `#writingStyleNotes`, `#baseContextPreamble`, `#characterGenInstructions`, `#imagePromptPrefix*`, `#customSlopWords`.
-- Defaults: `#playerStartingLevel`, `#defaultStartingCurrency`, `#defaultPlayerName`, `#defaultPlayerDescription`, `#defaultStartingLocation` (generation instructions), `#defaultExistingSkills`.
+- Defaults: `#playerStartingLevel`, `#defaultStartingCurrency`, `#defaultPlayerName`, `#defaultPlayerDescription`, `#defaultStartingLocation` (generation instructions), `#defaultExistingSkills`, `#defaultFactionCount`, `#defaultFactions`.
 - Lists: `#availableClasses`, `#availableRaces`, `#customSlopWords`.
 - Metadata: `#createdAt`, `#lastUpdated`.
 - Static indexes: `#indexByID`, `#indexByName`.
 
 ## Construction
-- `new SettingInfo(options)` validates required fields and normalizes lists and numeric defaults. Adds the instance to static indexes.
+- `new SettingInfo(options)` validates required fields and normalizes lists, numeric defaults, and faction drafts. Adds the instance to static indexes.
 
 ## Accessors
 - Getters and setters exist for all fields above. Setters normalize strings and update `#lastUpdated`.
@@ -44,4 +44,5 @@ Represents a game setting/world configuration, including theme, genre, prompts, 
 ## Notes
 - Many setters normalize line endings to `\n` for prompt fields.
 - List normalization accepts string (newline-delimited) or array input.
+- Faction draft normalization validates ids/names, relation targets/statuses/notes, assets, and reputation tiers; invalid payloads throw explicit errors.
 - `baseContextPreamble` is prepended to image-generation prompts at execution time.

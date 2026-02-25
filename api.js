@@ -164,6 +164,23 @@ module.exports = function registerApiRoutes(scope) {
             next();
         });
 
+        function resolveChatCompletionSoundPath(rawValue) {
+            if (rawValue === null || rawValue === false || typeof rawValue === 'undefined') {
+                return null;
+            }
+
+            if (typeof rawValue !== 'string') {
+                throw new Error('Configuration error: chat_completion_sound must be a string, null, or false.');
+            }
+
+            const trimmed = rawValue.trim();
+            if (!trimmed) {
+                throw new Error('Configuration error: chat_completion_sound must be a non-empty string, null, or false.');
+            }
+
+            return trimmed;
+        }
+
         function createStreamEmitter({ clientId, requestId } = {}) {
             const hasRealtime = Boolean(realtimeHub && typeof realtimeHub.emit === 'function');
             const targetClientId = (typeof clientId === 'string' && clientId.trim()) ? clientId.trim() : null;
@@ -211,7 +228,15 @@ module.exports = function registerApiRoutes(scope) {
                     return emit('npc_turn', payload);
                 },
                 complete(payload = {}) {
-                    return emit('chat_complete', payload);
+                    const finalizedPayload = { ...(payload || {}) };
+                    const isAborted = finalizedPayload.aborted === true;
+                    if (!isAborted) {
+                        const completionSoundPath = resolveChatCompletionSoundPath(config?.chat_completion_sound);
+                        if (completionSoundPath) {
+                            finalizedPayload.completionSoundPath = completionSoundPath;
+                        }
+                    }
+                    return emit('chat_complete', finalizedPayload);
                 },
                 error(payload = {}) {
                     return emit('chat_error', payload);
@@ -11607,7 +11632,8 @@ module.exports = function registerApiRoutes(scope) {
                                             ? userInput
                                             : null,
                                         stream,
-                                        suppressMoveEvents: Boolean(currentActionIsTravel && travelMetadataIsEventDriven)
+                                        // For non-travelProse turns, let event checks apply any narrated movement.
+                                        suppressMoveEvents: false
                                     }),
                                     Events.runQuestChecks()
                                 ]);
@@ -11884,20 +11910,41 @@ module.exports = function registerApiRoutes(scope) {
                                         || travelMetadata.exit.destinationId
                                         || destinationLocation?.id;
 
-                                    if (currentPlayer && destinationLocation && currentPlayer.currentLocation !== destinationLocation.id) {
-                                        currentPlayer.setLocation(destinationLocation);
+                                    const moveAlreadyProcessed = Boolean(Globals.processedMove);
+                                    let finalLocation = destinationLocation || null;
+
+                                    if (moveAlreadyProcessed) {
+                                        const resolvedLocationId = requireLocationId(
+                                            currentPlayer?.currentLocation,
+                                            'event-driven travel resolved location'
+                                        );
+                                        const resolvedLocation = gameLocations.get(resolvedLocationId) || null;
+                                        if (!resolvedLocation) {
+                                            throw new Error(`Resolved event-driven location '${resolvedLocationId}' is missing from gameLocations.`);
+                                        }
+                                        finalLocation = resolvedLocation;
+                                        traveledToLocationId = resolvedLocationId;
+                                    } else {
+                                        if (currentPlayer && destinationLocation && currentPlayer.currentLocation !== destinationLocation.id) {
+                                            currentPlayer.setLocation(destinationLocation);
+                                        }
+                                        traveledToLocationId = destinationLocation?.id || traveledToLocationId;
                                     }
 
-                                    traveledToLocationId = destinationLocation?.id || traveledToLocationId;
+                                    if (finalLocation) {
+                                        location = finalLocation;
+                                    }
                                     Globals.processedMove = true;
                                     assertMovementGraphIntegrity({
                                         player: currentPlayer,
                                         context: 'event-driven travel movement'
                                     });
 
-                                    const normalizedName = typeof destinationName === 'string' && destinationName.trim()
-                                        ? destinationName.trim()
-                                        : (destinationLocation?.id || travelMetadata.exit.destinationId);
+                                    const normalizedName = (typeof finalLocation?.name === 'string' && finalLocation.name.trim())
+                                        ? finalLocation.name.trim()
+                                        : (typeof destinationName === 'string' && destinationName.trim()
+                                            ? destinationName.trim()
+                                            : (traveledToLocationId || travelMetadata.exit.destinationId));
 
                                     if (normalizedName) {
                                         const eventsPayload = responseData.events
@@ -16186,6 +16233,52 @@ module.exports = function registerApiRoutes(scope) {
             return relationMap;
         };
 
+        const normalizeFactionRelationsForTargets = (value, {
+            currentId = null,
+            validTargetIds = null
+        } = {}) => {
+            if (value === null || value === undefined) {
+                return null;
+            }
+            if (!value || typeof value !== 'object' || Array.isArray(value)) {
+                throw new Error('Faction relations must be an object keyed by faction id.');
+            }
+            if (validTargetIds !== null && !(validTargetIds instanceof Set)) {
+                throw new Error('normalizeFactionRelationsForTargets requires validTargetIds to be a Set or null.');
+            }
+
+            const relationMap = {};
+            for (const [rawId, relation] of Object.entries(value)) {
+                const targetId = typeof rawId === 'string' ? rawId.trim() : '';
+                if (!targetId) {
+                    throw new Error('Faction relation ids must be non-empty strings.');
+                }
+                if (currentId && targetId === currentId) {
+                    continue;
+                }
+                if (validTargetIds && !validTargetIds.has(targetId)) {
+                    throw new Error(`Faction relation references unknown faction id "${targetId}".`);
+                }
+                if (!relation || typeof relation !== 'object' || Array.isArray(relation)) {
+                    throw new Error(`Faction relation for "${targetId}" must be an object.`);
+                }
+                const status = typeof relation.status === 'string' ? relation.status.trim().toLowerCase() : '';
+                if (!status) {
+                    throw new Error(`Faction relation for "${targetId}" is missing status.`);
+                }
+                if (!['allied', 'neutral', 'hostile', 'rival'].includes(status)) {
+                    throw new Error(`Faction relation for "${targetId}" has invalid status "${status}".`);
+                }
+                const notes = typeof relation.notes === 'string' ? relation.notes.trim() : '';
+                if (!notes) {
+                    throw new Error(`Faction relation for "${targetId}" is missing notes.`);
+                }
+                relationMap[targetId] = { status, notes };
+            }
+
+            return relationMap;
+        };
+
         const serializeFactionForClient = (faction) => {
             if (!faction) {
                 return null;
@@ -16231,7 +16324,10 @@ module.exports = function registerApiRoutes(scope) {
             return false;
         };
 
-        const normalizeFactionAutofillPayload = (raw = {}) => {
+        const normalizeFactionAutofillPayload = (raw = {}, {
+            currentId = null,
+            validTargetIds = null
+        } = {}) => {
             const toText = (value) => {
                 if (value === null || value === undefined) {
                     return '';
@@ -16274,7 +16370,10 @@ module.exports = function registerApiRoutes(scope) {
                 tags: normalizeFactionStringList(raw.tags || [], 'Faction tags'),
                 goals: normalizeFactionStringList(raw.goals || [], 'Faction goals'),
                 assets: normalizeAssetsForAutofill(raw.assets),
-                relations: normalizeFactionRelations(raw.relations || {}, { currentId: null }) || {},
+                relations: normalizeFactionRelationsForTargets(raw.relations || {}, {
+                    currentId,
+                    validTargetIds
+                }) || {},
                 reputationTiers: normalizeFactionTiers(raw.reputationTiers || [])
             };
         };
@@ -16731,6 +16830,238 @@ module.exports = function registerApiRoutes(scope) {
             });
         };
 
+        let transientFactionDraftCounter = 0;
+        const buildTransientFactionDraftId = () => {
+            transientFactionDraftCounter += 1;
+            return `faction_draft_${Date.now()}_${transientFactionDraftCounter}`;
+        };
+
+        const normalizeExistingFactionDrafts = (value) => {
+            if (value === null || value === undefined) {
+                return [];
+            }
+            if (!Array.isArray(value)) {
+                throw new Error('existingFactions must be an array when provided.');
+            }
+
+            const normalized = value.map((entry, index) => {
+                if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+                    throw new Error(`existingFactions[${index}] must be an object.`);
+                }
+                const name = typeof entry.name === 'string' ? entry.name.trim() : '';
+                if (!name) {
+                    throw new Error(`existingFactions[${index}].name is required.`);
+                }
+                if (name.toLowerCase() === 'none') {
+                    throw new Error(`existingFactions[${index}].name cannot be "None".`);
+                }
+                const providedId = typeof entry.id === 'string' ? entry.id.trim() : '';
+                const id = providedId || buildTransientFactionDraftId();
+                const shortDescription = typeof entry.shortDescription === 'string'
+                    ? entry.shortDescription.trim()
+                    : '';
+                return {
+                    id,
+                    name,
+                    shortDescription
+                };
+            });
+
+            const seenIds = new Set();
+            const seenNames = new Set();
+            for (const faction of normalized) {
+                if (seenIds.has(faction.id)) {
+                    throw new Error(`existingFactions contains duplicate id "${faction.id}".`);
+                }
+                seenIds.add(faction.id);
+                const lowerName = faction.name.toLowerCase();
+                if (seenNames.has(lowerName)) {
+                    throw new Error(`existingFactions contains duplicate name "${faction.name}".`);
+                }
+                seenNames.add(lowerName);
+            }
+
+            return normalized;
+        };
+
+        const buildExistingFactionContext = (existingFactions) => {
+            const existingFactionIds = existingFactions
+                .map(entry => (typeof entry?.id === 'string' ? entry.id.trim() : ''))
+                .filter(Boolean);
+            const existingFactionsById = new Map(
+                existingFactions
+                    .filter(entry => typeof entry?.id === 'string')
+                    .map(entry => [entry.id, entry])
+            );
+            const existingFactionNameMap = new Map();
+            for (const entry of existingFactions) {
+                if (typeof entry?.name !== 'string' || typeof entry?.id !== 'string') {
+                    continue;
+                }
+                const exactKey = entry.name.trim().toLowerCase();
+                if (exactKey) {
+                    existingFactionNameMap.set(exactKey, entry.id);
+                }
+                const normalizedKey = normalizeFactionRelationNameKey(entry.name);
+                if (normalizedKey) {
+                    existingFactionNameMap.set(normalizedKey, entry.id);
+                }
+            }
+            return {
+                existingFactionIds,
+                existingFactionsById,
+                existingFactionNameMap,
+                validTargetIds: new Set(existingFactionIds)
+            };
+        };
+
+        const runFactionAutofill = async ({
+            incomingFaction,
+            existingFactions = [],
+            settingDescription = '',
+            generationNotes = '',
+            metadataLabel = 'faction_autofill',
+            metadataPrefix = 'faction_autofill'
+        } = {}) => {
+            if (!incomingFaction || typeof incomingFaction !== 'object') {
+                throw new Error('incomingFaction must be an object.');
+            }
+            if (!Array.isArray(existingFactions)) {
+                throw new Error('existingFactions must be an array.');
+            }
+
+            const context = buildExistingFactionContext(existingFactions);
+            const normalizedFaction = normalizeFactionAutofillPayload(incomingFaction, {
+                currentId: null,
+                validTargetIds: context.validTargetIds
+            });
+            if (!factionPayloadNeedsAutofill(normalizedFaction, {
+                existingFactionIds: context.existingFactionIds,
+                existingFactionsById: context.existingFactionsById
+            })) {
+                return {
+                    faction: normalizedFaction,
+                    raw: null
+                };
+            }
+
+            const relationEntries = Object.entries(normalizedFaction.relations || {})
+                .map(([targetId, relation]) => {
+                    const targetFaction = context.existingFactionsById.get(targetId);
+                    return {
+                        factionId: targetId,
+                        factionName: targetFaction?.name || targetId,
+                        status: relation?.status || '',
+                        notes: relation?.notes || ''
+                    };
+                });
+
+            const renderedTemplate = promptEnv.render('fill-faction-form.xml.njk', {
+                faction: {
+                    ...normalizedFaction,
+                    relationEntries
+                },
+                existingFactions,
+                settingDescription: typeof settingDescription === 'string' ? settingDescription : '',
+                generationNotes
+            });
+
+            const promptData = parseXMLTemplate(renderedTemplate);
+            const systemPrompt = promptData.systemPrompt ? promptData.systemPrompt.trim() : '';
+            const generationPrompt = promptData.generationPrompt ? promptData.generationPrompt.trim() : '';
+
+            if (!generationPrompt) {
+                throw new Error('Failed to build faction autofill prompt from template.');
+            }
+            if (!config?.ai) {
+                throw new Error('AI configuration is incomplete. Please update config.yaml.');
+            }
+
+            const messages = [];
+            if (systemPrompt) {
+                messages.push({ role: 'system', content: systemPrompt });
+            }
+            messages.push({ role: 'user', content: generationPrompt });
+
+            const requestOptions = {
+                messages,
+                metadataLabel
+            };
+            if (typeof promptData.temperature === 'number') {
+                requestOptions.temperature = promptData.temperature;
+            } else {
+                const configTemperature = Number(config.ai.temperature);
+                if (Number.isInteger(configTemperature)) {
+                    requestOptions.temperature = configTemperature;
+                }
+            }
+
+            const aiMessage = await LLMClient.chatCompletion(requestOptions);
+            if (!aiMessage || typeof aiMessage !== 'string') {
+                throw new Error('AI did not return a usable response.');
+            }
+
+            LLMClient.logPrompt({
+                prefix: metadataPrefix,
+                metadataLabel,
+                systemPrompt,
+                generationPrompt,
+                response: aiMessage
+            });
+
+            const generatedFaction = parseFactionAutofillResponse(aiMessage);
+            const mergedFaction = mergeFactionAutofillValues(normalizedFaction, generatedFaction);
+
+            const generatedRelationMap = mapGeneratedRelationsToIds(generatedFaction.relationEntries, context.existingFactionNameMap);
+            const mergedRelationMap = {
+                ...(normalizedFaction.relations || {})
+            };
+            for (const [targetId, relation] of Object.entries(generatedRelationMap)) {
+                const current = mergedRelationMap[targetId];
+                const status = typeof current?.status === 'string' ? current.status.trim() : '';
+                const notes = typeof current?.notes === 'string' ? current.notes.trim() : '';
+                if (!status || !notes) {
+                    mergedRelationMap[targetId] = relation;
+                }
+            }
+            mergedFaction.relations = mergedRelationMap;
+
+            const finalized = {
+                name: typeof mergedFaction.name === 'string' ? mergedFaction.name.trim() : '',
+                homeRegionName: typeof mergedFaction.homeRegionName === 'string' ? mergedFaction.homeRegionName.trim() : '',
+                shortDescription: typeof mergedFaction.shortDescription === 'string' && mergedFaction.shortDescription.trim()
+                    ? mergedFaction.shortDescription.trim()
+                    : null,
+                description: typeof mergedFaction.description === 'string' && mergedFaction.description.trim()
+                    ? mergedFaction.description.trim()
+                    : null,
+                tags: normalizeFactionStringList(mergedFaction.tags || [], 'Faction tags'),
+                goals: normalizeFactionStringList(mergedFaction.goals || [], 'Faction goals'),
+                assets: normalizeFactionAssets(mergedFaction.assets || []),
+                relations: normalizeFactionRelationsForTargets(mergedFaction.relations || {}, {
+                    currentId: null,
+                    validTargetIds: context.validTargetIds
+                }) || {},
+                reputationTiers: normalizeFactionTiers(mergedFaction.reputationTiers || [])
+            };
+
+            const autofillCompleteness = analyzeFactionAutofillCompleteness(finalized, {
+                existingFactionIds: context.existingFactionIds,
+                existingFactionsById: context.existingFactionsById
+            });
+            if (autofillCompleteness.hasMissing) {
+                const detailText = autofillCompleteness.issues.length
+                    ? ` ${autofillCompleteness.issues.join('; ')}.`
+                    : '';
+                throw new Error(`AI response did not fill all missing faction fields.${detailText}`);
+            }
+
+            return {
+                faction: finalized,
+                raw: aiMessage
+            };
+        };
+
         app.get('/api/factions', (req, res) => {
             try {
                 const list = Array.from(factions.values())
@@ -16782,164 +17113,140 @@ module.exports = function registerApiRoutes(scope) {
                     ? rawGenerationNotes.trim()
                     : '';
 
-                const normalizedFaction = normalizeFactionAutofillPayload(incomingFaction);
                 const existingFactions = Array.from(factions.values())
                     .filter(Boolean)
                     .map(serializeFactionForClient)
                     .filter(Boolean)
                     .sort((a, b) => (a?.name || '').localeCompare((b?.name || ''), undefined, { sensitivity: 'base' }));
 
-                const existingFactionIds = existingFactions
-                    .map(entry => (typeof entry?.id === 'string' ? entry.id.trim() : ''))
-                    .filter(Boolean);
-                const existingFactionsById = new Map(
-                    existingFactions
-                        .filter(entry => typeof entry?.id === 'string')
-                        .map(entry => [entry.id, entry])
-                );
-                if (!factionPayloadNeedsAutofill(normalizedFaction, { existingFactionIds, existingFactionsById })) {
-                    return res.json({
-                        success: true,
-                        faction: normalizedFaction,
-                        raw: null
-                    });
-                }
-
-                const relationEntries = Object.entries(normalizedFaction.relations || {})
-                    .map(([targetId, relation]) => {
-                        const targetFaction = factions.get(targetId);
-                        return {
-                            factionId: targetId,
-                            factionName: targetFaction?.name || targetId,
-                            status: relation?.status || '',
-                            notes: relation?.notes || ''
-                        };
-                    });
-
-                const renderedTemplate = promptEnv.render('fill-faction-form.xml.njk', {
-                    faction: {
-                        ...normalizedFaction,
-                        relationEntries
-                    },
+                const result = await runFactionAutofill({
+                    incomingFaction,
                     existingFactions,
                     settingDescription: currentSetting?.description || '',
-                    generationNotes
-                });
-
-                const promptData = parseXMLTemplate(renderedTemplate);
-                const systemPrompt = promptData.systemPrompt ? promptData.systemPrompt.trim() : '';
-                const generationPrompt = promptData.generationPrompt ? promptData.generationPrompt.trim() : '';
-
-                if (!generationPrompt) {
-                    throw new Error('Failed to build faction autofill prompt from template.');
-                }
-
-                if (!config?.ai) {
-                    throw new Error('AI configuration is incomplete. Please update config.yaml.');
-                }
-
-                const messages = [];
-                if (systemPrompt) {
-                    messages.push({ role: 'system', content: systemPrompt });
-                }
-                messages.push({ role: 'user', content: generationPrompt });
-
-                const requestOptions = {
-                    messages,
-                    metadataLabel: 'faction_autofill'
-                };
-
-                if (typeof promptData.temperature === 'number') {
-                    requestOptions.temperature = promptData.temperature;
-                } else {
-                    const configTemperature = Number(config.ai.temperature);
-                    if (Number.isInteger(configTemperature)) {
-                        requestOptions.temperature = configTemperature;
-                    }
-                }
-
-                const aiMessage = await LLMClient.chatCompletion(requestOptions);
-                if (!aiMessage || typeof aiMessage !== 'string') {
-                    throw new Error('AI did not return a usable response.');
-                }
-
-                LLMClient.logPrompt({
-                    prefix: 'faction_autofill',
+                    generationNotes,
                     metadataLabel: 'faction_autofill',
-                    systemPrompt,
-                    generationPrompt,
-                    response: aiMessage
+                    metadataPrefix: 'faction_autofill'
                 });
-
-                const generatedFaction = parseFactionAutofillResponse(aiMessage);
-                const mergedFaction = mergeFactionAutofillValues(normalizedFaction, generatedFaction);
-
-                const existingFactionNameMap = new Map();
-                for (const entry of existingFactions) {
-                    if (typeof entry?.name !== 'string' || typeof entry?.id !== 'string') {
-                        continue;
-                    }
-                    const exactKey = entry.name.trim().toLowerCase();
-                    if (exactKey) {
-                        existingFactionNameMap.set(exactKey, entry.id);
-                    }
-                    const normalizedKey = normalizeFactionRelationNameKey(entry.name);
-                    if (normalizedKey) {
-                        existingFactionNameMap.set(normalizedKey, entry.id);
-                    }
-                }
-
-                const generatedRelationMap = mapGeneratedRelationsToIds(generatedFaction.relationEntries, existingFactionNameMap);
-                const mergedRelationMap = {
-                    ...(normalizedFaction.relations || {})
-                };
-                for (const [targetId, relation] of Object.entries(generatedRelationMap)) {
-                    const current = mergedRelationMap[targetId];
-                    const status = typeof current?.status === 'string' ? current.status.trim() : '';
-                    const notes = typeof current?.notes === 'string' ? current.notes.trim() : '';
-                    if (!status || !notes) {
-                        mergedRelationMap[targetId] = relation;
-                    }
-                }
-                mergedFaction.relations = mergedRelationMap;
-
-                const finalized = {
-                    name: typeof mergedFaction.name === 'string' ? mergedFaction.name.trim() : '',
-                    homeRegionName: typeof mergedFaction.homeRegionName === 'string' ? mergedFaction.homeRegionName.trim() : '',
-                    shortDescription: typeof mergedFaction.shortDescription === 'string' && mergedFaction.shortDescription.trim()
-                        ? mergedFaction.shortDescription.trim()
-                        : null,
-                    description: typeof mergedFaction.description === 'string' && mergedFaction.description.trim()
-                        ? mergedFaction.description.trim()
-                        : null,
-                    tags: normalizeFactionStringList(mergedFaction.tags || [], 'Faction tags'),
-                    goals: normalizeFactionStringList(mergedFaction.goals || [], 'Faction goals'),
-                    assets: normalizeFactionAssets(mergedFaction.assets || []),
-                    relations: normalizeFactionRelations(mergedFaction.relations || {}, { currentId: null }) || {},
-                    reputationTiers: normalizeFactionTiers(mergedFaction.reputationTiers || [])
-                };
-
-                const autofillCompleteness = analyzeFactionAutofillCompleteness(finalized, {
-                    existingFactionIds,
-                    existingFactionsById
-                });
-                if (autofillCompleteness.hasMissing) {
-                    const detailText = autofillCompleteness.issues.length
-                        ? ` ${autofillCompleteness.issues.join('; ')}.`
-                        : '';
-                    throw new Error(`AI response did not fill all missing faction fields.${detailText}`);
-                }
 
                 res.json({
                     success: true,
-                    faction: finalized,
-                    raw: aiMessage
+                    faction: result.faction,
+                    raw: result.raw
                 });
             } catch (error) {
                 console.error('Failed to fill faction form:', error);
                 res.status(500).json({
                     success: false,
                     error: error?.message || 'Failed to auto-fill faction fields.'
+                });
+            }
+        });
+
+        app.post('/api/settings/factions/fill-missing', async (req, res) => {
+            try {
+                const incomingFaction = req.body?.faction;
+                if (!incomingFaction || typeof incomingFaction !== 'object') {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Request body must include a faction object.'
+                    });
+                }
+
+                const rawExistingFactions = req.body?.existingFactions;
+                const existingFactions = normalizeExistingFactionDrafts(rawExistingFactions || []);
+
+                const rawSettingDescription = req.body?.settingDescription;
+                if (rawSettingDescription !== undefined && rawSettingDescription !== null && typeof rawSettingDescription !== 'string') {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'settingDescription must be a string when provided.'
+                    });
+                }
+                const settingDescription = typeof rawSettingDescription === 'string'
+                    ? rawSettingDescription.trim()
+                    : (currentSetting?.description || '');
+
+                const rawGenerationNotes = req.body?.generationNotes;
+                if (rawGenerationNotes !== undefined && rawGenerationNotes !== null && typeof rawGenerationNotes !== 'string') {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'generationNotes must be a string when provided.'
+                    });
+                }
+                const generationNotes = typeof rawGenerationNotes === 'string'
+                    ? rawGenerationNotes.trim()
+                    : '';
+
+                const result = await runFactionAutofill({
+                    incomingFaction,
+                    existingFactions,
+                    settingDescription,
+                    generationNotes,
+                    metadataLabel: 'setting_faction_autofill',
+                    metadataPrefix: 'setting_faction_autofill'
+                });
+
+                res.json({
+                    success: true,
+                    faction: result.faction,
+                    raw: result.raw
+                });
+            } catch (error) {
+                console.error('Failed to fill setting faction form:', error);
+                res.status(500).json({
+                    success: false,
+                    error: error?.message || 'Failed to auto-fill setting faction fields.'
+                });
+            }
+        });
+
+        app.post('/api/settings/factions/generate', async (req, res) => {
+            try {
+                const rawCount = req.body?.count;
+                const parsedCount = Number.parseInt(rawCount, 10);
+                if (!Number.isFinite(parsedCount) || parsedCount < 0) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'count must be a non-negative integer.'
+                    });
+                }
+                const rawSettingDescription = req.body?.settingDescription;
+                if (rawSettingDescription !== undefined && rawSettingDescription !== null && typeof rawSettingDescription !== 'string') {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'settingDescription must be a string when provided.'
+                    });
+                }
+                const settingDescription = typeof rawSettingDescription === 'string'
+                    ? rawSettingDescription.trim()
+                    : (currentSetting?.description || '');
+                const rawGenerationNotes = req.body?.generationNotes;
+                if (rawGenerationNotes !== undefined && rawGenerationNotes !== null && typeof rawGenerationNotes !== 'string') {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'generationNotes must be a string when provided.'
+                    });
+                }
+                const generationNotes = typeof rawGenerationNotes === 'string'
+                    ? rawGenerationNotes.trim()
+                    : '';
+
+                const generatedDrafts = await generateFactionsList({
+                    count: parsedCount,
+                    settingDescription,
+                    generationNotes,
+                    asDraft: true
+                });
+
+                res.json({
+                    success: true,
+                    factions: Array.isArray(generatedDrafts) ? generatedDrafts : []
+                });
+            } catch (error) {
+                console.error('Failed to generate setting factions:', error);
+                res.status(500).json({
+                    success: false,
+                    error: error?.message || 'Failed to generate setting factions.'
                 });
             }
         });
@@ -22193,6 +22500,32 @@ module.exports = function registerApiRoutes(scope) {
                     .filter(item => item.length > 0);
             };
 
+            const toFactionArray = (value) => {
+                if (value === null || value === undefined || value === '') {
+                    return [];
+                }
+                if (Array.isArray(value)) {
+                    return value;
+                }
+                if (typeof value !== 'string') {
+                    throw new Error('defaultFactions must be an array or a JSON string.');
+                }
+                const trimmed = value.trim();
+                if (!trimmed) {
+                    return [];
+                }
+                let parsed;
+                try {
+                    parsed = JSON.parse(trimmed);
+                } catch (error) {
+                    throw new Error(`defaultFactions must be valid JSON: ${error.message}`);
+                }
+                if (!Array.isArray(parsed)) {
+                    throw new Error('defaultFactions JSON must decode to an array.');
+                }
+                return parsed;
+            };
+
             return {
                 name: toStringValue(raw.name),
                 description: toStringValue(raw.description),
@@ -22219,6 +22552,8 @@ module.exports = function registerApiRoutes(scope) {
                 defaultStartingLocation: toStringValue(raw.defaultStartingLocation),
                 defaultStartingCurrency: toNumberString(raw.defaultStartingCurrency),
                 defaultExistingSkills: toStringArray(raw.defaultExistingSkills),
+                defaultFactionCount: toNumberString(raw.defaultFactionCount),
+                defaultFactions: toFactionArray(raw.defaultFactions),
                 availableClasses: toStringArray(raw.availableClasses),
                 availableRaces: toStringArray(raw.availableRaces),
                 customSlopWords: toStringArray(raw.customSlopWords)
@@ -22277,6 +22612,123 @@ module.exports = function registerApiRoutes(scope) {
                 return Number.isFinite(parsed) ? parsed : '';
             };
 
+            const parseFactionEntry = (node) => {
+                if (!node) {
+                    return null;
+                }
+                const getChildText = (tagName) => {
+                    const child = node.getElementsByTagName(tagName)[0];
+                    if (!child || typeof child.textContent !== 'string') {
+                        return '';
+                    }
+                    return child.textContent.trim();
+                };
+                const id = getChildText('id');
+                const name = getChildText('name');
+                if (!name) {
+                    return null;
+                }
+                const shortDescription = getChildText('shortDescription');
+                const description = getChildText('description');
+                const homeRegionName = getChildText('homeRegionName');
+                const tagsParent = node.getElementsByTagName('tags')[0];
+                const goalsParent = node.getElementsByTagName('goals')[0];
+                const relationsParent = node.getElementsByTagName('relations')[0];
+                const assetsParent = node.getElementsByTagName('assets')[0];
+                const reputationTiersParent = node.getElementsByTagName('reputationTiers')[0];
+
+                const tags = tagsParent
+                    ? Array.from(tagsParent.getElementsByTagName('tag'))
+                        .map(tagNode => (typeof tagNode?.textContent === 'string' ? tagNode.textContent.trim() : ''))
+                        .filter(Boolean)
+                    : [];
+                const goals = goalsParent
+                    ? Array.from(goalsParent.getElementsByTagName('goal'))
+                        .map(goalNode => (typeof goalNode?.textContent === 'string' ? goalNode.textContent.trim() : ''))
+                        .filter(Boolean)
+                    : [];
+
+                const assets = assetsParent
+                    ? Array.from(assetsParent.getElementsByTagName('asset'))
+                        .map(assetNode => {
+                            const assetName = assetNode.getElementsByTagName('name')[0]?.textContent?.trim() || '';
+                            if (!assetName) {
+                                return null;
+                            }
+                            const assetType = assetNode.getElementsByTagName('type')[0]?.textContent?.trim() || '';
+                            const assetDescription = assetNode.getElementsByTagName('description')[0]?.textContent?.trim() || '';
+                            return {
+                                name: assetName,
+                                type: assetType,
+                                description: assetDescription
+                            };
+                        })
+                        .filter(Boolean)
+                    : [];
+
+                const relations = {};
+                if (relationsParent) {
+                    const relationNodes = Array.from(relationsParent.getElementsByTagName('relation'));
+                    relationNodes.forEach(relationNode => {
+                        const factionId = relationNode.getElementsByTagName('factionId')[0]?.textContent?.trim() || '';
+                        const status = relationNode.getElementsByTagName('status')[0]?.textContent?.trim() || '';
+                        const notes = relationNode.getElementsByTagName('notes')[0]?.textContent?.trim() || '';
+                        if (!factionId || !status || !notes) {
+                            return;
+                        }
+                        relations[factionId] = { status, notes };
+                    });
+                }
+
+                const reputationTiers = reputationTiersParent
+                    ? Array.from(reputationTiersParent.getElementsByTagName('tier'))
+                        .map(tierNode => {
+                            const threshold = Number(tierNode.getElementsByTagName('threshold')[0]?.textContent?.trim() || '');
+                            if (!Number.isFinite(threshold)) {
+                                return null;
+                            }
+                            const label = tierNode.getElementsByTagName('label')[0]?.textContent?.trim() || '';
+                            const perksParent = tierNode.getElementsByTagName('perks')[0];
+                            const penaltiesParent = tierNode.getElementsByTagName('penalties')[0];
+                            const perks = perksParent
+                                ? Array.from(perksParent.getElementsByTagName('perk'))
+                                    .map(perkNode => (typeof perkNode?.textContent === 'string' ? perkNode.textContent.trim() : ''))
+                                    .filter(Boolean)
+                                : [];
+                            const penalties = penaltiesParent
+                                ? Array.from(penaltiesParent.getElementsByTagName('penalty'))
+                                    .map(penaltyNode => (typeof penaltyNode?.textContent === 'string' ? penaltyNode.textContent.trim() : ''))
+                                    .filter(Boolean)
+                                : [];
+                            return { threshold, label, perks, penalties };
+                        })
+                        .filter(Boolean)
+                    : [];
+
+                return {
+                    id,
+                    name,
+                    shortDescription: shortDescription || null,
+                    description: description || null,
+                    homeRegionName: homeRegionName || null,
+                    tags,
+                    goals,
+                    assets,
+                    relations,
+                    reputationTiers
+                };
+            };
+
+            const getFactionList = () => {
+                const parent = settingNode.getElementsByTagName('defaultFactions')[0];
+                if (!parent) {
+                    return [];
+                }
+                return Array.from(parent.getElementsByTagName('faction'))
+                    .map(node => parseFactionEntry(node))
+                    .filter(Boolean);
+            };
+
             return {
                 name: getText('name'),
                 description: getText('description'),
@@ -22303,6 +22755,8 @@ module.exports = function registerApiRoutes(scope) {
                 defaultStartingLocation: getText('defaultStartingLocation'),
                 defaultStartingCurrency: toNumber(getText('defaultStartingCurrency')),
                 defaultExistingSkills: getList('defaultExistingSkills', 'skill'),
+                defaultFactionCount: toNumber(getText('defaultFactionCount')),
+                defaultFactions: getFactionList(),
                 availableClasses: getList('availableClasses', 'class'),
                 availableRaces: getList('availableRaces', 'race'),
                 customSlopWords: getList('customSlopWords', 'word')
@@ -23473,11 +23927,20 @@ module.exports = function registerApiRoutes(scope) {
                     ? parsedRequestedLevel
                     : fallbackLevel;
                 const startingLocationStyle = resolveLocationStyle(activeSetting?.startingLocationType || resolvedStartingLocation, activeSetting);
-                const rawFactionCount = config?.factions?.count;
-                const parsedFactionCount = Number.parseInt(rawFactionCount, 10);
-                let factionCount = Number.isFinite(parsedFactionCount) && parsedFactionCount >= 0
-                    ? parsedFactionCount
+                const settingFactionDrafts = Array.isArray(newGameDefaults.factions)
+                    ? newGameDefaults.factions.filter(entry => entry && typeof entry === 'object' && !Array.isArray(entry))
+                    : [];
+                const parsedSettingFactionCount = Number.parseInt(newGameDefaults.factionCount, 10);
+                const parsedConfigFactionCount = Number.parseInt(config?.factions?.count, 10);
+                let factionCount = Number.isFinite(parsedSettingFactionCount) && parsedSettingFactionCount >= 0
+                    ? parsedSettingFactionCount
                     : null;
+                if (factionCount === null && settingFactionDrafts.length > 0) {
+                    factionCount = settingFactionDrafts.length;
+                }
+                if (factionCount === null && Number.isFinite(parsedConfigFactionCount) && parsedConfigFactionCount >= 0) {
+                    factionCount = parsedConfigFactionCount;
+                }
                 if (factionCount === null) {
                     console.warn('config.factions.count missing or invalid; defaulting to 5.');
                     factionCount = 5;
@@ -23596,24 +24059,86 @@ module.exports = function registerApiRoutes(scope) {
                 report('new_game:skills_ready', 'Skill library ready. Forging your hero...');
 
                 let generatedFactions = [];
+                const preconfiguredFactions = [];
                 if (factionCount > 0) {
+                    const selectedDrafts = settingFactionDrafts.slice(0, factionCount);
+                    if (selectedDrafts.length > 0) {
+                        report('new_game:factions_generate', `Loading ${selectedDrafts.length} preconfigured faction(s)...`);
+                        for (const [index, draft] of selectedDrafts.entries()) {
+                            try {
+                                const faction = Faction.fromJSON(draft);
+                                preconfiguredFactions.push(faction);
+                            } catch (error) {
+                                throw new Error(`Failed to load preconfigured faction ${index + 1}: ${error.message}`);
+                            }
+                        }
+                    }
+
+                    const remainingCount = Math.max(0, factionCount - preconfiguredFactions.length);
                     try {
-                        report('new_game:factions_generate', `Founding ${factionCount} factions...`);
-                        generatedFactions = await generateFactionsList({
-                            count: factionCount,
-                            settingDescription
-                        });
+                        if (remainingCount > 0) {
+                            report('new_game:factions_generate', `Founding ${remainingCount} additional faction(s)...`);
+                            generatedFactions = await generateFactionsList({
+                                count: remainingCount,
+                                settingDescription
+                            });
+                        }
                     } catch (factionError) {
                         throw new Error(`Failed to generate factions: ${factionError.message}`);
                     }
 
+                    const combinedFactions = [...preconfiguredFactions, ...generatedFactions];
+                    const duplicateNameMap = new Map();
+                    for (const faction of combinedFactions) {
+                        if (!faction || typeof faction.name !== 'string') {
+                            continue;
+                        }
+                        const key = faction.name.trim().toLowerCase();
+                        if (!key) {
+                            continue;
+                        }
+                        if (duplicateNameMap.has(key)) {
+                            throw new Error(`Faction name "${faction.name}" is duplicated between preconfigured/generated factions.`);
+                        }
+                        duplicateNameMap.set(key, faction.id);
+                    }
+
+                    const validStatuses = new Set(['allied', 'neutral', 'hostile', 'rival']);
+                    const defaultRelationNotes = 'No explicit relationship provided.';
+                    for (const faction of combinedFactions) {
+                        if (!faction) {
+                            continue;
+                        }
+                        const currentRelationsMap = faction.relations instanceof Map
+                            ? faction.relations
+                            : new Map(Object.entries(faction.relations || {}));
+                        const rebuiltRelations = new Map();
+                        for (const otherFaction of combinedFactions) {
+                            if (!otherFaction || otherFaction.id === faction.id) {
+                                continue;
+                            }
+                            const relation = currentRelationsMap.get(otherFaction.id);
+                            const status = typeof relation?.status === 'string' ? relation.status.trim().toLowerCase() : '';
+                            const notes = typeof relation?.notes === 'string' ? relation.notes.trim() : '';
+                            if (status && notes && validStatuses.has(status)) {
+                                rebuiltRelations.set(otherFaction.id, { status, notes });
+                            } else {
+                                rebuiltRelations.set(otherFaction.id, {
+                                    status: 'neutral',
+                                    notes: defaultRelationNotes
+                                });
+                            }
+                        }
+                        faction.relations = rebuiltRelations;
+                    }
+
                     factions.clear();
-                    for (const faction of generatedFactions) {
+                    for (const faction of combinedFactions) {
                         if (faction && faction.id) {
                             factions.set(faction.id, faction);
                         }
                     }
-                    report('new_game:factions_ready', 'Factions established.');
+                    report('new_game:factions_ready', `Factions established (${combinedFactions.length} total).`);
                 } else {
                     factions.clear();
                     report('new_game:factions_skipped', 'Faction generation disabled.');

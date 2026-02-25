@@ -83,8 +83,10 @@ Variants:
   - `@@@...`: not persisted in server chat history at all (ephemeral display only), and skipped in future base-context history.
   - All three generic prompt variants bypass slop-remover processing for that response.
 - When realtime streaming is enabled, the final response may omit `eventChecks`, `events`, and other event artifacts (they are stripped for streaming clients).
+- Realtime `chat_complete` websocket payloads may include `completionSoundPath` (from `chat_completion_sound` config) so clients can play a completion cue; travel actions may defer playback until movement completes.
 - When travel prose is returned, event checks are split into origin/destination; the response includes `eventChecksOrigin`/`eventsOrigin` and `eventChecksDestination`/`eventsDestination`.
 - For `<travelProse>` turns, origin/destination event-check passes allow `item_appear` and `scenery_appear` outcomes to be applied even after movement is marked processed.
+- For event-driven travel turns that return `<finalProse>` (not `<travelProse>`), non-travelProse event checks still apply narrated movement; metadata destination enforcement only forces the travel destination when no move has already been applied that turn.
 - If the travel prose destination does not match a known location, the server creates a stub destination (and exit) using the event-driven location creation flow.
 - Travel actions are guarded by a per-player non-blocking move lock; overlapping move requests for the same player return `409`.
 - Event-driven travel origin/destination resolution now requires authoritative `gameLocations` presence (no `Location` index fallback for movement).
