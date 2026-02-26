@@ -1180,6 +1180,185 @@ class LLMClient {
         return convertedMessages;
     }
 
+    static #extractTextContent(rawContent) {
+        if (typeof rawContent === 'string') {
+            return rawContent;
+        }
+        if (Array.isArray(rawContent)) {
+            return rawContent
+                .map(part => {
+                    if (!part || typeof part !== 'object') {
+                        return '';
+                    }
+                    if (typeof part.text === 'string') {
+                        return part.text;
+                    }
+                    if (typeof part.content === 'string') {
+                        return part.content;
+                    }
+                    return '';
+                })
+                .join('');
+        }
+        return '';
+    }
+
+    static #appendStreamToolCalls(toolCallMap, toolCallDeltas = []) {
+        if (!(toolCallMap instanceof Map)) {
+            throw new Error('appendStreamToolCalls requires a Map.');
+        }
+        if (!Array.isArray(toolCallDeltas)) {
+            return;
+        }
+
+        toolCallDeltas.forEach((deltaCall, fallbackIndex) => {
+            if (!deltaCall || typeof deltaCall !== 'object') {
+                return;
+            }
+            const rawIndex = Number(deltaCall.index);
+            const index = Number.isInteger(rawIndex) && rawIndex >= 0
+                ? rawIndex
+                : fallbackIndex;
+            const existing = toolCallMap.get(index) || {
+                index,
+                id: '',
+                type: 'function',
+                function: {
+                    name: '',
+                    arguments: ''
+                }
+            };
+
+            if (typeof deltaCall.id === 'string' && deltaCall.id.trim()) {
+                existing.id = deltaCall.id.trim();
+            }
+            if (typeof deltaCall.type === 'string' && deltaCall.type.trim()) {
+                existing.type = deltaCall.type.trim();
+            }
+
+            const functionDelta = deltaCall.function;
+            if (functionDelta && typeof functionDelta === 'object') {
+                if (typeof functionDelta.name === 'string' && functionDelta.name) {
+                    existing.function.name += functionDelta.name;
+                }
+                if (typeof functionDelta.arguments === 'string' && functionDelta.arguments) {
+                    existing.function.arguments += functionDelta.arguments;
+                }
+            }
+
+            toolCallMap.set(index, existing);
+        });
+    }
+
+    static #normalizeToolCalls(rawToolCalls, {
+        sourceLabel = 'response',
+        requireJsonArguments = true
+    } = {}) {
+        if (!Array.isArray(rawToolCalls)) {
+            return [];
+        }
+
+        const normalized = [];
+        for (let i = 0; i < rawToolCalls.length; i += 1) {
+            const rawCall = rawToolCalls[i];
+            if (!rawCall || typeof rawCall !== 'object') {
+                continue;
+            }
+            const rawFunction = rawCall.function;
+            const name = typeof rawFunction?.name === 'string' ? rawFunction.name.trim() : '';
+            if (!name) {
+                throw new Error(`Malformed tool call in ${sourceLabel}: function.name is required.`);
+            }
+
+            const id = typeof rawCall.id === 'string' ? rawCall.id.trim() : '';
+            const type = typeof rawCall.type === 'string' && rawCall.type.trim()
+                ? rawCall.type.trim()
+                : 'function';
+            const argumentsText = typeof rawFunction?.arguments === 'string'
+                ? rawFunction.arguments
+                : '';
+
+            let parsedArguments = null;
+            if (requireJsonArguments) {
+                const trimmedArguments = argumentsText.trim();
+                if (!trimmedArguments) {
+                    throw new Error(`Malformed tool call "${name}" in ${sourceLabel}: function.arguments is empty.`);
+                }
+                try {
+                    parsedArguments = JSON.parse(trimmedArguments);
+                } catch (error) {
+                    throw new Error(`Malformed tool call "${name}" in ${sourceLabel}: function.arguments is not valid JSON (${error.message}).`);
+                }
+            }
+
+            normalized.push({
+                id,
+                type,
+                function: {
+                    name,
+                    arguments: argumentsText,
+                    parsedArguments
+                }
+            });
+        }
+
+        return normalized;
+    }
+
+    static #buildNormalizedResponseData({
+        rawResponseData = null,
+        fallbackModel = null,
+        fallbackId = null,
+        content = '',
+        toolCalls = [],
+        finishReason = null,
+        usage = null
+    } = {}) {
+        const firstChoice = rawResponseData?.choices?.[0] || null;
+        const rawMessage = firstChoice?.message || null;
+        const messageRole = typeof rawMessage?.role === 'string' && rawMessage.role.trim()
+            ? rawMessage.role.trim()
+            : 'assistant';
+        const model = typeof rawResponseData?.model === 'string' && rawResponseData.model.trim()
+            ? rawResponseData.model.trim()
+            : fallbackModel;
+        const id = typeof rawResponseData?.id === 'string' && rawResponseData.id.trim()
+            ? rawResponseData.id.trim()
+            : fallbackId;
+        const rawUsage = rawResponseData?.usage;
+        const resolvedUsage = usage || (rawUsage && typeof rawUsage === 'object' ? { ...rawUsage } : null);
+
+        const normalizedMessage = {
+            role: messageRole,
+            content: typeof content === 'string' ? content : ''
+        };
+        if (Array.isArray(toolCalls) && toolCalls.length) {
+            normalizedMessage.tool_calls = toolCalls.map(call => ({
+                id: call.id || '',
+                type: call.type || 'function',
+                function: {
+                    name: call?.function?.name || '',
+                    arguments: call?.function?.arguments || ''
+                }
+            }));
+        }
+
+        const normalized = {
+            id: id || undefined,
+            object: 'chat.completion',
+            model: model || undefined,
+            choices: [{
+                index: 0,
+                finish_reason: finishReason ?? firstChoice?.finish_reason ?? null,
+                message: normalizedMessage
+            }]
+        };
+        if (resolvedUsage) {
+            normalized.usage = resolvedUsage;
+        }
+        return normalized;
+    }
+
     static async chatCompletion({
         messages,
         maxTokens,
@@ -1514,6 +1693,9 @@ class LLMClient {
                 responseContent = '';
                 streamTrackerId = null;
                 startTimer = null;
+                let responseToolCalls = [];
+                let responseUsage = null;
+                let responseFinishReason = null;
                 let attemptSemaphore = null;
                 let attemptRuntime = null;
                 let payload = null;
@@ -1573,14 +1755,6 @@ class LLMClient {
                         lastTotalTokens = response.data.usage.total_tokens;
                     }
 
-                    if (!payload.stream && typeof captureResponsePayload === 'function') {
-                        try {
-                            captureResponsePayload(JSON.parse(JSON.stringify(response.data)));
-                        } catch (_) {
-                            captureResponsePayload(response.data);
-                        }
-                    }
-
                     // On any 5xx response, wait waitAfterError seconds and then retry
                     if (response.status == 429 || (response.status >= 500 && response.status < 600)) {
                         errorLog(`Server error from LLM (status ${response.status}) on attempt ${attempt + 1}.`);
@@ -1594,6 +1768,9 @@ class LLMClient {
                     const handleStream = (streamId) => new Promise((resolve, reject) => {
                         let buffer = '';
                         let assembled = '';
+                        const streamToolCallMap = new Map();
+                        let streamFinishReason = null;
+                        let streamUsage = null;
                         let timer = null;
 
                         const rejectWithPartial = (err) => {
@@ -1640,9 +1817,18 @@ class LLMClient {
                                 }
                                 try {
                                     const parsed = JSON.parse(payloadStr);
-                                    const delta = parsed?.choices?.[0]?.delta?.content
-                                        || parsed?.choices?.[0]?.message?.content
-                                        || '';
+                                    const firstChoice = parsed?.choices?.[0] || null;
+                                    const deltaPayload = firstChoice?.delta || firstChoice?.message || null;
+                                    const delta = LLMClient.#extractTextContent(deltaPayload?.content);
+                                    if (parsed?.usage && typeof parsed.usage === 'object') {
+                                        streamUsage = { ...parsed.usage };
+                                    }
+                                    if (firstChoice && typeof firstChoice.finish_reason === 'string') {
+                                        streamFinishReason = firstChoice.finish_reason;
+                                    }
+                                    if (Array.isArray(deltaPayload?.tool_calls)) {
+                                        LLMClient.#appendStreamToolCalls(streamToolCallMap, deltaPayload.tool_calls);
+                                    }
                                     if (delta) {
                                         resetTimer(streamContinueTimeoutMs);
                                         assembled += delta;
@@ -1661,7 +1847,16 @@ class LLMClient {
                             clear();
                             LLMClient.#trackStreamEnd(streamId);
                             responseContent = assembled;
-                            resolve(assembled);
+                            const toolCalls = LLMClient.#normalizeToolCalls(
+                                Array.from(streamToolCallMap.values()).sort((a, b) => a.index - b.index),
+                                { sourceLabel: 'streamed response', requireJsonArguments: true }
+                            );
+                            resolve({
+                                content: assembled,
+                                toolCalls,
+                                usage: streamUsage,
+                                finishReason: streamFinishReason
+                            });
                         });
                         response.data.on('error', err => {
                             clear();
@@ -1671,13 +1866,53 @@ class LLMClient {
                     });
 
                     if (payload.stream) {
-                        responseContent = await handleStream(streamTrackerId);
+                        const streamResult = await handleStream(streamTrackerId);
+                        responseContent = streamResult.content || '';
+                        responseToolCalls = Array.isArray(streamResult.toolCalls) ? streamResult.toolCalls : [];
+                        responseUsage = streamResult.usage && typeof streamResult.usage === 'object'
+                            ? { ...streamResult.usage }
+                            : null;
+                        responseFinishReason = streamResult.finishReason || null;
+                        if (responseUsage && Number.isFinite(responseUsage.total_tokens)) {
+                            lastTotalTokens = responseUsage.total_tokens;
+                        }
                     } else {
-                        responseContent = response.data?.choices?.[0]?.message?.content || '';
+                        const firstChoice = response.data?.choices?.[0] || null;
+                        const responseMessage = firstChoice?.message || null;
+                        responseContent = LLMClient.#extractTextContent(responseMessage?.content);
+                        responseToolCalls = LLMClient.#normalizeToolCalls(
+                            responseMessage?.tool_calls || [],
+                            { sourceLabel: 'non-stream response', requireJsonArguments: true }
+                        );
+                        responseUsage = response?.data?.usage && typeof response.data.usage === 'object'
+                            ? { ...response.data.usage }
+                            : null;
+                        responseFinishReason = firstChoice?.finish_reason || null;
+                    }
+
+                    const normalizedResponseData = LLMClient.#buildNormalizedResponseData({
+                        rawResponseData: payload.stream ? null : response.data,
+                        fallbackModel: resolvedModel,
+                        fallbackId: null,
+                        content: responseContent,
+                        toolCalls: responseToolCalls,
+                        finishReason: responseFinishReason,
+                        usage: responseUsage
+                    });
+
+                    if (typeof captureResponsePayload === 'function') {
+                        try {
+                            captureResponsePayload(JSON.parse(JSON.stringify(normalizedResponseData)));
+                        } catch (_) {
+                            captureResponsePayload(normalizedResponseData);
+                        }
                     }
 
                     if (typeof onResponse === 'function') {
-                        onResponse(response);
+                        onResponse({
+                            ...response,
+                            data: normalizedResponseData
+                        });
                     }
                     if (debug) {
                         log('Raw LLM response content:', responseContent);
@@ -1692,8 +1927,9 @@ class LLMClient {
                     const thinkTagPattern = /<think>[\s\S]*?<\/think>/gi;
                     responseContent = responseContent.replace(thinkTagPattern, '').trim();
 
+                    const hasToolCalls = responseToolCalls.length > 0;
 
-                    if (responseContent.trim() === '') {
+                    if (responseContent.trim() === '' && !hasToolCalls) {
                         errorLog(`Empty response content received (attempt ${attempt + 1}).`);
                         if (thinkTags.length > 0) {
                             warn('⚠️ Contents of <think></think> tags:', thinkTags);
@@ -1706,7 +1942,7 @@ class LLMClient {
                         thinkTags.forEach(tag => log(` - ${tag}`));
                     }
 
-                    if (resolvedRequiredRegex) {
+                    if (resolvedRequiredRegex && !hasToolCalls) {
                         if (resolvedRequiredRegex.global || resolvedRequiredRegex.sticky) {
                             resolvedRequiredRegex.lastIndex = 0;
                         }
@@ -1774,7 +2010,7 @@ class LLMClient {
                         }
                     }
 
-                    if (validateXML) {
+                    if (validateXML && !hasToolCalls) {
                         try {
                             Utils.parseXmlDocument(responseContent);
                         } catch (xmlError) {

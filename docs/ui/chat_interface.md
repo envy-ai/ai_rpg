@@ -44,6 +44,7 @@ The main UI is rendered by `views/index.njk` and powered by `public/js/chat.js` 
   - Chat send + travel actions are blocked while this modal is pending.
 - **Load game modal** (`#loadGameModal`):
   - Uses elevated z-order above all other overlays when open.
+  - Any visible `.modal` is forced above the elevated load backdrop layer to prevent blur-overlay occlusion.
   - On confirm, closes immediately and calls `/api/prompts/cancel-all` (`waitForDrain: false`) before issuing `/api/load`.
 - Player/NPC "Edit" opens `#npcEditModal`, which includes an `Aliases` textarea (one alias per line) plus `Resistances`/`Vulnerabilities` textareas and saves through `PUT /api/npcs/:id`.
   - Player/NPC Inventory modal keeps active inventory filters (including slot filter selection) when equip/unequip triggers an inventory re-render.

@@ -76,6 +76,7 @@ Most modals live in `views/index.njk` and are wired up by the inline script or `
 
 - `#loadGameModal`: choose manual or autosave and load.
   - Uses elevated z-order above all other overlays while open.
+  - When the elevated load backdrop is active, any visible `.modal` is forced above it to prevent blur-layer occlusion of dialogs.
   - Confirm closes the modal immediately, then sends `/api/prompts/cancel-all` before `/api/load`.
 
 ## Player level-up ability draft

@@ -34,6 +34,7 @@ Response (200):
 - Optional fields (present when relevant):
   - `summary`: string
   - `aiUsage`: object (token usage metrics)
+  - `toolInvocations`: array (executed model tool calls for this turn; includes tool metadata such as `moreInfo`/`getHistory` queries and match counts)
   - `slopRemoval`: `{ slopWords: string[], slopNgrams: string[] }`
   - `debug`: object (debug payload, when enabled)
   - `actionResolution`: ActionResolution
@@ -82,6 +83,10 @@ Variants:
   - `@@...`: saved in chat history, but marked so those entries are excluded from base-context history assembly.
   - `@@@...`: not persisted in server chat history at all (ephemeral display only), and skipped in future base-context history.
   - All three generic prompt variants bypass slop-remover processing for that response.
+- Tool calling is enabled in the chat generation loop. The model can emit `tool_calls`; the server executes each call, appends `role: tool` messages, and continues generation until normal assistant prose is returned.
+- Available tools:
+  - `moreInfo({ name })`: returns `<moreInfoResults>...</moreInfoResults>` XML with full serialized snapshots for all matching NPCs (including alias matches), things, locations, and regions whose names contain the query substring.
+  - `getHistory({ query })`: returns `<historyResults>...</historyResults>` XML for assistant prose-like history entries whose content contains the query substring (case-insensitive), including entry metadata and full content.
 - When realtime streaming is enabled, the final response may omit `eventChecks`, `events`, and other event artifacts (they are stripped for streaming clients).
 - Realtime `chat_complete` websocket payloads may include `completionSoundPath` (from `chat_completion_sound` config) so clients can play a completion cue; travel actions may defer playback until movement completes.
 - When travel prose is returned, event checks are split into origin/destination; the response includes `eventChecksOrigin`/`eventsOrigin` and `eventChecksDestination`/`eventsDestination`.

@@ -20,6 +20,9 @@ Slash Commands Quick Guide
 - Interaction API
   - `interaction.user.id` is the caller’s userId (may be null).
   - `interaction.argsText` is the raw argument text after the slash command name.
+  - `interaction.getChatHistory()` returns the live server `chatHistory` array.
+  - `interaction.getHistory(query)` returns assistant prose-like history entries whose content contains the case-insensitive query substring.
+  - `interaction.performGameSave(saveName?)` is available when the save helper is in scope.
   - `interaction.reply(payload)` collects responses; payload shape: `{ content: string, ephemeral?: boolean }`.
   - Return value is ignored; send one or multiple replies; empty replies produce a generic success message client-side.
 

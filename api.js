@@ -618,6 +618,493 @@ module.exports = function registerApiRoutes(scope) {
             return matches;
         };
 
+        const CHAT_TOOL_MAX_ROUNDS = 8;
+        const MORE_INFO_MAX_MATCHES = 50;
+        const CHAT_TOOL_DEFINITIONS = Object.freeze([
+            {
+                type: 'function',
+                function: {
+                    name: 'moreInfo',
+                    description: 'Return full XML for NPCs, things, locations, and regions whose names contain the given query substring.',
+                    parameters: {
+                        type: 'object',
+                        properties: {
+                            name: {
+                                type: 'string',
+                                description: 'Case-insensitive substring to match against entity names. Example: "Bob".'
+                            }
+                        },
+                        required: ['name'],
+                        additionalProperties: false
+                    }
+                }
+            },
+            {
+                type: 'function',
+                function: {
+                    name: 'getHistory',
+                    description: 'Return all prose chat entries whose content contains the given case-insensitive query substring.',
+                    parameters: {
+                        type: 'object',
+                        properties: {
+                            query: {
+                                type: 'string',
+                                description: 'Case-insensitive substring to match against prose history entry content. Example: "Rodrigo".'
+                            }
+                        },
+                        required: ['query'],
+                        additionalProperties: false
+                    }
+                }
+            }
+        ]);
+
+        const xmlEscapeText = (value) => String(value)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+
+        const xmlEscapeAttribute = (value) => xmlEscapeText(value)
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&apos;');
+
+        const xmlIndent = (level) => '  '.repeat(Math.max(0, level));
+
+        const renderXmlNode = (tagName, value, level = 0, attributes = null) => {
+            const attrs = [];
+            if (attributes && typeof attributes === 'object') {
+                for (const [key, raw] of Object.entries(attributes)) {
+                    if (raw === null || raw === undefined) {
+                        continue;
+                    }
+                    attrs.push(`${key}="${xmlEscapeAttribute(raw)}"`);
+                }
+            }
+            const attrText = attrs.length ? ` ${attrs.join(' ')}` : '';
+            const tag = typeof tagName === 'string' && tagName.trim() ? tagName.trim() : 'node';
+
+            if (value === null || value === undefined) {
+                return [`${xmlIndent(level)}<${tag}${attrText}/>`];
+            }
+
+            const valueType = typeof value;
+            if (valueType !== 'object') {
+                return [`${xmlIndent(level)}<${tag}${attrText}>${xmlEscapeText(value)}</${tag}>`];
+            }
+
+            const lines = [`${xmlIndent(level)}<${tag}${attrText}>`];
+            if (Array.isArray(value)) {
+                for (const item of value) {
+                    lines.push(...renderXmlNode('item', item, level + 1));
+                }
+            } else {
+                for (const [key, entry] of Object.entries(value)) {
+                    lines.push(...renderXmlNode('field', entry, level + 1, { name: key }));
+                }
+            }
+            lines.push(`${xmlIndent(level)}</${tag}>`);
+            return lines;
+        };
+
+        const normalizeToolCallsForExecution = (toolCalls = [], { sourceLabel = 'tool response' } = {}) => {
+            if (!Array.isArray(toolCalls)) {
+                throw new Error(`Expected tool call list in ${sourceLabel}.`);
+            }
+            const normalized = [];
+            for (let i = 0; i < toolCalls.length; i += 1) {
+                const rawCall = toolCalls[i];
+                if (!rawCall || typeof rawCall !== 'object') {
+                    continue;
+                }
+                const id = typeof rawCall.id === 'string' ? rawCall.id.trim() : '';
+                if (!id) {
+                    throw new Error(`Malformed tool call in ${sourceLabel}: missing call id.`);
+                }
+                const fn = rawCall.function;
+                const functionName = typeof fn?.name === 'string' ? fn.name.trim() : '';
+                if (!functionName) {
+                    throw new Error(`Malformed tool call "${id}" in ${sourceLabel}: missing function.name.`);
+                }
+                const argumentsText = typeof fn?.arguments === 'string' ? fn.arguments : '';
+                const trimmedArguments = argumentsText.trim();
+                if (!trimmedArguments) {
+                    throw new Error(`Malformed tool call "${functionName}" in ${sourceLabel}: function.arguments is empty.`);
+                }
+                let argumentsObject = null;
+                try {
+                    argumentsObject = JSON.parse(trimmedArguments);
+                } catch (error) {
+                    throw new Error(`Malformed tool call "${functionName}" in ${sourceLabel}: function.arguments is not valid JSON (${error.message}).`);
+                }
+                normalized.push({
+                    id,
+                    type: typeof rawCall.type === 'string' ? rawCall.type : 'function',
+                    functionName,
+                    argumentsText,
+                    argumentsObject
+                });
+            }
+            return normalized;
+        };
+
+        const toSearchableValues = (input) => {
+            if (input === null || input === undefined) {
+                return [];
+            }
+            if (typeof input === 'string') {
+                const trimmed = input.trim();
+                return trimmed ? [trimmed] : [];
+            }
+            if (typeof input === 'number' || typeof input === 'boolean') {
+                return [String(input)];
+            }
+            if (Array.isArray(input)) {
+                return input.flatMap(toSearchableValues);
+            }
+            if (typeof input === 'object') {
+                return Object.values(input).flatMap(toSearchableValues);
+            }
+            return [];
+        };
+
+        const npcAliasesForMatching = (npc) => {
+            if (!npc) {
+                return [];
+            }
+            if (typeof npc.getAliases === 'function') {
+                return toSearchableValues(npc.getAliases());
+            }
+            if (npc.aliases instanceof Set) {
+                return toSearchableValues(Array.from(npc.aliases));
+            }
+            return toSearchableValues(npc.aliases);
+        };
+
+        const executeMoreInfoTool = ({ name }) => {
+            if (typeof name !== 'string' || !name.trim()) {
+                throw new Error('moreInfo requires a non-empty "name" string.');
+            }
+            const query = name.trim();
+            const queryLower = query.toLowerCase();
+            const nameIncludesQuery = (candidate) => (
+                typeof candidate === 'string' && candidate.toLowerCase().includes(queryLower)
+            );
+
+            const allActors = typeof Player?.getAll === 'function' ? Player.getAll() : [];
+            const allThings = typeof Thing?.getAll === 'function' ? Thing.getAll() : [];
+            const allLocations = typeof Location?.getAll === 'function' ? Location.getAll() : [];
+            const allRegions = typeof Region?.getAll === 'function' ? Region.getAll() : [];
+
+            const matchedNpcs = Array.isArray(allActors)
+                ? allActors.filter(actor => {
+                    if (!actor || actor.isNPC !== true) {
+                        return false;
+                    }
+                    if (nameIncludesQuery(actor.name)) {
+                        return true;
+                    }
+                    const aliases = npcAliasesForMatching(actor);
+                    return aliases.some(alias => nameIncludesQuery(alias));
+                })
+                : [];
+
+            const matchedThings = Array.isArray(allThings)
+                ? allThings.filter(thing => thing && nameIncludesQuery(thing.name))
+                : [];
+
+            const matchedLocations = Array.isArray(allLocations)
+                ? allLocations.filter(location => location && nameIncludesQuery(location.name))
+                : [];
+
+            const matchedRegions = Array.isArray(allRegions)
+                ? allRegions.filter(region => region && nameIncludesQuery(region.name))
+                : [];
+
+            const totalMatches = matchedNpcs.length
+                + matchedThings.length
+                + matchedLocations.length
+                + matchedRegions.length;
+
+            if (totalMatches > MORE_INFO_MAX_MATCHES) {
+                throw new Error(`moreInfo("${query}") matched ${totalMatches} entities, exceeding the limit of ${MORE_INFO_MAX_MATCHES}. Provide a narrower query.`);
+            }
+
+            const lines = [
+                '<moreInfoResults>',
+                `  <query>${xmlEscapeText(query)}</query>`,
+                `  <totalMatches>${totalMatches}</totalMatches>`,
+                `  <npcs count="${matchedNpcs.length}">`
+            ];
+
+            for (const npc of matchedNpcs) {
+                const snapshot = serializeNpcForClient(npc) || npc.toJSON?.() || {};
+                lines.push(...renderXmlNode('npc', snapshot, 2, { id: npc.id || '', name: npc.name || '' }));
+            }
+            lines.push('  </npcs>');
+            lines.push(`  <things count="${matchedThings.length}">`);
+            for (const thing of matchedThings) {
+                const snapshot = typeof thing.toJSON === 'function' ? thing.toJSON() : thing;
+                lines.push(...renderXmlNode('thing', snapshot, 2, { id: thing.id || '', name: thing.name || '' }));
+            }
+            lines.push('  </things>');
+            lines.push(`  <locations count="${matchedLocations.length}">`);
+            for (const locationEntry of matchedLocations) {
+                const snapshot = buildLocationResponse(locationEntry) || (typeof locationEntry.toJSON === 'function' ? locationEntry.toJSON() : locationEntry);
+                lines.push(...renderXmlNode('location', snapshot, 2, { id: locationEntry.id || '', name: locationEntry.name || '' }));
+            }
+            lines.push('  </locations>');
+            lines.push(`  <regions count="${matchedRegions.length}">`);
+            for (const regionEntry of matchedRegions) {
+                const snapshot = typeof regionEntry.toJSON === 'function' ? regionEntry.toJSON() : regionEntry;
+                lines.push(...renderXmlNode('region', snapshot, 2, { id: regionEntry.id || '', name: regionEntry.name || '' }));
+            }
+            lines.push('  </regions>');
+            lines.push('</moreInfoResults>');
+
+            return {
+                content: lines.join('\n'),
+                metadata: {
+                    query,
+                    totalMatches,
+                    counts: {
+                        npcs: matchedNpcs.length,
+                        things: matchedThings.length,
+                        locations: matchedLocations.length,
+                        regions: matchedRegions.length
+                    }
+                }
+            };
+        };
+
+        const collectHistoryMatches = ({ query, includeFullContent = true } = {}) => {
+            if (typeof query !== 'string' || !query.trim()) {
+                throw new Error('getHistory requires a non-empty "query" string.');
+            }
+            if (!Array.isArray(chatHistory)) {
+                throw new Error('Chat history is unavailable for getHistory.');
+            }
+
+            const queryText = query.trim();
+            const queryLower = queryText.toLowerCase();
+            const matches = [];
+
+            for (let index = 0; index < chatHistory.length; index += 1) {
+                const entry = chatHistory[index];
+                if (!entry || typeof entry !== 'object') {
+                    continue;
+                }
+                if (!isAssistantProseLikeEntry(entry)) {
+                    continue;
+                }
+                const content = typeof entry.content === 'string' ? entry.content : '';
+                if (!content.trim()) {
+                    continue;
+                }
+                if (!content.toLowerCase().includes(queryLower)) {
+                    continue;
+                }
+
+                const match = {
+                    index,
+                    id: typeof entry.id === 'string' ? entry.id : null,
+                    type: typeof entry.type === 'string' ? entry.type : null,
+                    role: typeof entry.role === 'string' ? entry.role : null,
+                    timestamp: typeof entry.timestamp === 'string' ? entry.timestamp : null,
+                    locationId: typeof entry.locationId === 'string' ? entry.locationId : null
+                };
+
+                if (includeFullContent) {
+                    match.content = content;
+                } else {
+                    const trimmedContent = content.trim();
+                    match.preview = trimmedContent.length > 220
+                        ? `${trimmedContent.slice(0, 220)}...`
+                        : trimmedContent;
+                }
+
+                matches.push(match);
+            }
+
+            return {
+                query: queryText,
+                totalMatches: matches.length,
+                entries: matches
+            };
+        };
+
+        const executeGetHistoryTool = ({ query }) => {
+            const historyResult = collectHistoryMatches({ query, includeFullContent: true });
+            const lines = [
+                '<historyResults>',
+                `  <query>${xmlEscapeText(historyResult.query)}</query>`,
+                `  <totalMatches>${historyResult.totalMatches}</totalMatches>`,
+                `  <entries count="${historyResult.entries.length}">`
+            ];
+
+            for (const entry of historyResult.entries) {
+                const serializedEntry = {
+                    id: entry.id,
+                    type: entry.type,
+                    role: entry.role,
+                    timestamp: entry.timestamp,
+                    locationId: entry.locationId,
+                    content: entry.content
+                };
+                lines.push(...renderXmlNode('entry', serializedEntry, 2, { index: entry.index }));
+            }
+
+            lines.push('  </entries>');
+            lines.push('</historyResults>');
+
+            return {
+                content: lines.join('\n'),
+                metadata: {
+                    query: historyResult.query,
+                    totalMatches: historyResult.totalMatches,
+                    entryIndexes: historyResult.entries.map(entry => entry.index)
+                }
+            };
+        };
+
+        const executeChatToolCall = async (toolCall) => {
+            if (!toolCall || typeof toolCall !== 'object') {
+                throw new Error('Tool execution requires a tool call object.');
+            }
+            if (toolCall.functionName === 'moreInfo') {
+                return executeMoreInfoTool(toolCall.argumentsObject || {});
+            }
+            if (toolCall.functionName === 'getHistory') {
+                return executeGetHistoryTool(toolCall.argumentsObject || {});
+            }
+            throw new Error(`Unsupported tool call function "${toolCall.functionName}".`);
+        };
+
+        const runChatCompletionWithToolLoop = async ({
+            requestOptions,
+            streamEmitter = null,
+            metadataLabel = 'chat'
+        }) => {
+            if (!requestOptions || typeof requestOptions !== 'object') {
+                throw new Error('runChatCompletionWithToolLoop requires requestOptions.');
+            }
+            if (!Array.isArray(requestOptions.messages) || !requestOptions.messages.length) {
+                throw new Error('runChatCompletionWithToolLoop requires non-empty requestOptions.messages.');
+            }
+
+            const configuredMaxRounds = Number(config?.ai?.max_tool_rounds);
+            const maxRounds = Number.isInteger(configuredMaxRounds) && configuredMaxRounds > 0
+                ? configuredMaxRounds
+                : CHAT_TOOL_MAX_ROUNDS;
+            const originalOnResponse = typeof requestOptions.onResponse === 'function'
+                ? requestOptions.onResponse
+                : null;
+            const messages = requestOptions.messages.map(message => (
+                message && typeof message === 'object'
+                    ? JSON.parse(JSON.stringify(message))
+                    : message
+            ));
+
+            let aiResponse = '';
+            let lastResponse = null;
+            let rounds = 0;
+            let completed = false;
+            let toolLoopActivated = false;
+            const toolInvocations = [];
+
+            while (!completed) {
+                rounds += 1;
+                if (rounds > maxRounds) {
+                    throw new Error(`Tool-call loop exceeded max rounds (${maxRounds}) for ${metadataLabel}.`);
+                }
+
+                let roundResponse = null;
+                const roundOptions = {
+                    ...requestOptions,
+                    messages,
+                    onResponse: (response) => {
+                        roundResponse = response;
+                        if (originalOnResponse) {
+                            originalOnResponse(response);
+                        }
+                    }
+                };
+
+                aiResponse = await LLMClient.chatCompletion(roundOptions);
+                lastResponse = roundResponse;
+
+                const assistantMessage = roundResponse?.data?.choices?.[0]?.message || null;
+                const rawToolCalls = Array.isArray(assistantMessage?.tool_calls)
+                    ? assistantMessage.tool_calls
+                    : [];
+                const toolCalls = normalizeToolCallsForExecution(rawToolCalls, {
+                    sourceLabel: `${metadataLabel} round ${rounds}`
+                });
+
+                if (toolLoopActivated || toolCalls.length) {
+                    const roundLabel = `${metadataLabel}_tool_loop_round`;
+                    LLMClient.logPrompt({
+                        prefix: roundLabel,
+                        metadataLabel: roundLabel,
+                        systemPrompt: '',
+                        generationPrompt: LLMClient.formatMessagesForErrorLog(messages),
+                        response: aiResponse || ''
+                    });
+                }
+
+                if (!toolCalls.length) {
+                    completed = true;
+                    continue;
+                }
+                toolLoopActivated = true;
+
+                if (streamEmitter?.isEnabled) {
+                    streamEmitter.status('player_action:tool_calls', {
+                        round: rounds,
+                        toolCallCount: toolCalls.length,
+                        message: `Running ${toolCalls.length} tool call${toolCalls.length === 1 ? '' : 's'}...`
+                    });
+                }
+
+                messages.push({
+                    role: 'assistant',
+                    content: typeof assistantMessage?.content === 'string' ? assistantMessage.content : (aiResponse || ''),
+                    tool_calls: toolCalls.map(call => ({
+                        id: call.id,
+                        type: 'function',
+                        function: {
+                            name: call.functionName,
+                            arguments: call.argumentsText
+                        }
+                    }))
+                });
+
+                for (const toolCall of toolCalls) {
+                    const toolResult = await executeChatToolCall(toolCall);
+                    if (!toolResult || typeof toolResult.content !== 'string' || !toolResult.content.trim()) {
+                        throw new Error(`Tool "${toolCall.functionName}" returned empty content.`);
+                    }
+                    toolInvocations.push({
+                        id: toolCall.id,
+                        name: toolCall.functionName,
+                        metadata: toolResult.metadata || null
+                    });
+                    messages.push({
+                        role: 'tool',
+                        tool_call_id: toolCall.id,
+                        name: toolCall.functionName,
+                        content: toolResult.content
+                    });
+                }
+            }
+
+            return {
+                aiResponse,
+                response: lastResponse,
+                rounds,
+                toolInvocations
+            };
+        };
+
         const shortDescriptionBackfillByClient = new Map();
         const OFFSCREEN_NPC_ACTIVITY_DAILY_MINUTES = [7 * 60, 19 * 60];
         const OFFSCREEN_NPC_ACTIVITY_WEEKLY_MINUTE = 7 * 60;
@@ -11525,9 +12012,12 @@ module.exports = function registerApiRoutes(scope) {
                 if (Number.isFinite(repetitionPenalty) && repetitionPenalty > 0) {
                     additionalPayload.repetition_penalty = repetitionPenalty;
                 }
+                additionalPayload.tools = CHAT_TOOL_DEFINITIONS;
+                additionalPayload.tool_choice = 'auto';
 
                 const metricsStart = Date.now();
                 let capturedResponse = null;
+                let toolInvocations = [];
                 const promptMetadataLabel = promptType === 'question'
                     ? 'question'
                     : (promptType === 'generic-prompt' ? 'generic_prompt' : 'player_action');
@@ -11553,7 +12043,15 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 stream.status('player_action:prompt', 'Awaiting response from AI...');
-                let aiResponse = await LLMClient.chatCompletion(requestOptions);
+                const toolLoopResult = await runChatCompletionWithToolLoop({
+                    requestOptions,
+                    streamEmitter: stream,
+                    metadataLabel: promptMetadataLabel
+                });
+                let aiResponse = toolLoopResult.aiResponse;
+                toolInvocations = Array.isArray(toolLoopResult.toolInvocations)
+                    ? toolLoopResult.toolInvocations
+                    : [];
                 let travelProsePayload = null;
                 //console.log("Player Prose Request Options:", requestOptions);
 
@@ -11611,7 +12109,15 @@ module.exports = function registerApiRoutes(scope) {
                                     if (rerendered.temperature !== null) {
                                         rerunOptions.temperature = rerendered.temperature;
                                     }
-                                    let rerunResponse = await LLMClient.chatCompletion(rerunOptions);
+                                    const rerunLoopResult = await runChatCompletionWithToolLoop({
+                                        requestOptions: rerunOptions,
+                                        streamEmitter: stream,
+                                        metadataLabel: `${promptMetadataLabel}_rerun`
+                                    });
+                                    let rerunResponse = rerunLoopResult.aiResponse;
+                                    if (Array.isArray(rerunLoopResult.toolInvocations) && rerunLoopResult.toolInvocations.length) {
+                                        toolInvocations = [...toolInvocations, ...rerunLoopResult.toolInvocations];
+                                    }
                                     if (typeof rerunResponse === 'string' && rerunResponse.trim()) {
                                         const parsedProse = parsePlayerActionProseFromXml(rerunResponse, { logJson: true });
                                         aiResponse = parsedProse.prose;
@@ -11684,6 +12190,10 @@ module.exports = function registerApiRoutes(scope) {
                         response: aiResponse
                     };
 
+                    if (toolInvocations.length) {
+                        responseData.toolInvocations = toolInvocations;
+                    }
+
                     if (usageMetrics) {
                         responseData.aiUsage = usageMetrics;
                     }
@@ -11704,6 +12214,9 @@ module.exports = function registerApiRoutes(scope) {
                     if (debugInfo) {
                         debugInfo.actionResolution = actionResolution;
                         debugInfo.plausibilityStructured = plausibilityInfo?.structured || null;
+                        if (toolInvocations.length) {
+                            debugInfo.toolInvocations = toolInvocations;
+                        }
                         responseData.debug = debugInfo;
                     }
 
@@ -26628,11 +27141,13 @@ module.exports = function registerApiRoutes(scope) {
 
                 const replies = [];
                 const getChatHistory = () => chatHistory;
+                const getHistory = (query) => collectHistoryMatches({ query, includeFullContent: true }).entries;
                 const interaction = {
                     user: { id: typeof userId === 'string' ? userId : null },
                     argsText: typeof argsText === 'string' ? argsText : '',
                     chatHistory,
                     getChatHistory,
+                    getHistory,
                     performGameSave,
                     runPlotSummaryPrompt: async ({ parentEntryId = null, locationId = null } = {}) => {
                         const resolvedLocationId = requireLocationId(
