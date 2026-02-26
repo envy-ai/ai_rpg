@@ -177,3 +177,100 @@ Original prompt: Horizontally center the submit abilities button in the modal an
 - Updated docs:
   - `docs/ui/modals_overlays.md`
   - `docs/README.md`
+
+Original prompt: Make it so the modal pops up before the prompt to generate the abilities is run, with a message saying that the ability options for level X are being generated.
+Then: "Just say 'Ability options for level-up are being generated'"
+Also: update `/respec_abilities` with optional end level and player-specific modal reselection behavior.
+
+- Deferred player ability-option generation until explicitly requested:
+  - `server.js` `resolvePlayerAbilitySelectionState(...)` now supports pending selections with incomplete options (`selection.optionsReady=false`, `optionsToGenerate`) when generation is not requested.
+  - Player `generateLevelUpAbilitiesForCharacter(...)` now resolves pending state without pre-generating options.
+  - `api.js` pending checks for `/api/chat`, `/api/player/move`, `/api/player/levelup`, and load-time pending resolution now use `ensureOptionsForNext: false` (no pre-generation).
+  - `GET /api/player/ability-selection` now supports query `generateOptions=0|false|no` to return pending state without generating options.
+- Updated modal flow in `views/index.njk`:
+  - Added loading-first flow: modal opens before generation with message `Ability options for level-up are being generated`.
+  - Generation is then triggered via a second request (`/api/player/ability-selection?generateOptions=1`), after which cards render.
+  - Added client-side detection for incomplete selection payloads (`optionsReady`/option count), plus submit-state guards while loading.
+- Updated `/respec_abilities` in `slashcommands/respec_abilities.js`:
+  - Added optional `end_level`.
+  - Supports numeric positional shorthand (`/respec_abilities 2 4`) when no character named `2` exists.
+  - Respec range is now inclusive `[start_level, end_level]`.
+  - Player target: removes abilities only in range, clears pending generated options for those levels, does not regenerate automatically, and instructs replacement via modal.
+  - NPC target: keeps regeneration flow, now limited to range via `{ previousLevel: start-1, newLevel: end }`.
+- Updated docs:
+  - `docs/api/players.md`
+  - `docs/api/game.md`
+  - `docs/ui/chat_interface.md`
+  - `docs/ui/modals_overlays.md`
+  - `docs/slashcommands/RespecAbilitiesCommand.md`
+  - `docs/server_llm_notes.md`
+  - `docs/README.md`
+- Validation:
+  - `node --check server.js` ✅
+  - `node --check api.js` ✅
+  - `node --check slashcommands/respec_abilities.js` ✅
+
+Original prompt: "If no game has been loaded or started, suppress the dialogue. (and the prompt, obviously)"
+
+- Added no-active-game suppression for player ability selection modal/prompt flow:
+  - `server.js` now passes `gameLoaded` into `index.njk` render context.
+  - `views/index.njk` now sets `window.__AIRPG_GAME_LOADED__` and gates `requestPlayerAbilitySelectionFlow(...)`; when false, the modal is closed and ability-selection fetch/generation is skipped.
+  - `views/index.njk` pending-payload handler now no-ops when no game is loaded.
+  - `api.js` `resolvePendingPlayerAbilitySelection(...)` now immediately returns `null` when `Globals.gameLoaded === false`.
+  - `GET /api/player/ability-selection` now returns `{ pending:false }` without generating options when no game is loaded.
+- Updated docs:
+  - `docs/api/players.md`
+  - `docs/ui/chat_interface.md`
+  - `docs/server_llm_notes.md`
+  - `docs/README.md`
+- Validation:
+  - `node --check api.js` ✅
+  - `node --check server.js` ✅
+
+Original prompt: When I run /respec_abilities on another character, it says character not found even if I copy and paste their name directly.
+
+- Fixed `/respec_abilities` target resolution and positional parsing in `slashcommands/respec_abilities.js`:
+  - Added raw positional parsing from `interaction.argsText` so multi-word copied names are interpreted correctly before trailing levels.
+  - Added alias-aware, sanitized character lookup with ambiguity detection (fails loudly when multiple matches exist).
+  - Kept numeric shorthand support (`/respec_abilities 2 4`) and range validation.
+  - Added explicit integer validation messaging for `start_level` / `end_level` when provided.
+- Updated slash interaction payload in `api.js` to pass `argsText` into command `interaction`.
+- Updated docs:
+  - `docs/slashcommands/RespecAbilitiesCommand.md`
+  - `docs/README.md`
+- Follow-up docs update: `docs/slash_commands.md` now documents `interaction.argsText` availability for command handlers.
+- Root cause identified in `slashcommands/respec_abilities.js`: not-found reply branch only checked `rawName`, so it fired even when target lookup succeeded. Fixed to `if (rawName && !target)`.
+- Added quick local smoke checks via `node - <<'NODE' ...` for:
+  - direct name lookup (`Bob Ross`) ✅
+  - parser-split positional input (`character=Bob`, `start_level=Ross`, `argsText='Bob Ross'`) ✅
+  - numeric shorthand (`2 3`) ✅
+
+Original prompt: For the skill generation modal: close the load game modal first; keep top-screen options clickable during generation.
+
+- Updated load-game modal controls in `views/index.njk`:
+  - Exposed `openLoadGameModal` / `closeLoadGameModal` on `window` so other UI layers can safely dismiss the load dialog.
+- Updated prompt progress UI behavior in `public/js/chat.js`:
+  - Added `closeLoadGameModalIfOpen()` and call it before rendering prompt progress entries, so the load modal is dismissed before prompt activity UI appears.
+  - Added prompt overlay auto-anchoring below top controls via `getPromptProgressSafeTopOffsetPx()` + `applyPromptProgressAutoAnchor()`.
+  - Dragging prompt overlay now disables auto-anchor for that overlay instance (`dataset.autoAnchored=false`).
+- Updated docs:
+  - `docs/ui/chat_interface.md`
+  - `docs/ui/modals_overlays.md`
+  - `docs/README.md`
+- Validation:
+  - `node --check public/js/chat.js` ✅
+
+Original prompt: Trigger item-card long-name compact style when any word is 12+ characters.
+
+- Updated shared name rendering helper in `views/index.njk`:
+  - Added `LONG_NAME_WORD_CHARACTER_LIMIT = 12` and `containsLongWord(...)`.
+  - `setRenderedName(...)` now supports optional `longWordCharacterLimit` and applies `.entity-name-long` when either:
+    - name length > 40, or
+    - a word meets the configured long-word limit.
+- Applied the 12+ word trigger only to item/scenery card name call sites:
+  - inventory cards
+  - crafting inventory cards
+  - location item/scenery cards
+- Updated docs:
+  - `docs/ui/assets_styles.md`
+  - `docs/README.md`

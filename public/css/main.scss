@@ -1537,6 +1537,14 @@ p:not(:last-child) {
   color: rgba(226, 232, 240, 0.92);
 }
 
+.load-game-modal {
+  z-index: 11000;
+}
+
+.modal-backdrop.modal-backdrop--load-game-top {
+  z-index: 10999;
+}
+
 .load-game-source-control {
   display: flex;
   flex-direction: column;

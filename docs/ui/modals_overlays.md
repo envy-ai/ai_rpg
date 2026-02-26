@@ -5,6 +5,10 @@ Most modals live in `views/index.njk` and are wired up by the inline script or `
 ## Global overlays
 
 - `#locationOverlay` (class `overlay-backdrop`): travel/generation spinner while location updates.
+- Prompt-progress overlay (`.prompt-progress-overlay`, created by `public/js/chat.js`):
+  - Auto-closes `#loadGameModal` before showing prompt activity.
+  - Auto-anchors below the top header/tab controls by default so top navigation remains clickable.
+  - Supports drag/resize/contract; manual drag disables auto-anchoring for that session.
 - `#npcModalBackdrop`, `#questEditBackdrop`, `#craftingModalBackdrop`, `#salvageIntentBackdrop`:
   shared backdrops used to dim the page for certain modals.
 
@@ -71,10 +75,14 @@ Most modals live in `views/index.njk` and are wired up by the inline script or `
 ## Save/load
 
 - `#loadGameModal`: choose manual or autosave and load.
+  - Uses elevated z-order above all other overlays while open.
+  - Confirm closes the modal immediately, then sends `/api/prompts/cancel-all` before `/api/load`.
 
 ## Player level-up ability draft
 
 - `#playerAbilitySelectionModal`: player-only blocking modal used when one or more levels are missing required abilities.
+- Shows `Ability options for level-up are being generated` while option generation is in progress.
+- Applies a dynamic top offset below header/tab controls so top-row UI buttons stay clickable during generation.
 - Renders card options for one level at a time and requires exactly `player_abilities_per_level` selections.
 - Existing level abilities appear preselected and toggleable; newly generated options fill up to `player_ability_options_per_level`.
 - Submit button is horizontally centered with `1.5em` bottom spacing.

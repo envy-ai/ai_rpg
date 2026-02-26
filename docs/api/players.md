@@ -22,6 +22,11 @@ Response:
 ## GET /api/player/ability-selection
 Get the player-only pending ability draft state (and generate the next option set if needed).
 
+Request:
+- Query (optional): `generateOptions`
+  - `generateOptions=0|false|no` returns pending state without generating new options.
+  - omitted/other values generate missing options for the next pending level.
+
 Response:
 - 200: `{ success: true, pending: boolean, abilitySelection, player: NpcProfile }`
 - 400: `{ success: false, error }` (invalid current player type)
@@ -29,11 +34,14 @@ Response:
 - 500: `{ success: false, error }`
 
 Notes:
+- When no game is currently loaded/started (`Globals.gameLoaded === false`), this endpoint returns `pending: false` and does not generate ability options.
 - `abilitySelection.pending` indicates whether gameplay is blocked by unfilled level ability picks.
 - When pending, `abilitySelection.selection` includes:
   - `level`
   - `requiredSelections`
   - `optionsPerLevel`
+  - `optionsReady`
+  - `optionsToGenerate`
   - `options` (card choices)
   - `preselectedAbilityNames` (already-owned abilities for that level)
 

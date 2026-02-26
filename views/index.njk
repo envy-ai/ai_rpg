@@ -1798,6 +1798,7 @@
         window.availableSkillsList = {{ (availableSkills or []) | dump | safe }};
         window.needBarDefinitions = {{ (needBarDefinitions or []) | dump | safe }};
         window.__AIRPG_SAVE_METADATA__ = {{ (saveMetadata if saveMetadata is defined else null) | dump | safe }};
+        window.__AIRPG_GAME_LOADED__ = {{ (gameLoaded if gameLoaded is defined else false) | dump | safe }};
         if (!window.AIRPG_CONFIG || typeof window.AIRPG_CONFIG !== 'object') {
             window.AIRPG_CONFIG = {};
         }
@@ -1936,9 +1937,26 @@
         };
 
         const LONG_NAME_CHARACTER_LIMIT = 40;
+        const LONG_NAME_WORD_CHARACTER_LIMIT = 12;
         const LONG_NAME_CLASS = 'entity-name-long';
 
-        function setRenderedName(target, value, fallbackText = '') {
+        function containsLongWord(text, minimumLength = 0) {
+            if (!Number.isInteger(minimumLength) || minimumLength <= 0) {
+                return false;
+            }
+            if (typeof text !== 'string' || !text.trim()) {
+                return false;
+            }
+
+            const words = text
+                .split(/\s+/)
+                .map(word => word.replace(/^[^A-Za-z0-9]+|[^A-Za-z0-9]+$/g, ''))
+                .filter(Boolean);
+
+            return words.some(word => word.length >= minimumLength);
+        }
+
+        function setRenderedName(target, value, fallbackText = '', options = {}) {
             if (!target) {
                 return;
             }
@@ -1950,8 +1968,15 @@
                     ? String(value)
                     : String(fallbackText ?? ''));
 
+            const longWordCharacterLimit = Number.isInteger(options?.longWordCharacterLimit)
+                ? options.longWordCharacterLimit
+                : null;
+
             target.textContent = '';
-            if (text.length > LONG_NAME_CHARACTER_LIMIT) {
+            if (
+                text.length > LONG_NAME_CHARACTER_LIMIT
+                || containsLongWord(text, longWordCharacterLimit)
+            ) {
                 const compactName = document.createElement('div');
                 compactName.className = LONG_NAME_CLASS;
                 compactName.textContent = text;
@@ -2829,12 +2854,79 @@
             return null;
         }
 
+        function resolvePlayerAbilitySelectionClientConfig() {
+            const requiredRaw = Number(runtimeConfig?.player_abilities_per_level);
+            const optionsRaw = Number(runtimeConfig?.player_ability_options_per_level);
+            const requiredPerLevel = Number.isInteger(requiredRaw) && requiredRaw > 0 ? requiredRaw : 1;
+            const optionsPerLevel = Number.isInteger(optionsRaw) && optionsRaw > 0
+                ? optionsRaw
+                : requiredPerLevel;
+            return {
+                requiredPerLevel,
+                optionsPerLevel
+            };
+        }
+
+        function playerAbilitySelectionNeedsGeneration(selectionState) {
+            if (!selectionState || selectionState.pending !== true) {
+                return false;
+            }
+            const selection = selectionState.selection;
+            if (!selection || typeof selection !== 'object') {
+                return false;
+            }
+            if (selection.optionsReady === false) {
+                return true;
+            }
+            const optionsPerLevel = Number(selection.optionsPerLevel);
+            if (!Number.isInteger(optionsPerLevel) || optionsPerLevel <= 0) {
+                return false;
+            }
+            const options = Array.isArray(selection.options) ? selection.options : [];
+            return options.length < optionsPerLevel;
+        }
+
+        function isGameLoadedForAbilitySelection() {
+            return window.__AIRPG_GAME_LOADED__ === true;
+        }
+
         function isPlayerAbilitySelectionBlockingGameplay() {
             return Boolean(
                 playerAbilitySelectionState.active
                 || playerAbilitySelectionState.loading
                 || playerAbilitySelectionState.submitting
             );
+        }
+
+        function getPlayerAbilitySelectionSafeTopOffsetPx() {
+            const SAFE_MARGIN = 12;
+            let maxBottom = 0;
+            const topControls = [
+                document.querySelector('.header'),
+                document.querySelector('.tab-bar')
+            ];
+            for (const control of topControls) {
+                if (!control) {
+                    continue;
+                }
+                const rect = control.getBoundingClientRect();
+                if (rect.width <= 0 || rect.height <= 0) {
+                    continue;
+                }
+                maxBottom = Math.max(maxBottom, Math.ceil(rect.bottom));
+            }
+            return maxBottom > 0 ? maxBottom + SAFE_MARGIN : SAFE_MARGIN;
+        }
+
+        function applyPlayerAbilitySelectionModalOffset() {
+            if (!playerAbilitySelectionModal) {
+                return;
+            }
+            if (playerAbilitySelectionModal.hasAttribute('hidden')) {
+                playerAbilitySelectionModal.style.top = '';
+                return;
+            }
+            playerAbilitySelectionModal.style.top = `${getPlayerAbilitySelectionSafeTopOffsetPx()}px`;
         }
 
         function syncPlayerAbilitySelectionInteractionState() {
@@ -2874,12 +2966,14 @@
             const required = playerAbilitySelectionState.requiredSelections;
             const canSubmit = (
                 playerAbilitySelectionState.active
+                && !playerAbilitySelectionState.loading
                 && !playerAbilitySelectionState.submitting
+                && required > 0
                 && selectedCount === required
             );
             playerAbilitySelectionSubmitBtn.disabled = !canSubmit;
 
-            if (!playerAbilitySelectionState.submitting) {
+            if (!playerAbilitySelectionState.submitting && !playerAbilitySelectionState.loading && required > 0) {
                 const levelText = Number.isInteger(playerAbilitySelectionState.level)
                     ? `Level ${playerAbilitySelectionState.level}`
                     : 'Current level';
@@ -2896,7 +2990,10 @@
             }
             playerAbilitySelectionModal.setAttribute('hidden', '');
             playerAbilitySelectionModal.setAttribute('aria-hidden', 'true');
+            playerAbilitySelectionModal.style.top = '';
             playerAbilitySelectionState.active = false;
+            playerAbilitySelectionState.loading = false;
+            playerAbilitySelectionState.submitting = false;
             playerAbilitySelectionState.selection = null;
             playerAbilitySelectionState.selectedNames = new Set();
             playerAbilitySelectionState.level = null;
@@ -2909,6 +3006,54 @@
                 playerAbilitySelectionIntro.textContent = '';
             }
             setPlayerAbilitySelectionStatus('');
+            syncPlayerAbilitySelectionInteractionState();
+        }
+
+        function openPlayerAbilitySelectionLoadingModal(selectionState = null) {
+            if (!playerAbilitySelectionModal) {
+                return;
+            }
+            const selection = (selectionState && selectionState.selection && typeof selectionState.selection === 'object')
+                ? selectionState.selection
+                : null;
+            const config = resolvePlayerAbilitySelectionClientConfig();
+            const resolvedLevel = Number.isInteger(Number(selection?.level))
+                ? Number(selection.level)
+                : null;
+            const resolvedRequiredSelections = Number.isInteger(Number(selection?.requiredSelections))
+                ? Number(selection.requiredSelections)
+                : config.requiredPerLevel;
+            const resolvedOptionsPerLevel = Number.isInteger(Number(selection?.optionsPerLevel))
+                ? Number(selection.optionsPerLevel)
+                : config.optionsPerLevel;
+
+            playerAbilitySelectionState.active = true;
+            playerAbilitySelectionState.loading = true;
+            playerAbilitySelectionState.selection = null;
+            playerAbilitySelectionState.selectedNames = new Set();
+            playerAbilitySelectionState.level = resolvedLevel;
+            playerAbilitySelectionState.requiredSelections = resolvedRequiredSelections;
+            playerAbilitySelectionState.optionsPerLevel = resolvedOptionsPerLevel;
+
+            const titleLevelText = Number.isInteger(resolvedLevel)
+                ? `Level ${resolvedLevel}`
+                : 'Level-Up';
+            if (playerAbilitySelectionTitle) {
+                playerAbilitySelectionTitle.textContent = `Choose Abilities for ${titleLevelText}`;
+            }
+            if (playerAbilitySelectionIntro) {
+                playerAbilitySelectionIntro.textContent = 'Ability options for level-up are being generated';
+            }
+            if (playerAbilitySelectionCards) {
+                playerAbilitySelectionCards.innerHTML = '';
+            }
+
+            setPlayerAbilitySelectionStatus('Ability options for level-up are being generated', 'info');
+            updatePlayerAbilitySelectionSubmitState();
+
+            playerAbilitySelectionModal.removeAttribute('hidden');
+            playerAbilitySelectionModal.setAttribute('aria-hidden', 'false');
+            applyPlayerAbilitySelectionModalOffset();
             syncPlayerAbilitySelectionInteractionState();
         }
 
@@ -2999,6 +3144,7 @@
             }
 
             playerAbilitySelectionState.active = true;
+            playerAbilitySelectionState.loading = false;
             playerAbilitySelectionState.selection = selection;
             playerAbilitySelectionState.level = Number.isInteger(Number(selection.level))
                 ? Number(selection.level)
@@ -3034,6 +3180,7 @@
 
             playerAbilitySelectionModal.removeAttribute('hidden');
             playerAbilitySelectionModal.setAttribute('aria-hidden', 'false');
+            applyPlayerAbilitySelectionModalOffset();
             syncPlayerAbilitySelectionInteractionState();
         }
 
@@ -3041,7 +3188,11 @@
             if (!playerAbilitySelectionModal) {
                 return null;
             }
-            if (playerAbilitySelectionState.loading && !force) {
+            if (!isGameLoadedForAbilitySelection()) {
+                closePlayerAbilitySelectionModal();
+                return null;
+            }
+            if ((playerAbilitySelectionState.loading || playerAbilitySelectionState.submitting) && !force) {
                 return null;
             }
 
@@ -3049,32 +3200,42 @@
             const requestToken = ++playerAbilitySelectionState.requestToken;
             let resolvedSelectionState = payloadSelectionState;
 
-            if (!resolvedSelectionState) {
-                playerAbilitySelectionState.loading = true;
+            const setLoadingState = (loadingValue) => {
+                if (requestToken !== playerAbilitySelectionState.requestToken) {
+                    return;
+                }
+                playerAbilitySelectionState.loading = Boolean(loadingValue);
                 syncPlayerAbilitySelectionInteractionState();
+            };
+
+            const fetchAbilitySelectionState = async ({ generateOptions = false } = {}) => {
+                const response = await fetch(`/api/player/ability-selection?generateOptions=${generateOptions ? '1' : '0'}`, {
+                    cache: 'no-store'
+                });
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok || !data?.success) {
+                    throw new Error(data?.error || `HTTP ${response.status}`);
+                }
+                if (data.player) {
+                    updateChatPlayerPanel(data.player);
+                    if (Array.isArray(data.player.partyMembers)) {
+                        renderChatPartyPanel(data.player.partyMembers);
+                    }
+                }
+                return data.abilitySelection || null;
+            };
+
+            if (!resolvedSelectionState) {
+                setLoadingState(true);
                 try {
-                    const response = await fetch('/api/player/ability-selection', { cache: 'no-store' });
-                    const data = await response.json().catch(() => ({}));
-                    if (!response.ok || !data?.success) {
-                        throw new Error(data?.error || `HTTP ${response.status}`);
-                    }
-                    resolvedSelectionState = data.abilitySelection || null;
-                    if (data.player) {
-                        updateChatPlayerPanel(data.player);
-                        if (Array.isArray(data.player.partyMembers)) {
-                            renderChatPartyPanel(data.player.partyMembers);
-                        }
-                    }
+                    resolvedSelectionState = await fetchAbilitySelectionState({ generateOptions: false });
                 } catch (error) {
                     if (requestToken === playerAbilitySelectionState.requestToken) {
                         setPlayerAbilitySelectionStatus(`Failed to load ability choices: ${error?.message || error}`, 'error');
                     }
                     throw error;
                 } finally {
-                    if (requestToken === playerAbilitySelectionState.requestToken) {
-                        playerAbilitySelectionState.loading = false;
-                        syncPlayerAbilitySelectionInteractionState();
-                    }
+                    setLoadingState(false);
                 }
             }
 
@@ -3085,6 +3246,32 @@
             if (!resolvedSelectionState || resolvedSelectionState.pending !== true || !resolvedSelectionState.selection) {
                 closePlayerAbilitySelectionModal();
                 return resolvedSelectionState;
+            }
+
+            if (playerAbilitySelectionNeedsGeneration(resolvedSelectionState)) {
+                openPlayerAbilitySelectionLoadingModal(resolvedSelectionState);
+                setLoadingState(true);
+                try {
+                    resolvedSelectionState = await fetchAbilitySelectionState({ generateOptions: true });
+                } catch (error) {
+                    if (requestToken === playerAbilitySelectionState.requestToken) {
+                        setPlayerAbilitySelectionStatus(`Failed to generate ability options: ${error?.message || error}`, 'error');
+                    }
+                    throw error;
+                } finally {
+                    setLoadingState(false);
+                }
+
+                if (requestToken !== playerAbilitySelectionState.requestToken) {
+                    return resolvedSelectionState;
+                }
+                if (!resolvedSelectionState || resolvedSelectionState.pending !== true || !resolvedSelectionState.selection) {
+                    closePlayerAbilitySelectionModal();
+                    return resolvedSelectionState;
+                }
+                if (playerAbilitySelectionNeedsGeneration(resolvedSelectionState)) {
+                    throw new Error('Ability option generation did not complete.');
+                }
             }
 
             openPlayerAbilitySelectionModal(resolvedSelectionState);
@@ -3166,6 +3353,9 @@
         window.isPlayerAbilitySelectionBlockingGameplay = isPlayerAbilitySelectionBlockingGameplay;
         window.requestPlayerAbilitySelectionFlow = requestPlayerAbilitySelectionFlow;
         window.handlePendingAbilitySelectionPayload = (payload) => {
+            if (!isGameLoadedForAbilitySelection()) {
+                return;
+            }
             requestPlayerAbilitySelectionFlow({
                 pendingPayload: extractAbilitySelectionState(payload),
                 force: true
@@ -3936,6 +4126,7 @@
         let loadGameFetchToken = 0;
         let currentLoadGameSource = 'saves';
         let loadGameTriggerButton = null;
+        let loadGameInFlight = false;
 
         function ensureGearSlotTypes() {
             if (gearSlotTypesLoaded) {
@@ -5903,6 +6094,9 @@
                 submitPlayerAbilitySelection();
             });
         }
+        window.addEventListener('resize', () => {
+            applyPlayerAbilitySelectionModalOffset();
+        });
         const npcInventoryCloseBtn = document.getElementById('npcInventoryCloseBtn');
         const npcViewModalTitle = document.getElementById('npcViewModalTitle');
         const npcViewCloseBtn = document.getElementById('npcViewCloseBtn');
@@ -9514,6 +9708,22 @@
             }
         }
 
+        async function cancelAllPromptsBeforeLoad() {
+            const response = await fetch('/api/prompts/cancel-all', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    waitForDrain: false,
+                    timeoutMs: 0
+                })
+            });
+            const result = await response.json().catch(() => ({}));
+            if (!response.ok || !result?.success) {
+                throw new Error(result?.error || `Failed to cancel prompts: HTTP ${response.status}`);
+            }
+            return result;
+        }
+
         function getLoadGameSourceLabel({ source = currentLoadGameSource, plural = false } = {}) {
             const normalizedSource = source === 'autosaves' ? 'autosaves' : 'saves';
             if (plural) {
@@ -9651,6 +9861,10 @@
             if (!loadGameModal || !npcModalBackdrop) {
                 return;
             }
+            if (loadGameInFlight) {
+                window.alert('A game load is already in progress.');
+                return;
+            }
 
             loadGameSaves = [];
             currentLoadGameSource = initialSource === 'autosaves' ? 'autosaves' : 'saves';
@@ -9667,6 +9881,7 @@
             setLoadGameStatus('', null);
 
             npcModalBackdrop.removeAttribute('hidden');
+            npcModalBackdrop.classList.add('modal-backdrop--load-game-top');
             loadGameModal.removeAttribute('hidden');
             loadGameModal.setAttribute('aria-hidden', 'false');
             document.body.classList.add('modal-open');
@@ -9690,6 +9905,9 @@
             currentLoadGameSource = 'saves';
             loadGameModal.setAttribute('aria-hidden', 'true');
             loadGameModal.setAttribute('hidden', '');
+            if (npcModalBackdrop) {
+                npcModalBackdrop.classList.remove('modal-backdrop--load-game-top');
+            }
             setLoadGameStatus('');
             loadGameSaves = [];
             if (loadGameSelect) {
@@ -9728,6 +9946,9 @@
             }
             loadGameTriggerButton = null;
         }
+
+        window.openLoadGameModal = openLoadGameModal;
+        window.closeLoadGameModal = closeLoadGameModal;
 
         function openAddNpcModal() {
             if (!addNpcModal || !npcModalBackdrop) {
@@ -11082,6 +11303,9 @@
 
         if (loadGameConfirmBtn) {
             loadGameConfirmBtn.addEventListener('click', async () => {
+                if (loadGameInFlight) {
+                    return;
+                }
                 if (!loadGameSelect || loadGameSelect.disabled) {
                     setLoadGameStatus(`No ${getLoadGameSourceLabel({ plural: true })} available.`, 'error');
                     return;
@@ -11105,17 +11329,14 @@
                 const saveSource = optionSource
                     || (selectedSave?.source === 'autosaves' ? 'autosaves' : (currentLoadGameSource === 'autosaves' ? 'autosaves' : 'saves'));
                 const singularLabel = getLoadGameSourceLabel({ source: saveSource, plural: false });
-
+                const clientId = window.AIRPG_CLIENT_ID
+                    || (window.localStorage ? window.localStorage.getItem('airpg:clientId') : null);
                 const originalLabel = loadGameConfirmBtn.textContent;
+
+                loadGameInFlight = true;
+                closeLoadGameModal();
                 try {
-                    loadGameConfirmBtn.disabled = true;
-                    loadGameConfirmBtn.textContent = 'Loading...';
-                    if (loadGameCancelBtn) {
-                        loadGameCancelBtn.disabled = true;
-                    }
-                    setLoadGameStatus(`Loading ${singularLabel}…`, 'info');
-                    const clientId = window.AIRPG_CLIENT_ID
-                        || (window.localStorage ? window.localStorage.getItem('airpg:clientId') : null);
+                    await cancelAllPromptsBeforeLoad();
 
                     const loadResponse = await fetch('/api/load', {
                         method: 'POST',
@@ -11132,7 +11353,6 @@
                                 'This save does not have NPC aliases yet.\n\nGenerate aliases now? This will run in batches of 20 NPCs per prompt.'
                             );
                             if (shouldGenerateAliases) {
-                                setLoadGameStatus('Generating NPC aliases...', 'info');
                                 const aliasResponse = await fetch('/api/npcs/generate-aliases', {
                                     method: 'POST',
                                     headers: { 'Content-Type': 'application/json' },
@@ -11143,30 +11363,22 @@
                                     const aliasErrorMessage = aliasResult?.error || `HTTP ${aliasResponse.status}`;
                                     throw new Error(`Failed to generate NPC aliases: ${aliasErrorMessage}`);
                                 }
-                                const updatedCount = Number.isFinite(aliasResult?.updatedNpcs)
-                                    ? aliasResult.updatedNpcs
-                                    : 0;
-                                setLoadGameStatus(`Generated aliases for ${updatedCount} NPCs.`, 'success');
                             }
                         }
-                        closeLoadGameModal();
                         window.location.reload();
                     } else {
                         const errorMessage = loadResult?.error || `HTTP ${loadResponse.status}`;
-                        setLoadGameStatus(errorMessage, 'error');
-                        loadGameConfirmBtn.disabled = false;
-                        loadGameConfirmBtn.textContent = originalLabel;
-                        if (loadGameCancelBtn) {
-                            loadGameCancelBtn.disabled = false;
-                        }
+                        throw new Error(errorMessage);
                     }
                 } catch (error) {
-                    setLoadGameStatus(error.message, 'error');
+                    window.alert(`Failed to load ${singularLabel}: ${error.message}`);
                     loadGameConfirmBtn.disabled = false;
                     loadGameConfirmBtn.textContent = originalLabel;
                     if (loadGameCancelBtn) {
                         loadGameCancelBtn.disabled = false;
                     }
+                } finally {
+                    loadGameInFlight = false;
                 }
             });
         }
@@ -12490,7 +12702,9 @@
 
                 const name = document.createElement('div');
                 name.className = 'entity-name inventory-name';
-                setRenderedName(name, item.name, 'Unknown Item');
+                setRenderedName(name, item.name, 'Unknown Item', {
+                    longWordCharacterLimit: LONG_NAME_WORD_CHARACTER_LIMIT
+                });
                 applyRarityClass(name, item.rarity);
 
                 const equippedSlot = slotInfo.equippedSlot;
@@ -13332,7 +13546,9 @@
 
                 const name = document.createElement('div');
                 name.className = 'entity-name inventory-name';
-                setRenderedName(name, clone.name, 'Unknown Item');
+                setRenderedName(name, clone.name, 'Unknown Item', {
+                    longWordCharacterLimit: LONG_NAME_WORD_CHARACTER_LIMIT
+                });
                 applyRarityClass(name, clone.rarity);
 
                 const rawSlot = typeof clone.slot === 'string' ? clone.slot.trim() : '';
@@ -17740,7 +17956,9 @@
 
                                 const nameEl = document.createElement('div');
                                 nameEl.className = 'entity-name location-entity-name';
-                                setRenderedName(nameEl, thing.name, 'Unknown Object');
+                                setRenderedName(nameEl, thing.name, 'Unknown Object', {
+                                    longWordCharacterLimit: LONG_NAME_WORD_CHARACTER_LIMIT
+                                });
                                 applyRarityClass(nameEl, thing.rarity);
 
                                 card.appendChild(icon);

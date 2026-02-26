@@ -36,9 +36,15 @@ The main UI is rendered by `views/index.njk` and powered by `public/js/chat.js` 
   - Player "View" opens `#npcViewModal` in editable mode for attributes/skills using shared allocation partials; skills can now be added/removed directly in this modal for the player view. NPCs use the same sections in read-only mode, and their unspent point totals are hidden.
 - **Player level-up ability draft modal** (`#playerAbilitySelectionModal`):
   - Opens when the player has any underfilled level (`player_abilities_per_level`) from level 1 through current level.
+  - Is suppressed entirely when no game is loaded/started.
+  - Opens immediately before option generation with the message `Ability options for level-up are being generated`, then updates to card picks when generation completes.
+  - Offsets itself below header/tab controls so the top-row buttons remain clickable (including normal pointer cursor behavior) while options generate.
   - Presents card-style options for the next missing level only; after submit, it advances sequentially to the next missing level.
   - Pre-existing abilities at that level are preselected but can be toggled off.
   - Chat send + travel actions are blocked while this modal is pending.
+- **Load game modal** (`#loadGameModal`):
+  - Uses elevated z-order above all other overlays when open.
+  - On confirm, closes immediately and calls `/api/prompts/cancel-all` (`waitForDrain: false`) before issuing `/api/load`.
 - Player/NPC "Edit" opens `#npcEditModal`, which includes an `Aliases` textarea (one alias per line) plus `Resistances`/`Vulnerabilities` textareas and saves through `PUT /api/npcs/:id`.
   - Player/NPC Inventory modal keeps active inventory filters (including slot filter selection) when equip/unequip triggers an inventory re-render.
   - Party summary list.
@@ -78,7 +84,7 @@ The chat client listens on `/ws?clientId=...` and handles:
 - `location_exit_created`, `location_exit_deleted` (refresh location + map).
 - `image_job_update` (image job completion via `ImageGenerationManager`).
 - `chat_history_updated` (refresh history, quest panel, and Story Tools data).
-- `prompt_progress`, `prompt_progress_cleared` (floating top-left prompt-progress overlay with per-prompt cancel/retry controls plus a header-level "Abort + Reload" action that cancels all tracked prompts and reloads the latest autosave; includes contract/expand toggle, drag handle on the header, native resize handle, and a 3.5-second hidden-placeholder-row debounce before the empty table state is hidden).
+- `prompt_progress`, `prompt_progress_cleared` (floating prompt-progress overlay with per-prompt cancel/retry controls plus a header-level "Abort + Reload" action that cancels all tracked prompts and reloads the latest autosave; auto-closes the load-game modal before showing prompt activity, auto-anchors below top navigation controls so header options remain clickable, includes contract/expand toggle, drag handle on the header, native resize handle, and a 3.5-second hidden-placeholder-row debounce before the empty table state is hidden; request-finalization input refocus now skips when the active element is already in a typing context to avoid caret/focus disruption).
 - `quest_confirmation_request` (modal prompt).
 
 `processChatPayload()` also consumes `payload.worldTime` from streamed/final chat responses, updates the world-time chip, and emits transition summaries (`segment`/`season`) into the event-summary flow.

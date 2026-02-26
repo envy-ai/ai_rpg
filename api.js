@@ -244,7 +244,10 @@ module.exports = function registerApiRoutes(scope) {
             };
         }
 
-        async function resolvePendingPlayerAbilitySelection({ ensureOptionsForNext = true } = {}) {
+        async function resolvePendingPlayerAbilitySelection({ ensureOptionsForNext = false } = {}) {
+            if (!Globals.gameLoaded) {
+                return null;
+            }
             if (!currentPlayer || currentPlayer.isNPC) {
                 return null;
             }
@@ -10161,7 +10164,7 @@ module.exports = function registerApiRoutes(scope) {
 
             try {
                 const pendingAbilitySelection = await resolvePendingPlayerAbilitySelection({
-                    ensureOptionsForNext: true
+                    ensureOptionsForNext: false
                 });
                 if (pendingAbilitySelection) {
                     return res.status(409).json({
@@ -13083,6 +13086,17 @@ module.exports = function registerApiRoutes(scope) {
         });
 
         app.get('/api/player/ability-selection', async (req, res) => {
+            if (!Globals.gameLoaded) {
+                return res.json({
+                    success: true,
+                    pending: false,
+                    abilitySelection: {
+                        pending: false,
+                        levelsMissing: []
+                    },
+                    player: currentPlayer ? serializeNpcForClient(currentPlayer) : null
+                });
+            }
             if (!currentPlayer) {
                 return res.status(404).json({
                     success: false,
@@ -13097,8 +13111,17 @@ module.exports = function registerApiRoutes(scope) {
             }
 
             try {
+                const rawGenerateOptions = typeof req.query?.generateOptions === 'string'
+                    ? req.query.generateOptions.trim().toLowerCase()
+                    : '';
+                const ensureOptionsForNext = !(
+                    rawGenerateOptions === 'false'
+                    || rawGenerateOptions === '0'
+                    || rawGenerateOptions === 'no'
+                );
+
                 const abilitySelection = await resolvePlayerAbilitySelectionState(currentPlayer, {
-                    ensureOptionsForNext: true
+                    ensureOptionsForNext
                 });
                 return res.json({
                     success: true,
@@ -13602,7 +13625,7 @@ module.exports = function registerApiRoutes(scope) {
                 const oldLevel = currentPlayer.level;
                 currentPlayer.levelUp();
                 const pendingAbilitySelection = await resolvePendingPlayerAbilitySelection({
-                    ensureOptionsForNext: true
+                    ensureOptionsForNext: false
                 });
 
                 res.json({
@@ -19866,7 +19889,7 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 const pendingAbilitySelection = await resolvePendingPlayerAbilitySelection({
-                    ensureOptionsForNext: true
+                    ensureOptionsForNext: false
                 });
                 if (pendingAbilitySelection) {
                     return res.status(409).json({
@@ -25763,7 +25786,7 @@ module.exports = function registerApiRoutes(scope) {
                     throw new Error('resolvePlayerAbilitySelectionState helper is unavailable.');
                 }
                 await resolvePlayerAbilitySelectionState(currentPlayer, {
-                    ensureOptionsForNext: true
+                    ensureOptionsForNext: false
                 });
             }
 
@@ -26607,6 +26630,7 @@ module.exports = function registerApiRoutes(scope) {
                 const getChatHistory = () => chatHistory;
                 const interaction = {
                     user: { id: typeof userId === 'string' ? userId : null },
+                    argsText: typeof argsText === 'string' ? argsText : '',
                     chatHistory,
                     getChatHistory,
                     performGameSave,

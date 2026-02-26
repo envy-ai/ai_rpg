@@ -81,7 +81,7 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
   - `levelUp(count)` (updates level/health only; point pools are formula-derived dynamically).
   - `getUnspentSkillPoints()`, `setUnspentSkillPoints(value)`, `adjustUnspentSkillPoints(delta)`.
   - `getUnspentAttributePoints()`, `setUnspentAttributePoints(value)`, `adjustUnspentAttributePoints(delta)`.
-  - `addExperience(amount, raw)`, `addRawExperience(amount)`, `setExperience(value)`.
+  - `addExperience(amount, raw)` (for non-NPC actors with party members, shared XP is scaled per recipient by `sourceLevel / recipientLevel`; `raw=true` bypasses this scaling), `addRawExperience(amount)`, `setExperience(value)`.
 - Health/combat:
   - `modifyHealth(amount, reason)`, `setHealthAttribute(attributeName)`.
   - `isAlive()`, `updateCorpseCountdown()`.
@@ -131,4 +131,5 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
 - `elapsedTime` is minute-canonical; setter validation requires non-negative integer minutes, and load paths normalize to integer minutes.
 - Unspent skill/attribute points are formula-derived at read time from current level + assigned stats/skills.
 - Party members are treated as off-location actors: joining party removes them from all location `npcIds` and clears `currentLocation`.
+- Party XP sharing now scales by each recipient's level instead of copying the source actor's already-scaled award.
 - Direct unspent-point mutators (`setUnspent*`/`adjustUnspent*`) now throw by design.

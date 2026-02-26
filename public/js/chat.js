@@ -2560,6 +2560,7 @@ class AIRPGChat {
             overlay.style.top = `${targetTop}px`;
             overlay.style.right = 'auto';
             overlay.classList.add('is-dragging');
+            overlay.dataset.autoAnchored = 'false';
         };
 
         const stopDragging = (event) => {
@@ -2592,6 +2593,7 @@ class AIRPGChat {
             this.promptProgressDragState.pointerId = event.pointerId;
             this.promptProgressDragState.offsetX = event.clientX - rect.left;
             this.promptProgressDragState.offsetY = event.clientY - rect.top;
+            overlay.dataset.autoAnchored = 'false';
             window.addEventListener('pointermove', onPointerMove);
             window.addEventListener('pointerup', stopDragging);
             window.addEventListener('pointercancel', stopDragging);
@@ -2599,6 +2601,54 @@ class AIRPGChat {
         });
 
         overlay.dataset.dragBound = 'true';
+    }
+
+    closeLoadGameModalIfOpen() {
+        const loadGameModal = document.getElementById('loadGameModal');
+        if (!loadGameModal || loadGameModal.hasAttribute('hidden')) {
+            return;
+        }
+
+        if (typeof window.closeLoadGameModal === 'function') {
+            window.closeLoadGameModal({ focusTrigger: false });
+            return;
+        }
+
+        loadGameModal.setAttribute('aria-hidden', 'true');
+        loadGameModal.setAttribute('hidden', '');
+    }
+
+    getPromptProgressSafeTopOffsetPx() {
+        const SAFE_MARGIN = 12;
+        let maxBottom = SAFE_MARGIN;
+        const candidates = [
+            document.querySelector('.header'),
+            document.querySelector('.tab-bar')
+        ];
+
+        for (const element of candidates) {
+            if (!element) {
+                continue;
+            }
+            const rect = element.getBoundingClientRect();
+            if (rect.width <= 0 || rect.height <= 0) {
+                continue;
+            }
+            maxBottom = Math.max(maxBottom, Math.ceil(rect.bottom) + SAFE_MARGIN);
+        }
+
+        const maxTop = Math.max(SAFE_MARGIN, window.innerHeight - 180);
+        return Math.min(maxBottom, maxTop);
+    }
+
+    applyPromptProgressAutoAnchor(overlay) {
+        if (!overlay || overlay.dataset.autoAnchored === 'false') {
+            return;
+        }
+        overlay.style.left = '16px';
+        overlay.style.right = 'auto';
+        overlay.style.top = `${this.getPromptProgressSafeTopOffsetPx()}px`;
+        overlay.dataset.autoAnchored = 'true';
     }
 
     renderPromptProgress(entries = []) {
@@ -2652,6 +2702,8 @@ class AIRPGChat {
             clearTimeout(this.promptProgressHideTimer);
             this.promptProgressHideTimer = null;
         }
+
+        this.closeLoadGameModalIfOpen();
 
         const formatBytes = (value) => {
             if (!Number.isFinite(value)) return '-';
@@ -2740,6 +2792,7 @@ class AIRPGChat {
             overlay.className = 'prompt-progress-overlay';
             overlay.setAttribute('aria-live', 'polite');
             overlay.setAttribute('aria-label', 'AI prompt activity');
+            overlay.dataset.autoAnchored = 'true';
 
             const headerDiv = document.createElement('div');
             headerDiv.className = 'prompt-progress-overlay__header';
@@ -2806,6 +2859,7 @@ class AIRPGChat {
             this.bindPromptProgressOverlayInteractions(overlay, headerDiv, toggleButton);
             document.body.appendChild(overlay);
             this.promptProgressMessage = overlay;
+            this.applyPromptProgressAutoAnchor(overlay);
         } else {
             if (!this.promptProgressMessage.isConnected) {
                 document.body.appendChild(this.promptProgressMessage);
@@ -2819,6 +2873,7 @@ class AIRPGChat {
             if (tsDiv) {
                 tsDiv.textContent = renderTimestamp();
             }
+            this.applyPromptProgressAutoAnchor(this.promptProgressMessage);
         }
     }
 
@@ -5874,7 +5929,12 @@ class AIRPGChat {
         this.pendingRequests.delete(requestId);
         if (this.pendingRequests.size === 0) {
             this.setSendButtonLoading(false);
-            this.messageInput?.focus();
+            const activeElement = document.activeElement;
+            const activeInTypingContext = activeElement instanceof HTMLElement
+                && Boolean(activeElement.closest('input, textarea, select, [contenteditable="true"]'));
+            if (!activeInTypingContext) {
+                this.messageInput?.focus();
+            }
             if (this.pendingMoveOverlay && !this.locationRefreshPending) {
                 try {
                     window.hideLocationOverlay?.();

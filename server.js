@@ -14561,7 +14561,8 @@ async function resolvePlayerAbilitySelectionState(character, { ensureOptionsForN
         character.setPendingAbilityOptionsForLevel(targetLevel, generatedOptions);
     }
 
-    if (optionsToGenerate > 0 && generatedOptions.length !== optionsToGenerate) {
+    const optionsReady = optionsToGenerate === 0 || generatedOptions.length === optionsToGenerate;
+    if (ensureOptionsForNext && !optionsReady) {
         throw new Error(
             `Pending ability options for level ${targetLevel} are incomplete. `
             + `Expected ${optionsToGenerate}, got ${generatedOptions.length}.`
@@ -14572,7 +14573,7 @@ async function resolvePlayerAbilitySelectionState(character, { ensureOptionsForN
     ensureUniqueAbilityNames(combinedOptions, {
         context: `combined player ability options at level ${targetLevel}`
     });
-    if (combinedOptions.length !== optionsPerLevel) {
+    if (optionsReady && combinedOptions.length !== optionsPerLevel) {
         throw new Error(
             `Combined ability options for level ${targetLevel} must total ${optionsPerLevel}; `
             + `received ${combinedOptions.length}.`
@@ -14589,6 +14590,8 @@ async function resolvePlayerAbilitySelectionState(character, { ensureOptionsForN
             level: targetLevel,
             requiredSelections: requiredPerLevel,
             optionsPerLevel,
+            optionsReady,
+            optionsToGenerate,
             options: combinedOptions.map(ability => ({ ...ability, level: targetLevel })),
             preselectedAbilityNames: existingAbilities
                 .map(ability => ability.name)
@@ -14621,6 +14624,9 @@ async function applyPlayerAbilitySelection(character, {
     }
 
     const selection = selectionState.selection;
+    if (selection.optionsReady === false) {
+        throw new Error('Ability options for this level are still being generated. Please try again.');
+    }
     if (selection.level !== parsedLevel) {
         throw new Error(
             `Ability selections must be submitted for level ${selection.level} next `
@@ -14722,7 +14728,7 @@ async function generateLevelUpAbilitiesForCharacter(character, { previousLevel =
     const abilityPromise = (async () => {
         if (!character.isNPC) {
             const selectionState = await resolvePlayerAbilitySelectionState(character, {
-                ensureOptionsForNext: true
+                ensureOptionsForNext: false
             });
             if (selectionState?.pending) {
                 const pendingLevel = selectionState?.selection?.level;
@@ -22756,6 +22762,7 @@ app.get('/', (req, res) => {
         //systemPrompt: systemPrompt,
         chatHistory: filteredChatHistory,
         currentPage: 'chat',
+        gameLoaded: Boolean(Globals.gameLoaded),
         player: currentPlayer ? currentPlayer.getStatus() : null,
         availableSkills: Array.from(skills.values()).map(skill => skill.toJSON()),
         currentSetting: activeSetting,

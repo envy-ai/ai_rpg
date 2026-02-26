@@ -19,6 +19,7 @@ Slash Commands Quick Guide
 
 - Interaction API
   - `interaction.user.id` is the caller’s userId (may be null).
+  - `interaction.argsText` is the raw argument text after the slash command name.
   - `interaction.reply(payload)` collects responses; payload shape: `{ content: string, ephemeral?: boolean }`.
   - Return value is ignored; send one or multiple replies; empty replies produce a generic success message client-side.
 

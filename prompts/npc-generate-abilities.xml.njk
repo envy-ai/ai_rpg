@@ -3,7 +3,15 @@
     <role>NPC ability generator</role>
 <generationPrompt>
 
-For each NPC generated above, generate a set of 1 to 4 special abilities per NPC level that are appropriate to the character's description, race, and class. Abilities should be unique and interesting, avoiding generic or overly broad abilities. Abilities should be level appropriate (level 1 is starting level and level 20 is considered very high level). Abilities can be active, passive, or triggered, and should be more interesting than just an attribute bonus. Use your judgment to determine the number of abilities based on the NPC's race and class, and only generate them up to that NPC's current level. Character classes with fewer skills tend to have more abilities, and supernatural classes are often ability-based.  Output the abilities in this format:
+For each NPC generated above, do the following:
+
+For each level that the NPC has, generate a set of 2 to 4 special abilities for that level that are appropriate to the character's description, race, and class. Abilities should be unique and interesting, avoiding generic or overly broad abilities. Abilities should be level appropriate (level 1 is starting level and level 20 is considered very high level). Abilities can be active, passive, or triggered, and should be more interesting than just an attribute bonus. Use your judgment to determine the number of abilities based on the NPC's race and class, and only generate them up to that NPC's current level. Character classes with fewer skills tend to have more abilities, and supernatural classes are often ability-based.  
+
+For instance, for a 3rd level NPC, genreate 2 to 4 1st level abilities, 2 to 4 2nd level abilities, and 2 to 4 3rd level abilities. 
+
+Do this for each NPC.
+
+Output the abilities in this format:
 
 {% include "_includes/ability-format.njk" %}
 </generationPrompt>

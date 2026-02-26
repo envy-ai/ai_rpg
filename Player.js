@@ -3246,6 +3246,7 @@ class Player {
         }
 
         let award = Number(amount);
+        const sourceLevel = this.#level;
 
         console.log(`⭐ Awarding ${award.toFixed(2)} experience to player ${this.#name || this.#id || 'unknown'} (raw: ${raw ? 'yes' : 'no'})`);
         this.#experience = Math.max(0, this.#experience + award);
@@ -3253,12 +3254,22 @@ class Player {
         this.#processExperienceOverflow(raw);
         this.#lastUpdated = new Date().toISOString();
 
-        // If this player is not an NPC, iterate through their party and award the same exp to all members.
+        // If this player is not an NPC, iterate through their party and scale awards by each recipient's level.
         if (!this.#isNPC && this.#partyMembers.size) {
+            if (!Number.isFinite(sourceLevel) || sourceLevel <= 0) {
+                throw new Error(`Cannot distribute party experience from ${this.#name || this.#id || 'unknown'}: source level is invalid (${sourceLevel}).`);
+            }
             for (const memberId of this.#partyMembers) {
                 const member = Player.getById(memberId);
                 if (member && member instanceof Player && member.id !== this.id) {
-                    member.addExperience(amount);
+                    const memberLevel = Number(member.level);
+                    if (!Number.isFinite(memberLevel) || memberLevel <= 0) {
+                        throw new Error(`Cannot distribute party experience to ${member?.name || member?.id || memberId}: member level is invalid (${memberLevel}).`);
+                    }
+                    const scaledAward = raw
+                        ? award
+                        : (award * sourceLevel) / memberLevel;
+                    member.addExperience(scaledAward, raw);
                 }
             }
         }

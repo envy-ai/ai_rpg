@@ -91,7 +91,7 @@ Response:
 Notes:
 - If a save has no persisted `calendarDefinition`, the server generates one from the active setting via LLM (`calendar_generation`) using the same Earth-like => Gregorian prompt rule, then falls back to Gregorian if generation fails.
 - `/api/load` now runs faction-reference reconciliation before restoring the current player: invalid faction ids are cleared from player `factionId`, player faction standings, location/region/pending-stub controlling faction ids, and faction relation edges that target missing/self factions.
-- `/api/load` now also resolves pending player level-up ability draft state for the loaded player and generates missing option cards for the next required level when needed (`player_ability_options_per_level` / `player_abilities_per_level`).
+- `/api/load` now also resolves pending player level-up ability draft state for the loaded player (`player_ability_options_per_level` / `player_abilities_per_level`) without generating options yet; option generation runs when the client requests `/api/player/ability-selection` with generation enabled.
 - `metadata.npcAliasesGenerated` is normalized to a boolean on load (`true` only when explicitly set `true` in the save metadata).
 
 ## GET /api/saves
