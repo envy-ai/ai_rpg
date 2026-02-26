@@ -1,0 +1,49 @@
+<name>{{ thing.name | default('Unknown', true) | escape }}</name>
+<thingType>{{ thing.thingType | default('item', true) | escape }}</thingType>
+<rarity>{{ thing.rarity | default('common', true) | escape }}</rarity>
+<level>{{ thing.level | default(1, true) }}</level>
+<summary>{{ thing.summary | default('', true) | escape }}</summary>
+<description>{{ thing.description | default('', true) | escape }}</description>
+{% if thing.itemTypeDetail %}
+<itemType>{{ thing.itemTypeDetail | escape }}</itemType>
+{% endif %}
+{% if thing.slot %}
+<slot>{{ thing.slot | escape }}</slot>
+{% endif %}
+<flags>
+  <isVehicle>{{ thing.isVehicle | default(false) }}</isVehicle>
+  <isCraftingStation>{{ thing.isCraftingStation | default(false) }}</isCraftingStation>
+  <isProcessingStation>{{ thing.isProcessingStation | default(false) }}</isProcessingStation>
+  <isHarvestable>{{ thing.isHarvestable | default(false) }}</isHarvestable>
+  <isSalvageable>{{ thing.isSalvageable | default(false) }}</isSalvageable>
+</flags>
+<attributeBonuses>
+{% for bonus in thing.attributeBonuses %}
+  <bonus>
+    <attribute>{{ bonus.attribute | default('Unknown', true) | escape }}</attribute>
+    <value>{{ bonus.bonus | default(0, true) }}</value>
+  </bonus>
+{% endfor %}
+</attributeBonuses>
+<statusEffects>
+{% for effect in thing.statusEffects %}
+  <effect>
+    <description>{{ effect.description | default('', true) | escape }}</description>
+    <duration>{{ effect.duration | default('unknown', true) | escape }}</duration>
+  </effect>
+{% endfor %}
+</statusEffects>
+{% if thing.causeStatusEffectOnTarget %}
+<causeStatusEffectOnTarget>
+  <name>{{ thing.causeStatusEffectOnTarget.name | default('', true) | escape }}</name>
+  <description>{{ thing.causeStatusEffectOnTarget.description | default('', true) | escape }}</description>
+  <duration>{{ thing.causeStatusEffectOnTarget.duration | default('unknown', true) | escape }}</duration>
+</causeStatusEffectOnTarget>
+{% endif %}
+{% if thing.causeStatusEffectOnEquipper %}
+<causeStatusEffectOnEquipper>
+  <name>{{ thing.causeStatusEffectOnEquipper.name | default('', true) | escape }}</name>
+  <description>{{ thing.causeStatusEffectOnEquipper.description | default('', true) | escape }}</description>
+  <duration>{{ thing.causeStatusEffectOnEquipper.duration | default('unknown', true) | escape }}</duration>
+</causeStatusEffectOnEquipper>
+{% endif %}

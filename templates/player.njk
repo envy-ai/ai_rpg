@@ -1,0 +1,68 @@
+<name>{{ player.name | default('Unknown', true) | escape }}</name>
+<description>{{ player.description | default('', true) | escape }}</description>
+<class>{{ player.class | default('Unknown', true) | escape }}</class>
+<race>{{ player.race | default('Unknown', true) | escape }}</race>
+<level>{{ player.level | default(1, true) }}</level>
+<location>{{ player.locationName | default('Unknown', true) | escape }}</location>
+<isNpc>{{ player.isNPC | default(false) }}</isNpc>
+<isHostile>{{ player.isHostile | default(false) }}</isHostile>
+<isDead>{{ player.isDead | default(false) }}</isDead>
+{% if player.aliases and player.aliases.length %}
+<aliases>
+{% for alias in player.aliases %}
+  <alias>{{ alias | escape }}</alias>
+{% endfor %}
+</aliases>
+{% endif %}
+{% if player.factionName %}
+<faction>{{ player.factionName | escape }}</faction>
+{% endif %}
+{% if player.resistances %}
+<resistances>{{ player.resistances | escape }}</resistances>
+{% endif %}
+{% if player.vulnerabilities %}
+<vulnerabilities>{{ player.vulnerabilities | escape }}</vulnerabilities>
+{% endif %}
+{% if player.currency is not none %}
+<currency>{{ player.currency }}</currency>
+{% endif %}
+{% if player.experience is not none %}
+<experience>{{ player.experience }}</experience>
+{% endif %}
+<skills>
+{% for skill in player.skills %}
+  <skill>
+    <name>{{ skill.name | escape }}</name>
+    <value>{{ skill.value }}</value>
+  </skill>
+{% endfor %}
+</skills>
+<abilities>
+{% for ability in player.abilities %}
+  <ability>
+    <name>{{ ability.name | escape }}</name>
+    <level>{{ ability.level | default(1, true) }}</level>
+    <summary>{{ ability.summary | default('', true) | escape }}</summary>
+  </ability>
+{% endfor %}
+</abilities>
+<inventory>
+{% for item in player.inventory %}
+  <item>
+    <name>{{ item.name | escape }}</name>
+    <thingType>{{ item.thingType | default('item', true) | escape }}</thingType>
+    <rarity>{{ item.rarity | default('common', true) | escape }}</rarity>
+    <level>{{ item.level | default(1, true) }}</level>
+    <summary>{{ item.summary | default('', true) | escape }}</summary>
+    {% if item.equippedSlot %}<equippedSlot>{{ item.equippedSlot | escape }}</equippedSlot>{% endif %}
+  </item>
+{% endfor %}
+</inventory>
+<statusEffects>
+{% for effect in player.statusEffects %}
+  <effect>
+    <description>{{ effect.description | default('', true) | escape }}</description>
+    <duration>{{ effect.duration | default('unknown', true) | escape }}</duration>
+  </effect>
+{% endfor %}
+</statusEffects>

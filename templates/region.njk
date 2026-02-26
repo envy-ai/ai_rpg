@@ -1,0 +1,43 @@
+<name>{{ region.name | default('Unknown', true) | escape }}</name>
+<description>{{ region.description | default('', true) | escape }}</description>
+{% if region.shortDescription %}
+<shortDescription>{{ region.shortDescription | escape }}</shortDescription>
+{% endif %}
+{% if region.parentRegionName %}
+<parentRegion>{{ region.parentRegionName | escape }}</parentRegion>
+{% endif %}
+{% if region.controllingFactionName %}
+<controllingFaction>{{ region.controllingFactionName | escape }}</controllingFaction>
+{% endif %}
+{% if region.averageLevel is not none %}
+<averageLevel>{{ region.averageLevel }}</averageLevel>
+{% endif %}
+<locations>
+{% for name in region.locationNames %}
+  <locationName>{{ name | escape }}</locationName>
+{% endfor %}
+</locations>
+<connectedRegions>
+{% for name in region.connectedRegionNames %}
+  <regionName>{{ name | escape }}</regionName>
+{% endfor %}
+</connectedRegions>
+<secrets>
+{% for secret in region.secrets %}
+  <secret>{{ secret | escape }}</secret>
+{% endfor %}
+</secrets>
+{% if region.weatherName %}
+<weather>
+  <name>{{ region.weatherName | escape }}</name>
+  <description>{{ region.weatherDescription | default('', true) | escape }}</description>
+</weather>
+{% endif %}
+<statusEffects>
+{% for effect in region.statusEffects %}
+  <effect>
+    <description>{{ effect.description | default('', true) | escape }}</description>
+    <duration>{{ effect.duration | default('unknown', true) | escape }}</duration>
+  </effect>
+{% endfor %}
+</statusEffects>

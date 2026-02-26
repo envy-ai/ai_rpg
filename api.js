@@ -670,7 +670,7 @@ module.exports = function registerApiRoutes(scope) {
 
         const xmlIndent = (level) => '  '.repeat(Math.max(0, level));
 
-        const renderXmlNode = (tagName, value, level = 0, attributes = null) => {
+        const buildXmlAttributeText = (attributes = null) => {
             const attrs = [];
             if (attributes && typeof attributes === 'object') {
                 for (const [key, raw] of Object.entries(attributes)) {
@@ -680,7 +680,11 @@ module.exports = function registerApiRoutes(scope) {
                     attrs.push(`${key}="${xmlEscapeAttribute(raw)}"`);
                 }
             }
-            const attrText = attrs.length ? ` ${attrs.join(' ')}` : '';
+            return attrs.length ? ` ${attrs.join(' ')}` : '';
+        };
+
+        const renderXmlNode = (tagName, value, level = 0, attributes = null) => {
+            const attrText = buildXmlAttributeText(attributes);
             const tag = typeof tagName === 'string' && tagName.trim() ? tagName.trim() : 'node';
 
             if (value === null || value === undefined) {
@@ -704,6 +708,384 @@ module.exports = function registerApiRoutes(scope) {
             }
             lines.push(`${xmlIndent(level)}</${tag}>`);
             return lines;
+        };
+
+        const moreInfoTemplateEnv = (() => {
+            if (!nunjucks || typeof nunjucks.Environment !== 'function' || typeof nunjucks.FileSystemLoader !== 'function') {
+                throw new Error('Nunjucks is unavailable for moreInfo display templates.');
+            }
+            const templatesPath = path.join(__dirname, 'templates');
+            return new nunjucks.Environment(
+                new nunjucks.FileSystemLoader(templatesPath, { noCache: true }),
+                {
+                    autoescape: false,
+                    throwOnUndefined: false,
+                    trimBlocks: true,
+                    lstripBlocks: true
+                }
+            );
+        })();
+
+        const renderMoreInfoTemplate = (templateName, context = {}) => {
+            if (typeof templateName !== 'string' || !templateName.trim()) {
+                throw new Error('moreInfo template name must be a non-empty string.');
+            }
+            let rendered = '';
+            try {
+                rendered = moreInfoTemplateEnv.render(templateName.trim(), context);
+            } catch (error) {
+                throw new Error(`Failed to render moreInfo template "${templateName}": ${error.message}`);
+            }
+            const trimmed = typeof rendered === 'string' ? rendered.trim() : '';
+            if (!trimmed) {
+                throw new Error(`moreInfo template "${templateName}" rendered empty output.`);
+            }
+            return trimmed;
+        };
+
+        const renderTemplatedXmlNode = ({
+            tagName,
+            templateName,
+            context,
+            level = 0,
+            attributes = null
+        } = {}) => {
+            const tag = typeof tagName === 'string' && tagName.trim() ? tagName.trim() : 'entry';
+            const attrText = buildXmlAttributeText(attributes);
+            const rendered = renderMoreInfoTemplate(templateName, context);
+            const templateLines = rendered
+                .split(/\r?\n/g)
+                .map(line => line.trim())
+                .filter(Boolean);
+            if (!templateLines.length) {
+                throw new Error(`moreInfo template "${templateName}" rendered no content lines.`);
+            }
+            const lines = [`${xmlIndent(level)}<${tag}${attrText}>`];
+            for (const line of templateLines) {
+                lines.push(`${xmlIndent(level + 1)}${line}`);
+            }
+            lines.push(`${xmlIndent(level)}</${tag}>`);
+            return lines;
+        };
+
+        const toTrimmedString = (value) => (typeof value === 'string' ? value.trim() : '');
+
+        const toDisplayLevel = (rawValues = [], fallback = 1) => {
+            for (const rawValue of rawValues) {
+                const numeric = Number(rawValue);
+                if (Number.isFinite(numeric) && numeric > 0) {
+                    return Math.max(1, Math.round(numeric));
+                }
+            }
+            return fallback;
+        };
+
+        const normalizeStatusEffectsForDisplay = (effects) => {
+            if (!Array.isArray(effects)) {
+                return [];
+            }
+            return effects
+                .map(effect => {
+                    const description = toTrimmedString(effect?.description || effect?.name || effect?.text);
+                    if (!description) {
+                        return null;
+                    }
+                    const durationValue = effect?.duration;
+                    const duration = durationValue === null || durationValue === undefined
+                        ? 'unknown'
+                        : String(durationValue);
+                    return { description, duration };
+                })
+                .filter(Boolean);
+        };
+
+        const buildThingDisplayModel = (thingLike) => {
+            const rawThing = thingLike && typeof thingLike === 'object' ? thingLike : {};
+            const metadata = rawThing.metadata && typeof rawThing.metadata === 'object'
+                ? rawThing.metadata
+                : {};
+            const description = toTrimmedString(rawThing.description);
+            const shortDescription = toTrimmedString(rawThing.shortDescription)
+                || toTrimmedString(metadata.shortDescription);
+            const summary = shortDescription || description;
+            const rarity = toTrimmedString(rawThing.rarity) || 'common';
+            const level = toDisplayLevel(
+                [rawThing.level, rawThing.relativeLevel, metadata.relativeLevel, metadata.level],
+                1
+            );
+
+            const attributeBonusesRaw = Array.isArray(rawThing.attributeBonuses)
+                ? rawThing.attributeBonuses
+                : [];
+            const attributeBonuses = attributeBonusesRaw
+                .map(entry => {
+                    if (!entry || typeof entry !== 'object') {
+                        return null;
+                    }
+                    const attribute = toTrimmedString(entry.attribute || entry.name);
+                    if (!attribute) {
+                        return null;
+                    }
+                    const bonusNumber = Number(entry.bonus ?? entry.value ?? 0);
+                    return {
+                        attribute,
+                        bonus: Number.isFinite(bonusNumber) ? bonusNumber : 0
+                    };
+                })
+                .filter(Boolean);
+
+            return {
+                id: toTrimmedString(rawThing.id) || null,
+                name: toTrimmedString(rawThing.name) || 'Unknown',
+                thingType: toTrimmedString(rawThing.thingType) || 'item',
+                description,
+                summary,
+                rarity,
+                level,
+                itemTypeDetail: toTrimmedString(rawThing.itemTypeDetail),
+                slot: toTrimmedString(rawThing.slot),
+                isVehicle: Boolean(rawThing.isVehicle ?? metadata.isVehicle),
+                isCraftingStation: Boolean(rawThing.isCraftingStation ?? metadata.isCraftingStation),
+                isProcessingStation: Boolean(rawThing.isProcessingStation ?? metadata.isProcessingStation),
+                isHarvestable: Boolean(rawThing.isHarvestable ?? metadata.isHarvestable),
+                isSalvageable: Boolean(rawThing.isSalvageable ?? metadata.isSalvageable),
+                attributeBonuses,
+                statusEffects: normalizeStatusEffectsForDisplay(rawThing.statusEffects),
+                causeStatusEffectOnTarget: rawThing.causeStatusEffectOnTarget && typeof rawThing.causeStatusEffectOnTarget === 'object'
+                    ? rawThing.causeStatusEffectOnTarget
+                    : null,
+                causeStatusEffectOnEquipper: rawThing.causeStatusEffectOnEquipper && typeof rawThing.causeStatusEffectOnEquipper === 'object'
+                    ? rawThing.causeStatusEffectOnEquipper
+                    : null
+            };
+        };
+
+        const buildPlayerDisplayModel = (playerRecord) => {
+            const snapshot = playerRecord && typeof playerRecord === 'object' ? playerRecord : {};
+            const skillSource = snapshot.skills && typeof snapshot.skills === 'object'
+                ? snapshot.skills
+                : {};
+            const skills = Object.entries(skillSource)
+                .map(([name, value]) => ({ name: toTrimmedString(name), value: Number(value) }))
+                .filter(entry => entry.name && Number.isFinite(entry.value) && entry.value > 1)
+                .sort((a, b) => {
+                    if (b.value !== a.value) {
+                        return b.value - a.value;
+                    }
+                    return a.name.localeCompare(b.name);
+                });
+
+            const abilities = Array.isArray(snapshot.abilities)
+                ? snapshot.abilities
+                    .map(ability => {
+                        const name = toTrimmedString(ability?.name);
+                        if (!name) {
+                            return null;
+                        }
+                        return {
+                            name,
+                            level: toDisplayLevel([ability?.level], 1),
+                            summary: toTrimmedString(ability?.shortDescription) || toTrimmedString(ability?.description)
+                        };
+                    })
+                    .filter(Boolean)
+                : [];
+
+            const inventory = Array.isArray(snapshot.inventory)
+                ? snapshot.inventory
+                    .map(item => {
+                        const thing = buildThingDisplayModel(item);
+                        const equippedSlot = toTrimmedString(item?.equippedSlot);
+                        if (equippedSlot) {
+                            thing.equippedSlot = equippedSlot;
+                        }
+                        return thing;
+                    })
+                    .filter(Boolean)
+                : [];
+
+            const aliases = Array.isArray(snapshot.aliases)
+                ? Array.from(new Set(snapshot.aliases.map(alias => toTrimmedString(alias)).filter(Boolean)))
+                : [];
+
+            const locationId = toTrimmedString(snapshot.locationId);
+            const locationName = locationId && gameLocations instanceof Map && gameLocations.has(locationId)
+                ? toTrimmedString(gameLocations.get(locationId)?.name) || locationId
+                : (locationId || 'Unknown');
+            const factionId = toTrimmedString(snapshot.factionId);
+            const factionName = factionId && factions instanceof Map && factions.has(factionId)
+                ? toTrimmedString(factions.get(factionId)?.name) || factionId
+                : factionId;
+
+            return {
+                id: toTrimmedString(snapshot.id) || null,
+                name: toTrimmedString(snapshot.name) || 'Unknown',
+                description: toTrimmedString(snapshot.shortDescription) || toTrimmedString(snapshot.description),
+                class: toTrimmedString(snapshot.class) || 'Unknown',
+                race: toTrimmedString(snapshot.race) || 'Unknown',
+                level: toDisplayLevel([snapshot.level], 1),
+                locationName,
+                isNPC: Boolean(snapshot.isNPC),
+                isHostile: Boolean(snapshot.isHostile),
+                isDead: Boolean(snapshot.isDead),
+                aliases,
+                factionName: factionName || null,
+                resistances: toTrimmedString(snapshot.resistances),
+                vulnerabilities: toTrimmedString(snapshot.vulnerabilities),
+                currency: Number.isFinite(Number(snapshot.currency)) ? Number(snapshot.currency) : null,
+                experience: Number.isFinite(Number(snapshot.experience)) ? Number(snapshot.experience) : null,
+                skills,
+                abilities,
+                inventory,
+                statusEffects: normalizeStatusEffectsForDisplay(snapshot.statusEffects)
+            };
+        };
+
+        const buildLocationDisplayModel = (locationData) => {
+            const snapshot = locationData && typeof locationData === 'object' ? locationData : {};
+            const exits = Object.entries(snapshot.exits || {})
+                .map(([direction, exit]) => {
+                    if (!exit || typeof exit !== 'object') {
+                        return null;
+                    }
+                    return {
+                        direction,
+                        name: toTrimmedString(exit.name) || direction,
+                        destinationName: toTrimmedString(exit.destinationName) || toTrimmedString(exit.destination),
+                        destinationRegionName: toTrimmedString(exit.destinationRegionName),
+                        isVehicle: Boolean(exit.isVehicle),
+                        vehicleType: toTrimmedString(exit.vehicleType)
+                    };
+                })
+                .filter(Boolean);
+
+            const npcs = Array.isArray(snapshot.npcs)
+                ? snapshot.npcs
+                    .map(npc => ({
+                        name: toTrimmedString(npc?.name) || 'Unknown',
+                        class: toTrimmedString(npc?.class) || 'Unknown',
+                        race: toTrimmedString(npc?.race) || 'Unknown',
+                        level: toDisplayLevel([npc?.level], 1),
+                        summary: toTrimmedString(npc?.shortDescription) || toTrimmedString(npc?.description)
+                    }))
+                    .filter(Boolean)
+                : [];
+
+            const thingModels = Array.isArray(snapshot.things)
+                ? snapshot.things.map(buildThingDisplayModel).filter(Boolean)
+                : [];
+            const items = thingModels.filter(entry => entry.thingType !== 'scenery');
+            const scenery = thingModels.filter(entry => entry.thingType === 'scenery');
+
+            const controllingFactionId = toTrimmedString(snapshot.controllingFactionId);
+            const controllingFactionName = controllingFactionId && factions instanceof Map && factions.has(controllingFactionId)
+                ? toTrimmedString(factions.get(controllingFactionId)?.name) || controllingFactionId
+                : controllingFactionId;
+
+            return {
+                id: toTrimmedString(snapshot.id) || null,
+                name: toTrimmedString(snapshot.name) || 'Unknown',
+                description: toTrimmedString(snapshot.description),
+                shortDescription: toTrimmedString(snapshot.shortDescription),
+                regionName: toTrimmedString(snapshot.regionName),
+                baseLevel: toDisplayLevel([snapshot.baseLevel], 1),
+                isStub: Boolean(snapshot.isStub),
+                controllingFactionName: controllingFactionName || null,
+                exits,
+                npcs,
+                items,
+                scenery,
+                statusEffects: normalizeStatusEffectsForDisplay(snapshot.statusEffects)
+            };
+        };
+
+        const buildRegionDisplayModel = (regionRecord) => {
+            const regionData = typeof regionRecord?.toJSON === 'function'
+                ? regionRecord.toJSON()
+                : (regionRecord && typeof regionRecord === 'object' ? regionRecord : {});
+            const regionId = toTrimmedString(regionData.id);
+
+            const locationIds = Array.isArray(regionData.locationIds)
+                ? regionData.locationIds
+                : [];
+            const locationNames = locationIds
+                .map(locationId => {
+                    const trimmedId = toTrimmedString(locationId);
+                    if (!trimmedId) {
+                        return null;
+                    }
+                    if (gameLocations instanceof Map && gameLocations.has(trimmedId)) {
+                        return toTrimmedString(gameLocations.get(trimmedId)?.name) || trimmedId;
+                    }
+                    return trimmedId;
+                })
+                .filter(Boolean);
+
+            const connectedRegionNames = new Set();
+            for (const locationId of locationIds) {
+                const trimmedId = toTrimmedString(locationId);
+                if (!trimmedId || !(gameLocations instanceof Map) || !gameLocations.has(trimmedId)) {
+                    continue;
+                }
+                const location = gameLocations.get(trimmedId);
+                const exitMap = location?.exits instanceof Map ? location.exits : null;
+                if (!exitMap) {
+                    continue;
+                }
+                for (const exit of exitMap.values()) {
+                    const destinationId = toTrimmedString(exit?.destination);
+                    if (!destinationId || !(gameLocations instanceof Map) || !gameLocations.has(destinationId)) {
+                        continue;
+                    }
+                    const destinationLocation = gameLocations.get(destinationId);
+                    const destinationRegionId = toTrimmedString(destinationLocation?.regionId)
+                        || toTrimmedString(destinationLocation?.stubMetadata?.regionId)
+                        || toTrimmedString(destinationLocation?.stubMetadata?.targetRegionId);
+                    if (!destinationRegionId || destinationRegionId === regionId) {
+                        continue;
+                    }
+                    const connectedRegionName = (regions instanceof Map && regions.has(destinationRegionId))
+                        ? (toTrimmedString(regions.get(destinationRegionId)?.name) || destinationRegionId)
+                        : (toTrimmedString(pendingRegionStubs?.get(destinationRegionId)?.name)
+                            || toTrimmedString(destinationLocation?.stubMetadata?.regionName)
+                            || toTrimmedString(destinationLocation?.stubMetadata?.targetRegionName)
+                            || destinationRegionId);
+                    if (connectedRegionName) {
+                        connectedRegionNames.add(connectedRegionName);
+                    }
+                }
+            }
+
+            const parentRegionId = toTrimmedString(regionData.parentRegionId);
+            const parentRegionName = parentRegionId && regions instanceof Map && regions.has(parentRegionId)
+                ? toTrimmedString(regions.get(parentRegionId)?.name) || parentRegionId
+                : parentRegionId;
+            const controllingFactionId = toTrimmedString(regionData.controllingFactionId);
+            const controllingFactionName = controllingFactionId && factions instanceof Map && factions.has(controllingFactionId)
+                ? toTrimmedString(factions.get(controllingFactionId)?.name) || controllingFactionId
+                : controllingFactionId;
+            const weatherName = toTrimmedString(regionData.weatherState?.name);
+            const weatherDescription = toTrimmedString(regionData.weatherState?.description);
+
+            return {
+                id: regionId || null,
+                name: toTrimmedString(regionData.name) || 'Unknown',
+                description: toTrimmedString(regionData.description),
+                shortDescription: toTrimmedString(regionData.shortDescription),
+                parentRegionName: parentRegionName || null,
+                controllingFactionName: controllingFactionName || null,
+                averageLevel: Number.isFinite(Number(regionData.averageLevel))
+                    ? Number(regionData.averageLevel)
+                    : null,
+                locationNames,
+                connectedRegionNames: Array.from(connectedRegionNames).sort((a, b) => a.localeCompare(b)),
+                secrets: Array.isArray(regionData.secrets)
+                    ? regionData.secrets.map(secret => toTrimmedString(secret)).filter(Boolean)
+                    : [],
+                weatherName: weatherName || null,
+                weatherDescription: weatherDescription || null,
+                statusEffects: normalizeStatusEffectsForDisplay(regionData.statusEffects)
+            };
         };
 
         const normalizeToolCallsForExecution = (toolCalls = [], { sourceLabel = 'tool response' } = {}) => {
@@ -838,25 +1220,52 @@ module.exports = function registerApiRoutes(scope) {
 
             for (const npc of matchedNpcs) {
                 const snapshot = serializeNpcForClient(npc) || npc.toJSON?.() || {};
-                lines.push(...renderXmlNode('npc', snapshot, 2, { id: npc.id || '', name: npc.name || '' }));
+                const playerDisplay = buildPlayerDisplayModel(snapshot);
+                lines.push(...renderTemplatedXmlNode({
+                    tagName: 'npc',
+                    templateName: 'player.njk',
+                    context: { player: playerDisplay },
+                    level: 2,
+                    attributes: { id: npc.id || '', name: npc.name || '' }
+                }));
             }
             lines.push('  </npcs>');
             lines.push(`  <things count="${matchedThings.length}">`);
             for (const thing of matchedThings) {
                 const snapshot = typeof thing.toJSON === 'function' ? thing.toJSON() : thing;
-                lines.push(...renderXmlNode('thing', snapshot, 2, { id: thing.id || '', name: thing.name || '' }));
+                const thingDisplay = buildThingDisplayModel(snapshot);
+                lines.push(...renderTemplatedXmlNode({
+                    tagName: 'thing',
+                    templateName: 'thing.njk',
+                    context: { thing: thingDisplay },
+                    level: 2,
+                    attributes: { id: thing.id || '', name: thing.name || '' }
+                }));
             }
             lines.push('  </things>');
             lines.push(`  <locations count="${matchedLocations.length}">`);
             for (const locationEntry of matchedLocations) {
                 const snapshot = buildLocationResponse(locationEntry) || (typeof locationEntry.toJSON === 'function' ? locationEntry.toJSON() : locationEntry);
-                lines.push(...renderXmlNode('location', snapshot, 2, { id: locationEntry.id || '', name: locationEntry.name || '' }));
+                const locationDisplay = buildLocationDisplayModel(snapshot);
+                lines.push(...renderTemplatedXmlNode({
+                    tagName: 'location',
+                    templateName: 'location.njk',
+                    context: { location: locationDisplay },
+                    level: 2,
+                    attributes: { id: locationEntry.id || '', name: locationEntry.name || '' }
+                }));
             }
             lines.push('  </locations>');
             lines.push(`  <regions count="${matchedRegions.length}">`);
             for (const regionEntry of matchedRegions) {
-                const snapshot = typeof regionEntry.toJSON === 'function' ? regionEntry.toJSON() : regionEntry;
-                lines.push(...renderXmlNode('region', snapshot, 2, { id: regionEntry.id || '', name: regionEntry.name || '' }));
+                const regionDisplay = buildRegionDisplayModel(regionEntry);
+                lines.push(...renderTemplatedXmlNode({
+                    tagName: 'region',
+                    templateName: 'region.njk',
+                    context: { region: regionDisplay },
+                    level: 2,
+                    attributes: { id: regionEntry.id || '', name: regionEntry.name || '' }
+                }));
             }
             lines.push('  </regions>');
             lines.push('</moreInfoResults>');
