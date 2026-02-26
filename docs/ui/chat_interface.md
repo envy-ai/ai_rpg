@@ -34,7 +34,7 @@ The main UI is rendered by `views/index.njk` and powered by `public/js/chat.js` 
 - **Sidebar** (`.chat-sidebar`):
   - Player card (portrait, health, need bars, quick actions, and a top-left warning triangle when unspent skill/attribute points are present).
   - Player "View" opens `#npcViewModal` in editable mode for attributes/skills using shared allocation partials; skills can now be added/removed directly in this modal for the player view. NPCs use the same sections in read-only mode, and their unspent point totals are hidden.
-  - Player/NPC "Edit" opens `#npcEditModal`, which includes an `Aliases` textarea (one alias per line) and saves through `PUT /api/npcs/:id`.
+- Player/NPC "Edit" opens `#npcEditModal`, which includes an `Aliases` textarea (one alias per line) plus `Resistances`/`Vulnerabilities` textareas and saves through `PUT /api/npcs/:id`.
   - Player/NPC Inventory modal keeps active inventory filters (including slot filter selection) when equip/unequip triggers an inventory re-render.
   - Party summary list.
 - **World-time chip** (`#worldTimeIndicator`):
@@ -115,6 +115,7 @@ LLM-backed modal submits close immediately (no visible waiting state); errors su
 Chat entries can include attachments rendered as inline "insights":
 
 - `skill-check`, `attack-check`, `plausibility`, `slop-remover`.
+- Attack-check insight details include the computed damage multiplier/effectiveness line used in combat resolution.
 - Plausibility is rendered client-side with Nunjucks using `public/templates/plausibility.njk`.
 - Slop removal insight lists slop words / n-grams.
 

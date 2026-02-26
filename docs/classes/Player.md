@@ -9,7 +9,7 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
 - Inventory/gear: `#inventory`, `#gearSlots`, `#gearSlotsByType`, `#gearSlotNameIndex`.
 - Skills/abilities: `#skills`, `#abilities`, `#unspentSkillPoints`, `#unspentAttributePoints`.
 - Status/needs: `#statusEffects`, `#needBars`.
-- Social: `#dispositions`, `#personalityType`, `#personalityTraits`, `#personalityNotes`.
+- Social: `#dispositions`, `#personalityType`, `#personalityTraits`, `#personalityNotes`, `#resistances`, `#vulnerabilities`.
 - Factions: `#factionId`, `#factionStandings` (map of `factionId -> number`).
 - Party/quests: `#partyMembers`, `#quests`, `#goals`, `#characterArc`.
 - Movement/turns: `#currentLocation`, `#previousLocationId`, `#elapsedTime` (minutes), `#lastVisitedTime` (minutes), `#inCombat`, `#lastActionWasTravel`, `#consecutiveTravelActions`.
@@ -38,7 +38,7 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
   - `setNpcInventoryChangeHandler(handler)`, `setLevelUpHandler(handler)`.
 
 ## Accessors (Grouped)
-- Identity and descriptors: `id`, `name`, `aliases`, `description`, `shortDescription`, `imageId`, `class`, `race`, `gender`, `personalityType`, `personalityTraits`, `personalityNotes`.
+- Identity and descriptors: `id`, `name`, `aliases`, `description`, `shortDescription`, `imageId`, `class`, `race`, `gender`, `personalityType`, `personalityTraits`, `personalityNotes`, `resistances`, `vulnerabilities`.
 - Factions: `factionId`.
 - State: `level`, `experience`, `health`, `maxHealth`, `healthAttribute`, `isDead`, `isDisabled`, `inCombat`, `isHostile`, `corpseCountdown`, `elapsedTime`, `createdAt`, `lastUpdated`.
 - Locations: `currentLocation`, `location`, `previousLocationId`, `previousLocation`, `currentLocationObject`, `lastVisitedTime`.

@@ -30,7 +30,7 @@ Most modals live in `views/index.njk` and are wired up by the inline script or `
 ## NPC views and management
 
 - `#npcInventoryModal`: character inventory listing with filters.
-- `#npcViewModal`: character overview (attributes, gear, skills, abilities, status).
+- `#npcViewModal`: character overview (attributes, gear, skills, abilities, status, plus read-only resistances/vulnerabilities text boxes).
   - Attributes/skills now use the shared allocation partials from the New Game UI.
   - Attribute and skill allocation areas no longer use nested internal scrollbars; they inherit the modal body's single scroll container.
   - NPCs render those controls in read-only mode, and the unspent attribute/skill point totals are hidden.
@@ -40,7 +40,7 @@ Most modals live in `views/index.njk` and are wired up by the inline script or `
 - `#npcNeedsModal`: adjust need bars.
 - `#npcMemoriesModal`: edit important memories.
 - `#npcGoalsModal`: edit goals.
-- `#npcEditModal`: full NPC edit form (attributes, skills, abilities, status effects, faction membership).
+- `#npcEditModal`: full NPC edit form (attributes, skills, abilities, status effects, faction membership, resistances, vulnerabilities).
   - Abilities in the edit form include a required short description field.
 - `#addNpcModal`: generate and add a new NPC (optional reference image).
 

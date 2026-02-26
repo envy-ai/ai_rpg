@@ -80,6 +80,7 @@ Returned in many player/NPC endpoints and location responses.
 Fields:
 - `id`, `name`, `description`, `shortDescription`
 - `class`, `race`, `level`
+- `resistances`, `vulnerabilities` (strings)
 - `health`, `maxHealth`, `healthAttribute`
 - `imageId`
 - `isNPC`, `isPlayer`, `isHostile`, `isDead`
@@ -122,6 +123,7 @@ Highlights beyond `Player.toJSON()`:
 - `statusEffects` (active effects), `intrinsicStatusEffects` may be added by the route
 - `gear`, `gearSlotsByType`, `gearSlotDefinitions`
 - `needBars`, `corpseCountdown`, `importantMemories`
+- `resistances`, `vulnerabilities`
 - `quests`, `personality`, `goals`, `characterArc`
 
 ## Thing (Thing.toJSON)

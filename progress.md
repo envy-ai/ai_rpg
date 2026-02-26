@@ -49,3 +49,55 @@ Original prompt: Don't run the slop remover on prompts starting with @, @@, or @
   - `docs/slop_and_repetition.md` (explicit bypass section for `?`, `@`, `@@`, `@@@`).
   - `docs/README.md` (API chat summary line updated).
 - Validation: `node --check api.js` passed.
+
+Original prompt: I added vulnerability and resistance to the npc generation prompts. Please do the following:
+
+1. Add these properties to the NPC class. they should each be a single string, as they are meant for the LLM to interpret easily. Don't process them at all.
+
+2. Make sure that they are saved and loaded with the game. Do not error out if they are missing from the load; just leave them completely empty.
+
+3. Add them as text boxes to the character view and edit modals.
+
+4. Note that I've added a <damageEffectiveness> field to the attack-check prompt. If the enemy is successfully damaged, an effectiveness of 1 should cancel it out, 2 should reduce it by half, 3 should be normal (1x), 4 should be double, and 5 should be triple.
+
+5. Include the damage multiplier in the combat results popup in the client.
+
+- Added raw-string `resistances` and `vulnerabilities` fields to `Player` with getters/setters, constructor wiring, `getStatus()`, `toJSON()`, and `fromJSON()` (including singular-load aliases `resistance`/`vulnerability`). Missing fields now load as empty strings.
+- Updated NPC generation parsing/creation pipeline in `server.js`:
+  - `parseLocationNpcs()` / `parseRegionNpcs()` now parse `<resistances>` and `<vulnerabilities>`.
+  - Generated NPC `new Player(...)` calls now persist those fields.
+  - `serializeNpcForClient()` now returns both fields for client payloads.
+  - `normalizeNpcPromptSeed()` now carries those values into single-NPC generation prompts.
+- Updated base prompt context in `prompts/base-context.xml.njk` to include NPC `<resistances>` and `<vulnerabilities>` entries in `<currentLocation><npcs>`.
+- Updated NPC edit API route (`PUT /api/npcs/:id`) to accept and persist `resistances`/`vulnerabilities` (plus singular aliases).
+- Added UI text boxes:
+  - `#npcEditModal`: editable `npcEditResistances` / `npcEditVulnerabilities` fields.
+  - `#npcViewModal`: read-only `npcViewResistances` / `npcViewVulnerabilities` fields.
+  - Hooked modal populate + submit payload wiring.
+- Implemented `damageEffectiveness` combat math in `api.js`:
+  - Parse `<damageEffectiveness>` from attack-check XML.
+  - Apply multiplier only when pre-effectiveness damage is > 0.
+  - Mapping implemented: `1=>x0`, `2=>x0.5` (rounded up with `Math.ceil`), `3=>x1`, `4=>x2`, `5=>x3`.
+  - Added multiplier/effectiveness data to attack outcome + attack summary payloads.
+- Updated combat result popup rendering in `public/js/chat.js` to show:
+  - pre-multiplier damage,
+  - multiplier/effectiveness,
+  - effectiveness step inside damage calculation breakdown,
+  - explicit “prevented by effectiveness” reason when multiplier zeroes damage.
+- Docs updated:
+  - `docs/classes/Player.md`
+  - `docs/api/common.md`
+  - `docs/api/npcs.md`
+  - `docs/ui/chat_interface.md`
+  - `docs/ui/modals_overlays.md`
+  - `docs/ui/pages.md`
+  - `docs/server_llm_notes.md`
+  - `docs/README.md`
+- Validation:
+  - `node --check Player.js` ✅
+  - `node --check server.js` ✅
+  - `node --check api.js` ✅
+  - `node --check public/js/chat.js` ✅
+  - A direct `Player.fromJSON(...)` runtime smoke test failed outside full app bootstrap because `Globals.config.baseHealthPerLevel` is undefined in that isolated context.
+
+- TODO (optional): run a gameplay smoke test (`/api/chat` attack turn) in a fully bootstrapped server session to verify the new multiplier values render as expected in live chat insight tooltips.

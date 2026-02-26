@@ -5059,6 +5059,17 @@ class AIRPGChat {
             if (typeof damage.total === 'number') {
                 damageParts.push(`Total ${damage.total}`);
             }
+            if (typeof damage.preEffectivenessTotal === 'number' && damage.preEffectivenessTotal !== damage.total) {
+                damageParts.push(`Pre-multiplier ${damage.preEffectivenessTotal}`);
+            }
+            if (typeof damage.multiplier === 'number') {
+                const multiplierText = formatDecimal(damage.multiplier) ?? String(damage.multiplier);
+                if (typeof damage.effectiveness === 'number') {
+                    damageParts.push(`Multiplier ×${multiplierText} (Effectiveness ${damage.effectiveness})`);
+                } else {
+                    damageParts.push(`Multiplier ×${multiplierText}`);
+                }
+            }
             if (typeof damage.applied === 'number' && damage.applied !== damage.total) {
                 damageParts.push(`Applied ${damage.applied}`);
             }
@@ -5151,6 +5162,30 @@ class AIRPGChat {
                     }
                 }
 
+                if (Number.isFinite(calc.preEffectivenessDamage)
+                    && Number.isFinite(calc.damageEffectivenessMultiplier)
+                    && (calc.damageEffectivenessMultiplier !== 1 || Number.isFinite(calc.damageEffectiveness))) {
+                    const preEffectivenessText = formatDecimal(calc.preEffectivenessDamage) ?? String(calc.preEffectivenessDamage);
+                    const multiplierText = formatDecimal(calc.damageEffectivenessMultiplier) ?? String(calc.damageEffectivenessMultiplier);
+                    const effectivenessText = Number.isFinite(calc.damageEffectiveness)
+                        ? ` (effectiveness ${calc.damageEffectiveness})`
+                        : '';
+
+                    if (calc.damageEffectivenessMultiplier === 0.5) {
+                        const scaledValue = Number(calc.preEffectivenessDamage) * calc.damageEffectivenessMultiplier;
+                        const halfRounded = Math.ceil(scaledValue);
+                        const halfRoundedText = formatDecimal(halfRounded) ?? String(halfRounded);
+                        segments.push(`Effectiveness${effectivenessText}: ceil(${preEffectivenessText} × ${multiplierText}) = ${halfRoundedText}`);
+                    } else {
+                        const postEffectivenessText = Number.isFinite(calc.finalDamage)
+                            ? (formatDecimal(calc.finalDamage) ?? String(calc.finalDamage))
+                            : null;
+                        if (postEffectivenessText !== null) {
+                            segments.push(`Effectiveness${effectivenessText}: ${preEffectivenessText} × ${multiplierText} = ${postEffectivenessText}`);
+                        }
+                    }
+                }
+
                 if (Number.isFinite(calc.finalDamage)) {
                     const finalText = formatDecimal(calc.finalDamage) ?? String(calc.finalDamage);
                     segments.push(`Final damage = ${finalText}`);
@@ -5161,6 +5196,8 @@ class AIRPGChat {
                         segments.push('Damage prevented: hit degree below zero.');
                     } else if (calc.preventedBy === 'toughness') {
                         segments.push('Damage prevented: toughness reduced damage to zero.');
+                    } else if (calc.preventedBy === 'effectiveness') {
+                        segments.push('Damage prevented: effectiveness multiplier reduced damage to zero.');
                     }
                 }
 

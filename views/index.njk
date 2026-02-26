@@ -930,6 +930,19 @@
                         <ul class="npc-view-list" id="npcViewStatuses"></ul>
                         <div class="npc-view-empty" id="npcViewStatusesEmpty">No active status effects.</div>
                     </section>
+                    <section class="npc-view-section" id="npcViewDamageProfileSection">
+                        <h4>Damage Profile</h4>
+                        <div class="npc-edit-grid">
+                            <div class="npc-edit-field npc-edit-field--wide">
+                                <label for="npcViewResistances">Resistances</label>
+                                <textarea id="npcViewResistances" rows="2" readonly></textarea>
+                            </div>
+                            <div class="npc-edit-field npc-edit-field--wide">
+                                <label for="npcViewVulnerabilities">Vulnerabilities</label>
+                                <textarea id="npcViewVulnerabilities" rows="2" readonly></textarea>
+                            </div>
+                        </div>
+                    </section>
                 </div>
                 <details class="npc-view-dispositions" id="npcViewDispositions" hidden>
                     <summary>Dispositions</summary>
@@ -1323,6 +1336,20 @@
                     <label for="npcEditAliases">Aliases</label>
                     <textarea id="npcEditAliases" rows="3" placeholder="One alias per line"></textarea>
                     <p class="npc-edit-hint">Optional short-name references used in character matching.</p>
+                </div>
+
+                <div class="npc-edit-section">
+                    <h3>Damage Profile</h3>
+                    <div class="npc-edit-grid">
+                        <div class="npc-edit-field npc-edit-field--wide">
+                            <label for="npcEditResistances">Resistances</label>
+                            <textarea id="npcEditResistances" rows="2"></textarea>
+                        </div>
+                        <div class="npc-edit-field npc-edit-field--wide">
+                            <label for="npcEditVulnerabilities">Vulnerabilities</label>
+                            <textarea id="npcEditVulnerabilities" rows="2"></textarea>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="npc-edit-section">
@@ -5424,6 +5451,8 @@
         const npcEditExperienceInput = document.getElementById('npcEditExperience');
         const npcEditDescriptionInput = document.getElementById('npcEditDescription');
         const npcEditAliasesInput = document.getElementById('npcEditAliases');
+        const npcEditResistancesInput = document.getElementById('npcEditResistances');
+        const npcEditVulnerabilitiesInput = document.getElementById('npcEditVulnerabilities');
         const npcEditPersonalityTypeInput = document.getElementById('npcEditPersonalityType');
         const npcEditPersonalityTraitsInput = document.getElementById('npcEditPersonalityTraits');
         const npcEditPersonalityNotesInput = document.getElementById('npcEditPersonalityNotes');
@@ -5523,6 +5552,8 @@
         const npcViewHealth = document.getElementById('npcViewHealth');
         const npcViewCurrency = document.getElementById('npcViewCurrency');
         const npcViewExperience = document.getElementById('npcViewExperience');
+        const npcViewResistancesInput = document.getElementById('npcViewResistances');
+        const npcViewVulnerabilitiesInput = document.getElementById('npcViewVulnerabilities');
         const npcViewDispositions = document.getElementById('npcViewDispositions');
         const npcViewDispositionsList = document.getElementById('npcViewDispositionsList');
         const npcViewAttributeAllocationSection = document.getElementById('npcViewAttributeAllocationSection');
@@ -8064,6 +8095,12 @@
             if (npcEditAliasesInput) {
                 const aliases = Array.isArray(npc.aliases) ? npc.aliases : [];
                 npcEditAliasesInput.value = aliases.join('\n');
+            }
+            if (npcEditResistancesInput) {
+                npcEditResistancesInput.value = typeof npc.resistances === 'string' ? npc.resistances : '';
+            }
+            if (npcEditVulnerabilitiesInput) {
+                npcEditVulnerabilitiesInput.value = typeof npc.vulnerabilities === 'string' ? npc.vulnerabilities : '';
             }
             const personalityDetails = npc.personality || {};
             if (npcEditPersonalityTypeInput) {
@@ -11322,6 +11359,12 @@
                         .map(alias => alias.trim())
                         .filter(Boolean);
                 }
+                if (npcEditResistancesInput) {
+                    payload.resistances = npcEditResistancesInput.value ?? '';
+                }
+                if (npcEditVulnerabilitiesInput) {
+                    payload.vulnerabilities = npcEditVulnerabilitiesInput.value ?? '';
+                }
 
                 const parsedLevel = Number.parseInt(npcEditLevelInput?.value ?? '', 10);
                 if (Number.isFinite(parsedLevel)) {
@@ -13812,6 +13855,17 @@
                     npcViewExperience.textContent = `Experience: ${experienceValue}`;
                     npcViewExperience.removeAttribute('hidden');
                 }
+            }
+
+            if (npcViewResistancesInput) {
+                npcViewResistancesInput.value = typeof latestNpc?.resistances === 'string'
+                    ? latestNpc.resistances
+                    : '';
+            }
+            if (npcViewVulnerabilitiesInput) {
+                npcViewVulnerabilitiesInput.value = typeof latestNpc?.vulnerabilities === 'string'
+                    ? latestNpc.vulnerabilities
+                    : '';
             }
 
             const dispositions = Array.isArray(latestNpc?.dispositionsTowardsPlayer)

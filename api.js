@@ -6434,6 +6434,10 @@ module.exports = function registerApiRoutes(scope) {
                 const defender = getTagValue(attackNode, 'defender');
                 const ability = getTagValue(attackNode, 'ability');
                 const weapon = getTagValue(attackNode, 'weapon');
+                const damageEffectivenessRaw = getNumericTagValue(attackNode, 'damageEffectiveness');
+                const damageEffectiveness = Number.isFinite(damageEffectivenessRaw)
+                    ? Math.round(damageEffectivenessRaw)
+                    : null;
 
                 const attackSkill = getNestedTagValue(attackNode, 'attackerInfo', 'attackSkill');
                 const damageAttribute = getNestedTagValue(attackNode, 'attackerInfo', 'damageAttribute');
@@ -6449,6 +6453,9 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 const attackEntry = { attacker, defender, ability, weapon };
+                if (damageEffectiveness !== null) {
+                    attackEntry.damageEffectiveness = damageEffectiveness;
+                }
 
                 const collectCircumstanceModifiers = (node) => {
                     if (!node || typeof node.getElementsByTagName !== 'function') {
@@ -6739,6 +6746,28 @@ module.exports = function registerApiRoutes(scope) {
         }
 
         const BAREHANDED_KEYWORDS = new Set(['barehanded', 'bare hands', 'unarmed', 'fists']);
+        const resolveDamageEffectivenessMultiplier = (value) => {
+            if (!Number.isFinite(value)) {
+                return 1;
+            }
+            const normalized = Math.round(value);
+            if (normalized === 1) {
+                return 0;
+            }
+            if (normalized === 2) {
+                return 0.5;
+            }
+            if (normalized === 3) {
+                return 1;
+            }
+            if (normalized === 4) {
+                return 2;
+            }
+            if (normalized === 5) {
+                return 3;
+            }
+            return 1;
+        };
 
         const applyNeedBarTurnTick = () => {
             const summaries = [];
@@ -7099,8 +7128,16 @@ module.exports = function registerApiRoutes(scope) {
                 : { key: toughnessAttributeName || null, modifier: 0 };
 
             const weaponData = resolveWeaponData(attacker, weaponName);
+            const damageEffectivenessValueRaw = Number(attackEntry.damageEffectiveness);
+            const damageEffectiveness = Number.isFinite(damageEffectivenessValueRaw)
+                ? Math.round(damageEffectivenessValueRaw)
+                : null;
+            const damageEffectivenessMultiplier = damageEffectiveness === null
+                ? 1
+                : resolveDamageEffectivenessMultiplier(damageEffectiveness);
 
             let attackDamage = 0;
+            let preEffectivenessDamage = 0;
             let unmitigatedDamage = 0;
             let mitigatedDamage = 0;
             let toughnessReduction = 0;
@@ -7120,6 +7157,14 @@ module.exports = function registerApiRoutes(scope) {
                     toughnessReduction = Number.isFinite(toughnessInfo.modifier) ? toughnessInfo.modifier : 0;
                     mitigatedDamage = unmitigatedDamage - toughnessReduction;
                     attackDamage = mitigatedDamage > 0 ? mitigatedDamage : 0;
+                    preEffectivenessDamage = attackDamage;
+
+                    if (attackDamage > 0 && damageEffectiveness !== null) {
+                        const scaledByEffectiveness = attackDamage * damageEffectivenessMultiplier;
+                        attackDamage = damageEffectivenessMultiplier === 0.5
+                            ? Math.ceil(scaledByEffectiveness)
+                            : scaledByEffectiveness;
+                    }
                 }
 
                 damageCalculation = {
@@ -7135,11 +7180,16 @@ module.exports = function registerApiRoutes(scope) {
                     unmitigatedDamage,
                     toughnessReduction,
                     mitigatedDamage,
+                    preEffectivenessDamage,
+                    damageEffectiveness,
+                    damageEffectivenessMultiplier,
                     finalDamage: attackDamage,
                     canDealDamage,
                     preventedBy: !canDealDamage
                         ? 'negative_hit_degree'
-                        : (attackDamage <= 0 && mitigatedDamage <= 0 ? 'toughness' : null)
+                        : (preEffectivenessDamage <= 0 && mitigatedDamage <= 0
+                            ? 'toughness'
+                            : (damageEffectivenessMultiplier === 0 && preEffectivenessDamage > 0 ? 'effectiveness' : null))
                 };
             }
 
@@ -7190,6 +7240,9 @@ module.exports = function registerApiRoutes(scope) {
                 hitDegree,
                 damage: {
                     total: attackDamage,
+                    preEffectivenessTotal: preEffectivenessDamage,
+                    effectiveness: damageEffectiveness,
+                    multiplier: damageEffectivenessMultiplier,
                     raw: unmitigatedDamage,
                     mitigated: mitigatedDamage,
                     toughnessReduction,
@@ -7272,6 +7325,9 @@ module.exports = function registerApiRoutes(scope) {
                 },
                 damage: {
                     total: Number.isFinite(damage.total) ? damage.total : null,
+                    preEffectivenessTotal: Number.isFinite(damage.preEffectivenessTotal) ? damage.preEffectivenessTotal : null,
+                    effectiveness: Number.isFinite(damage.effectiveness) ? damage.effectiveness : null,
+                    multiplier: Number.isFinite(damage.multiplier) ? damage.multiplier : null,
                     mitigated: Number.isFinite(damage.mitigated) ? damage.mitigated : null,
                     raw: Number.isFinite(damage.raw) ? damage.raw : null,
                     applied: Number.isFinite(damage.applied) ? damage.applied : (Number.isFinite(damageApplication?.damageApplied) ? damageApplication.damageApplied : null),
@@ -14226,6 +14282,16 @@ module.exports = function registerApiRoutes(scope) {
                     statusEffects,
                     aliases
                 } = body;
+                const hasResistances = Object.prototype.hasOwnProperty.call(body, 'resistances')
+                    || Object.prototype.hasOwnProperty.call(body, 'resistance');
+                const hasVulnerabilities = Object.prototype.hasOwnProperty.call(body, 'vulnerabilities')
+                    || Object.prototype.hasOwnProperty.call(body, 'vulnerability');
+                const submittedResistances = Object.prototype.hasOwnProperty.call(body, 'resistances')
+                    ? body.resistances
+                    : body.resistance;
+                const submittedVulnerabilities = Object.prototype.hasOwnProperty.call(body, 'vulnerabilities')
+                    ? body.vulnerabilities
+                    : body.vulnerability;
 
                 const hasFactionId = Object.prototype.hasOwnProperty.call(body, 'factionId');
                 const hasAliases = Object.prototype.hasOwnProperty.call(body, 'aliases');
@@ -14510,6 +14576,14 @@ module.exports = function registerApiRoutes(scope) {
                     } catch (personalityError) {
                         console.warn(`Failed to set personality notes for NPC ${npcId}:`, personalityError.message);
                     }
+                }
+
+                if (hasResistances) {
+                    npc.resistances = typeof submittedResistances === 'string' ? submittedResistances : '';
+                }
+
+                if (hasVulnerabilities) {
+                    npc.vulnerabilities = typeof submittedVulnerabilities === 'string' ? submittedVulnerabilities : '';
                 }
 
                 const npcProfile = serializeNpcForClient(npc);

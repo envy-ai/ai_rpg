@@ -231,6 +231,8 @@ The below context is an account of the current game state, including the setting
         <description>{{ npc.description }}</description>
         <class>{{ npc.class | default('Unknown') }}</class>
         <race>{{ npc.race | default('Unknown') }}</race>
+        <resistances>{{ npc.resistances | default('', true) }}</resistances>
+        <vulnerabilities>{{ npc.vulnerabilities | default('', true) }}</vulnerabilities>
         <personality>
           <type>{{ npc.personality.type | default('Unknown', true) }}</type>
           <traits>{{ npc.personality.traits | default('None', true) }}</traits>

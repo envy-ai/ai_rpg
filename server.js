@@ -2162,14 +2162,16 @@ function collectNpcNamesForContext(entry = null) {
 
 function pushChatEntry(entry, collector = null, locationId = null) {
     if (entry && typeof entry === 'object') {
+        const entryRole = typeof entry.role === 'string' ? entry.role.trim().toLowerCase() : '';
+        const shouldScrub = entryRole !== 'user';
         const entryType = typeof entry.type === 'string' ? entry.type.trim().toLowerCase() : '';
         const scrubOptions = entryType === 'event-summary'
             ? { scrub_events: false }
             : null;
-        if (typeof entry.content === 'string') {
+        if (shouldScrub && typeof entry.content === 'string') {
             entry.content = scrubGeneratedBrackets(entry.content, scrubOptions);
         }
-        if (typeof entry.summary === 'string') {
+        if (shouldScrub && typeof entry.summary === 'string') {
             entry.summary = scrubGeneratedBrackets(entry.summary, scrubOptions);
         }
     }
@@ -2698,6 +2700,20 @@ function serializeNpcForClient(npc, options = {}) {
         attributes = {};
     }
 
+    let resistances = '';
+    try {
+        resistances = typeof npc.resistances === 'string' ? npc.resistances : '';
+    } catch (_) {
+        resistances = '';
+    }
+
+    let vulnerabilities = '';
+    try {
+        vulnerabilities = typeof npc.vulnerabilities === 'string' ? npc.vulnerabilities : '';
+    } catch (_) {
+        vulnerabilities = '';
+    }
+
     let factionId = null;
     try {
         const rawFactionId = typeof npc.factionId === 'string' ? npc.factionId : null;
@@ -2868,6 +2884,8 @@ function serializeNpcForClient(npc, options = {}) {
         locationId: npc.currentLocation,
         corpseCountdown: Number.isFinite(npc.corpseCountdown) ? npc.corpseCountdown : (npc.corpseCountdown ?? null),
         attributes,
+        resistances,
+        vulnerabilities,
         skills,
         abilities,
         aliases,
@@ -11874,6 +11892,15 @@ function normalizeNpcPromptSeed(seed = {}) {
             normalized[key] = trimmed;
         }
     };
+    const copyRawString = (key, options = {}) => {
+        const value = seed[key];
+        if (value === undefined || value === null || typeof value !== 'string') {
+            return;
+        }
+        if (value.length || options.allowEmpty) {
+            normalized[key] = value;
+        }
+    };
 
     const name = typeof seed.name === 'string' ? seed.name.trim() : '';
     if (name) {
@@ -11885,6 +11912,8 @@ function normalizeNpcPromptSeed(seed = {}) {
     copyTrimmed('role');
     copyTrimmed('class');
     copyTrimmed('race');
+    copyRawString('resistances', { allowEmpty: true });
+    copyRawString('vulnerabilities', { allowEmpty: true });
 
     if (Object.prototype.hasOwnProperty.call(seed, 'isHostile')) {
         normalized.isHostile = Boolean(seed.isHostile);
@@ -12284,6 +12313,8 @@ async function generateNpcFromEvent({
             shortDescription: npcData?.shortDescription || '',
             class: npcData?.class || npcData?.role || 'citizen',
             race: npcData?.race || 'human',
+            resistances: typeof npcData?.resistances === 'string' ? npcData.resistances : '',
+            vulnerabilities: typeof npcData?.vulnerabilities === 'string' ? npcData.vulnerabilities : '',
             level: 1,
             location: resolvedLocation?.id || null,
             imageId: portraitImageId,
@@ -13015,6 +13046,8 @@ function parseLocationNpcs(xmlContent) {
             const attributesNode = node.getElementsByTagName('attributes')[0];
             const classNode = node.getElementsByTagName('class')[0];
             const raceNode = node.getElementsByTagName('race')[0];
+            const resistancesNode = node.getElementsByTagName('resistances')[0];
+            const vulnerabilitiesNode = node.getElementsByTagName('vulnerabilities')[0];
             const genderNode = node.getElementsByTagName('gender')[0];
             const factionNode = node.getElementsByTagName('faction')[0];
             const relativeLevelNode = node.getElementsByTagName('relativeLevel')[0];
@@ -13028,6 +13061,12 @@ function parseLocationNpcs(xmlContent) {
 
             const className = classNode ? classNode.textContent.trim() : null;
             const race = raceNode ? raceNode.textContent.trim() : null;
+            const resistances = resistancesNode && typeof resistancesNode.textContent === 'string'
+                ? resistancesNode.textContent
+                : '';
+            const vulnerabilities = vulnerabilitiesNode && typeof vulnerabilitiesNode.textContent === 'string'
+                ? vulnerabilitiesNode.textContent
+                : '';
             const name = nameNode ? nameNode.textContent.trim() : null;
             const description = descriptionNode ? descriptionNode.textContent.trim() : '';
             const shortDescription = shortDescriptionNode ? shortDescriptionNode.textContent.trim() : '';
@@ -13095,6 +13134,8 @@ function parseLocationNpcs(xmlContent) {
                     role,
                     class: className,
                     race,
+                    resistances,
+                    vulnerabilities,
                     gender,
                     faction,
                     attributes,
@@ -13159,6 +13200,8 @@ function parseRegionNpcs(xmlContent) {
             const roleNode = node.getElementsByTagName('role')[0];
             const classNode = node.getElementsByTagName('class')[0];
             const raceNode = node.getElementsByTagName('race')[0];
+            const resistancesNode = node.getElementsByTagName('resistances')[0];
+            const vulnerabilitiesNode = node.getElementsByTagName('vulnerabilities')[0];
             const genderNode = node.getElementsByTagName('gender')[0];
             const locationNode = node.getElementsByTagName('location')[0];
             const factionNode = node.getElementsByTagName('faction')[0];
@@ -13182,6 +13225,12 @@ function parseRegionNpcs(xmlContent) {
             const role = roleNode ? roleNode.textContent.trim() : null;
             const className = classNode ? classNode.textContent.trim() : null;
             const race = raceNode ? raceNode.textContent.trim() : null;
+            const resistances = resistancesNode && typeof resistancesNode.textContent === 'string'
+                ? resistancesNode.textContent
+                : '';
+            const vulnerabilities = vulnerabilitiesNode && typeof vulnerabilitiesNode.textContent === 'string'
+                ? vulnerabilitiesNode.textContent
+                : '';
             const locationName = locationNode ? locationNode.textContent.trim() : null;
             const gender = genderNode ? genderNode.textContent.trim() : null;
             const faction = factionNode ? factionNode.textContent.trim() : '';
@@ -13247,6 +13296,8 @@ function parseRegionNpcs(xmlContent) {
                 role,
                 class: className,
                 race,
+                resistances,
+                vulnerabilities,
                 gender,
                 location: locationName,
                 faction,
@@ -18516,6 +18567,8 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
                 factionId: factionResolution.id,
                 class: npcData.class || null,
                 race: npcData.race,
+                resistances: typeof npcData.resistances === 'string' ? npcData.resistances : '',
+                vulnerabilities: typeof npcData.vulnerabilities === 'string' ? npcData.vulnerabilities : '',
                 isNPC: true,
                 isHostile: Boolean(npcData.isHostile),
                 healthAttribute: npcData.healthAttribute,
@@ -18889,6 +18942,8 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
                 shortDescription: npcData.shortDescription || '',
                 class: npcData.class || 'citizen',
                 race: npcData.race || 'human',
+                resistances: typeof npcData.resistances === 'string' ? npcData.resistances : '',
+                vulnerabilities: typeof npcData.vulnerabilities === 'string' ? npcData.vulnerabilities : '',
                 level: 1,
                 location: targetLocation ? targetLocation.id : null,
                 attributes,

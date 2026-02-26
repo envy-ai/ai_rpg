@@ -29,7 +29,7 @@ Update an NPC's core data.
 
 Request:
 - Path: `id`
-- Body supports: `name`, `description`, `shortDescription`, `race`, `class`, `factionId`, `level`, `health`, `healthAttribute`, `attributes`, `skills`, `abilities`, `currency`, `experience`, `isDead`, `personalityType`, `personalityTraits`, `personalityNotes`, `statusEffects`, `aliases`
+- Body supports: `name`, `description`, `shortDescription`, `race`, `class`, `factionId`, `level`, `health`, `healthAttribute`, `attributes`, `skills`, `abilities`, `currency`, `experience`, `isDead`, `personalityType`, `personalityTraits`, `personalityNotes`, `statusEffects`, `aliases`, `resistances`, `vulnerabilities` (also accepts singular aliases `resistance` and `vulnerability`)
 - Rejects `unspentSkillPoints` (400) because pools are formula-derived at read time.
 
 Response:

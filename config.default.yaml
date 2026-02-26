@@ -240,6 +240,9 @@ combat_npc_turns:
   npcTurnFrequency: 1
 baseWeaponDamage: 5
 
+player_ability_options_per_level: 6
+player_abilities_per_level: 3
+
 # Point pool formulas (character creation).
 # Variables: level, number_of_skills, number_of_attributes,
 #   attribute.<name>.value, attribute.<name>.bonus (base values),
