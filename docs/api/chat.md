@@ -89,6 +89,7 @@ Variants:
 - For event-driven travel turns that return `<finalProse>` (not `<travelProse>`), non-travelProse event checks still apply narrated movement; metadata destination enforcement only forces the travel destination when no move has already been applied that turn.
 - If the travel prose destination does not match a known location, the server creates a stub destination (and exit) using the event-driven location creation flow.
 - Travel actions are guarded by a per-player non-blocking move lock; overlapping move requests for the same player return `409`.
+- If the player has pending level-up ability picks, `/api/chat` returns `409` with `pendingAbilitySelection` and does not resolve the turn.
 - Event-driven travel origin/destination resolution now requires authoritative `gameLocations` presence (no `Location` index fallback for movement).
 - Supplemental story info prompts append `supplemental-story-info` entries linked to the main turn entry; these are stored server-side for base-context prompts and are not sent to clients. They run asynchronously after turn resolution and do not block the response. Frequency is controlled by `supplemental_story_info_prompt_frequency` (`0` disables, `>0` runs every X turns) and prompts also run on turns where new NPCs or things were generated. Only one supplemental story info prompt runs at a time; additional requests are skipped while one is in flight.
 - Plot summary prompts append hidden `plot-summary` entries linked to the main turn entry. They are scheduled every 10 player action submissions (normal/creative actions; excludes `?`, `@`, `!!`, and `#` flows), run asynchronously (fire-and-forget), and do not block event checks or response delivery. Old entries remain in saved chat history but are hidden from client history and excluded from normal base-context history assembly.
@@ -103,7 +104,7 @@ Variants:
 
 Errors:
 - 400: `{ error: string, requestId?, streamMeta? }` (missing `messages`, invalid `travelMetadata`, etc.)
-- 409: `{ error: string, requestId?, streamMeta? }` (concurrent move lock contention)
+- 409: `{ error: string, pendingAbilitySelection?, requestId?, streamMeta? }` (concurrent move lock contention or pending player ability selection)
 - 408: `{ error: string, requestId?, streamMeta? }` (timeout)
 - 503: `{ error: string, requestId?, streamMeta? }` (connection issues)
 - 500: `{ error: string, requestId?, streamMeta? }`

@@ -101,3 +101,79 @@ Original prompt: I added vulnerability and resistance to the npc generation prom
   - A direct `Player.fromJSON(...)` runtime smoke test failed outside full app bootstrap because `Globals.config.baseHealthPerLevel` is undefined in that isolated context.
 
 - TODO (optional): run a gameplay smoke test (`/api/chat` attack turn) in a fully bootstrapped server session to verify the new multiplier values render as expected in live chat insight tooltips.
+
+Original prompt: Note the following additions to config.default.yaml:
+
+player_ability_options_per_level: 6
+player_abilities_per_level: 3
+
+When the player (and only the player) levels up, don't assign them abilities automatically. Instead, if they don't have player_abilities_per_level abilities for all of their levels, then for each level in sequence up to their current level (starting with the lowest level where they are missing abilities and skipping any level where they have sufficient abilities ), do the following:
+
+Use the abilities generation prompt to generate a set of player_ability_options_per_level abilities. Display them in a new modal themed as cards, and allow them to toggle on player_abilities_per_level abilities, then click the submit button to choose those abilities.
+
+If they already have one or more abilities in a level but less than player_abilities_per_level, then add those to the modal, already selected, but able to be toggled off. Generate that many fewer new abilities so that the number of choices they have is consistent.
+
+- Added persisted player-only pending ability option storage in `Player` (`pendingAbilityOptionsByLevel`) with accessors/mutators and save/load wiring.
+- Reworked level-up ability flow in `server.js`:
+  - NPC behavior remains auto-generated + auto-assigned.
+  - Player behavior now enters pending draft state instead of auto-assignment.
+  - Added helper pipeline to resolve missing levels, generate per-level player options (via the level-up abilities prompt template), and apply submitted selections.
+  - Added strict config validation for `player_ability_options_per_level` / `player_abilities_per_level` and explicit duplicate/shape validation errors.
+- Added API endpoints:
+  - `GET /api/player/ability-selection`
+  - `POST /api/player/ability-selection/submit`
+- Added pending-selection gameplay gates:
+  - `/api/chat` now returns `409` with `pendingAbilitySelection` when player picks are pending.
+  - `/api/player/move` now returns `409` with `pendingAbilitySelection` when pending.
+  - `/api/player/levelup` now includes `pendingAbilitySelection` in the response.
+- Added player ability draft modal to `views/index.njk`:
+  - Card-style options, preselected existing abilities, exact-selection enforcement, sequential level progression.
+  - Flow auto-checks on player refresh/load and blocks chat send/travel while pending.
+  - Added handlers to consume `pendingAbilitySelection` payloads from API/chat errors and force-open the modal.
+- Updated `public/js/chat.js`:
+  - Blocks message dispatch when ability drafting is pending.
+  - Handles pending-selection payloads from `/api/chat` and suppresses generic error spam for that case.
+- Added modal styles in `public/css/main.scss` and rebuilt `public/css/main.css`.
+- Updated docs:
+  - `docs/config.md`
+  - `docs/api/chat.md`
+  - `docs/api/players.md`
+  - `docs/ui/chat_interface.md`
+  - `docs/ui/modals_overlays.md`
+  - `docs/classes/Player.md`
+  - `docs/server_llm_notes.md`
+  - `docs/README.md`
+- Validation:
+  - `node --check Player.js` ✅
+  - `node --check server.js` ✅
+  - `node --check api.js` ✅
+  - `node --check public/js/chat.js` ✅
+  - `npm run scss:build:main` ✅
+  - `npm run test:e2e:headless` ❌ (pre-existing failure: `Process from config.webServer exited early.`)
+
+Follow-up update for the same prompt:
+- Added load-time player ability draft resolution in `performGameLoad` (`api.js`) so missing per-level player ability option pools are generated during save load, not only during later chat/move requests.
+- `performGameLoad` now also clears `playerAbilitySelectionPromises` alongside other in-flight generation maps.
+- Updated docs:
+  - `docs/api/game.md`
+  - `docs/server_llm_notes.md`
+  - `docs/README.md`
+
+Original prompt: Make this a warning: "Error loading game: Error: Location description is required and must be a string ..."
+
+- Applied a load-time-only fix in `Utils.hydrateGameState`:
+  - For each loaded location, if `description` is blank/non-string, hydration now logs a warning and substitutes `"NO DESCRIPTION"` before `new Location(...)`.
+  - `Location` constructor validation remains unchanged.
+- Updated docs:
+  - `docs/classes/Utils.md`
+  - `docs/README.md`
+
+Original prompt: Horizontally center the submit abilities button in the modal and put a 1.5em margin below it.
+
+- Updated `public/css/main.scss`:
+  - `.player-ability-selection-footer` now centers content.
+  - `#playerAbilitySelectionSubmitBtn` now has `margin-bottom: 1.5em`.
+- Rebuilt CSS output: `npm run scss:build:main` (updates `public/css/main.css`).
+- Updated docs:
+  - `docs/ui/modals_overlays.md`
+  - `docs/README.md`

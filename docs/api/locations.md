@@ -68,6 +68,29 @@ Responses:
 Notes:
 - `controllingFactionId` must reference an existing faction id or be `null` to clear.
 
+## DELETE /api/locations/:id
+
+Deletes a hydrated (non-stub) location with ordered cascade cleanup.
+
+Execution order:
+1. Delete items/scenery at the location.
+2. Delete NPCs at the location.
+   - Party NPCs are not deleted; they are moved to the player's current location.
+3. Delete exits both from and to the location.
+4. Delete the location record.
+
+Request:
+- Path: `id`
+
+Responses:
+- 200: `{ success: true, locationId, message, deletedThingIds, deletedNpcIds, relocatedPartyNpcIds, removedExitIds }`
+- 400: `{ success: false, error }`
+  - Missing id
+  - Target is a stub (must use `/api/stubs/:id`)
+  - Target is the player's current location
+- 404: `{ success: false, error }` (location not found)
+- 500: `{ success: false, error }`
+
 ## POST /api/locations/:id/exits
 
 Request:

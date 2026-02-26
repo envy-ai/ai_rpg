@@ -139,6 +139,21 @@ Attribute/skill names are normalized to lowercase with non-alphanumeric characte
 - When the Player Stats page loads without a player, the skill formula is used to set the default unspent points.
 - Invalid formulas throw errors and block the allocator until corrected.
 
+## Player level-up ability selection
+
+Two config keys control player-only level-up ability drafting:
+
+```yaml
+player_ability_options_per_level: 6
+player_abilities_per_level: 3
+```
+
+- `player_ability_options_per_level`: how many ability cards/options are shown per level draft.
+- `player_abilities_per_level`: how many abilities the player must submit for that level.
+- Both values must be positive integers.
+- `player_abilities_per_level` cannot exceed `player_ability_options_per_level`.
+- NPC level-up ability assignment remains automatic; this config applies only to the player draft modal flow.
+
 ## Supplemental story info prompt frequency
 
 `supplemental_story_info_prompt_frequency` controls when hidden supplemental story-info prompts run after a player turn.

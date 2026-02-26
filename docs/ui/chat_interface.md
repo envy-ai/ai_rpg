@@ -34,6 +34,11 @@ The main UI is rendered by `views/index.njk` and powered by `public/js/chat.js` 
 - **Sidebar** (`.chat-sidebar`):
   - Player card (portrait, health, need bars, quick actions, and a top-left warning triangle when unspent skill/attribute points are present).
   - Player "View" opens `#npcViewModal` in editable mode for attributes/skills using shared allocation partials; skills can now be added/removed directly in this modal for the player view. NPCs use the same sections in read-only mode, and their unspent point totals are hidden.
+- **Player level-up ability draft modal** (`#playerAbilitySelectionModal`):
+  - Opens when the player has any underfilled level (`player_abilities_per_level`) from level 1 through current level.
+  - Presents card-style options for the next missing level only; after submit, it advances sequentially to the next missing level.
+  - Pre-existing abilities at that level are preselected but can be toggled off.
+  - Chat send + travel actions are blocked while this modal is pending.
 - Player/NPC "Edit" opens `#npcEditModal`, which includes an `Aliases` textarea (one alias per line) plus `Resistances`/`Vulnerabilities` textareas and saves through `PUT /api/npcs/:id`.
   - Player/NPC Inventory modal keeps active inventory filters (including slot filter selection) when equip/unequip triggers an inventory re-render.
   - Party summary list.
@@ -91,6 +96,7 @@ Not exhaustive, but the core UI calls include:
 - `/api/quest/edit` and `/api/player/quests/:id` (quest edit / abandon).
 - `/api/factions` + `/api/player/factions/:id/standing` (faction panel edits).
 - `/api/player` and `/api/player/skills/:name/increase` (sidebar + skill adjust).
+- `/api/player/ability-selection` + `/api/player/ability-selection/submit` (player level-up ability draft flow).
 - `/api/player/move` (direct travel fallback path; sends `destinationId` plus `expectedOriginLocationId` for server-side origin verification).
 - `/api/player/update-stats` (player-view modal point allocation submit; unspent pools are server-derived from submitted level/attributes/skills).
 - `/api/locations/:id` and `/api/locations/:id/exits` (location details + exit edits).

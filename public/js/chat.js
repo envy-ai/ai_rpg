@@ -5892,6 +5892,22 @@ class AIRPGChat {
         if (!trimmed) {
             return;
         }
+        if (typeof window.isPlayerAbilitySelectionBlockingGameplay === 'function'
+            && window.isPlayerAbilitySelectionBlockingGameplay()) {
+            try {
+                if (typeof window.requestPlayerAbilitySelectionFlow === 'function') {
+                    const pendingSelectionPromise = window.requestPlayerAbilitySelectionFlow({ force: true });
+                    if (pendingSelectionPromise && typeof pendingSelectionPromise.catch === 'function') {
+                        pendingSelectionPromise.catch((abilitySelectionError) => {
+                            console.warn('Failed to open pending player ability selection modal:', abilitySelectionError);
+                        });
+                    }
+                }
+            } catch (abilitySelectionError) {
+                console.warn('Failed to open pending player ability selection modal:', abilitySelectionError);
+            }
+            return;
+        }
 
         const firstVisibleIndex = typeof content === 'string' ? content.search(/\S/) : -1;
         const trimmedVisibleContent = firstVisibleIndex > -1
@@ -5999,10 +6015,21 @@ class AIRPGChat {
             const data = await response.json();
             context.httpResolved = true;
             this.setTravelCompletionSoundSource(context, data?.completionSoundPath);
+            const pendingAbilitySelection = data?.pendingAbilitySelection
+                || (data?.abilitySelection?.pending ? data.abilitySelection : null);
+            if (pendingAbilitySelection && typeof window.handlePendingAbilitySelectionPayload === 'function') {
+                try {
+                    window.handlePendingAbilitySelectionPayload(pendingAbilitySelection);
+                } catch (abilitySelectionError) {
+                    console.warn('Failed to handle pending ability selection payload:', abilitySelectionError);
+                }
+            }
 
             if (data.error) {
                 this.hideLoading(requestId);
-                this.addMessage('system', `Error: ${data.error}`, true);
+                if (!pendingAbilitySelection) {
+                    this.addMessage('system', `Error: ${data.error}`, true);
+                }
                 finalizeMode = 'immediate';
             } else {
                 const result = this.processChatPayload(requestId, data, { fromStream: false });
@@ -6047,6 +6074,18 @@ class AIRPGChat {
     async sendMessage() {
         const rawInput = this.messageInput.value;
         if (!rawInput || !rawInput.trim()) {
+            return;
+        }
+        if (typeof window.isPlayerAbilitySelectionBlockingGameplay === 'function'
+            && window.isPlayerAbilitySelectionBlockingGameplay()) {
+            if (typeof window.requestPlayerAbilitySelectionFlow === 'function') {
+                const pendingSelectionPromise = window.requestPlayerAbilitySelectionFlow({ force: true });
+                if (pendingSelectionPromise && typeof pendingSelectionPromise.catch === 'function') {
+                    pendingSelectionPromise.catch((abilitySelectionError) => {
+                        console.warn('Failed to open pending player ability selection modal:', abilitySelectionError);
+                    });
+                }
+            }
             return;
         }
 

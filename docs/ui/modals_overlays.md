@@ -72,6 +72,14 @@ Most modals live in `views/index.njk` and are wired up by the inline script or `
 
 - `#loadGameModal`: choose manual or autosave and load.
 
+## Player level-up ability draft
+
+- `#playerAbilitySelectionModal`: player-only blocking modal used when one or more levels are missing required abilities.
+- Renders card options for one level at a time and requires exactly `player_abilities_per_level` selections.
+- Existing level abilities appear preselected and toggleable; newly generated options fill up to `player_ability_options_per_level`.
+- Submit button is horizontally centered with `1.5em` bottom spacing.
+- Submit advances to the next missing level (if any) and keeps gameplay blocked until all missing levels are filled.
+
 ## Image lightbox
 
 - `#imageLightbox`: full-screen image viewer bound by `public/js/lightbox.js`.

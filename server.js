@@ -2032,6 +2032,7 @@ const pendingRegionStubs = new Map(); // Store region definitions awaiting full 
 const pendingLocationImages = new Map(); // Store active image job IDs per location
 const npcGenerationPromises = new Map(); // Track in-flight NPC generations by normalized explicit name
 const levelUpAbilityPromises = new Map(); // Track in-flight level-up ability generations per character
+const playerAbilitySelectionPromises = new Map(); // Track in-flight player ability option generation per level
 
 function generateChatMessageId() {
     if (typeof randomUUID === 'function') {
@@ -14002,6 +14003,701 @@ function collectNpcSummariesForLevelUp({ character, locationObj, regionObj, prev
     return Array.from(summaries.values()).slice(0, 30);
 }
 
+function normalizeAbilityNameForLookup(rawName) {
+    if (typeof rawName !== 'string') {
+        return '';
+    }
+    const trimmed = rawName.trim();
+    return trimmed ? trimmed.toLowerCase() : '';
+}
+
+function resolvePlayerAbilitySelectionConfig() {
+    const optionsRaw = Number(config?.player_ability_options_per_level);
+    const requiredRaw = Number(config?.player_abilities_per_level);
+
+    if (!Number.isInteger(optionsRaw) || optionsRaw <= 0) {
+        throw new Error('config.player_ability_options_per_level must be a positive integer.');
+    }
+    if (!Number.isInteger(requiredRaw) || requiredRaw <= 0) {
+        throw new Error('config.player_abilities_per_level must be a positive integer.');
+    }
+    if (requiredRaw > optionsRaw) {
+        throw new Error(
+            `config.player_abilities_per_level (${requiredRaw}) cannot exceed `
+            + `config.player_ability_options_per_level (${optionsRaw}).`
+        );
+    }
+
+    return {
+        optionsPerLevel: optionsRaw,
+        requiredPerLevel: requiredRaw
+    };
+}
+
+function resolveCharacterLevelForAbilitySelection(character) {
+    if (!character) {
+        throw new Error('Character is required for ability selection.');
+    }
+    const parsedLevel = Number(character.level);
+    if (!Number.isInteger(parsedLevel) || parsedLevel <= 0) {
+        throw new Error(`Character "${character.name || character.id || 'unknown'}" has an invalid level value.`);
+    }
+    return parsedLevel;
+}
+
+function getCharacterAbilities(character) {
+    if (!character || typeof character.getAbilities !== 'function') {
+        throw new Error('Character ability selection requires getAbilities().');
+    }
+    const abilities = character.getAbilities();
+    if (!Array.isArray(abilities)) {
+        throw new Error('Character getAbilities() must return an array.');
+    }
+    return abilities;
+}
+
+function sortAbilitiesByLevelAndName(abilities = []) {
+    return abilities.sort((a, b) => {
+        const levelA = Number(a?.level) || 0;
+        const levelB = Number(b?.level) || 0;
+        if (levelA !== levelB) {
+            return levelA - levelB;
+        }
+        const nameA = typeof a?.name === 'string' ? a.name.toLowerCase() : '';
+        const nameB = typeof b?.name === 'string' ? b.name.toLowerCase() : '';
+        return nameA.localeCompare(nameB);
+    });
+}
+
+function ensureUniqueAbilityNames(abilities, { context = 'ability list' } = {}) {
+    const seen = new Set();
+    for (const ability of abilities) {
+        const name = typeof ability?.name === 'string' ? ability.name.trim() : '';
+        if (!name) {
+            continue;
+        }
+        const key = name.toLowerCase();
+        if (seen.has(key)) {
+            throw new Error(`Duplicate ability "${name}" found in ${context}.`);
+        }
+        seen.add(key);
+    }
+}
+
+function resolvePlayerMissingAbilityLevels(character, { requiredPerLevel }) {
+    if (!character || character.isNPC) {
+        throw new Error('Player ability selection can only be resolved for non-NPC characters.');
+    }
+    const currentLevel = resolveCharacterLevelForAbilitySelection(character);
+    const abilities = getCharacterAbilities(character);
+
+    const abilitiesByLevel = new Map();
+    for (const ability of abilities) {
+        if (!ability || typeof ability !== 'object') {
+            continue;
+        }
+        const level = Number.parseInt(ability.level, 10);
+        if (!Number.isInteger(level) || level <= 0) {
+            continue;
+        }
+        if (!abilitiesByLevel.has(level)) {
+            abilitiesByLevel.set(level, []);
+        }
+        abilitiesByLevel.get(level).push({ ...ability, level });
+    }
+
+    const missingLevels = [];
+    for (let level = 1; level <= currentLevel; level += 1) {
+        const entries = abilitiesByLevel.get(level) || [];
+        if (entries.length >= requiredPerLevel) {
+            continue;
+        }
+        missingLevels.push({
+            level,
+            existingAbilities: entries.map(ability => ({ ...ability, level }))
+        });
+    }
+    return missingLevels;
+}
+
+function requirePlayerAbilitySelectionMethods(character) {
+    if (!character || typeof character !== 'object') {
+        throw new Error('Player ability selection requires a valid character object.');
+    }
+    if (typeof character.getPendingAbilityOptionsByLevel !== 'function') {
+        throw new Error('Character is missing getPendingAbilityOptionsByLevel().');
+    }
+    if (typeof character.getPendingAbilityOptionsForLevel !== 'function') {
+        throw new Error('Character is missing getPendingAbilityOptionsForLevel().');
+    }
+    if (typeof character.setPendingAbilityOptionsForLevel !== 'function') {
+        throw new Error('Character is missing setPendingAbilityOptionsForLevel().');
+    }
+    if (typeof character.clearPendingAbilityOptionsForLevel !== 'function') {
+        throw new Error('Character is missing clearPendingAbilityOptionsForLevel().');
+    }
+    if (typeof character.clearPendingAbilityOptions !== 'function') {
+        throw new Error('Character is missing clearPendingAbilityOptions().');
+    }
+}
+
+function normalizePendingAbilityLevelKey(rawLevel) {
+    const parsed = Number.parseInt(String(rawLevel), 10);
+    if (!Number.isInteger(parsed) || parsed <= 0) {
+        throw new Error(`Pending ability option level key "${rawLevel}" is invalid.`);
+    }
+    return parsed;
+}
+
+function resolveAssignmentEntry(assignments, normalizedName) {
+    if (!(assignments instanceof Map) || assignments.size === 0) {
+        return null;
+    }
+    if (normalizedName && assignments.has(normalizedName)) {
+        return assignments.get(normalizedName);
+    }
+    if (assignments.size === 1) {
+        return assignments.values().next().value || null;
+    }
+    return null;
+}
+
+async function buildLevelUpAbilityPromptRequest({
+    character,
+    previousLevel = null,
+    newLevel = null,
+    extraTemplateFields = {}
+} = {}) {
+    if (!character || typeof character.name !== 'string') {
+        throw new Error('Level-up ability prompt request requires a valid character.');
+    }
+
+    const trimmedName = character.name.trim();
+    if (!trimmedName) {
+        throw new Error('Character name is required to build a level-up ability prompt.');
+    }
+
+    const locationId = typeof character.currentLocation === 'string'
+        ? character.currentLocation
+        : null;
+
+    let locationObj = null;
+    if (locationId) {
+        locationObj = gameLocations.get(locationId) || null;
+        if (!locationObj) {
+            try {
+                locationObj = Location.get(locationId);
+            } catch (_) {
+                locationObj = null;
+            }
+        }
+    }
+
+    const locationContext = {
+        name: locationObj?.name || 'Unknown Location',
+        description: (locationObj?.description && typeof locationObj.description === 'string'
+            ? locationObj.description.trim()
+            : locationObj?.stubMetadata?.stubDescription
+                || locationObj?.stubMetadata?.blueprintDescription
+                || locationObj?.stubMetadata?.shortDescription
+                || 'No description provided.')
+    };
+
+    const regionObj = locationObj ? findRegionByLocationId(locationObj.id) : null;
+    const regionContext = {
+        name: regionObj?.name || 'Unknown Region',
+        description: regionObj?.description || 'No description provided.'
+    };
+
+    const currentLevel = Number.isFinite(newLevel)
+        ? newLevel
+        : (Number(character.level) || null);
+    const priorLevel = Number.isFinite(previousLevel)
+        ? previousLevel
+        : (Number.isFinite(currentLevel) ? currentLevel - 1 : null);
+
+    const baseContext = await prepareBasePromptContext({ locationOverride: locationObj || null });
+    const levelUpLine = `[system] ${trimmedName} advanced ${Number.isFinite(priorLevel) ? `from level ${priorLevel} ` : ''}to level ${Number.isFinite(currentLevel) ? currentLevel : 'unknown'}.`;
+    const baseHistoryText = typeof baseContext?.fullGameHistory === 'string'
+        ? baseContext.fullGameHistory.trim()
+        : null;
+    if (baseHistoryText === null) {
+        throw new Error('Base context is missing fullGameHistory.');
+    }
+    const gameHistory = baseHistoryText ? `${baseHistoryText}\n${levelUpLine}` : levelUpLine;
+
+    const existingNpcSummaries = collectNpcSummariesForLevelUp({
+        character,
+        locationObj,
+        regionObj,
+        previousLevel: priorLevel
+    });
+
+    const activePlayer = Player.getCurrentPlayer?.() || currentPlayer || null;
+    const currentPlayerContext = activePlayer ? {
+        name: activePlayer.name || '',
+        description: activePlayer.description || '',
+        level: Number.isFinite(activePlayer.level) ? activePlayer.level : null,
+        class: activePlayer.class || '',
+        race: activePlayer.race || ''
+    } : {
+        name: '',
+        description: '',
+        level: null,
+        class: '',
+        race: ''
+    };
+
+    const availableSkillsForPrompt = Array.from(Player.getAvailableSkills().values())
+        .filter(skill => skill && typeof skill.name === 'string' && skill.name.trim())
+        .map(skill => ({
+            name: skill.name.trim(),
+            description: skill.description || ''
+        }));
+    const availableAttributesForPrompt = buildNpcAttributePromptEntries();
+
+    const promptTemplateBase = {
+        ...baseContext,
+        promptType: 'npc-generate-abilities-levelup',
+        gameHistory,
+        existingNpcSummaries,
+        levelUpSummary: levelUpLine,
+        levelsGained: Number.isFinite(currentLevel) && Number.isFinite(priorLevel)
+            ? Math.max(0, currentLevel - priorLevel)
+            : null,
+        character: {
+            id: character.id || null,
+            name: trimmedName,
+            description: character.description || '',
+            race: character.race || '',
+            class: character.class || '',
+            isNPC: Boolean(character.isNPC),
+            level: Number.isFinite(currentLevel) ? currentLevel : null,
+            previousLevel: Number.isFinite(priorLevel) ? priorLevel : null
+        },
+        locationContext,
+        regionContext,
+        currentPlayer: currentPlayerContext,
+        availableSkillsForPrompt,
+        availableAttributesForPrompt,
+        ...extraTemplateFields
+    };
+
+    const renderedTemplate = promptEnv.render('base-context.xml.njk', promptTemplateBase);
+    const parsedTemplate = parseXMLTemplate(renderedTemplate);
+    const systemPrompt = parsedTemplate.systemPrompt;
+    const generationPrompt = parsedTemplate.generationPrompt;
+    if (!systemPrompt || !generationPrompt) {
+        throw new Error(`Level-up ability template missing prompts for ${trimmedName}.`);
+    }
+
+    return {
+        trimmedName,
+        currentLevel,
+        priorLevel,
+        systemPrompt,
+        generationPrompt,
+        temperature: parsedTemplate.temperature,
+        messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: generationPrompt }
+        ]
+    };
+}
+
+async function requestLevelUpAbilityAssignmentsForCharacter({
+    character,
+    previousLevel = null,
+    newLevel = null,
+    metadataLabel = 'levelup_abilities',
+    logPrefix = 'levelup_abilities',
+    extraTemplateFields = {}
+} = {}) {
+    const request = await buildLevelUpAbilityPromptRequest({
+        character,
+        previousLevel,
+        newLevel,
+        extraTemplateFields
+    });
+
+    const abilityResponse = await LLMClient.chatCompletion({
+        messages: request.messages,
+        temperature: request.temperature,
+        metadataLabel
+    });
+
+    const normalizedResponse = typeof abilityResponse === 'string' ? abilityResponse.trim() : '';
+    LLMClient.logPrompt({
+        prefix: logPrefix,
+        metadataLabel,
+        systemPrompt: request.systemPrompt || '',
+        generationPrompt: request.generationPrompt || '',
+        response: abilityResponse || ''
+    });
+
+    if (!normalizedResponse) {
+        return {
+            ...request,
+            response: '',
+            assignments: new Map()
+        };
+    }
+
+    return {
+        ...request,
+        response: abilityResponse,
+        assignments: parseNpcAbilityAssignments(abilityResponse)
+    };
+}
+
+async function generatePlayerAbilityOptionsForLevel(character, {
+    targetLevel,
+    optionsToGenerate,
+    excludedAbilityNames = []
+} = {}) {
+    if (!character || character.isNPC) {
+        throw new Error('Player ability options can only be generated for a player character.');
+    }
+
+    const parsedLevel = Number.parseInt(targetLevel, 10);
+    if (!Number.isInteger(parsedLevel) || parsedLevel <= 0) {
+        throw new Error(`Invalid target level for player ability options: ${targetLevel}`);
+    }
+
+    const parsedCount = Number.parseInt(optionsToGenerate, 10);
+    if (!Number.isInteger(parsedCount) || parsedCount < 0) {
+        throw new Error(`Invalid option count for player ability options: ${optionsToGenerate}`);
+    }
+    if (parsedCount === 0) {
+        return [];
+    }
+
+    const characterKey = (typeof character.id === 'string' && character.id.trim())
+        ? character.id.trim()
+        : (typeof character.name === 'string' ? character.name.trim().toLowerCase() : 'player');
+    const promiseKey = `${characterKey}:${parsedLevel}:${parsedCount}`;
+    if (playerAbilitySelectionPromises.has(promiseKey)) {
+        return playerAbilitySelectionPromises.get(promiseKey);
+    }
+
+    const generationPromise = (async () => {
+        const excludedKeys = new Set();
+        for (const rawName of excludedAbilityNames) {
+            const key = normalizeAbilityNameForLookup(rawName);
+            if (key) {
+                excludedKeys.add(key);
+            }
+        }
+
+        const generated = [];
+        const maxAttempts = 3;
+
+        for (let attempt = 1; attempt <= maxAttempts && generated.length < parsedCount; attempt += 1) {
+            const remaining = parsedCount - generated.length;
+            const requestResult = await requestLevelUpAbilityAssignmentsForCharacter({
+                character,
+                previousLevel: parsedLevel - 1,
+                newLevel: parsedLevel,
+                metadataLabel: 'player_ability_options',
+                logPrefix: 'player_ability_options',
+                extraTemplateFields: {
+                    playerAbilitySelection: {
+                        enabled: true,
+                        targetLevel: parsedLevel,
+                        optionsToGenerate: remaining,
+                        excludedAbilityNames: Array.from(excludedKeys)
+                    }
+                }
+            });
+
+            const normalizedName = requestResult.trimmedName.toLowerCase();
+            const assignmentEntry = resolveAssignmentEntry(requestResult.assignments, normalizedName);
+            if (!assignmentEntry || !Array.isArray(assignmentEntry.abilities) || !assignmentEntry.abilities.length) {
+                console.warn(
+                    `Player ability option attempt ${attempt} returned no assignments for `
+                    + `${requestResult.trimmedName} at level ${parsedLevel}.`
+                );
+                continue;
+            }
+
+            for (const ability of assignmentEntry.abilities) {
+                const rawName = typeof ability?.name === 'string' ? ability.name.trim() : '';
+                if (!rawName) {
+                    continue;
+                }
+                const nameKey = rawName.toLowerCase();
+                if (excludedKeys.has(nameKey)) {
+                    continue;
+                }
+
+                const abilityLevel = Number.parseInt(ability.level, 10);
+                if (Number.isInteger(abilityLevel) && abilityLevel !== parsedLevel) {
+                    continue;
+                }
+
+                generated.push({
+                    ...ability,
+                    name: rawName,
+                    level: parsedLevel
+                });
+                excludedKeys.add(nameKey);
+                if (generated.length >= parsedCount) {
+                    break;
+                }
+            }
+        }
+
+        if (generated.length < parsedCount) {
+            throw new Error(
+                `Failed to generate enough player ability options for level ${parsedLevel}. `
+                + `Needed ${parsedCount}, generated ${generated.length}.`
+            );
+        }
+
+        ensureUniqueAbilityNames(generated, {
+            context: `generated player ability options for level ${parsedLevel}`
+        });
+
+        return generated;
+    })();
+
+    playerAbilitySelectionPromises.set(promiseKey, generationPromise);
+    try {
+        return await generationPromise;
+    } finally {
+        playerAbilitySelectionPromises.delete(promiseKey);
+    }
+}
+
+async function resolvePlayerAbilitySelectionState(character, { ensureOptionsForNext = false } = {}) {
+    if (!character || character.isNPC) {
+        return {
+            pending: false,
+            levelsMissing: []
+        };
+    }
+
+    requirePlayerAbilitySelectionMethods(character);
+    const { optionsPerLevel, requiredPerLevel } = resolvePlayerAbilitySelectionConfig();
+    const currentLevel = resolveCharacterLevelForAbilitySelection(character);
+    const missingLevels = resolvePlayerMissingAbilityLevels(character, {
+        requiredPerLevel
+    });
+
+    const missingLevelSet = new Set(missingLevels.map(entry => entry.level));
+    const pendingByLevel = character.getPendingAbilityOptionsByLevel();
+    if (!pendingByLevel || typeof pendingByLevel !== 'object') {
+        throw new Error('Pending ability options must deserialize to an object.');
+    }
+
+    for (const rawLevel of Object.keys(pendingByLevel)) {
+        const level = normalizePendingAbilityLevelKey(rawLevel);
+        if (!missingLevelSet.has(level)) {
+            character.clearPendingAbilityOptionsForLevel(level);
+        }
+    }
+
+    if (!missingLevels.length) {
+        character.clearPendingAbilityOptions();
+        return {
+            pending: false,
+            currentLevel,
+            requiredPerLevel,
+            optionsPerLevel,
+            levelsMissing: []
+        };
+    }
+
+    const nextMissing = missingLevels[0];
+    const targetLevel = nextMissing.level;
+    const existingAbilities = nextMissing.existingAbilities.map(ability => ({
+        ...ability,
+        level: targetLevel
+    }));
+    ensureUniqueAbilityNames(existingAbilities, {
+        context: `existing player abilities at level ${targetLevel}`
+    });
+
+    if (existingAbilities.length > optionsPerLevel) {
+        throw new Error(
+            `Player has ${existingAbilities.length} existing abilities at level ${targetLevel}, `
+            + `which exceeds player_ability_options_per_level (${optionsPerLevel}).`
+        );
+    }
+
+    const optionsToGenerate = optionsPerLevel - existingAbilities.length;
+    let generatedOptions = character.getPendingAbilityOptionsForLevel(targetLevel);
+    if (!Array.isArray(generatedOptions)) {
+        throw new Error(`Pending ability options for level ${targetLevel} must be an array.`);
+    }
+
+    if (generatedOptions.length && generatedOptions.length !== optionsToGenerate) {
+        character.clearPendingAbilityOptionsForLevel(targetLevel);
+        generatedOptions = [];
+    }
+
+    if (generatedOptions.length) {
+        ensureUniqueAbilityNames(generatedOptions, {
+            context: `stored player ability options at level ${targetLevel}`
+        });
+        const existingNameSet = new Set(existingAbilities.map(ability => ability.name.trim().toLowerCase()));
+        const overlapsExisting = generatedOptions.some(ability => existingNameSet.has(ability.name.trim().toLowerCase()));
+        if (overlapsExisting) {
+            character.clearPendingAbilityOptionsForLevel(targetLevel);
+            generatedOptions = [];
+        }
+    }
+
+    if (ensureOptionsForNext && optionsToGenerate > 0 && generatedOptions.length === 0) {
+        const allAbilityNames = getCharacterAbilities(character)
+            .map(ability => (typeof ability?.name === 'string' ? ability.name.trim() : ''))
+            .filter(Boolean);
+
+        generatedOptions = await generatePlayerAbilityOptionsForLevel(character, {
+            targetLevel,
+            optionsToGenerate,
+            excludedAbilityNames: allAbilityNames
+        });
+        character.setPendingAbilityOptionsForLevel(targetLevel, generatedOptions);
+    }
+
+    if (optionsToGenerate > 0 && generatedOptions.length !== optionsToGenerate) {
+        throw new Error(
+            `Pending ability options for level ${targetLevel} are incomplete. `
+            + `Expected ${optionsToGenerate}, got ${generatedOptions.length}.`
+        );
+    }
+
+    const combinedOptions = [...existingAbilities, ...generatedOptions];
+    ensureUniqueAbilityNames(combinedOptions, {
+        context: `combined player ability options at level ${targetLevel}`
+    });
+    if (combinedOptions.length !== optionsPerLevel) {
+        throw new Error(
+            `Combined ability options for level ${targetLevel} must total ${optionsPerLevel}; `
+            + `received ${combinedOptions.length}.`
+        );
+    }
+
+    return {
+        pending: true,
+        currentLevel,
+        requiredPerLevel,
+        optionsPerLevel,
+        levelsMissing: missingLevels.map(entry => entry.level),
+        selection: {
+            level: targetLevel,
+            requiredSelections: requiredPerLevel,
+            optionsPerLevel,
+            options: combinedOptions.map(ability => ({ ...ability, level: targetLevel })),
+            preselectedAbilityNames: existingAbilities
+                .map(ability => ability.name)
+                .filter(name => typeof name === 'string' && name.trim())
+        }
+    };
+}
+
+async function applyPlayerAbilitySelection(character, {
+    level,
+    selectedAbilityNames
+} = {}) {
+    if (!character || character.isNPC) {
+        throw new Error('Ability selection can only be applied to a player character.');
+    }
+    if (!Array.isArray(selectedAbilityNames)) {
+        throw new Error('selectedAbilityNames must be an array.');
+    }
+
+    const parsedLevel = Number.parseInt(level, 10);
+    if (!Number.isInteger(parsedLevel) || parsedLevel <= 0) {
+        throw new Error(`Selected ability level must be a positive integer. Received: ${level}`);
+    }
+
+    const selectionState = await resolvePlayerAbilitySelectionState(character, {
+        ensureOptionsForNext: true
+    });
+    if (!selectionState?.pending || !selectionState.selection) {
+        throw new Error('There are no pending player ability selections to submit.');
+    }
+
+    const selection = selectionState.selection;
+    if (selection.level !== parsedLevel) {
+        throw new Error(
+            `Ability selections must be submitted for level ${selection.level} next `
+            + `(received level ${parsedLevel}).`
+        );
+    }
+
+    const normalizedSelectionKeys = selectedAbilityNames.map(name => {
+        if (typeof name !== 'string') {
+            throw new Error('selectedAbilityNames must contain only strings.');
+        }
+        const trimmed = name.trim();
+        if (!trimmed) {
+            throw new Error('selectedAbilityNames cannot contain blank values.');
+        }
+        return trimmed.toLowerCase();
+    });
+
+    const uniqueSelectionKeys = new Set(normalizedSelectionKeys);
+    if (uniqueSelectionKeys.size !== normalizedSelectionKeys.length) {
+        throw new Error('Duplicate ability names were submitted.');
+    }
+
+    if (uniqueSelectionKeys.size !== selection.requiredSelections) {
+        throw new Error(
+            `Exactly ${selection.requiredSelections} abilities must be selected `
+            + `for level ${parsedLevel}.`
+        );
+    }
+
+    const optionLookup = new Map();
+    for (const ability of selection.options) {
+        const key = normalizeAbilityNameForLookup(ability?.name);
+        if (!key) {
+            continue;
+        }
+        optionLookup.set(key, ability);
+    }
+
+    const selectedAbilities = [];
+    for (const key of uniqueSelectionKeys) {
+        const match = optionLookup.get(key);
+        if (!match) {
+            throw new Error(`Selected ability "${key}" is not one of the available options.`);
+        }
+        selectedAbilities.push({
+            ...match,
+            level: parsedLevel
+        });
+    }
+
+    ensureUniqueAbilityNames(selectedAbilities, {
+        context: `submitted player ability selections for level ${parsedLevel}`
+    });
+
+    const currentAbilities = getCharacterAbilities(character);
+    const retainedAbilities = currentAbilities.filter(ability => {
+        const abilityLevel = Number.parseInt(ability?.level, 10);
+        return abilityLevel !== parsedLevel;
+    });
+
+    const mergedAbilities = sortAbilitiesByLevelAndName([
+        ...retainedAbilities.map(ability => ({ ...ability })),
+        ...selectedAbilities
+    ]);
+
+    if (typeof character.setAbilities !== 'function') {
+        throw new Error('Character is missing setAbilities().');
+    }
+    character.setAbilities(mergedAbilities);
+    character.clearPendingAbilityOptionsForLevel(parsedLevel);
+
+    return resolvePlayerAbilitySelectionState(character, {
+        ensureOptionsForNext: true
+    });
+}
+
 async function generateLevelUpAbilitiesForCharacter(character, { previousLevel = null, newLevel = null } = {}) {
     if (!character || typeof character.name !== 'string') {
         console.error('generateLevelUpAbilitiesForCharacter: Invalid character object.');
@@ -14024,202 +14720,59 @@ async function generateLevelUpAbilitiesForCharacter(character, { previousLevel =
     }
 
     const abilityPromise = (async () => {
-        const settingSnapshot = getActiveSettingSnapshot();
-        const settingContext = buildSettingPromptContext(settingSnapshot);
-
-        const locationId = typeof character.currentLocation === 'string'
-            ? character.currentLocation
-            : null;
-
-        let locationObj = null;
-        if (locationId) {
-            locationObj = gameLocations.get(locationId) || null;
-            if (!locationObj) {
-                try {
-                    locationObj = Location.get(locationId);
-                } catch (_) {
-                    locationObj = null;
-                }
-            }
-        }
-
-        const locationContext = {
-            name: locationObj?.name || 'Unknown Location',
-            description: (locationObj?.description && typeof locationObj.description === 'string'
-                ? locationObj.description.trim()
-                : locationObj?.stubMetadata?.stubDescription
-                    || locationObj?.stubMetadata?.blueprintDescription
-                    || locationObj?.stubMetadata?.shortDescription
-                    || 'No description provided.')
-        };
-
-        const regionObj = locationObj ? findRegionByLocationId(locationObj.id) : null;
-        const regionContext = {
-            name: regionObj?.name || 'Unknown Region',
-            description: regionObj?.description || 'No description provided.'
-        };
-
-        const currentLevel = Number.isFinite(newLevel)
-            ? newLevel
-            : (Number(character.level) || null);
-        const priorLevel = Number.isFinite(previousLevel)
-            ? previousLevel
-            : (Number.isFinite(currentLevel) ? currentLevel - 1 : null);
-
-        const baseContext = await prepareBasePromptContext({ locationOverride: locationObj || null });
-
-        const levelUpLine = `[system] ${trimmedName} advanced ${Number.isFinite(priorLevel) ? `from level ${priorLevel} ` : ''}to level ${Number.isFinite(currentLevel) ? currentLevel : 'unknown'}.`;
-        const baseHistoryText = typeof baseContext?.fullGameHistory === 'string'
-            ? baseContext.fullGameHistory.trim()
-            : null;
-        if (baseHistoryText === null) {
-            throw new Error('Base context is missing fullGameHistory.');
-        }
-        const gameHistory = baseHistoryText ? `${baseHistoryText}\n${levelUpLine}` : levelUpLine;
-
-        const existingNpcSummaries = collectNpcSummariesForLevelUp({
-            character,
-            locationObj,
-            regionObj,
-            previousLevel: priorLevel
-        });
-
-        const activePlayer = Player.getCurrentPlayer?.() || currentPlayer || null;
-        const currentPlayerContext = activePlayer ? {
-            name: activePlayer.name || '',
-            description: activePlayer.description || '',
-            level: Number.isFinite(activePlayer.level) ? activePlayer.level : null,
-            class: activePlayer.class || '',
-            race: activePlayer.race || ''
-        } : {
-            name: '',
-            description: '',
-            level: null,
-            class: '',
-            race: ''
-        };
-        const availableSkillsForPrompt = Array.from(Player.getAvailableSkills().values())
-            .filter(skill => skill && typeof skill.name === 'string' && skill.name.trim())
-            .map(skill => ({
-                name: skill.name.trim(),
-                description: skill.description || ''
-            }));
-        const availableAttributesForPrompt = buildNpcAttributePromptEntries();
-
-        const promptTemplateBase = {
-            ...baseContext,
-            promptType: 'npc-generate-abilities-levelup',
-            gameHistory,
-            existingNpcSummaries,
-            levelUpSummary: levelUpLine,
-            levelsGained: Number.isFinite(currentLevel) && Number.isFinite(priorLevel)
-                ? Math.max(0, currentLevel - priorLevel)
-                : null,
-            character: {
-                id: character.id || null,
-                name: trimmedName,
-                description: character.description || '',
-                race: character.race || '',
-                class: character.class || '',
-                isNPC: Boolean(character.isNPC),
-                level: Number.isFinite(currentLevel) ? currentLevel : null,
-                previousLevel: Number.isFinite(priorLevel) ? priorLevel : null
-            },
-            locationContext,
-            regionContext,
-            currentPlayer: currentPlayerContext,
-            availableSkillsForPrompt,
-            availableAttributesForPrompt
-        };
-
-        let renderedTemplate;
-        try {
-            renderedTemplate = promptEnv.render('base-context.xml.njk', promptTemplateBase);
-        } catch (error) {
-            console.warn(`Failed to render level-up ability template for ${trimmedName}:`, error?.message || error);
-            return;
-        }
-
-        let parsedTemplate;
-        try {
-            parsedTemplate = parseXMLTemplate(renderedTemplate);
-        } catch (error) {
-            console.warn(`Failed to parse level-up ability template for ${trimmedName}:`, error?.message || error);
-            return;
-        }
-
-        const systemPrompt = parsedTemplate.systemPrompt;
-        const generationPrompt = parsedTemplate.generationPrompt;
-        if (!systemPrompt || !generationPrompt) {
-            console.warn(`Level-up ability template missing prompts for ${trimmedName}.`);
-            return;
-        }
-
-        const messages = [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: generationPrompt }
-        ];
-
-        const requestStart = Date.now();
-        let abilityResponse = '';
-        try {
-            abilityResponse = await LLMClient.chatCompletion({
-                messages,
-                temperature: parsedTemplate.temperature,
-                metadataLabel: 'levelup_abilities'
+        if (!character.isNPC) {
+            const selectionState = await resolvePlayerAbilitySelectionState(character, {
+                ensureOptionsForNext: true
             });
-            if (!abilityResponse || !abilityResponse.trim()) {
-                console.warn(`Level-up ability generation returned no choices for ${trimmedName}.`);
-                return;
+            if (selectionState?.pending) {
+                const pendingLevel = selectionState?.selection?.level;
+                console.log(
+                    `🎓 Player ${trimmedName} has pending ability selections`
+                    + `${Number.isInteger(pendingLevel) ? ` at level ${pendingLevel}` : ''}.`
+                );
             }
-        } catch (error) {
-            console.warn(`Level-up ability generation request failed for ${trimmedName}:`, error?.message || error);
-            return;
+            return selectionState;
         }
-        LLMClient.logPrompt({
-            prefix: 'levelup_abilities',
+
+        const requestResult = await requestLevelUpAbilityAssignmentsForCharacter({
+            character,
+            previousLevel,
+            newLevel,
             metadataLabel: 'levelup_abilities',
-            systemPrompt: systemPrompt || '',
-            generationPrompt: generationPrompt || '',
-            response: abilityResponse || ''
+            logPrefix: 'levelup_abilities'
         });
+
+        if (!requestResult.response || !requestResult.response.trim()) {
+            console.warn(`Level-up ability generation returned no choices for ${trimmedName}.`);
+            return null;
+        }
 
         const normalizedName = trimmedName.toLowerCase();
-        if (character.isNPC) {
-            try {
-                const progressionAssignments = parseNpcSkillAssignments(abilityResponse);
-                const progressionEntry = progressionAssignments.get(normalizedName);
-                if (progressionEntry) {
-                    applyNpcLevelUpProgressionAllocations({
-                        npc: character,
-                        progressionEntry,
-                        previousLevel: priorLevel,
-                        newLevel: currentLevel
-                    });
-                }
-            } catch (progressionError) {
-                console.warn(`Failed to apply level-up progression assignments for ${trimmedName}:`, progressionError?.message || progressionError);
+        try {
+            const progressionAssignments = parseNpcSkillAssignments(requestResult.response);
+            const progressionEntry = progressionAssignments.get(normalizedName);
+            if (progressionEntry) {
+                applyNpcLevelUpProgressionAllocations({
+                    npc: character,
+                    progressionEntry,
+                    previousLevel: requestResult.priorLevel,
+                    newLevel: requestResult.currentLevel
+                });
             }
+        } catch (progressionError) {
+            console.warn(`Failed to apply level-up progression assignments for ${trimmedName}:`, progressionError?.message || progressionError);
         }
 
-        const assignments = parseNpcAbilityAssignments(abilityResponse);
-        if (!assignments || !(assignments instanceof Map)) {
-            console.warn(`Unable to parse level-up abilities for ${trimmedName}.`);
-            return;
-        }
-
-        const assignmentEntry = assignments.get(normalizedName);
+        const assignmentEntry = resolveAssignmentEntry(requestResult.assignments, normalizedName);
         if (!assignmentEntry || !Array.isArray(assignmentEntry.abilities) || assignmentEntry.abilities.length === 0) {
             console.warn(`No ability assignments found for ${trimmedName} in level-up response.`);
-            return;
+            return null;
         }
 
-        const currentAbilities = typeof character.getAbilities === 'function'
-            ? character.getAbilities()
-            : [];
+        const currentAbilities = getCharacterAbilities(character);
         const existingNames = new Set(
             currentAbilities
-                .map(ability => typeof ability.name === 'string' ? ability.name.trim().toLowerCase() : null)
+                .map(ability => normalizeAbilityNameForLookup(ability?.name))
                 .filter(Boolean)
         );
 
@@ -14232,7 +14785,9 @@ async function generateLevelUpAbilitiesForCharacter(character, { previousLevel =
                 return false;
             }
             const abilityLevel = Number(ability.level);
-            if (Number.isFinite(currentLevel) && Number.isFinite(abilityLevel) && abilityLevel > currentLevel) {
+            if (Number.isFinite(requestResult.currentLevel)
+                && Number.isFinite(abilityLevel)
+                && abilityLevel > requestResult.currentLevel) {
                 return false;
             }
             return true;
@@ -14246,36 +14801,37 @@ async function generateLevelUpAbilitiesForCharacter(character, { previousLevel =
                 continue;
             }
             const abilityLevel = Number(ability.level);
-            if (!Number.isFinite(abilityLevel) || abilityLevel <= 0) {
-                ability.level = Number.isFinite(currentLevel) ? currentLevel : 1;
-            }
-            additions.push({ ...ability, name: abilityName });
+            additions.push({
+                ...ability,
+                name: abilityName,
+                level: (!Number.isFinite(abilityLevel) || abilityLevel <= 0)
+                    ? (Number.isFinite(requestResult.currentLevel) ? requestResult.currentLevel : 1)
+                    : abilityLevel
+            });
             existingNames.add(nameKey);
         }
 
         if (!additions.length) {
             console.log(`Level-up abilities for ${trimmedName} produced no new entries.`);
-            return;
+            return null;
         }
 
-        const mergedAbilities = [...currentAbilities, ...additions];
-        mergedAbilities.sort((a, b) => {
-            const levelA = Number(a.level) || 0;
-            const levelB = Number(b.level) || 0;
-            if (levelA !== levelB) {
-                return levelA - levelB;
-            }
-            const nameA = typeof a.name === 'string' ? a.name.toLowerCase() : '';
-            const nameB = typeof b.name === 'string' ? b.name.toLowerCase() : '';
-            return nameA.localeCompare(nameB);
-        });
-
-        if (typeof character.setAbilities === 'function') {
-            character.setAbilities(mergedAbilities);
-            const addedCount = additions.length;
-            const levelLabel = Number.isFinite(currentLevel) ? currentLevel : character.level;
-            console.log(`🎓 Added ${addedCount} new abilit${addedCount === 1 ? 'y' : 'ies'} for ${trimmedName} (Level ${levelLabel}).`);
+        if (typeof character.setAbilities !== 'function') {
+            throw new Error(`Character ${trimmedName} is missing setAbilities().`);
         }
+
+        const mergedAbilities = sortAbilitiesByLevelAndName([
+            ...currentAbilities.map(ability => ({ ...ability })),
+            ...additions
+        ]);
+        character.setAbilities(mergedAbilities);
+
+        const addedCount = additions.length;
+        const levelLabel = Number.isFinite(requestResult.currentLevel)
+            ? requestResult.currentLevel
+            : character.level;
+        console.log(`🎓 Added ${addedCount} new abilit${addedCount === 1 ? 'y' : 'ies'} for ${trimmedName} (Level ${levelLabel}).`);
+        return null;
     })();
 
     levelUpAbilityPromises.set(characterKey, abilityPromise);
@@ -14294,6 +14850,8 @@ async function generateLevelUpAbilitiesForCharacter(character, { previousLevel =
 }
 
 Globals.generateLevelUpAbilitiesForCharacter = generateLevelUpAbilitiesForCharacter;
+Globals.resolvePlayerAbilitySelectionState = resolvePlayerAbilitySelectionState;
+Globals.applyPlayerAbilitySelection = applyPlayerAbilitySelection;
 
 function getBannedNpcWords() {
     if (Array.isArray(cachedBannedNpcWords)) {
@@ -22672,6 +23230,8 @@ const apiScope = {
     applyNpcAbilities,
     applyNpcAliases,
     generateLevelUpAbilitiesForCharacter,
+    resolvePlayerAbilitySelectionState,
+    applyPlayerAbilitySelection,
     getActiveSettingSnapshot,
     buildNewGameDefaults,
     getSuggestedPlayerLevel,
@@ -22717,6 +23277,7 @@ const apiScope = {
     pendingLocationImages,
     npcGenerationPromises,
     levelUpAbilityPromises,
+    playerAbilitySelectionPromises,
     stubExpansionPromises,
     imageJobs,
     jobQueue,

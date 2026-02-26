@@ -53,9 +53,26 @@ Output exactly in this XML structure:
   </npc>
 </npcs>
 {% else %}
+{% if playerAbilitySelection and playerAbilitySelection.enabled %}
+Generate abilities only for this character.
+
+Generate exactly {{ playerAbilitySelection.optionsToGenerate }} abilities for level {{ playerAbilitySelection.targetLevel }}.
+All generated abilities must be unique, level-appropriate, and relevant to the character's class/race/history/personality.
+Every generated `<ability>` must set `<level>{{ playerAbilitySelection.targetLevel }}</level>`.
+
+Do not generate abilities that duplicate any of these names (case-insensitive):
+<excludedAbilityNames>
+{% for abilityName in playerAbilitySelection.excludedAbilityNames %}  <name>{{ abilityName }}</name>
+{% endfor %}</excludedAbilityNames>
+
+Output abilities in this format:
+
+{% include "_includes/ability-format.njk" %}
+{% else %}
 Generate abilities only for this character. For each gained level, generate 2 to 4 abilities (total {{ (character.level - character.previousLevel) * 2 }} to {{ (character.level - character.previousLevel) * 4 }} abilities across this level-up). Abilities should be unique and level-appropriate.
 
 Output abilities in this format:
 
 {% include "_includes/ability-format.njk" %}
+{% endif %}
 {% endif %}

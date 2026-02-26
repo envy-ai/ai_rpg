@@ -19,6 +19,7 @@ Rendered inside `#mapContainer` in the Map tab.
 
 ### Interactions
 - Context menu on nodes and edges for edit/delete actions.
+- Hydrated location node context menu includes `Delete Location`, which confirms a destructive warning and then calls location cascade deletion (items/NPCs, exits to/from, then location).
 - Link mode for creating new exits (ghost node + edge).
 - New exits call `POST /api/locations/:id/exits` with payload:
   - region/location target, optional relative level, optional image data.

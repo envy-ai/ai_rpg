@@ -8,6 +8,7 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
 - Core stats: `#attributes`, `#level`, `#experience`, `#health`, `#healthAttribute`.
 - Inventory/gear: `#inventory`, `#gearSlots`, `#gearSlotsByType`, `#gearSlotNameIndex`.
 - Skills/abilities: `#skills`, `#abilities`, `#unspentSkillPoints`, `#unspentAttributePoints`.
+- Pending level-up ability draft state: `#pendingAbilityOptionsByLevel` (per-level generated options for player-only ability selection flow).
 - Status/needs: `#statusEffects`, `#needBars`.
 - Social: `#dispositions`, `#personalityType`, `#personalityTraits`, `#personalityNotes`, `#resistances`, `#vulnerabilities`.
 - Factions: `#factionId`, `#factionStandings` (map of `factionId -> number`).
@@ -72,6 +73,10 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
   - `getSkillModifiers(name, { includeEquipped })`.
   - `increaseSkill(name, amount)`, `syncSkillsWithAvailable()`.
   - `getAbilities()`, `setAbilities(list)`, `addAbility(ability)`.
+  - Pending player draft options:
+    - `getPendingAbilityOptionsByLevel()`, `getPendingAbilityOptionsForLevel(level)`.
+    - `setPendingAbilityOptionsForLevel(level, abilities)`.
+    - `clearPendingAbilityOptionsForLevel(level)`, `clearPendingAbilityOptions()`.
 - Progression:
   - `levelUp(count)` (updates level/health only; point pools are formula-derived dynamically).
   - `getUnspentSkillPoints()`, `setUnspentSkillPoints(value)`, `adjustUnspentSkillPoints(delta)`.
@@ -113,6 +118,7 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
 - Need bar helpers: `#normalizeNeedBarChangeList`, `#normalizeNeedMagnitudeKey`, `#normalizeNeedValueMap`, `#buildNeedBarDefinition`, `#cloneNeedBarDefinition`, `#formatNeedBarForContext`, `#resolveNeedBarByIdentifier`, `#resolveNeedBarMagnitudeDelta`, `#resolveNeedBarThreshold`, `#applyNeedBarValue`.
 - Attributes/health: `#defaultHealthAttribute`, `#resolveHealthAttribute`, `#calculateBaseHealth`, `#validateAttributeValue`, `#calculateAttributeModifier`.
 - Status/abilities: `#normalizeStatusEffects`, `#normalizeAbilities`, `#getIntrinsicStatusEffects`.
+- Pending draft options: `#normalizePendingAbilityOptionsByLevel`.
 - Dispositions: `#normalizeDispositionType`, `#sanitizePersonalityValue`, `#applyHostileDispositionsToCurrentPlayer`.
 - Inventory helpers: `#resolveThing`, `#addInventoryThing`, `#removeInventoryThing`, `#notifyNpcInventoryChange`.
 - XP: `#skillPointsPerLevel`, `#processExperienceOverflow`.

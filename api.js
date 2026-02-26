@@ -244,6 +244,22 @@ module.exports = function registerApiRoutes(scope) {
             };
         }
 
+        async function resolvePendingPlayerAbilitySelection({ ensureOptionsForNext = true } = {}) {
+            if (!currentPlayer || currentPlayer.isNPC) {
+                return null;
+            }
+            if (typeof resolvePlayerAbilitySelectionState !== 'function') {
+                throw new Error('resolvePlayerAbilitySelectionState helper is unavailable.');
+            }
+            const state = await resolvePlayerAbilitySelectionState(currentPlayer, {
+                ensureOptionsForNext: Boolean(ensureOptionsForNext)
+            });
+            if (!state || state.pending !== true) {
+                return null;
+            }
+            return state;
+        }
+
         const normalizeMentionedNames = (names = []) => {
             const list = Array.isArray(names) ? names : [];
             const seen = new Set();
@@ -3392,6 +3408,82 @@ module.exports = function registerApiRoutes(scope) {
             return configuredTypes;
         };
 
+        function deleteThingById(thingId, { skipNotFound = false } = {}) {
+            if (!thingId || typeof thingId !== 'string') {
+                return { success: false, error: 'Thing ID is required', status: 400 };
+            }
+
+            const thing = things.get(thingId) || Thing.getById(thingId);
+            if (!thing) {
+                const result = {
+                    success: false,
+                    error: `Thing with ID '${thingId}' not found`,
+                    status: 404
+                };
+                if (skipNotFound) {
+                    result.skipped = true;
+                }
+                return result;
+            }
+
+            const affectedLocationIds = new Set();
+            const affectedPlayerIds = new Set();
+            const affectedNpcIds = new Set();
+
+            for (const location of gameLocations.values()) {
+                if (!location) {
+                    continue;
+                }
+
+                let changed = false;
+                if (typeof location.removeThingId === 'function') {
+                    changed = location.removeThingId(thingId) || changed;
+                }
+
+                if (!changed && Array.isArray(location.thingIds) && location.thingIds.includes(thingId)) {
+                    location.thingIds = location.thingIds.filter(existingThingId => existingThingId !== thingId);
+                    changed = true;
+                }
+
+                if (changed) {
+                    affectedLocationIds.add(location.id);
+                }
+            }
+
+            for (const actor of players.values()) {
+                if (!actor || typeof actor.removeInventoryItem !== 'function') {
+                    continue;
+                }
+
+                let actorChanged = false;
+                if (actor.removeInventoryItem(thingId, { suppressNpcEquip: Boolean(actor.isNPC) })) {
+                    actorChanged = true;
+                }
+                if (typeof actor.unequipItemId === 'function' && actor.unequipItemId(thingId, { suppressTimestamp: true })) {
+                    actorChanged = true;
+                }
+
+                if (actorChanged) {
+                    if (actor.isNPC) {
+                        affectedNpcIds.add(actor.id);
+                    } else {
+                        affectedPlayerIds.add(actor.id);
+                    }
+                }
+            }
+
+            things.delete(thingId);
+            thing.delete();
+
+            return {
+                success: true,
+                thing,
+                locationIds: Array.from(affectedLocationIds),
+                playerIds: Array.from(affectedPlayerIds),
+                npcIds: Array.from(affectedNpcIds)
+            };
+        }
+
         function deleteNpcById(npcId, { skipNotFound = false, reason = null, deleteInventory = false } = {}) {
             if (!npcId || typeof npcId !== 'string') {
                 return { success: false, error: 'NPC ID is required', status: 400 };
@@ -3546,6 +3638,47 @@ module.exports = function registerApiRoutes(scope) {
                 summaries.push({
                     id: npcId,
                     name: (typeof npc?.name === 'string' && npc.name.trim()) ? npc.name.trim() : npcId
+                });
+            }
+            return summaries;
+        }
+
+        function listThingsAtLocation(locationId) {
+            if (!locationId) {
+                return [];
+            }
+
+            const thingIds = new Set();
+            const location = gameLocations.get(locationId);
+            if (location && Array.isArray(location.thingIds)) {
+                location.thingIds.forEach(id => {
+                    if (typeof id === 'string' && id.trim()) {
+                        thingIds.add(id.trim());
+                    }
+                });
+            }
+
+            for (const thing of things.values()) {
+                if (!thing || typeof thing.id !== 'string' || !thing.id.trim()) {
+                    continue;
+                }
+                const metadata = thing.metadata && typeof thing.metadata === 'object'
+                    ? thing.metadata
+                    : {};
+                const thingLocationId = typeof metadata.locationId === 'string'
+                    ? metadata.locationId.trim()
+                    : '';
+                if (thingLocationId && thingLocationId === locationId) {
+                    thingIds.add(thing.id.trim());
+                }
+            }
+
+            const summaries = [];
+            for (const thingId of thingIds) {
+                const thing = things.get(thingId) || Thing.getById(thingId) || null;
+                summaries.push({
+                    id: thingId,
+                    name: (typeof thing?.name === 'string' && thing.name.trim()) ? thing.name.trim() : thingId
                 });
             }
             return summaries;
@@ -10026,6 +10159,24 @@ module.exports = function registerApiRoutes(scope) {
             let currentTurnLog = [];
             let releasePlayerMoveLock = null;
 
+            try {
+                const pendingAbilitySelection = await resolvePendingPlayerAbilitySelection({
+                    ensureOptionsForNext: true
+                });
+                if (pendingAbilitySelection) {
+                    return res.status(409).json({
+                        error: 'Player ability selection is required before continuing.',
+                        pendingAbilitySelection,
+                        player: serializeNpcForClient(currentPlayer)
+                    });
+                }
+            } catch (abilitySelectionError) {
+                console.warn('Failed to resolve pending player ability selection before /api/chat:', abilitySelectionError?.message || abilitySelectionError);
+                return res.status(500).json({
+                    error: `Failed to resolve pending player ability selection: ${abilitySelectionError?.message || abilitySelectionError}`
+                });
+            }
+
             let statusNeedAdjustments = [];
             try {
                 statusNeedAdjustments = Player.applyStatusEffectNeedBarsToAll() || [];
@@ -12931,6 +13082,78 @@ module.exports = function registerApiRoutes(scope) {
             });
         });
 
+        app.get('/api/player/ability-selection', async (req, res) => {
+            if (!currentPlayer) {
+                return res.status(404).json({
+                    success: false,
+                    error: 'No current player found'
+                });
+            }
+            if (currentPlayer.isNPC) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Current player is invalid for ability selection.'
+                });
+            }
+
+            try {
+                const abilitySelection = await resolvePlayerAbilitySelectionState(currentPlayer, {
+                    ensureOptionsForNext: true
+                });
+                return res.json({
+                    success: true,
+                    pending: Boolean(abilitySelection?.pending),
+                    abilitySelection,
+                    player: serializeNpcForClient(currentPlayer)
+                });
+            } catch (error) {
+                return res.status(500).json({
+                    success: false,
+                    error: error?.message || 'Failed to resolve player ability selection state.'
+                });
+            }
+        });
+
+        app.post('/api/player/ability-selection/submit', async (req, res) => {
+            if (!currentPlayer) {
+                return res.status(404).json({
+                    success: false,
+                    error: 'No current player found'
+                });
+            }
+            if (currentPlayer.isNPC) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Current player is invalid for ability selection.'
+                });
+            }
+            if (typeof applyPlayerAbilitySelection !== 'function') {
+                return res.status(500).json({
+                    success: false,
+                    error: 'Player ability selection helper is unavailable.'
+                });
+            }
+
+            try {
+                const { level, selectedAbilityNames } = req.body || {};
+                const abilitySelection = await applyPlayerAbilitySelection(currentPlayer, {
+                    level,
+                    selectedAbilityNames
+                });
+                return res.json({
+                    success: true,
+                    pending: Boolean(abilitySelection?.pending),
+                    abilitySelection,
+                    player: serializeNpcForClient(currentPlayer)
+                });
+            } catch (error) {
+                return res.status(400).json({
+                    success: false,
+                    error: error?.message || 'Failed to submit player ability selection.'
+                });
+            }
+        });
+
         app.delete('/api/player/quests/:questId', (req, res) => {
             if (!currentPlayer) {
                 return res.status(404).json({
@@ -13367,7 +13590,7 @@ module.exports = function registerApiRoutes(scope) {
         });
 
         // Level up player
-        app.post('/api/player/levelup', (req, res) => {
+        app.post('/api/player/levelup', async (req, res) => {
             if (!currentPlayer) {
                 return res.status(404).json({
                     success: false,
@@ -13378,10 +13601,14 @@ module.exports = function registerApiRoutes(scope) {
             try {
                 const oldLevel = currentPlayer.level;
                 currentPlayer.levelUp();
+                const pendingAbilitySelection = await resolvePendingPlayerAbilitySelection({
+                    ensureOptionsForNext: true
+                });
 
                 res.json({
                     success: true,
                     player: serializeNpcForClient(currentPlayer),
+                    pendingAbilitySelection: pendingAbilitySelection || null,
                     message: `Player leveled up from ${oldLevel} to ${currentPlayer.level}!`
                 });
             } catch (error) {
@@ -17999,6 +18226,197 @@ module.exports = function registerApiRoutes(scope) {
             }
         });
 
+        app.delete('/api/locations/:id', (req, res) => {
+            try {
+                const locationIdRaw = req.params.id;
+                const locationId = typeof locationIdRaw === 'string' ? locationIdRaw.trim() : '';
+                if (!locationId) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Location ID is required'
+                    });
+                }
+
+                const location = gameLocations.get(locationId) || Location.get(locationId);
+                if (!location) {
+                    return res.status(404).json({
+                        success: false,
+                        error: `Location with ID '${locationId}' not found`
+                    });
+                }
+
+                if (location.isStub) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Stub locations must be deleted via /api/stubs/:id.'
+                    });
+                }
+
+                const playerCurrentLocationId = typeof currentPlayer?.currentLocation === 'string'
+                    ? currentPlayer.currentLocation.trim()
+                    : '';
+                if (playerCurrentLocationId && playerCurrentLocationId === locationId) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Cannot delete the player\'s current location.'
+                    });
+                }
+
+                const partyMemberIds = new Set(
+                    Array.isArray(currentPlayer?.getPartyMembers?.())
+                        ? currentPlayer.getPartyMembers().filter(id => typeof id === 'string' && id.trim())
+                        : []
+                );
+                const partyDestinationLocation = partyMemberIds.size
+                    ? (gameLocations.get(playerCurrentLocationId) || Location.get(playerCurrentLocationId) || null)
+                    : null;
+                if (partyMemberIds.size && !partyDestinationLocation) {
+                    throw new Error('Cannot relocate party NPCs: the player current location is unavailable.');
+                }
+
+                const deletedThingIds = [];
+                const thingsAtLocation = listThingsAtLocation(locationId);
+                for (const thingSummary of thingsAtLocation) {
+                    if (!thingSummary?.id) {
+                        continue;
+                    }
+                    const result = deleteThingById(thingSummary.id, { skipNotFound: true });
+                    if (result.success) {
+                        deletedThingIds.push(thingSummary.id);
+                    }
+                }
+
+                const deletedNpcIds = [];
+                const relocatedPartyNpcIds = [];
+                const npcsAtLocation = listNpcsAtLocation(locationId);
+                for (const npcSummary of npcsAtLocation) {
+                    if (!npcSummary?.id) {
+                        continue;
+                    }
+                    const npc = players.get(npcSummary.id);
+                    if (!npc || !npc.isNPC) {
+                        continue;
+                    }
+
+                    if (partyMemberIds.has(npc.id)) {
+                        if (!partyDestinationLocation) {
+                            throw new Error(`Cannot relocate party member '${npc.name || npc.id}': destination location unavailable.`);
+                        }
+                        if (typeof npc.setLocation !== 'function') {
+                            throw new Error(`Cannot relocate party member '${npc.name || npc.id}': setLocation is unavailable.`);
+                        }
+                        if (typeof partyDestinationLocation.addNpcId !== 'function') {
+                            throw new Error(`Cannot relocate party member '${npc.name || npc.id}': destination addNpcId is unavailable.`);
+                        }
+
+                        for (const candidateLocation of gameLocations.values()) {
+                            if (candidateLocation && typeof candidateLocation.removeNpcId === 'function') {
+                                candidateLocation.removeNpcId(npc.id);
+                            }
+                        }
+                        for (const region of regions.values()) {
+                            if (!region || !Array.isArray(region.npcIds)) {
+                                continue;
+                            }
+                            if (region.npcIds.includes(npc.id)) {
+                                region.npcIds = region.npcIds.filter(id => id !== npc.id);
+                            }
+                        }
+
+                        npc.setLocation(partyDestinationLocation);
+                        partyDestinationLocation.addNpcId(npc.id);
+                        const destinationRegion = findRegionByLocationId(partyDestinationLocation.id);
+                        if (destinationRegion && Array.isArray(destinationRegion.npcIds) && !destinationRegion.npcIds.includes(npc.id)) {
+                            destinationRegion.npcIds.push(npc.id);
+                        }
+                        relocatedPartyNpcIds.push(npc.id);
+                        continue;
+                    }
+
+                    const result = deleteNpcById(npc.id, {
+                        skipNotFound: true,
+                        reason: 'location_deleted',
+                        deleteInventory: true
+                    });
+                    if (result.success) {
+                        deletedNpcIds.push(npc.id);
+                    }
+                }
+
+                const removedExitIds = [];
+                const locationSnapshot = Array.from(gameLocations.values());
+                for (const candidateLocation of locationSnapshot) {
+                    if (!candidateLocation || typeof candidateLocation.getAvailableDirections !== 'function' || typeof candidateLocation.getExit !== 'function') {
+                        continue;
+                    }
+                    const directions = candidateLocation.getAvailableDirections();
+                    for (const direction of directions) {
+                        const exit = candidateLocation.getExit(direction);
+                        if (!exit) {
+                            continue;
+                        }
+
+                        const isOutboundFromDeletedLocation = candidateLocation.id === locationId;
+                        const isInboundToDeletedLocation = exit.destination === locationId;
+                        if (!isOutboundFromDeletedLocation && !isInboundToDeletedLocation) {
+                            continue;
+                        }
+
+                        removeExitStrict(candidateLocation, direction, exit.id || null);
+                        if (exit.id) {
+                            removedExitIds.push(exit.id);
+                        }
+                    }
+                }
+
+                if (pendingLocationImages && typeof pendingLocationImages.delete === 'function') {
+                    pendingLocationImages.delete(locationId);
+                }
+                if (location.imageId && generatedImages && typeof generatedImages.delete === 'function') {
+                    generatedImages.delete(location.imageId);
+                }
+
+                for (const region of regions.values()) {
+                    if (!region || !Array.isArray(region.locationIds)) {
+                        continue;
+                    }
+                    if (region.locationIds.includes(locationId)) {
+                        region.locationIds = region.locationIds.filter(id => id !== locationId);
+                    }
+                    if (region.entranceLocationId === locationId) {
+                        const fallbackEntranceId = Array.isArray(region.locationIds) && region.locationIds.length
+                            ? region.locationIds[0]
+                            : null;
+                        region.entranceLocationId = fallbackEntranceId || null;
+                    }
+                }
+
+                if (gameLocations.has(locationId)) {
+                    gameLocations.delete(locationId);
+                }
+                if (typeof Location.removeFromIndex === 'function') {
+                    Location.removeFromIndex(locationId);
+                    Location.removeFromIndex(location);
+                }
+
+                return res.json({
+                    success: true,
+                    locationId,
+                    message: `Location '${location.name || locationId}' deleted successfully.`,
+                    deletedThingIds,
+                    deletedNpcIds,
+                    relocatedPartyNpcIds,
+                    removedExitIds: Array.from(new Set(removedExitIds.filter(Boolean)))
+                });
+            } catch (error) {
+                console.error('Failed to delete location:', error);
+                return res.status(500).json({
+                    success: false,
+                    error: error?.message || 'Failed to delete location'
+                });
+            }
+        });
+
         function findExitOnLocation(location, predicate) {
             if (!location || typeof location.getAvailableDirections !== 'function' || typeof location.getExit !== 'function') {
                 return null;
@@ -19444,6 +19862,18 @@ module.exports = function registerApiRoutes(scope) {
                     return res.status(400).json({
                         success: false,
                         error: 'Current player is missing a valid id.'
+                    });
+                }
+
+                const pendingAbilitySelection = await resolvePendingPlayerAbilitySelection({
+                    ensureOptionsForNext: true
+                });
+                if (pendingAbilitySelection) {
+                    return res.status(409).json({
+                        success: false,
+                        error: 'Player ability selection is required before moving.',
+                        pendingAbilitySelection,
+                        player: serializeNpcForClient(currentPlayer)
                     });
                 }
 
@@ -22303,76 +22733,20 @@ module.exports = function registerApiRoutes(scope) {
         app.delete('/api/things/:id', (req, res) => {
             try {
                 const { id } = req.params;
-                if (!id || typeof id !== 'string') {
-                    return res.status(400).json({
+                const result = deleteThingById(id);
+                if (!result.success) {
+                    return res.status(result.status || 500).json({
                         success: false,
-                        error: 'Thing ID is required'
+                        error: result.error || 'Failed to delete thing'
                     });
                 }
-
-                const thing = things.get(id) || Thing.getById(id);
-                if (!thing) {
-                    return res.status(404).json({
-                        success: false,
-                        error: `Thing with ID '${id}' not found`
-                    });
-                }
-
-                const affectedLocationIds = new Set();
-                const affectedPlayerIds = new Set();
-                const affectedNpcIds = new Set();
-
-                for (const location of gameLocations.values()) {
-                    if (!location) {
-                        continue;
-                    }
-
-                    let changed = false;
-                    if (typeof location.removeThingId === 'function') {
-                        changed = location.removeThingId(id) || changed;
-                    }
-
-                    if (!changed && Array.isArray(location.thingIds) && location.thingIds.includes(id)) {
-                        location.thingIds = location.thingIds.filter(thingId => thingId !== id);
-                        changed = true;
-                    }
-
-                    if (changed) {
-                        affectedLocationIds.add(location.id);
-                    }
-                }
-
-                for (const actor of players.values()) {
-                    if (!actor || typeof actor.removeInventoryItem !== 'function') {
-                        continue;
-                    }
-
-                    let actorChanged = false;
-                    if (actor.removeInventoryItem(id, { suppressNpcEquip: Boolean(actor.isNPC) })) {
-                        actorChanged = true;
-                    }
-                    if (typeof actor.unequipItemId === 'function' && actor.unequipItemId(id, { suppressTimestamp: true })) {
-                        actorChanged = true;
-                    }
-
-                    if (actorChanged) {
-                        if (actor.isNPC) {
-                            affectedNpcIds.add(actor.id);
-                        } else {
-                            affectedPlayerIds.add(actor.id);
-                        }
-                    }
-                }
-
-                things.delete(id);
-                thing.delete();
 
                 res.json({
                     success: true,
                     message: 'Thing deleted successfully',
-                    locationIds: Array.from(affectedLocationIds),
-                    playerIds: Array.from(affectedPlayerIds),
-                    npcIds: Array.from(affectedNpcIds)
+                    locationIds: Array.isArray(result.locationIds) ? result.locationIds : [],
+                    playerIds: Array.isArray(result.playerIds) ? result.playerIds : [],
+                    npcIds: Array.isArray(result.npcIds) ? result.npcIds : []
                 });
             } catch (error) {
                 console.error('Failed to delete thing:', error);
@@ -24920,6 +25294,7 @@ module.exports = function registerApiRoutes(scope) {
             pendingLocationImages.clear();
             generatedImages.clear();
             npcGenerationPromises.clear();
+            playerAbilitySelectionPromises.clear();
             isProcessingJob = false;
 
             const hydrationResult = Utils.hydrateGameState(serialized, {
@@ -25382,6 +25757,15 @@ module.exports = function registerApiRoutes(scope) {
             };
 
             await ensureShortDescriptionsOnLoad();
+
+            if (currentPlayer && !currentPlayer.isNPC) {
+                if (typeof resolvePlayerAbilitySelectionState !== 'function') {
+                    throw new Error('resolvePlayerAbilitySelectionState helper is unavailable.');
+                }
+                await resolvePlayerAbilitySelectionState(currentPlayer, {
+                    ensureOptionsForNext: true
+                });
+            }
 
             Globals.gameLoaded = true;
 

@@ -2581,7 +2581,10 @@ body.dark .thing-toggle-hint {
   padding: 8px 10px;
   font-size: 0.85rem;
   cursor: pointer;
-  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+  transition:
+    background 0.2s ease,
+    border-color 0.2s ease,
+    color 0.2s ease;
 
   &:hover,
   &:focus {
@@ -2667,7 +2670,9 @@ body.dark .thing-toggle-hint {
   padding: 6px 10px;
   font-size: 0.82rem;
   cursor: pointer;
-  transition: background 0.2s ease, border-color 0.2s ease;
+  transition:
+    background 0.2s ease,
+    border-color 0.2s ease;
 
   &:hover,
   &:focus {
@@ -3259,7 +3264,7 @@ body.dark .thing-toggle-hint {
 }
 
 .chat-player-points-indicator::before {
-  content: '';
+  content: "";
   position: absolute;
   inset: 0;
   clip-path: polygon(50% 0%, 0% 100%, 100% 100%);
@@ -5328,6 +5333,117 @@ body.modal-open {
   margin-left: auto;
 }
 
+.player-ability-selection-modal .modal__dialog {
+  width: min(980px, 96vw);
+}
+
+.player-ability-selection-body {
+  gap: 14px;
+}
+
+.player-ability-selection-status {
+  margin: 0;
+  font-size: 0.92rem;
+  color: rgba(226, 232, 240, 0.9);
+}
+
+.player-ability-selection-status[data-variant="success"] {
+  color: #a7f3d0;
+}
+
+.player-ability-selection-status[data-variant="warning"] {
+  color: #fde68a;
+}
+
+.player-ability-selection-status[data-variant="error"] {
+  color: #fca5a5;
+}
+
+.player-ability-selection-cards {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.player-ability-selection-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  text-align: left;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.34);
+  background: linear-gradient(
+    160deg,
+    rgba(15, 23, 42, 0.72),
+    rgba(30, 41, 59, 0.62)
+  );
+  color: #f8fafc;
+  padding: 14px;
+  cursor: pointer;
+  transition:
+    border-color 0.2s ease,
+    background 0.2s ease,
+    transform 0.16s ease,
+    box-shadow 0.2s ease;
+}
+
+.player-ability-selection-card:hover,
+.player-ability-selection-card:focus {
+  border-color: rgba(125, 211, 252, 0.62);
+  background: linear-gradient(
+    160deg,
+    rgba(30, 41, 59, 0.82),
+    rgba(15, 23, 42, 0.72)
+  );
+  box-shadow: 0 10px 30px rgba(8, 47, 73, 0.28);
+  transform: translateY(-1px);
+  outline: none;
+}
+
+.player-ability-selection-card.is-selected {
+  border-color: rgba(56, 189, 248, 0.9);
+  background: linear-gradient(
+    160deg,
+    rgba(14, 116, 144, 0.35),
+    rgba(15, 23, 42, 0.78)
+  );
+  box-shadow:
+    0 0 0 1px rgba(56, 189, 248, 0.25),
+    0 12px 30px rgba(8, 47, 73, 0.35);
+}
+
+.player-ability-selection-card-header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.player-ability-selection-card-name {
+  font-size: 0.98rem;
+  font-weight: 600;
+}
+
+.player-ability-selection-card-meta {
+  font-size: 0.78rem;
+  color: rgba(191, 219, 254, 0.9);
+}
+
+.player-ability-selection-card-description {
+  margin: 0;
+  font-size: 0.84rem;
+  line-height: 1.5;
+  color: rgba(226, 232, 240, 0.9);
+}
+
+.player-ability-selection-footer {
+  justify-content: center;
+  text-align: center;
+}
+
+.player-ability-selection-footer #playerAbilitySelectionSubmitBtn {
+  margin-bottom: 1.5em;
+}
+
 .crafting-modal__dialog {
   width: min(1100px, 96vw);
 }
@@ -7037,12 +7153,12 @@ body.modal-open {
   background: rgba(251, 191, 36, 0.1);
 }
 
-.thing-type-drop-target[data-drop-target-type='scenery'].is-drop-hover {
+.thing-type-drop-target[data-drop-target-type="scenery"].is-drop-hover {
   outline-color: rgba(125, 211, 252, 0.75);
   background: rgba(125, 211, 252, 0.12);
 }
 
-.thing-type-drop-target[data-drop-target-type='item'].is-drop-hover {
+.thing-type-drop-target[data-drop-target-type="item"].is-drop-hover {
   outline-color: rgba(251, 191, 36, 0.72);
   background: rgba(251, 191, 36, 0.1);
 }

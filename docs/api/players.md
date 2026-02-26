@@ -19,6 +19,34 @@ Response:
 - 200: `{ success: true, player: NpcProfile }`
 - 404: `{ success: false, error: 'No current player found' }`
 
+## GET /api/player/ability-selection
+Get the player-only pending ability draft state (and generate the next option set if needed).
+
+Response:
+- 200: `{ success: true, pending: boolean, abilitySelection, player: NpcProfile }`
+- 400: `{ success: false, error }` (invalid current player type)
+- 404: `{ success: false, error }`
+- 500: `{ success: false, error }`
+
+Notes:
+- `abilitySelection.pending` indicates whether gameplay is blocked by unfilled level ability picks.
+- When pending, `abilitySelection.selection` includes:
+  - `level`
+  - `requiredSelections`
+  - `optionsPerLevel`
+  - `options` (card choices)
+  - `preselectedAbilityNames` (already-owned abilities for that level)
+
+## POST /api/player/ability-selection/submit
+Submit selected abilities for the current pending level.
+
+Request:
+- Body: `{ level: number, selectedAbilityNames: string[] }`
+
+Response:
+- 200: `{ success: true, pending: boolean, abilitySelection, player: NpcProfile }`
+- 400/404/500: `{ success: false, error }`
+
 ## GET /api/players
 List all players.
 
@@ -75,7 +103,7 @@ Response:
 - 200: `{ success: true, location: LocationResponse, message, direction }`
 - 400: `{ success: false, error }` (missing args/origin)
 - 404: `{ success: false, error }` (destination not found)
-- 409: `{ success: false, error }` (origin mismatch or another move already in progress)
+- 409: `{ success: false, error }` (origin mismatch, pending ability selection, or another move already in progress)
 - 500: `{ success: false, error }`
 
 Notes:
@@ -89,7 +117,7 @@ Request:
 - Body: `{ attributes: Record<string, number> }`
 
 Response:
-- 200: `{ success: true, player: NpcProfile, message }`
+- 200: `{ success: true, player: NpcProfile, pendingAbilitySelection, message }`
 - 400/404 with `{ success: false, error }`
 
 ## PUT /api/player/health

@@ -1265,8 +1265,20 @@ class Utils {
       if (!locationData) {
         continue;
       }
+      const rawDescription = locationData.description;
+      const hasUsableDescription = typeof rawDescription === 'string' && rawDescription.trim().length > 0;
+      const resolvedDescription = hasUsableDescription ? rawDescription : 'NO DESCRIPTION';
+      if (!hasUsableDescription) {
+        const locationIdForWarning = typeof locationData.id === 'string' && locationData.id.trim()
+          ? locationData.id.trim()
+          : id;
+        console.warn(
+          `Location "${locationIdForWarning}" has a blank description in save data; `
+          + `using "${resolvedDescription}" during load.`
+        );
+      }
       const location = new Location({
-        description: locationData.description ?? null,
+        description: resolvedDescription,
         shortDescription: locationData.shortDescription ?? null,
         baseLevel: locationData.baseLevel ?? null,
         id: locationData.id,

@@ -257,6 +257,7 @@
                     <button type="button" class="entity-context-menu-item location-image-menu-item" id="mapLocationMenuSummonNpcButton">Summon NPC</button>
                     <button type="button" class="entity-context-menu-item location-image-menu-item" id="mapLocationMenuSummonThingButton">Summon Item/Scenery</button>
                     <button type="button" class="entity-context-menu-item location-image-menu-item" id="mapLocationMenuRegenerateImageButton">Regenerate Image</button>
+                    <button type="button" class="entity-context-menu-item location-image-menu-item" id="mapLocationMenuDeleteButton">Delete Location</button>
                 </div>
                 <section class="tab-panel" id="tab-character" role="tabpanel" aria-labelledby="tab-character-tab" hidden>
                     <div class="config-content character-panel">
@@ -1203,6 +1204,21 @@
             <div class="modal__actions load-game-actions">
                 <button type="button" class="button button-secondary" id="loadGameCancelBtn">Cancel</button>
                 <button type="button" class="button button-primary" id="loadGameConfirmBtn">Load Game</button>
+            </div>
+        </div>
+    </div>
+    <div id="playerAbilitySelectionModal" class="modal player-ability-selection-modal" role="dialog" aria-modal="true" aria-hidden="true" hidden>
+        <div class="modal__dialog">
+            <header class="modal__header">
+                <h2 id="playerAbilitySelectionTitle">Choose New Abilities</h2>
+            </header>
+            <div class="modal__body player-ability-selection-body">
+                <p id="playerAbilitySelectionIntro" class="modal__instruction"></p>
+                <p id="playerAbilitySelectionStatus" class="player-ability-selection-status" role="status" aria-live="polite"></p>
+                <div id="playerAbilitySelectionCards" class="player-ability-selection-cards" role="list"></div>
+            </div>
+            <div class="modal__actions player-ability-selection-footer">
+                <button type="button" class="button button-primary" id="playerAbilitySelectionSubmitBtn" disabled>Submit Abilities</button>
             </div>
         </div>
     </div>
@@ -2789,6 +2805,387 @@
             return baseData;
         }
 
+        function normalizeAbilityNameKey(value) {
+            if (typeof value !== 'string') {
+                return '';
+            }
+            const trimmed = value.trim();
+            return trimmed ? trimmed.toLowerCase() : '';
+        }
+
+        function extractAbilitySelectionState(payload) {
+            if (!payload || typeof payload !== 'object') {
+                return null;
+            }
+            if (payload.pending === true && payload.selection && typeof payload.selection === 'object') {
+                return payload;
+            }
+            if (payload.pendingAbilitySelection && payload.pendingAbilitySelection.pending === true) {
+                return payload.pendingAbilitySelection;
+            }
+            if (payload.abilitySelection && payload.abilitySelection.pending === true) {
+                return payload.abilitySelection;
+            }
+            return null;
+        }
+
+        function isPlayerAbilitySelectionBlockingGameplay() {
+            return Boolean(
+                playerAbilitySelectionState.active
+                || playerAbilitySelectionState.loading
+                || playerAbilitySelectionState.submitting
+            );
+        }
+
+        function syncPlayerAbilitySelectionInteractionState() {
+            const blocking = isPlayerAbilitySelectionBlockingGameplay();
+            const messageInput = document.getElementById('messageInput');
+            const sendButton = document.getElementById('sendButton');
+            if (messageInput) {
+                messageInput.disabled = blocking;
+            }
+            if (sendButton) {
+                sendButton.disabled = blocking;
+            }
+            if (blocking) {
+                document.body.classList.add('modal-open');
+            } else if (!document.querySelector('.modal[aria-hidden="false"]')) {
+                document.body.classList.remove('modal-open');
+            }
+        }
+
+        function setPlayerAbilitySelectionStatus(message = '', variant = 'info') {
+            if (!playerAbilitySelectionStatus) {
+                return;
+            }
+            playerAbilitySelectionStatus.textContent = message || '';
+            if (variant) {
+                playerAbilitySelectionStatus.dataset.variant = variant;
+            } else {
+                delete playerAbilitySelectionStatus.dataset.variant;
+            }
+        }
+
+        function updatePlayerAbilitySelectionSubmitState() {
+            if (!playerAbilitySelectionSubmitBtn) {
+                return;
+            }
+            const selectedCount = playerAbilitySelectionState.selectedNames.size;
+            const required = playerAbilitySelectionState.requiredSelections;
+            const canSubmit = (
+                playerAbilitySelectionState.active
+                && !playerAbilitySelectionState.submitting
+                && selectedCount === required
+            );
+            playerAbilitySelectionSubmitBtn.disabled = !canSubmit;
+
+            if (!playerAbilitySelectionState.submitting) {
+                const levelText = Number.isInteger(playerAbilitySelectionState.level)
+                    ? `Level ${playerAbilitySelectionState.level}`
+                    : 'Current level';
+                setPlayerAbilitySelectionStatus(
+                    `Selected ${selectedCount}/${required} abilities for ${levelText}.`,
+                    selectedCount === required ? 'success' : 'info'
+                );
+            }
+        }
+
+        function closePlayerAbilitySelectionModal() {
+            if (!playerAbilitySelectionModal) {
+                return;
+            }
+            playerAbilitySelectionModal.setAttribute('hidden', '');
+            playerAbilitySelectionModal.setAttribute('aria-hidden', 'true');
+            playerAbilitySelectionState.active = false;
+            playerAbilitySelectionState.selection = null;
+            playerAbilitySelectionState.selectedNames = new Set();
+            playerAbilitySelectionState.level = null;
+            playerAbilitySelectionState.requiredSelections = 0;
+            playerAbilitySelectionState.optionsPerLevel = 0;
+            if (playerAbilitySelectionCards) {
+                playerAbilitySelectionCards.innerHTML = '';
+            }
+            if (playerAbilitySelectionIntro) {
+                playerAbilitySelectionIntro.textContent = '';
+            }
+            setPlayerAbilitySelectionStatus('');
+            syncPlayerAbilitySelectionInteractionState();
+        }
+
+        function renderPlayerAbilitySelectionCards() {
+            if (!playerAbilitySelectionCards) {
+                return;
+            }
+            playerAbilitySelectionCards.innerHTML = '';
+            const selection = playerAbilitySelectionState.selection;
+            const options = Array.isArray(selection?.options) ? selection.options : [];
+            for (const option of options) {
+                const abilityName = typeof option?.name === 'string' ? option.name.trim() : '';
+                if (!abilityName) {
+                    continue;
+                }
+                const abilityKey = normalizeAbilityNameKey(abilityName);
+                if (!abilityKey) {
+                    continue;
+                }
+                const selected = playerAbilitySelectionState.selectedNames.has(abilityKey);
+                const card = document.createElement('button');
+                card.type = 'button';
+                card.className = 'player-ability-selection-card';
+                card.setAttribute('role', 'listitem');
+                card.setAttribute('aria-pressed', selected ? 'true' : 'false');
+                if (selected) {
+                    card.classList.add('is-selected');
+                }
+                card.dataset.abilityNameKey = abilityKey;
+
+                const header = document.createElement('div');
+                header.className = 'player-ability-selection-card-header';
+                const name = document.createElement('span');
+                name.className = 'player-ability-selection-card-name';
+                name.textContent = abilityName;
+                const meta = document.createElement('span');
+                meta.className = 'player-ability-selection-card-meta';
+                const typeText = typeof option?.type === 'string' && option.type.trim()
+                    ? option.type.trim()
+                    : 'Passive';
+                meta.textContent = `${typeText} • Level ${selection.level}`;
+                header.appendChild(name);
+                header.appendChild(meta);
+
+                const description = document.createElement('p');
+                description.className = 'player-ability-selection-card-description';
+                description.textContent = (
+                    typeof option?.shortDescription === 'string' && option.shortDescription.trim()
+                        ? option.shortDescription.trim()
+                        : (typeof option?.description === 'string' && option.description.trim()
+                            ? option.description.trim()
+                            : 'No description provided.')
+                );
+
+                card.appendChild(header);
+                card.appendChild(description);
+
+                card.addEventListener('click', () => {
+                    const required = playerAbilitySelectionState.requiredSelections;
+                    const alreadySelected = playerAbilitySelectionState.selectedNames.has(abilityKey);
+                    if (alreadySelected) {
+                        playerAbilitySelectionState.selectedNames.delete(abilityKey);
+                        card.classList.remove('is-selected');
+                        card.setAttribute('aria-pressed', 'false');
+                    } else {
+                        if (playerAbilitySelectionState.selectedNames.size >= required) {
+                            setPlayerAbilitySelectionStatus(`Select exactly ${required} abilities. Deselect one first.`, 'warning');
+                            return;
+                        }
+                        playerAbilitySelectionState.selectedNames.add(abilityKey);
+                        card.classList.add('is-selected');
+                        card.setAttribute('aria-pressed', 'true');
+                    }
+                    updatePlayerAbilitySelectionSubmitState();
+                });
+
+                playerAbilitySelectionCards.appendChild(card);
+            }
+        }
+
+        function openPlayerAbilitySelectionModal(selectionState) {
+            if (!playerAbilitySelectionModal) {
+                return;
+            }
+            const selection = selectionState?.selection;
+            if (!selection || typeof selection !== 'object') {
+                throw new Error('Ability selection payload is missing selection data.');
+            }
+
+            playerAbilitySelectionState.active = true;
+            playerAbilitySelectionState.selection = selection;
+            playerAbilitySelectionState.level = Number.isInteger(Number(selection.level))
+                ? Number(selection.level)
+                : null;
+            playerAbilitySelectionState.requiredSelections = Number(selection.requiredSelections) || 0;
+            playerAbilitySelectionState.optionsPerLevel = Number(selection.optionsPerLevel) || 0;
+            playerAbilitySelectionState.selectedNames = new Set(
+                (Array.isArray(selection.preselectedAbilityNames) ? selection.preselectedAbilityNames : [])
+                    .map(normalizeAbilityNameKey)
+                    .filter(Boolean)
+            );
+
+            const titleLevelText = Number.isInteger(playerAbilitySelectionState.level)
+                ? `Level ${playerAbilitySelectionState.level}`
+                : 'Next Level';
+            if (playerAbilitySelectionTitle) {
+                playerAbilitySelectionTitle.textContent = `Choose Abilities for ${titleLevelText}`;
+            }
+            if (playerAbilitySelectionIntro) {
+                const levelCount = Array.isArray(selectionState.levelsMissing)
+                    ? selectionState.levelsMissing.length
+                    : 1;
+                playerAbilitySelectionIntro.textContent = (
+                    `Select exactly ${playerAbilitySelectionState.requiredSelections} abilities `
+                    + `from ${playerAbilitySelectionState.optionsPerLevel} options. `
+                    + `You must complete this before continuing gameplay. `
+                    + `${levelCount > 1 ? `${levelCount} levels still need choices.` : ''}`
+                ).trim();
+            }
+
+            renderPlayerAbilitySelectionCards();
+            updatePlayerAbilitySelectionSubmitState();
+
+            playerAbilitySelectionModal.removeAttribute('hidden');
+            playerAbilitySelectionModal.setAttribute('aria-hidden', 'false');
+            syncPlayerAbilitySelectionInteractionState();
+        }
+
+        async function requestPlayerAbilitySelectionFlow({ pendingPayload = null, force = false } = {}) {
+            if (!playerAbilitySelectionModal) {
+                return null;
+            }
+            if (playerAbilitySelectionState.loading && !force) {
+                return null;
+            }
+
+            const payloadSelectionState = extractAbilitySelectionState(pendingPayload);
+            const requestToken = ++playerAbilitySelectionState.requestToken;
+            let resolvedSelectionState = payloadSelectionState;
+
+            if (!resolvedSelectionState) {
+                playerAbilitySelectionState.loading = true;
+                syncPlayerAbilitySelectionInteractionState();
+                try {
+                    const response = await fetch('/api/player/ability-selection', { cache: 'no-store' });
+                    const data = await response.json().catch(() => ({}));
+                    if (!response.ok || !data?.success) {
+                        throw new Error(data?.error || `HTTP ${response.status}`);
+                    }
+                    resolvedSelectionState = data.abilitySelection || null;
+                    if (data.player) {
+                        updateChatPlayerPanel(data.player);
+                        if (Array.isArray(data.player.partyMembers)) {
+                            renderChatPartyPanel(data.player.partyMembers);
+                        }
+                    }
+                } catch (error) {
+                    if (requestToken === playerAbilitySelectionState.requestToken) {
+                        setPlayerAbilitySelectionStatus(`Failed to load ability choices: ${error?.message || error}`, 'error');
+                    }
+                    throw error;
+                } finally {
+                    if (requestToken === playerAbilitySelectionState.requestToken) {
+                        playerAbilitySelectionState.loading = false;
+                        syncPlayerAbilitySelectionInteractionState();
+                    }
+                }
+            }
+
+            if (requestToken !== playerAbilitySelectionState.requestToken) {
+                return resolvedSelectionState;
+            }
+
+            if (!resolvedSelectionState || resolvedSelectionState.pending !== true || !resolvedSelectionState.selection) {
+                closePlayerAbilitySelectionModal();
+                return resolvedSelectionState;
+            }
+
+            openPlayerAbilitySelectionModal(resolvedSelectionState);
+            return resolvedSelectionState;
+        }
+
+        async function submitPlayerAbilitySelection() {
+            if (!playerAbilitySelectionState.active || playerAbilitySelectionState.submitting) {
+                return;
+            }
+            if (!playerAbilitySelectionState.selection) {
+                return;
+            }
+
+            const required = playerAbilitySelectionState.requiredSelections;
+            if (playerAbilitySelectionState.selectedNames.size !== required) {
+                setPlayerAbilitySelectionStatus(`Select exactly ${required} abilities before submitting.`, 'warning');
+                return;
+            }
+
+            const optionNameByKey = new Map();
+            for (const option of playerAbilitySelectionState.selection.options || []) {
+                const key = normalizeAbilityNameKey(option?.name);
+                if (key) {
+                    optionNameByKey.set(key, option.name.trim());
+                }
+            }
+
+            const selectedAbilityNames = [];
+            for (const key of playerAbilitySelectionState.selectedNames) {
+                const resolvedName = optionNameByKey.get(key);
+                if (!resolvedName) {
+                    setPlayerAbilitySelectionStatus('One selected ability is no longer valid. Please retry.', 'error');
+                    return;
+                }
+                selectedAbilityNames.push(resolvedName);
+            }
+
+            playerAbilitySelectionState.submitting = true;
+            updatePlayerAbilitySelectionSubmitState();
+            syncPlayerAbilitySelectionInteractionState();
+            setPlayerAbilitySelectionStatus('Saving ability choices...', 'info');
+
+            try {
+                const response = await fetch('/api/player/ability-selection/submit', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        level: playerAbilitySelectionState.level,
+                        selectedAbilityNames
+                    })
+                });
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok || !data?.success) {
+                    throw new Error(data?.error || `HTTP ${response.status}`);
+                }
+
+                if (data.player) {
+                    updateChatPlayerPanel(data.player);
+                    if (Array.isArray(data.player.partyMembers)) {
+                        renderChatPartyPanel(data.player.partyMembers);
+                    }
+                }
+
+                const nextState = data.abilitySelection || null;
+                await requestPlayerAbilitySelectionFlow({
+                    pendingPayload: nextState,
+                    force: true
+                });
+            } catch (error) {
+                setPlayerAbilitySelectionStatus(`Failed to submit abilities: ${error?.message || error}`, 'error');
+            } finally {
+                playerAbilitySelectionState.submitting = false;
+                updatePlayerAbilitySelectionSubmitState();
+                syncPlayerAbilitySelectionInteractionState();
+            }
+        }
+
+        window.isPlayerAbilitySelectionBlockingGameplay = isPlayerAbilitySelectionBlockingGameplay;
+        window.requestPlayerAbilitySelectionFlow = requestPlayerAbilitySelectionFlow;
+        window.handlePendingAbilitySelectionPayload = (payload) => {
+            requestPlayerAbilitySelectionFlow({
+                pendingPayload: extractAbilitySelectionState(payload),
+                force: true
+            }).catch(error => {
+                console.warn('Failed to open pending ability selection flow:', error);
+            });
+        };
+        window.guardPendingPlayerAbilitySelection = ({ showAlert = true } = {}) => {
+            if (!isPlayerAbilitySelectionBlockingGameplay()) {
+                return false;
+            }
+            if (showAlert) {
+                window.alert('Choose your pending abilities before continuing.');
+            }
+            requestPlayerAbilitySelectionFlow({ force: true }).catch(error => {
+                console.warn('Failed to refresh pending player ability selection:', error);
+            });
+            return true;
+        };
+
         if (chatSidebarElements.viewButton) {
             chatSidebarElements.viewButton.addEventListener('click', () => {
                 const playerData = getLatestPlayerData();
@@ -2951,6 +3348,12 @@
             }
             if (chatSidebarElements.inventoryButton) {
                 chatSidebarElements.inventoryButton.disabled = !data || !data.id;
+            }
+
+            if (typeof window.requestPlayerAbilitySelectionFlow === 'function') {
+                window.requestPlayerAbilitySelectionFlow().catch(error => {
+                    console.warn('Failed to refresh player ability selection state:', error);
+                });
             }
         }
 
@@ -5435,6 +5838,12 @@
         const loadGameCancelBtn = document.getElementById('loadGameCancelBtn');
         const loadGameConfirmBtn = document.getElementById('loadGameConfirmBtn');
         const loadGameCloseBtn = document.getElementById('loadGameCloseBtn');
+        const playerAbilitySelectionModal = document.getElementById('playerAbilitySelectionModal');
+        const playerAbilitySelectionTitle = document.getElementById('playerAbilitySelectionTitle');
+        const playerAbilitySelectionIntro = document.getElementById('playerAbilitySelectionIntro');
+        const playerAbilitySelectionStatus = document.getElementById('playerAbilitySelectionStatus');
+        const playerAbilitySelectionCards = document.getElementById('playerAbilitySelectionCards');
+        const playerAbilitySelectionSubmitBtn = document.getElementById('playerAbilitySelectionSubmitBtn');
         const npcEditForm = document.getElementById('npcEditForm');
         const npcEditModalTitle = document.getElementById('npcEditModalTitle');
         const npcEditIdInput = document.getElementById('npcEditId');
@@ -5478,6 +5887,22 @@
         const npcInventoryEmptyDefaultText = npcInventoryEmpty ? npcInventoryEmpty.textContent : 'Inventory is empty.';
         const npcInventoryCount = document.getElementById('npcInventoryCount');
         const npcInventoryName = document.getElementById('npcInventoryName');
+        const playerAbilitySelectionState = {
+            active: false,
+            loading: false,
+            submitting: false,
+            requestToken: 0,
+            selection: null,
+            selectedNames: new Set(),
+            level: null,
+            requiredSelections: 0,
+            optionsPerLevel: 0
+        };
+        if (playerAbilitySelectionSubmitBtn) {
+            playerAbilitySelectionSubmitBtn.addEventListener('click', () => {
+                submitPlayerAbilitySelection();
+            });
+        }
         const npcInventoryCloseBtn = document.getElementById('npcInventoryCloseBtn');
         const npcViewModalTitle = document.getElementById('npcViewModalTitle');
         const npcViewCloseBtn = document.getElementById('npcViewCloseBtn');
@@ -5497,6 +5922,7 @@
         const mapLocationMenuSummonNpcButton = document.getElementById('mapLocationMenuSummonNpcButton');
         const mapLocationMenuSummonThingButton = document.getElementById('mapLocationMenuSummonThingButton');
         const mapLocationMenuRegenerateImageButton = document.getElementById('mapLocationMenuRegenerateImageButton');
+        const mapLocationMenuDeleteButton = document.getElementById('mapLocationMenuDeleteButton');
         const locationEditModal = document.getElementById('locationEditModal');
         const locationEditModalTitle = document.getElementById('locationEditModalTitle');
         const locationEditForm = document.getElementById('locationEditForm');
@@ -16414,6 +16840,75 @@
             }
         }
 
+        async function deleteHydratedLocation() {
+            const targetLocation = getLocationMenuContext();
+            if (!targetLocation || !targetLocation.id) {
+                alert('No location is currently loaded.');
+                clearLocationMenuContext();
+                return;
+            }
+            if (targetLocation.isStub) {
+                alert('Stub locations must be deleted from the stub menu.');
+                clearLocationMenuContext();
+                return;
+            }
+
+            const locationName = (typeof targetLocation.name === 'string' && targetLocation.name.trim())
+                ? targetLocation.name.trim()
+                : targetLocation.id;
+            const confirmed = window.confirm(
+                `Delete location "${locationName}"?\n\nWarning: all items, NPCs, and exits at that location (to and from) will be deleted as well.\n\nParty NPCs at that location will be moved to your current location instead of deleted.`
+            );
+            if (!confirmed) {
+                clearLocationMenuContext();
+                return;
+            }
+
+            let overlayVisible = false;
+            try {
+                showLocationOverlay(`Deleting ${locationName}...`);
+                overlayVisible = true;
+            } catch (_) {
+                // Ignore overlay failures.
+            }
+
+            try {
+                const response = await fetch(`/api/locations/${encodeURIComponent(targetLocation.id)}`, {
+                    method: 'DELETE'
+                });
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok || !data?.success) {
+                    throw new Error(data?.error || `HTTP ${response.status}`);
+                }
+
+                try {
+                    await window.loadRegionMap?.();
+                } catch (mapError) {
+                    console.warn('Failed to refresh region map after location deletion:', mapError);
+                }
+                try {
+                    await window.loadWorldMap?.({ silent: true });
+                } catch (worldMapError) {
+                    console.warn('Failed to refresh world map after location deletion:', worldMapError);
+                }
+
+                const removedNpcCount = Array.isArray(data.deletedNpcIds) ? data.deletedNpcIds.length : 0;
+                const removedThingCount = Array.isArray(data.deletedThingIds) ? data.deletedThingIds.length : 0;
+                const movedPartyCount = Array.isArray(data.relocatedPartyNpcIds) ? data.relocatedPartyNpcIds.length : 0;
+                alert(
+                    `Location deleted.\n\nDeleted NPCs: ${removedNpcCount}\nDeleted items/scenery: ${removedThingCount}\nMoved party NPCs: ${movedPartyCount}`
+                );
+            } catch (error) {
+                console.warn('Failed to delete location:', error);
+                alert(`Failed to delete location: ${error?.message || 'Unknown error'}`);
+            } finally {
+                if (overlayVisible) {
+                    hideLocationOverlay();
+                }
+                clearLocationMenuContext();
+            }
+        }
+
         if (locationImageMenuButton) {
             wireContextMenuButtonTooltipSuppression(locationImageMenuButton);
             locationImageMenuButton.addEventListener('click', (event) => {
@@ -16501,6 +16996,14 @@
                 event.stopPropagation();
                 closeMapLocationContextMenu({ preserveContext: true });
                 await regenerateLocationImage();
+            });
+        }
+
+        if (mapLocationMenuDeleteButton) {
+            mapLocationMenuDeleteButton.addEventListener('click', async (event) => {
+                event.stopPropagation();
+                closeMapLocationContextMenu({ preserveContext: true });
+                await deleteHydratedLocation();
             });
         }
 
@@ -17379,6 +17882,9 @@
                 if (!exit || !exit.destination) {
                     return;
                 }
+                if (window.guardPendingPlayerAbilitySelection?.({ showAlert: true })) {
+                    return;
+                }
 
                 const originLocationId = (moveRequest && typeof moveRequest.originLocationId === 'string')
                     ? moveRequest.originLocationId
@@ -17477,6 +17983,9 @@
                 if (!destinationId) {
                     return false;
                 }
+                if (window.guardPendingPlayerAbilitySelection?.({ showAlert: true })) {
+                    return false;
+                }
 
                 const resolvedDestinationName = (destinationName && destinationName.toString().trim()) || null;
                 if (!resolvedDestinationName) {
@@ -17523,6 +18032,9 @@
                             window.loadRegionMap?.();
                         }
                     } else if (result.error) {
+                        if (result.pendingAbilitySelection && typeof window.handlePendingAbilitySelectionPayload === 'function') {
+                            window.handlePendingAbilitySelectionPayload(result.pendingAbilitySelection);
+                        }
                         hideLocationOverlay();
                         alert(`Move failed: ${result.error}`);
                     }
@@ -17569,6 +18081,9 @@
 
             async function travelToAdjacentLocationFromMap(destinationId, { focusAdventureTab = true } = {}) {
                 if (!destinationId) {
+                    return false;
+                }
+                if (window.guardPendingPlayerAbilitySelection?.({ showAlert: true })) {
                     return false;
                 }
                 if (lastRenderedLocation?.id === destinationId) {

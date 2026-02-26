@@ -53,6 +53,7 @@ class Player {
     #gearSlotsByType;
     #gearSlotNameIndex;
     #abilities;
+    #pendingAbilityOptionsByLevel = new Map();
     #needBars;
     #experience;
     #currency;
@@ -1342,6 +1343,7 @@ class Player {
         this.#skills = new Map();
         this.#initializeSkills(options.skills);
         this.#abilities = this.#normalizeAbilities(options.abilities);
+        this.#pendingAbilityOptionsByLevel = this.#normalizePendingAbilityOptionsByLevel(options.pendingAbilityOptionsByLevel);
         this.#initializeGear(options.gear);
 
         const providedPoints = Number(options.unspentSkillPoints);
@@ -3446,6 +3448,35 @@ class Player {
         return normalized;
     }
 
+    #normalizePendingAbilityOptionsByLevel(source = null) {
+        if (source === null || source === undefined) {
+            return new Map();
+        }
+        if (typeof source !== 'object') {
+            throw new Error('Pending ability options must be an object or Map.');
+        }
+
+        const normalized = new Map();
+        const entries = source instanceof Map
+            ? Array.from(source.entries())
+            : Object.entries(source);
+
+        for (const [rawLevel, rawAbilities] of entries) {
+            const parsedLevel = Number.parseInt(String(rawLevel), 10);
+            if (!Number.isInteger(parsedLevel) || parsedLevel <= 0) {
+                throw new Error(`Pending ability options include invalid level key "${rawLevel}".`);
+            }
+
+            const normalizedAbilities = this.#normalizeAbilities(rawAbilities);
+            if (!normalizedAbilities.length) {
+                continue;
+            }
+            normalized.set(parsedLevel, normalizedAbilities);
+        }
+
+        return normalized;
+    }
+
     get isNpc() {
         throw new Error('Use isNPC property instead of isNpc');
     }
@@ -4398,6 +4429,7 @@ class Player {
             factionId: this.#factionId,
             factionStandings: this.getFactionStandings()
         };
+        status.pendingAbilityOptionsByLevel = this.getPendingAbilityOptionsByLevel();
 
         status.quests = this.#quests.map(quest => quest.toJSON());
         status.personality = {
@@ -4480,6 +4512,7 @@ class Player {
             partyMembersAddedThisTurn: Array.from(this.#partyMembersAddedThisTurn),
             partyMembersRemovedThisTurn: Array.from(this.#partyMembersRemovedThisTurn),
             elapsedTime: this.#elapsedTime,
+            pendingAbilityOptionsByLevel: this.getPendingAbilityOptionsByLevel(),
             quests: this.#quests.map(quest => quest.toJSON())
         };
     }
@@ -4536,6 +4569,7 @@ class Player {
             isDead: data.isDead,
             corpseCountdown: data.corpseCountdown,
             importantMemories: Array.isArray(data.importantMemories) ? data.importantMemories : [],
+            pendingAbilityOptionsByLevel: data.pendingAbilityOptionsByLevel,
             characterArc: Player.#normalizeCharacterArc(
                 data.characterArc
                 ?? data.personality?.characterArc
@@ -4925,6 +4959,63 @@ class Player {
 
     getAbilities() {
         return this.#abilities.map(ability => ({ ...ability }));
+    }
+
+    getPendingAbilityOptionsByLevel() {
+        const snapshot = {};
+        for (const [level, abilities] of this.#pendingAbilityOptionsByLevel.entries()) {
+            snapshot[level] = Array.isArray(abilities)
+                ? abilities.map(ability => ({ ...ability }))
+                : [];
+        }
+        return snapshot;
+    }
+
+    getPendingAbilityOptionsForLevel(level) {
+        const parsedLevel = Number.parseInt(level, 10);
+        if (!Number.isInteger(parsedLevel) || parsedLevel <= 0) {
+            throw new Error(`Pending ability level must be a positive integer. Received: ${level}`);
+        }
+        const abilities = this.#pendingAbilityOptionsByLevel.get(parsedLevel);
+        if (!Array.isArray(abilities)) {
+            return [];
+        }
+        return abilities.map(ability => ({ ...ability }));
+    }
+
+    setPendingAbilityOptionsForLevel(level, abilitiesInput = []) {
+        const parsedLevel = Number.parseInt(level, 10);
+        if (!Number.isInteger(parsedLevel) || parsedLevel <= 0) {
+            throw new Error(`Pending ability level must be a positive integer. Received: ${level}`);
+        }
+        const normalizedAbilities = this.#normalizeAbilities(abilitiesInput);
+        if (!normalizedAbilities.length) {
+            this.#pendingAbilityOptionsByLevel.delete(parsedLevel);
+        } else {
+            this.#pendingAbilityOptionsByLevel.set(parsedLevel, normalizedAbilities);
+        }
+        this.#lastUpdated = new Date().toISOString();
+        return this.getPendingAbilityOptionsForLevel(parsedLevel);
+    }
+
+    clearPendingAbilityOptionsForLevel(level) {
+        const parsedLevel = Number.parseInt(level, 10);
+        if (!Number.isInteger(parsedLevel) || parsedLevel <= 0) {
+            throw new Error(`Pending ability level must be a positive integer. Received: ${level}`);
+        }
+        const removed = this.#pendingAbilityOptionsByLevel.delete(parsedLevel);
+        if (removed) {
+            this.#lastUpdated = new Date().toISOString();
+        }
+        return removed;
+    }
+
+    clearPendingAbilityOptions() {
+        if (this.#pendingAbilityOptionsByLevel.size === 0) {
+            return;
+        }
+        this.#pendingAbilityOptionsByLevel.clear();
+        this.#lastUpdated = new Date().toISOString();
     }
 
     getSkillValue(skillName) {
