@@ -6749,9 +6749,6 @@ class Events {
             Location,
             findRegionByLocationId,
             findThingByName,
-            fs,
-            path,
-            baseDir,
             generatedImages,
         } = this._deps;
 
@@ -6952,10 +6949,19 @@ class Events {
                 { role: "user", content: promptData.generationPrompt },
             ];
 
+            let requestPayloadForLog = null;
+            let responsePayloadForLog = null;
             const requestOptions = {
                 messages,
                 metadataLabel: "alter_npc",
                 timeoutMs: this._baseTimeout,
+                requiredRegex: /<npc\b[\s\S]*?<\/npc>/i,
+                captureRequestPayload: (payload) => {
+                    requestPayloadForLog = payload;
+                },
+                captureResponsePayload: (payload) => {
+                    responsePayloadForLog = payload;
+                },
             };
 
             if (typeof promptData.temperature === "number") {
@@ -6964,7 +6970,6 @@ class Events {
                 requestOptions.temperature = defaultTemperature;
             }
 
-            const requestStarted = Date.now();
             let aiContent;
             try {
                 aiContent = await LLMClient.chatCompletion(requestOptions);
@@ -6978,45 +6983,26 @@ class Events {
                 throw new Error(`Alter NPC response for "${npcName}" was empty.`);
             }
 
+            const safeName =
+                (npc.name || "npc")
+                    .toLowerCase()
+                    .replace(/[^a-z0-9]+/g, "_")
+                    .replace(/^_+|_+$/g, "") || "npc";
+            LLMClient.logPrompt({
+                prefix: `alter_npc_${safeName}`,
+                metadataLabel: "alter_npc",
+                systemPrompt: promptData.systemPrompt,
+                generationPrompt: promptData.generationPrompt,
+                response: aiContent.trim() || "(empty response)",
+                requestPayload: requestPayloadForLog,
+                responsePayload: responsePayloadForLog,
+            });
+
             const parsedCharacter = this._parseCharacterAlterXml(aiContent);
             if (!parsedCharacter) {
                 throw new Error(
                     `Failed to parse character alteration response for "${npcName}".`,
                 );
-            }
-
-            if (fs && path) {
-                try {
-                    const logsDir = path.join(baseDir || process.cwd(), "logs");
-                    if (!fs.existsSync(logsDir)) {
-                        fs.mkdirSync(logsDir, { recursive: true });
-                    }
-                    const safeName =
-                        (npc.name || "npc")
-                            .toLowerCase()
-                            .replace(/[^a-z0-9]+/g, "_")
-                            .replace(/^_+|_+$/g, "") || "npc";
-                    const durationSeconds = (Date.now() - requestStarted) / 1000;
-                    const logPath = path.join(
-                        logsDir,
-                        `alter_npc_${Date.now()}_${safeName}.log`,
-                    );
-                    const logLines = [
-                        `=== API CALL DURATION: ${durationSeconds.toFixed(3)}s ===`,
-                        "=== ALTER NPC SYSTEM PROMPT ===",
-                        promptData.systemPrompt,
-                        "",
-                        "=== ALTER NPC GENERATION PROMPT ===",
-                        promptData.generationPrompt,
-                        "",
-                        "=== ALTER NPC RESPONSE ===",
-                        aiContent.trim() || "(empty response)",
-                        "",
-                    ];
-                    fs.writeFileSync(logPath, logLines.join("\n"), "utf8");
-                } catch (error) {
-                    console.warn("Failed to log NPC alteration prompt:", error.message);
-                }
             }
 
             const summary = this._applyCharacterAlteration({
@@ -7881,7 +7867,13 @@ class Events {
         }
 
         try {
-            const doc = Utils.parseXmlDocument(xmlContent, "text/xml");
+            const decoded = xmlContent
+                .replace(/&lt;/gi, "<")
+                .replace(/&gt;/gi, ">")
+                .replace(/&amp;/gi, "&");
+            const npcBlockMatch = decoded.match(/<npc\b[\s\S]*?<\/npc>/i);
+            const candidateXml = npcBlockMatch ? npcBlockMatch[0] : decoded.trim();
+            const doc = Utils.parseXmlDocument(candidateXml, "text/xml");
 
             const parserError = doc.getElementsByTagName("parsererror")[0];
             if (parserError) {

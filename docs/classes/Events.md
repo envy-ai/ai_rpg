@@ -54,6 +54,8 @@ Runs LLM-based event checks on narrative text, parses structured outcomes, and a
 - When `item_inflict` applies a status, Events emits a synthesized `status_effect_change` entry so status summaries are delivered to the client even if no separate NPC-group status entry is present.
 - `status_effect_change` de-duplicates gained effects against same-turn `item_inflict` applications for the same entity; duplicate gain entries are skipped when names match exactly or when the status-change name starts with the item-inflict effect name.
 - `death_incapacitation` skips `dead` outcomes for NPCs already marked dead, preventing duplicate death application.
+- `alter_npc` requests now require an `<npc>...</npc>` block from the model and always log prompt/response payloads through `LLMClient.logPrompt` before parse/apply.
+- `_parseCharacterAlterXml` can parse wrapped or escaped model output by decoding basic entities and extracting the first `<npc>...</npc>` block before XML parsing.
 - `suppressMoveEvents` skips applying `move_location` and `move_new_location` outcomes; this is primarily used for split `<travelProse>` origin/destination checks where movement is handled by the travel pipeline.
 - Non-`<travelProse>` turns should generally leave move suppression disabled so narrated movement in event checks can still move the player.
 - Follow-up event-check passes inherit `suppressMoveEvents`/`allowMoveTurnAppearances` from the parent check to keep move-handling behavior consistent across queued reward/follow-up prose.

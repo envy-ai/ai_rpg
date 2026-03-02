@@ -77,6 +77,13 @@ class StatusEffect {
             if (!trimmed) {
                 return null;
             }
+            if (/^-?\d+$/.test(trimmed)) {
+                const parsed = Number.parseInt(trimmed, 10);
+                if (!Number.isFinite(parsed)) {
+                    throw new Error(`StatusEffect duration "${value}" is invalid`);
+                }
+                return parsed < 0 ? -1 : parsed;
+            }
             const lower = trimmed.toLowerCase();
             if (lower === 'instant') {
                 return 1;
