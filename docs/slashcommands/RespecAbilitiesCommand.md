@@ -22,6 +22,7 @@ Slash command `/respec_abilities` to respec a character's abilities within a sel
   - Relies on the player level-up selection modal flow to choose replacement abilities.
 - NPC target (`isNPC === true`):
   - Calls `Globals.generateLevelUpAbilitiesForCharacter` with `{ previousLevel: start_level - 1, newLevel: end_level }`.
+  - Requires replacement abilities when abilities were removed from the selected range; if replacements cannot be matched/applied, the command retries generation with explicit excluded-name guidance, then fails and restores the original ability snapshot.
   - Sorts final abilities by level then name and replies with summary.
 
 ## Notes

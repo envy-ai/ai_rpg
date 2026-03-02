@@ -1062,7 +1062,8 @@ slopwords:
   zyra: default
   zz'glorg: default
 ngrams:
-  "voice barely whisper": default
+  "above whisper": default
+  "barely whisper": default
   "took deep breath": default
   "could help feel": default
   "heart pounding chest": default

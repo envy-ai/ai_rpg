@@ -1,43 +1,64 @@
-<name>{{ region.name | default('Unknown', true) | escape }}</name>
-<description>{{ region.description | default('', true) | escape }}</description>
-{% if region.shortDescription %}
-<shortDescription>{{ region.shortDescription | escape }}</shortDescription>
-{% endif %}
+### {{ region.name }}
+
 {% if region.parentRegionName %}
-<parentRegion>{{ region.parentRegionName | escape }}</parentRegion>
+- Parent Region: {{ region.parentRegionName }}
 {% endif %}
 {% if region.controllingFactionName %}
-<controllingFaction>{{ region.controllingFactionName | escape }}</controllingFaction>
+- Controlling Faction: {{ region.controllingFactionName }}
 {% endif %}
-{% if region.averageLevel is not none %}
-<averageLevel>{{ region.averageLevel }}</averageLevel>
+{% if region.averageLevel is defined and region.averageLevel is not none %}
+- Average Level: {{ region.averageLevel }}
 {% endif %}
-<locations>
+
+{% if region.shortDescription %}
+**Short Description**
+{{ region.shortDescription }}
+
+{% endif %}
+{% if region.description %}
+**Description**
+{{ region.description }}
+
+{% endif %}
+
+**Locations**
+{% if region.locationNames and region.locationNames.length %}
 {% for name in region.locationNames %}
-  <locationName>{{ name | escape }}</locationName>
+- {{ name }}
 {% endfor %}
-</locations>
-<connectedRegions>
-{% for name in region.connectedRegionNames %}
-  <regionName>{{ name | escape }}</regionName>
-{% endfor %}
-</connectedRegions>
-<secrets>
-{% for secret in region.secrets %}
-  <secret>{{ secret | escape }}</secret>
-{% endfor %}
-</secrets>
-{% if region.weatherName %}
-<weather>
-  <name>{{ region.weatherName | escape }}</name>
-  <description>{{ region.weatherDescription | default('', true) | escape }}</description>
-</weather>
+{% else %}
+- None
 {% endif %}
-<statusEffects>
-{% for effect in region.statusEffects %}
-  <effect>
-    <description>{{ effect.description | default('', true) | escape }}</description>
-    <duration>{{ effect.duration | default('unknown', true) | escape }}</duration>
-  </effect>
+
+**Connected Regions**
+{% if region.connectedRegionNames and region.connectedRegionNames.length %}
+{% for name in region.connectedRegionNames %}
+- {{ name }}
 {% endfor %}
-</statusEffects>
+{% else %}
+- None
+{% endif %}
+
+**Secrets**
+{% if region.secrets and region.secrets.length %}
+{% for secret in region.secrets %}
+- {{ secret }}
+{% endfor %}
+{% else %}
+- None
+{% endif %}
+
+{% if region.weatherName %}
+**Current Weather**
+- {{ region.weatherName }}{% if region.weatherDescription %}: {{ region.weatherDescription }}{% endif %}
+
+{% endif %}
+
+**Status Effects**
+{% if region.statusEffects and region.statusEffects.length %}
+{% for effect in region.statusEffects %}
+- {{ effect.description }} (duration: {{ effect.duration | default('unknown', true) }})
+{% endfor %}
+{% else %}
+- None
+{% endif %}

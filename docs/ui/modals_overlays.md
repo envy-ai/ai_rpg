@@ -7,6 +7,7 @@ Most modals live in `views/index.njk` and are wired up by the inline script or `
 - `#locationOverlay` (class `overlay-backdrop`): travel/generation spinner while location updates.
 - Prompt-progress overlay (`.prompt-progress-overlay`, created by `public/js/chat.js`):
   - Auto-closes `#loadGameModal` before showing prompt activity.
+  - Renders in the upper modal layer so prompt activity stays visible above the full interface.
   - Auto-anchors below the top header/tab controls by default so top navigation remains clickable.
   - Supports drag/resize/contract; manual drag disables auto-anchoring for that session.
 - `#npcModalBackdrop`, `#questEditBackdrop`, `#craftingModalBackdrop`, `#salvageIntentBackdrop`:
@@ -34,11 +35,14 @@ Most modals live in `views/index.njk` and are wired up by the inline script or `
 ## NPC views and management
 
 - `#npcInventoryModal`: character inventory listing with filters.
-- `#npcViewModal`: character overview (attributes, gear, skills, abilities, status, plus read-only resistances/vulnerabilities text boxes).
+- `#npcViewModal`: character overview (attributes, skills, faction info, gear, abilities, status, plus read-only resistances/vulnerabilities text boxes).
   - Attributes/skills now use the shared allocation partials from the New Game UI.
+  - Section order now renders Skills, the `Apply Point Changes` action row, and a Faction section above Equipment in the modal body.
+  - In NPC view mode, the Faction section shows that NPC's faction name.
+  - In player view mode, the Faction section lists all factions with resolved reputation tier labels and tier perks as benefits.
   - Attribute and skill allocation areas no longer use nested internal scrollbars; they inherit the modal body's single scroll container.
   - NPCs render those controls in read-only mode, and the unspent attribute/skill point totals are hidden.
-  - Player view mode enables spending unspent attribute/skill points directly in the modal.
+  - Player view mode enables spending unspent attribute/skill points directly in the modal, with live skill-pool previews that include formula deltas from provisional edits (for example, Intelligence bonus effects in the skill pool formula).
   - Player save flow blocks submit on negative pools and prompts confirmation if pools remain positive.
 - `#npcDispositionModal`: adjust dispositions.
 - `#npcNeedsModal`: adjust need bars.
@@ -56,6 +60,7 @@ Most modals live in `views/index.njk` and are wired up by the inline script or `
   - Item tooltips include inflicted status effect durations when available.
   - Equip status effects only show for equippable items (slots set).
   - Attribute bonuses are hidden for non-equippable items.
+  - Hovering an equippable item also stacks additional tooltip cards below it for currently equipped items in compatible slots (player gear in world/location context; viewed actor gear in inventory modal context).
   - Status effect need bar selectors normalize Health and need bar display names to their ids.
 
 ## Location and region editing
@@ -64,8 +69,8 @@ Most modals live in `views/index.njk` and are wired up by the inline script or `
 - `#regionEditModal`: edit region name/description/parent/level and controlling faction.
   - Both include a short description field directly under the main description.
 - `#newExitModal`: create new exits (new region/location, optional image).
-- `#summonNpcModal`: summon an existing NPC into current location.
-- `#summonThingModal`: summon an existing item/scenery into current location.
+- `#summonNpcModal`: summon an existing NPC into current location, with a live substring filter over NPC name/location.
+- `#summonThingModal`: summon an existing item/scenery into current location, with a live substring filter over name/type/origin label (including inventory origins like `Bob's inventory`).
 
 ## Crafting / processing
 

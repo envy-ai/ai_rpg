@@ -12,8 +12,9 @@ You are an AI Player Portrait Generator image prompt for a fantasy RPG world. Yo
 </setting>
 </context>
 
-Generate a prompt for a detailed player portrait image based on the following character description:
+Generate a prompt for a detailed portrait image based on the following description (note that the 'character' may be a human/humanoid character, a monster/creature, an normal animal, a drone, or anything that could act autonomously):
 
+<imageGenerationTarget>
 Class: {{ characterClass }}
 Race: {{ characterRace }}
 {{ characterDescription | replace('\n', '\n    ') }}
@@ -32,8 +33,9 @@ Location:
     <name>{{ location.name }}</name>
     <description>{{ location.description }}</description>
 </location>
+</imageGenerationTarget>
 
-Do not specify an art style. Specify the character's gender (if known), age, clothing, accessories, pose, expression, and any relevant background elements. Do not mention their level or specific stats. Use vivid and specific descriptions to guide the image generation effectively.
+Do not specify an art style. If applicable, specify the character's gender (if known), age, clothing, accessories, pose, expression, and any relevant background elements. Do not mention their level or specific stats. Use vivid and specific descriptions to guide the image generation effectively.
 
 {% if additionalInstructions %}Additional instructions from the user:
 {{ additionalInstructions }}{% endif %}

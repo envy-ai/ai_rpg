@@ -34,7 +34,7 @@ Response (200):
 - Optional fields (present when relevant):
   - `summary`: string
   - `aiUsage`: object (token usage metrics)
-  - `toolInvocations`: array (executed model tool calls for this turn; includes tool metadata such as `moreInfo`/`getHistory` queries and match counts)
+  - `toolInvocations`: array (executed model tool calls for this turn; includes tool metadata such as lookup queries/match counts and world-mutation results)
   - `slopRemoval`: `{ slopWords: string[], slopNgrams: string[] }`
   - `debug`: object (debug payload, when enabled)
   - `actionResolution`: ActionResolution
@@ -85,8 +85,18 @@ Variants:
   - All three generic prompt variants bypass slop-remover processing for that response.
 - Tool calling is enabled in the chat generation loop. The model can emit `tool_calls`; the server executes each call, appends `role: tool` messages, and continues generation until normal assistant prose is returned.
 - Available tools:
-  - `moreInfo({ name })`: returns `<moreInfoResults>...</moreInfoResults>` XML with curated, template-rendered summaries (base-context style) for matching NPCs (including alias matches), things, locations, and regions whose names contain the query substring.
-  - `getHistory({ query })`: returns `<historyResults>...</historyResults>` XML for assistant prose-like history entries whose content contains the query substring (case-insensitive), including entry metadata and full content.
+  - `moreInfo({ name, type? })`: returns `<moreInfoResults>...</moreInfoResults>` XML with curated, template-rendered markdown summaries (base-context style) for matching NPCs (including alias matches), things, locations, and regions whose names contain the query substring. Optional `type` may be `character`, `thing`, `location`, or `region`; omitting it searches all categories. Each entity node includes a `<markdown>` field.
+  - `getHistory({ query, startIndex?, count? })`: returns `<historyResults>...</historyResults>` XML for assistant prose-like history entries whose content matches all case-insensitive query terms (`query` supports string or string-array inputs with AND semantics). Optional `startIndex` is 1-based and optional `count` limits how many matches are returned; omitting both preserves current behavior (all matches).
+  - `teleportCharacterToLocation({ character, location, region? })`: teleports a player/NPC to the destination location.
+  - `teleportThingToLocation({ thing, location, region? })`: teleports a thing to the destination location, removing prior ownership/location ties first.
+  - `moveThingFromLocationToCharacterInventory({ thing, fromLocation, character, region? })`: moves an item from a specific location into a character inventory.
+  - `createRegionStub({ regionName, originLocation?, originRegion?, description?, parentRegion?, vehicleType?, relativeLevel? })`: creates a new region-entry stub from an origin location.
+  - `createExit({ fromLocation, fromRegion?, toLocation?, toRegion?, description?, vehicleType?, relativeLevel? })`: creates exits to existing destinations and is the canonical creation path for new location/region stubs (missing destinations are stubbed automatically).
+  - `listLocationEntities({ location, region?, entityType? })`: returns concise character/thing lists for a location; includes current player + party members when the player is present.
+  - `createThing({ shortDescription, itemOrScenery, location?, region?, ...thingSeedFields })`: creates a new thing at the specified location (or current player location when omitted) via the `thing-generator-single` flow and returns the final created name (useful when requested names are normalized/adjusted by name checks).
+  - `locateNpcs({ query })`: locates NPCs by full name or alias; returns all matches with full name, location, and region.
+  - `locateThings({ query })`: locates things by name; returns all matches with location/region, and includes owner name when in inventory.
+- For world-mutation tools above, recoverable problems are returned to the model as structured `<toolError>` output (including disambiguation candidates with IDs and location context) so it can choose follow-up calls.
 - When realtime streaming is enabled, the final response may omit `eventChecks`, `events`, and other event artifacts (they are stripped for streaming clients).
 - Realtime `chat_complete` websocket payloads may include `completionSoundPath` (from `chat_completion_sound` config) so clients can play a completion cue; travel actions may defer playback until movement completes.
 - When travel prose is returned, event checks are split into origin/destination; the response includes `eventChecksOrigin`/`eventsOrigin` and `eventChecksDestination`/`eventsDestination`.

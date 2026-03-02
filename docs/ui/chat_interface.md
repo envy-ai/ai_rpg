@@ -20,6 +20,7 @@ The main UI is rendered by `views/index.njk` and powered by `public/js/chat.js` 
   - Compact world-time chip at the top (`#worldTimeIndicator`) showing `HH:MM`, date label, and segment/season.
   - Image + context menu for edit/summon/regenerate.
   - On mobile (`max-width: 768px`), item/NPC/location tooltips are constrained to `80vw` for readability.
+  - Equippable item tooltips include stacked comparison cards for currently equipped compatible-slot items (using the active actor context).
   - On touch/coarse-pointer devices, tapping any entity `•••` context-menu button temporarily suppresses floating tooltips so the menu remains reachable.
   - Exits list + "New Exit" button.
   - NPC list + "Add NPC" button.
@@ -33,11 +34,12 @@ The main UI is rendered by `views/index.njk` and powered by `public/js/chat.js` 
   - Prefix actions preserve raw input markers in the API payload (`?`, `@`, `@@`, `@@@`) even though optimistic local entries render marker-stripped content.
 - **Sidebar** (`.chat-sidebar`):
   - Player card (portrait, health, need bars, quick actions, and a top-left warning triangle when unspent skill/attribute points are present).
-  - Player "View" opens `#npcViewModal` in editable mode for attributes/skills using shared allocation partials; skills can now be added/removed directly in this modal for the player view. NPCs use the same sections in read-only mode, and their unspent point totals are hidden.
+  - Player "View" opens `#npcViewModal` in editable mode for attributes/skills using shared allocation partials; skills can now be added/removed directly in this modal for the player view. The modal now includes a Faction section above Equipment: NPCs show a single faction, while player view lists all factions with reputation tier labels and associated tier perks. NPCs use the same allocation sections in read-only mode, and their unspent point totals are hidden.
 - **Player level-up ability draft modal** (`#playerAbilitySelectionModal`):
   - Opens when the player has any underfilled level (`player_abilities_per_level`) from level 1 through current level.
   - Is suppressed entirely when no game is loaded/started.
   - Opens immediately before option generation with the message `Ability options for level-up are being generated`, then updates to card picks when generation completes.
+  - Passive ability-selection state polls are non-blocking; chat input is only disabled when the modal is actively pending/loading/submitting.
   - Offsets itself below header/tab controls so the top-row buttons remain clickable (including normal pointer cursor behavior) while options generate.
   - Presents card-style options for the next missing level only; after submit, it advances sequentially to the next missing level.
   - Pre-existing abilities at that level are preselected but can be toggled off.
@@ -85,7 +87,7 @@ The chat client listens on `/ws?clientId=...` and handles:
 - `location_exit_created`, `location_exit_deleted` (refresh location + map).
 - `image_job_update` (image job completion via `ImageGenerationManager`).
 - `chat_history_updated` (refresh history, quest panel, and Story Tools data).
-- `prompt_progress`, `prompt_progress_cleared` (floating prompt-progress overlay with per-prompt cancel/retry controls plus a header-level "Abort + Reload" action that cancels all tracked prompts and reloads the latest autosave; auto-closes the load-game modal before showing prompt activity, auto-anchors below top navigation controls so header options remain clickable, includes contract/expand toggle, drag handle on the header, native resize handle, and a 3.5-second hidden-placeholder-row debounce before the empty table state is hidden; request-finalization input refocus now skips when the active element is already in a typing context to avoid caret/focus disruption).
+- `prompt_progress`, `prompt_progress_cleared` (floating prompt-progress overlay with per-prompt cancel/retry controls plus a header-level "Abort + Reload" action that cancels all tracked prompts and reloads the latest autosave; auto-closes the load-game modal before showing prompt activity, renders in the upper modal layer above the full interface, auto-anchors below top navigation controls so header options remain clickable, includes contract/expand toggle, drag handle on the header, native resize handle, and a 3.5-second hidden-placeholder-row debounce before the empty table state is hidden).
 - `quest_confirmation_request` (modal prompt).
 
 `processChatPayload()` also consumes `payload.worldTime` from streamed/final chat responses, updates the world-time chip, and emits transition summaries (`segment`/`season`) into the event-summary flow.
@@ -105,7 +107,7 @@ Not exhaustive, but the core UI calls include:
 - `/api/player` and `/api/player/skills/:name/increase` (sidebar + skill adjust).
 - `/api/player/ability-selection` + `/api/player/ability-selection/submit` (player level-up ability draft flow).
 - `/api/player/move` (direct travel fallback path; sends `destinationId` plus `expectedOriginLocationId` for server-side origin verification).
-- `/api/player/update-stats` (player-view modal point allocation submit; unspent pools are server-derived from submitted level/attributes/skills).
+- `/api/player/update-stats` (player-view modal point allocation submit; unspent pools are server-derived from submitted level/attributes/skills, and the in-modal skill pool preview tracks formula deltas from provisional stat changes such as Intelligence bonus adjustments).
 - `/api/locations/:id` and `/api/locations/:id/exits` (location details + exit edits).
 - `/api/things/:id` (thing updates; location drag/drop uses this to convert item/scenery type).
 - `/api/map/region` and `/api/map/world` (map tabs).

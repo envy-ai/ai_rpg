@@ -58,7 +58,10 @@ Runs LLM-based event checks on narrative text, parses structured outcomes, and a
 - Non-`<travelProse>` turns should generally leave move suppression disabled so narrated movement in event checks can still move the player.
 - Follow-up event-check passes inherit `suppressMoveEvents`/`allowMoveTurnAppearances` from the parent check to keep move-handling behavior consistent across queued reward/follow-up prose.
 - `allowMoveTurnAppearances` allows `item_appear` / `scenery_appear` handlers to run even when `Globals.processedMove` is true (used for `<travelProse>` event-check passes).
+- `move_location` no longer pre-marks destinations in `Events.movedLocations` before movement; destination tracking is now only recorded after a successful `setLocation` write.
+- `movePlayerToDestination(...)` enforces at most one player move per turn (`Globals.processedMove`, unless `allowAdditionalPlayerMoves` is explicitly true in context) and sets `Globals.processedMove` only after verifying the player's `currentLocation` matches the resolved destination id.
 - `_generateItemsIntoWorld` passes generation `options` to `generateItemsByNames`; `treatAsScenery` / `treatAsResource` now preserve scenery classification in generated `Thing` records.
+- `_parseCharacterAlterXml` treats a missing/blank `<relativeLevel>` as null (no level write), preventing accidental resets to base-relative level 0 during `alter_npc`.
 - `time_passed` parsing uses `Utils.parseDurationToMinutes` (`HH:MM`, integer minutes, or day/hour/minute units); malformed values are logged and skipped.
 - `time_passed` accepts `0` from event checks; when this occurs, Events still advances canonical world time by 1 minute to avoid fully static clocks on zero-time turns.
 - Arrow-delimited event parsing accepts both ASCII `->` and unicode arrows (for example `→`), preventing malformed NPC/item names when models emit typographic arrows.

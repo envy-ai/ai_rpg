@@ -59,7 +59,7 @@ class Location {
     const creatingStub = Boolean(isStub);
 
     if (!creatingStub) {
-      if (!description || typeof description !== 'string') {
+      if (typeof description !== 'string') {
         throw new Error('Location description is required and must be a string');
       }
 
@@ -91,7 +91,7 @@ class Location {
 
     // Initialize private fields
     this.#id = id || Location.#generateId();
-    this.#description = description && typeof description === 'string' ? description.trim() : null;
+    this.#description = typeof description === 'string' ? description.trim() : null;
     const normalizedShortDescription = typeof shortDescription === 'string' ? shortDescription.trim() : null;
     let resolvedStubMetadata = creatingStub && stubMetadata ? { ...stubMetadata } : creatingStub ? {} : null;
     let resolvedShortDescription = normalizedShortDescription;
@@ -749,7 +749,7 @@ class Location {
   }
 
   promoteFromStub({ name, description, shortDescription, baseLevel, imageId, generationHints, randomEvents, npcIds, thingIds } = {}) {
-    if (!description || typeof description !== 'string') {
+    if (typeof description !== 'string') {
       throw new Error('Promoting stub requires a description string');
     }
 

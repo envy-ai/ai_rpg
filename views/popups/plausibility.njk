@@ -41,6 +41,21 @@
           {% if skill.difficulty %}
           <li class="popup-card__list-item"><strong>Difficulty:</strong> <span>{{ skill.difficulty }}</span></li>
           {% endif %}
+          {% if skill.checkType %}
+          <li class="popup-card__list-item"><strong>Check Type:</strong> <span>{{ skill.checkType | title }}</span></li>
+          {% endif %}
+          {% if skill.opposedCheck %}
+          <li class="popup-card__list-item"><strong>Opponent:</strong> <span>{{ skill.opposedCheck.opponent or 'N/A' }}</span></li>
+            {% if skill.opposedCheck.opponentSkill %}
+            <li class="popup-card__list-item"><strong>Opponent Skill:</strong> <span>{{ skill.opposedCheck.opponentSkill }}</span></li>
+            {% endif %}
+            {% if skill.opposedCheck.opponentAttribute %}
+            <li class="popup-card__list-item"><strong>Opponent Attribute:</strong> <span>{{ skill.opposedCheck.opponentAttribute }}</span></li>
+            {% endif %}
+          {% endif %}
+          {% if skill.unopposedCheck and skill.unopposedCheck.difficultyLevel %}
+          <li class="popup-card__list-item"><strong>Unopposed Difficulty:</strong> <span>{{ skill.unopposedCheck.difficultyLevel }}</span></li>
+          {% endif %}
           {% if skill.reason %}
           <li class="popup-card__list-item"><strong>Skill Reason:</strong> <span>{{ skill.reason }}</span></li>
           {% endif %}

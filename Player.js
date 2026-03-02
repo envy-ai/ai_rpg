@@ -107,6 +107,27 @@ class Player {
     static #experienceThreshold = 100;
     static #experienceRolloverMultiplier = 2 / 3;
 
+    static #rebuildIndexes() {
+        this.#indexById = new Map();
+        this.#indexByName = new SanitizedStringMap();
+
+        for (const player of this.#instances) {
+            if (!player) {
+                continue;
+            }
+
+            const playerId = typeof player.id === 'string' ? player.id.trim() : '';
+            if (playerId) {
+                this.#indexById.set(playerId, player);
+            }
+
+            const playerName = typeof player.name === 'string' ? player.name.trim() : '';
+            if (playerName) {
+                this.#indexByName.set(playerName, player);
+            }
+        }
+    }
+
     static #normalizeGoalList(source) {
         const goals = [];
         const append = (value) => {
@@ -618,22 +639,6 @@ class Player {
         return player && typeof player.id === 'string' ? player.id : null;
     }
 
-    static getById(playerId) {
-        if (typeof playerId !== 'string') {
-            return null;
-        }
-        const trimmed = playerId.trim();
-        if (!trimmed) {
-            return null;
-        }
-        for (const player of this.#instances) {
-            if (player?.id === trimmed) {
-                return player;
-            }
-        }
-        return null;
-    }
-
     static resolvePlayerId(playerLike) {
         if (!playerLike) {
             return null;
@@ -773,17 +778,47 @@ class Player {
         if (!target) {
             return false;
         }
+
+        const instancesToRemove = new Set();
+
         if (target instanceof Player) {
-            return this.#instances.delete(target);
+            instancesToRemove.add(target);
         }
-        if (typeof target === 'string') {
+
+        const targetId = (typeof target === 'string'
+            ? target.trim()
+            : (typeof target?.id === 'string' ? target.id.trim() : ''));
+        if (targetId) {
             for (const instance of this.#instances) {
-                if (instance?.id === target) {
-                    return this.#instances.delete(instance);
+                if (instance?.id === targetId) {
+                    instancesToRemove.add(instance);
                 }
             }
         }
-        return false;
+
+        if (!instancesToRemove.size) {
+            return false;
+        }
+
+        let removed = false;
+        for (const instance of instancesToRemove) {
+            if (this.#instances.delete(instance)) {
+                removed = true;
+            }
+        }
+
+        if (!removed) {
+            return false;
+        }
+
+        this.#rebuildIndexes();
+        return true;
+    }
+
+    static clearRuntimeRegistries() {
+        this.#instances.clear();
+        this.#indexById = new Map();
+        this.#indexByName = new SanitizedStringMap();
     }
 
     static getByName(name) {
@@ -815,11 +850,22 @@ class Player {
     }
 
     static getById(id) {
-        if (!id) {
+        if (typeof id !== 'string') {
             return null;
         }
+        const trimmed = id.trim();
+        if (!trimmed) {
+            return null;
+        }
+
+        const indexed = this.#indexById.get(trimmed);
+        if (indexed) {
+            return indexed;
+        }
+
         for (const player of this.#instances) {
-            if (player.id === id) {
+            if (player?.id === trimmed) {
+                this.#indexById.set(trimmed, player);
                 return player;
             }
         }
@@ -1379,7 +1425,7 @@ class Player {
         this.#lastUpdated = options.lastUpdated || this.#createdAt;
 
         Player.#indexById.set(this.#id, this);
-        Player.#indexByName.set(this.#name.toLowerCase(), this);
+        Player.#indexByName.set(this.#name, this);
 
         Player.#instances.add(this);
     }
@@ -4140,8 +4186,17 @@ class Player {
     setLocation(location) {
         // Load object if given an id
         if (typeof location === 'string') {
+            const requestedLocationId = location;
             const Location = getLocationModule();
             location = Location.get(location);
+            if (!location) {
+                // Leave state unchanged so callers can detect failed movement by comparing
+                // currentLocation after setLocation(...) and logging this stack trace.
+                const actorLabel = this.#name || this.#id || 'unknown-player';
+                console.warn(`[Player.setLocation] Failed to resolve location ID "${requestedLocationId}" for "${actorLabel}". Leaving current location unchanged.`);
+                console.trace('[Player.setLocation] Unresolved location stack trace');
+                return;
+            }
         }
 
         if (location === null || location === undefined) {

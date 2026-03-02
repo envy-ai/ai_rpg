@@ -7,6 +7,13 @@ Generate three things for this NPC:
 3. Attribute priorities: pick 2 to 6 attributes and assign priority 1 to 3.
 
 If in need of ideas, consider the information provided in context. Do not duplicate existing ability names. You may add abilities that synergize with existing abilities.
+{% if npcAbilityGeneration and npcAbilityGeneration.excludedAbilityNames and npcAbilityGeneration.excludedAbilityNames.length %}
+Do not generate abilities that duplicate any of these names (case-insensitive):
+<excludedAbilityNames>
+{% for abilityName in npcAbilityGeneration.excludedAbilityNames %}  <name>{{ abilityName }}</name>
+{% endfor %}</excludedAbilityNames>
+If a generated ability would duplicate one of these names, choose a different name.
+{% endif %}
 
 <availableSkills>
 {% for skill in availableSkillsForPrompt %}  <skill>

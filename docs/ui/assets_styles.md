@@ -35,6 +35,14 @@ Loaded on the chat page:
 
 ## Notes
 - The chat UI relies on SCSS variables and mixins in `_globals.scss`.
+- Markdown/prose tables in chat messages (`.message .message-content table`) use
+  alternating row backgrounds (top row shaded at `rgba(0,0,0,0.25)`), `border-spacing: 0`,
+  top-left cell alignment for all `th`/`td`, and default cell padding `0 1em` with reduced
+  outer-edge horizontal padding (`0.2em`) on each row's first/last cell. Markdown-rendered
+  tables are wrapped in `.message-table-scroll` so they span the content width and provide
+  horizontal scrolling when content is wider than the message area.
+- Item tooltip styling includes stacked tooltip cards (`.tooltip-thing-stack*`) so hovering an
+  equippable item can show currently equipped compatible-slot items beneath the primary card.
 - Shared theming primitives for entity cards/menus live in `public/css/main.scss`:
   `.entity-card`, `.entity-icon`, `.entity-image`, `.entity-name`,
   `.entity-context-menu-button`, `.entity-context-menu`, `.entity-context-menu-item`.

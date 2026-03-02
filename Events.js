@@ -620,10 +620,8 @@ async function movePlayerToDestination(
     { fallbackName = null, label = "move_location" } = {},
 ) {
     const player = context.player || eventsInstance.currentPlayer;
-
-    if (!player.isNPC) {
-        Globals.processedMove = true;
-    }
+    const enforceSinglePlayerMovePerTurn =
+        !player?.isNPC && context?.allowAdditionalPlayerMoves !== true;
 
     const { Location, findLocationByNameLoose, createLocationFromEvent } =
         eventsInstance._deps || {};
@@ -634,7 +632,9 @@ async function movePlayerToDestination(
         !Location ||
         typeof Location.get !== "function"
     ) {
-        return;
+        throw new Error(
+            `[${label}] Missing movement dependencies (player/setLocation/Location.get).`,
+        );
     }
 
     let destinationObject = null;
@@ -657,6 +657,12 @@ async function movePlayerToDestination(
 
     if (!destinationName) {
         throw new Error(`[${label}] Missing destination name.`);
+    }
+
+    // Prevent multi-hop movement in one turn: once the player has already moved,
+    // suppress any additional event-driven move attempts, even to a different destination.
+    if (enforceSinglePlayerMovePerTurn && Globals.processedMove) {
+        return;
     }
 
     if (!destinationObject) {
@@ -715,14 +721,29 @@ async function movePlayerToDestination(
 
     const trackingName =
         destinationObject.name || destinationName || destinationObject.id;
+    // Destination-name de-dupe for repeated entries targeting the same place.
+    // Cross-destination double moves are prevented by the Globals.processedMove guard above.
     if (trackingName && eventsInstance.movedLocations.has(trackingName)) {
         return;
     }
 
+    const destinationId = destinationObject.id;
     player.setLocation(destinationObject.id);
+    // setLocation may refuse unresolved ids; treat that as move failure so we do not emit
+    // downstream "move happened" effects for a move that never actually applied.
+    if (player.currentLocation !== destinationId) {
+        throw new Error(
+            `[${label}] Player location did not resolve to destination id "${destinationId}".`,
+        );
+    }
     context.location = destinationObject;
+    // Track destination only after successful location application.
     if (trackingName) {
         eventsInstance.movedLocations.add(trackingName);
+    }
+    // Mark processedMove only after success so turn systems stay consistent.
+    if (!player.isNPC) {
+        Globals.processedMove = true;
     }
 }
 
@@ -6697,10 +6718,14 @@ class Events {
                 if (!destinationName) {
                     return;
                 }
+                // De-dupe repeated move events for the same destination in a single turn.
+                // Separate protection for second moves to different destinations lives in
+                // movePlayerToDestination via Globals.processedMove.
+                // Do not pre-add to movedLocations here; movePlayerToDestination records it
+                // only after a verified location write.
                 if (Events.movedLocations.has(destinationName)) {
                     return;
                 }
-                Events.movedLocations.add(destinationName);
                 try {
                     await movePlayerToDestination(this, destinationName, context, {
                         fallbackName: destinationName,
@@ -7872,7 +7897,9 @@ class Events {
                 npcNode.getElementsByTagName(tag)[0]?.textContent?.trim() || "";
 
             const relativeLevelRaw = getText("relativeLevel");
-            const relativeLevel = Number(relativeLevelRaw);
+            const relativeLevel = relativeLevelRaw === ""
+                ? null
+                : Number(relativeLevelRaw);
             const currencyRaw = getText("currency");
             const currency = Number(currencyRaw);
 

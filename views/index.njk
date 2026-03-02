@@ -894,11 +894,6 @@
                         {% set attributeGridId = 'npcViewAttributeGrid' %}
                         {% include "_includes/attribute-allocation.njk" %}
                     </section>
-                    <section class="npc-view-section" id="npcViewEquipmentSection">
-                        <h4>Equipment</h4>
-                        <dl class="npc-view-equipment" id="npcViewEquipment"></dl>
-                        <div class="npc-view-empty" id="npcViewEquipmentEmpty">No equipment equipped.</div>
-                    </section>
                     <section class="npc-view-section" id="npcViewSkillsSection">
                         {% set skillSectionId = 'npcViewSkillAllocationSection' %}
                         {% set skillSectionHeading = 'Skills' %}
@@ -920,6 +915,16 @@
                         <div class="npc-view-allocation-buttons">
                             <button type="button" class="btn btn-primary" id="npcViewAllocationSaveBtn">Apply Point Changes</button>
                         </div>
+                    </section>
+                    <section class="npc-view-section" id="npcViewFactionSection">
+                        <h4>Faction</h4>
+                        <ul class="npc-view-list" id="npcViewFactionList"></ul>
+                        <div class="npc-view-empty" id="npcViewFactionEmpty">No faction information available.</div>
+                    </section>
+                    <section class="npc-view-section" id="npcViewEquipmentSection">
+                        <h4>Equipment</h4>
+                        <dl class="npc-view-equipment" id="npcViewEquipment"></dl>
+                        <div class="npc-view-empty" id="npcViewEquipmentEmpty">No equipment equipped.</div>
                     </section>
                     <section class="npc-view-section" id="npcViewAbilitiesSection">
                         <h4>Abilities</h4>
@@ -1721,6 +1726,10 @@
             </header>
             <form id="summonNpcForm" class="modal__body location-edit-form summon-modal-form" novalidate>
                 <div class="location-edit-field">
+                    <label for="summonNpcSearch">Search NPCs</label>
+                    <input id="summonNpcSearch" type="search" placeholder="Type to filter by name or location" autocomplete="off" disabled>
+                </div>
+                <div class="location-edit-field">
                     <label for="summonNpcSelect">Select NPC</label>
                     <select id="summonNpcSelect" name="npcId" required disabled>
                         <option value="" disabled selected hidden>Select an NPC</option>
@@ -1746,6 +1755,10 @@
                 </button>
             </header>
             <form id="summonThingForm" class="modal__body location-edit-form summon-modal-form" novalidate>
+                <div class="location-edit-field">
+                    <label for="summonThingSearch">Search Items or Scenery</label>
+                    <input id="summonThingSearch" type="search" placeholder="Type to filter by name, type, or origin" autocomplete="off" disabled>
+                </div>
                 <div class="location-edit-field">
                     <label for="summonThingSelect">Select Item or Scenery</label>
                     <select id="summonThingSelect" name="thingId" required disabled>
@@ -3197,6 +3210,9 @@
             }
 
             const payloadSelectionState = extractAbilitySelectionState(pendingPayload);
+            if (!force && !payloadSelectionState && playerAbilitySelectionProbePromise) {
+                return playerAbilitySelectionProbePromise;
+            }
             const requestToken = ++playerAbilitySelectionState.requestToken;
             let resolvedSelectionState = payloadSelectionState;
 
@@ -3226,16 +3242,36 @@
             };
 
             if (!resolvedSelectionState) {
-                setLoadingState(true);
-                try {
-                    resolvedSelectionState = await fetchAbilitySelectionState({ generateOptions: false });
-                } catch (error) {
-                    if (requestToken === playerAbilitySelectionState.requestToken) {
-                        setPlayerAbilitySelectionStatus(`Failed to load ability choices: ${error?.message || error}`, 'error');
+                const shouldRunPassiveProbe = !force && !payloadSelectionState;
+                if (shouldRunPassiveProbe) {
+                    const probePromise = (async () => {
+                        try {
+                            return await fetchAbilitySelectionState({ generateOptions: false });
+                        } catch (error) {
+                            if (requestToken === playerAbilitySelectionState.requestToken) {
+                                setPlayerAbilitySelectionStatus(`Failed to load ability choices: ${error?.message || error}`, 'error');
+                            }
+                            throw error;
+                        } finally {
+                            if (playerAbilitySelectionProbePromise === probePromise) {
+                                playerAbilitySelectionProbePromise = null;
+                            }
+                        }
+                    })();
+                    playerAbilitySelectionProbePromise = probePromise;
+                    resolvedSelectionState = await probePromise;
+                } else {
+                    setLoadingState(true);
+                    try {
+                        resolvedSelectionState = await fetchAbilitySelectionState({ generateOptions: false });
+                    } catch (error) {
+                        if (requestToken === playerAbilitySelectionState.requestToken) {
+                            setPlayerAbilitySelectionStatus(`Failed to load ability choices: ${error?.message || error}`, 'error');
+                        }
+                        throw error;
+                    } finally {
+                        setLoadingState(false);
                     }
-                    throw error;
-                } finally {
-                    setLoadingState(false);
                 }
             }
 
@@ -5672,6 +5708,117 @@
             card.appendChild(menu);
         }
 
+        const resolveThingSlotType = (thing = {}) => {
+            if (!thing || typeof thing !== 'object') {
+                return '';
+            }
+            const directSlot = typeof thing.slot === 'string' ? thing.slot.trim() : '';
+            const metadataSlot = typeof thing.metadata?.slot === 'string' ? thing.metadata.slot.trim() : '';
+            return normalizeSlotType(directSlot || metadataSlot || '');
+        };
+
+        const normalizeTooltipSlotLabel = (value) => {
+            if (value === null || value === undefined) {
+                return '';
+            }
+            const text = String(value).trim();
+            if (!text || text.toLowerCase() === 'n/a') {
+                return '';
+            }
+            return text;
+        };
+
+        const collectCompatibleEquippedItems = (thing = {}, equipmentOwner = null) => {
+            if (!thing || typeof thing !== 'object' || !isEquippableThing(thing)) {
+                return [];
+            }
+            const targetSlotType = resolveThingSlotType(thing);
+            if (!targetSlotType || targetSlotType === 'n/a' || targetSlotType === 'none') {
+                return [];
+            }
+            const owner = typeof equipmentOwner === 'function'
+                ? equipmentOwner()
+                : equipmentOwner;
+            if (!owner || typeof owner !== 'object') {
+                return [];
+            }
+
+            const sourceThingId = typeof thing.id === 'string' ? thing.id.trim() : '';
+            const inventory = Array.isArray(owner.inventory)
+                ? owner.inventory.filter(item => item && typeof item === 'object')
+                : [];
+            const inventoryById = new Map();
+            inventory.forEach(item => {
+                if (typeof item.id === 'string' && item.id.trim()) {
+                    inventoryById.set(item.id.trim(), item);
+                }
+            });
+
+            const entries = [];
+            const seenKeys = new Set();
+            const pushEntry = (item, slotLabelRaw = null) => {
+                if (!item || typeof item !== 'object') {
+                    return;
+                }
+                const itemId = typeof item.id === 'string' ? item.id.trim() : '';
+                if (sourceThingId && itemId && itemId === sourceThingId) {
+                    return;
+                }
+                const displayName = typeof item.name === 'string' ? item.name.trim() : '';
+                if (!itemId && !displayName) {
+                    return;
+                }
+                const slotLabel = normalizeTooltipSlotLabel(slotLabelRaw) || formatSlotTypeLabel(targetSlotType);
+                const dedupeKey = `${itemId || displayName.toLowerCase()}::${slotLabel.toLowerCase()}`;
+                if (seenKeys.has(dedupeKey)) {
+                    return;
+                }
+                seenKeys.add(dedupeKey);
+                entries.push({ item, slotLabel });
+            };
+
+            const gear = owner.gear && typeof owner.gear === 'object' ? owner.gear : null;
+            if (gear) {
+                for (const [slotName, slotData] of Object.entries(gear)) {
+                    if (!slotData || typeof slotData !== 'object') {
+                        continue;
+                    }
+                    const slotType = normalizeSlotType(slotData.slotType || slotData.type || '');
+                    if (!slotType || slotType !== targetSlotType) {
+                        continue;
+                    }
+
+                    let resolvedItem = slotData.item && typeof slotData.item === 'object'
+                        ? slotData.item
+                        : null;
+                    const slotItemId = typeof slotData.itemId === 'string' ? slotData.itemId.trim() : '';
+                    if (!resolvedItem && slotItemId) {
+                        resolvedItem = inventoryById.get(slotItemId) || null;
+                    }
+                    if (!resolvedItem) {
+                        continue;
+                    }
+
+                    pushEntry(resolvedItem, slotName || slotData.slotType || targetSlotType);
+                }
+            }
+
+            inventory.forEach(item => {
+                const isEquipped = Boolean(item?.isEquipped || item?.equippedSlot);
+                if (!isEquipped) {
+                    return;
+                }
+                const itemSlotType = resolveThingSlotType(item);
+                if (!itemSlotType || itemSlotType !== targetSlotType) {
+                    return;
+                }
+                const slotLabel = item?.equippedSlot || item?.equippedSlotType || item?.slot || item?.metadata?.slot || targetSlotType;
+                pushEntry(item, slotLabel);
+            });
+
+            return entries;
+        };
+
         const formatThingTooltip = (thing = {}) => {
             const normalizedType = normalizeThingType(thing);
 
@@ -5920,6 +6067,47 @@
             `.trim();
         };
 
+        const formatThingTooltipWithCompatibleEquipped = (thing = {}, { equipmentOwner = null } = {}) => {
+            const primaryTooltip = formatThingTooltip(thing);
+            if (!primaryTooltip) {
+                return '';
+            }
+
+            const compatibleEquipped = collectCompatibleEquippedItems(thing, equipmentOwner);
+            if (!compatibleEquipped.length) {
+                return primaryTooltip;
+            }
+
+            const comparisonCards = compatibleEquipped.map(entry => {
+                if (!entry || !entry.item) {
+                    return '';
+                }
+                const relatedTooltip = formatThingTooltip(entry.item);
+                if (!relatedTooltip) {
+                    return '';
+                }
+                return `
+                    <div class="tooltip-thing-stack-card tooltip-thing-stack-card--equipped">
+                        <div class="tooltip-thing-stack-label">Equipped: ${escapeHtml(entry.slotLabel || 'Compatible Slot')}</div>
+                        ${relatedTooltip}
+                    </div>
+                `.trim();
+            }).filter(Boolean);
+
+            if (!comparisonCards.length) {
+                return primaryTooltip;
+            }
+
+            return `
+                <div class="tooltip-thing-stack">
+                    <div class="tooltip-thing-stack-card tooltip-thing-stack-card--primary">
+                        ${primaryTooltip}
+                    </div>
+                    ${comparisonCards.join('')}
+                </div>
+            `.trim();
+        };
+
         const npcEditModal = document.getElementById('npcEditModal');
         const npcInventoryModal = document.getElementById('npcInventoryModal');
         const npcInventoryModalTitle = document.getElementById('npcInventoryModalTitle');
@@ -6089,6 +6277,7 @@
             requiredSelections: 0,
             optionsPerLevel: 0
         };
+        let playerAbilitySelectionProbePromise = null;
         if (playerAbilitySelectionSubmitBtn) {
             playerAbilitySelectionSubmitBtn.addEventListener('click', () => {
                 submitPlayerAbilitySelection();
@@ -6137,6 +6326,7 @@
         const locationStatusEffectAddBtn = document.getElementById('locationStatusEffectAddBtn');
         const summonNpcModal = document.getElementById('summonNpcModal');
         const summonNpcForm = document.getElementById('summonNpcForm');
+        const summonNpcSearchInput = document.getElementById('summonNpcSearch');
         const summonNpcSelect = document.getElementById('summonNpcSelect');
         const summonNpcStatus = document.getElementById('summonNpcStatus');
         const summonNpcCancelBtn = document.getElementById('summonNpcCancelBtn');
@@ -6144,6 +6334,7 @@
         const summonNpcConfirmBtn = document.getElementById('summonNpcConfirmBtn');
         const summonThingModal = document.getElementById('summonThingModal');
         const summonThingForm = document.getElementById('summonThingForm');
+        const summonThingSearchInput = document.getElementById('summonThingSearch');
         const summonThingSelect = document.getElementById('summonThingSelect');
         const summonThingStatus = document.getElementById('summonThingStatus');
         const summonThingCancelBtn = document.getElementById('summonThingCancelBtn');
@@ -6183,6 +6374,8 @@
             ? npcViewAttributePointsRemaining.closest('.form-group')
             : null;
         const npcViewAttributePointsWarning = document.getElementById('npcViewAttributePointsWarning');
+        const npcViewFactionList = document.getElementById('npcViewFactionList');
+        const npcViewFactionEmpty = document.getElementById('npcViewFactionEmpty');
         const npcViewEquipment = document.getElementById('npcViewEquipment');
         const npcViewEquipmentEmpty = document.getElementById('npcViewEquipmentEmpty');
         const npcViewSkillAllocationSection = document.getElementById('npcViewSkillAllocationSection');
@@ -7489,6 +7682,43 @@
             }
             const trimmed = value.trim();
             return trimmed || '';
+        }
+
+        function normalizeFactionTextList(value) {
+            const source = Array.isArray(value)
+                ? value
+                : (typeof value === 'string' ? value.split(/\r?\n/) : []);
+            return source
+                .map(entry => (typeof entry === 'string' ? entry.trim() : ''))
+                .filter(Boolean);
+        }
+
+        function resolveFactionStandingTier(value, tiers = []) {
+            const numeric = Number(value);
+            if (!Number.isFinite(numeric)) {
+                return null;
+            }
+
+            const sorted = Array.isArray(tiers)
+                ? tiers
+                    .map(tier => ({
+                        ...tier,
+                        threshold: Number(tier?.threshold)
+                    }))
+                    .filter(tier => Number.isFinite(tier.threshold))
+                    .sort((a, b) => a.threshold - b.threshold)
+                : [];
+
+            let resolved = null;
+            for (const tier of sorted) {
+                if (numeric >= tier.threshold) {
+                    resolved = tier;
+                } else {
+                    break;
+                }
+            }
+
+            return resolved;
         }
 
         async function loadFactionOptions({ force = false } = {}) {
@@ -12451,16 +12681,27 @@
             });
         }
 
-        function bindThingTooltip(element, thing) {
+        function bindThingTooltip(element, thing, options = {}) {
             if (!element || !thing) {
                 return;
             }
+
+            const resolveEquipmentOwner = () => {
+                if (options && Object.prototype.hasOwnProperty.call(options, 'equipmentOwner')) {
+                    return typeof options.equipmentOwner === 'function'
+                        ? options.equipmentOwner()
+                        : options.equipmentOwner;
+                }
+                return window.currentPlayerData || null;
+            };
 
             element.addEventListener('mouseenter', (event) => {
                 if (window.floatingTooltipController && typeof window.floatingTooltipController.show === 'function') {
                     const description = thing.description || 'No description provided.';
                     const fallbackTooltip = `<div class="tooltip-thing is-item"><div class="tooltip-thing-description">${escapeHtml(description)}</div></div>`;
-                    const tooltipContent = formatThingTooltip(thing) || fallbackTooltip;
+                    const tooltipContent = formatThingTooltipWithCompatibleEquipped(thing, {
+                        equipmentOwner: resolveEquipmentOwner
+                    }) || fallbackTooltip;
                     window.floatingTooltipController.show(tooltipContent, event, { allowHTML: true });
                 }
             });
@@ -12754,7 +12995,22 @@
 
                 registerThingContextMenu(card, item, { context: 'npc-inventory', npcId: currentNpcInventoryNpcId });
 
-                bindThingTooltip(card, item);
+                bindThingTooltip(card, item, {
+                    equipmentOwner: () => {
+                        if (currentNpcInventoryNpcId) {
+                            const currentPlayerId = typeof window.currentPlayerData?.id === 'string'
+                                ? window.currentPlayerData.id
+                                : null;
+                            if (currentPlayerId && currentPlayerId === currentNpcInventoryNpcId) {
+                                return window.currentPlayerData || null;
+                            }
+                            if (window.currentNpcData instanceof Map && window.currentNpcData.has(currentNpcInventoryNpcId)) {
+                                return window.currentNpcData.get(currentNpcInventoryNpcId) || null;
+                            }
+                        }
+                        return window.currentPlayerData || null;
+                    }
+                });
 
                 npcInventoryGrid.appendChild(card);
             });
@@ -14581,6 +14837,77 @@
                 }
             }
 
+            let factionDirectory = null;
+            try {
+                factionDirectory = await loadFactionOptions();
+            } catch (error) {
+                console.warn('Failed to load factions for character overview:', error?.message || error);
+            }
+
+            const factionEntries = [];
+            if (isPlayerView) {
+                const standings = latestNpc?.factionStandings && typeof latestNpc.factionStandings === 'object'
+                    ? latestNpc.factionStandings
+                    : {};
+                const factionMap = factionDirectory?.map instanceof Map
+                    ? factionDirectory.map
+                    : new Map();
+                const allFactions = Array.isArray(factionDirectory?.list)
+                    ? factionDirectory.list.filter(entry => entry && entry.id)
+                    : [];
+
+                allFactions.sort((a, b) => {
+                    const labelA = typeof a.name === 'string' && a.name.trim() ? a.name.trim() : a.id;
+                    const labelB = typeof b.name === 'string' && b.name.trim() ? b.name.trim() : b.id;
+                    return labelA.localeCompare(labelB);
+                });
+
+                allFactions.forEach(faction => {
+                    const standingRaw = Number(standings[faction.id]);
+                    const standingValue = Number.isFinite(standingRaw) ? Math.round(standingRaw) : 0;
+                    const resolvedTier = resolveFactionStandingTier(standingValue, faction.reputationTiers || []);
+                    const tierLabel = typeof resolvedTier?.label === 'string' && resolvedTier.label.trim()
+                        ? resolvedTier.label.trim()
+                        : 'Unranked';
+                    const benefits = normalizeFactionTextList(resolvedTier?.perks);
+                    const benefitText = benefits.length ? benefits.join(', ') : 'None';
+                    const factionName = typeof faction.name === 'string' && faction.name.trim()
+                        ? faction.name.trim()
+                        : faction.id;
+
+                    factionEntries.push(
+                        `<strong>${escapeHtml(factionName)}</strong><span class="npc-view-list-description">Reputation: ${escapeHtml(`${tierLabel} (${formatSignedValue(standingValue)})`)}</span><span class="npc-view-list-description">Benefit: ${escapeHtml(benefitText)}</span>`
+                    );
+                });
+
+                Object.entries(standings).forEach(([rawFactionId, rawStanding]) => {
+                    const factionId = normalizeFactionId(rawFactionId);
+                    if (!factionId || factionMap.has(factionId)) {
+                        return;
+                    }
+                    const standingRaw = Number(rawStanding);
+                    if (!Number.isFinite(standingRaw)) {
+                        return;
+                    }
+                    const standingValue = Math.round(standingRaw);
+                    factionEntries.push(
+                        `<strong>${escapeHtml(`Unknown faction (${factionId})`)}</strong><span class="npc-view-list-description">Reputation: ${escapeHtml(`Unranked (${formatSignedValue(standingValue)})`)}</span><span class="npc-view-list-description">Benefit: None</span>`
+                    );
+                });
+
+                renderList(npcViewFactionList, npcViewFactionEmpty, factionEntries, { allowHTML: true });
+            } else {
+                const factionId = normalizeFactionId(latestNpc?.factionId);
+                if (factionId) {
+                    const knownFaction = factionDirectory?.map instanceof Map
+                        ? factionDirectory.map.get(factionId)
+                        : null;
+                    const knownName = typeof knownFaction?.name === 'string' ? knownFaction.name.trim() : '';
+                    factionEntries.push(knownName || factionId);
+                }
+                renderList(npcViewFactionList, npcViewFactionEmpty, factionEntries);
+            }
+
             const attributeValues = resolveNpcViewAttributeValues(latestNpc);
             const skillValues = resolveNpcViewSkillValues(latestNpc);
             const skillNames = Object.keys(skillValues);
@@ -16118,6 +16445,8 @@
 
         const summonNpcOptionIndex = new Map();
         const summonThingOptionIndex = new Map();
+        const summonNpcOptions = [];
+        const summonThingOptions = [];
 
         function resetSummonSelect(selectElement, placeholderLabel) {
             if (!selectElement) {
@@ -16132,6 +16461,90 @@
             option.hidden = true;
             selectElement.appendChild(option);
             selectElement.value = '';
+        }
+
+        function resetSummonSearchInput(inputElement) {
+            if (!inputElement) {
+                return;
+            }
+            inputElement.value = '';
+            inputElement.disabled = true;
+        }
+
+        function normalizeSummonSearchValue(value) {
+            if (typeof value !== 'string') {
+                return '';
+            }
+            return value.trim().toLowerCase();
+        }
+
+        function renderSummonNpcSelect(filterValue = '') {
+            if (!summonNpcSelect) {
+                return 0;
+            }
+
+            const normalizedFilter = normalizeSummonSearchValue(filterValue);
+            const previousValue = summonNpcSelect.value;
+            const matchingOptions = summonNpcOptions.filter(option => {
+                if (!normalizedFilter) {
+                    return true;
+                }
+                return option.searchText.includes(normalizedFilter);
+            });
+
+            resetSummonSelect(summonNpcSelect, 'Select an NPC');
+            const fragment = document.createDocumentFragment();
+            matchingOptions.forEach(option => {
+                const opt = document.createElement('option');
+                opt.value = option.id;
+                opt.textContent = option.displayLabel;
+                opt.dataset.locationId = option.locationId || '';
+                opt.dataset.locationName = option.locationName || '';
+                fragment.appendChild(opt);
+            });
+            summonNpcSelect.appendChild(fragment);
+
+            const hasPreviousSelection = matchingOptions.some(option => option.id === previousValue);
+            summonNpcSelect.value = hasPreviousSelection ? previousValue : '';
+            summonNpcSelect.disabled = matchingOptions.length === 0;
+            if (summonNpcConfirmBtn) {
+                summonNpcConfirmBtn.disabled = !summonNpcSelect.value;
+            }
+            return matchingOptions.length;
+        }
+
+        function renderSummonThingSelect(filterValue = '') {
+            if (!summonThingSelect) {
+                return 0;
+            }
+
+            const normalizedFilter = normalizeSummonSearchValue(filterValue);
+            const previousValue = summonThingSelect.value;
+            const matchingOptions = summonThingOptions.filter(option => {
+                if (!normalizedFilter) {
+                    return true;
+                }
+                return option.searchText.includes(normalizedFilter);
+            });
+
+            resetSummonSelect(summonThingSelect, 'Select an item');
+            const fragment = document.createDocumentFragment();
+            matchingOptions.forEach(option => {
+                const opt = document.createElement('option');
+                opt.value = option.id;
+                opt.textContent = option.displayLabel;
+                opt.dataset.origin = option.originLabel || '';
+                fragment.appendChild(opt);
+            });
+            summonThingSelect.appendChild(fragment);
+
+            const hasPreviousSelection = matchingOptions.some(option => option.id === previousValue);
+            summonThingSelect.value = hasPreviousSelection ? previousValue : '';
+            summonThingSelect.disabled = matchingOptions.length === 0;
+            if (summonThingConfirmBtn) {
+                summonThingConfirmBtn.disabled = !summonThingSelect.value;
+            }
+            return matchingOptions.length;
         }
 
         function setSummonNpcStatus(message = '', type = null) {
@@ -16341,7 +16754,9 @@
             }
 
             summonNpcOptionIndex.clear();
+            summonNpcOptions.length = 0;
             resetSummonSelect(summonNpcSelect, 'Select an NPC');
+            resetSummonSearchInput(summonNpcSearchInput);
             if (summonNpcSelect) {
                 summonNpcSelect.disabled = true;
             }
@@ -16353,9 +16768,6 @@
             summonNpcModal.removeAttribute('hidden');
             summonNpcModal.setAttribute('aria-hidden', 'false');
             summonNpcModal.classList.add('is-open');
-            requestAnimationFrame(() => {
-                summonNpcSelect?.focus();
-            });
 
             try {
                 const options = await gatherSummonNpcOptions();
@@ -16365,24 +16777,25 @@
                     return;
                 }
 
-                const fragment = document.createDocumentFragment();
                 options.forEach(option => {
+                    const displayLabel = `${option.name} — ${option.locationName}`;
                     summonNpcOptionIndex.set(option.id, option);
-                    const opt = document.createElement('option');
-                    opt.value = option.id;
-                    opt.textContent = `${option.name} — ${option.locationName}`;
-                    opt.dataset.locationId = option.locationId || '';
-                    opt.dataset.locationName = option.locationName || '';
-                    fragment.appendChild(opt);
+                    summonNpcOptions.push({
+                        ...option,
+                        displayLabel,
+                        searchText: normalizeSummonSearchValue(`${option.name} ${option.locationName}`)
+                    });
                 });
 
-                if (summonNpcSelect) {
-                    summonNpcSelect.appendChild(fragment);
-                    summonNpcSelect.disabled = false;
-                    summonNpcSelect.value = '';
+                if (summonNpcSearchInput) {
+                    summonNpcSearchInput.disabled = false;
                 }
+                renderSummonNpcSelect(summonNpcSearchInput?.value || '');
 
                 setSummonNpcStatus('', null);
+                requestAnimationFrame(() => {
+                    summonNpcSearchInput?.focus();
+                });
             } catch (error) {
                 console.warn('Failed to load summon NPC options:', error);
                 setSummonNpcStatus(`Failed to load NPCs: ${error?.message || error}`, 'error');
@@ -16398,7 +16811,9 @@
             summonNpcModal.classList.remove('is-open');
             setSummonNpcStatus('', null);
             summonNpcOptionIndex.clear();
+            summonNpcOptions.length = 0;
             resetSummonSelect(summonNpcSelect, 'Select an NPC');
+            resetSummonSearchInput(summonNpcSearchInput);
             if (summonNpcSelect) {
                 summonNpcSelect.disabled = true;
             }
@@ -16420,7 +16835,9 @@
             }
 
             summonThingOptionIndex.clear();
+            summonThingOptions.length = 0;
             resetSummonSelect(summonThingSelect, 'Select an item');
+            resetSummonSearchInput(summonThingSearchInput);
             if (summonThingSelect) {
                 summonThingSelect.disabled = true;
             }
@@ -16432,9 +16849,6 @@
             summonThingModal.removeAttribute('hidden');
             summonThingModal.setAttribute('aria-hidden', 'false');
             summonThingModal.classList.add('is-open');
-            requestAnimationFrame(() => {
-                summonThingSelect?.focus();
-            });
 
             try {
                 const options = await gatherSummonThingOptions();
@@ -16444,23 +16858,25 @@
                     return;
                 }
 
-                const fragment = document.createDocumentFragment();
                 options.forEach(option => {
+                    const displayLabel = `${option.name} — ${option.type} · ${option.originLabel}`;
                     summonThingOptionIndex.set(option.id, option);
-                    const opt = document.createElement('option');
-                    opt.value = option.id;
-                    opt.textContent = `${option.name} — ${option.type} · ${option.originLabel}`;
-                    opt.dataset.origin = option.originLabel || '';
-                    fragment.appendChild(opt);
+                    summonThingOptions.push({
+                        ...option,
+                        displayLabel,
+                        searchText: normalizeSummonSearchValue(`${option.name} ${option.type} ${option.originLabel}`)
+                    });
                 });
 
-                if (summonThingSelect) {
-                    summonThingSelect.appendChild(fragment);
-                    summonThingSelect.disabled = false;
-                    summonThingSelect.value = '';
+                if (summonThingSearchInput) {
+                    summonThingSearchInput.disabled = false;
                 }
+                renderSummonThingSelect(summonThingSearchInput?.value || '');
 
                 setSummonThingStatus('', null);
+                requestAnimationFrame(() => {
+                    summonThingSearchInput?.focus();
+                });
             } catch (error) {
                 console.warn('Failed to load summon item options:', error);
                 setSummonThingStatus(`Failed to load items: ${error?.message || error}`, 'error');
@@ -16476,7 +16892,9 @@
             summonThingModal.classList.remove('is-open');
             setSummonThingStatus('', null);
             summonThingOptionIndex.clear();
+            summonThingOptions.length = 0;
             resetSummonSelect(summonThingSelect, 'Select an item');
+            resetSummonSearchInput(summonThingSearchInput);
             if (summonThingSelect) {
                 summonThingSelect.disabled = true;
             }
@@ -16518,6 +16936,37 @@
                 summonThingConfirmBtn.disabled = false;
             }
             setSummonThingStatus('', null);
+        }
+
+        function handleSummonNpcSearchInput() {
+            if (!summonNpcSearchInput) {
+                return;
+            }
+            const visibleCount = renderSummonNpcSelect(summonNpcSearchInput.value || '');
+            if ((summonNpcSearchInput.value || '').trim() && visibleCount === 0) {
+                setSummonNpcStatus('No NPCs match that search.', null);
+                return;
+            }
+            setSummonNpcStatus('', null);
+        }
+
+        function handleSummonThingSearchInput() {
+            if (!summonThingSearchInput) {
+                return;
+            }
+            const visibleCount = renderSummonThingSelect(summonThingSearchInput.value || '');
+            if ((summonThingSearchInput.value || '').trim() && visibleCount === 0) {
+                setSummonThingStatus('No items or scenery match that search.', null);
+                return;
+            }
+            setSummonThingStatus('', null);
+        }
+
+        function handleSummonSearchKeydown(event) {
+            if (!event || event.key !== 'Enter') {
+                return;
+            }
+            event.preventDefault();
         }
 
         async function submitSummonNpcForm(event) {
@@ -17295,6 +17744,10 @@
         if (summonNpcForm) {
             summonNpcForm.addEventListener('submit', submitSummonNpcForm);
         }
+        if (summonNpcSearchInput) {
+            summonNpcSearchInput.addEventListener('input', handleSummonNpcSearchInput);
+            summonNpcSearchInput.addEventListener('keydown', handleSummonSearchKeydown);
+        }
         if (summonNpcSelect) {
             summonNpcSelect.addEventListener('change', handleSummonNpcSelectionChange);
         }
@@ -17307,6 +17760,10 @@
         }
         if (summonThingForm) {
             summonThingForm.addEventListener('submit', submitSummonThingForm);
+        }
+        if (summonThingSearchInput) {
+            summonThingSearchInput.addEventListener('input', handleSummonThingSearchInput);
+            summonThingSearchInput.addEventListener('keydown', handleSummonSearchKeydown);
         }
         if (summonThingSelect) {
             summonThingSelect.addEventListener('change', handleSummonThingSelectionChange);
@@ -17967,15 +18424,8 @@
                                 registerThingContextMenu(card, thing, { context: 'location', locationId: location.id });
 
                                 if (tooltipController && typeof tooltipController.show === 'function') {
-                                    card.addEventListener('mouseenter', (event) => {
-                                        const tooltipContent = formatThingTooltip(thing);
-                                        tooltipController.show(tooltipContent, event, { allowHTML: true });
-                                    });
-                                    card.addEventListener('mousemove', (event) => {
-                                        tooltipController.move(event);
-                                    });
-                                    card.addEventListener('mouseleave', () => {
-                                        tooltipController.hide();
+                                    bindThingTooltip(card, thing, {
+                                        equipmentOwner: () => window.currentPlayerData || null
                                     });
                                 }
 

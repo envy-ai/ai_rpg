@@ -1,49 +1,55 @@
-<name>{{ thing.name | default('Unknown', true) | escape }}</name>
-<thingType>{{ thing.thingType | default('item', true) | escape }}</thingType>
-<rarity>{{ thing.rarity | default('common', true) | escape }}</rarity>
-<level>{{ thing.level | default(1, true) }}</level>
-<summary>{{ thing.summary | default('', true) | escape }}</summary>
-<description>{{ thing.description | default('', true) | escape }}</description>
+### {{ thing.name }}
+
+- Type: {{ thing.thingType | default('item', true) }}
+- Rarity: {{ thing.rarity | default('common', true) }}
+- Level: {{ thing.level | default(1, true) }}
 {% if thing.itemTypeDetail %}
-<itemType>{{ thing.itemTypeDetail | escape }}</itemType>
+- Item Type: {{ thing.itemTypeDetail }}
 {% endif %}
 {% if thing.slot %}
-<slot>{{ thing.slot | escape }}</slot>
+- Slot: {{ thing.slot }}
 {% endif %}
-<flags>
-  <isVehicle>{{ thing.isVehicle | default(false) }}</isVehicle>
-  <isCraftingStation>{{ thing.isCraftingStation | default(false) }}</isCraftingStation>
-  <isProcessingStation>{{ thing.isProcessingStation | default(false) }}</isProcessingStation>
-  <isHarvestable>{{ thing.isHarvestable | default(false) }}</isHarvestable>
-  <isSalvageable>{{ thing.isSalvageable | default(false) }}</isSalvageable>
-</flags>
-<attributeBonuses>
+- Vehicle: {{ thing.isVehicle | default(false) }}
+- Crafting Station: {{ thing.isCraftingStation | default(false) }}
+- Processing Station: {{ thing.isProcessingStation | default(false) }}
+- Harvestable: {{ thing.isHarvestable | default(false) }}
+- Salvageable: {{ thing.isSalvageable | default(false) }}
+
+{% if thing.summary %}
+**Summary**
+{{ thing.summary }}
+
+{% endif %}
+{% if thing.description and thing.description != thing.summary %}
+**Description**
+{{ thing.description }}
+
+{% endif %}
+
+**Attribute Bonuses**
+{% if thing.attributeBonuses and thing.attributeBonuses.length %}
 {% for bonus in thing.attributeBonuses %}
-  <bonus>
-    <attribute>{{ bonus.attribute | default('Unknown', true) | escape }}</attribute>
-    <value>{{ bonus.bonus | default(0, true) }}</value>
-  </bonus>
+- {{ bonus.attribute | default('Unknown', true) }}: {{ bonus.bonus | default(0, true) }}
 {% endfor %}
-</attributeBonuses>
-<statusEffects>
+{% else %}
+- None
+{% endif %}
+
+**Status Effects**
+{% if thing.statusEffects and thing.statusEffects.length %}
 {% for effect in thing.statusEffects %}
-  <effect>
-    <description>{{ effect.description | default('', true) | escape }}</description>
-    <duration>{{ effect.duration | default('unknown', true) | escape }}</duration>
-  </effect>
+- {{ effect.description }} (duration: {{ effect.duration | default('unknown', true) }})
 {% endfor %}
-</statusEffects>
+{% else %}
+- None
+{% endif %}
+
 {% if thing.causeStatusEffectOnTarget %}
-<causeStatusEffectOnTarget>
-  <name>{{ thing.causeStatusEffectOnTarget.name | default('', true) | escape }}</name>
-  <description>{{ thing.causeStatusEffectOnTarget.description | default('', true) | escape }}</description>
-  <duration>{{ thing.causeStatusEffectOnTarget.duration | default('unknown', true) | escape }}</duration>
-</causeStatusEffectOnTarget>
+**Inflicts on Target**
+- {{ thing.causeStatusEffectOnTarget.name | default('Unknown', true) }}: {{ thing.causeStatusEffectOnTarget.description | default('', true) }} (duration: {{ thing.causeStatusEffectOnTarget.duration | default('unknown', true) }})
+
 {% endif %}
 {% if thing.causeStatusEffectOnEquipper %}
-<causeStatusEffectOnEquipper>
-  <name>{{ thing.causeStatusEffectOnEquipper.name | default('', true) | escape }}</name>
-  <description>{{ thing.causeStatusEffectOnEquipper.description | default('', true) | escape }}</description>
-  <duration>{{ thing.causeStatusEffectOnEquipper.duration | default('unknown', true) | escape }}</duration>
-</causeStatusEffectOnEquipper>
+**Inflicts on Equipper**
+- {{ thing.causeStatusEffectOnEquipper.name | default('Unknown', true) }}: {{ thing.causeStatusEffectOnEquipper.description | default('', true) }} (duration: {{ thing.causeStatusEffectOnEquipper.duration | default('unknown', true) }})
 {% endif %}

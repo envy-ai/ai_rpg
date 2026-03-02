@@ -97,6 +97,27 @@ Merge semantics:
 - `null` on a specific header key removes that inherited header key.
 - `headers: null` clears inherited headers for that override chain.
 
+## AI retry wait after errors
+
+`config.ai.waitAfterError` controls how many seconds to wait between automatic retry attempts after retryable non-rate-limit failures (`5xx`).
+`config.ai.waitAfterRateLimitError` is a specific override used for rate-limit failures (`429`).
+
+```yaml
+ai:
+  retryAttempts: 3
+  waitAfterError: 10
+  waitAfterRateLimitError: 10
+```
+
+- Must be a non-negative number.
+- `0` disables the delay between retries.
+- If unset, the default is `10`.
+- Can be overridden per prompt via `ai_model_overrides.<profile>.waitAfterError` (using that profile's `prompts` selection).
+- `waitAfterRateLimitError` falls back to `waitAfterError` when unset.
+- `waitAfterRateLimitError` can also be overridden per prompt via `ai_model_overrides.<profile>.waitAfterRateLimitError`.
+- Per-call `LLMClient.chatCompletion({ waitAfterError })` still takes precedence over config values when explicitly provided.
+- Per-call `LLMClient.chatCompletion({ waitAfterRateLimitError })` takes highest precedence for rate-limit retries.
+
 ## Character creation point pools
 
 `config.formulas.character_creation` controls the formulas used to calculate the base point pools for the New Game attribute and skill allocators.

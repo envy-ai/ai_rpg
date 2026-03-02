@@ -6319,8 +6319,43 @@ function parsePlausibilityOutcome(xmlSnippet) {
         if (skillCheckNode) {
             const skill = getText(skillCheckNode, 'skill');
             const attribute = getText(skillCheckNode, 'attribute');
-            const difficulty = getText(skillCheckNode, 'difficulty');
             const skillReason = getText(skillCheckNode, 'reason');
+            const normalizeOptionalText = (value) => {
+                if (typeof value !== 'string') {
+                    return null;
+                }
+                const trimmedValue = value.trim();
+                if (!trimmedValue) {
+                    return null;
+                }
+                if (trimmedValue.toLowerCase() === 'n/a') {
+                    return null;
+                }
+                return trimmedValue;
+            };
+
+            const difficultyNode = skillCheckNode.getElementsByTagName('difficulty')?.[0] || null;
+            const legacyDifficulty = normalizeOptionalText(getText(skillCheckNode, 'difficulty'));
+            const unopposedDifficultyLevel = difficultyNode
+                ? normalizeOptionalText(getText(difficultyNode, 'difficultyLevel'))
+                : null;
+            const opposedCheckNode = difficultyNode
+                ? (difficultyNode.getElementsByTagName('opposedCheck')?.[0] || null)
+                : null;
+            const opponent = opposedCheckNode ? normalizeOptionalText(getText(opposedCheckNode, 'opponent')) : null;
+            const opponentSkill = opposedCheckNode ? normalizeOptionalText(getText(opposedCheckNode, 'opponentSkill')) : null;
+            const opponentAttribute = opposedCheckNode ? normalizeOptionalText(getText(opposedCheckNode, 'opponentAttribute')) : null;
+            const opposedCheck = (opponent || opponentSkill || opponentAttribute)
+                ? {
+                    opponent,
+                    opponentSkill,
+                    opponentAttribute
+                }
+                : null;
+            const resolvedDifficulty = opposedCheck
+                ? 'Opposed'
+                : (unopposedDifficultyLevel || legacyDifficulty);
+
             const collectCircumstanceModifiers = (parentNode) => {
                 if (!parentNode || typeof parentNode.getElementsByTagName !== 'function') {
                     return [];
@@ -6365,13 +6400,23 @@ function parsePlausibilityOutcome(xmlSnippet) {
             const legacyCircumstanceModifier = circumstanceModifierRaw !== null ? Number(circumstanceModifierRaw) : null;
             const circumstanceModifierReason = getText(skillCheckNode, 'circumstanceModifierReason');
 
-            if (skill || attribute || difficulty || skillReason) {
+            if (skill || attribute || resolvedDifficulty || skillReason || opposedCheck || unopposedDifficultyLevel) {
                 skillCheck = {
                     skill: skill && skill.toLowerCase() !== 'n/a' ? skill : null,
                     attribute: attribute && attribute.toLowerCase() !== 'n/a' ? attribute : null,
-                    difficulty: difficulty && difficulty.toLowerCase() !== 'n/a' ? difficulty : null,
+                    difficulty: resolvedDifficulty,
                     reason: skillReason
                 };
+
+                if (opposedCheck) {
+                    skillCheck.checkType = 'opposed';
+                    skillCheck.opposedCheck = opposedCheck;
+                } else if (resolvedDifficulty || unopposedDifficultyLevel) {
+                    skillCheck.checkType = 'unopposed';
+                    skillCheck.unopposedCheck = {
+                        difficultyLevel: unopposedDifficultyLevel || resolvedDifficulty || null
+                    };
+                }
 
                 if (parsedModifiers.length) {
                     skillCheck.circumstanceModifiers = parsedModifiers;
@@ -6560,6 +6605,68 @@ function resolvePlayerSkillValue(player, skillName) {
     return { key: canonicalName, value: 0 };
 }
 
+function resolveOpposedActor({ opponentName, actingActor = null }) {
+    if (typeof opponentName !== 'string') {
+        return null;
+    }
+
+    const trimmed = opponentName.trim();
+    if (!trimmed) {
+        return null;
+    }
+
+    const normalized = trimmed.toLowerCase();
+    if (normalized === 'player' || normalized === 'the player' || normalized === 'you') {
+        return currentPlayer || null;
+    }
+    if (normalized === 'self') {
+        return actingActor || null;
+    }
+
+    const actingActorName = typeof actingActor?.name === 'string'
+        ? actingActor.name.trim().toLowerCase()
+        : '';
+    if (actingActorName && actingActorName === normalized) {
+        return actingActor;
+    }
+
+    const directMatch = findActorByName(trimmed);
+    if (directMatch) {
+        return directMatch;
+    }
+
+    const aliasCandidates = [];
+    const seenIds = new Set();
+    const addCandidate = (actor) => {
+        if (!actor || typeof actor !== 'object') {
+            return;
+        }
+        const actorId = typeof actor.id === 'string' ? actor.id.trim() : '';
+        if (actorId && seenIds.has(actorId)) {
+            return;
+        }
+        if (actorId) {
+            seenIds.add(actorId);
+        }
+        aliasCandidates.push(actor);
+    };
+
+    addCandidate(currentPlayer);
+    addCandidate(actingActor);
+    if (players instanceof Map) {
+        for (const actor of players.values()) {
+            addCandidate(actor);
+        }
+    }
+
+    const aliasMatch = findActorByAliasInCandidates(trimmed, aliasCandidates);
+    if (aliasMatch) {
+        return aliasMatch;
+    }
+
+    return findActorByLooseName(trimmed) || null;
+}
+
 function resolveActionOutcome({ plausibility, player }) {
     if (!plausibility || !player) {
         return null;
@@ -6610,6 +6717,17 @@ function resolveActionOutcome({ plausibility, player }) {
     const resolvedSkill = skillCheck.skill || null;
     const resolvedAttributeName = skillCheck.attribute || null;
     const resolvedDifficulty = skillCheck.difficulty || null;
+    const opposedCheck = skillCheck.opposedCheck && typeof skillCheck.opposedCheck === 'object'
+        ? skillCheck.opposedCheck
+        : null;
+    const hasOpposedCheck = Boolean(
+        opposedCheck
+        && (
+            (typeof opposedCheck.opponent === 'string' && opposedCheck.opponent.trim())
+            || (typeof opposedCheck.opponentSkill === 'string' && opposedCheck.opponentSkill.trim())
+            || (typeof opposedCheck.opponentAttribute === 'string' && opposedCheck.opponentAttribute.trim())
+        )
+    );
     const circumstanceModifiers = Array.isArray(skillCheck.circumstanceModifiers)
         ? skillCheck.circumstanceModifiers.map(entry => ({
             amount: Number.isFinite(entry?.amount) ? entry.amount : 0,
@@ -6640,6 +6758,118 @@ function resolveActionOutcome({ plausibility, player }) {
             ? circumstanceModifierReasonRaw
             : null);
 
+    const skillValueInfo = resolvePlayerSkillValue(player, resolvedSkill || '');
+    const skillValue = Number.isFinite(skillValueInfo.value) ? skillValueInfo.value : 0;
+
+    const attributeKey = findAttributeKey(player, resolvedAttributeName || '');
+    const baseAttributeBonusRaw = player.getAttributeBonus(attributeKey);
+    const baseAttributeBonus = Number.isFinite(baseAttributeBonusRaw) ? baseAttributeBonusRaw : 0;
+    const attributeBonus = skillValueInfo.key ? baseAttributeBonus : baseAttributeBonus * 2;
+
+    if (hasOpposedCheck) {
+        const opponentName = typeof opposedCheck.opponent === 'string'
+            ? opposedCheck.opponent.trim()
+            : '';
+        const opponentSkillName = typeof opposedCheck.opponentSkill === 'string'
+            ? opposedCheck.opponentSkill.trim()
+            : '';
+        const opponentAttributeName = typeof opposedCheck.opponentAttribute === 'string'
+            ? opposedCheck.opponentAttribute.trim()
+            : '';
+        const opponentActor = resolveOpposedActor({
+            opponentName,
+            actingActor: player
+        });
+
+        if (!opponentActor) {
+            const missingOpponentLabel = opponentName || 'unknown opponent';
+            return {
+                label: 'failure',
+                degree: 'failure',
+                success: false,
+                type,
+                reason: plausibility.reason || skillCheck.reason || `Opposed check failed: ${missingOpponentLabel} could not be resolved.`,
+                roll: null,
+                difficulty: {
+                    label: 'Opposed',
+                    dc: null,
+                    type: 'opposed'
+                },
+                skill: skillValueInfo.key,
+                attribute: attributeKey,
+                margin: null,
+                opponent: {
+                    name: missingOpponentLabel,
+                    found: false
+                },
+                circumstanceModifier,
+                circumstanceModifiers,
+                circumstanceReason: circumstanceModifierReason
+            };
+        }
+
+        const opponentSkillInfo = resolvePlayerSkillValue(opponentActor, opponentSkillName || '');
+        const opponentSkillValue = Number.isFinite(opponentSkillInfo.value) ? opponentSkillInfo.value : 0;
+        const opponentAttributeKey = findAttributeKey(opponentActor, opponentAttributeName || '');
+        const opponentBaseAttributeBonusRaw = opponentActor.getAttributeBonus(opponentAttributeKey);
+        const opponentBaseAttributeBonus = Number.isFinite(opponentBaseAttributeBonusRaw) ? opponentBaseAttributeBonusRaw : 0;
+        const opponentAttributeBonus = opponentSkillInfo.key ? opponentBaseAttributeBonus : opponentBaseAttributeBonus * 2;
+
+        const rollResult = diceModule.rollDice('1d20');
+        const dieRoll = rollResult.total;
+        const total = dieRoll + skillValue + attributeBonus + circumstanceModifier;
+
+        const opponentRollResult = diceModule.rollDice('1d20');
+        const opponentDieRoll = opponentRollResult.total;
+        const opponentTotal = opponentDieRoll + opponentSkillValue + opponentAttributeBonus;
+
+        const margin = total - opponentTotal;
+        const outcome = classifyOutcomeMargin(margin, dieRoll, null);
+        const opponentDisplayName = opponentActor?.name || opponentName || 'Opponent';
+
+        console.log(`🎲 Opposed skill check result: ${player?.name || 'Actor'} d20(${dieRoll}) + skill(${skillValue}) + attribute(${attributeBonus}) + circumstances(${circumstanceModifier}) = ${total} vs ${opponentDisplayName} d20(${opponentDieRoll}) + skill(${opponentSkillValue}) + attribute(${opponentAttributeBonus}) = ${opponentTotal}. Outcome: ${outcome.label}`);
+
+        return {
+            label: outcome.label,
+            degree: outcome.degree,
+            success: outcome.success,
+            type,
+            reason: plausibility.reason || skillCheck.reason || null,
+            roll: {
+                die: dieRoll,
+                detail: rollResult.detail,
+                skillValue,
+                attributeBonus,
+                circumstanceModifier,
+                circumstanceModifiers,
+                circumstanceReason: circumstanceModifierReason,
+                total,
+                opponentDie: opponentDieRoll,
+                opponentDetail: opponentRollResult.detail,
+                opponentSkillValue,
+                opponentAttributeBonus,
+                opponentTotal
+            },
+            difficulty: {
+                label: `Opposed vs ${opponentDisplayName}`,
+                dc: null,
+                type: 'opposed'
+            },
+            skill: skillValueInfo.key,
+            attribute: attributeKey,
+            margin,
+            opponent: {
+                name: opponentDisplayName,
+                id: opponentActor?.id || null,
+                skill: opponentSkillInfo.key,
+                attribute: opponentAttributeKey
+            },
+            circumstanceModifier,
+            circumstanceModifiers,
+            circumstanceReason: circumstanceModifierReason
+        };
+    }
+
     const dc = difficultyToDC(resolvedDifficulty);
     if (!dc) {
         return {
@@ -6655,17 +6885,10 @@ function resolveActionOutcome({ plausibility, player }) {
             },
             skill: resolvedSkill,
             attribute: resolvedAttributeName,
-            margin: null
+            margin: null,
+            checkType: 'unopposed'
         };
     }
-
-    const skillValueInfo = resolvePlayerSkillValue(player, resolvedSkill || '');
-    const skillValue = Number.isFinite(skillValueInfo.value) ? skillValueInfo.value : 0;
-
-    const attributeKey = findAttributeKey(player, resolvedAttributeName || '');
-    const baseAttributeBonusRaw = player.getAttributeBonus(attributeKey);
-    const baseAttributeBonus = Number.isFinite(baseAttributeBonusRaw) ? baseAttributeBonusRaw : 0;
-    const attributeBonus = skillValueInfo.key ? baseAttributeBonus : baseAttributeBonus * 2;
 
     const rollResult = diceModule.rollDice('1d20');
     const dieRoll = rollResult.total;
@@ -6698,6 +6921,7 @@ function resolveActionOutcome({ plausibility, player }) {
         skill: skillValueInfo.key,
         attribute: attributeKey,
         margin,
+        checkType: 'unopposed',
         circumstanceModifier,
         circumstanceModifiers,
         circumstanceReason: circumstanceModifierReason
@@ -14153,9 +14377,45 @@ function resolveAssignmentEntry(assignments, normalizedName) {
     if (!(assignments instanceof Map) || assignments.size === 0) {
         return null;
     }
-    if (normalizedName && assignments.has(normalizedName)) {
-        return assignments.get(normalizedName);
+    const directKey = typeof normalizedName === 'string'
+        ? normalizedName.trim().toLowerCase()
+        : '';
+    if (directKey && assignments.has(directKey)) {
+        return assignments.get(directKey);
     }
+
+    const normalizedTarget = normalizeActorNameForComparison(directKey);
+    if (normalizedTarget) {
+        const fuzzyMatches = [];
+        for (const [key, entry] of assignments.entries()) {
+            if (!entry || typeof entry !== 'object') {
+                continue;
+            }
+            const candidateKeys = [];
+            if (typeof key === 'string' && key.trim()) {
+                candidateKeys.push(key);
+            }
+            if (typeof entry.name === 'string' && entry.name.trim()) {
+                candidateKeys.push(entry.name);
+            }
+            const candidateNormalized = candidateKeys
+                .map(value => normalizeActorNameForComparison(value))
+                .find(Boolean);
+            if (!candidateNormalized) {
+                continue;
+            }
+            if (candidateNormalized === normalizedTarget) {
+                return entry;
+            }
+            if (candidateNormalized.includes(normalizedTarget) || normalizedTarget.includes(candidateNormalized)) {
+                fuzzyMatches.push(entry);
+            }
+        }
+        if (fuzzyMatches.length === 1) {
+            return fuzzyMatches[0];
+        }
+    }
+
     if (assignments.size === 1) {
         return assignments.values().next().value || null;
     }
@@ -14704,7 +14964,11 @@ async function applyPlayerAbilitySelection(character, {
     });
 }
 
-async function generateLevelUpAbilitiesForCharacter(character, { previousLevel = null, newLevel = null } = {}) {
+async function generateLevelUpAbilitiesForCharacter(character, {
+    previousLevel = null,
+    newLevel = null,
+    requireAbilityAddition = false
+} = {}) {
     if (!character || typeof character.name !== 'string') {
         console.error('generateLevelUpAbilitiesForCharacter: Invalid character object.');
         return null;
@@ -14740,103 +15004,149 @@ async function generateLevelUpAbilitiesForCharacter(character, { previousLevel =
             return selectionState;
         }
 
-        const requestResult = await requestLevelUpAbilityAssignmentsForCharacter({
-            character,
-            previousLevel,
-            newLevel,
-            metadataLabel: 'levelup_abilities',
-            logPrefix: 'levelup_abilities'
-        });
-
-        if (!requestResult.response || !requestResult.response.trim()) {
-            console.warn(`Level-up ability generation returned no choices for ${trimmedName}.`);
-            return null;
-        }
-
-        const normalizedName = trimmedName.toLowerCase();
-        try {
-            const progressionAssignments = parseNpcSkillAssignments(requestResult.response);
-            const progressionEntry = progressionAssignments.get(normalizedName);
-            if (progressionEntry) {
-                applyNpcLevelUpProgressionAllocations({
-                    npc: character,
-                    progressionEntry,
-                    previousLevel: requestResult.priorLevel,
-                    newLevel: requestResult.currentLevel
-                });
-            }
-        } catch (progressionError) {
-            console.warn(`Failed to apply level-up progression assignments for ${trimmedName}:`, progressionError?.message || progressionError);
-        }
-
-        const assignmentEntry = resolveAssignmentEntry(requestResult.assignments, normalizedName);
-        if (!assignmentEntry || !Array.isArray(assignmentEntry.abilities) || assignmentEntry.abilities.length === 0) {
-            console.warn(`No ability assignments found for ${trimmedName} in level-up response.`);
-            return null;
-        }
-
         const currentAbilities = getCharacterAbilities(character);
-        const existingNames = new Set(
+        const existingNameKeys = new Set(
             currentAbilities
                 .map(ability => normalizeAbilityNameForLookup(ability?.name))
                 .filter(Boolean)
         );
+        const excludedAbilityNames = new Set(
+            currentAbilities
+                .map(ability => (typeof ability?.name === 'string' ? ability.name.trim() : ''))
+                .filter(Boolean)
+        );
+        const maxAttempts = requireAbilityAddition ? 3 : 1;
+        const normalizedName = trimmedName.toLowerCase();
+        let progressionApplied = false;
+        let lastMessage = '';
 
-        const filteredAbilities = assignmentEntry.abilities.filter(ability => {
-            if (!ability || typeof ability.name !== 'string') {
-                return false;
-            }
-            const abilityName = ability.name.trim();
-            if (!abilityName) {
-                return false;
-            }
-            const abilityLevel = Number(ability.level);
-            if (Number.isFinite(requestResult.currentLevel)
-                && Number.isFinite(abilityLevel)
-                && abilityLevel > requestResult.currentLevel) {
-                return false;
-            }
-            return true;
-        });
-
-        const additions = [];
-        for (const ability of filteredAbilities) {
-            const abilityName = ability.name.trim();
-            const nameKey = abilityName.toLowerCase();
-            if (existingNames.has(nameKey)) {
-                continue;
-            }
-            const abilityLevel = Number(ability.level);
-            additions.push({
-                ...ability,
-                name: abilityName,
-                level: (!Number.isFinite(abilityLevel) || abilityLevel <= 0)
-                    ? (Number.isFinite(requestResult.currentLevel) ? requestResult.currentLevel : 1)
-                    : abilityLevel
+        for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+            const requestResult = await requestLevelUpAbilityAssignmentsForCharacter({
+                character,
+                previousLevel,
+                newLevel,
+                metadataLabel: 'levelup_abilities',
+                logPrefix: 'levelup_abilities',
+                extraTemplateFields: {
+                    npcAbilityGeneration: {
+                        excludedAbilityNames: Array.from(excludedAbilityNames)
+                    }
+                }
             });
-            existingNames.add(nameKey);
-        }
 
-        if (!additions.length) {
-            console.log(`Level-up abilities for ${trimmedName} produced no new entries.`);
+            if (!requestResult.response || !requestResult.response.trim()) {
+                lastMessage = `Level-up ability generation returned no choices for ${trimmedName}.`;
+                console.warn(lastMessage);
+                if (attempt < maxAttempts) {
+                    continue;
+                }
+                if (requireAbilityAddition) {
+                    throw new Error(lastMessage);
+                }
+                return null;
+            }
+
+            if (!progressionApplied) {
+                try {
+                    const progressionAssignments = parseNpcSkillAssignments(requestResult.response);
+                    const progressionEntry = resolveAssignmentEntry(progressionAssignments, normalizedName);
+                    if (progressionEntry) {
+                        applyNpcLevelUpProgressionAllocations({
+                            npc: character,
+                            progressionEntry,
+                            previousLevel: requestResult.priorLevel,
+                            newLevel: requestResult.currentLevel
+                        });
+                        progressionApplied = true;
+                    }
+                } catch (progressionError) {
+                    console.warn(`Failed to apply level-up progression assignments for ${trimmedName}:`, progressionError?.message || progressionError);
+                }
+            }
+
+            const assignmentEntry = resolveAssignmentEntry(requestResult.assignments, normalizedName);
+            if (!assignmentEntry || !Array.isArray(assignmentEntry.abilities) || assignmentEntry.abilities.length === 0) {
+                lastMessage = `No ability assignments found for ${trimmedName} in level-up response.`;
+                console.warn(lastMessage);
+                if (attempt < maxAttempts) {
+                    continue;
+                }
+                if (requireAbilityAddition) {
+                    throw new Error(lastMessage);
+                }
+                return null;
+            }
+
+            const filteredAbilities = assignmentEntry.abilities.filter(ability => {
+                if (!ability || typeof ability.name !== 'string') {
+                    return false;
+                }
+                const abilityName = ability.name.trim();
+                if (!abilityName) {
+                    return false;
+                }
+                const abilityLevel = Number(ability.level);
+                if (Number.isFinite(requestResult.currentLevel)
+                    && Number.isFinite(abilityLevel)
+                    && abilityLevel > requestResult.currentLevel) {
+                    return false;
+                }
+                return true;
+            });
+
+            const additions = [];
+            for (const ability of filteredAbilities) {
+                const abilityName = ability.name.trim();
+                const nameKey = abilityName.toLowerCase();
+                if (existingNameKeys.has(nameKey)) {
+                    excludedAbilityNames.add(abilityName);
+                    continue;
+                }
+                const abilityLevel = Number(ability.level);
+                additions.push({
+                    ...ability,
+                    name: abilityName,
+                    level: (!Number.isFinite(abilityLevel) || abilityLevel <= 0)
+                        ? (Number.isFinite(requestResult.currentLevel) ? requestResult.currentLevel : 1)
+                        : abilityLevel
+                });
+                existingNameKeys.add(nameKey);
+                excludedAbilityNames.add(abilityName);
+            }
+
+            if (!additions.length) {
+                lastMessage = `Level-up abilities for ${trimmedName} produced no new entries.`;
+                console.log(lastMessage);
+                if (attempt < maxAttempts) {
+                    continue;
+                }
+                if (requireAbilityAddition) {
+                    throw new Error(lastMessage);
+                }
+                return null;
+            }
+
+            if (typeof character.setAbilities !== 'function') {
+                throw new Error(`Character ${trimmedName} is missing setAbilities().`);
+            }
+
+            const mergedAbilities = sortAbilitiesByLevelAndName([
+                ...currentAbilities.map(ability => ({ ...ability })),
+                ...additions
+            ]);
+            character.setAbilities(mergedAbilities);
+
+            const addedCount = additions.length;
+            const levelLabel = Number.isFinite(requestResult.currentLevel)
+                ? requestResult.currentLevel
+                : character.level;
+            console.log(`🎓 Added ${addedCount} new abilit${addedCount === 1 ? 'y' : 'ies'} for ${trimmedName} (Level ${levelLabel}).`);
             return null;
         }
 
-        if (typeof character.setAbilities !== 'function') {
-            throw new Error(`Character ${trimmedName} is missing setAbilities().`);
+        if (requireAbilityAddition && lastMessage) {
+            throw new Error(lastMessage);
         }
-
-        const mergedAbilities = sortAbilitiesByLevelAndName([
-            ...currentAbilities.map(ability => ({ ...ability })),
-            ...additions
-        ]);
-        character.setAbilities(mergedAbilities);
-
-        const addedCount = additions.length;
-        const levelLabel = Number.isFinite(requestResult.currentLevel)
-            ? requestResult.currentLevel
-            : character.level;
-        console.log(`🎓 Added ${addedCount} new abilit${addedCount === 1 ? 'y' : 'ies'} for ${trimmedName} (Level ${levelLabel}).`);
         return null;
     })();
 

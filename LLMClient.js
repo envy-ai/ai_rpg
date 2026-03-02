@@ -1377,7 +1377,8 @@ class LLMClient {
         validateXML = true,
         requiredTags = [],
         requiredRegex = null,
-        waitAfterError = 10,
+        waitAfterError = null,
+        waitAfterRateLimitError = null,
         dumpReasoningToConsole = false,
         debug = false,
         output = 'stdout',
@@ -1441,6 +1442,7 @@ class LLMClient {
                 requiredTags,
                 requiredRegex,
                 waitAfterError,
+                waitAfterRateLimitError,
                 dumpReasoningToConsole,
                 seed,
                 topP,
@@ -1604,6 +1606,34 @@ class LLMClient {
                 const effectiveMaxConcurrent = Number.isInteger(maxConcurrent) && maxConcurrent > 0
                     ? maxConcurrent
                     : configuredMaxConcurrent;
+                let resolvedWaitAfterError = 10;
+                if (waitAfterError !== null && waitAfterError !== undefined) {
+                    const explicitWaitAfterError = Number(waitAfterError);
+                    if (!Number.isFinite(explicitWaitAfterError) || explicitWaitAfterError < 0) {
+                        throw new Error('waitAfterError must be a non-negative number when provided.');
+                    }
+                    resolvedWaitAfterError = explicitWaitAfterError;
+                } else if (Object.prototype.hasOwnProperty.call(aiConfig, 'waitAfterError')) {
+                    const configuredWaitAfterError = Number(aiConfig.waitAfterError);
+                    if (!Number.isFinite(configuredWaitAfterError) || configuredWaitAfterError < 0) {
+                        throw new Error('AI waitAfterError must be a non-negative number when configured.');
+                    }
+                    resolvedWaitAfterError = configuredWaitAfterError;
+                }
+                let resolvedWaitAfterRateLimitError = resolvedWaitAfterError;
+                if (waitAfterRateLimitError !== null && waitAfterRateLimitError !== undefined) {
+                    const explicitRateLimitWait = Number(waitAfterRateLimitError);
+                    if (!Number.isFinite(explicitRateLimitWait) || explicitRateLimitWait < 0) {
+                        throw new Error('waitAfterRateLimitError must be a non-negative number when provided.');
+                    }
+                    resolvedWaitAfterRateLimitError = explicitRateLimitWait;
+                } else if (Object.prototype.hasOwnProperty.call(aiConfig, 'waitAfterRateLimitError')) {
+                    const configuredRateLimitWait = Number(aiConfig.waitAfterRateLimitError);
+                    if (!Number.isFinite(configuredRateLimitWait) || configuredRateLimitWait < 0) {
+                        throw new Error('AI waitAfterRateLimitError must be a non-negative number when configured.');
+                    }
+                    resolvedWaitAfterRateLimitError = configuredRateLimitWait;
+                }
                 const semaphoreKey = `${resolvedApiKey || 'no-key'}::${resolvedModel || 'no-model'}`;
                 const resolvedTimeout = LLMClient.resolveTimeout(timeoutMs, timeoutScale);
                 const baseStartTimeoutMs = Number.isFinite(aiConfig.stream_start_timeout)
@@ -1650,6 +1680,8 @@ class LLMClient {
                     resolvedTemperature,
                     resolvedTimeout,
                     effectiveMaxConcurrent,
+                    resolvedWaitAfterError,
+                    resolvedWaitAfterRateLimitError,
                     semaphoreKey,
                     streamStartTimeoutMs,
                     streamContinueTimeoutMs,
@@ -1702,6 +1734,8 @@ class LLMClient {
                 let resolvedModel = null;
                 let resolvedEndpoint = null;
                 let resolvedTimeout = null;
+                let waitAfterErrorSeconds = 10;
+                let waitAfterRateLimitErrorSeconds = 10;
                 let streamStartTimeoutMs = 40000;
                 let streamContinueTimeoutMs = 10000;
                 const controller = new AbortController();
@@ -1711,6 +1745,8 @@ class LLMClient {
                     resolvedModel = attemptRuntime.resolvedModel;
                     resolvedEndpoint = attemptRuntime.resolvedEndpoint;
                     resolvedTimeout = attemptRuntime.resolvedTimeout;
+                    waitAfterErrorSeconds = attemptRuntime.resolvedWaitAfterError;
+                    waitAfterRateLimitErrorSeconds = attemptRuntime.resolvedWaitAfterRateLimitError;
                     streamStartTimeoutMs = attemptRuntime.streamStartTimeoutMs;
                     streamContinueTimeoutMs = attemptRuntime.streamContinueTimeoutMs;
 
@@ -1758,9 +1794,12 @@ class LLMClient {
                     // On any 5xx response, wait waitAfterError seconds and then retry
                     if (response.status == 429 || (response.status >= 500 && response.status < 600)) {
                         errorLog(`Server error from LLM (status ${response.status}) on attempt ${attempt + 1}.`);
-                        if (waitAfterError > 0) {
-                            log(`Waiting ${waitAfterError} seconds before retrying...`);
-                            await new Promise(resolve => setTimeout(resolve, waitAfterError * 1000));
+                        const retryWaitSeconds = response.status == 429
+                            ? waitAfterRateLimitErrorSeconds
+                            : waitAfterErrorSeconds;
+                        if (retryWaitSeconds > 0) {
+                            log(`Waiting ${retryWaitSeconds} seconds before retrying...`);
+                            await new Promise(resolve => setTimeout(resolve, retryWaitSeconds * 1000));
                         }
                         throw new Error(`Server error from LLM (status ${response.status}).`);
                     }
@@ -1991,7 +2030,8 @@ class LLMClient {
                                     presencePenalty,
                                     timeoutScale,
                                     retryAttempts,
-                                    waitAfterError,
+                                    waitAfterError: waitAfterErrorSeconds,
+                                    waitAfterRateLimitError: waitAfterRateLimitErrorSeconds,
                                     validateXML,
                                     requiredTags,
                                     requiredRegex: resolvedRequiredRegex ? resolvedRequiredRegex.toString() : requiredRegex,
@@ -2082,11 +2122,12 @@ class LLMClient {
                         startTimer = null;
                     }
 
-                    if (error.status == 429) {
+                    const errorStatus = Number(error?.status ?? error?.response?.status);
+                    if (errorStatus === 429) {
                         log('Rate limit exceeded. Waiting before retrying...');
-                        if (waitAfterError > 0) {
-                            log(`Waiting ${waitAfterError} seconds before retrying...`);
-                            await new Promise(resolve => setTimeout(resolve, waitAfterError * 1000));
+                        if (waitAfterRateLimitErrorSeconds > 0) {
+                            log(`Waiting ${waitAfterRateLimitErrorSeconds} seconds before retrying...`);
+                            await new Promise(resolve => setTimeout(resolve, waitAfterRateLimitErrorSeconds * 1000));
                         }
                     }
 

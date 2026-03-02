@@ -47,6 +47,7 @@ Collection of static utility helpers used across the server: set math, text simi
 - `serializeGameState`/`writeSerializedGameState` also persist canonical world time and calendar definition (`worldTime.json`, `calendarDefinition.json`), and hydration restores them through `Globals.hydrateWorldTime(...)`.
 - `serializeGameState` and `hydrateGameState` coordinate `Location`, `Region`, `Thing`, `Player`, `Skill`, and stubs into a consistent save/load flow.
 - `hydrateGameState` includes a legacy save migration pass that converts hour-based fields to minute-canonical data (`worldTime`, elapsed/visited timestamps, status-effect duration/appliedAt, weather duration fields, and offscreen scheduler snapshots).
-- During `hydrateGameState`, locations with blank or non-string descriptions are loaded with `"NO DESCRIPTION"` and emit a warning instead of aborting the entire load.
+- `hydrateGameState` clears `Player` runtime registries before re-instantiating saved actors, preventing stale in-memory duplicate instances from surviving loads.
+- During `hydrateGameState`, location descriptions are loaded as-is, and non-string descriptions are normalized to an empty string so save hydration continues without placeholder substitution.
 - Legacy migration triggers when `serialized.worldTime` has `timeHours` without `timeMinutes`; migrated data is written in-memory before object hydration.
 - Pending region stubs are aggressively validated; missing ids or duplicates throw explicit errors.

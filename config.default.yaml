@@ -39,6 +39,10 @@ ai:
   top_p: 1.0
   baseTimeoutSeconds: 300
   retryAttempts: 3
+  # Seconds to wait after 429/5xx responses before each automatic retry
+  waitAfterError: 10
+  # Optional override used specifically for 429 rate-limit responses
+  waitAfterRateLimitError: 10
   max_concurrent_requests: 6
 
   # Streaming -- enable if API supports it (it probably does)

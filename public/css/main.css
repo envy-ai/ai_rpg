@@ -1721,6 +1721,36 @@ p:not(:last-child) {
   gap: 6px;
 }
 
+.tooltip-thing-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tooltip-thing-stack-card {
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: rgba(15, 23, 42, 0.72);
+  padding: 10px 12px;
+}
+
+.tooltip-thing-stack-card--primary {
+  background: rgba(15, 23, 42, 0.62);
+}
+
+.tooltip-thing-stack-card--equipped {
+  background: rgba(30, 41, 59, 0.78);
+}
+
+.tooltip-thing-stack-label {
+  font-size: 0.67rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: rgba(191, 219, 254, 0.92);
+  margin-bottom: 6px;
+}
+
 .tooltip-thing.is-item {
   border-left: 3px solid rgba(251, 191, 36, 0.45);
   padding-left: 10px;
@@ -3508,6 +3538,42 @@ body.dark .thing-toggle-hint {
   border-left: 3px solid rgba(148, 163, 184, 0.4);
   color: rgba(226, 232, 240, 0.85);
 }
+.message .message-content .message-table-scroll {
+  width: 100%;
+  overflow-x: auto;
+}
+.message .message-content table {
+  width: max-content;
+  min-width: 100%;
+  border-spacing: 0;
+}
+.message .message-content th,
+.message .message-content td {
+  padding: 0 1em;
+  text-align: left;
+  vertical-align: top;
+}
+.message .message-content tr > :first-child {
+  padding-left: 0.2em;
+}
+.message .message-content tr > :last-child {
+  padding-right: 0.2em;
+}
+.message .message-content tbody tr:nth-child(odd) {
+  background: rgba(0, 0, 0, 0.25);
+}
+.message .message-content tbody tr:nth-child(even) {
+  background: transparent;
+}
+.message .message-content thead tr {
+  background: rgba(0, 0, 0, 0.25);
+}
+.message .message-content thead + tbody tr:nth-child(odd) {
+  background: transparent;
+}
+.message .message-content thead + tbody tr:nth-child(even) {
+  background: rgba(0, 0, 0, 0.25);
+}
 .message .message-content strong {
   color: #7cb6ef;
 }
@@ -4255,7 +4321,7 @@ body.dark .thing-toggle-hint {
   background: linear-gradient(135deg, rgba(15, 23, 42, 0.84), rgba(30, 41, 59, 0.84));
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.38);
   backdrop-filter: blur(8px);
-  z-index: 3400;
+  z-index: 11100;
   display: flex;
   flex-direction: column;
   overflow: hidden;

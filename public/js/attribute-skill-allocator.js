@@ -225,6 +225,14 @@
       }
     };
 
+    const baselineState = {
+      initialized: false,
+      level: null,
+      attributes: new Map(),
+      skills: new Map(),
+      skillNames: []
+    };
+
     let lastValidLevel = null;
     let suspendPoolUpdates = false;
 
@@ -281,15 +289,73 @@
       return Number.isFinite(lastValidLevel) ? lastValidLevel : 1;
     };
 
-    const buildFormulaVariables = (levelValue, attributeCountOverride = null) => {
-      const attrCount = Number.isFinite(Number(attributeCountOverride))
-        ? Number(attributeCountOverride)
-        : (state.attributes.definitions.length || state.attributes.values.size);
-      const skillCount = state.skills.names.length;
+    const captureBaselineState = (levelOverride = null) => {
+      const hasOverride = levelOverride !== null && levelOverride !== undefined && levelOverride !== '';
+      const baselineLevel = hasOverride && Number.isFinite(Number(levelOverride))
+        ? Number(levelOverride)
+        : getLevelValue();
+
+      baselineState.level = Number.isFinite(baselineLevel) ? baselineLevel : 1;
+      baselineState.attributes = new Map();
+      baselineState.skills = new Map();
+      baselineState.skillNames = enableSkills ? state.skills.names.slice() : [];
+
+      if (enableAttributes) {
+        for (const definition of state.attributes.definitions) {
+          const attributeKey = typeof definition?.key === 'string' ? definition.key.trim() : '';
+          if (!attributeKey) {
+            continue;
+          }
+          const fromState = Number(state.attributes.values.get(attributeKey));
+          const floorValue = getAttributeFloorValue(attributeKey);
+          const fallback = Number.isFinite(floorValue) ? floorValue : attributeDefaultValue;
+          baselineState.attributes.set(attributeKey, Number.isFinite(fromState) ? fromState : fallback);
+        }
+      }
+
+      if (enableSkills) {
+        for (const skillName of baselineState.skillNames) {
+          const fromState = Number(state.skills.values.get(skillName));
+          const floorValue = getSkillFloorValue(skillName);
+          const fallback = Number.isFinite(floorValue) ? Math.max(1, floorValue) : 1;
+          baselineState.skills.set(skillName, Number.isFinite(fromState) ? fromState : fallback);
+        }
+      }
+
+      baselineState.initialized = true;
+    };
+
+    const buildFormulaVariables = (levelValue, overrides = null) => {
+      const optionsOverride = (() => {
+        if (Number.isFinite(Number(overrides))) {
+          return { attributeCountOverride: Number(overrides) };
+        }
+        if (overrides && typeof overrides === 'object') {
+          return overrides;
+        }
+        return {};
+      })();
+
+      const sourceAttributes = optionsOverride.attributeValues instanceof Map
+        ? optionsOverride.attributeValues
+        : state.attributes.values;
+      const sourceSkills = optionsOverride.skillValues instanceof Map
+        ? optionsOverride.skillValues
+        : state.skills.values;
+      const sourceSkillNames = Array.isArray(optionsOverride.skillNames)
+        ? optionsOverride.skillNames.slice()
+        : state.skills.names.slice();
+
+      const attrCount = Number.isFinite(Number(optionsOverride.attributeCountOverride))
+        ? Number(optionsOverride.attributeCountOverride)
+        : (state.attributes.definitions.length || sourceAttributes.size);
+      const skillCount = Number.isFinite(Number(optionsOverride.skillCountOverride))
+        ? Number(optionsOverride.skillCountOverride)
+        : sourceSkillNames.length;
 
       const attributeValues = {};
       const attributeKeys = new Set();
-      for (const [key, value] of state.attributes.values.entries()) {
+      for (const [key, value] of sourceAttributes.entries()) {
         const normalizedKey = normalizeVariableKey(key);
         if (attributeKeys.has(normalizedKey)) {
           throw new Error(`Duplicate attribute variable key '${normalizedKey}'.`);
@@ -303,7 +369,9 @@
       }
 
       const modifiedAttributeValues = {};
-      const modifiedInput = options.modifiedAttributeValues || null;
+      const modifiedInput = Object.prototype.hasOwnProperty.call(optionsOverride, 'modifiedAttributeValues')
+        ? optionsOverride.modifiedAttributeValues
+        : (options.modifiedAttributeValues || null);
       let normalizedModifiedInput = null;
       if (modifiedInput !== null && modifiedInput !== undefined) {
         if (!modifiedInput || typeof modifiedInput !== 'object') {
@@ -335,12 +403,16 @@
 
       const skillValues = {};
       const skillKeys = new Set();
-      for (const [name, value] of state.skills.values.entries()) {
+      for (const name of sourceSkillNames) {
+        if (typeof name !== 'string' || !name.trim()) {
+          continue;
+        }
         const normalizedKey = normalizeVariableKey(name);
         if (skillKeys.has(normalizedKey)) {
           throw new Error(`Duplicate skill variable key '${normalizedKey}'.`);
         }
         skillKeys.add(normalizedKey);
+        const value = sourceSkills.has(name) ? sourceSkills.get(name) : 1;
         skillValues[normalizedKey] = Number(value);
       }
 
@@ -370,6 +442,39 @@
         throw new Error('Max skill formula did not return a finite number.');
       }
       return rawMax;
+    };
+
+    const computeFormulaDeltaFromBaseline = (evaluator, levelOverride = null) => {
+      if (!baselineState.initialized) {
+        return 0;
+      }
+      const hasOverride = levelOverride !== null && levelOverride !== undefined && levelOverride !== '';
+      const baselineLevel = Number.isFinite(Number(baselineState.level))
+        ? Number(baselineState.level)
+        : 1;
+      const candidateLevel = hasOverride && Number.isFinite(Number(levelOverride))
+        ? Number(levelOverride)
+        : baselineLevel;
+      const levelValue = Number.isFinite(candidateLevel) && candidateLevel >= 1
+        ? candidateLevel
+        : baselineLevel;
+      if (!Number.isFinite(levelValue)) {
+        return 0;
+      }
+
+      const currentFormula = evaluator(buildFormulaVariables(levelValue));
+      const baselineFormula = evaluator(buildFormulaVariables(baselineLevel, {
+        attributeValues: baselineState.attributes,
+        skillValues: baselineState.skills,
+        skillNames: baselineState.skillNames,
+        attributeCountOverride: baselineState.attributes.size || null,
+        skillCountOverride: baselineState.skillNames.length
+      }));
+
+      if (!Number.isFinite(currentFormula) || !Number.isFinite(baselineFormula)) {
+        throw new Error('Point pool formulas must evaluate to finite numbers.');
+      }
+      return currentFormula - baselineFormula;
     };
 
     const computeAttributePool = (levelOverride = null) => {
@@ -420,6 +525,7 @@
         return 0;
       }
       if (Number.isFinite(skillPoolBaseValue)) {
+        const formulaDelta = computeFormulaDeltaFromBaseline(skillPoolEvaluator, levelOverride);
         let spent = 0;
         for (const [name, value] of state.skills.values.entries()) {
           const numeric = Number(value);
@@ -430,7 +536,7 @@
           const baseline = Number.isFinite(floorValue) ? floorValue : 1;
           spent += Math.max(0, numeric - baseline);
         }
-        return skillPoolBaseValue - spent;
+        return skillPoolBaseValue + formulaDelta - spent;
       }
       const hasOverride = levelOverride !== null && levelOverride !== undefined && levelOverride !== '';
       const levelValue = hasOverride && Number.isFinite(Number(levelOverride))
@@ -1035,6 +1141,9 @@
         });
       }
       const initialLevel = getLevelValue();
+      if (Number.isFinite(attributePoolBaseValue) || Number.isFinite(skillPoolBaseValue)) {
+        captureBaselineState(initialLevel);
+      }
       updateAttributePoolDisplay(initialLevel);
       updateSkillPoolDisplay(initialLevel);
     };
@@ -1271,6 +1380,9 @@
         }
       } finally {
         suspendPoolUpdates = false;
+      }
+      if (Number.isFinite(attributePoolBaseValue) || Number.isFinite(skillPoolBaseValue)) {
+        captureBaselineState(levelValue);
       }
       updateAttributePoolDisplay(levelValue);
       updateSkillPoolDisplay(levelValue);

@@ -1216,6 +1216,9 @@ class Utils {
     if (players?.clear) {
       players.clear();
     }
+    if (typeof Player.clearRuntimeRegistries === 'function') {
+      Player.clearRuntimeRegistries();
+    }
     const playersData = serialized.players || {};
     for (const [id, payload] of Object.entries(playersData)) {
       try {
@@ -1265,18 +1268,9 @@ class Utils {
       if (!locationData) {
         continue;
       }
-      const rawDescription = locationData.description;
-      const hasUsableDescription = typeof rawDescription === 'string' && rawDescription.trim().length > 0;
-      const resolvedDescription = hasUsableDescription ? rawDescription : 'NO DESCRIPTION';
-      if (!hasUsableDescription) {
-        const locationIdForWarning = typeof locationData.id === 'string' && locationData.id.trim()
-          ? locationData.id.trim()
-          : id;
-        console.warn(
-          `Location "${locationIdForWarning}" has a blank description in save data; `
-          + `using "${resolvedDescription}" during load.`
-        );
-      }
+      const resolvedDescription = typeof locationData.description === 'string'
+        ? locationData.description
+        : '';
       const location = new Location({
         description: resolvedDescription,
         shortDescription: locationData.shortDescription ?? null,

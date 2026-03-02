@@ -872,11 +872,25 @@ class AIRPGChat {
             return null;
         }
         try {
-            return window.markdownit({
+            const markdownRenderer = window.markdownit({
                 html: true,
                 linkify: true,
                 breaks: true
             });
+
+            const defaultTableOpen = markdownRenderer.renderer.rules.table_open
+                || ((tokens, idx, options, env, self) => self.renderToken(tokens, idx, options));
+            const defaultTableClose = markdownRenderer.renderer.rules.table_close
+                || ((tokens, idx, options, env, self) => self.renderToken(tokens, idx, options));
+
+            markdownRenderer.renderer.rules.table_open = (tokens, idx, options, env, self) => (
+                `<div class="message-table-scroll">${defaultTableOpen(tokens, idx, options, env, self)}`
+            );
+            markdownRenderer.renderer.rules.table_close = (tokens, idx, options, env, self) => (
+                `${defaultTableClose(tokens, idx, options, env, self)}</div>`
+            );
+
+            return markdownRenderer;
         } catch (error) {
             console.warn('Failed to initialize Markdown renderer:', error);
             return null;
@@ -2655,7 +2669,6 @@ class AIRPGChat {
         if (!Array.isArray(entries)) {
             return;
         }
-
         const tableHeaderHtml = '<tr><th class="prompt-progress-cancel-header">Actions</th><th>Prompt</th><th>Model</th><th>Bytes</th><th>Seconds</th><th>Timeout In</th><th>Latency</th><th>Avg B/s</th><th>Retries</th></tr>';
         const renderTimestamp = () => new Date().toISOString().replace('T', ' ').replace('Z', '');
 
@@ -4581,6 +4594,9 @@ class AIRPGChat {
         const rawDifficulty = resolution.difficulty;
         const difficulty = rawDifficulty && typeof rawDifficulty === 'object' ? rawDifficulty : {};
         const { skill, attribute, label, reason, margin, type } = resolution;
+        const opponent = resolution.opponent && typeof resolution.opponent === 'object'
+            ? resolution.opponent
+            : null;
 
         const formatSigned = (value) => {
             if (typeof value !== 'number' || Number.isNaN(value)) {
@@ -4627,6 +4643,38 @@ class AIRPGChat {
             }
             if (diffParts.length) {
                 lines.push(`<li><strong>Difficulty:</strong> ${diffParts.join(' ')}</li>`);
+            }
+        }
+
+        if (opponent && opponent.name) {
+            lines.push(`<li><strong>Opponent:</strong> ${this.escapeHtml(String(opponent.name))}</li>`);
+        }
+
+        if (opponent && (opponent.skill || typeof roll.opponentSkillValue === 'number')) {
+            const parts = [];
+            if (opponent.skill) {
+                parts.push(this.escapeHtml(String(opponent.skill)));
+            }
+            if (typeof roll.opponentSkillValue === 'number') {
+                const modifier = formatSigned(roll.opponentSkillValue);
+                parts.push(modifier !== null ? `(${modifier})` : `(${roll.opponentSkillValue})`);
+            }
+            if (parts.length) {
+                lines.push(`<li><strong>Opponent Skill:</strong> ${parts.join(' ')}</li>`);
+            }
+        }
+
+        if (opponent && (opponent.attribute || typeof roll.opponentAttributeBonus === 'number')) {
+            const parts = [];
+            if (opponent.attribute) {
+                parts.push(this.escapeHtml(String(opponent.attribute)));
+            }
+            if (typeof roll.opponentAttributeBonus === 'number') {
+                const modifier = formatSigned(roll.opponentAttributeBonus);
+                parts.push(modifier !== null ? `(${modifier})` : `(${roll.opponentAttributeBonus})`);
+            }
+            if (parts.length) {
+                lines.push(`<li><strong>Opponent Attribute:</strong> ${parts.join(' ')}</li>`);
             }
         }
 
@@ -4713,6 +4761,29 @@ class AIRPGChat {
             }
 
             lines.push(`<li><strong>Roll:</strong> ${rollText}</li>`);
+        }
+
+        if (roll && (typeof roll.opponentDie === 'number' || typeof roll.opponentTotal === 'number')) {
+            const segments = [];
+            if (typeof roll.opponentDie === 'number') {
+                segments.push(`d20 ${roll.opponentDie}`);
+            }
+            if (typeof roll.opponentSkillValue === 'number') {
+                const modifier = formatSigned(roll.opponentSkillValue);
+                segments.push(`Skill ${modifier !== null ? modifier : roll.opponentSkillValue}`);
+            }
+            if (typeof roll.opponentAttributeBonus === 'number') {
+                const modifier = formatSigned(roll.opponentAttributeBonus);
+                segments.push(`Attribute ${modifier !== null ? modifier : roll.opponentAttributeBonus}`);
+            }
+            if (typeof roll.opponentTotal === 'number') {
+                segments.push(`Total ${roll.opponentTotal}`);
+            }
+            let rollText = segments.join(' → ');
+            if (roll.opponentDetail) {
+                rollText += `<br><small>${this.escapeHtml(String(roll.opponentDetail))}</small>`;
+            }
+            lines.push(`<li><strong>Opponent Roll:</strong> ${rollText}</li>`);
         }
 
         const resultParts = [];

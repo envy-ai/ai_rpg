@@ -1,62 +1,64 @@
-<name>{{ location.name | default('Unknown', true) | escape }}</name>
-<description>{{ location.description | default('', true) | escape }}</description>
-{% if location.shortDescription %}
-<shortDescription>{{ location.shortDescription | escape }}</shortDescription>
-{% endif %}
-<region>{{ location.regionName | default('Unknown', true) | escape }}</region>
-<baseLevel>{{ location.baseLevel | default(1, true) }}</baseLevel>
-<isStub>{{ location.isStub | default(false) }}</isStub>
+### {{ location.name }}
+
+- Region: {{ location.regionName | default('Unknown', true) }}
+- Base Level: {{ location.baseLevel | default(1, true) }}
+- Stub: {{ location.isStub | default(false) }}
 {% if location.controllingFactionName %}
-<controllingFaction>{{ location.controllingFactionName | escape }}</controllingFaction>
+- Controlling Faction: {{ location.controllingFactionName }}
 {% endif %}
-<exits>
+
+{% if location.shortDescription %}
+**Short Description**
+{{ location.shortDescription }}
+
+{% endif %}
+{% if location.description %}
+**Description**
+{{ location.description }}
+
+{% endif %}
+
+**Exits**
+{% if location.exits and location.exits.length %}
 {% for exit in location.exits %}
-  <exit>
-    <direction>{{ exit.direction | default('', true) | escape }}</direction>
-    <name>{{ exit.name | default('', true) | escape }}</name>
-    <destination>{{ exit.destinationName | default('Unknown destination', true) | escape }}</destination>
-    {% if exit.destinationRegionName %}<destinationRegion>{{ exit.destinationRegionName | escape }}</destinationRegion>{% endif %}
-    <isVehicle>{{ exit.isVehicle | default(false) }}</isVehicle>
-    {% if exit.vehicleType %}<vehicleType>{{ exit.vehicleType | escape }}</vehicleType>{% endif %}
-  </exit>
+- {{ exit.direction | default('', true) }} -> {{ exit.destinationName | default('Unknown destination', true) }}{% if exit.destinationRegionName %} (region: {{ exit.destinationRegionName }}){% endif %}{% if exit.isVehicle %} [vehicle{% if exit.vehicleType %}: {{ exit.vehicleType }}{% endif %}]{% endif %}
 {% endfor %}
-</exits>
-<npcs>
+{% else %}
+- None
+{% endif %}
+
+**NPCs**
+{% if location.npcs and location.npcs.length %}
 {% for npc in location.npcs %}
-  <npc>
-    <name>{{ npc.name | default('Unknown', true) | escape }}</name>
-    <class>{{ npc.class | default('Unknown', true) | escape }}</class>
-    <race>{{ npc.race | default('Unknown', true) | escape }}</race>
-    <level>{{ npc.level | default(1, true) }}</level>
-    <summary>{{ npc.summary | default('', true) | escape }}</summary>
-  </npc>
+- {{ npc.name | default('Unknown', true) }} ({{ npc.class | default('Unknown', true) }}/{{ npc.race | default('Unknown', true) }}, L{{ npc.level | default(1, true) }}){% if npc.summary %}: {{ npc.summary }}{% endif %}
 {% endfor %}
-</npcs>
-<items>
+{% else %}
+- None
+{% endif %}
+
+**Items**
+{% if location.items and location.items.length %}
 {% for item in location.items %}
-  <item>
-    <name>{{ item.name | default('Unknown', true) | escape }}</name>
-    <rarity>{{ item.rarity | default('common', true) | escape }}</rarity>
-    <level>{{ item.level | default(1, true) }}</level>
-    <summary>{{ item.summary | default('', true) | escape }}</summary>
-  </item>
+- {{ item.name | default('Unknown', true) }} ({{ item.rarity | default('common', true) }}, L{{ item.level | default(1, true) }}){% if item.summary %}: {{ item.summary }}{% endif %}
 {% endfor %}
-</items>
-<scenery>
+{% else %}
+- None
+{% endif %}
+
+**Scenery**
+{% if location.scenery and location.scenery.length %}
 {% for scenery in location.scenery %}
-  <sceneryItem>
-    <name>{{ scenery.name | default('Unknown', true) | escape }}</name>
-    <rarity>{{ scenery.rarity | default('common', true) | escape }}</rarity>
-    <level>{{ scenery.level | default(1, true) }}</level>
-    <summary>{{ scenery.summary | default('', true) | escape }}</summary>
-  </sceneryItem>
+- {{ scenery.name | default('Unknown', true) }} ({{ scenery.rarity | default('common', true) }}, L{{ scenery.level | default(1, true) }}){% if scenery.summary %}: {{ scenery.summary }}{% endif %}
 {% endfor %}
-</scenery>
-<statusEffects>
+{% else %}
+- None
+{% endif %}
+
+**Status Effects**
+{% if location.statusEffects and location.statusEffects.length %}
 {% for effect in location.statusEffects %}
-  <effect>
-    <description>{{ effect.description | default('', true) | escape }}</description>
-    <duration>{{ effect.duration | default('unknown', true) | escape }}</duration>
-  </effect>
+- {{ effect.description }} (duration: {{ effect.duration | default('unknown', true) }})
 {% endfor %}
-</statusEffects>
+{% else %}
+- None
+{% endif %}

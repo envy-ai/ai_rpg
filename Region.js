@@ -47,7 +47,7 @@ class Region {
       throw new Error('Region name is required and must be a string');
     }
 
-    if (!description || typeof description !== 'string') {
+    if (typeof description !== 'string') {
       throw new Error('Region description is required and must be a string');
     }
 

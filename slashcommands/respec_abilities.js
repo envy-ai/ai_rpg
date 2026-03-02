@@ -515,10 +515,15 @@ class RespecAbilitiesCommand extends SlashCommandBase {
     try {
       await regenerateFn(target, {
         previousLevel: effectiveStartLevel - 1,
-        newLevel: effectiveEndLevel
+        newLevel: effectiveEndLevel,
+        requireAbilityAddition: removedAbilities.length > 0
       });
     } catch (error) {
-      target.setAbilities(snapshot);
+      try {
+        target.setAbilities(snapshot);
+      } catch (_) {
+        // Ignore rollback error and still report regeneration failure.
+      }
       await interaction.reply({
         content: `Error while regenerating abilities for ${target.name}: ${error.message}`,
         ephemeral: true
@@ -543,6 +548,19 @@ class RespecAbilitiesCommand extends SlashCommandBase {
       const abilityLevel = Number.isFinite(Number(ability?.level)) ? Number(ability.level) : 1;
       return abilityLevel >= effectiveStartLevel && abilityLevel <= effectiveEndLevel;
     });
+
+    if (removedAbilities.length > 0 && regenerated.length === 0) {
+      try {
+        target.setAbilities(snapshot);
+      } catch (_) {
+        // Ignore rollback failure and report the underlying respec issue.
+      }
+      await interaction.reply({
+        content: `Error while regenerating abilities for ${target.name}: generated replacements could not be applied; original abilities were restored.`,
+        ephemeral: true
+      });
+      return;
+    }
 
     const summaryList = regenerated.map(ability => {
       const label = ability?.name || 'Unnamed Ability';

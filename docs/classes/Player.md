@@ -23,6 +23,7 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
 ## Static API
 - Lookup and registry:
   - `getAll()`, `getById(id)`, `get(id)`, `getByName(name)`, `getByNames(names)`, `unregister(target)`.
+  - `clearRuntimeRegistries()` clears in-memory player registries (`#instances`, `#indexById`, `#indexByName`) before hydration/new-game rebuilds.
   - `removeNpcFromAllLocations(npcId)` removes an NPC id from every location's `npcIds` list.
   - `resolvePlayerId(playerLike)`.
 - Current player helpers:
@@ -132,4 +133,7 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
 - Unspent skill/attribute points are formula-derived at read time from current level + assigned stats/skills.
 - Party members are treated as off-location actors: joining party removes them from all location `npcIds` and clears `currentLocation`.
 - Party XP sharing now scales by each recipient's level instead of copying the source actor's already-scaled award.
+- `getById(id)` is index-backed (`#indexById`) so party XP and other lookups resolve the canonical current instance, not stale insertion-order instances.
+- `unregister(target)` now rebuilds indexes after removals to prevent stale id/name registry entries.
 - Direct unspent-point mutators (`setUnspent*`/`adjustUnspent*`) now throw by design.
+- `setLocation(locationId)` now warns with a stack trace and leaves `currentLocation` unchanged when the provided string id cannot be resolved.

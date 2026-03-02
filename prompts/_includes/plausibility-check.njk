@@ -96,7 +96,18 @@ Respond with one of the following (reason about your decision in the reason tag 
     <reason><!--Brief explanation of why this skill/attribute and difficulty level are appropriate (e.g., "The player is trying to pick a lock, which requires Dexterity and the Lockpicking skill. The lock is old and rusty, making it a Hard check.")--></reason>
     <skill><!--One of the following skills: {{ setting.skills | join(', ') }} (Or, if none are relevant, respond with N/A.)--></skill>
     <attribute><!--Relevant attribute--></attribute>
-    <difficulty><!--Difficulty level (Trivial, Easy, Medium, Hard, Very Hard, Legendary). Do not account for the player's current state, because that's accounted for in the circumstance modifiers.--></difficulty>
+    <difficulty>
+      <!--Is this an opposed check versus another character? If so, use the following: -->
+      <opposedCheck>
+        <opponent><!--Exact name of the opponent as seen in the location context ("player" if it was the player)--></opponent>
+        <opponentSkill><!--One of the following skills: {{ setting.skills | join(', ') }} (Or, if none are relevant, respond with N/A.)--></opponentSkill>
+        <opponentAttribute><!--Relevant attribute--></opponentAttribute>
+      </opposedCheck>
+      <!--If it's not an opposed check, just specify the difficulty level: Trivial, Easy, Medium, Hard, Very Hard, or Legendary. Do not account for the player's current state, because that's accounted for in the circumstance modifiers.-->
+      <unopposedCheck>
+        <difficultyLevel><!--Trivial, Easy, Medium, Hard, Very Hard, or Legendary--></difficultyLevel>
+      </unopposedCheck>
+    </difficulty>
     <curcumstanceModifiers>
       <circumstanceModifier>
         <amount><!--integer from -10 (worst possible circumstances) to 10 (extremely ideal circumstances)--></amount>
