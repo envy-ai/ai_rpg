@@ -45,6 +45,26 @@ node playwright_scripts/test_new_game_end_to_end.js
 This script now logs live progress milestones and streams server stdout/stderr to the console while long generation steps run.
 It also validates `/api/new-game` completion and fails fast when game creation reports an error.
 
+Deterministic playthrough regression replay (loads fixture autosave, configures forced prompt outputs, runs a captured attack turn):
+
+```bash
+npm run test:e2e:playthrough-regression
+```
+
+Notes:
+- This test is intentionally gated behind `PLAYWRIGHT_PLAYTHROUGH_REGRESSION=1` so normal e2e runs are unaffected.
+- It copies fixtures into runtime `autosaves/` and `tmp/` paths, then cleans them up after the test.
+- `PLAYWRIGHT_PLAYTHROUGH_MODE` selects which scenario runs:
+  - `attack` (default): captured deterministic attack replay.
+  - `region`: cross-region move + return, asserting single back-link exits and no double-travel.
+  - `all`: run both scenarios.
+
+Region round-trip mode shortcut:
+
+```bash
+npm run test:e2e:playthrough-region-roundtrip
+```
+
 One-off settings-page capture + validation against an already-running server:
 
 ```bash
@@ -53,6 +73,16 @@ npm run playwright:settings:screenshot
 
 This captures desktop/mobile screenshots and writes `tmp/playwright_settings_capture/result.json`.
 The script fails if the redesigned settings layout is not present.
+
+Settings persistence regression (create -> rename-as-new-id -> delete original -> refresh verification):
+
+```bash
+npm run test:e2e:headless -- tests/e2e/settings.persistence.spec.js
+```
+
+Notes:
+- The test uses the selected-setting action panel (`Edit` / `Delete`) rather than deprecated inline row action buttons.
+- It validates API-level persistence state in addition to UI interactions.
 
 Headed Chromium with virtual display (Linux servers/containers):
 

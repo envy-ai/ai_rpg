@@ -23,7 +23,14 @@ async function waitForSettingName(page, name, shouldExist, timeoutMs = 20000) {
     throw new Error(`Timed out waiting for setting "${name}" existence=${shouldExist}.`);
 }
 
-test('renaming creates new id and delete persists across refresh', async ({ page }) => {
+async function selectSettingByName(page, name) {
+    const settingItem = page.locator(`.setting-item:has-text("${name}")`).first();
+    await expect(settingItem).toBeVisible();
+    await settingItem.click();
+    await expect(page.locator('#selectedSettingTitle')).toContainText(name);
+}
+
+test('renaming creates new id and delete persists across refresh', async ({ page, request }) => {
     const stamp = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const originalName = `PW Persist Original ${stamp}`;
     const renamedName = `PW Persist Renamed ${stamp}`;
@@ -42,7 +49,9 @@ test('renaming creates new id and delete persists across refresh', async ({ page
         expect(originalSetting).toBeTruthy();
         cleanupIds.push(originalSetting.id);
 
-        await page.locator(`.setting-item:has-text("${originalName}") .btn-edit`).first().click();
+        await selectSettingByName(page, originalName);
+        await expect(page.locator('#selectedEditBtn')).toBeEnabled();
+        await page.click('#selectedEditBtn');
         await page.fill('#name', renamedName);
         await page.click('#submitBtn');
 
@@ -56,7 +65,9 @@ test('renaming creates new id and delete persists across refresh', async ({ page
         page.once('dialog', async dialog => {
             await dialog.accept();
         });
-        await page.locator(`.setting-item:has-text("${originalName}") .btn-delete`).first().click();
+        await selectSettingByName(page, originalName);
+        await expect(page.locator('#selectedDeleteBtn')).toBeEnabled();
+        await page.click('#selectedDeleteBtn');
         await waitForSettingName(page, originalName, false);
 
         await page.reload();
@@ -67,10 +78,11 @@ test('renaming creates new id and delete persists across refresh', async ({ page
         expect(renamedAfterReload).toBeTruthy();
     } finally {
         for (const id of cleanupIds) {
-            await page.evaluate(async (settingId) => {
-                await fetch(`/api/settings/${settingId}`, { method: 'DELETE' });
-            }, id);
+            try {
+                await request.delete(`/api/settings/${id}`);
+            } catch (error) {
+                console.warn(`Failed cleanup delete for setting ${id}:`, error?.message || error);
+            }
         }
     }
 });
-

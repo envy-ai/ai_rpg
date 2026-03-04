@@ -1,0 +1,2007 @@
+{
+  "locations": {
+    "location_1772642705133_c64222056ec5": {
+      "id": "location_1772642705133_c64222056ec5",
+      "name": "Guildhall Exterior",
+      "description": "The Guildhall dominates this corner of Dusthollow, its three stories of reinforced oak and gray stone looming over the surrounding structures. A covered porch extends from the main entrance, where adventurers gather to check equipment in the weak winter light, their breath misting as they speak of routes and hazards. Carved wooden signs display the Guild's crest—a lantern descending into darkness—above doorways worn smooth by generations of gauntleted hands.\n\nThe street before the hall churns with mud and melting snow, littered with the debris of preparation: discarded ration wrappers, broken arrow shafts, and the occasional bloodstain that no one bothers to wash away. Guild guards in weathered leather stand watch, their eyes sharp for troublemakers and unlicensed expedition leaders seeking to poach clients from the sanctioned boards inside.",
+      "shortDescription": "The imposing timber and stone facade of the Adventurer's Guildhall, where hopeful delvers gather before expeditions.",
+      "baseLevel": 1,
+      "imageId": "img_20260304_165237_rp4d5grf",
+      "visited": true,
+      "exits": {
+        "common_room": {
+          "id": "exit_1772642705136_5fbb2a582111",
+          "description": "Common Room",
+          "destination": "location_1772642705134_f99de2e2cc27",
+          "destinationRegion": "region_1772642705121_ab15058beea1",
+          "bidirectional": true,
+          "isVehicle": false,
+          "name": "Dusthollow - The Guildhall",
+          "relativeName": "Dusthollow - The Guildhall (in Dusthollow - The Guildhall)",
+          "vehicleType": null,
+          "exitObject": {
+            "id": "exit_1772642705136_5fbb2a582111",
+            "description": "Common Room",
+            "destination": "location_1772642705134_f99de2e2cc27",
+            "destinationRegion": null,
+            "name": "Dusthollow - The Guildhall",
+            "bidirectional": true,
+            "imageId": null,
+            "isVehicle": false,
+            "vehicleType": null,
+            "type": "two-way",
+            "createdAt": "2026-03-04T16:45:05.136Z",
+            "lastUpdated": "2026-03-04T16:45:05.136Z"
+          }
+        },
+        "return_guildhall_exterior": {
+          "id": "exit_1772642705137_800844832562",
+          "description": "Path back to Dormitory",
+          "destination": "location_1772642705135_23cb59d7df9e",
+          "destinationRegion": "region_1772642705121_ab15058beea1",
+          "bidirectional": false,
+          "isVehicle": false,
+          "name": "Dusthollow - The Guildhall",
+          "relativeName": "Dusthollow - The Guildhall (in Dusthollow - The Guildhall)",
+          "vehicleType": null,
+          "exitObject": {
+            "id": "exit_1772642705137_800844832562",
+            "description": "Path back to Dormitory",
+            "destination": "location_1772642705135_23cb59d7df9e",
+            "destinationRegion": null,
+            "name": "Dusthollow - The Guildhall",
+            "bidirectional": false,
+            "imageId": null,
+            "isVehicle": false,
+            "vehicleType": null,
+            "type": "one-way",
+            "createdAt": "2026-03-04T16:45:05.137Z",
+            "lastUpdated": "2026-03-04T16:45:05.137Z"
+          }
+        },
+        "dusthollow_market_square": {
+          "id": "exit_1772642705138_d768db6eff7f",
+          "description": "Dusthollow Market Square",
+          "destination": "location_1772642705138_a6a9ba3b37b0",
+          "bidirectional": false,
+          "isVehicle": false,
+          "name": "Dusthollow Market Square",
+          "relativeName": "Dusthollow Market Square (in Dusthollow Market Square)",
+          "vehicleType": null,
+          "exitObject": {
+            "id": "exit_1772642705138_d768db6eff7f",
+            "description": "Dusthollow Market Square",
+            "destination": "location_1772642705138_a6a9ba3b37b0",
+            "destinationRegion": "region_1772642705138_x1dkik61",
+            "name": "Dusthollow Market Square",
+            "bidirectional": false,
+            "imageId": null,
+            "isVehicle": false,
+            "vehicleType": null,
+            "type": "one-way",
+            "createdAt": "2026-03-04T16:45:05.138Z",
+            "lastUpdated": "2026-03-04T16:45:05.139Z"
+          }
+        },
+        "dusthollow_inn_district": {
+          "id": "exit_1772642705139_b2af400d57d2",
+          "description": "Dusthollow Inn District",
+          "destination": "location_1772642705139_d281c5d5dc61",
+          "bidirectional": false,
+          "isVehicle": false,
+          "name": "Dusthollow Inn District",
+          "relativeName": "Dusthollow Inn District (in Dusthollow Inn District)",
+          "vehicleType": null,
+          "exitObject": {
+            "id": "exit_1772642705139_b2af400d57d2",
+            "description": "Dusthollow Inn District",
+            "destination": "location_1772642705139_d281c5d5dc61",
+            "destinationRegion": "region_1772642705139_q8x47yo1",
+            "name": "Dusthollow Inn District",
+            "bidirectional": false,
+            "imageId": null,
+            "isVehicle": false,
+            "vehicleType": null,
+            "type": "one-way",
+            "createdAt": "2026-03-04T16:45:05.139Z",
+            "lastUpdated": "2026-03-04T16:45:05.139Z"
+          }
+        },
+        "dungeon_entrance_road": {
+          "id": "exit_1772642705140_ffbeca9a9dd8",
+          "description": "Last Chance Market",
+          "destination": "location_1772643622936_675966334234",
+          "destinationRegion": "region_1772642705140_dkhqtt5v",
+          "bidirectional": false,
+          "isVehicle": false,
+          "name": "Dungeon Entrance Road",
+          "relativeName": "Dungeon Entrance Road",
+          "vehicleType": null,
+          "exitObject": {
+            "id": "exit_1772642705140_ffbeca9a9dd8",
+            "description": "Last Chance Market",
+            "destination": "location_1772643622936_675966334234",
+            "destinationRegion": "region_1772642705140_dkhqtt5v",
+            "name": "Dungeon Entrance Road",
+            "bidirectional": false,
+            "imageId": null,
+            "isVehicle": false,
+            "vehicleType": null,
+            "type": "one-way",
+            "createdAt": "2026-03-04T16:45:05.140Z",
+            "lastUpdated": "2026-03-04T17:06:41.203Z"
+          }
+        }
+      },
+      "regionId": "region_1772642705121_ab15058beea1",
+      "controllingFactionId": "setting_faction_1772642453161_2",
+      "createdAt": "2026-03-04T16:45:05.133Z",
+      "lastUpdated": "2026-03-04T17:00:30.625Z",
+      "isStub": false,
+      "hasGeneratedStubs": false,
+      "stubMetadata": null,
+      "npcIds": [
+        "player_1772643077916_mb6e62p9b",
+        "player_1772643077917_wcrt69zyu"
+      ],
+      "thingIds": [
+        "thing_1772643045854_a7751af50858",
+        "thing_1772643045855_b25cebbdf477",
+        "thing_1772643045855_a9004580f359",
+        "thing_1772643045855_7dad786e6760",
+        "thing_1772643045855_118f6b30862f",
+        "thing_1772643045855_0c365655809d",
+        "thing_1772643045856_c428d8165f09"
+      ],
+      "randomEvents": [
+        "A nervous young half-elf approaches you, asking if you're forming a party and whether you'd consider taking on a novice healer.",
+        "A grizzled dwarf stumbles out the front doors, vomiting into the mud while his companions laugh and make bets about his survival odds.",
+        "Two Guild guards tackle a fleeing thief who tried to snatch a map case from an unattended pack, dragging him toward a side entrance.",
+        "A returning adventuring party emerges from the dungeon road, one member carried on a stretcher, their faces hollow with what they've witnessed.",
+        "A hooded figure lingers near the porch, quietly offering \"expedited licensing\" to those who can't afford the Guild's official fees."
+      ],
+      "statusEffects": [],
+      "characterConcepts": [],
+      "enemyConcepts": []
+    },
+    "location_1772642705134_f99de2e2cc27": {
+      "id": "location_1772642705134_f99de2e2cc27",
+      "name": "Common Room",
+      "description": null,
+      "shortDescription": "The bustling main hall where adventurers eat, plan, and trade rumors before the great hearths.",
+      "baseLevel": 1,
+      "imageId": null,
+      "visited": false,
+      "exits": {
+        "guildhall_exterior": {
+          "id": "exit_1772642705136_0ccf1d6d911d",
+          "description": "Guildhall Exterior",
+          "destination": "location_1772642705133_c64222056ec5",
+          "destinationRegion": "region_1772642705121_ab15058beea1",
+          "bidirectional": true,
+          "isVehicle": false,
+          "name": "Dusthollow - The Guildhall",
+          "relativeName": "Dusthollow - The Guildhall (in Dusthollow - The Guildhall)",
+          "vehicleType": null,
+          "exitObject": {
+            "id": "exit_1772642705136_0ccf1d6d911d",
+            "description": "Guildhall Exterior",
+            "destination": "location_1772642705133_c64222056ec5",
+            "destinationRegion": null,
+            "name": "Dusthollow - The Guildhall",
+            "bidirectional": true,
+            "imageId": null,
+            "isVehicle": false,
+            "vehicleType": null,
+            "type": "two-way",
+            "createdAt": "2026-03-04T16:45:05.136Z",
+            "lastUpdated": "2026-03-04T16:45:05.136Z"
+          }
+        },
+        "guild_master_s_office": {
+          "id": "exit_1772642705136_393c084e460e",
+          "description": "Guild Master's Office",
+          "destination": "location_1772642705134_f6455ecdce84",
+          "destinationRegion": "region_1772642705121_ab15058beea1",
+          "bidirectional": true,
+          "isVehicle": false,
+          "name": "Dusthollow - The Guildhall",
+          "relativeName": "Dusthollow - The Guildhall (in Dusthollow - The Guildhall)",
+          "vehicleType": null,
+          "exitObject": {
+            "id": "exit_1772642705136_393c084e460e",
+            "description": "Guild Master's Office",
+            "destination": "location_1772642705134_f6455ecdce84",
+            "destinationRegion": null,
+            "name": "Dusthollow - The Guildhall",
+            "bidirectional": true,
+            "imageId": null,
+            "isVehicle": false,
+            "vehicleType": null,
+            "type": "two-way",
+            "createdAt": "2026-03-04T16:45:05.136Z",
+            "lastUpdated": "2026-03-04T16:45:05.136Z"
+          }
+        },
+        "supply_storeroom": {
+          "id": "exit_1772642705136_efc37a73fa3d",
+          "description": "Supply Storeroom",
+          "destination": "location_1772642705134_e705f7d91d91",
+          "destinationRegion": "region_1772642705121_ab15058beea1",
+          "bidirectional": true,
+          "isVehicle": false,
+          "name": "Dusthollow - The Guildhall",
+          "relativeName": "Dusthollow - The Guildhall (in Dusthollow - The Guildhall)",
+          "vehicleType": null,
+          "exitObject": {
+            "id": "exit_1772642705136_efc37a73fa3d",
+            "description": "Supply Storeroom",
+            "destination": "location_1772642705134_e705f7d91d91",
+            "destinationRegion": null,
+            "name": "Dusthollow - The Guildhall",
+            "bidirectional": true,
+            "imageId": null,
+            "isVehicle": false,
+            "vehicleType": null,
+            "type": "two-way",
+            "createdAt": "2026-03-04T16:45:05.136Z",
+            "lastUpdated": "2026-03-04T16:45:05.136Z"
+          }
+        },
+        "dormitory": {
+          "id": "exit_1772642705136_a82a09de9d5f",
+          "description": "Dormitory",
+          "destination": "location_1772642705135_23cb59d7df9e",
+          "destinationRegion": "region_1772642705121_ab15058beea1",
+          "bidirectional": true,
+          "isVehicle": false,
+          "name": "Dusthollow - The Guildhall",
+          "relativeName": "Dusthollow - The Guildhall (in Dusthollow - The Guildhall)",
+          "vehicleType": null,
+          "exitObject": {
+            "id": "exit_1772642705136_a82a09de9d5f",
+            "description": "Dormitory",
+            "destination": "location_1772642705135_23cb59d7df9e",
+            "destinationRegion": null,
+            "name": "Dusthollow - The Guildhall",
+            "bidirectional": true,
+            "imageId": null,
+            "isVehicle": false,
+            "vehicleType": null,
+            "type": "two-way",
+            "createdAt": "2026-03-04T16:45:05.136Z",
+            "lastUpdated": "2026-03-04T16:45:05.136Z"
+          }
+        },
+        "notice_board_area": {
+          "id": "exit_1772642705136_e6666ec9713c",
+          "description": "Notice Board Area",
+          "destination": "location_1772642705135_c012a898a08f",
+          "destinationRegion": "region_1772642705121_ab15058beea1",
+          "bidirectional": true,
+          "isVehicle": false,
+          "name": "Dusthollow - The Guildhall",
+          "relativeName": "Dusthollow - The Guildhall (in Dusthollow - The Guildhall)",
+          "vehicleType": null,
+          "exitObject": {
+            "id": "exit_1772642705136_e6666ec9713c",
+            "description": "Notice Board Area",
+            "destination": "location_1772642705135_c012a898a08f",
+            "destinationRegion": null,
+            "name": "Dusthollow - The Guildhall",
+            "bidirectional": true,
+            "imageId": null,
+            "isVehicle": false,
+            "vehicleType": null,
+            "type": "two-way",
+            "createdAt": "2026-03-04T16:45:05.136Z",
+            "lastUpdated": "2026-03-04T16:45:05.136Z"
+          }
+        }
+      },
+      "regionId": "region_1772642705121_ab15058beea1",
+      "controllingFactionId": "setting_faction_1772642453161_2",
+      "createdAt": "2026-03-04T16:45:05.134Z",
+      "lastUpdated": "2026-03-04T16:45:05.136Z",
+      "isStub": true,
+      "hasGeneratedStubs": false,
+      "stubMetadata": {
+        "regionId": "region_1772642705121_ab15058beea1",
+        "regionName": "Dusthollow - The Guildhall",
+        "blueprintDescription": "The Common Room stretches wide and low-ceilinged, its heavy beams blackened by decades of hearth smoke and its stone floor worn into channels by countless boots. Three massive fireplaces burn along the outer walls, their flames casting dancing shadows across long tables where adventurers huddle over steaming bowls of stew and murmured strategy. The acoustics here are strange—conversations carry oddly, so that a whispered confession at one table might reach attentive ears three rows away.\n\nAbove the central hearth hangs a massive map of the known dungeon levels, its parchment yellowed and annotated with hundreds of small flags marking confirmed deaths, discovered treasures, and passages that no longer exist. Guild servers move between tables with practiced efficiency, their trays heavy with tankards and their eyes sharper than they pretend, gathering intelligence for their masters even as they serve.",
+        "stubDescription": "The Common Room stretches wide and low-ceilinged, its heavy beams blackened by decades of hearth smoke and its stone floor worn into channels by countless boots. Three massive fireplaces burn along the outer walls, their flames casting dancing shadows across long tables where adventurers huddle over steaming bowls of stew and murmured strategy. The acoustics here are strange—conversations carry oddly, so that a whispered confession at one table might reach attentive ears three rows away.\n\nAbove the central hearth hangs a massive map of the known dungeon levels, its parchment yellowed and annotated with hundreds of small flags marking confirmed deaths, discovered treasures, and passages that no longer exist. Guild servers move between tables with practiced efficiency, their trays heavy with tankards and their eyes sharper than they pretend, gathering intelligence for their masters even as they serve.",
+        "stubShortDescription": "The bustling main hall where adventurers eat, plan, and trade rumors before the great hearths.",
+        "suggestedRegionExits": [
+          "Guildhall Exterior",
+          "Guild Master's Office",
+          "Supply Storeroom",
+          "Dormitory",
+          "Notice Board Area"
+        ],
+        "themeHint": "Region name: Dusthollow - The Guildhall\n\nSummary: The Adventurer's Guildhall serves as the primary hub for dungeon expeditions, a sturdy timber and stone building filled with worn tables, crackling hearths, and bulletin boards plastered with contracts and maps. The air smells of woodsmoke, stew, and polished leather. Fellow adventurers converse in hushed tones while guild scribes record expedition reports.\n\nRooms/Locations: Common Room, Guild Master's Office, Supply Storeroom, Dormitory, Notice Board Area\n\nRegion exits: Dusthollow Market Square, Dusthollow Inn District, Dungeon Entrance Road",
+        "shortDescription": "The bustling main hall where adventurers eat, plan, and trade rumors before the great hearths.",
+        "locationPurpose": "Part of the Dusthollow - The Guildhall region",
+        "allowRename": false,
+        "relativeLevel": 0,
+        "regionAverageLevel": 1,
+        "computedBaseLevel": 1,
+        "numNpcs": 4,
+        "numHostiles": 0,
+        "locationHasWeather": false,
+        "hasWeather": false
+      },
+      "npcIds": [],
+      "thingIds": [],
+      "randomEvents": [],
+      "statusEffects": [],
+      "characterConcepts": [],
+      "enemyConcepts": []
+    },
+    "location_1772642705134_f6455ecdce84": {
+      "id": "location_1772642705134_f6455ecdce84",
+      "name": "Guild Master's Office",
+      "description": null,
+      "shortDescription": "The imposing office where expedition licenses are granted and fortunes extracted from desperate delvers.",
+      "baseLevel": 2,
+      "imageId": null,
+      "visited": false,
+      "exits": {
+        "common_room": {
+          "id": "exit_1772642705136_5edcc1186345",
+          "description": "Common Room",
+          "destination": "location_1772642705134_f99de2e2cc27",
+          "destinationRegion": "region_1772642705121_ab15058beea1",
+          "bidirectional": true,
+          "isVehicle": false,
+          "name": "Dusthollow - The Guildhall",
+          "relativeName": "Dusthollow - The Guildhall (in Dusthollow - The Guildhall)",
+          "vehicleType": null,
+          "exitObject": {
+            "id": "exit_1772642705136_5edcc1186345",
+            "description": "Common Room",
+            "destination": "location_1772642705134_f99de2e2cc27",
+            "destinationRegion": null,
+            "name": "Dusthollow - The Guildhall",
+            "bidirectional": true,
+            "imageId": null,
+            "isVehicle": false,
+            "vehicleType": null,
+            "type": "two-way",
+            "createdAt": "2026-03-04T16:45:05.136Z",
+            "lastUpdated": "2026-03-04T16:45:05.136Z"
+          }
+        }
+      },
+      "regionId": "region_1772642705121_ab15058beea1",
+      "controllingFactionId": "setting_faction_1772642453161_2",
+      "createdAt": "2026-03-04T16:45:05.134Z",
+      "lastUpdated": "2026-03-04T16:48:35.850Z",
+      "isStub": true,
+      "hasGeneratedStubs": false,
+      "stubMetadata": {
+        "regionId": "region_1772642705121_ab15058beea1",
+        "regionName": "Dusthollow - The Guildhall",
+        "blueprintDescription": "A narrow staircase climbs from the Common Room's corner to this sanctum of polished mahogany and calculated intimidation. The Guild Master's desk dominates the space, its surface immaculate except for a single ledger and a bronze bell that summons servants without visible means of connection. Behind the desk, a tall window overlooks the Dungeon Entrance Road, so that the Master might watch parties depart and calculate the odds of their return even as they negotiate fees.\n\nThe walls display trophies of successful expeditions—recovered artifacts behind glass, mounted monster heads with glass eyes that seem to follow visitors, and portraits of past Masters whose expressions grow progressively more haunted with each generation. A hidden safe built into the floor contains the true records: unlicensed expeditions quietly approved, bribes accepted, and the names of those sacrificed to maintain profitable relationships with the dungeon's deeper powers.",
+        "stubDescription": "A narrow staircase climbs from the Common Room's corner to this sanctum of polished mahogany and calculated intimidation. The Guild Master's desk dominates the space, its surface immaculate except for a single ledger and a bronze bell that summons servants without visible means of connection. Behind the desk, a tall window overlooks the Dungeon Entrance Road, so that the Master might watch parties depart and calculate the odds of their return even as they negotiate fees.\n\nThe walls display trophies of successful expeditions—recovered artifacts behind glass, mounted monster heads with glass eyes that seem to follow visitors, and portraits of past Masters whose expressions grow progressively more haunted with each generation. A hidden safe built into the floor contains the true records: unlicensed expeditions quietly approved, bribes accepted, and the names of those sacrificed to maintain profitable relationships with the dungeon's deeper powers.",
+        "stubShortDescription": "The imposing office where expedition licenses are granted and fortunes extracted from desperate delvers.",
+        "suggestedRegionExits": [
+          "Common Room"
+        ],
+        "themeHint": "Region name: Dusthollow - The Guildhall\n\nSummary: The Adventurer's Guildhall serves as the primary hub for dungeon expeditions, a sturdy timber and stone building filled with worn tables, crackling hearths, and bulletin boards plastered with contracts and maps. The air smells of woodsmoke, stew, and polished leather. Fellow adventurers converse in hushed tones while guild scribes record expedition reports.\n\nRooms/Locations: Common Room, Guild Master's Office, Supply Storeroom, Dormitory, Notice Board Area\n\nRegion exits: Dusthollow Market Square, Dusthollow Inn District, Dungeon Entrance Road",
+        "shortDescription": "The imposing office where expedition licenses are granted and fortunes extracted from desperate delvers.",
+        "locationPurpose": "Part of the Dusthollow - The Guildhall region",
+        "allowRename": false,
+        "relativeLevel": 1,
+        "regionAverageLevel": 1,
+        "computedBaseLevel": 2,
+        "numNpcs": 1,
+        "numHostiles": 0,
+        "locationHasWeather": false,
+        "hasWeather": false
+      },
+      "npcIds": [
+        "player_1772642915849_yg0e5kxhb"
+      ],
+      "thingIds": [],
+      "randomEvents": [],
+      "statusEffects": [],
+      "characterConcepts": [],
+      "enemyConcepts": []
+    },
+    "location_1772642705134_e705f7d91d91": {
+      "id": "location_1772642705134_e705f7d91d91",
+      "name": "Supply Storeroom",
+      "description": null,
+      "shortDescription": "The well-stocked but overpriced source of dungeon-delving equipment and provisions.",
+      "baseLevel": 1,
+      "imageId": null,
+      "visited": false,
+      "exits": {
+        "common_room": {
+          "id": "exit_1772642705136_9c9ad5a3973a",
+          "description": "Common Room",
+          "destination": "location_1772642705134_f99de2e2cc27",
+          "destinationRegion": "region_1772642705121_ab15058beea1",
+          "bidirectional": true,
+          "isVehicle": false,
+          "name": "Dusthollow - The Guildhall",
+          "relativeName": "Dusthollow - The Guildhall (in Dusthollow - The Guildhall)",
+          "vehicleType": null,
+          "exitObject": {
+            "id": "exit_1772642705136_9c9ad5a3973a",
+            "description": "Common Room",
+            "destination": "location_1772642705134_f99de2e2cc27",
+            "destinationRegion": null,
+            "name": "Dusthollow - The Guildhall",
+            "bidirectional": true,
+            "imageId": null,
+            "isVehicle": false,
+            "vehicleType": null,
+            "type": "two-way",
+            "createdAt": "2026-03-04T16:45:05.136Z",
+            "lastUpdated": "2026-03-04T16:45:05.136Z"
+          }
+        },
+        "guildhall_exterior": {
+          "id": "exit_1772642705136_2fd0945d6c0f",
+          "description": "Guildhall Exterior",
+          "destination": "location_1772642705133_c64222056ec5",
+          "destinationRegion": "region_1772642705121_ab15058beea1",
+          "bidirectional": true,
+          "isVehicle": false,
+          "name": "Dusthollow - The Guildhall",
+          "relativeName": "Dusthollow - The Guildhall (in Dusthollow - The Guildhall)",
+          "vehicleType": null,
+          "exitObject": {
+            "id": "exit_1772642705136_2fd0945d6c0f",
+            "description": "Guildhall Exterior",
+            "destination": "location_1772642705133_c64222056ec5",
+            "destinationRegion": null,
+            "name": "Dusthollow - The Guildhall",
+            "bidirectional": true,
+            "imageId": null,
+            "isVehicle": false,
+            "vehicleType": null,
+            "type": "two-way",
+            "createdAt": "2026-03-04T16:45:05.136Z",
+            "lastUpdated": "2026-03-04T16:45:05.136Z"
+          }
+        }
+      },
+      "regionId": "region_1772642705121_ab15058beea1",
+      "controllingFactionId": "setting_faction_1772642453161_2",
+      "createdAt": "2026-03-04T16:45:05.134Z",
+      "lastUpdated": "2026-03-04T16:48:35.853Z",
+      "isStub": true,
+      "hasGeneratedStubs": false,
+      "stubMetadata": {
+        "regionId": "region_1772642705121_ab15058beea1",
+        "regionName": "Dusthollow - The Guildhall",
+        "blueprintDescription": "The Supply Storeroom extends deep into the Guildhall's rear, a cavernous space of wooden racks and iron-barred cages where the tools of survival are dispensed at exorbitant markup. Lanterns hang every few paces, their light catching on the gleam of steel weapons, the dull canvas of expedition packs, and the amber glass of potion bottles arranged by potency and price. The air here smells of oil, dried meat, and the particular mustiness of rope that has never seen sunlight.\n\nA counter divides the public space from the secured reserves, where clerks in Guild livery negotiate with the desperate and the prepared alike. Behind them, a heavy door of iron-bound oak leads to the true vault—restricted equipment, cursed items awaiting identification, and the occasional artifact recovered under circumstances too sensitive for the official record.",
+        "stubDescription": "The Supply Storeroom extends deep into the Guildhall's rear, a cavernous space of wooden racks and iron-barred cages where the tools of survival are dispensed at exorbitant markup. Lanterns hang every few paces, their light catching on the gleam of steel weapons, the dull canvas of expedition packs, and the amber glass of potion bottles arranged by potency and price. The air here smells of oil, dried meat, and the particular mustiness of rope that has never seen sunlight.\n\nA counter divides the public space from the secured reserves, where clerks in Guild livery negotiate with the desperate and the prepared alike. Behind them, a heavy door of iron-bound oak leads to the true vault—restricted equipment, cursed items awaiting identification, and the occasional artifact recovered under circumstances too sensitive for the official record.",
+        "stubShortDescription": "The well-stocked but overpriced source of dungeon-delving equipment and provisions.",
+        "suggestedRegionExits": [
+          "Common Room",
+          "Guildhall Exterior"
+        ],
+        "themeHint": "Region name: Dusthollow - The Guildhall\n\nSummary: The Adventurer's Guildhall serves as the primary hub for dungeon expeditions, a sturdy timber and stone building filled with worn tables, crackling hearths, and bulletin boards plastered with contracts and maps. The air smells of woodsmoke, stew, and polished leather. Fellow adventurers converse in hushed tones while guild scribes record expedition reports.\n\nRooms/Locations: Common Room, Guild Master's Office, Supply Storeroom, Dormitory, Notice Board Area\n\nRegion exits: Dusthollow Market Square, Dusthollow Inn District, Dungeon Entrance Road",
+        "shortDescription": "The well-stocked but overpriced source of dungeon-delving equipment and provisions.",
+        "locationPurpose": "Part of the Dusthollow - The Guildhall region",
+        "allowRename": false,
+        "relativeLevel": 0,
+        "regionAverageLevel": 1,
+        "computedBaseLevel": 1,
+        "numNpcs": 2,
+        "numHostiles": 0,
+        "locationHasWeather": false,
+        "hasWeather": false
+      },
+      "npcIds": [
+        "player_1772642915852_xd1k9i9yi"
+      ],
+      "thingIds": [],
+      "randomEvents": [],
+      "statusEffects": [],
+      "characterConcepts": [],
+      "enemyConcepts": []
+    },
+    "location_1772642705135_23cb59d7df9e": {
+      "id": "location_1772642705135_23cb59d7df9e",
+      "name": "Dormitory",
+      "description": null,
+      "shortDescription": "Spartan sleeping quarters where adventurers rest before expeditions or recover from failed delves.",
+      "baseLevel": 1,
+      "imageId": null,
+      "visited": false,
+      "exits": {
+        "common_room": {
+          "id": "exit_1772642705136_e957d0738527",
+          "description": "Common Room",
+          "destination": "location_1772642705134_f99de2e2cc27",
+          "destinationRegion": "region_1772642705121_ab15058beea1",
+          "bidirectional": true,
+          "isVehicle": false,
+          "name": "Dusthollow - The Guildhall",
+          "relativeName": "Dusthollow - The Guildhall (in Dusthollow - The Guildhall)",
+          "vehicleType": null,
+          "exitObject": {
+            "id": "exit_1772642705136_e957d0738527",
+            "description": "Common Room",
+            "destination": "location_1772642705134_f99de2e2cc27",
+            "destinationRegion": null,
+            "name": "Dusthollow - The Guildhall",
+            "bidirectional": true,
+            "imageId": null,
+            "isVehicle": false,
+            "vehicleType": null,
+            "type": "two-way",
+            "createdAt": "2026-03-04T16:45:05.136Z",
+            "lastUpdated": "2026-03-04T16:45:05.136Z"
+          }
+        },
+        "guildhall_exterior": {
+          "id": "exit_1772642705136_67b308f95800",
+          "description": "Guildhall Exterior",
+          "destination": "location_1772642705133_c64222056ec5",
+          "destinationRegion": "region_1772642705121_ab15058beea1",
+          "bidirectional": true,
+          "isVehicle": false,
+          "name": "Dusthollow - The Guildhall",
+          "relativeName": "Dusthollow - The Guildhall (in Dusthollow - The Guildhall)",
+          "vehicleType": null,
+          "exitObject": {
+            "id": "exit_1772642705136_67b308f95800",
+            "description": "Guildhall Exterior",
+            "destination": "location_1772642705133_c64222056ec5",
+            "destinationRegion": null,
+            "name": "Dusthollow - The Guildhall",
+            "bidirectional": true,
+            "imageId": null,
+            "isVehicle": false,
+            "vehicleType": null,
+            "type": "two-way",
+            "createdAt": "2026-03-04T16:45:05.136Z",
+            "lastUpdated": "2026-03-04T16:45:05.136Z"
+          }
+        }
+      },
+      "regionId": "region_1772642705121_ab15058beea1",
+      "controllingFactionId": "setting_faction_1772642453161_2",
+      "createdAt": "2026-03-04T16:45:05.135Z",
+      "lastUpdated": "2026-03-04T16:48:35.854Z",
+      "isStub": true,
+      "hasGeneratedStubs": false,
+      "stubMetadata": {
+        "regionId": "region_1772642705121_ab15058beea1",
+        "regionName": "Dusthollow - The Guildhall",
+        "blueprintDescription": "The Dormitory occupies the Guildhall's upper floor, a long hall of narrow cots separated by hanging canvas partitions that provide the illusion of privacy. Each cot bears the marks of its previous occupants—carved initials, stained bedding, the occasional desperate message scrawled in charcoal or blood. The windows here are small and high, admitting only gray shafts of winter light that do little to dispel the perpetual twilight of the sleeping quarters.\n\nAt the hall's end, a communal washroom steams with hot water for those who can pay the fee, while a small shrine to whatever gods adventurers favor stands opposite, its candles kept burning by anonymous donations. The atmosphere is one of temporary refuge, of bodies resting before the next descent, and of the peculiar intimacy of strangers who may never see each other again after tomorrow's dawn.",
+        "stubDescription": "The Dormitory occupies the Guildhall's upper floor, a long hall of narrow cots separated by hanging canvas partitions that provide the illusion of privacy. Each cot bears the marks of its previous occupants—carved initials, stained bedding, the occasional desperate message scrawled in charcoal or blood. The windows here are small and high, admitting only gray shafts of winter light that do little to dispel the perpetual twilight of the sleeping quarters.\n\nAt the hall's end, a communal washroom steams with hot water for those who can pay the fee, while a small shrine to whatever gods adventurers favor stands opposite, its candles kept burning by anonymous donations. The atmosphere is one of temporary refuge, of bodies resting before the next descent, and of the peculiar intimacy of strangers who may never see each other again after tomorrow's dawn.",
+        "stubShortDescription": "Spartan sleeping quarters where adventurers rest before expeditions or recover from failed delves.",
+        "suggestedRegionExits": [
+          "Common Room",
+          "Guildhall Exterior"
+        ],
+        "themeHint": "Region name: Dusthollow - The Guildhall\n\nSummary: The Adventurer's Guildhall serves as the primary hub for dungeon expeditions, a sturdy timber and stone building filled with worn tables, crackling hearths, and bulletin boards plastered with contracts and maps. The air smells of woodsmoke, stew, and polished leather. Fellow adventurers converse in hushed tones while guild scribes record expedition reports.\n\nRooms/Locations: Common Room, Guild Master's Office, Supply Storeroom, Dormitory, Notice Board Area\n\nRegion exits: Dusthollow Market Square, Dusthollow Inn District, Dungeon Entrance Road",
+        "shortDescription": "Spartan sleeping quarters where adventurers rest before expeditions or recover from failed delves.",
+        "locationPurpose": "Part of the Dusthollow - The Guildhall region",
+        "allowRename": false,
+        "relativeLevel": 0,
+        "regionAverageLevel": 1,
+        "computedBaseLevel": 1,
+        "numNpcs": 3,
+        "numHostiles": 0,
+        "locationHasWeather": false,
+        "hasWeather": false
+      },
+      "npcIds": [
+        "player_1772642915854_rb6f99mgj"
+      ],
+      "thingIds": [],
+      "randomEvents": [],
+      "statusEffects": [],
+      "characterConcepts": [],
+      "enemyConcepts": []
+    },
+    "location_1772642705135_c012a898a08f": {
+      "id": "location_1772642705135_c012a898a08f",
+      "name": "Notice Board Area",
+      "description": null,
+      "shortDescription": "The crowded posting area where contracts, maps, and desperate pleas compete for adventurer attention.",
+      "baseLevel": 1,
+      "imageId": null,
+      "visited": false,
+      "exits": {
+        "common_room": {
+          "id": "exit_1772642705136_9fdbb9440cd2",
+          "description": "Common Room",
+          "destination": "location_1772642705134_f99de2e2cc27",
+          "destinationRegion": "region_1772642705121_ab15058beea1",
+          "bidirectional": true,
+          "isVehicle": false,
+          "name": "Dusthollow - The Guildhall",
+          "relativeName": "Dusthollow - The Guildhall (in Dusthollow - The Guildhall)",
+          "vehicleType": null,
+          "exitObject": {
+            "id": "exit_1772642705136_9fdbb9440cd2",
+            "description": "Common Room",
+            "destination": "location_1772642705134_f99de2e2cc27",
+            "destinationRegion": null,
+            "name": "Dusthollow - The Guildhall",
+            "bidirectional": true,
+            "imageId": null,
+            "isVehicle": false,
+            "vehicleType": null,
+            "type": "two-way",
+            "createdAt": "2026-03-04T16:45:05.137Z",
+            "lastUpdated": "2026-03-04T16:45:05.137Z"
+          }
+        }
+      },
+      "regionId": "region_1772642705121_ab15058beea1",
+      "controllingFactionId": "setting_faction_1772642453161_2",
+      "createdAt": "2026-03-04T16:45:05.135Z",
+      "lastUpdated": "2026-03-04T16:45:05.137Z",
+      "isStub": true,
+      "hasGeneratedStubs": false,
+      "stubMetadata": {
+        "regionId": "region_1772642705121_ab15058beea1",
+        "regionName": "Dusthollow - The Guildhall",
+        "blueprintDescription": "The Notice Board Area opens from the Common Room through an archway carved with warning symbols older than the Guild itself. Three massive boards dominate the space, their surfaces layered with parchment of varying ages—fresh contracts pinned atop faded pleas for information about the missing, reward notices for recovered bodies, and cryptic messages in codes known only to specific delving companies. The floor here is scattered with discarded notices, trampled into pulp by those who search for opportunity.\n\nBenches line the walls where adventurers sit to study offers, their faces lit by the greenish glow of bioluminescent moss cultivated in hanging pots—a luxury imported from the Twilight Depths that the Guild uses to demonstrate its connection to the dungeon's mysteries. A scribe's desk sits permanently staffed, where for a fee, the literate will read contracts aloud or record verbal agreements that the Guild will enforce with whatever violence proves necessary.",
+        "stubDescription": "The Notice Board Area opens from the Common Room through an archway carved with warning symbols older than the Guild itself. Three massive boards dominate the space, their surfaces layered with parchment of varying ages—fresh contracts pinned atop faded pleas for information about the missing, reward notices for recovered bodies, and cryptic messages in codes known only to specific delving companies. The floor here is scattered with discarded notices, trampled into pulp by those who search for opportunity.\n\nBenches line the walls where adventurers sit to study offers, their faces lit by the greenish glow of bioluminescent moss cultivated in hanging pots—a luxury imported from the Twilight Depths that the Guild uses to demonstrate its connection to the dungeon's mysteries. A scribe's desk sits permanently staffed, where for a fee, the literate will read contracts aloud or record verbal agreements that the Guild will enforce with whatever violence proves necessary.",
+        "stubShortDescription": "The crowded posting area where contracts, maps, and desperate pleas compete for adventurer attention.",
+        "suggestedRegionExits": [
+          "Common Room"
+        ],
+        "themeHint": "Region name: Dusthollow - The Guildhall\n\nSummary: The Adventurer's Guildhall serves as the primary hub for dungeon expeditions, a sturdy timber and stone building filled with worn tables, crackling hearths, and bulletin boards plastered with contracts and maps. The air smells of woodsmoke, stew, and polished leather. Fellow adventurers converse in hushed tones while guild scribes record expedition reports.\n\nRooms/Locations: Common Room, Guild Master's Office, Supply Storeroom, Dormitory, Notice Board Area\n\nRegion exits: Dusthollow Market Square, Dusthollow Inn District, Dungeon Entrance Road",
+        "shortDescription": "The crowded posting area where contracts, maps, and desperate pleas compete for adventurer attention.",
+        "locationPurpose": "Part of the Dusthollow - The Guildhall region",
+        "allowRename": false,
+        "relativeLevel": 0,
+        "regionAverageLevel": 1,
+        "computedBaseLevel": 1,
+        "numNpcs": 3,
+        "numHostiles": 0,
+        "locationHasWeather": false,
+        "hasWeather": false
+      },
+      "npcIds": [],
+      "thingIds": [],
+      "randomEvents": [],
+      "statusEffects": [],
+      "characterConcepts": [],
+      "enemyConcepts": []
+    },
+    "location_1772642705138_a6a9ba3b37b0": {
+      "id": "location_1772642705138_a6a9ba3b37b0",
+      "name": "Dusthollow Market Square",
+      "description": null,
+      "shortDescription": "An unexplored path leading toward Dusthollow Market Square.",
+      "baseLevel": 2,
+      "imageId": null,
+      "visited": false,
+      "exits": {},
+      "regionId": "region_1772642705138_x1dkik61",
+      "controllingFactionId": "setting_faction_1772642453161_2",
+      "createdAt": "2026-03-04T16:45:05.138Z",
+      "lastUpdated": "2026-03-04T16:45:05.138Z",
+      "isStub": true,
+      "hasGeneratedStubs": false,
+      "stubMetadata": {
+        "originLocationId": "location_1772642705133_c64222056ec5",
+        "originRegionId": "region_1772642705121_ab15058beea1",
+        "originDirection": "dusthollow_market_square",
+        "regionId": "region_1772642705138_x1dkik61",
+        "shortDescription": "An unexplored path leading toward Dusthollow Market Square.",
+        "locationPurpose": "Entrance to Dusthollow Market Square",
+        "allowRename": false,
+        "isRegionEntryStub": true,
+        "targetRegionId": "region_1772642705138_x1dkik61",
+        "targetRegionName": "Dusthollow Market Square",
+        "targetRegionDescription": "The commercial heart of Dusthollow, where merchants hawk dungeon supplies, healing potions, and questionable maps beneath canvas awnings that flap in the bitter wind. The square churns with adventurers, farmers selling provisions, and pickpockets working the crowds. At its center stands a dry fountain carved with reliefs of legendary delvers, now used as an impromptu meeting point for forming parties.",
+        "targetRegionRelationship": "Adjacent",
+        "targetRegionRelativeLevel": 1,
+        "relativeLevel": 1,
+        "settingDescription": "Test Dungeon Game - Fantasy Dungeon / Dungeon Crawler, Dark Fantasy The Sunken Labyrinth of Valdros is an ancient, ever-shifting dungeon that beneath the crumbling ruins of a once-great magical empire. Centuries ago, the Archmage Valdros attempted to achieve immortality through a forbidden ritual that backfired catastrophically, sinking his entire citadel beneath the earth and twisting its halls into an infinite, maze-like nightmare. Now, the labyrinth breathes with a life of its own—corridors realign when no one is watching, stairs lead to different floors depending on the phase of the moon, and rooms appear and disappear like half-remembered dreams. Adventurers from across the realm are drawn to the dungeon's depths by whispers of unimaginable treasures, powerful artifacts, and perhaps even the secrets of Valdros's forbidden magic.\n\nThe dungeon is divided into distinct strata, each with its own生态环境 and denizens. The uppermost levels, known as the Faded Halls, are relatively stable and frequented by novice adventurers seeking their fortunes. Here, crumbling stonework is choked with ivy and moss, and the dangers are modest—giant rats, goblin scavengers, and the occasional animated skeleton. Deeper lies the Twilight Depths, where bioluminescent fungi cast an eerie glow over abandoned laboratories and trapped corridors guarded by constructs still following their centuries-old commands. Below that, the Abyssal Reaches harbor truly terrifying creatures: aberrations twisted by wild magic, undead knights who eternally patrol forgotten chambers, and beings from other planes drawn to the dungeon's reality-thinning energies. At the very bottom, if such a concept even applies, lies the Sanctum of Valdros himself—though none have reached it and returned to tell the tale.\n\nThe nearby settlement of Dusthollow has grown around the dungeon's entrance, a rough-and-tumble frontier town where adventurers gather to form parties, restock supplies, and spend their hard-won treasure. The town operates under an uneasy truce between the Adventurer's Guild, which regulates expeditions and maintains order, and various merchant houses, criminal organizations, and cults that seek to exploit the dungeon's riches for their own purposes. In Dusthollow, a healing potion costs the same as a farmer's monthly wages, and information about newly discovered passages is traded like currency. Every day, hopeful newcomers arrive with stars in their eyes, while veterans with haunted expressions drink away their sorrows, muttering about the things they've seen in the depths. The dungeon takes and gives in equal measure, and no one who descends ever truly returns unchanged. Key traits: tone Atmospheric, perilous, wondrous, difficulty Medium, magic Medium-High, technology Medieval with magical artifacts. Common starting location: Town near dungeon.",
+        "regionAverageLevel": 1,
+        "stubShortDescription": "An unexplored path leading toward Dusthollow Market Square."
+      },
+      "npcIds": [],
+      "thingIds": [],
+      "randomEvents": [],
+      "statusEffects": [],
+      "characterConcepts": [],
+      "enemyConcepts": []
+    },
+    "location_1772642705139_d281c5d5dc61": {
+      "id": "location_1772642705139_d281c5d5dc61",
+      "name": "Dusthollow Inn District",
+      "description": null,
+      "shortDescription": "An unexplored path leading toward Dusthollow Inn District.",
+      "baseLevel": 2,
+      "imageId": null,
+      "visited": false,
+      "exits": {},
+      "regionId": "region_1772642705139_q8x47yo1",
+      "controllingFactionId": null,
+      "createdAt": "2026-03-04T16:45:05.139Z",
+      "lastUpdated": "2026-03-04T16:45:05.139Z",
+      "isStub": true,
+      "hasGeneratedStubs": false,
+      "stubMetadata": {
+        "originLocationId": "location_1772642705133_c64222056ec5",
+        "originRegionId": "region_1772642705121_ab15058beea1",
+        "originDirection": "dusthollow_inn_district",
+        "regionId": "region_1772642705139_q8x47yo1",
+        "shortDescription": "An unexplored path leading toward Dusthollow Inn District.",
+        "locationPurpose": "Entrance to Dusthollow Inn District",
+        "allowRename": false,
+        "isRegionEntryStub": true,
+        "targetRegionId": "region_1772642705139_q8x47yo1",
+        "targetRegionName": "Dusthollow Inn District",
+        "targetRegionDescription": "A winding cluster of taverns, boarding houses, and flophouses where adventurers spend their coin on drink, warmth, and fleeting companionship. The district never truly sleeps, with somewhere always serving ale to those too haunted to rest or too eager to begin. Fights are common, alliances are forged in drunken honesty, and information flows as freely as the watered-down beer.",
+        "targetRegionRelationship": "Adjacent",
+        "targetRegionRelativeLevel": 1,
+        "relativeLevel": 1,
+        "settingDescription": "Test Dungeon Game - Fantasy Dungeon / Dungeon Crawler, Dark Fantasy The Sunken Labyrinth of Valdros is an ancient, ever-shifting dungeon that beneath the crumbling ruins of a once-great magical empire. Centuries ago, the Archmage Valdros attempted to achieve immortality through a forbidden ritual that backfired catastrophically, sinking his entire citadel beneath the earth and twisting its halls into an infinite, maze-like nightmare. Now, the labyrinth breathes with a life of its own—corridors realign when no one is watching, stairs lead to different floors depending on the phase of the moon, and rooms appear and disappear like half-remembered dreams. Adventurers from across the realm are drawn to the dungeon's depths by whispers of unimaginable treasures, powerful artifacts, and perhaps even the secrets of Valdros's forbidden magic.\n\nThe dungeon is divided into distinct strata, each with its own生态环境 and denizens. The uppermost levels, known as the Faded Halls, are relatively stable and frequented by novice adventurers seeking their fortunes. Here, crumbling stonework is choked with ivy and moss, and the dangers are modest—giant rats, goblin scavengers, and the occasional animated skeleton. Deeper lies the Twilight Depths, where bioluminescent fungi cast an eerie glow over abandoned laboratories and trapped corridors guarded by constructs still following their centuries-old commands. Below that, the Abyssal Reaches harbor truly terrifying creatures: aberrations twisted by wild magic, undead knights who eternally patrol forgotten chambers, and beings from other planes drawn to the dungeon's reality-thinning energies. At the very bottom, if such a concept even applies, lies the Sanctum of Valdros himself—though none have reached it and returned to tell the tale.\n\nThe nearby settlement of Dusthollow has grown around the dungeon's entrance, a rough-and-tumble frontier town where adventurers gather to form parties, restock supplies, and spend their hard-won treasure. The town operates under an uneasy truce between the Adventurer's Guild, which regulates expeditions and maintains order, and various merchant houses, criminal organizations, and cults that seek to exploit the dungeon's riches for their own purposes. In Dusthollow, a healing potion costs the same as a farmer's monthly wages, and information about newly discovered passages is traded like currency. Every day, hopeful newcomers arrive with stars in their eyes, while veterans with haunted expressions drink away their sorrows, muttering about the things they've seen in the depths. The dungeon takes and gives in equal measure, and no one who descends ever truly returns unchanged. Key traits: tone Atmospheric, perilous, wondrous, difficulty Medium, magic Medium-High, technology Medieval with magical artifacts. Common starting location: Town near dungeon.",
+        "regionAverageLevel": 1,
+        "stubShortDescription": "An unexplored path leading toward Dusthollow Inn District."
+      },
+      "npcIds": [],
+      "thingIds": [],
+      "randomEvents": [],
+      "statusEffects": [],
+      "characterConcepts": [],
+      "enemyConcepts": []
+    },
+    "location_1772643622936_675966334234": {
+      "id": "location_1772643622936_675966334234",
+      "name": "Last Chance Market",
+      "description": "The final cluster of merchant activity before the road commits fully to its descent, where stalls of weathered canvas and repurposed wagon beds huddle against a retaining wall of crumbling brick. Here, opportunistic vendors sell marked-up provisions, \"lucky\" charms of dubious provenance, and maps that contradict each other with cheerful shamelessness—their cries competing with the pleas of a hollow-eyed woman who clutches a faded portrait and begs each passing party to seek her brother in the Faded Halls.",
+      "shortDescription": "Final merchant stalls before the descent, thick with desperation and commerce.",
+      "baseLevel": 3,
+      "imageId": "img_20260304_170650_mtf7dg3y",
+      "visited": true,
+      "exits": {
+        "memorial_walk": {
+          "id": "exit_1772643622937_a3f64255b559",
+          "description": "Memorial Walk",
+          "destination": "location_1772643622936_d96355885fb6",
+          "destinationRegion": "region_1772642705140_dkhqtt5v",
+          "bidirectional": true,
+          "isVehicle": false,
+          "name": "Dungeon Entrance Road",
+          "relativeName": "Dungeon Entrance Road",
+          "vehicleType": null,
+          "exitObject": {
+            "id": "exit_1772643622937_a3f64255b559",
+            "description": "Memorial Walk",
+            "destination": "location_1772643622936_d96355885fb6",
+            "destinationRegion": null,
+            "name": "Dungeon Entrance Road",
+            "bidirectional": true,
+            "imageId": null,
+            "isVehicle": false,
+            "vehicleType": null,
+            "type": "two-way",
+            "createdAt": "2026-03-04T17:00:22.937Z",
+            "lastUpdated": "2026-03-04T17:00:22.937Z"
+          }
+        },
+        "guildhall_exterior": {
+          "id": "exit_1772643630624_dc8cc5f4ed83",
+          "description": "Guildhall Exterior",
+          "destination": "location_1772642705133_c64222056ec5",
+          "destinationRegion": "region_1772642705121_ab15058beea1",
+          "bidirectional": false,
+          "isVehicle": false,
+          "name": "Dusthollow - The Guildhall",
+          "relativeName": "Dusthollow - The Guildhall (in Dusthollow - The Guildhall)",
+          "vehicleType": null,
+          "exitObject": {
+            "id": "exit_1772643630624_dc8cc5f4ed83",
+            "description": "Guildhall Exterior",
+            "destination": "location_1772642705133_c64222056ec5",
+            "destinationRegion": "region_1772642705121_ab15058beea1",
+            "name": "Dusthollow - The Guildhall",
+            "bidirectional": false,
+            "imageId": null,
+            "isVehicle": false,
+            "vehicleType": null,
+            "type": "one-way",
+            "createdAt": "2026-03-04T17:00:30.624Z",
+            "lastUpdated": "2026-03-04T17:06:41.203Z"
+          }
+        }
+      },
+      "regionId": "region_1772642705140_dkhqtt5v",
+      "controllingFactionId": null,
+      "createdAt": "2026-03-04T17:00:22.936Z",
+      "lastUpdated": "2026-03-04T17:07:10.210Z",
+      "isStub": false,
+      "hasGeneratedStubs": false,
+      "stubMetadata": null,
+      "npcIds": [
+        "player_1772643709322_0b01l9oqi",
+        "player_1772643626135_gwr4ogjat",
+        "player_1772643929499_ij33h5ivb",
+        "player_1772643929500_1za4ecx7i",
+        "player_1772643929501_9ilslrbhg",
+        "player_1772643929502_1g5b7iv0k"
+      ],
+      "thingIds": [
+        "thing_1772643830403_a47de85fb422",
+        "thing_1772643830403_1e09fd8e7e50",
+        "thing_1772643830403_b54fa13431fa",
+        "thing_1772643830404_a6db85798c29",
+        "thing_1772643830404_bcfa51c1d5e1"
+      ],
+      "randomEvents": [
+        "A pickpocket slashes open a novice adventurer's pack, scattering rations into the mud before disappearing into the crowd.",
+        "Ithelwen Moss-Tender identifies a rare fungal specimen brought up from the depths, paying handsomely and asking pointed questions about where it was found.",
+        "The desperate woman faints from exhaustion and is carried behind a stall by sympathetic merchants, her pleas momentarily silenced.",
+        "A Guild inspector makes rounds checking vendor permits, sending two unlicensed sellers scrambling down the road toward the dungeon.",
+        "A returning adventurer heatedly argues with a vendor over the quality of rope that failed during a descent, drawing an amused crowd."
+      ],
+      "statusEffects": [],
+      "characterConcepts": [],
+      "enemyConcepts": []
+    },
+    "location_1772643622936_d96355885fb6": {
+      "id": "location_1772643622936_d96355885fb6",
+      "name": "Memorial Walk",
+      "description": "The road narrows here, flanked by rows of memorial stones that crowd closer together with each downward step—weathered granite, imported marble, and rough local limestone competing for space in a silent congregation of the dead. Names and dates fade into illegibility, though some newer stones bear the Guild's standardized inscription format, while older markers suggest personal grief carved by hands that never returned to maintain them.",
+      "shortDescription": "Stone-lined descent where the dead outnumber the living.",
+      "baseLevel": 3,
+      "imageId": "img_20260304_171018_6cggvwg8",
+      "visited": true,
+      "exits": {
+        "last_chance_market": {
+          "id": "exit_1772643622937_c89b63059024",
+          "description": "Last Chance Market",
+          "destination": "location_1772643622936_675966334234",
+          "destinationRegion": "region_1772642705140_dkhqtt5v",
+          "bidirectional": true,
+          "isVehicle": false,
+          "name": "Dungeon Entrance Road",
+          "relativeName": "Dungeon Entrance Road",
+          "vehicleType": null,
+          "exitObject": {
+            "id": "exit_1772643622937_c89b63059024",
+            "description": "Last Chance Market",
+            "destination": "location_1772643622936_675966334234",
+            "destinationRegion": null,
+            "name": "Dungeon Entrance Road",
+            "bidirectional": true,
+            "imageId": null,
+            "isVehicle": false,
+            "vehicleType": null,
+            "type": "two-way",
+            "createdAt": "2026-03-04T17:00:22.937Z",
+            "lastUpdated": "2026-03-04T17:00:22.937Z"
+          }
+        },
+        "warning_post": {
+          "id": "exit_1772643622937_5c79ea0cc55b",
+          "description": "Warning Post",
+          "destination": "location_1772643622937_e489509c6174",
+          "destinationRegion": "region_1772642705140_dkhqtt5v",
+          "bidirectional": true,
+          "isVehicle": false,
+          "name": "Dungeon Entrance Road",
+          "relativeName": "Dungeon Entrance Road",
+          "vehicleType": null,
+          "exitObject": {
+            "id": "exit_1772643622937_5c79ea0cc55b",
+            "description": "Warning Post",
+            "destination": "location_1772643622937_e489509c6174",
+            "destinationRegion": null,
+            "name": "Dungeon Entrance Road",
+            "bidirectional": true,
+            "imageId": null,
+            "isVehicle": false,
+            "vehicleType": null,
+            "type": "two-way",
+            "createdAt": "2026-03-04T17:00:22.937Z",
+            "lastUpdated": "2026-03-04T17:00:22.937Z"
+          }
+        }
+      },
+      "regionId": "region_1772642705140_dkhqtt5v",
+      "controllingFactionId": "setting_faction_1772642453161_2",
+      "createdAt": "2026-03-04T17:00:22.936Z",
+      "lastUpdated": "2026-03-04T17:10:38.920Z",
+      "isStub": false,
+      "hasGeneratedStubs": false,
+      "stubMetadata": null,
+      "npcIds": [
+        "player_1772644212669_kmgppmrh2"
+      ],
+      "thingIds": [
+        "thing_1772644209453_84091bc75880",
+        "thing_1772644209454_584906296714",
+        "thing_1772644209454_47f4514e3f6b",
+        "thing_1772644209454_203c3c6be583",
+        "thing_1772644209454_206b96edf12c"
+      ],
+      "randomEvents": [
+        "A tearful woman kneels before a marker, whispering to the dead—she mistakes you for someone else before realizing her error.",
+        "An icy wind carries a fragment of sound from below: voices, perhaps, or something imitating them.",
+        "You notice a stone that has been toppled and smashed recent, though no one is around to have done it.",
+        "A veteran adventurer pauses beside you, pointing out which markers belong to parties he survived—and which mark companions he couldn't save.",
+        "Frost melts from a worn inscription as you pass, revealing a name that seems familiar from somewhere you can't quite place."
+      ],
+      "statusEffects": [],
+      "characterConcepts": [],
+      "enemyConcepts": []
+    },
+    "location_1772643622937_e489509c6174": {
+      "id": "location_1772643622937_e489509c6174",
+      "name": "Warning Post",
+      "description": "A fortified platform of timber and stone where the Guild maintains its final official presence before the dungeon itself, though the two guards stationed here spend more time watching each other than the road. A massive board displays the week's casualty statistics in paint that runs when it rains, alongside official notices about quota limits and the rewards for reporting unlicensed expeditions—beneath which someone has nailed a competing notice offering triple rates for the same information.",
+      "shortDescription": "Guild checkpoint overlooking the first view of the dungeon maw.",
+      "baseLevel": 3,
+      "imageId": "img_20260304_171527_9p6ipe1r",
+      "visited": true,
+      "exits": {
+        "memorial_walk": {
+          "id": "exit_1772643622937_d5a387869443",
+          "description": "Memorial Walk",
+          "destination": "location_1772643622936_d96355885fb6",
+          "destinationRegion": "region_1772642705140_dkhqtt5v",
+          "bidirectional": true,
+          "isVehicle": false,
+          "name": "Dungeon Entrance Road",
+          "relativeName": "Dungeon Entrance Road",
+          "vehicleType": null,
+          "exitObject": {
+            "id": "exit_1772643622937_d5a387869443",
+            "description": "Memorial Walk",
+            "destination": "location_1772643622936_d96355885fb6",
+            "destinationRegion": null,
+            "name": "Dungeon Entrance Road",
+            "bidirectional": true,
+            "imageId": null,
+            "isVehicle": false,
+            "vehicleType": null,
+            "type": "two-way",
+            "createdAt": "2026-03-04T17:00:22.937Z",
+            "lastUpdated": "2026-03-04T17:00:22.937Z"
+          }
+        },
+        "the_sinking_stairs": {
+          "id": "exit_1772643622937_198ae7920b30",
+          "description": "The Sinking Stairs",
+          "destination": "location_1772643622937_ff41d67841de",
+          "destinationRegion": "region_1772642705140_dkhqtt5v",
+          "bidirectional": true,
+          "isVehicle": false,
+          "name": "Dungeon Entrance Road",
+          "relativeName": "Dungeon Entrance Road",
+          "vehicleType": null,
+          "exitObject": {
+            "id": "exit_1772643622937_198ae7920b30",
+            "description": "The Sinking Stairs",
+            "destination": "location_1772643622937_ff41d67841de",
+            "destinationRegion": null,
+            "name": "Dungeon Entrance Road",
+            "bidirectional": true,
+            "imageId": null,
+            "isVehicle": false,
+            "vehicleType": null,
+            "type": "two-way",
+            "createdAt": "2026-03-04T17:00:22.937Z",
+            "lastUpdated": "2026-03-04T17:00:22.937Z"
+          }
+        },
+        "switchback_shelter": {
+          "id": "exit_1772643622937_6503e5b60402",
+          "description": "Switchback Shelter",
+          "destination": "location_1772643622937_d47b6903b3d0",
+          "destinationRegion": "region_1772642705140_dkhqtt5v",
+          "bidirectional": true,
+          "isVehicle": false,
+          "name": "Dungeon Entrance Road",
+          "relativeName": "Dungeon Entrance Road",
+          "vehicleType": null,
+          "exitObject": {
+            "id": "exit_1772643622937_6503e5b60402",
+            "description": "Switchback Shelter",
+            "destination": "location_1772643622937_d47b6903b3d0",
+            "destinationRegion": null,
+            "name": "Dungeon Entrance Road",
+            "bidirectional": true,
+            "imageId": null,
+            "isVehicle": false,
+            "vehicleType": null,
+            "type": "two-way",
+            "createdAt": "2026-03-04T17:00:22.937Z",
+            "lastUpdated": "2026-03-04T17:00:22.937Z"
+          }
+        }
+      },
+      "regionId": "region_1772642705140_dkhqtt5v",
+      "controllingFactionId": "setting_faction_1772642453161_2",
+      "createdAt": "2026-03-04T17:00:22.937Z",
+      "lastUpdated": "2026-03-04T17:16:05.903Z",
+      "isStub": false,
+      "hasGeneratedStubs": false,
+      "stubMetadata": null,
+      "npcIds": [
+        "player_1772644471016_dnsb0eb75",
+        "player_1772644565902_036vcsm1r",
+        "player_1772644565903_sd00xx9lw"
+      ],
+      "thingIds": [
+        "thing_1772644493223_e3c9542796ec",
+        "thing_1772644493224_dbcc77c8b0e2",
+        "thing_1772644493224_d71a0de158a9",
+        "thing_1772644493224_975c4499354b",
+        "thing_1772644493224_e9ccd8f0804d",
+        "thing_1772644493224_c8b5f08e21b8"
+      ],
+      "randomEvents": [
+        "A terrified novice collapses on the platform, sobbing about what they saw in the Faded Halls and refusing to descend further.",
+        "The guards stop a frantic woman demanding to know if her son passed through, showing a faded portrait.",
+        "A group of adventurers returns from the depths, one member missing and the others refusing to speak of what happened.",
+        "A cartel operative openly bribes one guard while the other pointedly examines the warning board.",
+        "A sudden tremor shakes the platform as the dungeon exhales a massive breath of freezing mist, temporarily blinding everyone present."
+      ],
+      "statusEffects": [],
+      "characterConcepts": [],
+      "enemyConcepts": []
+    },
+    "location_1772643622937_d47b6903b3d0": {
+      "id": "location_1772643622937_d47b6903b3d0",
+      "name": "Switchback Shelter",
+      "description": null,
+      "shortDescription": "Unofficial refuge in the cliff face, maintained by unknown benefactors.",
+      "baseLevel": 3,
+      "imageId": null,
+      "visited": false,
+      "exits": {
+        "warning_post": {
+          "id": "exit_1772643622937_5598bf216664",
+          "description": "Warning Post",
+          "destination": "location_1772643622937_e489509c6174",
+          "destinationRegion": "region_1772642705140_dkhqtt5v",
+          "bidirectional": true,
+          "isVehicle": false,
+          "name": "Dungeon Entrance Road",
+          "relativeName": "Dungeon Entrance Road",
+          "vehicleType": null,
+          "exitObject": {
+            "id": "exit_1772643622937_5598bf216664",
+            "description": "Warning Post",
+            "destination": "location_1772643622937_e489509c6174",
+            "destinationRegion": null,
+            "name": "Dungeon Entrance Road",
+            "bidirectional": true,
+            "imageId": null,
+            "isVehicle": false,
+            "vehicleType": null,
+            "type": "two-way",
+            "createdAt": "2026-03-04T17:00:22.937Z",
+            "lastUpdated": "2026-03-04T17:00:22.937Z"
+          }
+        }
+      },
+      "regionId": "region_1772642705140_dkhqtt5v",
+      "controllingFactionId": null,
+      "createdAt": "2026-03-04T17:00:22.937Z",
+      "lastUpdated": "2026-03-04T17:00:22.937Z",
+      "isStub": true,
+      "hasGeneratedStubs": false,
+      "stubMetadata": {
+        "regionId": "region_1772642705140_dkhqtt5v",
+        "regionName": "Dungeon Entrance Road",
+        "blueprintDescription": "A crude lean-to built into a natural alcove where the road doubles back on itself, its walls reinforced with scavenged dungeon stone that pulses faintly in darkness. The shelter serves no official purpose—Guild permits don't recognize it, and no merchant claims ownership—yet it persists, maintained by unknown hands who restock its meager supply of firewood and occasionally leave bandages, water, or anonymous notes of encouragement.",
+        "stubDescription": "A crude lean-to built into a natural alcove where the road doubles back on itself, its walls reinforced with scavenged dungeon stone that pulses faintly in darkness. The shelter serves no official purpose—Guild permits don't recognize it, and no merchant claims ownership—yet it persists, maintained by unknown hands who restock its meager supply of firewood and occasionally leave bandages, water, or anonymous notes of encouragement.",
+        "stubShortDescription": "Unofficial refuge in the cliff face, maintained by unknown benefactors.",
+        "suggestedRegionExits": [
+          "Warning Post"
+        ],
+        "themeHint": null,
+        "shortDescription": "Unofficial refuge in the cliff face, maintained by unknown benefactors.",
+        "locationPurpose": "Part of the Dungeon Entrance Road region",
+        "allowRename": false,
+        "relativeLevel": 0,
+        "regionAverageLevel": 3,
+        "computedBaseLevel": 3,
+        "numNpcs": 0,
+        "numHostiles": 0,
+        "locationHasWeather": false,
+        "hasWeather": false
+      },
+      "npcIds": [],
+      "thingIds": [],
+      "randomEvents": [],
+      "statusEffects": [],
+      "characterConcepts": [],
+      "enemyConcepts": []
+    },
+    "location_1772643622937_ff41d67841de": {
+      "id": "location_1772643622937_ff41d67841de",
+      "name": "The Sinking Stairs",
+      "description": "The final approach: a switchback staircase carved directly into the sinkhole's living rock, its steps worn concave by centuries of desperate feet and polished by something else entirely in places where the stone gleams with unnatural smoothness. Cold air rises here in visible currents, carrying scents of mineral water, old magic, and the faint, sweet corruption that veterans learn to associate with the dungeon's deeper hungry places.",
+      "shortDescription": "Impossibly long staircase descending into the earth's wounded depths.",
+      "baseLevel": 4,
+      "imageId": "img_20260304_172329_zhh2bukv",
+      "visited": true,
+      "exits": {
+        "warning_post": {
+          "id": "exit_1772643622937_8d313de91c29",
+          "description": "Warning Post",
+          "destination": "location_1772643622937_e489509c6174",
+          "destinationRegion": "region_1772642705140_dkhqtt5v",
+          "bidirectional": true,
+          "isVehicle": false,
+          "name": "Dungeon Entrance Road",
+          "relativeName": "Dungeon Entrance Road",
+          "vehicleType": null,
+          "exitObject": {
+            "id": "exit_1772643622937_8d313de91c29",
+            "description": "Warning Post",
+            "destination": "location_1772643622937_e489509c6174",
+            "destinationRegion": null,
+            "name": "Dungeon Entrance Road",
+            "bidirectional": true,
+            "imageId": null,
+            "isVehicle": false,
+            "vehicleType": null,
+            "type": "two-way",
+            "createdAt": "2026-03-04T17:00:22.937Z",
+            "lastUpdated": "2026-03-04T17:00:22.937Z"
+          }
+        },
+        "the_maw": {
+          "id": "exit_1772643622937_763fc9d6b7d7",
+          "description": "The Maw",
+          "destination": "location_1772643622937_84323546b005",
+          "destinationRegion": "region_1772642705140_dkhqtt5v",
+          "bidirectional": true,
+          "isVehicle": false,
+          "name": "Dungeon Entrance Road",
+          "relativeName": "Dungeon Entrance Road",
+          "vehicleType": null,
+          "exitObject": {
+            "id": "exit_1772643622937_763fc9d6b7d7",
+            "description": "The Maw",
+            "destination": "location_1772643622937_84323546b005",
+            "destinationRegion": null,
+            "name": "Dungeon Entrance Road",
+            "bidirectional": true,
+            "imageId": null,
+            "isVehicle": false,
+            "vehicleType": null,
+            "type": "two-way",
+            "createdAt": "2026-03-04T17:00:22.937Z",
+            "lastUpdated": "2026-03-04T17:00:22.937Z"
+          }
+        }
+      },
+      "regionId": "region_1772642705140_dkhqtt5v",
+      "controllingFactionId": null,
+      "createdAt": "2026-03-04T17:00:22.937Z",
+      "lastUpdated": "2026-03-04T17:23:49.758Z",
+      "isStub": false,
+      "hasGeneratedStubs": false,
+      "stubMetadata": null,
+      "npcIds": [
+        "player_1772644953014_0psyfa4dx"
+      ],
+      "thingIds": [
+        "thing_1772644943988_28559fdfd222",
+        "thing_1772644943989_12fc25d4faa6",
+        "thing_1772644943989_ba55c5b5ff93",
+        "thing_1772644943989_e4d45edc30ab",
+        "thing_1772644943989_ebf20a245bcb",
+        "thing_1772644943990_bea8b4620625"
+      ],
+      "randomEvents": [
+        "One of the worn steps crumbles beneath your weight, sending stone fragments clattering into the void below—you catch yourself on the rough wall, heart pounding.",
+        "A cold draft carries voices from somewhere deeper, fragments of conversation in a language that sounds almost familiar but slides away like water through fingers.",
+        "You find a discarded torch wedged between steps, still dry and usable—someone left it here recently, perhaps in haste.",
+        "Bioluminescent lichen pulses faintly on the wall, casting just enough pale blue light to reveal the next dozen steps before fading again.",
+        "The mist parts briefly, revealing a narrow side passage that wasn't visible moments ago—by the time you look back, the fog has closed over it like water."
+      ],
+      "statusEffects": [],
+      "characterConcepts": [],
+      "enemyConcepts": []
+    },
+    "location_1772643622937_84323546b005": {
+      "id": "location_1772643622937_84323546b005",
+      "name": "The Maw",
+      "description": null,
+      "shortDescription": "The sinkhole's base where countless passages begin their hungry invitation.",
+      "baseLevel": 4,
+      "imageId": null,
+      "visited": false,
+      "exits": {
+        "the_sinking_stairs": {
+          "id": "exit_1772643622937_95f53a811215",
+          "description": "The Sinking Stairs",
+          "destination": "location_1772643622937_ff41d67841de",
+          "destinationRegion": "region_1772642705140_dkhqtt5v",
+          "bidirectional": true,
+          "isVehicle": false,
+          "name": "Dungeon Entrance Road",
+          "relativeName": "Dungeon Entrance Road",
+          "vehicleType": null,
+          "exitObject": {
+            "id": "exit_1772643622937_95f53a811215",
+            "description": "The Sinking Stairs",
+            "destination": "location_1772643622937_ff41d67841de",
+            "destinationRegion": null,
+            "name": "Dungeon Entrance Road",
+            "bidirectional": true,
+            "imageId": null,
+            "isVehicle": false,
+            "vehicleType": null,
+            "type": "two-way",
+            "createdAt": "2026-03-04T17:00:22.937Z",
+            "lastUpdated": "2026-03-04T17:00:22.937Z"
+          }
+        },
+        "valdros_s_folly": {
+          "id": "exit_1772643630625_4c45d458971c",
+          "description": "Valdros's Folly",
+          "destination": "location_1772643630625_344ffd166e26",
+          "bidirectional": false,
+          "isVehicle": false,
+          "name": "Valdros's Folly",
+          "relativeName": "Valdros's Folly (in Valdros's Folly)",
+          "vehicleType": null,
+          "exitObject": {
+            "id": "exit_1772643630625_4c45d458971c",
+            "description": "Valdros's Folly",
+            "destination": "location_1772643630625_344ffd166e26",
+            "destinationRegion": "region_1772643630625_bu466fmg",
+            "name": "Valdros's Folly",
+            "bidirectional": false,
+            "imageId": null,
+            "isVehicle": false,
+            "vehicleType": null,
+            "type": "one-way",
+            "createdAt": "2026-03-04T17:00:30.625Z",
+            "lastUpdated": "2026-03-04T17:00:30.625Z"
+          }
+        },
+        "the_twilight_depths": {
+          "id": "exit_1772643630626_38935303ca83",
+          "description": "The Twilight Depths",
+          "destination": "location_1772643630626_50aded6a022c",
+          "bidirectional": false,
+          "isVehicle": false,
+          "name": "The Twilight Depths",
+          "relativeName": "The Twilight Depths (in The Twilight Depths)",
+          "vehicleType": null,
+          "exitObject": {
+            "id": "exit_1772643630626_38935303ca83",
+            "description": "The Twilight Depths",
+            "destination": "location_1772643630626_50aded6a022c",
+            "destinationRegion": "region_1772643630626_dre3x4l8",
+            "name": "The Twilight Depths",
+            "bidirectional": false,
+            "imageId": null,
+            "isVehicle": false,
+            "vehicleType": null,
+            "type": "one-way",
+            "createdAt": "2026-03-04T17:00:30.626Z",
+            "lastUpdated": "2026-03-04T17:00:30.626Z"
+          }
+        },
+        "black_market_tunnels": {
+          "id": "exit_1772643630626_113f17b0d837",
+          "description": "Black Market Tunnels",
+          "destination": "location_1772643630626_e10010d3ea9b",
+          "bidirectional": false,
+          "isVehicle": false,
+          "name": "Black Market Tunnels",
+          "relativeName": "Black Market Tunnels (in Black Market Tunnels)",
+          "vehicleType": null,
+          "exitObject": {
+            "id": "exit_1772643630626_113f17b0d837",
+            "description": "Black Market Tunnels",
+            "destination": "location_1772643630626_e10010d3ea9b",
+            "destinationRegion": "region_1772643630626_7pqq0j0b",
+            "name": "Black Market Tunnels",
+            "bidirectional": false,
+            "imageId": null,
+            "isVehicle": false,
+            "vehicleType": null,
+            "type": "one-way",
+            "createdAt": "2026-03-04T17:00:30.626Z",
+            "lastUpdated": "2026-03-04T17:00:30.626Z"
+          }
+        }
+      },
+      "regionId": "region_1772642705140_dkhqtt5v",
+      "controllingFactionId": "setting_faction_1772642453161_2",
+      "createdAt": "2026-03-04T17:00:22.937Z",
+      "lastUpdated": "2026-03-04T17:01:49.321Z",
+      "isStub": true,
+      "hasGeneratedStubs": false,
+      "stubMetadata": {
+        "regionId": "region_1772642705140_dkhqtt5v",
+        "regionName": "Dungeon Entrance Road",
+        "blueprintDescription": "The terminus: a cavernous opening where the stairs emerge onto a ledge overlooking a vast vertical shaft, its depths lost to darkness and its walls studded with the entrances to countless passages—some natural, others bearing the unmistakable angles of deliberate construction. The Guild maintains a final checkpoint here, little more than a chained ledger where parties register their intended routes and estimated return dates, though the clerk who tends it has long since stopped reading the entries before filing them.",
+        "stubDescription": "The terminus: a cavernous opening where the stairs emerge onto a ledge overlooking a vast vertical shaft, its depths lost to darkness and its walls studded with the entrances to countless passages—some natural, others bearing the unmistakable angles of deliberate construction. The Guild maintains a final checkpoint here, little more than a chained ledger where parties register their intended routes and estimated return dates, though the clerk who tends it has long since stopped reading the entries before filing them.",
+        "stubShortDescription": "The sinkhole's base where countless passages begin their hungry invitation.",
+        "suggestedRegionExits": [
+          "The Sinking Stairs"
+        ],
+        "themeHint": null,
+        "shortDescription": "The sinkhole's base where countless passages begin their hungry invitation.",
+        "locationPurpose": "Part of the Dungeon Entrance Road region",
+        "allowRename": false,
+        "relativeLevel": 1,
+        "regionAverageLevel": 3,
+        "computedBaseLevel": 4,
+        "numNpcs": 1,
+        "numHostiles": 0,
+        "locationHasWeather": false,
+        "hasWeather": false
+      },
+      "npcIds": [
+        "player_1772643709321_gx5y8yfn5"
+      ],
+      "thingIds": [],
+      "randomEvents": [],
+      "statusEffects": [],
+      "characterConcepts": [],
+      "enemyConcepts": []
+    },
+    "location_1772643630625_344ffd166e26": {
+      "id": "location_1772643630625_344ffd166e26",
+      "name": "Valdros's Folly",
+      "description": null,
+      "shortDescription": "An unexplored path leading toward Valdros's Folly.",
+      "baseLevel": 4,
+      "imageId": null,
+      "visited": false,
+      "exits": {},
+      "regionId": "region_1772643630625_bu466fmg",
+      "controllingFactionId": null,
+      "createdAt": "2026-03-04T17:00:30.625Z",
+      "lastUpdated": "2026-03-04T17:00:30.625Z",
+      "isStub": true,
+      "hasGeneratedStubs": false,
+      "stubMetadata": {
+        "originLocationId": "location_1772643622937_84323546b005",
+        "originRegionId": "region_1772642705140_dkhqtt5v",
+        "originDirection": "valdros_s_folly",
+        "regionId": "region_1772643630625_bu466fmg",
+        "shortDescription": "An unexplored path leading toward Valdros's Folly.",
+        "locationPurpose": "Entrance to Valdros's Folly",
+        "allowRename": false,
+        "isRegionEntryStub": true,
+        "targetRegionId": "region_1772643630625_bu466fmg",
+        "targetRegionName": "Valdros's Folly",
+        "targetRegionDescription": "The uppermost and most stable region of the Sunken Labyrinth, where crumbling stonework meets invasive nature and novice adventurers test their mettle against giant rats, goblin scavengers, and the occasional restless dead. The corridors here shift slowly enough to be mapped, and survivors can usually find their way back to the Maw with persistence.",
+        "targetRegionRelationship": "Adjacent",
+        "targetRegionRelativeLevel": 1,
+        "relativeLevel": 1,
+        "settingDescription": "Test Dungeon Game - Fantasy Dungeon / Dungeon Crawler, Dark Fantasy The Sunken Labyrinth of Valdros is an ancient, ever-shifting dungeon that beneath the crumbling ruins of a once-great magical empire. Centuries ago, the Archmage Valdros attempted to achieve immortality through a forbidden ritual that backfired catastrophically, sinking his entire citadel beneath the earth and twisting its halls into an infinite, maze-like nightmare. Now, the labyrinth breathes with a life of its own—corridors realign when no one is watching, stairs lead to different floors depending on the phase of the moon, and rooms appear and disappear like half-remembered dreams. Adventurers from across the realm are drawn to the dungeon's depths by whispers of unimaginable treasures, powerful artifacts, and perhaps even the secrets of Valdros's forbidden magic.\n\nThe dungeon is divided into distinct strata, each with its own生态环境 and denizens. The uppermost levels, known as the Faded Halls, are relatively stable and frequented by novice adventurers seeking their fortunes. Here, crumbling stonework is choked with ivy and moss, and the dangers are modest—giant rats, goblin scavengers, and the occasional animated skeleton. Deeper lies the Twilight Depths, where bioluminescent fungi cast an eerie glow over abandoned laboratories and trapped corridors guarded by constructs still following their centuries-old commands. Below that, the Abyssal Reaches harbor truly terrifying creatures: aberrations twisted by wild magic, undead knights who eternally patrol forgotten chambers, and beings from other planes drawn to the dungeon's reality-thinning energies. At the very bottom, if such a concept even applies, lies the Sanctum of Valdros himself—though none have reached it and returned to tell the tale.\n\nThe nearby settlement of Dusthollow has grown around the dungeon's entrance, a rough-and-tumble frontier town where adventurers gather to form parties, restock supplies, and spend their hard-won treasure. The town operates under an uneasy truce between the Adventurer's Guild, which regulates expeditions and maintains order, and various merchant houses, criminal organizations, and cults that seek to exploit the dungeon's riches for their own purposes. In Dusthollow, a healing potion costs the same as a farmer's monthly wages, and information about newly discovered passages is traded like currency. Every day, hopeful newcomers arrive with stars in their eyes, while veterans with haunted expressions drink away their sorrows, muttering about the things they've seen in the depths. The dungeon takes and gives in equal measure, and no one who descends ever truly returns unchanged. Key traits: tone Atmospheric, perilous, wondrous, difficulty Medium, magic Medium-High, technology Medieval with magical artifacts. Common starting location: Town near dungeon.",
+        "regionAverageLevel": 3,
+        "stubShortDescription": "An unexplored path leading toward Valdros's Folly."
+      },
+      "npcIds": [],
+      "thingIds": [],
+      "randomEvents": [],
+      "statusEffects": [],
+      "characterConcepts": [],
+      "enemyConcepts": []
+    },
+    "location_1772643630626_50aded6a022c": {
+      "id": "location_1772643630626_50aded6a022c",
+      "name": "The Twilight Depths",
+      "description": null,
+      "shortDescription": "An unexplored path leading toward The Twilight Depths.",
+      "baseLevel": 6,
+      "imageId": null,
+      "visited": false,
+      "exits": {},
+      "regionId": "region_1772643630626_dre3x4l8",
+      "controllingFactionId": "setting_faction_1772642453161_3",
+      "createdAt": "2026-03-04T17:00:30.626Z",
+      "lastUpdated": "2026-03-04T17:00:30.626Z",
+      "isStub": true,
+      "hasGeneratedStubs": false,
+      "stubMetadata": {
+        "originLocationId": "location_1772643622937_84323546b005",
+        "originRegionId": "region_1772642705140_dkhqtt5v",
+        "originDirection": "the_twilight_depths",
+        "regionId": "region_1772643630626_dre3x4l8",
+        "shortDescription": "An unexplored path leading toward The Twilight Depths.",
+        "locationPurpose": "Entrance to The Twilight Depths",
+        "allowRename": false,
+        "isRegionEntryStub": true,
+        "targetRegionId": "region_1772643630626_dre3x4l8",
+        "targetRegionName": "The Twilight Depths",
+        "targetRegionDescription": "Bioluminescent fungi illuminate abandoned laboratories and trapped corridors where constructs still follow centuries-old commands. Reality grows thin here, and the Sisters of the Buried Light maintain hidden sanctuaries for those they deem worthy of salvation—or conversion.",
+        "targetRegionRelationship": "Adjacent",
+        "targetRegionRelativeLevel": 3,
+        "relativeLevel": 3,
+        "settingDescription": "Test Dungeon Game - Fantasy Dungeon / Dungeon Crawler, Dark Fantasy The Sunken Labyrinth of Valdros is an ancient, ever-shifting dungeon that beneath the crumbling ruins of a once-great magical empire. Centuries ago, the Archmage Valdros attempted to achieve immortality through a forbidden ritual that backfired catastrophically, sinking his entire citadel beneath the earth and twisting its halls into an infinite, maze-like nightmare. Now, the labyrinth breathes with a life of its own—corridors realign when no one is watching, stairs lead to different floors depending on the phase of the moon, and rooms appear and disappear like half-remembered dreams. Adventurers from across the realm are drawn to the dungeon's depths by whispers of unimaginable treasures, powerful artifacts, and perhaps even the secrets of Valdros's forbidden magic.\n\nThe dungeon is divided into distinct strata, each with its own生态环境 and denizens. The uppermost levels, known as the Faded Halls, are relatively stable and frequented by novice adventurers seeking their fortunes. Here, crumbling stonework is choked with ivy and moss, and the dangers are modest—giant rats, goblin scavengers, and the occasional animated skeleton. Deeper lies the Twilight Depths, where bioluminescent fungi cast an eerie glow over abandoned laboratories and trapped corridors guarded by constructs still following their centuries-old commands. Below that, the Abyssal Reaches harbor truly terrifying creatures: aberrations twisted by wild magic, undead knights who eternally patrol forgotten chambers, and beings from other planes drawn to the dungeon's reality-thinning energies. At the very bottom, if such a concept even applies, lies the Sanctum of Valdros himself—though none have reached it and returned to tell the tale.\n\nThe nearby settlement of Dusthollow has grown around the dungeon's entrance, a rough-and-tumble frontier town where adventurers gather to form parties, restock supplies, and spend their hard-won treasure. The town operates under an uneasy truce between the Adventurer's Guild, which regulates expeditions and maintains order, and various merchant houses, criminal organizations, and cults that seek to exploit the dungeon's riches for their own purposes. In Dusthollow, a healing potion costs the same as a farmer's monthly wages, and information about newly discovered passages is traded like currency. Every day, hopeful newcomers arrive with stars in their eyes, while veterans with haunted expressions drink away their sorrows, muttering about the things they've seen in the depths. The dungeon takes and gives in equal measure, and no one who descends ever truly returns unchanged. Key traits: tone Atmospheric, perilous, wondrous, difficulty Medium, magic Medium-High, technology Medieval with magical artifacts. Common starting location: Town near dungeon.",
+        "regionAverageLevel": 3,
+        "stubShortDescription": "An unexplored path leading toward The Twilight Depths."
+      },
+      "npcIds": [],
+      "thingIds": [],
+      "randomEvents": [],
+      "statusEffects": [],
+      "characterConcepts": [],
+      "enemyConcepts": []
+    },
+    "location_1772643630626_e10010d3ea9b": {
+      "id": "location_1772643630626_e10010d3ea9b",
+      "name": "Black Market Tunnels",
+      "description": null,
+      "shortDescription": "An unexplored path leading toward Black Market Tunnels.",
+      "baseLevel": 5,
+      "imageId": null,
+      "visited": false,
+      "exits": {},
+      "regionId": "region_1772643630626_7pqq0j0b",
+      "controllingFactionId": "setting_faction_1772642453161_4",
+      "createdAt": "2026-03-04T17:00:30.626Z",
+      "lastUpdated": "2026-03-04T17:00:30.626Z",
+      "isStub": true,
+      "hasGeneratedStubs": false,
+      "stubMetadata": {
+        "originLocationId": "location_1772643622937_84323546b005",
+        "originRegionId": "region_1772642705140_dkhqtt5v",
+        "originDirection": "black_market_tunnels",
+        "regionId": "region_1772643630626_7pqq0j0b",
+        "shortDescription": "An unexplored path leading toward Black Market Tunnels.",
+        "locationPurpose": "Entrance to Black Market Tunnels",
+        "allowRename": false,
+        "isRegionEntryStub": true,
+        "targetRegionId": "region_1772643630626_7pqq0j0b",
+        "targetRegionName": "Black Market Tunnels",
+        "targetRegionDescription": "An unofficial network of passages maintained by the Veiled Cartel to bypass Guild checkpoints, connecting to hidden surface entrances and illicit trade posts throughout the upper dungeon. The Cartel charges for passage in favors, secrets, or blood, and their guides know routes that appear on no legitimate map.",
+        "targetRegionRelationship": "Adjacent",
+        "targetRegionRelativeLevel": 2,
+        "relativeLevel": 2,
+        "settingDescription": "Test Dungeon Game - Fantasy Dungeon / Dungeon Crawler, Dark Fantasy The Sunken Labyrinth of Valdros is an ancient, ever-shifting dungeon that beneath the crumbling ruins of a once-great magical empire. Centuries ago, the Archmage Valdros attempted to achieve immortality through a forbidden ritual that backfired catastrophically, sinking his entire citadel beneath the earth and twisting its halls into an infinite, maze-like nightmare. Now, the labyrinth breathes with a life of its own—corridors realign when no one is watching, stairs lead to different floors depending on the phase of the moon, and rooms appear and disappear like half-remembered dreams. Adventurers from across the realm are drawn to the dungeon's depths by whispers of unimaginable treasures, powerful artifacts, and perhaps even the secrets of Valdros's forbidden magic.\n\nThe dungeon is divided into distinct strata, each with its own生态环境 and denizens. The uppermost levels, known as the Faded Halls, are relatively stable and frequented by novice adventurers seeking their fortunes. Here, crumbling stonework is choked with ivy and moss, and the dangers are modest—giant rats, goblin scavengers, and the occasional animated skeleton. Deeper lies the Twilight Depths, where bioluminescent fungi cast an eerie glow over abandoned laboratories and trapped corridors guarded by constructs still following their centuries-old commands. Below that, the Abyssal Reaches harbor truly terrifying creatures: aberrations twisted by wild magic, undead knights who eternally patrol forgotten chambers, and beings from other planes drawn to the dungeon's reality-thinning energies. At the very bottom, if such a concept even applies, lies the Sanctum of Valdros himself—though none have reached it and returned to tell the tale.\n\nThe nearby settlement of Dusthollow has grown around the dungeon's entrance, a rough-and-tumble frontier town where adventurers gather to form parties, restock supplies, and spend their hard-won treasure. The town operates under an uneasy truce between the Adventurer's Guild, which regulates expeditions and maintains order, and various merchant houses, criminal organizations, and cults that seek to exploit the dungeon's riches for their own purposes. In Dusthollow, a healing potion costs the same as a farmer's monthly wages, and information about newly discovered passages is traded like currency. Every day, hopeful newcomers arrive with stars in their eyes, while veterans with haunted expressions drink away their sorrows, muttering about the things they've seen in the depths. The dungeon takes and gives in equal measure, and no one who descends ever truly returns unchanged. Key traits: tone Atmospheric, perilous, wondrous, difficulty Medium, magic Medium-High, technology Medieval with magical artifacts. Common starting location: Town near dungeon.",
+        "regionAverageLevel": 3,
+        "stubShortDescription": "An unexplored path leading toward Black Market Tunnels."
+      },
+      "npcIds": [],
+      "thingIds": [],
+      "randomEvents": [],
+      "statusEffects": [],
+      "characterConcepts": [],
+      "enemyConcepts": []
+    }
+  },
+  "locationExits": {
+    "exit_1772642705138_d768db6eff7f": {
+      "id": "exit_1772642705138_d768db6eff7f",
+      "description": "Dusthollow Market Square",
+      "destination": "location_1772642705138_a6a9ba3b37b0",
+      "destinationRegion": "region_1772642705138_x1dkik61",
+      "name": "Dusthollow Market Square",
+      "bidirectional": false,
+      "imageId": null,
+      "isVehicle": false,
+      "vehicleType": null,
+      "type": "one-way",
+      "createdAt": "2026-03-04T16:45:05.138Z",
+      "lastUpdated": "2026-03-04T16:45:05.139Z"
+    },
+    "exit_1772642705139_b2af400d57d2": {
+      "id": "exit_1772642705139_b2af400d57d2",
+      "description": "Dusthollow Inn District",
+      "destination": "location_1772642705139_d281c5d5dc61",
+      "destinationRegion": "region_1772642705139_q8x47yo1",
+      "name": "Dusthollow Inn District",
+      "bidirectional": false,
+      "imageId": null,
+      "isVehicle": false,
+      "vehicleType": null,
+      "type": "one-way",
+      "createdAt": "2026-03-04T16:45:05.139Z",
+      "lastUpdated": "2026-03-04T16:45:05.139Z"
+    },
+    "exit_1772642705140_ffbeca9a9dd8": {
+      "id": "exit_1772642705140_ffbeca9a9dd8",
+      "description": "Last Chance Market",
+      "destination": "location_1772643622936_675966334234",
+      "destinationRegion": "region_1772642705140_dkhqtt5v",
+      "name": "Dungeon Entrance Road",
+      "bidirectional": false,
+      "imageId": null,
+      "isVehicle": false,
+      "vehicleType": null,
+      "type": "one-way",
+      "createdAt": "2026-03-04T16:45:05.140Z",
+      "lastUpdated": "2026-03-04T17:06:41.203Z"
+    },
+    "exit_1772643630624_dc8cc5f4ed83": {
+      "id": "exit_1772643630624_dc8cc5f4ed83",
+      "description": "Guildhall Exterior",
+      "destination": "location_1772642705133_c64222056ec5",
+      "destinationRegion": "region_1772642705121_ab15058beea1",
+      "name": "Dusthollow - The Guildhall",
+      "bidirectional": false,
+      "imageId": null,
+      "isVehicle": false,
+      "vehicleType": null,
+      "type": "one-way",
+      "createdAt": "2026-03-04T17:00:30.624Z",
+      "lastUpdated": "2026-03-04T17:06:41.203Z"
+    },
+    "exit_1772643630625_4c45d458971c": {
+      "id": "exit_1772643630625_4c45d458971c",
+      "description": "Valdros's Folly",
+      "destination": "location_1772643630625_344ffd166e26",
+      "destinationRegion": "region_1772643630625_bu466fmg",
+      "name": "Valdros's Folly",
+      "bidirectional": false,
+      "imageId": null,
+      "isVehicle": false,
+      "vehicleType": null,
+      "type": "one-way",
+      "createdAt": "2026-03-04T17:00:30.625Z",
+      "lastUpdated": "2026-03-04T17:00:30.625Z"
+    },
+    "exit_1772643630626_38935303ca83": {
+      "id": "exit_1772643630626_38935303ca83",
+      "description": "The Twilight Depths",
+      "destination": "location_1772643630626_50aded6a022c",
+      "destinationRegion": "region_1772643630626_dre3x4l8",
+      "name": "The Twilight Depths",
+      "bidirectional": false,
+      "imageId": null,
+      "isVehicle": false,
+      "vehicleType": null,
+      "type": "one-way",
+      "createdAt": "2026-03-04T17:00:30.626Z",
+      "lastUpdated": "2026-03-04T17:00:30.626Z"
+    },
+    "exit_1772643630626_113f17b0d837": {
+      "id": "exit_1772643630626_113f17b0d837",
+      "description": "Black Market Tunnels",
+      "destination": "location_1772643630626_e10010d3ea9b",
+      "destinationRegion": "region_1772643630626_7pqq0j0b",
+      "name": "Black Market Tunnels",
+      "bidirectional": false,
+      "imageId": null,
+      "isVehicle": false,
+      "vehicleType": null,
+      "type": "one-way",
+      "createdAt": "2026-03-04T17:00:30.626Z",
+      "lastUpdated": "2026-03-04T17:00:30.626Z"
+    }
+  },
+  "regions": {
+    "region_1772642705121_ab15058beea1": {
+      "id": "region_1772642705121_ab15058beea1",
+      "name": "Dusthollow - The Guildhall",
+      "description": "The Adventurer's Guildhall rises from Dusthollow's muddy streets like a fortress of timber and stone, its weathered facade bearing the scars of countless expeditions launched and concluded within its walls. Inside, the air hangs thick with the mingled scents of woodsmoke from perpetually burning hearths, savory stew simmering in iron pots, and the sharp tang of leather armor being repaired between delves. The building breathes with the rhythm of the dungeon itself—quiet in the bitter hours before dawn when parties descend, raucous at twilight when survivors return with tales of glory or hollow-eyed grief.",
+      "shortDescription": "Guild headquarters for dungeon expeditions, thick with woodsmoke, secrets, and the weight of countless departures.",
+      "locationBlueprints": [
+        {
+          "name": "Guildhall Exterior",
+          "description": "The Guildhall dominates this corner of Dusthollow, its three stories of reinforced oak and gray stone looming over the surrounding structures. A covered porch extends from the main entrance, where adventurers gather to check equipment in the weak winter light, their breath misting as they speak of routes and hazards. Carved wooden signs display the Guild's crest—a lantern descending into darkness—above doorways worn smooth by generations of gauntleted hands.\n\nThe street before the hall churns with mud and melting snow, littered with the debris of preparation: discarded ration wrappers, broken arrow shafts, and the occasional bloodstain that no one bothers to wash away. Guild guards in weathered leather stand watch, their eyes sharp for troublemakers and unlicensed expedition leaders seeking to poach clients from the sanctioned boards inside.",
+          "shortDescription": "The imposing timber and stone facade of the Adventurer's Guildhall, where hopeful delvers gather before expeditions.",
+          "exits": [
+            "Common Room"
+          ],
+          "aliases": [],
+          "relativeLevel": 0,
+          "numNpcs": 2,
+          "numHostiles": 0,
+          "controllingFaction": "Dusthollow Adventurer's Guild",
+          "hasWeather": false
+        },
+        {
+          "name": "Common Room",
+          "description": "The Common Room stretches wide and low-ceilinged, its heavy beams blackened by decades of hearth smoke and its stone floor worn into channels by countless boots. Three massive fireplaces burn along the outer walls, their flames casting dancing shadows across long tables where adventurers huddle over steaming bowls of stew and murmured strategy. The acoustics here are strange—conversations carry oddly, so that a whispered confession at one table might reach attentive ears three rows away.\n\nAbove the central hearth hangs a massive map of the known dungeon levels, its parchment yellowed and annotated with hundreds of small flags marking confirmed deaths, discovered treasures, and passages that no longer exist. Guild servers move between tables with practiced efficiency, their trays heavy with tankards and their eyes sharper than they pretend, gathering intelligence for their masters even as they serve.",
+          "shortDescription": "The bustling main hall where adventurers eat, plan, and trade rumors before the great hearths.",
+          "exits": [
+            "Guildhall Exterior",
+            "Guild Master's Office",
+            "Supply Storeroom",
+            "Dormitory",
+            "Notice Board Area"
+          ],
+          "aliases": [],
+          "relativeLevel": 0,
+          "numNpcs": 4,
+          "numHostiles": 0,
+          "controllingFaction": "Dusthollow Adventurer's Guild",
+          "hasWeather": false
+        },
+        {
+          "name": "Guild Master's Office",
+          "description": "A narrow staircase climbs from the Common Room's corner to this sanctum of polished mahogany and calculated intimidation. The Guild Master's desk dominates the space, its surface immaculate except for a single ledger and a bronze bell that summons servants without visible means of connection. Behind the desk, a tall window overlooks the Dungeon Entrance Road, so that the Master might watch parties depart and calculate the odds of their return even as they negotiate fees.\n\nThe walls display trophies of successful expeditions—recovered artifacts behind glass, mounted monster heads with glass eyes that seem to follow visitors, and portraits of past Masters whose expressions grow progressively more haunted with each generation. A hidden safe built into the floor contains the true records: unlicensed expeditions quietly approved, bribes accepted, and the names of those sacrificed to maintain profitable relationships with the dungeon's deeper powers.",
+          "shortDescription": "The imposing office where expedition licenses are granted and fortunes extracted from desperate delvers.",
+          "exits": [
+            "Common Room"
+          ],
+          "aliases": [],
+          "relativeLevel": 1,
+          "numNpcs": 1,
+          "numHostiles": 0,
+          "controllingFaction": "Dusthollow Adventurer's Guild",
+          "hasWeather": false
+        },
+        {
+          "name": "Supply Storeroom",
+          "description": "The Supply Storeroom extends deep into the Guildhall's rear, a cavernous space of wooden racks and iron-barred cages where the tools of survival are dispensed at exorbitant markup. Lanterns hang every few paces, their light catching on the gleam of steel weapons, the dull canvas of expedition packs, and the amber glass of potion bottles arranged by potency and price. The air here smells of oil, dried meat, and the particular mustiness of rope that has never seen sunlight.\n\nA counter divides the public space from the secured reserves, where clerks in Guild livery negotiate with the desperate and the prepared alike. Behind them, a heavy door of iron-bound oak leads to the true vault—restricted equipment, cursed items awaiting identification, and the occasional artifact recovered under circumstances too sensitive for the official record.",
+          "shortDescription": "The well-stocked but overpriced source of dungeon-delving equipment and provisions.",
+          "exits": [
+            "Common Room",
+            "Guildhall Exterior"
+          ],
+          "aliases": [],
+          "relativeLevel": 0,
+          "numNpcs": 2,
+          "numHostiles": 0,
+          "controllingFaction": "Dusthollow Adventurer's Guild",
+          "hasWeather": false
+        },
+        {
+          "name": "Dormitory",
+          "description": "The Dormitory occupies the Guildhall's upper floor, a long hall of narrow cots separated by hanging canvas partitions that provide the illusion of privacy. Each cot bears the marks of its previous occupants—carved initials, stained bedding, the occasional desperate message scrawled in charcoal or blood. The windows here are small and high, admitting only gray shafts of winter light that do little to dispel the perpetual twilight of the sleeping quarters.\n\nAt the hall's end, a communal washroom steams with hot water for those who can pay the fee, while a small shrine to whatever gods adventurers favor stands opposite, its candles kept burning by anonymous donations. The atmosphere is one of temporary refuge, of bodies resting before the next descent, and of the peculiar intimacy of strangers who may never see each other again after tomorrow's dawn.",
+          "shortDescription": "Spartan sleeping quarters where adventurers rest before expeditions or recover from failed delves.",
+          "exits": [
+            "Common Room",
+            "Guildhall Exterior"
+          ],
+          "aliases": [],
+          "relativeLevel": 0,
+          "numNpcs": 3,
+          "numHostiles": 0,
+          "controllingFaction": "Dusthollow Adventurer's Guild",
+          "hasWeather": false
+        },
+        {
+          "name": "Notice Board Area",
+          "description": "The Notice Board Area opens from the Common Room through an archway carved with warning symbols older than the Guild itself. Three massive boards dominate the space, their surfaces layered with parchment of varying ages—fresh contracts pinned atop faded pleas for information about the missing, reward notices for recovered bodies, and cryptic messages in codes known only to specific delving companies. The floor here is scattered with discarded notices, trampled into pulp by those who search for opportunity.\n\nBenches line the walls where adventurers sit to study offers, their faces lit by the greenish glow of bioluminescent moss cultivated in hanging pots—a luxury imported from the Twilight Depths that the Guild uses to demonstrate its connection to the dungeon's mysteries. A scribe's desk sits permanently staffed, where for a fee, the literate will read contracts aloud or record verbal agreements that the Guild will enforce with whatever violence proves necessary.",
+          "shortDescription": "The crowded posting area where contracts, maps, and desperate pleas compete for adventurer attention.",
+          "exits": [
+            "Common Room"
+          ],
+          "aliases": [],
+          "relativeLevel": 0,
+          "numNpcs": 3,
+          "numHostiles": 0,
+          "controllingFaction": "Dusthollow Adventurer's Guild",
+          "hasWeather": false
+        }
+      ],
+      "locationIds": [
+        "location_1772642705133_c64222056ec5",
+        "location_1772642705134_f99de2e2cc27",
+        "location_1772642705134_f6455ecdce84",
+        "location_1772642705134_e705f7d91d91",
+        "location_1772642705135_23cb59d7df9e",
+        "location_1772642705135_c012a898a08f"
+      ],
+      "entranceLocationId": "location_1772642705133_c64222056ec5",
+      "parentRegionId": null,
+      "controllingFactionId": "setting_faction_1772642453161_2",
+      "createdAt": "2026-03-04T16:45:05.121Z",
+      "lastUpdated": "2026-03-04T17:00:30.625Z",
+      "statusEffects": [],
+      "averageLevel": 3,
+      "numImportantNPCs": 3,
+      "randomEvents": [
+        "A veteran delver stands on a table, offering to sell a genuine map to an unclaimed treasure room, while Guild guards move to intervene.",
+        "The hearth fires suddenly gutter and turn green for three heartbeats, prompting whispered prayers and the signing of emergency wills.",
+        "A courier arrives with news that a major expedition has returned with casualties, and the Common Room falls silent as names are read.",
+        "Two rival parties nearly come to blows over a disputed contract, their confrontation broken up by a bored server with a tray of drinks.",
+        "A wealthy patron enters seeking to hire a party for a \"discreet\" recovery mission, their fine clothes marking them as from far beyond Dusthollow.",
+        "The Guild Master announces a temporary ban on solo expeditions following three disappearances in as many days, sparking protests.",
+        "A strange fungus begins growing on one of the support beams, prompting hushed speculation about contamination from the depths.",
+        "A bard performs a new ballad about a famous delver's death, only to discover the subject is alive and drinking at the next table.",
+        "The supply of healing potions runs low, causing prices to double and desperate adventurers to consider unlicensed alchemists.",
+        "A child slips inside seeking their parent, who never returned from an expedition three weeks prior, and receives conflicting stories from the regulars."
+      ],
+      "characterConcepts": [
+        "A Guild scribe who secretly sells information about expedition routes to the Veiled Cartel, justifying the betrayal as necessary survival.",
+        "A former delver turned cook whose meals contain subtle coded warnings about dungeon hazards, recognizable only to those who know to look.",
+        "An optimistic young healer who keeps detailed journals of every wound treated, believing patterns in the injuries will reveal dungeon secrets.",
+        "A debt collector for the Guild who specializes in \"alternative payment arrangements\" from failed expeditions, haunted by the faces of those they've ruined.",
+        "A cartographer who sells maps she knows are outdated, telling herself that the dungeon's shifting nature makes accuracy impossible anyway.",
+        "A retired adventurer who sits by the same hearth every day, telling exaggerated stories while silently judging which newcomers will survive.",
+        "A black market contact who poses as a simple lantern-seller, her wares containing hidden compartments for smuggling restricted goods.",
+        "A priest of a forgotten god who maintains the dormitory shrine, collecting confessions that reveal more about dungeon dangers than any map.",
+        "A young noble slumming in Dusthollow for \"authentic experience,\" their naivete making them both exploitable and dangerously unpredictable.",
+        "A survivor of three total party kills who refuses to descend again, instead making a living by identifying recovered artifacts and their curses."
+      ],
+      "enemyConcepts": [
+        "A Guild guard corrupted by Veiled Cartel promises, who plants false evidence to discredit honest competitors.",
+        "A desperate adventurer who has resorted to mugging fellow delvers for equipment, their eyes showing the first signs of dungeon madness.",
+        "A smuggler using the dormitory's service passages to move cursed items, willing to kill anyone who discovers their route.",
+        "A doppelganger who has replaced a popular expedition leader, subtly steering parties toward ambushes arranged with dungeon denizens.",
+        "A debt slave of the Guild forced to spy on fellow adventurers, torn between loyalty to friends and threats against their family.",
+        "A veteran suffering from severe dungeon-induced paranoia who attacks anyone who approaches their \"territory\" in the Common Room.",
+        "A cultist of Valdros's Hollow Court who has infiltrated the Guild to identify promising adventurers for \"recruitment\" below.",
+        "A poisoner selling tainted rations meant to weaken parties so their accomplices can rob the corpses in the dungeon.",
+        "A former Guild Master who faked their death and now haunts the upper floors, stealing supplies and leaving cryptic warnings.",
+        "A minor aberration that has slipped through reality's cracks, disguised as a stray cat that feeds on the despair of failed expeditions."
+      ],
+      "secrets": [
+        "The Guild Master's desk conceals a speaking tube that connects to listening posts throughout the building, including hidden chambers in the dormitory.",
+        "A bricked-up passage in the Supply Storeroom leads to an abandoned section of the original Valdros citadel, predating the dungeon's sinking.",
+        "The bioluminescent moss in the Notice Board Area is psychically sensitive, and careful observers can sometimes read emotional impressions left by those who touched it."
+      ],
+      "weather": {
+        "hasDynamicWeather": false,
+        "seasonWeather": []
+      },
+      "weatherState": null
+    },
+    "region_1772642705140_dkhqtt5v": {
+      "id": "region_1772642705140_dkhqtt5v",
+      "name": "Dungeon Entrance Road",
+      "description": "The treacherous path leading from Dusthollow to the sunken maw of Valdros's labyrinth, lined with memorial stones for those who never returned. Merchant stalls thin as the elevation drops, replaced by warning signs and the occasional desperate soul begging passersby to turn back. At its end, the earth itself seems wounded—a jagged sinkhole exhaling cold mist and the distant echoes of things best not imagined.",
+      "shortDescription": "Final merchant stalls before the descent, thick with desperation and commerce.",
+      "locationBlueprints": [
+        {
+          "name": "Last Chance Market",
+          "description": "The final cluster of merchant activity before the road commits fully to its descent, where stalls of weathered canvas and repurposed wagon beds huddle against a retaining wall of crumbling brick. Here, opportunistic vendors sell marked-up provisions, \"lucky\" charms of dubious provenance, and maps that contradict each other with cheerful shamelessness—their cries competing with the pleas of a hollow-eyed woman who clutches a faded portrait and begs each passing party to seek her brother in the Faded Halls.",
+          "shortDescription": "Final merchant stalls before the descent, thick with desperation and commerce.",
+          "exits": [
+            "Memorial Walk"
+          ],
+          "aliases": [],
+          "relativeLevel": 0,
+          "numNpcs": 4,
+          "numHostiles": 0,
+          "controllingFaction": "None",
+          "hasWeather": true
+        },
+        {
+          "name": "Memorial Walk",
+          "description": "The road narrows here, flanked by rows of memorial stones that crowd closer together with each downward step—weathered granite, imported marble, and rough local limestone competing for space in a silent congregation of the dead. Names and dates fade into illegibility, though some newer stones bear the Guild's standardized inscription format, while older markers suggest personal grief carved by hands that never returned to maintain them.",
+          "shortDescription": "Stone-lined descent where the dead outnumber the living.",
+          "exits": [
+            "Last Chance Market",
+            "Warning Post"
+          ],
+          "aliases": [],
+          "relativeLevel": 0,
+          "numNpcs": 1,
+          "numHostiles": 0,
+          "controllingFaction": "None",
+          "hasWeather": true
+        },
+        {
+          "name": "Warning Post",
+          "description": "A fortified platform of timber and stone where the Guild maintains its final official presence before the dungeon itself, though the two guards stationed here spend more time watching each other than the road. A massive board displays the week's casualty statistics in paint that runs when it rains, alongside official notices about quota limits and the rewards for reporting unlicensed expeditions—beneath which someone has nailed a competing notice offering triple rates for the same information.",
+          "shortDescription": "Guild checkpoint overlooking the first view of the dungeon maw.",
+          "exits": [
+            "Memorial Walk",
+            "The Sinking Stairs",
+            "Switchback Shelter"
+          ],
+          "aliases": [],
+          "relativeLevel": 0,
+          "numNpcs": 2,
+          "numHostiles": 0,
+          "controllingFaction": "Dusthollow Adventurer's Guild",
+          "hasWeather": true
+        },
+        {
+          "name": "Switchback Shelter",
+          "description": "A crude lean-to built into a natural alcove where the road doubles back on itself, its walls reinforced with scavenged dungeon stone that pulses faintly in darkness. The shelter serves no official purpose—Guild permits don't recognize it, and no merchant claims ownership—yet it persists, maintained by unknown hands who restock its meager supply of firewood and occasionally leave bandages, water, or anonymous notes of encouragement.",
+          "shortDescription": "Unofficial refuge in the cliff face, maintained by unknown benefactors.",
+          "exits": [
+            "Warning Post"
+          ],
+          "aliases": [],
+          "relativeLevel": 0,
+          "numNpcs": 0,
+          "numHostiles": 0,
+          "controllingFaction": "None",
+          "hasWeather": false
+        },
+        {
+          "name": "The Sinking Stairs",
+          "description": "The final approach: a switchback staircase carved directly into the sinkhole's living rock, its steps worn concave by centuries of desperate feet and polished by something else entirely in places where the stone gleams with unnatural smoothness. Cold air rises here in visible currents, carrying scents of mineral water, old magic, and the faint, sweet corruption that veterans learn to associate with the dungeon's deeper hungry places.",
+          "shortDescription": "Impossibly long staircase descending into the earth's wounded depths.",
+          "exits": [
+            "Warning Post",
+            "The Maw"
+          ],
+          "aliases": [],
+          "relativeLevel": 1,
+          "numNpcs": 0,
+          "numHostiles": 1,
+          "controllingFaction": "None",
+          "hasWeather": false
+        },
+        {
+          "name": "The Maw",
+          "description": "The terminus: a cavernous opening where the stairs emerge onto a ledge overlooking a vast vertical shaft, its depths lost to darkness and its walls studded with the entrances to countless passages—some natural, others bearing the unmistakable angles of deliberate construction. The Guild maintains a final checkpoint here, little more than a chained ledger where parties register their intended routes and estimated return dates, though the clerk who tends it has long since stopped reading the entries before filing them.",
+          "shortDescription": "The sinkhole's base where countless passages begin their hungry invitation.",
+          "exits": [
+            "The Sinking Stairs"
+          ],
+          "aliases": [],
+          "relativeLevel": 1,
+          "numNpcs": 1,
+          "numHostiles": 0,
+          "controllingFaction": "Dusthollow Adventurer's Guild",
+          "hasWeather": false
+        }
+      ],
+      "locationIds": [
+        "location_1772643622936_675966334234",
+        "location_1772643622936_d96355885fb6",
+        "location_1772643622937_e489509c6174",
+        "location_1772643622937_d47b6903b3d0",
+        "location_1772643622937_ff41d67841de",
+        "location_1772643622937_84323546b005"
+      ],
+      "entranceLocationId": "location_1772643622936_675966334234",
+      "parentRegionId": null,
+      "controllingFactionId": "setting_faction_1772642453161_2",
+      "createdAt": "2026-03-04T17:00:22.935Z",
+      "lastUpdated": "2026-03-04T17:08:05.776Z",
+      "statusEffects": [],
+      "averageLevel": 3,
+      "numImportantNPCs": 2,
+      "randomEvents": [
+        "A party of four emerges from the Maw, only three returning—one supports a companion whose arm ends at the elbow, the wound wrapped in blood-soaked cloth that drips with each stumbling step.",
+        "Cold wind carries the echo of distant screaming from somewhere deep within the labyrinth, causing several adventurers at the market to pause mid-transaction and exchange worried glances.",
+        "Brunhilda presses an extra bread roll into a young adventurer's hands, whispering something about proper footwear and \"not ending up like poor Gregor.\"",
+        "The memorial stones seem to shimmer faintly as you pass, and for just a moment, you could swear you see a new name carved into the cracked granite that wasn't there before.",
+        "Tibbit Quickwhisper suddenly goes pale and vanishes behind a merchant's stall, having spotted a scarred elf in Guild colors who seems to be asking questions about \"that lying little gossip.\""
+      ],
+      "characterConcepts": [],
+      "enemyConcepts": [],
+      "secrets": [
+        "The memorial stone with \"WHY\" carved into it bears a hidden compartment containing a genuine map to an unguarded passage into the Twilight Depths.",
+        "The Switchback Shelter's anonymous maintainer is a lich-in-denial who hasn't accepted her own death and believes she's still preparing for her first descent.",
+        "One of the Sinking Stairs' \"fossilized\" wall impressions is actually a sealed portal that opens only when stepped on by someone who has died and been resurrected.",
+        "The warning bell's leather-wrapped clapper is made from human bone, and ringing it with bare hands allows brief communication with the last person who died in the labyrinth."
+      ],
+      "weather": {
+        "hasDynamicWeather": true,
+        "seasonWeather": [
+          {
+            "seasonName": "Veilfrost",
+            "weatherTypes": [
+              {
+                "name": "Freezing Mist",
+                "description": "Dungeon exhalation coats everything in rime.",
+                "relativeFrequency": 6,
+                "durationRange": {
+                  "minMinutes": 120,
+                  "maxMinutes": 360
+                }
+              },
+              {
+                "name": "Clear Cold",
+                "description": "Bitter air with visibility to the distant ruins.",
+                "relativeFrequency": 3,
+                "durationRange": {
+                  "minMinutes": 60,
+                  "maxMinutes": 240
+                }
+              },
+              {
+                "name": "Phantom Fog",
+                "description": "Thick vapor carrying half-glimpsed shapes and whispers.",
+                "relativeFrequency": 1,
+                "durationRange": {
+                  "minMinutes": 30,
+                  "maxMinutes": 120
+                }
+              }
+            ]
+          },
+          {
+            "seasonName": "Mistmergence",
+            "weatherTypes": [
+              {
+                "name": "Warm Drizzle",
+                "description": "Soft rain that makes the stones treacherous.",
+                "relativeFrequency": 5,
+                "durationRange": {
+                  "minMinutes": 60,
+                  "maxMinutes": 180
+                }
+              },
+              {
+                "name": "Thick Mist",
+                "description": "Visibility reduced to arm's length; sounds distorted.",
+                "relativeFrequency": 4,
+                "durationRange": {
+                  "minMinutes": 120,
+                  "maxMinutes": 480
+                }
+              },
+              {
+                "name": "Sudden Downpour",
+                "description": "Heavy rain that transforms the path to mud.",
+                "relativeFrequency": 1,
+                "durationRange": {
+                  "minMinutes": 30,
+                  "maxMinutes": 120
+                }
+              }
+            ]
+          },
+          {
+            "seasonName": "Deepgloom",
+            "weatherTypes": [
+              {
+                "name": "Oppressive Heat",
+                "description": "Unnatural warmth rising from the sinkhole below.",
+                "relativeFrequency": 4,
+                "durationRange": {
+                  "minMinutes": 180,
+                  "maxMinutes": 480
+                }
+              },
+              {
+                "name": "Flickerlight",
+                "description": "Strange auroras dance above the dungeon entrance.",
+                "relativeFrequency": 3,
+                "durationRange": {
+                  "minMinutes": 60,
+                  "maxMinutes": 240
+                }
+              },
+              {
+                "name": "Stagnant Air",
+                "description": "Dead calm; breath comes hard, sounds carry strangely.",
+                "relativeFrequency": 3,
+                "durationRange": {
+                  "minMinutes": 120,
+                  "maxMinutes": 360
+                }
+              }
+            ]
+          },
+          {
+            "seasonName": "Ruinwither",
+            "weatherTypes": [
+              {
+                "name": "Dry Wind",
+                "description": "Scouring gusts that strip loose stone and dust.",
+                "relativeFrequency": 5,
+                "durationRange": {
+                  "minMinutes": 60,
+                  "maxMinutes": 300
+                }
+              },
+              {
+                "name": "Dust Haze",
+                "description": "Fine particles obscure the sun and sting the eyes.",
+                "relativeFrequency": 4,
+                "durationRange": {
+                  "minMinutes": 120,
+                  "maxMinutes": 360
+                }
+              },
+              {
+                "name": "Dead Calm",
+                "description": "Perfect stillness; memorial stones seem to watch.",
+                "relativeFrequency": 1,
+                "durationRange": {
+                  "minMinutes": 30,
+                  "maxMinutes": 120
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "weatherState": {
+        "seasonName": "Veilfrost",
+        "name": "Clear Cold",
+        "description": "Bitter air with visibility to the distant ruins.",
+        "nextChangeMinutes": 638,
+        "durationMinutes": 98
+      }
+    }
+  }
+}

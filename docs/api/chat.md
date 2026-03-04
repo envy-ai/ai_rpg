@@ -83,7 +83,7 @@ Variants:
   - `@@...`: saved in chat history, but marked so those entries are excluded from base-context history assembly.
   - `@@@...`: not persisted in server chat history at all (ephemeral display only), and skipped in future base-context history.
   - All three generic prompt variants bypass slop-remover processing for that response.
-- Inline die-roll override: player action text supports one or more `"<integer>"` tokens (pattern `/<-?\\d+>/`). These tokens are stripped from action text before prompt/check processing. When present, the first parsed integer is used as the player's die roll for this request's attack-roll and plausibility skill-check resolution (no clamping).
+- Inline die-roll override: player action text supports one or more `"<integer>"` tokens (pattern `/<-?\\d+>/`). These tokens are stripped from action text before prompt/check processing and before the user entry is persisted in chat history. When present, the first parsed integer is used as the player's die roll for this request's attack-roll and plausibility skill-check resolution (no clamping).
 - Tool calling is enabled in the chat generation loop. The model can emit `tool_calls`; the server executes each call, appends `role: tool` messages, and continues generation until normal assistant prose is returned.
 - Available tools:
   - `moreInfo({ name, type? })`: returns `<moreInfoResults>...</moreInfoResults>` XML with curated, template-rendered markdown summaries (base-context style) for matching NPCs (including alias matches), things, locations, and regions whose names contain the query substring. Optional `type` may be `character`, `thing`, `location`, or `region`; omitting it searches all categories. Each entity node includes a `<markdown>` field.

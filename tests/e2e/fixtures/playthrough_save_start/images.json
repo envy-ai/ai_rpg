@@ -1,0 +1,848 @@
+{
+  "img_20260304_164137_shn67q81": {
+    "id": "img_20260304_164137_shn67q81",
+    "prompt": "[Title: The Sunken Labyrinth of Valdros; Tags: dungeon crawler, dark fantasy, exploration, treasure hunting; Genre: fantasy, adventure, horror-adjacent]\n\nA young woman with an air of enigmatic allure stands poised in the dim light, her age impossible to determine beneath the shadows that seem to cling to her features. Her hair cascades in loose waves past her shoulders, transitioning from deep midnight blue at the roots to shimmering silver-white at the tips, with subtle amethyst highlights catching what little light exists. Her porcelain skin glows faintly against the darkness, and she wears a daring outfit consisting of a plunging black leather bodice that exposes generous cleavage and leaves her midriff bare, paired with a high-slit skirt that reveals shapely legs. Delicate silver chains drape across her bare shoulders and collarbone, glinting like starlight. Her lips curve in a knowing half-smile, and her eyes-an unusual pale violet-hold secrets and untold stories. A dark cloak billows behind her, its edges frayed from travel, framing her figure in mysterious shadow.",
+    "negative_prompt": "blurry, low quality, distorted, multiple faces, deformed, ugly, bad anatomy, bad proportions",
+    "width": 1200,
+    "height": 1600,
+    "seed": 681676,
+    "createdAt": "2026-03-04T16:42:08.135Z",
+    "comfyUIPromptId": "84dc4e12-a0a8-4948-b2ce-8ca2b304777e",
+    "images": [
+      {
+        "imageId": "img_20260304_164137_shn67q81",
+        "filename": "img_20260304_164137_shn67q81.png",
+        "url": "/generated-images/img_20260304_164137_shn67q81.png",
+        "size": 2424710
+      }
+    ]
+  },
+  "img_20260304_165237_rp4d5grf": {
+    "id": "img_20260304_165237_rp4d5grf",
+    "prompt": "[Title: The Sunken Labyrinth of Valdros; Tags: dungeon crawler, dark fantasy, exploration, treasure hunting; Genre: fantasy, adventure, horror-adjacent]\n\nA three-story guildhall of reinforced oak beams and gray stone stands tall at the street corner, rising above the smaller buildings that surround it. A covered wooden porch extends from the main entrance, where adventurers in travel-worn gear gather to inspect weapons and supplies, their breath visible in the cold winter air as they converse. Above the doorway, a carved wooden sign displays a lantern descending into darkness-the Guild's crest-positioned over door frames worn smooth from years of use by armored hands.\n\nThe muddy street churns with melting snow, scattered with the remnants of expedition preparations: crumpled ration wrappers, snapped arrow shafts, and dark bloodstains trodden into the muck. Guild guards in weathered leather armor stand at attention near the entrance, their watchful eyes scanning the crowd for troublemakers and those seeking to bypass the sanctioned quest boards within. The weak winter light casts long shadows across the scene, and the surrounding buildings appear humble in comparison to the guildhall's sturdy, imposing presence.",
+    "negative_prompt": "blurry, low quality, modern elements, cars, technology, people, characters, portraits, indoor scenes only",
+    "width": 1920,
+    "height": 1080,
+    "seed": 933075,
+    "createdAt": "2026-03-04T16:52:57.165Z",
+    "comfyUIPromptId": "02be60e2-9966-4f3e-96e4-23eb9c53a5df",
+    "images": [
+      {
+        "imageId": "img_20260304_165237_rp4d5grf",
+        "filename": "img_20260304_165237_rp4d5grf.png",
+        "url": "/generated-images/img_20260304_165237_rp4d5grf.png",
+        "size": 2931014
+      }
+    ]
+  },
+  "img_20260304_165257_tipzmnc0": {
+    "id": "img_20260304_165257_tipzmnc0",
+    "prompt": "[Title: The Sunken Labyrinth of Valdros; Tags: dungeon crawler, dark fantasy, exploration, treasure hunting; Genre: fantasy, adventure, horror-adjacent]\n\nA male tiefling warlock stands on the covered wooden porch of a rustic guildhall, his charcoal-gray skin contrasting against the dark flowing Shadowweave Cloak that drapes loosely over his shoulders, the fabric seeming to drink in the weak winter light while leaving his lean, defined chest and abdominals exposed to the cold air. His swept-back white hair graduates from pale silver at the roots to near-translucent moonlight tips, catching what little light filters through the overcast sky. Two small dark horns protrude from his hairline, curving back in a subtle sweep. His golden eyes emit a faint infernal glow beneath heavy-lidded brows, and his expression holds an alluring, patient stillness. In one hand, he loosely grips a Pact Dagger of darkened steel etched with infernal sigils, while a tarnished bronze ring glows softly on his finger. A component pouch hangs at his hip. Faint shadows flicker at his shoulders like half-seen apparitions, and behind him, carved guild symbols and muddy streets churn with melting snow.",
+    "negative_prompt": "blurry, low quality, distorted, multiple faces, deformed, ugly, bad anatomy, bad proportions",
+    "width": 1200,
+    "height": 1600,
+    "seed": 210666,
+    "createdAt": "2026-03-04T16:53:17.325Z",
+    "comfyUIPromptId": "042160d6-e973-4bfa-8aed-c08fd9618f53",
+    "images": [
+      {
+        "imageId": "img_20260304_165257_tipzmnc0",
+        "filename": "img_20260304_165257_tipzmnc0.png",
+        "url": "/generated-images/img_20260304_165257_tipzmnc0.png",
+        "size": 2472852
+      }
+    ]
+  },
+  "img_20260304_165317_lype3wbr": {
+    "id": "img_20260304_165317_lype3wbr",
+    "prompt": "[Title: The Sunken Labyrinth of Valdros; Tags: dungeon crawler, dark fantasy, exploration, treasure hunting; Genre: fantasy, adventure, horror-adjacent]\n\nTobin Wheeldon is a wiry male gnome standing barely three feet tall with a lean, slight frame that speaks more to scholarly pursuits than physical labor. His thick, tousled hair falls in untamed waves, transitioning from deep chestnut at the roots to honey-amber highlights at the tips, with streaks of premature silver catching the weak winter light. His enormous magnifying spectacles with brass frames dominate his delicate face, making his wide, nervous hazel eyes appear even larger as he peers out hopefully. He wears a fitted leather vest left partially unlaced, revealing a slim, pale chest beneath, paired with loose trousers tucked into worn leather boots. A moth-eaten wool scarf in faded sage drapes loosely around his slender neck, its frayed edges brushing against exposed collarbones. His ink-stained fingers grip a bulging leather map case protectively against his hip. He stands with an eager, slightly hunched posture on the Guildhall porch, snowflakes settling on his shoulders as warm light spills from the worn oak doorway behind him, the carved lantern crest visible above and mud-churned street stretching into the gray frontier town.",
+    "negative_prompt": "blurry, low quality, distorted, multiple faces, deformed, ugly, bad anatomy, bad proportions",
+    "width": 1200,
+    "height": 1600,
+    "seed": 669458,
+    "createdAt": "2026-03-04T16:53:36.107Z",
+    "comfyUIPromptId": "e2dd8d5d-5e1d-44fe-93cc-fa80b0ac10f3",
+    "images": [
+      {
+        "imageId": "img_20260304_165317_lype3wbr",
+        "filename": "img_20260304_165317_lype3wbr.png",
+        "url": "/generated-images/img_20260304_165317_lype3wbr.png",
+        "size": 2697603
+      }
+    ]
+  },
+  "img_20260304_165336_5krnmcsw": {
+    "id": "img_20260304_165336_5krnmcsw",
+    "prompt": "[Title: The Sunken Labyrinth of Valdros; Tags: dungeon crawler, dark fantasy, exploration, treasure hunting; Genre: fantasy, adventure, horror-adjacent]\n\nA rain-warped wooden notice board stands mounted on corroded iron brackets beside the heavy oak entrance of the Guildhall, the board itself gray and swollen from countless winters of exposure. Layers of curling parchment sheets overlap one another in thick, disorganized sheaves, their edges browned and brittle from moisture. Some notices have torn free at the corners, fluttering weakly in the cold draft, while others have been pinned directly over older announcements, creating a stratified record of expeditions past. Faded ink describes missing companions with crude charcoal sketches, hastily scrawled warnings of newly discovered hazards in the Sunken Labyrinth, and advertisements seeking able-bodied adventurers for upcoming descents into the depths.\n\nThe Guildhall's weathered stone wall rises behind the board, its surface stained with centuries of grime and lichen growth. Iron lantern brackets flank the entrance, their flames guttering behind smoky glass panels. Carved into the lintel above the doorway, the Guild's crest-a lantern descending into darkness-has been worn smooth by generations of passing adventurers. A few discarded parchment scraps and broken sealing wax litter the flagstones beneath the board, pressed into crevices by boot traffic and winter weather. The simple grey background eliminates all distraction, presenting this humble artifact of dungeon-crawling commerce as a monument to hope, desperation, and the endless hunger for treasure that draws souls down into Valdros's eternal night.",
+    "negative_prompt": "blurry, low quality, people, characters, modern elements, cars, technology, indoor scenes, portraits",
+    "width": 1024,
+    "height": 768,
+    "seed": 861650,
+    "createdAt": "2026-03-04T16:53:48.582Z",
+    "comfyUIPromptId": "870a004f-743b-4066-8fde-f4ad4d1c7d3e",
+    "images": [
+      {
+        "imageId": "img_20260304_165336_5krnmcsw",
+        "filename": "img_20260304_165336_5krnmcsw.png",
+        "url": "/generated-images/img_20260304_165336_5krnmcsw.png",
+        "size": 1155630
+      }
+    ]
+  },
+  "img_20260304_165348_cjigy73r": {
+    "id": "img_20260304_165348_cjigy73r",
+    "prompt": "[Title: The Sunken Labyrinth of Valdros; Tags: dungeon crawler, dark fantasy, exploration, treasure hunting; Genre: fantasy, adventure, horror-adjacent]\n\nAn iron lantern post rises from the churned mud beside the Guildhall's wooden porch, its blackened metal surface pitted with rust and scarred from decades of exposure to Dusthollow's harsh elements. The post stands slightly askew where it has been driven into the unstable ground, its thick base sunk deep amid frozen ruts and bootprints. Four glass panels enclose the lantern chamber at its height, each pane cracked in spiderweb patterns and coated with layers of accumulated soot that filter the light within. A sickly orange flame flickers behind the clouded glass, casting a weak, amber glow that barely penetrates the surrounding darkness. The lantern's crown has bent slightly inward, and verdigris stains the copper fittings where moisture has seeped beneath.\n\nThe scene is set against a neutral grey background, emphasizing the lantern post as a solitary marker of civilization in an unforgiving frontier town. Patches of frost cling to the iron where cold has settled into the metal's crevices. The flame gutters low, burning the low-grade oil that produces more smoke than light, leaving dark streaks up the inside of the glass panels. The post's weathered construction speaks to countless adventurers who have passed beneath its meager illumination, returning from the depths in the bitter hours before dawn when the air hangs cold and heavy over Dusthollow's streets.",
+    "negative_prompt": "blurry, low quality, people, characters, modern elements, cars, technology, indoor scenes, portraits",
+    "width": 1024,
+    "height": 768,
+    "seed": 21346,
+    "createdAt": "2026-03-04T16:54:02.751Z",
+    "comfyUIPromptId": "a5955340-18f7-4878-a7a8-bd806d78569a",
+    "images": [
+      {
+        "imageId": "img_20260304_165348_cjigy73r",
+        "filename": "img_20260304_165348_cjigy73r.png",
+        "url": "/generated-images/img_20260304_165348_cjigy73r.png",
+        "size": 1075994
+      }
+    ]
+  },
+  "img_20260304_165402_g2fmiugx": {
+    "id": "img_20260304_165402_g2fmiugx",
+    "prompt": "[Title: The Sunken Labyrinth of Valdros; Tags: dungeon crawler, dark fantasy, exploration, treasure hunting; Genre: fantasy, adventure, horror-adjacent]\n\nA heavy canvas awning of weathered gray-brown fabric stretches taut between three iron poles driven into the frozen earth, its corners secured with rope ties that creak in the biting wind. Snow has accumulated along the awning's upper edge in uneven drifts, while icicles hang like ragged teeth from the hem where meltwater has refrozen. The iron poles are pitted with rust at their bases but sturdy, capped with simple finials that catch the weak winter light. Beneath this shelter stands a weathered wooden weapons rack, its grain darkened by years of exposure to the elements yet still sound, holding an assortment of practice swords with notched edges and spears with worn ash hafts. Beside the rack, a iron brazier glows with banked coals, its heat creating a shimmer in the frigid air, while scattered embers have escaped onto the packed dirt below.\n\nThe guard station sits against the outer wall of the Guildhall, whose massive timber beams and gray stone form a backdrop of solid protection. The awning's shadow falls across muddy flagstones worn smooth by countless boots, and the orange glow of the brazier casts long, wavering shadows from the weapons rack onto the building's weathered planks. The scene is rendered against a simple grey background.",
+    "negative_prompt": "blurry, low quality, people, characters, modern elements, cars, technology, indoor scenes, portraits",
+    "width": 1024,
+    "height": 768,
+    "seed": 281904,
+    "createdAt": "2026-03-04T16:54:16.906Z",
+    "comfyUIPromptId": "a28e00a5-fdc8-4b72-a35b-f61a36393900",
+    "images": [
+      {
+        "imageId": "img_20260304_165402_g2fmiugx",
+        "filename": "img_20260304_165402_g2fmiugx.png",
+        "url": "/generated-images/img_20260304_165402_g2fmiugx.png",
+        "size": 1024046
+      }
+    ]
+  },
+  "img_20260304_165417_27x48zxp": {
+    "id": "img_20260304_165417_27x48zxp",
+    "prompt": "[Title: The Sunken Labyrinth of Valdros; Tags: dungeon crawler, dark fantasy, exploration, treasure hunting; Genre: fantasy, adventure, horror-adjacent]\n\nAn ancient boundary stone stands at the corner of the Guildhall's covered porch, weathered by countless winters and stained by decades of mud splashed up from the street. The rough-hewn marker reaches about knee-height, its original edges softened by time into something almost organic. Thick patches of gray-green moss cling to its northern face, spreading across the surface like a living patina that has slowly consumed what was once clearly carved text. Where the moss has receded, faint lines remain-protective runes etched deep into the stone but now worn to mere shadows, their meaning lost to all but the most learned scholars of old magic.\n\nThe boundary stone sits in a puddle of melting snow and mud at the porch's edge, half-reclaimed by the earth it was meant to mark. Its surface bears the accumulated grime of a frontier town: boot scuffs from adventurers stepping past without a glance, ale stains from crowded evenings, and a thin film of dust from the street. Snow piles against its base, and the weak winter light does little to illuminate the nearly invisible runes that spiral across its weathered face.",
+    "negative_prompt": "blurry, low quality, people, characters, modern elements, cars, technology, indoor scenes, portraits",
+    "width": 1024,
+    "height": 768,
+    "seed": 59848,
+    "createdAt": "2026-03-04T16:54:31.063Z",
+    "comfyUIPromptId": "a9a9a113-2db1-4944-8c22-180b42a65b72",
+    "images": [
+      {
+        "imageId": "img_20260304_165417_27x48zxp",
+        "filename": "img_20260304_165417_27x48zxp.png",
+        "url": "/generated-images/img_20260304_165417_27x48zxp.png",
+        "size": 1158183
+      }
+    ]
+  },
+  "img_20260304_165431_csh3pxlo": {
+    "id": "img_20260304_165431_csh3pxlo",
+    "prompt": "[Title: The Sunken Labyrinth of Valdros; Tags: dungeon crawler, dark fantasy, exploration, treasure hunting; Genre: fantasy, adventure, horror-adjacent]\n\nA weathered stone bench sits centered against a neutral grey background, its surface worn smooth by decades of touch from grieving hands. The dark granite is densely carved with dozens of names etched in varying scripts and sizes-some freshly chiseled, others faded nearly to oblivion-creating a tapestry of remembrance across every available surface. Fine cracks web through the stone where time and moisture have worked their damage, and a subtle layer of dust settles into the deeper grooves of the carved letters.\n\nSmall offerings cluster in the natural crevices and corners of the bench: tarnished copper coins, brittle dried flowers with curled brown petals, a tarnished silver ring, fragments of faded ribbon, and tiny carved wooden figures. A few candle stubs sit in puddles of hardened wax at the bench's base, and someone has left a small leather pouch containing what might be herbs or ashes. The accumulated mementos create small mounds of devotion, their muted colors blending with the somber grey stone.\n\nThe bench captures the quiet weight of accumulated grief, standing alone as a silent monument to those who descended into the Sunken Labyrinth and never emerged. Wear patterns on the armrests speak to the countless hours survivors have spent seated here, while the offerings-some ancient and crumbling, others recent enough to still hold color-testify to a tradition of remembrance that spans generations of Dusthollow's adventuring community.",
+    "negative_prompt": "blurry, low quality, people, characters, modern elements, cars, technology, indoor scenes, portraits",
+    "width": 1024,
+    "height": 768,
+    "seed": 213316,
+    "createdAt": "2026-03-04T16:54:45.219Z",
+    "comfyUIPromptId": "c40f1438-bbe2-422c-8e1c-3a8fa2a97ce0",
+    "images": [
+      {
+        "imageId": "img_20260304_165431_csh3pxlo",
+        "filename": "img_20260304_165431_csh3pxlo.png",
+        "url": "/generated-images/img_20260304_165431_csh3pxlo.png",
+        "size": 1138046
+      }
+    ]
+  },
+  "img_20260304_165445_jnvavxq3": {
+    "id": "img_20260304_165445_jnvavxq3",
+    "prompt": "[Title: The Sunken Labyrinth of Valdros; Tags: dungeon crawler, dark fantasy, exploration, treasure hunting; Genre: fantasy, adventure, horror-adjacent]\n\nA single heavy leather boot lies on its side against a plain grey background, its thick brown leather worn and scarred from use. The sole is partially torn away from the upper, revealing the layered construction beneath a thick coating of gray clay that smears across the leather surface. A torn leather strap dangles loosely where it has been ripped partway through, surrounded by dark stains that discolor the surrounding material. The boot shows the practical construction typical of adventurer's gear, with reinforced stitching at stress points and a thick heel. Flecks of dried mud and clay cling to every surface, giving the object a weathered appearance.",
+    "negative_prompt": "blurry, low quality, people, characters, hands, multiple objects, cluttered background, modern elements",
+    "width": 1024,
+    "height": 1024,
+    "seed": 285738,
+    "createdAt": "2026-03-04T16:55:00.033Z",
+    "comfyUIPromptId": "4d26d159-50a0-4360-a818-fde883131df8",
+    "images": [
+      {
+        "imageId": "img_20260304_165445_jnvavxq3",
+        "filename": "img_20260304_165445_jnvavxq3.png",
+        "url": "/generated-images/img_20260304_165445_jnvavxq3.png",
+        "size": 1428768
+      }
+    ]
+  },
+  "img_20260304_165500_9662xh33": {
+    "id": "img_20260304_165500_9662xh33",
+    "prompt": "[Title: The Sunken Labyrinth of Valdros; Tags: dungeon crawler, dark fantasy, exploration, treasure hunting; Genre: fantasy, adventure, horror-adjacent]\n\nA small leather pouch with a weathered brown patina rests against a neutral grey background, its drawstring top slightly loosened to reveal the contents within. The pouch is stamped with the Guild's lantern crest, the design worn but visible on the supple hide. Three tarnished bronze discs spill partially from the opening, their surfaces dulled by age and handling, each circular token etched with faded lettering that includes a name and numerical registration code. The leather shows creases and scuff marks from use, and the bronze tokens display minor oxidation around their edges. Thin leather cords secure the pouch, their ends frayed slightly from repeated tying and untying.",
+    "negative_prompt": "blurry, low quality, people, characters, hands, multiple objects, cluttered background, modern elements",
+    "width": 1024,
+    "height": 1024,
+    "seed": 731408,
+    "createdAt": "2026-03-04T16:55:14.349Z",
+    "comfyUIPromptId": "b1b4a33f-a0b5-4391-98ef-38e196140634",
+    "images": [
+      {
+        "imageId": "img_20260304_165500_9662xh33",
+        "filename": "img_20260304_165500_9662xh33.png",
+        "url": "/generated-images/img_20260304_165500_9662xh33.png",
+        "size": 1377324
+      }
+    ]
+  },
+  "img_20260304_165514_cd2bvwu0": {
+    "id": "img_20260304_165514_cd2bvwu0",
+    "prompt": "[Title: The Sunken Labyrinth of Valdros; Tags: dungeon crawler, dark fantasy, exploration, treasure hunting; Genre: fantasy, adventure, horror-adjacent]\n\nA striking young human woman stands before the Guildhall, her athletic frame evident beneath form-fitting padded leather armor that leaves her toned midriff bare and laces loosely at the chest to reveal inviting cleavage. Her thick, shoulder-length hair cascades in loose waves, transitioning from warm chestnut brown at the roots to honey-gold highlights at the tips, with subtle auburn lowlights catching the weak winter light. Her determined amber eyes scan the muddy street with adventurous hunger, full lips slightly parted, and flushed skin glowing from the cold. The leather armor hugs her curves, secured by worn straps that accentuate her narrow waist, while her bare arms show defined muscle from sword training. She rests a hand confidently on the pommel of a worn iron longsword at her hip, the weapon's leather grip darkened from use. Behind her, the Guildhall's weathered oak facade and carved lantern crest loom, breath misting in the frigid air as melting snow tramples into mud beneath her boots.",
+    "negative_prompt": "blurry, low quality, distorted, multiple faces, deformed, ugly, bad anatomy, bad proportions",
+    "width": 1200,
+    "height": 1600,
+    "seed": 286090,
+    "createdAt": "2026-03-04T16:55:34.519Z",
+    "comfyUIPromptId": "a56f4811-b032-4dfd-b240-34013d5da799",
+    "images": [
+      {
+        "imageId": "img_20260304_165514_cd2bvwu0",
+        "filename": "img_20260304_165514_cd2bvwu0.png",
+        "url": "/generated-images/img_20260304_165514_cd2bvwu0.png",
+        "size": 2655316
+      }
+    ]
+  },
+  "img_20260304_170650_mtf7dg3y": {
+    "id": "img_20260304_170650_mtf7dg3y",
+    "prompt": "[Title: The Sunken Labyrinth of Valdros; Tags: dungeon crawler, dark fantasy, exploration, treasure hunting; Genre: fantasy, adventure, horror-adjacent]\n\nA cluster of ramshackle merchant stalls crowds against a weathered retaining wall of crumbling brick, where faded canvas awnings in muted browns and grays stretch between wooden posts and repurposed wagon beds serving as makeshift counters. The uneven cobblestone road widens briefly here before beginning its clear descent beyond, marking this as the final outpost of commerce before travelers commit to the path below. Merchants display their wares with theatrical enthusiasm-barrels of salted provisions, dangling strings of questionable talismans braided from cheap cord and tarnished metal, and scrolls of yellowed parchment bearing hand-drawn maps that depict the same territories in conveniently different configurations.\n\nA hollow-eyed woman in a threadbare shawl stands apart from the commercial bustle, her pale face drawn with desperate exhaustion as she clutches a creased, sun-faded portrait to her chest. Her lips move in repeated, unheard pleas to passersby who navigate the cramped space between stalls, their attention caught by vendors calling out prices and promises. The mingled sounds of haggling and the woman's quiet begging create a discordant atmosphere of hopeful commerce and quiet desperation, while the road beyond beckons with descending stairs that disappear into shadow.",
+    "negative_prompt": "blurry, low quality, modern elements, cars, technology, people, characters, portraits, indoor scenes only",
+    "width": 1920,
+    "height": 1080,
+    "seed": 831282,
+    "createdAt": "2026-03-04T17:07:10.210Z",
+    "comfyUIPromptId": "018d950a-50b9-4e0e-81b5-48e865b64c6b",
+    "images": [
+      {
+        "imageId": "img_20260304_170650_mtf7dg3y",
+        "filename": "img_20260304_170650_mtf7dg3y.png",
+        "url": "/generated-images/img_20260304_170650_mtf7dg3y.png",
+        "size": 3097567
+      }
+    ]
+  },
+  "img_20260304_170710_v85zr97n": {
+    "id": "img_20260304_170710_v85zr97n",
+    "prompt": "[Title: The Sunken Labyrinth of Valdros; Tags: dungeon crawler, dark fantasy, exploration, treasure hunting; Genre: fantasy, adventure, horror-adjacent]\n\nA mature male gnome barely four feet tall with a wiry, lean frame stands with nervous tension, his pale grey eyes enormously magnified behind thick clouded spectacles that give him an owlish, anxious appearance. His hair is a wild tangle of silver-white strands streaked with ash-grey and dirt-brown gradients, the fine texture frizzy and disheveled from weeks of rough travel, hanging in unruly waves around his weathered, sharp-angled face. He wears a cropped, patched leather traveling coat left open to reveal a lean, sinewy torso marked with old scars and smudges of colorful ink, the garment stained and worn but hanging loosely off his bony shoulders. His calloused, ink-stained fingers fret obsessively over the brass clasps of a bulging cylindrical map case strapped to his waist, while his other hand grips a shortened iron-shod staff. Behind him, weathered canvas stalls and crumbling brick walls of a marketplace backdrop frame his trembling, desperate posture, his expression a mixture of anxious hope and weary resignation as sweat glistens on his exposed collarbone and thin chest.",
+    "negative_prompt": "blurry, low quality, distorted, multiple faces, deformed, ugly, bad anatomy, bad proportions",
+    "width": 1200,
+    "height": 1600,
+    "seed": 258992,
+    "createdAt": "2026-03-04T17:07:30.365Z",
+    "comfyUIPromptId": "b30a6f0b-3474-42b3-849e-a6e974f99ad5",
+    "images": [
+      {
+        "imageId": "img_20260304_170710_v85zr97n",
+        "filename": "img_20260304_170710_v85zr97n.png",
+        "url": "/generated-images/img_20260304_170710_v85zr97n.png",
+        "size": 2841823
+      }
+    ]
+  },
+  "img_20260304_170730_4gzqtyy2": {
+    "id": "img_20260304_170730_4gzqtyy2",
+    "prompt": "[Title: The Sunken Labyrinth of Valdros; Tags: dungeon crawler, dark fantasy, exploration, treasure hunting; Genre: fantasy, adventure, horror-adjacent]\n\nIthelwen Moss-Tender is an adult female moon elf with a slender, graceful figure accentuated by a form-fitting bodice of supple forest-green leather that bares her toned midriff and generous décolletage, her pale lavender skin luminous against the shadowy backdrop of her market stall. Her silver-white hair cascades in loose waves from a practical tie, shimmering with ethereal blue undertones and subtle opalescent highlights that catch the ambient glow of bioluminescent specimens surrounding her workspace. Faded pockmarks trace her cheekbones and jaw-remnants of some long-past fungal accident-lending character to delicate elven features with high arching brows and luminous violet eyes. Her slender fingers, perpetually stained with traces of luminous blue-green spores, are adorned with Sporekeeper's Gloves of thin leather marked with iridescent streaks, their fingertips reinforced but leaving her dexterous hands elegantly exposed. Behind her, crowded shelves glimmer with sealed glass jars containing glowing mushrooms, clouded specimens, and mysterious bundled reagents, their soft phosphorescent light painting her pale skin in otherworldly hues.",
+    "negative_prompt": "blurry, low quality, distorted, multiple faces, deformed, ugly, bad anatomy, bad proportions",
+    "width": 1200,
+    "height": 1600,
+    "seed": 631301,
+    "createdAt": "2026-03-04T17:07:50.536Z",
+    "comfyUIPromptId": "d47954e9-dad4-4723-9f74-7d9524d520b6",
+    "images": [
+      {
+        "imageId": "img_20260304_170730_4gzqtyy2",
+        "filename": "img_20260304_170730_4gzqtyy2.png",
+        "url": "/generated-images/img_20260304_170730_4gzqtyy2.png",
+        "size": 2631575
+      }
+    ]
+  },
+  "img_20260304_170750_ko7ha2ty": {
+    "id": "img_20260304_170750_ko7ha2ty",
+    "prompt": "[Title: The Sunken Labyrinth of Valdros; Tags: dungeon crawler, dark fantasy, exploration, treasure hunting; Genre: fantasy, adventure, horror-adjacent]\n\nHolt Brennan is a ruggedly weathered human man in his early fifties, his muscular, battle-hardened physique on full display beneath a sleeveless reinforced leather gambeson that hangs open at the chest, exposing a broad expanse of scarred, sun-bronzed skin dusted with iron-grey chest hair. His powerful forearms bear the mark of decades at the forge-angry red burn scars crawling up from wrist to elbow, contrasting against his tanned flesh. His thick, wavy hair is a stormy gradient of charcoal-grey fading to silver at the temples, swept back from a weathered face with a strong jaw covered in iron-grey stubble. His deep-set eyes hold a cold, flat assessment beneath furrowed brows. A lucky rabbit's foot dangles against his bare pectoral from a shoulder strap. Behind him, the Last Chance Market bustles with canvas stalls and crumbling brick walls, his weapon rack displaying secondhand blades with suspicious histories.",
+    "negative_prompt": "blurry, low quality, distorted, multiple faces, deformed, ugly, bad anatomy, bad proportions",
+    "width": 1200,
+    "height": 1600,
+    "seed": 184340,
+    "createdAt": "2026-03-04T17:08:09.299Z",
+    "comfyUIPromptId": "c9e00d58-2ab7-46f1-a5f9-6c4558e146a2",
+    "images": [
+      {
+        "imageId": "img_20260304_170750_ko7ha2ty",
+        "filename": "img_20260304_170750_ko7ha2ty.png",
+        "url": "/generated-images/img_20260304_170750_ko7ha2ty.png",
+        "size": 2858388
+      }
+    ]
+  },
+  "img_20260304_170809_rl8zjyev": {
+    "id": "img_20260304_170809_rl8zjyev",
+    "prompt": "[Title: The Sunken Labyrinth of Valdros; Tags: dungeon crawler, dark fantasy, exploration, treasure hunting; Genre: fantasy, adventure, horror-adjacent]\n\nBrunhilda Deepdelver is a stout dwarven matron in her late middle years, her weathered face framed by thick silver-streaked auburn hair that falls in elaborate braids woven with copper wire, catching the firelight with warm russet highlights fading to gunmetal gray at the tips. Despite her years, she possesses a formidable presence with broad shoulders, a generous bosom barely contained by a low-cut leather bodice laced tight with sinew cord, her thick arms and calloused hands darkened from decades over open flames. Her left sleeve is knotted at the shoulder, the empty fabric a testament to old battles, while her right hand grips a worn wooden spoon carved with faintly glowing dwarven runes. A tarnished brass locket rests in the hollow of her throat above her exposed collarbone, and her substantial hips are wrapped in a patched apron over practical skirts hiked up to reveal sturdy calves dusted with flour. Her amber eyes crinkle at the corners with maternal warmth as she tends her bubbling iron pot, the firelight dancing across her bare arms and the generous curve of her chest, her expression one of fierce contentment.",
+    "negative_prompt": "blurry, low quality, distorted, multiple faces, deformed, ugly, bad anatomy, bad proportions",
+    "width": 1200,
+    "height": 1600,
+    "seed": 220326,
+    "createdAt": "2026-03-04T17:08:29.454Z",
+    "comfyUIPromptId": "c53bd641-a1ab-40dd-855d-736e761ebbbb",
+    "images": [
+      {
+        "imageId": "img_20260304_170809_rl8zjyev",
+        "filename": "img_20260304_170809_rl8zjyev.png",
+        "url": "/generated-images/img_20260304_170809_rl8zjyev.png",
+        "size": 2687782
+      }
+    ]
+  },
+  "img_20260304_170829_0y564sjz": {
+    "id": "img_20260304_170829_0y564sjz",
+    "prompt": "[Title: The Sunken Labyrinth of Valdros; Tags: dungeon crawler, dark fantasy, exploration, treasure hunting; Genre: fantasy, adventure, horror-adjacent]\n\nMagra Ironhand is a towering half-orc woman of imposing physical presence, her grey-green skin stretched over a massively muscular frame with broad shoulders and powerful arms. Her shaved head exposes ritual scars that trace along her jawline like decorative patterns, framing a strong-boned face with a determined expression and dark eyes. She wears minimal armor-a fitted leather chest wrap that bares her sculpted midsection and toned arms, paired with fitted trousers held low on her hips by a thick canvas belt with multiple pouches. Heavy iron-knuckled enforcer's gauntlets cover her forearms and hands, the metal plates worn and marked from frequent use. A tarnished bronze medallion hangs at her collarbone, stamped with the crossed sword and coin symbol. Behind her, weathered canvas stalls and crumbling brick walls of the Last Chance Market fade into shadow, with warm light accentuating her powerful silhouette.",
+    "negative_prompt": "blurry, low quality, distorted, multiple faces, deformed, ugly, bad anatomy, bad proportions",
+    "width": 1200,
+    "height": 1600,
+    "seed": 16484,
+    "createdAt": "2026-03-04T17:08:49.617Z",
+    "comfyUIPromptId": "8c2905c5-40f5-4933-a03e-478141c060c7",
+    "images": [
+      {
+        "imageId": "img_20260304_170829_0y564sjz",
+        "filename": "img_20260304_170829_0y564sjz.png",
+        "url": "/generated-images/img_20260304_170829_0y564sjz.png",
+        "size": 2560493
+      }
+    ]
+  },
+  "img_20260304_170849_9pez3fzj": {
+    "id": "img_20260304_170849_9pez3fzj",
+    "prompt": "[Title: The Sunken Labyrinth of Valdros; Tags: dungeon crawler, dark fantasy, exploration, treasure hunting; Genre: fantasy, adventure, horror-adjacent]\n\nA slim male gnome with a wiry, delicate frame stands with nervous energy, his wild auburn hair cascading in untamed waves that transition from deep copper roots to shimmering amber highlights at the tips, framing a sharp-featured face dominated by large, darting amber eyes that constantly scan his surroundings. He wears an open, sleeveless vest of patchwork fabrics in muted earth tones that exposes his lean chest and stomach, paired with loose trousers cut off at the thigh revealing slender, pale legs, his skin marked with faint ink stains and small scars from years of scribbling notes. A tarnished silver amulet with a tiny mirror pendant rests against his bare collarbone, while a heavy belt slung low on his hips supports fourteen bulging pouches of varying sizes tied with colored strings. His slender fingers with ink-stained tips clutch a dog-eared leather notebook bursting with tabbed pages, and his expression shifts between anxious paranoia and a sly, knowing smirk as he leans forward conspiratorially. Behind him, weathered canvas stalls and crumbling brick walls of a marketplace create a shadowy backdrop.",
+    "negative_prompt": "blurry, low quality, distorted, multiple faces, deformed, ugly, bad anatomy, bad proportions",
+    "width": 1200,
+    "height": 1600,
+    "seed": 211122,
+    "createdAt": "2026-03-04T17:09:08.465Z",
+    "comfyUIPromptId": "a6c9c928-8677-4e50-9cb8-63f763ce8fca",
+    "images": [
+      {
+        "imageId": "img_20260304_170849_9pez3fzj",
+        "filename": "img_20260304_170849_9pez3fzj.png",
+        "url": "/generated-images/img_20260304_170849_9pez3fzj.png",
+        "size": 2632858
+      }
+    ]
+  },
+  "img_20260304_170908_tdcp9fsi": {
+    "id": "img_20260304_170908_tdcp9fsi",
+    "prompt": "[Title: The Sunken Labyrinth of Valdros; Tags: dungeon crawler, dark fantasy, exploration, treasure hunting; Genre: fantasy, adventure, horror-adjacent]\n\nA cleverly jointed wooden framework stands unfolded into a serviceable market stall, its collapsible design evident in the brass hinges and pegged joints that allow the entire structure to fold flat for transport. The frame is constructed from well-worn oak darkened by weather and handling, with cross-braced legs supporting a display shelf and cantilevered arms that hold up a canvas awning. The awning itself has faded from its original deep burgundy to a muted rose-grey, sun-bleached and water-stained but still sturdy, with brass grommets reinforcing the corners where it ties to the frame. The wood shows the marks of three hard seasons.\n\nEach of the four leg posts has been carefully carved with protective sigils and ward-marksr, the carvings darkened with soot or ink to make them stand out against the grain. These symbols range from simple geometric patterns to more complex rune-like shapes. The craftsmanship of the stall is practical rather than pretty. The whole structure sits against a simple grey background.",
+    "negative_prompt": "blurry, low quality, people, characters, modern elements, cars, technology, indoor scenes, portraits",
+    "width": 1024,
+    "height": 768,
+    "seed": 991802,
+    "createdAt": "2026-03-04T17:09:20.897Z",
+    "comfyUIPromptId": "7305f86d-fa5e-4269-a6a7-1a38dc86e7ee",
+    "images": [
+      {
+        "imageId": "img_20260304_170908_tdcp9fsi",
+        "filename": "img_20260304_170908_tdcp9fsi.png",
+        "url": "/generated-images/img_20260304_170908_tdcp9fsi.png",
+        "size": 851275
+      }
+    ]
+  },
+  "img_20260304_170920_3yn5r59f": {
+    "id": "img_20260304_170920_3yn5r59f",
+    "prompt": "[Title: The Sunken Labyrinth of Valdros; Tags: dungeon crawler, dark fantasy, exploration, treasure hunting; Genre: fantasy, adventure, horror-adjacent]\n\nA weathered rectangular stone slab is embedded in a crumbling brick retaining wall, its gray surface pockmarked by age and pitted from decades of exposure to the damp mist rising from the dungeon below. Dozens of names are carved into its face in varying depths and styles of lettering-some deeply incised in formal scripts, others scratched hastily in uneven strokes-creating a dense tapestry of remembered loss. Several names near the bottom have eroded almost completely smooth, their letters reduced to ghostly indentations barely distinguishable from the stone's natural imperfections.\n\nBright white chalk X marks cross through a handful of names with stark, recent finality, the powder still fresh enough to smear at a touch. The surrounding retaining wall consists of mismatched old bricks stained with moss and mineral seepage, with smaller memorial tokens tucked into crevices-a dried flower, a tarnished copper coin, a frayed ribbon. Weak daylight from an overcast sky illuminates the memorial against a neutral gray backdrop, casting soft shadows that emphasize the carved lettering. The atmosphere is heavy and still.",
+    "negative_prompt": "blurry, low quality, people, characters, modern elements, cars, technology, indoor scenes, portraits",
+    "width": 1024,
+    "height": 768,
+    "seed": 216221,
+    "createdAt": "2026-03-04T17:09:35.055Z",
+    "comfyUIPromptId": "76618d8d-457f-48de-9ecd-32346107b03c",
+    "images": [
+      {
+        "imageId": "img_20260304_170920_3yn5r59f",
+        "filename": "img_20260304_170920_3yn5r59f.png",
+        "url": "/generated-images/img_20260304_170920_3yn5r59f.png",
+        "size": 1248247
+      }
+    ]
+  },
+  "img_20260304_170935_uy8yj1fh": {
+    "id": "img_20260304_170935_uy8yj1fh",
+    "prompt": "[Title: The Sunken Labyrinth of Valdros; Tags: dungeon crawler, dark fantasy, exploration, treasure hunting; Genre: fantasy, adventure, horror-adjacent]\n\nA smooth, oval river stone with a flat surface sits against a neutral grey background, its natural gray-brown coloration worn glossy by years of water currents. Crude white chalk markings cover one face of the stone-a simplistic skull drawn with thick, uneven strokes positioned above a rough arrow shape pointing downward. The chalk lines are slightly smudged at the edges, showing faint signs of handling and exposure, though the warning symbols remain clearly visible. Small flecks of chalk dust cling to the stone's surface in the crevices of its natural texture. The stone fits easily in an open palm, its edges rounded and comfortable to hold.",
+    "negative_prompt": "blurry, low quality, people, characters, hands, multiple objects, cluttered background, modern elements",
+    "width": 1024,
+    "height": 1024,
+    "seed": 327345,
+    "createdAt": "2026-03-04T17:09:49.794Z",
+    "comfyUIPromptId": "34b12b39-22ff-4058-bc99-f040d84c65cf",
+    "images": [
+      {
+        "imageId": "img_20260304_170935_uy8yj1fh",
+        "filename": "img_20260304_170935_uy8yj1fh.png",
+        "url": "/generated-images/img_20260304_170935_uy8yj1fh.png",
+        "size": 1493137
+      }
+    ]
+  },
+  "img_20260304_170949_cypui6wc": {
+    "id": "img_20260304_170949_cypui6wc",
+    "prompt": "[Title: The Sunken Labyrinth of Valdros; Tags: dungeon crawler, dark fantasy, exploration, treasure hunting; Genre: fantasy, adventure, horror-adjacent]\n\nA single strip of dried dungeon mushroom lies diagonally against a neutral grey background, its surface dark brown with mottled gray-green patches where the fungal skin remains intact. The jerky has a wrinkled, leathery texture with deep creases running along its length, and rough, fibrous edges where it was torn from a larger fungal growth. Crystallized salt granules cling to the surface in scattered patches, catching the light and giving the preserved provision a faint crystalline shimmer. The strip measures approximately six inches long and one inch wide at its widest point, tapering to ragged ends with a slightly curved shape suggesting the natural form of the mushroom cap it was cut from.",
+    "negative_prompt": "blurry, low quality, people, characters, hands, multiple objects, cluttered background, modern elements",
+    "width": 1024,
+    "height": 1024,
+    "seed": 698452,
+    "createdAt": "2026-03-04T17:10:04.134Z",
+    "comfyUIPromptId": "86683e73-16b1-4da7-a4ce-45a9ec3e8fe5",
+    "images": [
+      {
+        "imageId": "img_20260304_170949_cypui6wc",
+        "filename": "img_20260304_170949_cypui6wc.png",
+        "url": "/generated-images/img_20260304_170949_cypui6wc.png",
+        "size": 1519628
+      }
+    ]
+  },
+  "img_20260304_171004_lolbgwnp": {
+    "id": "img_20260304_171004_lolbgwnp",
+    "prompt": "[Title: The Sunken Labyrinth of Valdros; Tags: dungeon crawler, dark fantasy, exploration, treasure hunting; Genre: fantasy, adventure, horror-adjacent]\n\nA small shrine niche carved into weathered brick, its edges rough-hewn and stained with centuries of damp and neglect. Within the hollow rests a cluttered collection of devotional offerings: stubs of melted tallow candles pooled in their own congealed wax, silk ribbons in muted shades of faded red and gold that have lost their luster to time and grime, and at the center, a crude clay figurine shaped into the approximate form of a robed saint with folded hands and a face smoothed featureless by many desperate touches. The clay figure bears cracks repaired with mismatched filler, evidence of careful, obsessive restoration.\n\nThe crumbling brick wall surrounding the niche shows the passage of countless hands, its mortar crumbling and its surface darkened with soot from innumerable candles. A hollow-eyed woman kneels before the makeshift altar, her face gaunt and her clothes threadbare but clean, arranged with meticulous care as she tends to her shrine. Small offerings have been placed with reverent precision: a single copper coin, a pressed flower long since browned, and a scrap of paper bearing faded ink that might be a name. The overall scene is rendered against a neutral grey background, emphasizing the poignant contrast between the woman's unwavering devotion and the humble, forgotten saint of lost causes she serves.",
+    "negative_prompt": "blurry, low quality, people, characters, modern elements, cars, technology, indoor scenes, portraits",
+    "width": 1024,
+    "height": 768,
+    "seed": 4394,
+    "createdAt": "2026-03-04T17:10:18.288Z",
+    "comfyUIPromptId": "b2fdc6d3-50c4-4568-812f-a186b35c6445",
+    "images": [
+      {
+        "imageId": "img_20260304_171004_lolbgwnp",
+        "filename": "img_20260304_171004_lolbgwnp.png",
+        "url": "/generated-images/img_20260304_171004_lolbgwnp.png",
+        "size": 1169836
+      }
+    ]
+  },
+  "img_20260304_171018_6cggvwg8": {
+    "id": "img_20260304_171018_6cggvwg8",
+    "prompt": "[Title: The Sunken Labyrinth of Valdros; Tags: dungeon crawler, dark fantasy, exploration, treasure hunting; Genre: fantasy, adventure, horror-adjacent]\n\nA narrow dirt road slopes downward between crowded rows of memorial stones that press in from both sides, creating a claustrophobic corridor of the dead. Weathered granite slabs stand shoulder-to-shoulder with polished marble markers and rough-hewn limestone blocks, their varied materials suggesting centuries of accumulated grief. The gravestones tilt at irregular angles, some leaning heavily against their neighbors, others half-swallowed by creeping moss and tangled weeds. Inscriptions have worn smooth on the older stones, their names and dates erased by time and weather, while newer markers display crisp, uniform lettering in the Guild's standardized format.\n\nMist clings low to the ground, softening the edges of the memorial stones and obscuring whatever lies at the bottom of the descending path. The graves extend into the haze on either side, a silent congregation stretching beyond sight. Some stones bear fresh chisel marks and recent dates, their pale surfaces stark against the lichen-crusted monuments surrounding them. Wild grass grows thick between the markers, undisturbed by visitors, and the air hangs still and heavy with the weight of accumulated years and forgotten names.",
+    "negative_prompt": "blurry, low quality, modern elements, cars, technology, people, characters, portraits, indoor scenes only",
+    "width": 1920,
+    "height": 1080,
+    "seed": 505985,
+    "createdAt": "2026-03-04T17:10:38.920Z",
+    "comfyUIPromptId": "f1fb799f-f320-4361-852f-61440053dd47",
+    "images": [
+      {
+        "imageId": "img_20260304_171018_6cggvwg8",
+        "filename": "img_20260304_171018_6cggvwg8.png",
+        "url": "/generated-images/img_20260304_171018_6cggvwg8.png",
+        "size": 3268598
+      }
+    ]
+  },
+  "img_20260304_171055_yqde0058": {
+    "id": "img_20260304_171055_yqde0058",
+    "prompt": "[Title: The Sunken Labyrinth of Valdros; Tags: dungeon crawler, dark fantasy, exploration, treasure hunting; Genre: fantasy, adventure, horror-adjacent]\n\nA massively muscular half-orc man with slate-gray skin sits in solemn vigil among weathered memorial stones, his powerful frame emphasized by a tattered cloak that hangs open to reveal scarred, battle-hardened flesh and rust-speckled chainmail that leaves his thick, corded arms and broad chest largely exposed. His coarse black hair falls in unkempt waves with subtle ash-brown highlights, framing a rugged face marked by a jaggedly broken tusk jutting from his strong jaw. Haunting yellow eyes with amber undertones gaze intensely at four nearby grave markers, his expression carved from deep grief and fierce protectiveness. His weathered hands rest upon an enormous notched greataxe planted before him, every sinew of his imposing physique coiled with latent, legendary strength beneath skin glistening faintly with the damp air of the memorial path.",
+    "negative_prompt": "blurry, low quality, distorted, multiple faces, deformed, ugly, bad anatomy, bad proportions",
+    "width": 1200,
+    "height": 1600,
+    "seed": 210045,
+    "createdAt": "2026-03-04T17:11:15.476Z",
+    "comfyUIPromptId": "9d912199-5ac8-4881-b0b0-4aa5e1915f5b",
+    "images": [
+      {
+        "imageId": "img_20260304_171055_yqde0058",
+        "filename": "img_20260304_171055_yqde0058.png",
+        "url": "/generated-images/img_20260304_171055_yqde0058.png",
+        "size": 2780529
+      }
+    ]
+  },
+  "img_20260304_171115_fbfz1gqs": {
+    "id": "img_20260304_171115_fbfz1gqs",
+    "prompt": "[Title: The Sunken Labyrinth of Valdros; Tags: dungeon crawler, dark fantasy, exploration, treasure hunting; Genre: fantasy, adventure, horror-adjacent]\n\nThe shattered remains of a quarterstaff lie isolated against a neutral grey background, the weapon broken into several splintered segments. The wood has weathered to a pale ashen gray, its surface spiderwebbed with deep cracks and fissures from years of exposure to the elements. One fragment retains a corroded iron cap at its terminus, the metal eaten away by rust and tarnish, its once-polished surface now rough and orange-brown with oxidation. At the opposite end of the largest piece, a dark reddish-brown stain permeates the grain of the wood, its origin ambiguous-could be ancient blood or simply the natural discoloration of age and decay.\n\nThe break points are jagged and uneven, revealing the dry, porous interior of the aged wood where long fibers splinter outward. What may have once been smooth, polished craftsmanship is now worn and pitted, the staff's original form barely recognizable in its ruined state. Small fragments and wood chips lie nearby, suggesting the staff was not merely abandoned but perhaps shattered through violence or deliberate force before being left to the elements.",
+    "negative_prompt": "blurry, low quality, people, characters, modern elements, cars, technology, indoor scenes, portraits",
+    "width": 1024,
+    "height": 768,
+    "seed": 428563,
+    "createdAt": "2026-03-04T17:11:28.008Z",
+    "comfyUIPromptId": "a0de2f57-cd2b-49c0-8ccf-446dcbd153a7",
+    "images": [
+      {
+        "imageId": "img_20260304_171115_fbfz1gqs",
+        "filename": "img_20260304_171115_fbfz1gqs.png",
+        "url": "/generated-images/img_20260304_171115_fbfz1gqs.png",
+        "size": 1134429
+      }
+    ]
+  },
+  "img_20260304_171128_b6d9b9tg": {
+    "id": "img_20260304_171128_b6d9b9tg",
+    "prompt": "[Title: The Sunken Labyrinth of Valdros; Tags: dungeon crawler, dark fantasy, exploration, treasure hunting; Genre: fantasy, adventure, horror-adjacent]\n\nAgainst a neutral grey background, the Weeping Memorial Stone rises as a massive, weathered slab of dark granite, its surface carved with dozens of names in varying scripts and sizes-some deeply etched and professional, others shallow and crude, suggesting they were carved by grieving hands rather than skilled masons. The stone's face glistens with perpetual dampness, moisture continuously weeping from within the rock itself as if the memorial harbors some deep, supernatural sorrow. Rivulets trace slow paths through lichen and mineral deposits, catching what light exists and giving the granite an almost organic quality, as though it breathes with the memories of the dead.\n\nAt the monument's base, a natural basin has formed where the perpetual moisture collects, its waters crystal clear and emitting a soft, ghostly luminescence that pulses with subtle, irregular rhythm. The gathered liquid creates a mirror-like surface, though its reflection seems to shimmer with unnatural depth-whispers among locals claim that gazing into the water reveals one's true self rather than mere physical appearance. The surrounding Memorial Walk presses close, other stones crowding in the periphery like silent witnesses, their own weathered surfaces half-visible, while scattered offerings of withered flowers and rusted tokens rest at the granite's foot, tributes to those who descended into Valdros's depths and never returned.",
+    "negative_prompt": "blurry, low quality, people, characters, modern elements, cars, technology, indoor scenes, portraits",
+    "width": 1024,
+    "height": 768,
+    "seed": 72888,
+    "createdAt": "2026-03-04T17:11:42.162Z",
+    "comfyUIPromptId": "1799989f-a7f4-45bf-939e-37729487122d",
+    "images": [
+      {
+        "imageId": "img_20260304_171128_b6d9b9tg",
+        "filename": "img_20260304_171128_b6d9b9tg.png",
+        "url": "/generated-images/img_20260304_171128_b6d9b9tg.png",
+        "size": 1257776
+      }
+    ]
+  },
+  "img_20260304_171142_1959fbbk": {
+    "id": "img_20260304_171142_1959fbbk",
+    "prompt": "[Title: The Sunken Labyrinth of Valdros; Tags: dungeon crawler, dark fantasy, exploration, treasure hunting; Genre: fantasy, adventure, horror-adjacent]\n\nA weathered wooden post of rough-hewn timber stands anchored in rocky, barren ground, its surface weathered to a silvery gray from years of exposure to wind and elements. The wood is dense with carved warnings covering nearly every available inch-some inscriptions are faded and moss-filled, barely legible with weathered grooves, while others display fresh, sharp cuts that expose the lighter wood beneath. The text varies wildly in style: angular runes, flowing scripts, crude symbols, and desperate scratchings in multiple languages, some overlapping where carvers ran out of empty space. Nails of varying sizes have been hammered into the post's sides from top to bottom, their heads rusted and stained.\n\nFrom these nails dangle an array of offerings and tokens: strips of sun-bleached cloth in muted reds and browns that flutter limply, small bone fragments-some unmistakably finger joints or teeth-tied with fraying twine, a tarnished copper coin with a hole punched through it, a tuft of dark horsehair, and several unrecognizable small objects wrapped in leather and bound with wire. A few of the dangling items sway slightly as if disturbed by a recent touch. The post appears to have been reinforced at its base with a cairn of loose stones piled around it for stability, with dark soil visible between the rocks.",
+    "negative_prompt": "blurry, low quality, people, characters, modern elements, cars, technology, indoor scenes, portraits",
+    "width": 1024,
+    "height": 768,
+    "seed": 694690,
+    "createdAt": "2026-03-04T17:11:56.320Z",
+    "comfyUIPromptId": "5a8d2438-5e52-4ba9-aab3-8d1b07340ef5",
+    "images": [
+      {
+        "imageId": "img_20260304_171142_1959fbbk",
+        "filename": "img_20260304_171142_1959fbbk.png",
+        "url": "/generated-images/img_20260304_171142_1959fbbk.png",
+        "size": 1267079
+      }
+    ]
+  },
+  "img_20260304_171156_s790xkno": {
+    "id": "img_20260304_171156_s790xkno",
+    "prompt": "[Title: The Sunken Labyrinth of Valdros; Tags: dungeon crawler, dark fantasy, exploration, treasure hunting; Genre: fantasy, adventure, horror-adjacent]\n\nA pale silk ribbon lies in a loose coil against a neutral grey background, its once-bright color faded to a ghostly gray from prolonged exposure to weather. The fabric shows subtle signs of age along its frayed edges, with several loose threads trailing from the cut ends where it was once tied. Thin and lightweight, the ribbon measures approximately twelve inches in length with a soft, slightly rumpled texture from being untied and handled. No visible patterns or embroidery decorate its surface, only the quiet sheen of aged silk catching light along the gentle folds.",
+    "negative_prompt": "blurry, low quality, people, characters, hands, multiple objects, cluttered background, modern elements",
+    "width": 1024,
+    "height": 1024,
+    "seed": 679041,
+    "createdAt": "2026-03-04T17:12:11.091Z",
+    "comfyUIPromptId": "98060fba-dbd0-437c-8613-0d00b9aa90a5",
+    "images": [
+      {
+        "imageId": "img_20260304_171156_s790xkno",
+        "filename": "img_20260304_171156_s790xkno.png",
+        "url": "/generated-images/img_20260304_171156_s790xkno.png",
+        "size": 1366357
+      }
+    ]
+  },
+  "img_20260304_171211_tix849ed": {
+    "id": "img_20260304_171211_tix849ed",
+    "prompt": "[Title: The Sunken Labyrinth of Valdros; Tags: dungeon crawler, dark fantasy, exploration, treasure hunting; Genre: fantasy, adventure, horror-adjacent]\n\nA worn copper coin rests against a neutral grey background, its surface weathered to a dull brownish-orange patina with darker oxidation concentrated around the raised edges and engraved lettering. The circular disc shows slight asymmetry from hand-crafting, with shallow nicks and scratches across both faces evidence of being carried and handled by countless Adventurers. One side displays the word \"Return\" stamped in bold, utilitarian lettering, while the opposite face bears \"Remember\" in matching script, both inscriptions slightly worn but clearly legible. The edges of the coin are smooth from use, and small patches of brighter copper show through where fingers have rubbed the patina thin over time. A subtle lip runs around the circumference of both faces, creating a shallow recess that has accumulated grime in its depths while the raised portions remain relatively clean.",
+    "negative_prompt": "blurry, low quality, people, characters, hands, multiple objects, cluttered background, modern elements",
+    "width": 1024,
+    "height": 1024,
+    "seed": 934911,
+    "createdAt": "2026-03-04T17:12:25.701Z",
+    "comfyUIPromptId": "9e315817-5e0d-4117-89e7-aa90bbf2d262",
+    "images": [
+      {
+        "imageId": "img_20260304_171211_tix849ed",
+        "filename": "img_20260304_171211_tix849ed.png",
+        "url": "/generated-images/img_20260304_171211_tix849ed.png",
+        "size": 1572650
+      }
+    ]
+  },
+  "img_20260304_171527_9p6ipe1r": {
+    "id": "img_20260304_171527_9p6ipe1r",
+    "prompt": "[Title: The Sunken Labyrinth of Valdros; Tags: dungeon crawler, dark fantasy, exploration, treasure hunting; Genre: fantasy, adventure, horror-adjacent]\n\nA rough-hewn platform of weathered timber and gray stone juts from the mountainside, reinforced with iron bands and crowned by a sloped roof of dark shingles. Two guards in mismatched leather armor stand at opposite corners of the post, their postures rigid with mutual suspicion rather than vigilance, hands resting on sword hilts as they watch one another. The structure bears the humble Guild crest carved into its lintel, partially obscured by creeping lichen and years of accumulated grime.\n\nA massive notice board dominates one wall, its surface dense with overlapping papers and parchment in various states of decay. Crimson paint lists the week's death toll in stark numerals, the ink streaked downward from recent rain. Official proclamations about expedition quotas hang alongside promised rewards for informing on unlicensed delvers, and directly beneath these, a smaller notice scrawled on yellowed parchment offers three times the official rate for the same information. The dungeon entrance looms somewhere beyond, and the platform's edge drops away into gray mist.",
+    "negative_prompt": "blurry, low quality, modern elements, cars, technology, people, characters, portraits, indoor scenes only",
+    "width": 1920,
+    "height": 1080,
+    "seed": 806782,
+    "createdAt": "2026-03-04T17:15:47.398Z",
+    "comfyUIPromptId": "61012487-165a-422e-a929-21c9cbb624ec",
+    "images": [
+      {
+        "imageId": "img_20260304_171527_9p6ipe1r",
+        "filename": "img_20260304_171527_9p6ipe1r.png",
+        "url": "/generated-images/img_20260304_171527_9p6ipe1r.png",
+        "size": 2937930
+      }
+    ]
+  },
+  "img_20260304_171547_icsi8kiv": {
+    "id": "img_20260304_171547_icsi8kiv",
+    "prompt": "[Title: The Sunken Labyrinth of Valdros; Tags: dungeon crawler, dark fantasy, exploration, treasure hunting; Genre: fantasy, adventure, horror-adjacent]\n\nA weathered human woman in her early forties stands at the warning post, her toned physique partially revealed through a modified chainmail hauberk that has been deliberately shortened to expose her midriff and cut high at the thighs, the battered metal links draped over a simple cloth undergarment. Her dark hair is pulled back in a severe knot, threaded with strands of silver and ash gray that catch the lantern light, styled with tight precision that reveals the strong angles of her face. Her arms, bare beneath the loose draping of a faded crimson Guild armband, show the defined muscle of someone accustomed to physical labor. The hooded iron lantern in her grip casts a steady white glow across her features, illuminating her flat, assessing gaze and the fine lines around her eyes that speak of long nights watching over the dungeon's entrance. Behind her, mist curls from the shadowed stairway below, and timber posts display weathered notices that flutter in the cold air.",
+    "negative_prompt": "blurry, low quality, distorted, multiple faces, deformed, ugly, bad anatomy, bad proportions",
+    "width": 1200,
+    "height": 1600,
+    "seed": 963662,
+    "createdAt": "2026-03-04T17:16:07.557Z",
+    "comfyUIPromptId": "dc28e72f-02c6-4fc3-909d-4bfee649df8e",
+    "images": [
+      {
+        "imageId": "img_20260304_171547_icsi8kiv",
+        "filename": "img_20260304_171547_icsi8kiv.png",
+        "url": "/generated-images/img_20260304_171547_icsi8kiv.png",
+        "size": 2641531
+      }
+    ]
+  },
+  "img_20260304_171607_n03etny7": {
+    "id": "img_20260304_171607_n03etny7",
+    "prompt": "[Title: The Sunken Labyrinth of Valdros; Tags: dungeon crawler, dark fantasy, exploration, treasure hunting; Genre: fantasy, adventure, horror-adjacent]\n\nA massive wooden board of dark, weathered timber dominates the frame, mounted on two thick rough-hewn posts stained by years of exposure. The board's surface is a chaos of painted numbers and names layered atop one another in successive weeks-the fresh white paint of the current death toll still glistening wetly, while older statistics beneath have dissolved into streaking ribbons of grey and faded red where rain has washed them into running vertical lines. The numbers grow denser and more illegible toward the bottom edges, creating a stratified record of accumulated tragedy, with paint so thick in places it has crusted and cracked like old scars.\n\nFragments of official guild notices remain visible around the borders-gilded insignias and formal headings now peeling and water-damaged, their authoritative proclamations reduced to illegible blurs. Dark iron nails protrude at irregular intervals where additional notices have been pinned and subsequently torn away, leaving behind ragged paper scraps and rust stains that bleed into the painted numbers. The wood grain itself has begun to rot at the corners, blackened with moss and fungal growth that creeps inward like a slow infection, as though the board is gradually being reclaimed by the very earth from which it was hewn.",
+    "negative_prompt": "blurry, low quality, people, characters, modern elements, cars, technology, indoor scenes, portraits",
+    "width": 1024,
+    "height": 768,
+    "seed": 771473,
+    "createdAt": "2026-03-04T17:16:20.159Z",
+    "comfyUIPromptId": "b0787ce0-c17d-40e4-812b-e4f444333962",
+    "images": [
+      {
+        "imageId": "img_20260304_171607_n03etny7",
+        "filename": "img_20260304_171607_n03etny7.png",
+        "url": "/generated-images/img_20260304_171607_n03etny7.png",
+        "size": 1216634
+      }
+    ]
+  },
+  "img_20260304_171620_ea5ch6su": {
+    "id": "img_20260304_171620_ea5ch6su",
+    "prompt": "[Title: The Sunken Labyrinth of Valdros; Tags: dungeon crawler, dark fantasy, exploration, treasure hunting; Genre: fantasy, adventure, horror-adjacent]\n\nA weathered wooden stake stands driven into rocky, uneven ground, its surface silvered and cracked from long exposure to wind and weather. From nails and hooks embedded along its length hang dozens of mementos-tarnished brass tags etched with faded names, ribbons bleached to muted pastels by sun and rain, scraps of cloth in torn and fraying lengths, and small charms that clink softly when the air stirs. The accumulated offerings create a cascade of memorial tokens that flutter and tangle together, bearing silent witness to those who descended into the depths and never emerged.\n\nAt the base of the stake, a small shrine has formed from accumulated tributes: copper coins scattered across the stones like fallen leaves, dried flowers in brittle shades of brown and grey, and other small tokens left by grieving survivors or superstitious adventurers seeking blessing before their own descents. The rocky ground around the memorial is bare and trampled, marked by the passage of countless feet, while tough scrub grass and pale lichen cling to the surrounding stones, pressed flat by the weight of the mourning place.\n\nThe scene carries an atmosphere of quiet sorrow and accumulated loss. The grey, overcast light lends a somber, muted quality to the scene, with no bright colors to interrupt the pallid display. Against a neutral grey background, the memorial stake and its offerings emerge as testament to the dungeon's endless toll.",
+    "negative_prompt": "blurry, low quality, people, characters, modern elements, cars, technology, indoor scenes, portraits",
+    "width": 1024,
+    "height": 768,
+    "seed": 905729,
+    "createdAt": "2026-03-04T17:16:34.305Z",
+    "comfyUIPromptId": "4b76c256-8319-4aac-97b7-648ae342831a",
+    "images": [
+      {
+        "imageId": "img_20260304_171620_ea5ch6su",
+        "filename": "img_20260304_171620_ea5ch6su.png",
+        "url": "/generated-images/img_20260304_171620_ea5ch6su.png",
+        "size": 1218580
+      }
+    ]
+  },
+  "img_20260304_171634_cad4pjxw": {
+    "id": "img_20260304_171634_cad4pjxw",
+    "prompt": "[Title: The Sunken Labyrinth of Valdros; Tags: dungeon crawler, dark fantasy, exploration, treasure hunting; Genre: fantasy, adventure, horror-adjacent]\n\nA weathered gray stone sits alone against a neutral grey background, seemingly unremarkable at first glance-a lichen-spattered rock with rough, pitted surfaces worn smooth by years of rain and passing hands. The stone is irregularly shaped, roughly the size of a human head, with natural crevices and cracks that help it blend into the roadside terrain of the Dungeon Entrance Road. Tufts of parched grass and small pebbles cluster around its base, and in the distance, a suggestion of the path's memorial stones and the timber structure of the Warning Post fades into a soft, overcast haze.\n\nUpon closer inspection, one jagged crack along the stone's face reveals itself as something more deliberate-a hidden compartment disguised within a natural fissure, its edges worn smooth from countless openings. The hollow interior is shadowed but visible, its walls stained with drippings from cheap tallow candles and scored with frantic scratch marks where hurried hands have fumbled for hidden goods in the dark. Small fragments of wax have pooled and hardened in the crevices, and the faint glint of copper coins or a folded note might catch the light, left behind by the smugglers and black market traders who use this dead drop to move contraband past the Guild's watchful presence at the nearby post.",
+    "negative_prompt": "blurry, low quality, people, characters, modern elements, cars, technology, indoor scenes, portraits",
+    "width": 1024,
+    "height": 768,
+    "seed": 354270,
+    "createdAt": "2026-03-04T17:16:48.453Z",
+    "comfyUIPromptId": "ab38b9bf-4584-4ae0-86a2-d74a0fe1d48c",
+    "images": [
+      {
+        "imageId": "img_20260304_171634_cad4pjxw",
+        "filename": "img_20260304_171634_cad4pjxw.png",
+        "url": "/generated-images/img_20260304_171634_cad4pjxw.png",
+        "size": 1224133
+      }
+    ]
+  },
+  "img_20260304_171648_rvqzsgio": {
+    "id": "img_20260304_171648_rvqzsgio",
+    "prompt": "[Title: The Sunken Labyrinth of Valdros; Tags: dungeon crawler, dark fantasy, exploration, treasure hunting; Genre: fantasy, adventure, horror-adjacent]\n\nA heavy iron brazier stands mounted on a rough-hewn stone platform, its dark metal surface pitted from years of exposure to the dungeon's cold breath. Overlapping slate tiles form a clever partial shield around the flame, angled to deflect the harsh winds that rush up from the sinkhole while still allowing heat to radiate outward. The coals within burn with an unsettling orange hue-too vivid, too consistent-suggesting the alchemical additives that prolong their burn and suppress the smoke.\n\nThe surrounding Warning Post stretches around the brazier, timber fortifications rising against a backdrop of grey mist and the jagged earth of the sinkhole's edge. Memorial stones stand as silent sentinels nearby, their carved names weathered by rain and time. The brazier's unnatural light casts long, trembling shadows across the wooden platform where the Guild's casualty boards stand, their painted statistics running in streaks whenever the cold dampness settles. The cold wind from the depths carries the faint scent of alchemical smoke.",
+    "negative_prompt": "blurry, low quality, people, characters, modern elements, cars, technology, indoor scenes, portraits",
+    "width": 1024,
+    "height": 768,
+    "seed": 954161,
+    "createdAt": "2026-03-04T17:17:02.607Z",
+    "comfyUIPromptId": "9e51ffd0-5a5d-49b5-8312-343c2a0f38fd",
+    "images": [
+      {
+        "imageId": "img_20260304_171648_rvqzsgio",
+        "filename": "img_20260304_171648_rvqzsgio.png",
+        "url": "/generated-images/img_20260304_171648_rvqzsgio.png",
+        "size": 1102146
+      }
+    ]
+  },
+  "img_20260304_171702_84zjpe5s": {
+    "id": "img_20260304_171702_84zjpe5s",
+    "prompt": "[Title: The Sunken Labyrinth of Valdros; Tags: dungeon crawler, dark fantasy, exploration, treasure hunting; Genre: fantasy, adventure, horror-adjacent]\n\nA bent iron spike approximately eight inches long lies displayed against a neutral grey background, its shaft angled sharply near the midpoint where the metal warped under tremendous impact. The surface is heavily corroded with a sickly greenish patina that mottles the dark iron beneath, evidence of prolonged exposure to the dungeon's toxic atmosphere. Pitted textures and rough patches cover the spike from tip to base, with flakes of oxidation scattered along its length. The pointed end appears slightly blunted from use, while the broader head shows irregular hammer marks and traces of rust-colored discoloration. Faint scratches and gouges in the metal suggest it was repeatedly struck against a hard surface.",
+    "negative_prompt": "blurry, low quality, people, characters, hands, multiple objects, cluttered background, modern elements",
+    "width": 1024,
+    "height": 1024,
+    "seed": 82322,
+    "createdAt": "2026-03-04T17:17:18.777Z",
+    "comfyUIPromptId": "e5cf32d8-69c0-4c92-a1bb-1fb0d6961613",
+    "images": [
+      {
+        "imageId": "img_20260304_171702_84zjpe5s",
+        "filename": "img_20260304_171702_84zjpe5s.png",
+        "url": "/generated-images/img_20260304_171702_84zjpe5s.png",
+        "size": 1155542
+      }
+    ]
+  },
+  "img_20260304_171718_d6vxmv20": {
+    "id": "img_20260304_171718_d6vxmv20",
+    "prompt": "[Title: The Sunken Labyrinth of Valdros; Tags: dungeon crawler, dark fantasy, exploration, treasure hunting; Genre: fantasy, adventure, horror-adjacent]\n\nA brass-rimmed monocle rests against a neutral grey background, its circular lens displaying a faint hairline fracture running diagonally across the surface. The brass frame has developed a muted patina with age, showing slight discoloration along the edges where fingers have held it over years of use. A slender chain of matching brass links extends from the frame, terminating in a small metal clip meant for securing to clothing. The clip bears faint etched initials alongside a small engraved date, the lettering worn but still legible upon close inspection. The glass lens catches light along its curves, the crack causing slight distortions in reflections.",
+    "negative_prompt": "blurry, low quality, people, characters, hands, multiple objects, cluttered background, modern elements",
+    "width": 1024,
+    "height": 1024,
+    "seed": 702334,
+    "createdAt": "2026-03-04T17:17:33.171Z",
+    "comfyUIPromptId": "4d798807-e2f9-4f86-97ab-39eef970f8fe",
+    "images": [
+      {
+        "imageId": "img_20260304_171718_d6vxmv20",
+        "filename": "img_20260304_171718_d6vxmv20.png",
+        "url": "/generated-images/img_20260304_171718_d6vxmv20.png",
+        "size": 1247536
+      }
+    ]
+  },
+  "img_20260304_172243_7dx7a0ge": {
+    "id": "img_20260304_172243_7dx7a0ge",
+    "prompt": "[Title: The Sunken Labyrinth of Valdros; Tags: dungeon crawler, dark fantasy, exploration, treasure hunting; Genre: fantasy, adventure, horror-adjacent]\n\nBrannick Holt is a weathered human man in his mid-forties with a ruggedly handsome face marked by heavy stubble and deep-set hazel eyes narrowed in a permanent, knowing squint beneath furrowed brows. His thick dark brown hair is swept back from his temples, dusted with silver-grey streaks and catching amber highlights that gradient into charcoal at the nape. He wears a sleeveless chainmail vest that hangs open across his broad, hairy chest, the polished metal links draped over powerful shoulders. A leather bracer strapped to one forearm and a silver whistle dangling against his collarbone. His muscular arms are thick from years of spear drills, and he stands in a relaxed pose, a sturdy iron-tipped spear resting against one shoulder. Behind him looms a timber watchpost with a weathered board displaying faded notices, the overcast sky casting dim light across the fortified platform.",
+    "negative_prompt": "blurry, low quality, distorted, multiple faces, deformed, ugly, bad anatomy, bad proportions",
+    "width": 1200,
+    "height": 1600,
+    "seed": 169204,
+    "createdAt": "2026-03-04T17:23:09.421Z",
+    "comfyUIPromptId": "acc67fed-8ba8-4adc-9773-5759f472aa34",
+    "images": [
+      {
+        "imageId": "img_20260304_172243_7dx7a0ge",
+        "filename": "img_20260304_172243_7dx7a0ge.png",
+        "url": "/generated-images/img_20260304_172243_7dx7a0ge.png",
+        "size": 2804155
+      }
+    ]
+  },
+  "img_20260304_172309_icckjemz": {
+    "id": "img_20260304_172309_icckjemz",
+    "prompt": "[Title: The Sunken Labyrinth of Valdros; Tags: dungeon crawler, dark fantasy, exploration, treasure hunting; Genre: fantasy, adventure, horror-adjacent]\n\nSycorax Stone-Etcher is a slender tiefling woman with smooth slate-grey skin that glows faintly in the misty light, her curved horns wrapped in spiraling copper wire that matches the warm amber intensity of her calculating eyes. Her thick white hair falls in loose waves gradienting from pale silver at the roots to moonlight-blue tips, threaded through with small copper charms that chime softly. She wears deep midnight-blue scholar's robes dramatically cut open at the chest and secured with bronze clasps, the fabric parted to reveal generous cleavage and the elegant curve of her shoulders, while the hem is scandalously shortened to expose her long grey legs to mid-thigh. A battered leather surveyor's case hangs from her shoulder, its bronze corners gleaming, while her slender fingers clutch a copper-wrapped journal against her hip. She stands at a rain-slicked timber post, one hand adjusting a brass astrolabe with three overlapping dial faces, her expression one of fierce intellectual focus as mist curls around her bare calves and lantern light catches the copper wire binding her horns.",
+    "negative_prompt": "blurry, low quality, distorted, multiple faces, deformed, ugly, bad anatomy, bad proportions",
+    "width": 1200,
+    "height": 1600,
+    "seed": 231967,
+    "createdAt": "2026-03-04T17:23:29.586Z",
+    "comfyUIPromptId": "dc487db3-e56d-4b0c-8ed3-e3c4650ff33f",
+    "images": [
+      {
+        "imageId": "img_20260304_172309_icckjemz",
+        "filename": "img_20260304_172309_icckjemz.png",
+        "url": "/generated-images/img_20260304_172309_icckjemz.png",
+        "size": 2500378
+      }
+    ]
+  },
+  "img_20260304_172329_zhh2bukv": {
+    "id": "img_20260304_172329_zhh2bukv",
+    "prompt": "[Title: The Sunken Labyrinth of Valdros; Tags: dungeon crawler, dark fantasy, exploration, treasure hunting; Genre: fantasy, adventure, horror-adjacent]\n\nA switchback staircase descends sharply into the massive sinkhole, each step carved directly into the sloping face of raw living rock that forms the pit's curved wall. The stone steps are worn into smooth concave depressions from centuries of use, while scattered patches display an eerie mirror-like sheen where the rock has been polished by something far more sinister than mortal feet. Rough handholds and erosion patterns mark the surrounding stone face, evidence of both deliberate craftsmanship and natural weathering.\n\nCold air currents rise visibly as faint white wisps from the depths below, curling around the zigzagging stairs and carrying droplets of moisture that glimmer in the available light. The walls bear mineral deposits and dark staining in places, creating organic patterns of whites, grays, and rust colors. Far below, the stairway vanishes into a thickening darkness that seems to absorb what little illumination exists.",
+    "negative_prompt": "blurry, low quality, modern elements, cars, technology, people, characters, portraits, indoor scenes only",
+    "width": 1920,
+    "height": 1080,
+    "seed": 226262,
+    "createdAt": "2026-03-04T17:23:49.758Z",
+    "comfyUIPromptId": "1bba90b5-d9d2-4f59-aa85-4b4caa38a896",
+    "images": [
+      {
+        "imageId": "img_20260304_172329_zhh2bukv",
+        "filename": "img_20260304_172329_zhh2bukv.png",
+        "url": "/generated-images/img_20260304_172329_zhh2bukv.png",
+        "size": 3384629
+      }
+    ]
+  },
+  "img_20260304_172349_kvmz2nuz": {
+    "id": "img_20260304_172349_kvmz2nuz",
+    "prompt": "[Title: The Sunken Labyrinth of Valdros; Tags: dungeon crawler, dark fantasy, exploration, treasure hunting; Genre: fantasy, adventure, horror-adjacent]\n\nA battered brass lantern lies overturned on weathered stone, its once-polished surface now tarnished to a dull brown-green patina. The frame is badly bent and cracked, split open along one seam as if struck against rock, and the protective wire cage around the oil reservoir is crumpled inward. Shattered glass fragments scatter nearby, catching minimal light, while the rusted hinges of its access door hang loose and broken.\n\nThe worn stone of the Sinking Stairs stretches beneath the ruined lantern, its surface worn smooth and slightly concave from ages of passing feet. Cold mist curls around the artifact, and mineral staining suggests dampness rising from the depths below. A few leaves and grit have accumulated inside the dry, empty oil reservoir. The grey background fades into shadow.",
+    "negative_prompt": "blurry, low quality, people, characters, modern elements, cars, technology, indoor scenes, portraits",
+    "width": 1024,
+    "height": 768,
+    "seed": 60120,
+    "createdAt": "2026-03-04T17:24:01.907Z",
+    "comfyUIPromptId": "f4f6455b-6156-438f-a040-f37ccf6d8e7e",
+    "images": [
+      {
+        "imageId": "img_20260304_172349_kvmz2nuz",
+        "filename": "img_20260304_172349_kvmz2nuz.png",
+        "url": "/generated-images/img_20260304_172349_kvmz2nuz.png",
+        "size": 1091122
+      }
+    ]
+  },
+  "img_20260304_172402_blfg7ox3": {
+    "id": "img_20260304_172402_blfg7ox3",
+    "prompt": "[Title: The Sunken Labyrinth of Valdros; Tags: dungeon crawler, dark fantasy, exploration, treasure hunting; Genre: fantasy, adventure, horror-adjacent]\n\nA shallow alcove carved into the dark living rock of a switchback wall, its walls and floor worn glass-smooth by centuries of desperate hands and resting bodies. The stone is dark grey with mineral veining, and the alcove is just deep enough for one or two people to press themselves into for shelter. Above the opening, a crude blessing has been scratched into the rock face-a jagged, hand-carved symbol resembling a protective eye or ward, its grooves darkened with age and perhaps old soot from torch smoke. The edges of the alcove are rounded and polished, showing the passage of countless adventurers who have sought refuge here.\n\nCold mist curls past the opening in visible tendrils, rising from the depths below along the switchback staircase. The surrounding rock face is rough-hewn and dark, with the alcove appearing as a darker shadow within it. A few discarded items might rest in corners of the niche-a torn cloth, old candle stub-evidence of those who paused here before descending further. The crude blessing above catches what little light exists, appearing both hopeful and haunting against the weathered stone. The scene is set against a neutral grey background, emphasizing the textures of ancient rock and the worn smoothness that speaks to generations of use.",
+    "negative_prompt": "blurry, low quality, people, characters, modern elements, cars, technology, indoor scenes, portraits",
+    "width": 1024,
+    "height": 768,
+    "seed": 515932,
+    "createdAt": "2026-03-04T17:24:16.065Z",
+    "comfyUIPromptId": "ec0dbab3-ce59-41d3-bade-9f5dd9926198",
+    "images": [
+      {
+        "imageId": "img_20260304_172402_blfg7ox3",
+        "filename": "img_20260304_172402_blfg7ox3.png",
+        "url": "/generated-images/img_20260304_172402_blfg7ox3.png",
+        "size": 1065211
+      }
+    ]
+  },
+  "img_20260304_172416_auqhghrr": {
+    "id": "img_20260304_172416_auqhghrr",
+    "prompt": "[Title: The Sunken Labyrinth of Valdros; Tags: dungeon crawler, dark fantasy, exploration, treasure hunting; Genre: fantasy, adventure, horror-adjacent]\n\nA rusted iron ring, thick as a thumb and encrusted with centuries of oxidation, emerges from the rough-hewn rock face of the Sinking Stairs. The metal has darkened to a deep reddish-brown patina, its surface textured with flaking corrosion and pitted from long exposure to the cold, mineral-laden air that rises from the depths below. A heavy iron staple, equally weathered, anchors the ring deep into a crack in the grey stone, the surrounding rock face fractured and dark with moisture in a simple, neutral grey environment.\n\nThe ring itself shows the marks of countless ropes that have worn smooth grooves into its inner curve, leaving behind faint fibrous residue and dark stains that suggest both successful descents and desperate climbs back toward the surface. Despite its aged appearance, the iron remains thick and unbroken, the staple driven firmly into the stone with no visible loosening. The rock face holding the anchor is rough and natural, carved directly into the sinkhole's living stone, with subtle ridges and natural fractures that speak to the geological chaos that created this passage into the Sunken Labyrinth.",
+    "negative_prompt": "blurry, low quality, people, characters, modern elements, cars, technology, indoor scenes, portraits",
+    "width": 1024,
+    "height": 768,
+    "seed": 992875,
+    "createdAt": "2026-03-04T17:24:30.217Z",
+    "comfyUIPromptId": "8572c7ff-14c9-42d8-a8c4-3034a897c04d",
+    "images": [
+      {
+        "imageId": "img_20260304_172416_auqhghrr",
+        "filename": "img_20260304_172416_auqhghrr.png",
+        "url": "/generated-images/img_20260304_172416_auqhghrr.png",
+        "size": 1237563
+      }
+    ]
+  },
+  "img_20260304_172430_0sevyc4p": {
+    "id": "img_20260304_172430_0sevyc4p",
+    "prompt": "[Title: The Sunken Labyrinth of Valdros; Tags: dungeon crawler, dark fantasy, exploration, treasure hunting; Genre: fantasy, adventure, horror-adjacent]\n\nA pair of iron climbing crampons designed to strap onto boots, each consisting of four thick iron spikes welded to a heavy leather frame with weathered brass buckles. The iron spikes show signs of filing and repeated sharpening, their tips darkened from use against stone, while the leather straps are dark brown and cracked with age but remain sturdy. The frames are simple and practical, lacking decoration, with visible hammer marks on the metal surfaces showing their utilitarian craftsmanship. Light scratches mark the spikes where they have scraped against the dungeon's polished stone surfaces, evidence of their actual use in the field. The object is displayed on a neutral grey background with even lighting that highlights the texture of the worn leather and the pitted surface of the iron.",
+    "negative_prompt": "blurry, low quality, people, characters, hands, multiple objects, cluttered background, modern elements",
+    "width": 1024,
+    "height": 1024,
+    "seed": 13874,
+    "createdAt": "2026-03-04T17:24:44.839Z",
+    "comfyUIPromptId": "00fccbd0-f35d-4702-b535-f5b2d7ea5bec",
+    "images": [
+      {
+        "imageId": "img_20260304_172430_0sevyc4p",
+        "filename": "img_20260304_172430_0sevyc4p.png",
+        "url": "/generated-images/img_20260304_172430_0sevyc4p.png",
+        "size": 1395010
+      }
+    ]
+  },
+  "img_20260304_172444_4kzrnnnh": {
+    "id": "img_20260304_172444_4kzrnnnh",
+    "prompt": "[Title: The Sunken Labyrinth of Valdros; Tags: dungeon crawler, dark fantasy, exploration, treasure hunting; Genre: fantasy, adventure, horror-adjacent]\n\nA worn section of curved stone wall along the switchback staircase, its surface carved into subtle concentric grooves and shallow bowls that catch dim light in unusual patterns. The rock here is darker than the surrounding limestone, stained by mineral seepage that traces the acoustic channels like frozen tears. Small crystalline formations cluster in the grooves' deepest points, their facets seeming to tremble faintly even in still air. A figure who stands before this place feels an inexplicable urge to lean close, to whisper secrets into the stone's waiting hollow.\n\nThe wall sits within a section of the Sinking Stairs where the staircase doubles back on itself, cold mist curling up from below in visible threads. The rough-hewn walls of the sinkhole rise on one side while the yawning void drops away on the other, the stone worn smooth by centuries of passing feet. Faint bioluminescent lichen clings to the upper rocks, casting just enough pale blue light to reveal the acoustic wall's unusual texture against the cruder carved steps. The background dissolves into neutral grey, isolating this uncanny landmark in silent focus.",
+    "negative_prompt": "blurry, low quality, people, characters, modern elements, cars, technology, indoor scenes, portraits",
+    "width": 1024,
+    "height": 768,
+    "seed": 254998,
+    "createdAt": "2026-03-04T17:24:58.997Z",
+    "comfyUIPromptId": "90beb75f-d05e-4e26-afe4-c26b9cf8266a",
+    "images": [
+      {
+        "imageId": "img_20260304_172444_4kzrnnnh",
+        "filename": "img_20260304_172444_4kzrnnnh.png",
+        "url": "/generated-images/img_20260304_172444_4kzrnnnh.png",
+        "size": 1129254
+      }
+    ]
+  }
+}

@@ -17,6 +17,8 @@
     "test:e2e:headless": "playwright test --project=chromium",
     "test:e2e:headed": "playwright test --project=chromium-headed",
     "test:e2e:headed:xvfb": "xvfb-run -a playwright test --project=chromium-headed",
+    "test:e2e:playthrough-regression": "PLAYWRIGHT_PLAYTHROUGH_REGRESSION=1 playwright test --project=chromium tests/e2e/playthrough.regression.spec.js",
+    "test:e2e:playthrough-region-roundtrip": "PLAYWRIGHT_PLAYTHROUGH_REGRESSION=1 PLAYWRIGHT_PLAYTHROUGH_MODE=region playwright test --project=chromium tests/e2e/playthrough.regression.spec.js",
     "test:e2e:ui": "playwright test --ui",
     "playwright:settings:screenshot": "node playwright_scripts/capture_settings_page.js"
   },

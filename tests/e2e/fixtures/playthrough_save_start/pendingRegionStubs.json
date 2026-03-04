@@ -1,0 +1,72 @@
+{
+  "region_1772642705138_x1dkik61": {
+    "id": "region_1772642705138_x1dkik61",
+    "name": "Dusthollow Market Square",
+    "originalName": "Dusthollow Market Square",
+    "description": "The commercial heart of Dusthollow, where merchants hawk dungeon supplies, healing potions, and questionable maps beneath canvas awnings that flap in the bitter wind. The square churns with adventurers, farmers selling provisions, and pickpockets working the crowds. At its center stands a dry fountain carved with reliefs of legendary delvers, now used as an impromptu meeting point for forming parties.",
+    "relationship": "Adjacent",
+    "relativeLevel": 1,
+    "parentRegionId": null,
+    "sourceRegionId": "region_1772642705121_ab15058beea1",
+    "exitLocationId": "location_1772642705133_c64222056ec5",
+    "entranceStubId": "location_1772642705138_a6a9ba3b37b0",
+    "createdAt": "2026-03-04T16:45:05.139Z",
+    "controllingFactionId": "setting_faction_1772642453161_2"
+  },
+  "region_1772642705139_q8x47yo1": {
+    "id": "region_1772642705139_q8x47yo1",
+    "name": "Dusthollow Inn District",
+    "originalName": "Dusthollow Inn District",
+    "description": "A winding cluster of taverns, boarding houses, and flophouses where adventurers spend their coin on drink, warmth, and fleeting companionship. The district never truly sleeps, with somewhere always serving ale to those too haunted to rest or too eager to begin. Fights are common, alliances are forged in drunken honesty, and information flows as freely as the watered-down beer.",
+    "relationship": "Adjacent",
+    "relativeLevel": 1,
+    "parentRegionId": null,
+    "sourceRegionId": "region_1772642705121_ab15058beea1",
+    "exitLocationId": "location_1772642705133_c64222056ec5",
+    "entranceStubId": "location_1772642705139_d281c5d5dc61",
+    "createdAt": "2026-03-04T16:45:05.139Z",
+    "controllingFactionId": null
+  },
+  "region_1772643630625_bu466fmg": {
+    "id": "region_1772643630625_bu466fmg",
+    "name": "Valdros's Folly",
+    "originalName": "Valdros's Folly",
+    "description": "The uppermost and most stable region of the Sunken Labyrinth, where crumbling stonework meets invasive nature and novice adventurers test their mettle against giant rats, goblin scavengers, and the occasional restless dead. The corridors here shift slowly enough to be mapped, and survivors can usually find their way back to the Maw with persistence.",
+    "relationship": "Adjacent",
+    "relativeLevel": 1,
+    "parentRegionId": null,
+    "sourceRegionId": "region_1772642705140_dkhqtt5v",
+    "exitLocationId": "location_1772643622937_84323546b005",
+    "entranceStubId": "location_1772643630625_344ffd166e26",
+    "createdAt": "2026-03-04T17:00:30.626Z",
+    "controllingFactionId": null
+  },
+  "region_1772643630626_dre3x4l8": {
+    "id": "region_1772643630626_dre3x4l8",
+    "name": "The Twilight Depths",
+    "originalName": "The Twilight Depths",
+    "description": "Bioluminescent fungi illuminate abandoned laboratories and trapped corridors where constructs still follow centuries-old commands. Reality grows thin here, and the Sisters of the Buried Light maintain hidden sanctuaries for those they deem worthy of salvation—or conversion.",
+    "relationship": "Adjacent",
+    "relativeLevel": 3,
+    "parentRegionId": null,
+    "sourceRegionId": "region_1772642705140_dkhqtt5v",
+    "exitLocationId": "location_1772643622937_84323546b005",
+    "entranceStubId": "location_1772643630626_50aded6a022c",
+    "createdAt": "2026-03-04T17:00:30.626Z",
+    "controllingFactionId": "setting_faction_1772642453161_3"
+  },
+  "region_1772643630626_7pqq0j0b": {
+    "id": "region_1772643630626_7pqq0j0b",
+    "name": "Black Market Tunnels",
+    "originalName": "Black Market Tunnels",
+    "description": "An unofficial network of passages maintained by the Veiled Cartel to bypass Guild checkpoints, connecting to hidden surface entrances and illicit trade posts throughout the upper dungeon. The Cartel charges for passage in favors, secrets, or blood, and their guides know routes that appear on no legitimate map.",
+    "relationship": "Adjacent",
+    "relativeLevel": 2,
+    "parentRegionId": null,
+    "sourceRegionId": "region_1772642705140_dkhqtt5v",
+    "exitLocationId": "location_1772643622937_84323546b005",
+    "entranceStubId": "location_1772643630626_e10010d3ea9b",
+    "createdAt": "2026-03-04T17:00:30.627Z",
+    "controllingFactionId": "setting_faction_1772642453161_4"
+  }
+}

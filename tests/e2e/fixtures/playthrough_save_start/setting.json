@@ -1,0 +1,569 @@
+{
+  "id": "setting_1772642485801_cb1830a4e408",
+  "name": "Test Dungeon Game",
+  "description": "The Sunken Labyrinth of Valdros is an ancient, ever-shifting dungeon that beneath the crumbling ruins of a once-great magical empire. Centuries ago, the Archmage Valdros attempted to achieve immortality through a forbidden ritual that backfired catastrophically, sinking his entire citadel beneath the earth and twisting its halls into an infinite, maze-like nightmare. Now, the labyrinth breathes with a life of its own—corridors realign when no one is watching, stairs lead to different floors depending on the phase of the moon, and rooms appear and disappear like half-remembered dreams. Adventurers from across the realm are drawn to the dungeon's depths by whispers of unimaginable treasures, powerful artifacts, and perhaps even the secrets of Valdros's forbidden magic.\n\nThe dungeon is divided into distinct strata, each with its own生态环境 and denizens. The uppermost levels, known as the Faded Halls, are relatively stable and frequented by novice adventurers seeking their fortunes. Here, crumbling stonework is choked with ivy and moss, and the dangers are modest—giant rats, goblin scavengers, and the occasional animated skeleton. Deeper lies the Twilight Depths, where bioluminescent fungi cast an eerie glow over abandoned laboratories and trapped corridors guarded by constructs still following their centuries-old commands. Below that, the Abyssal Reaches harbor truly terrifying creatures: aberrations twisted by wild magic, undead knights who eternally patrol forgotten chambers, and beings from other planes drawn to the dungeon's reality-thinning energies. At the very bottom, if such a concept even applies, lies the Sanctum of Valdros himself—though none have reached it and returned to tell the tale.\n\nThe nearby settlement of Dusthollow has grown around the dungeon's entrance, a rough-and-tumble frontier town where adventurers gather to form parties, restock supplies, and spend their hard-won treasure. The town operates under an uneasy truce between the Adventurer's Guild, which regulates expeditions and maintains order, and various merchant houses, criminal organizations, and cults that seek to exploit the dungeon's riches for their own purposes. In Dusthollow, a healing potion costs the same as a farmer's monthly wages, and information about newly discovered passages is traded like currency. Every day, hopeful newcomers arrive with stars in their eyes, while veterans with haunted expressions drink away their sorrows, muttering about the things they've seen in the depths. The dungeon takes and gives in equal measure, and no one who descends ever truly returns unchanged.",
+  "theme": "Fantasy Dungeon",
+  "genre": "Dungeon Crawler, Dark Fantasy",
+  "startingLocationType": "Town near dungeon",
+  "magicLevel": "Medium-High",
+  "techLevel": "Medieval with magical artifacts",
+  "tone": "Atmospheric, perilous, wondrous",
+  "difficulty": "Medium",
+  "currencyName": "Gold Piece",
+  "currencyNamePlural": "Gold Pieces",
+  "currencyValueNotes": "1: A loaf of bread or mug of ale\n2: A night's stay at a common inn\n5: A simple healing poultice\n10: A serviceable iron weapon\n25: A minor healing potion\n50: A night with a skilled artisan's services\n100: A enchanted minor item or professional mercenaries' weekly wage\n500: A potent magical artifact",
+  "writingStyleNotes": "Second-person present tense for actions and descriptions. Maintain an atmospheric and immersive tone with vivid sensory details. Balance moments of tension and discovery with opportunities for character interaction and strategic planning. Describe environments with evocative language that emphasizes light, shadow, and sound.",
+  "baseContextPreamble": "[Title: The Sunken Labyrinth of Valdros; Tags: dungeon crawler, dark fantasy, exploration, treasure hunting; Genre: fantasy, adventure, horror-adjacent]",
+  "characterGenInstructions": "Create a character appropriate for a fantasy dungeon-crawling adventure. Choose a race and class from the available options, then describe your character's appearance, brief background, and what draws them to the Sunken Labyrinth. Consider your character's motivations: are they seeking fortune, glory, revenge, knowledge, or perhaps redemption? Roll for or assign starting attributes and select beginning equipment appropriate to your class. All characters begin at level 1 with basic gear and minimal supplies.",
+  "imagePromptPrefixCharacter": "",
+  "imagePromptPrefixLocation": "",
+  "imagePromptPrefixItem": "",
+  "imagePromptPrefixScenery": "",
+  "playerStartingLevel": 1,
+  "defaultStartingCurrency": 0,
+  "defaultPlayerName": "Wanderer",
+  "defaultPlayerDescription": "An adventurous soul seeking fortune beneath the earth, clad in practical traveling clothes with a determined gleam in their eye.",
+  "defaultStartingLocation": "Region name: Dusthollow - The Guildhall\n\nSummary: The Adventurer's Guildhall serves as the primary hub for dungeon expeditions, a sturdy timber and stone building filled with worn tables, crackling hearths, and bulletin boards plastered with contracts and maps. The air smells of woodsmoke, stew, and polished leather. Fellow adventurers converse in hushed tones while guild scribes record expedition reports.\n\nRooms/Locations: Common Room, Guild Master's Office, Supply Storeroom, Dormitory, Notice Board Area\n\nRegion exits: Dusthollow Market Square, Dusthollow Inn District, Dungeon Entrance Road",
+  "defaultExistingSkills": [
+    "Ranged Combat",
+    "Melee Combat",
+    "Perception",
+    "Stealth",
+    "First Aid",
+    "Scavenging",
+    "Negotiation",
+    "Intimidation",
+    "Charm",
+    "Bluff",
+    "Insight",
+    "Lockpicking",
+    "Sleight of Hand",
+    "Survival",
+    "Crafting",
+    "Repair",
+    "Acrobatics",
+    "Deception",
+    "Dodge",
+    "Farming/Botany",
+    "Animal Handling",
+    "Trap Detection",
+    "Arcane Lore",
+    "Divine Magic",
+    "Arcane Magic",
+    "Item Identification",
+    "Dungeoneering",
+    "Cartography",
+    "Necromancy Resistance",
+    "Rune Reading",
+    "Alchemy"
+  ],
+  "defaultFactionCount": 4,
+  "defaultFactions": [
+    {
+      "id": "setting_faction_1772642453161_1",
+      "name": "Valdros's Hollow Court",
+      "shortDescription": "The undying remnants of Valdros's original court, preserving their noble delusions amidst the ruins of their failure.",
+      "description": "When Valdros's ritual shattered reality and sank his citadel, his court was caught in the cataclysm. Now they exist in a state between life and death, their bodies preserved but their minds fractured by centuries of magical stasis. The Hollow Court clings to the customs and hierarchies of the old empire, holding mock balls in crumbling ballrooms and conducting stern judicial proceedings against trespassers who rarely survive to stand trial. They view themselves as the rightful rulers of the labyrinth and all within it—both the treasures and the trespassers alike.",
+      "homeRegionName": "The Abyssal Reaches",
+      "tags": [
+        "Undead",
+        "Aristocratic",
+        "Obsessed",
+        "Tragic"
+      ],
+      "goals": [
+        "Restore Valdros to living immortality and raise the sunken citadel.",
+        "Reclaim artifacts stolen from the labyrinth by treasure hunters.",
+        "Punish those who defile the sanctity of the deep chambers."
+      ],
+      "assets": [
+        {
+          "name": "Lady Isyldra the Weeping",
+          "type": "leader",
+          "description": "The Court's de facto ruler, a grief-stricken sorceress whose tears are crystallized magic."
+        },
+        {
+          "name": "The Mirror Gallery",
+          "type": "outpost",
+          "description": "A secure chamber containing scrying mirrors that view many labyrinth locations."
+        },
+        {
+          "name": "Memory Vines",
+          "type": "resource",
+          "description": "A rare flora that grows only in the deep labyrinth, used in potions of recall."
+        }
+      ],
+      "relations": {
+        "setting_faction_1772642453161_2": {
+          "status": "hostile",
+          "notes": "The Court views the Guild as grave robbers and thieves who despoil the sacred halls for profit."
+        },
+        "setting_faction_1772642453161_3": {
+          "status": "rival",
+          "notes": "The sisters' efforts to seal reality breaches directly oppose the Court's goal of restoring Valdros's power."
+        },
+        "setting_faction_1772642453161_4": {
+          "status": "hostile",
+          "notes": "The Cartel's trade in stolen artifacts and forbidden texts marks them for eventual punishment by the undead nobles."
+        }
+      },
+      "reputationTiers": [
+        {
+          "threshold": -60,
+          "label": "Condemned Traitor",
+          "perks": [
+            "Members of the Court will occasionally reveal themselves to mock you",
+            "inadvertently exposing hidden passages or treasures in their arrogance."
+          ],
+          "penalties": [
+            "Hollow Knights are dispatched to hunt you down on sight",
+            "attacking without warning throughout the Twilight Depths and below.",
+            "Any artifacts bearing the Court's seal will burn your flesh when touched",
+            "dealing necrotic damage.",
+            "Any artifacts bearing the Court's seal will burn your flesh when touched",
+            "dealing necrotic damage."
+          ]
+        },
+        {
+          "threshold": -20,
+          "label": "Common Tomb-Robber",
+          "perks": [
+            "Court functionaries will sometimes engage in parley before attacking",
+            "allowing brief opportunities for escape or negotiation."
+          ],
+          "penalties": [
+            "Undead servants of the Court attack you on sight in the deeper strata.",
+            "Rooms occasionally shift to trap you when Court members sense your presence."
+          ]
+        },
+        {
+          "threshold": 0,
+          "label": "Unwelcome Intruder",
+          "perks": [
+            "The Court ignores you unless you enter their ceremonial chambers or touch their possessions."
+          ],
+          "penalties": [
+            "No safe passage through Court-controlled areas.",
+            "No trade or parley with Court members."
+          ]
+        },
+        {
+          "threshold": 20,
+          "label": "Tolerated Guest",
+          "perks": [
+            "Safe passage through the Faded Halls and Twilight Depths when accompanied by a Court escort.",
+            "Access to the Court's map room",
+            "revealing stable routes through shifting corridors."
+          ],
+          "penalties": [
+            "Required to bow and show elaborate deference to any Court noble encountered.",
+            "Forbidden from taking any treasure without explicit permission."
+          ]
+        },
+        {
+          "threshold": 60,
+          "label": "Sworn Vassal of the Hollow Court",
+          "perks": [
+            "Right to petition the Court for audience and present requests.",
+            "Gifted a signet ring that marks you as under Court protection",
+            "causing lesser undead to ignore you.",
+            "Access to the Royal Armory for borrowing enchanted equipment before expeditions."
+          ],
+          "penalties": [
+            "Bound by oath to retrieve any Court artifacts you encounter and return them to the Hollow Court.",
+            "The Guild views you with deep suspicion and charges double for all services.",
+            "You feel the cold weight of undeath slowly creeping into your soul with each passing week."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "setting_faction_1772642453161_2",
+      "name": "Dusthollow Adventurer's Guild",
+      "shortDescription": "The official gatekeepers of dungeon access, balancing legitimate protection with institutional greed.",
+      "description": "The Guild presents itself as a necessary evil—charging exorbitant fees for expedition permits, skimming percentages from all documented treasure, and maintaining rigid quotas on how many parties may descend each week. Behind the facade of order and protection lies a deeply political organization where influence can be bought and certain \"licensed\" expeditions are quietly directed to secure specific items for anonymous patrons. Veteran adventurers who survive long enough are often offered positions as Guild officers, creating a cycle where the cynical and corrupt govern the hopeful and naive.",
+      "homeRegionName": "Dusthollow",
+      "tags": [
+        "Bureaucratic",
+        "Mercenary",
+        "Protective",
+        "Corruptible"
+      ],
+      "goals": [
+        "Maintain monopoly on dungeon access and expedition licensing.",
+        "Protect Dusthollow from dungeon-spawned threats.",
+        "Recover powerful artifacts before hostile factions can claim them.",
+        "Amass wealth and influence through loot taxation."
+      ],
+      "assets": [
+        {
+          "name": "Guildmaster Thane Blackford",
+          "type": "leader",
+          "description": "A scarred retired adventurer who controls expeditions with pragmatic ruthlessness."
+        },
+        {
+          "name": "The Guildhall",
+          "type": "outpost",
+          "description": "A fortified building serving as headquarters, tavern, and registry for all dungeon business."
+        },
+        {
+          "name": "The Healer's Rest",
+          "type": "service",
+          "description": "A clinic providing emergency care to returning adventurers—for a substantial fee."
+        },
+        {
+          "name": "Cartography Archives",
+          "type": "resource",
+          "description": "The most comprehensive (though never complete) maps of the shifting labyrinth."
+        }
+      ],
+      "relations": {
+        "setting_faction_1772642453161_1": {
+          "status": "hostile",
+          "notes": "The Guild considers the Hollow Court one of the greatest threats to expedition parties venturing into the deeper strata."
+        },
+        "setting_faction_1772642453161_3": {
+          "status": "neutral",
+          "notes": "The Guild tolerates the sisters' presence as they provide emergency healing that reduces casualty statistics."
+        },
+        "setting_faction_1772642453161_4": {
+          "status": "rival",
+          "notes": "The Cartel undermines Guild authority by smuggling unlicensed expeditions and skirting taxation on dungeon loot."
+        }
+      },
+      "reputationTiers": [
+        {
+          "threshold": -60,
+          "label": "Outlawed Threat",
+          "perks": [
+            "Access to the black market through Guild back-channels, as corrupt officers seek to profit from your notoriety."
+          ],
+          "penalties": [
+            "Wanted posters bearing your likeness are distributed throughout Dusthollow and bounties are placed on your capture.",
+            "Guild-aligned adventurers are authorized to detain you by any means necessary."
+          ]
+        },
+        {
+          "threshold": -20,
+          "label": "Problematic Operator",
+          "perks": [
+            "No official perks, but your reputation makes criminal contacts more willing to trust you."
+          ],
+          "penalties": [
+            "Expedition permits cost triple the standard rate and require additional vetting.",
+            "Guild healers refuse service, forcing reliance on back-alley chirurgeons."
+          ]
+        },
+        {
+          "threshold": 0,
+          "label": "Registered Adventurer",
+          "perks": [
+            "Eligible to purchase standard expedition permits at base rates.",
+            "Access to the Guild hiring hall for finding party members."
+          ],
+          "penalties": [
+            "Subject to the Guild's 15% tax on all documented treasure recovered.",
+            "Bound by Guild regulations regarding restricted areas and prohibited activities."
+          ]
+        },
+        {
+          "threshold": 20,
+          "label": "Licensed Veteran",
+          "perks": [
+            "Discount of 20% on supplies and equipment at Guild-sanctioned merchants.",
+            "Priority access to newly discovered passages during the first week of mapping.",
+            "Eligible for Guild-sponsored bounty contracts with higher rewards."
+          ],
+          "penalties": [
+            "Expected to report regularly on activities and findings within the labyrinth.",
+            "May be compelled to assist in Guild enforcement actions against unlicensed adventurers."
+          ]
+        },
+        {
+          "threshold": 60,
+          "label": "Guild Officer Candidate",
+          "perks": [
+            "Authority to issue and sign expedition permits without higher approval.",
+            "Personal quarters in the Guildhall with secure storage for valuables.",
+            "A share of the Guild's quarterly profits proportional to your rank.",
+            "Access to the private archive containing partial maps of the Abyssal Reaches."
+          ],
+          "penalties": [
+            "Required to recruit and \"mentor\" new adventurers, which often means leading them into dangerous situations.",
+            "Politically obligated to support the Guildmaster's agenda regardless of personal ethics.",
+            "Your name appears on several criminal faction kill lists."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "setting_faction_1772642453161_3",
+      "name": "Sisters of the Buried Light",
+      "shortDescription": "Devoted women maintaining sacred sanctuaries in the depths, working to heal the magical wounds of the labyrinth.",
+      "description": "The Sisters are a monastic order who believe Valdros's failed ritual tore wounds in the fabric of reality that continue to fester. They have established hidden sanctuaries throughout the Twilight Depths where they practice strange rites involving bioluminescent fungi and crystallized moonlight. To the Sisters, death in the labyrinth is sacred—an opportunity to release the soul before it becomes trapped in the dungeon's cyclical curse. They offer shelter to lost adventurers, but their aid always comes with sermons and the expectation of eventual service.",
+      "homeRegionName": "The Twilight Depths",
+      "tags": [
+        "Religious",
+        "Ascetic",
+        "Secretive",
+        "Magical"
+      ],
+      "goals": [
+        "Locate and seal the breaches in reality caused by Valdros's ritual.",
+        "Convert dying adventurers to their faith before their final breath.",
+        "Accumulate magical energy for a great sealing ritual."
+      ],
+      "assets": [
+        {
+          "name": "Mother Absalom",
+          "type": "leader",
+          "description": "The order's blind founder who navigates the labyrinth through magical perception."
+        },
+        {
+          "name": "The Sanctuary of Pale Flame",
+          "type": "outpost",
+          "description": "A hidden temple offering safety and healing to those who can find it."
+        },
+        {
+          "name": "Spirit-Guide Service",
+          "type": "service",
+          "description": "Rituals that temporarily bind helpful spirits to lead adventurers safely through danger."
+        }
+      ],
+      "relations": {
+        "setting_faction_1772642453161_1": {
+          "status": "rival",
+          "notes": "The Court represents the source of the magical corruption the sisters have sworn to heal and seal."
+        },
+        "setting_faction_1772642453161_2": {
+          "status": "neutral",
+          "notes": "The sisters operate independently of Guild oversight, accepting all who seek aid regardless of licensing status."
+        },
+        "setting_faction_1772642453161_4": {
+          "status": "hostile",
+          "notes": "The Cartel's trade in cursed items and forbidden texts spreads the very corruption the sisters work to contain."
+        }
+      },
+      "reputationTiers": [
+        {
+          "threshold": -60,
+          "label": "Desecrator of the Light",
+          "perks": [
+            "The Sisters will occasionally dispatch guides to lead you into lethal traps, believing your death will seal a small breach."
+          ],
+          "penalties": [
+            "Sisters actively spread warnings about you to other adventurers, damaging your reputation.",
+            "Blessings from other healers in Dusthollow feel cold and offer diminished effect."
+          ]
+        },
+        {
+          "threshold": -20,
+          "label": "Lost Soul",
+          "perks": [
+            "No perks, but Sisters will still offer last rites if you are found dying."
+          ],
+          "penalties": [
+            "Sisters refuse non-emergency healing and shelter.",
+            "Required to perform acts of contrition before any aid is granted."
+          ]
+        },
+        {
+          "threshold": 0,
+          "label": "Wandering Traveler",
+          "perks": [
+            "Welcome to rest in sanctuary antechambers for up to one night.",
+            "Emergency healing available at standard donation rates."
+          ],
+          "penalties": [
+            "Required to listen to sermons about the sacred duty of sealing the labyrinth.\n          Forbidden from the inner sanctums without escort.",
+            "Forbidden from the inner sanctums without escort."
+          ]
+        },
+        {
+          "threshold": 20,
+          "label": "Friend of the Order",
+          "perks": [
+            "Unlimited shelter in any Sisterhood sanctuary throughout the labyrinth.",
+            "Healing services provided at reduced cost, with severe injuries treated free of charge.",
+            "Sisters will safely store items for you between expeditions."
+          ],
+          "penalties": [
+            "Expected to report locations of reality breaches and corrupted areas.",
+            "Subtle pressure to attend moonlight rituals and consider initiation."
+          ]
+        },
+        {
+          "threshold": 60,
+          "label": "Illuminated Brother/Sister",
+          "perks": [
+            "Access to the Order's most potent healing rites, including restoration of permanently lost attributes.",
+            "Trained in the Rite of Safe Passage, allowing you to create temporary safe zones in unstable areas.",
+            "Given a phial of crystallized moonlight that can reveal hidden doors once per expedition.",
+            "Sisters will risk their lives to rescue you if you are reported lost in the depths."
+          ],
+          "penalties": [
+            "Bound by oath to carry dying adventurers to sanctuary regardless of personal expeditions.",
+            "The Guild and criminal factions view you as a religious fanatic and trust you less.",
+            "You begin to see the glow of reality breaches everywhere, making restful sleep difficult."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "setting_faction_1772642453161_4",
+      "name": "The Veiled Cartel",
+      "shortDescription": "Decentralized criminal network profiting from the shadows of the dungeon economy.",
+      "description": "Where the Guild sees regulation, the Cartel sees opportunity. This loose confederation of smugglers, fences, and black marketeers operates in the shadows of Dusthollow, running unlicensed expeditions through hidden tunnel entrances and buying artifacts that legitimate merchants won't touch. The Cartel has no unified leadership, instead operating through a web of individual operators and small crews bound by mutual profit. Distinctively, they've begun establishing trade relationships with some of the labyrinth's more intelligent inhabitants, brokering deals for goods and safe passage that the Guild would never sanction.",
+      "homeRegionName": "Dusthollow Underground",
+      "tags": [
+        "Criminal",
+        "Entrepreneurial",
+        "Networked",
+        "Amoral"
+      ],
+      "goals": [
+        "Smuggle adventurers and contraband past Guild checkpoints.",
+        "Monopolize trade in illicit dungeon goods—cursed items",
+        "monster parts",
+        "forbidden texts.",
+        "Infiltrate and corrupt legitimate Dusthollow institutions.",
+        "Establish exclusive trade agreements with intelligent dungeon denizens."
+      ],
+      "assets": [
+        {
+          "name": "Fence-General Cordovan Rist",
+          "type": "leader",
+          "description": "The closest thing to a central authority; a charming merchant who connects buyers to sellers."
+        },
+        {
+          "name": "The Rat tunnels",
+          "type": "trade_route",
+          "description": "Smuggler passages bypassing Guild checkpoints to access the Faded Halls undetected."
+        },
+        {
+          "name": "The Blind Eye Tavern",
+          "type": "outpost",
+          "description": "A supposedly legitimate establishment serving as the Cartel's primary meeting place."
+        },
+        {
+          "name": "Goblin Trade Compact",
+          "type": "resource",
+          "description": "An agreement with goblin tribes for salvaged goods and limited safe passage."
+        }
+      ],
+      "relations": {
+        "setting_faction_1772642453161_1": {
+          "status": "hostile",
+          "notes": "The undead nobles would see every Cartel operative destroyed for profaning the labyrinth with their commerce."
+        },
+        "setting_faction_1772642453161_2": {
+          "status": "rival",
+          "notes": "The Guild's monopoly on dungeon access is the primary obstacle to the Cartel's expansion of smuggling operations."
+        },
+        "setting_faction_1772642453161_3": {
+          "status": "hostile",
+          "notes": "The sisters routinely interfere with profitable Cartel operations by destroying cursed merchandise and liberating their customers."
+        }
+      },
+      "reputationTiers": [
+        {
+          "threshold": -60,
+          "label": "Marked for Elimination",
+          "perks": [
+            "None—your name and description have been circulated among all Cartel operatives."
+          ],
+          "penalties": [
+            "Cartel assassins may attack without warning in Dusthollow's alleys or the dungeon's shadows.",
+            "Any goods you sell to fences are reported to the Guild, risking your license.",
+            "Poison is slipped into your drinks at taverns known to have Cartel connections."
+          ]
+        },
+        {
+          "threshold": -20,
+          "label": "Bad for Business",
+          "perks": [
+            "The Cartel avoids direct confrontation, preferring to simply deny you service."
+          ],
+          "penalties": [
+            "All black market goods and services cost double.",
+            "Information about hidden entrances and safe routes is withheld."
+          ]
+        },
+        {
+          "threshold": 0,
+          "label": "Anonymous Customer",
+          "perks": [
+            "Access to standard black market goods: unlicensed weapons, illicit potions, and forbidden texts at markup prices.",
+            "Can purchase forged expedition permits that pass casual inspection."
+          ],
+          "penalties": [
+            "No credit extended—everything must be paid for in advance.",
+            "No guarantee of quality on purchased goods."
+          ]
+        },
+        {
+          "threshold": 20,
+          "label": "Trusted Associate",
+          "perks": [
+            "Access to hidden tunnel entrances that bypass Guild checkpoints entirely.",
+            "Discount of 25% on all black market goods and services.",
+            "Fences will purchase cursed items and monster parts that legitimate merchants refuse.",
+            "Priority information on newly discovered treasure caches before the Guild maps them."
+          ],
+          "penalties": [
+            "The Guild has flagged you for \"additional monitoring\" due to suspected unlicensed activity.",
+            "Expected to look the other way when Cartel operations occur in your presence."
+          ]
+        },
+        {
+          "threshold": 60,
+          "label": "Made Agent",
+          "perks": [
+            "Full access to the Cartel's trade network with intelligent dungeon denizens, including safe passage agreements with goblin tribes and certain constructs.",
+            "Can call in \"favors\" to have threats eliminated or smuggled out of Dusthollow undetected.",
+            "Invitation to the Midnight Auction, where the rarest and most dangerous artifacts are sold.",
+            "A personal fence who travels to meet you at predetermined locations in the Twilight Depths."
+          ],
+          "penalties": [
+            "The Guild has placed a standing bounty for evidence of your unlicensed activities.",
+            "Required to smuggle contraband on behalf of the Cartel as part of your \"obligations.\"",
+            "Several Cartel operatives know damaging secrets about you that could be leveraged at any time.",
+            "Leaving the Cartel's good graces would mean losing access to decades of accumulated criminal knowledge about you."
+          ]
+        }
+      ]
+    }
+  ],
+  "availableClasses": [
+    "Warrior",
+    "Rogue",
+    "Mage",
+    "Cleric",
+    "Ranger",
+    "Paladin",
+    "Bard",
+    "Necromancer",
+    "Monk",
+    "Berserker"
+  ],
+  "availableRaces": [
+    "Human",
+    "Elf",
+    "Dwarf",
+    "Halfling",
+    "Half-Orc",
+    "Gnome",
+    "Tiefling",
+    "Dragonborn"
+  ],
+  "customSlopWords": [
+    "dungeon",
+    "adventure",
+    "thrilling",
+    "epic",
+    "legendary",
+    "mysterious"
+  ],
+  "createdAt": "2026-03-04T16:41:25.802Z",
+  "lastUpdated": "2026-03-04T16:41:25.802Z"
+}

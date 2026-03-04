@@ -53,6 +53,9 @@ class Semaphore {
 class LLMClient {
     static #semaphores = new Map();
     static #semaphoreLimit = null;
+    static #forcedOutputFixtureSource = null;
+    static #forcedOutputFixtureData = null;
+    static #forcedOutputLabelCounters = new Map();
     static #streamProgress = {
         active: new Map(),
         timer: null,
@@ -723,6 +726,221 @@ class LLMClient {
             .toLowerCase()
             .replace(/[^a-z0-9]+/g, '_')
             .replace(/^_+|_+$/g, '');
+    }
+
+    static resetForcedOutputState() {
+        LLMClient.#forcedOutputFixtureSource = null;
+        LLMClient.#forcedOutputFixtureData = null;
+        LLMClient.#forcedOutputLabelCounters = new Map();
+    }
+
+    static #resolveForcedOutputFixturePath() {
+        const envPath = typeof process.env.LLM_FORCE_OUTPUTS_FILE === 'string'
+            ? process.env.LLM_FORCE_OUTPUTS_FILE.trim()
+            : '';
+        if (envPath) {
+            return envPath;
+        }
+        const configPath = typeof Globals?.config?.ai?.force_outputs_file === 'string'
+            ? Globals.config.ai.force_outputs_file.trim()
+            : '';
+        return configPath || '';
+    }
+
+    static #loadForcedOutputFixtureFromDisk(sourcePath) {
+        const fs = require('fs');
+        const path = require('path');
+        const baseDir = Globals?.baseDir || process.cwd();
+        const resolvedPath = path.isAbsolute(sourcePath)
+            ? sourcePath
+            : path.join(baseDir, sourcePath);
+        if (!fs.existsSync(resolvedPath)) {
+            throw new Error(`Forced output fixture file not found: ${resolvedPath}`);
+        }
+        const raw = fs.readFileSync(resolvedPath, 'utf8');
+        let parsed = null;
+        try {
+            parsed = JSON.parse(raw);
+        } catch (error) {
+            throw new Error(`Forced output fixture JSON is invalid (${resolvedPath}): ${error.message}`);
+        }
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+            throw new Error(`Forced output fixture must be a JSON object: ${resolvedPath}`);
+        }
+        const groupsSource = (() => {
+            if (parsed.byMetadataLabel && typeof parsed.byMetadataLabel === 'object' && !Array.isArray(parsed.byMetadataLabel)) {
+                return parsed.byMetadataLabel;
+            }
+            if (parsed.labels && typeof parsed.labels === 'object' && !Array.isArray(parsed.labels)) {
+                return parsed.labels;
+            }
+            if (parsed.outputs && typeof parsed.outputs === 'object' && !Array.isArray(parsed.outputs)) {
+                return parsed.outputs;
+            }
+            const excluded = new Set(['strict', 'description']);
+            const inferred = {};
+            for (const [key, value] of Object.entries(parsed)) {
+                if (excluded.has(key)) {
+                    continue;
+                }
+                inferred[key] = value;
+            }
+            return inferred;
+        })();
+        if (!groupsSource || typeof groupsSource !== 'object' || Array.isArray(groupsSource)) {
+            throw new Error(`Forced output fixture must define object groups under byMetadataLabel/labels/outputs: ${resolvedPath}`);
+        }
+
+        const groups = new Map();
+        for (const [label, entries] of Object.entries(groupsSource)) {
+            if (!Array.isArray(entries)) {
+                throw new Error(`Forced output fixture label "${label}" must be an array in ${resolvedPath}.`);
+            }
+            groups.set(String(label), entries);
+        }
+        if (!groups.size) {
+            throw new Error(`Forced output fixture has no label entries: ${resolvedPath}`);
+        }
+
+        return {
+            sourcePath,
+            resolvedPath,
+            strict: parsed.strict !== false,
+            groups
+        };
+    }
+
+    static #getForcedOutputFixture() {
+        const sourcePath = LLMClient.#resolveForcedOutputFixturePath();
+        if (!sourcePath) {
+            return null;
+        }
+        if (LLMClient.#forcedOutputFixtureData && LLMClient.#forcedOutputFixtureSource === sourcePath) {
+            return LLMClient.#forcedOutputFixtureData;
+        }
+        const fixture = LLMClient.#loadForcedOutputFixtureFromDisk(sourcePath);
+        LLMClient.#forcedOutputFixtureSource = sourcePath;
+        LLMClient.#forcedOutputFixtureData = fixture;
+        LLMClient.#forcedOutputLabelCounters = new Map();
+        return fixture;
+    }
+
+    static #resolveForcedOutputFromFixture(metadataLabel = '') {
+        const fixture = LLMClient.#getForcedOutputFixture();
+        if (!fixture) {
+            return null;
+        }
+
+        const rawLabel = typeof metadataLabel === 'string' ? metadataLabel.trim() : '';
+        const normalizedLabel = LLMClient.#normalizePromptLabel(rawLabel) || 'unknown';
+        const preferredLabels = [];
+        if (rawLabel) {
+            preferredLabels.push(rawLabel);
+        }
+        preferredLabels.push(normalizedLabel);
+        if (!preferredLabels.includes('unknown')) {
+            preferredLabels.push('unknown');
+        }
+
+        let resolvedLabel = null;
+        let bucket = null;
+        for (const key of preferredLabels) {
+            if (fixture.groups.has(key)) {
+                resolvedLabel = key;
+                bucket = fixture.groups.get(key);
+                break;
+            }
+        }
+
+        const resolveGroupedBucket = (baseLabel) => {
+            const normalizedBase = typeof baseLabel === 'string' ? baseLabel.trim() : '';
+            if (!normalizedBase) {
+                return null;
+            }
+            const prefix = `${normalizedBase}_group_`;
+            const groupedEntries = [];
+            for (const [key, entries] of fixture.groups.entries()) {
+                if (!key.startsWith(prefix)) {
+                    continue;
+                }
+                const suffix = key.slice(prefix.length).trim();
+                const order = Number.parseInt(suffix, 10);
+                groupedEntries.push({
+                    key,
+                    entries,
+                    hasNumericOrder: Number.isInteger(order),
+                    order: Number.isInteger(order) ? order : Number.MAX_SAFE_INTEGER,
+                    suffix
+                });
+            }
+
+            if (!groupedEntries.length) {
+                return null;
+            }
+
+            groupedEntries.sort((left, right) => {
+                if (left.hasNumericOrder && right.hasNumericOrder && left.order !== right.order) {
+                    return left.order - right.order;
+                }
+                if (left.hasNumericOrder !== right.hasNumericOrder) {
+                    return left.hasNumericOrder ? -1 : 1;
+                }
+                return left.key.localeCompare(right.key);
+            });
+
+            const flattened = groupedEntries.flatMap(entry => entry.entries);
+            return flattened.length ? flattened : null;
+        };
+
+        if (!bucket) {
+            const promptPrefixedKeys = [];
+            for (const key of preferredLabels) {
+                if (!key || key === 'unknown') {
+                    continue;
+                }
+                promptPrefixedKeys.push(`prompt_${key}`);
+            }
+            for (const key of promptPrefixedKeys) {
+                if (fixture.groups.has(key)) {
+                    resolvedLabel = key;
+                    bucket = fixture.groups.get(key);
+                    break;
+                }
+            }
+        }
+
+        if (!bucket) {
+            for (const key of preferredLabels) {
+                const groupedBucket = resolveGroupedBucket(key);
+                if (groupedBucket) {
+                    resolvedLabel = key;
+                    bucket = groupedBucket;
+                    break;
+                }
+            }
+        }
+
+        if (!bucket) {
+            if (fixture.strict) {
+                throw new Error(`No forced output bucket configured for metadataLabel "${rawLabel || 'unknown'}" (normalized="${normalizedLabel}").`);
+            }
+            return null;
+        }
+
+        const index = LLMClient.#forcedOutputLabelCounters.get(resolvedLabel) || 0;
+        if (index >= bucket.length) {
+            if (fixture.strict) {
+                throw new Error(`Forced output bucket "${resolvedLabel}" is exhausted at index ${index} (total=${bucket.length}).`);
+            }
+            return null;
+        }
+
+        const entry = bucket[index];
+        LLMClient.#forcedOutputLabelCounters.set(resolvedLabel, index + 1);
+        if (typeof entry !== 'string' && (!entry || typeof entry !== 'object')) {
+            throw new Error(`Forced output entry "${resolvedLabel}" index ${index} must be a string or object.`);
+        }
+        return entry;
     }
 
     static #isPlainObject(value) {
@@ -1574,6 +1792,9 @@ class LLMClient {
             }
 
             messages = await LLMClient.#convertMessagesToWebp(messages);
+            const resolvedForcedOutput = (forceOutput !== null && forceOutput !== undefined)
+                ? forceOutput
+                : LLMClient.#resolveForcedOutputFromFixture(metadataLabel);
 
             const explicitRetryAttempts = Number.isInteger(retryAttempts) && retryAttempts >= 0
                 ? retryAttempts
@@ -1796,7 +2017,7 @@ class LLMClient {
             let streamTrackerId = null;
             let startTimer = null;
             let lastTotalTokens = null;
-            const hasForcedOutput = forceOutput !== null && forceOutput !== undefined;
+            const hasForcedOutput = resolvedForcedOutput !== null && resolvedForcedOutput !== undefined;
             const resolvedRequiredRegex = (() => {
                 if (!requiredRegex) {
                     return null;
@@ -1846,7 +2067,7 @@ class LLMClient {
                 try {
                     if (hasForcedOutput) {
                         payload = {
-                            forceOutput,
+                            forceOutput: resolvedForcedOutput,
                             messages,
                             stream: false
                         };
@@ -1858,7 +2079,7 @@ class LLMClient {
                             }
                         }
 
-                        const forcedResponse = LLMClient.#resolveForcedOutput(forceOutput, {
+                        const forcedResponse = LLMClient.#resolveForcedOutput(resolvedForcedOutput, {
                             sourceLabel: `forced output (${metadataLabel || 'chat'})`,
                             requestedModel: model || null
                         });

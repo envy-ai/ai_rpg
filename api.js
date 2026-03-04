@@ -10611,6 +10611,26 @@ module.exports = function registerApiRoutes(scope) {
                 let isGenericPromptAction = false;
                 let genericPromptText = null;
                 let genericPromptStorageMode = 'normal';
+                const extractInlineDieRollOverride = (text) => {
+                    if (typeof text !== 'string' || !text.length) {
+                        return { text, dieRoll: null };
+                    }
+                    let parsedDieRoll = null;
+                    const stripped = text.replace(/<(-?\d+)>/g, (_, rawValue) => {
+                        if (parsedDieRoll === null) {
+                            parsedDieRoll = Number.parseInt(rawValue, 10);
+                        }
+                        return '';
+                    });
+                    const normalized = stripped
+                        .replace(/[ \t]{2,}/g, ' ')
+                        .replace(/ *\n */g, '\n')
+                        .trim();
+                    return {
+                        text: normalized,
+                        dieRoll: Number.isInteger(parsedDieRoll) ? parsedDieRoll : null
+                    };
+                };
                 currentUserMessage = userMessage;
                 if (userMessage && userMessage.role === 'user') {
                     originalUserContent = typeof userMessage.content === 'string' ? userMessage.content : '';
@@ -10708,11 +10728,18 @@ module.exports = function registerApiRoutes(scope) {
                     const playerChatLocationId = requireLocationId(currentPlayer?.currentLocation, 'player chat entry');
                     const shouldPersistUserEntry = !(isGenericPromptAction && genericPromptStorageMode === 'no_log');
                     if (shouldPersistUserEntry) {
+                        const userEntryContentWithoutInlineRoll = extractInlineDieRollOverride(
+                            userMessage?.content
+                        ).text;
                         const entryPayload = {
                             role: 'user',
                             content: isQuestionAction
                                 ? (questionActionText || '')
-                                : (isGenericPromptAction ? (genericPromptText || '') : userMessage.content),
+                                : (isGenericPromptAction
+                                    ? (genericPromptText || '')
+                                    : (typeof userEntryContentWithoutInlineRoll === 'string'
+                                        ? userEntryContentWithoutInlineRoll
+                                        : '')),
                             travel: isTravelMessage,
                             locationId: playerChatLocationId
                         };
@@ -10823,27 +10850,6 @@ module.exports = function registerApiRoutes(scope) {
                     const markers = match[0];
                     const trimmed = text.slice(markers.length);
                     return trimmed;
-                };
-
-                const extractInlineDieRollOverride = (text) => {
-                    if (typeof text !== 'string' || !text.length) {
-                        return { text, dieRoll: null };
-                    }
-                    let parsedDieRoll = null;
-                    const stripped = text.replace(/<(-?\d+)>/g, (_, rawValue) => {
-                        if (parsedDieRoll === null) {
-                            parsedDieRoll = Number.parseInt(rawValue, 10);
-                        }
-                        return '';
-                    });
-                    const normalized = stripped
-                        .replace(/[ \t]{2,}/g, ' ')
-                        .replace(/ *\n */g, '\n')
-                        .trim();
-                    return {
-                        text: normalized,
-                        dieRoll: Number.isInteger(parsedDieRoll) ? parsedDieRoll : null
-                    };
                 };
 
                 let sanitizedUserContent = isForcedEventAction

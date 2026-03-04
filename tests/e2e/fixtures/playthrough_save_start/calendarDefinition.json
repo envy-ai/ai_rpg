@@ -1,0 +1,258 @@
+{
+  "yearName": "Sinking",
+  "months": [
+    {
+      "name": "Frostfall",
+      "lengthDays": 28,
+      "seasonName": "Veilfrost"
+    },
+    {
+      "name": "Graymourn",
+      "lengthDays": 28,
+      "seasonName": "Veilfrost"
+    },
+    {
+      "name": "Thawven",
+      "lengthDays": 30,
+      "seasonName": "Veilfrost"
+    },
+    {
+      "name": "Raindren",
+      "lengthDays": 30,
+      "seasonName": "Mistmergence"
+    },
+    {
+      "name": "Mossheart",
+      "lengthDays": 31,
+      "seasonName": "Mistmergence"
+    },
+    {
+      "name": "Sunkenfire",
+      "lengthDays": 30,
+      "seasonName": "Mistmergence"
+    },
+    {
+      "name": "Gloomwax",
+      "lengthDays": 31,
+      "seasonName": "Deepgloom"
+    },
+    {
+      "name": "Shadowtide",
+      "lengthDays": 31,
+      "seasonName": "Deepgloom"
+    },
+    {
+      "name": "Cryptbreath",
+      "lengthDays": 30,
+      "seasonName": "Deepgloom"
+    },
+    {
+      "name": "Dustwind",
+      "lengthDays": 30,
+      "seasonName": "Ruinwither"
+    },
+    {
+      "name": "Hollowmist",
+      "lengthDays": 28,
+      "seasonName": "Ruinwither"
+    },
+    {
+      "name": "Soulblight",
+      "lengthDays": 28,
+      "seasonName": "Ruinwither"
+    }
+  ],
+  "weekdays": [
+    "Stoneday",
+    "Lamplight",
+    "Shadowday",
+    "Gilday",
+    "Bloodmoon",
+    "Depthsday",
+    "Spiritrest"
+  ],
+  "seasons": [
+    {
+      "name": "Veilfrost",
+      "description": "Bitter cold grips the land as frost creeps across crumbling stones. The dungeon exhales freezing mist, and fewer adventurers dare the Faded Halls during these harsh months.",
+      "startMonth": "Frostfall",
+      "startDay": 1,
+      "dayLengthMinutes": 540,
+      "timeDescriptions": [
+        {
+          "timeOfDay": 0,
+          "description": "pitch black darkness"
+        },
+        {
+          "timeOfDay": 7,
+          "description": "pale gray twilight"
+        },
+        {
+          "timeOfDay": 9,
+          "description": "weak winter light"
+        },
+        {
+          "timeOfDay": 16,
+          "description": "dim and fading"
+        },
+        {
+          "timeOfDay": 18,
+          "description": "deepening dusk"
+        }
+      ]
+    },
+    {
+      "name": "Mistmergence",
+      "description": "Warm rains and thick mists shroud the ruins as life returns to the surface. The dungeon grows more active, its corridors shifting with renewed vigor.",
+      "startMonth": "Raindren",
+      "startDay": 1,
+      "dayLengthMinutes": 840,
+      "timeDescriptions": [
+        {
+          "timeOfDay": 0,
+          "description": "dark and misty"
+        },
+        {
+          "timeOfDay": 5,
+          "description": "foggy pre-dawn gloom"
+        },
+        {
+          "timeOfDay": 6,
+          "description": "pale light through mist"
+        },
+        {
+          "timeOfDay": 10,
+          "description": "hazy daylight"
+        },
+        {
+          "timeOfDay": 19,
+          "description": "golden twilight"
+        },
+        {
+          "timeOfDay": 21,
+          "description": "darkness settles"
+        }
+      ]
+    },
+    {
+      "name": "Deepgloom",
+      "description": "Oppressive heat and unnatural darkness plague the land as the dungeon's influence waxes strong. Strange lights flicker in the depths and more monsters roam.",
+      "startMonth": "Gloomwax",
+      "startDay": 1,
+      "dayLengthMinutes": 720,
+      "timeDescriptions": [
+        {
+          "timeOfDay": 0,
+          "description": "unnaturally dark"
+        },
+        {
+          "timeOfDay": 6,
+          "description": "sullen red dawn"
+        },
+        {
+          "timeOfDay": 8,
+          "description": "dim overcast light"
+        },
+        {
+          "timeOfDay": 18,
+          "description": "shadows lengthen early"
+        },
+        {
+          "timeOfDay": 20,
+          "description": "complete darkness"
+        }
+      ]
+    },
+    {
+      "name": "Ruinwither",
+      "description": "Dry winds scour the dusty plains as leaves turn brown and the dungeon grows quieter. Old bones surface in the Faded Halls as if the earth itself exhales the dead.",
+      "startMonth": "Dustwind",
+      "startDay": 1,
+      "dayLengthMinutes": 600,
+      "timeDescriptions": [
+        {
+          "timeOfDay": 0,
+          "description": "clear cold darkness"
+        },
+        {
+          "timeOfDay": 6,
+          "description": "gray dawn light"
+        },
+        {
+          "timeOfDay": 8,
+          "description": "pale autumn sun"
+        },
+        {
+          "timeOfDay": 17,
+          "description": "orange sunset"
+        },
+        {
+          "timeOfDay": 19,
+          "description": "purple twilight"
+        }
+      ]
+    }
+  ],
+  "holidays": [
+    {
+      "name": "The Founding",
+      "description": "Commemorates the establishment of Dusthollow as an official town. The Adventurer's Guild holds a recruitment fair and veterans share tales of their first descents.",
+      "month": "Frostfall",
+      "day": 14
+    },
+    {
+      "name": "Valdros's Fall",
+      "description": "Marking the cataclysm that sank the citadel, people light candles in windows to ward off the evil that stirs. The dungeon's entrances shimmer with ethereal light.",
+      "month": "Thawven",
+      "day": 15
+    },
+    {
+      "name": "Lanterns of the Lost",
+      "description": "Adventurers hang paper lanterns bearing names of fallen companions. The glow can be seen for miles, and the dungeon grows strangely quiet for one night.",
+      "month": "Raindren",
+      "day": 22
+    },
+    {
+      "name": "The Gilded Market",
+      "description": "Merchant houses host a grand bazaar where dungeon treasures are auctioned. Coins flow freely and information brokers do their best business of the year.",
+      "month": "Mossheart",
+      "day": 8
+    },
+    {
+      "name": "Descent's Eve",
+      "description": "The traditional start of the adventuring season when the most daring expeditions launch. Parties feast and make pacts to share treasures or bring home bones.",
+      "month": "Sunkenfire",
+      "day": 1
+    },
+    {
+      "name": "The Stillness",
+      "description": "A day when no one enters the dungeon, honoring superstitious beliefs that the labyrinth claims all who descend. Ghost stories are told in every tavern.",
+      "month": "Gloomwax",
+      "day": 16
+    },
+    {
+      "name": "Shadowstide",
+      "description": "Magical phenomena peak as reality grows thin. Scholars study the dungeon from a safe distance while cultists conduct rituals in hidden cellars.",
+      "month": "Shadowtide",
+      "day": 15
+    },
+    {
+      "name": "Guardian's Vigil",
+      "description": "Adventurer's Guild members stand ceremonial watch at the dungeon entrance. Fresh recruits swear oaths and receive their first copper badges.",
+      "month": "Cryptbreath",
+      "day": 23
+    },
+    {
+      "name": "The Ash Parade",
+      "description": "Survivors march through Dusthollow bearing effigies of monsters they've slain, which are burned at sunset. Ash falls like snow over the celebration.",
+      "month": "Dustwind",
+      "day": 7
+    },
+    {
+      "name": "Soulsdeep",
+      "description": "The year's darkest night when families honor ancestors and adventurers lost. Some claim the dead walk the upper dungeon, seeking unfinished business.",
+      "month": "Soulblight",
+      "day": 28
+    }
+  ]
+}

@@ -1,0 +1,5205 @@
+{
+  "thing_1772642937584_e9c6200bce38": {
+    "id": "thing_1772642937584_e9c6200bce38",
+    "name": "Masterwork Alchemist's Kit",
+    "description": "A well-worn leather satchel containing crystal vials, precision scales, a brass mortar and pestle, and several compartments for storing rare ingredients. The inside of the flap bears scorch marks from dozens of minor laboratory mishaps. Type: tool | Slot: waist | Rarity: Uncommon | Value: 185 | Weight: 4 | Properties: Allows crafting of potions and alchemical substances; grants advantage on checks to identify unknown liquids or compounds | Bonuses: intelligence +2",
+    "shortDescription": "Leather satchel with vials, scales, and tools for potion crafting",
+    "thingType": "item",
+    "imageId": null,
+    "createdAt": "2026-03-04T16:48:57.584Z",
+    "lastUpdated": "2026-03-04T16:48:57.586Z",
+    "rarity": "Uncommon",
+    "itemTypeDetail": "tool",
+    "slot": "waist",
+    "attributeBonuses": [
+      {
+        "attribute": "intelligence",
+        "bonus": 2
+      }
+    ],
+    "causeStatusEffect": null,
+    "level": 4,
+    "relativeLevel": 1,
+    "isVehicle": false,
+    "isCraftingStation": true,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": true,
+    "flags": [
+      "crafting station",
+      "salvageable"
+    ],
+    "metadata": {
+      "rarity": "Uncommon",
+      "itemType": "tool",
+      "value": "185",
+      "weight": "4",
+      "properties": "Allows crafting of potions and alchemical substances; grants advantage on checks to identify unknown liquids or compounds",
+      "slot": "waist",
+      "attributeBonuses": [
+        {
+          "attribute": "intelligence",
+          "bonus": 2
+        }
+      ],
+      "relativeLevel": 1,
+      "level": 4,
+      "isCraftingStation": true,
+      "isSalvageable": true,
+      "ownerId": "player_1772642915852_xd1k9i9yi",
+      "playerId": "player_1772642915852_xd1k9i9yi",
+      "locationId": "location_1772642705134_e705f7d91d91"
+    },
+    "statusEffects": []
+  },
+  "thing_1772642937587_5bcb4653ae7b": {
+    "id": "thing_1772642937587_5bcb4653ae7b",
+    "name": "Burnscar's Ring",
+    "description": "A band of blackened iron etched with runic inscriptions that faintly shimmer when exposed to flame. Mirelle forged this ring herself after the accident that scarred her face, as a reminder and a protection against future mishaps. Type: accessory | Slot: ring | Rarity: Uncommon | Value: 220 | Weight: 0 | Status Effect: Equipper: Fire Resistance - The wearer gains resistance to fire damage and advantage on saves against effects that would cause burning. | Properties: Grants resistance to fire damage; the ring feels warm to the touch | Bonuses: constitution +2",
+    "shortDescription": "Blackened iron ring providing protection against flames",
+    "thingType": "item",
+    "imageId": null,
+    "createdAt": "2026-03-04T16:48:57.587Z",
+    "lastUpdated": "2026-03-04T16:49:10.653Z",
+    "rarity": "Uncommon",
+    "itemTypeDetail": "accessory",
+    "slot": "ring",
+    "attributeBonuses": [
+      {
+        "attribute": "constitution",
+        "bonus": 2
+      }
+    ],
+    "causeStatusEffectOnEquipper": {
+      "name": "Fire Resistance",
+      "description": "Flames wash over the bearer with diminished fury, their searing touch reduced to an uncomfortable heat. Magical and mundane fire alike find it harder to take hold on skin or cloth.",
+      "attributes": [
+        {
+          "attribute": "constitution",
+          "modifier": 2
+        }
+      ],
+      "skills": [
+        {
+          "skill": "Survival",
+          "modifier": 2
+        }
+      ],
+      "needBars": [],
+      "duration": 480,
+      "appliedAt": null
+    },
+    "causeStatusEffect": {
+      "name": "Fire Resistance",
+      "description": "Flames wash over the bearer with diminished fury, their searing touch reduced to an uncomfortable heat. Magical and mundane fire alike find it harder to take hold on skin or cloth.",
+      "attributes": [
+        {
+          "attribute": "constitution",
+          "modifier": 2
+        }
+      ],
+      "skills": [
+        {
+          "skill": "Survival",
+          "modifier": 2
+        }
+      ],
+      "needBars": [],
+      "duration": 480,
+      "appliedAt": null,
+      "applyToTarget": false,
+      "applyToEquipper": true
+    },
+    "level": 3,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": true,
+    "flags": [
+      "salvageable"
+    ],
+    "metadata": {
+      "rarity": "Uncommon",
+      "itemType": "accessory",
+      "value": "220",
+      "weight": "0",
+      "properties": "Grants resistance to fire damage; the ring feels warm to the touch",
+      "slot": "ring",
+      "attributeBonuses": [
+        {
+          "attribute": "constitution",
+          "bonus": 2
+        }
+      ],
+      "causeStatusEffectOnEquipper": {
+        "name": "Fire Resistance",
+        "description": "Flames wash over the bearer with diminished fury, their searing touch reduced to an uncomfortable heat. Magical and mundane fire alike find it harder to take hold on skin or cloth.",
+        "attributes": [
+          {
+            "attribute": "constitution",
+            "modifier": 2
+          }
+        ],
+        "skills": [
+          {
+            "skill": "Survival",
+            "modifier": 2
+          }
+        ],
+        "needBars": [],
+        "duration": 480,
+        "appliedAt": null
+      },
+      "relativeLevel": 0,
+      "level": 3,
+      "isSalvageable": true,
+      "ownerId": "player_1772642915852_xd1k9i9yi",
+      "playerId": "player_1772642915852_xd1k9i9yi",
+      "locationId": "location_1772642705134_e705f7d91d91"
+    },
+    "statusEffects": []
+  },
+  "thing_1772642937591_78cf6fb31f8c": {
+    "id": "thing_1772642937591_78cf6fb31f8c",
+    "name": "Sturdy Iron Ledger",
+    "description": "A thick-bound book with iron-reinforced covers and pages of treated vellum designed to resist water, mold, and the occasional ale spill. Its contents record every transaction made in the Supply Storeroom for the past three years, along with threatening notes about outstanding debts. Type: tool | Slot: hands | Rarity: Common | Value: 15 | Weight: 3 | Properties: Contains detailed records of all Guildhall supply transactions; pages are waterproof and tear-resistant",
+    "shortDescription": "Waterproof ledger recording supply transactions and debts",
+    "thingType": "item",
+    "imageId": null,
+    "createdAt": "2026-03-04T16:48:57.591Z",
+    "lastUpdated": "2026-03-04T16:48:57.592Z",
+    "rarity": "Common",
+    "itemTypeDetail": "tool",
+    "slot": "hands",
+    "causeStatusEffect": null,
+    "level": 3,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": true,
+    "flags": [
+      "salvageable"
+    ],
+    "metadata": {
+      "rarity": "Common",
+      "itemType": "tool",
+      "value": "15",
+      "weight": "3",
+      "properties": "Contains detailed records of all Guildhall supply transactions; pages are waterproof and tear-resistant",
+      "slot": "hands",
+      "relativeLevel": 0,
+      "level": 3,
+      "isSalvageable": true,
+      "ownerId": "player_1772642915852_xd1k9i9yi",
+      "playerId": "player_1772642915852_xd1k9i9yi",
+      "locationId": "location_1772642705134_e705f7d91d91"
+    },
+    "statusEffects": []
+  },
+  "thing_1772642937592_6b9ab4c1d919": {
+    "id": "thing_1772642937592_6b9ab4c1d919",
+    "name": "Guild Merchant's Keys",
+    "description": "A heavy iron keyring bearing a dozen keys of varying sizes and complexity, each tagged with a small copper plate identifying which lock it opens. The largest key, blackened with age, fits the iron-bound door to the restricted vault. Type: tool | Rarity: Common | Value: 45 | Weight: 1 | Properties: Opens all standard locks in the Guildhall Supply Storeroom, including the restricted vault; losing these would be catastrophic",
+    "shortDescription": "Iron keyring with keys to storeroom and restricted vault",
+    "thingType": "item",
+    "imageId": null,
+    "createdAt": "2026-03-04T16:48:57.592Z",
+    "lastUpdated": "2026-03-04T16:48:57.592Z",
+    "rarity": "Common",
+    "itemTypeDetail": "tool",
+    "causeStatusEffect": null,
+    "level": 3,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": true,
+    "flags": [
+      "salvageable"
+    ],
+    "metadata": {
+      "rarity": "Common",
+      "itemType": "tool",
+      "value": "45",
+      "weight": "1",
+      "properties": "Opens all standard locks in the Guildhall Supply Storeroom, including the restricted vault; losing these would be catastrophic",
+      "relativeLevel": 0,
+      "level": 3,
+      "isSalvageable": true,
+      "ownerId": "player_1772642915852_xd1k9i9yi",
+      "playerId": "player_1772642915852_xd1k9i9yi",
+      "locationId": "location_1772642705134_e705f7d91d91"
+    },
+    "statusEffects": []
+  },
+  "thing_1772642942421_82fef36929c1": {
+    "id": "thing_1772642942421_82fef36929c1",
+    "name": "Guild Master's Signet Ring",
+    "description": "A heavy band of tarnished silver set with a black onyx seal carved with the Adventurer's Guild crest. The ring grants its wearer authority within Dusthollow and can be pressed into hot wax to authorize official guild documents, expedition charters, and bounty contracts. Type: accessory | Slot: ring | Rarity: Uncommon | Value: 350 | Weight: 0.1 | Properties: Grants advantage on persuasion checks with guild members; seals documents with unforgeable guild mark | Bonuses: charisma +2, intelligence +2",
+    "shortDescription": "Silver signet ring bearing Guild crest, grants authority and document-sealing power",
+    "thingType": "item",
+    "imageId": null,
+    "createdAt": "2026-03-04T16:49:02.421Z",
+    "lastUpdated": "2026-03-04T16:49:02.422Z",
+    "rarity": "Uncommon",
+    "itemTypeDetail": "accessory",
+    "slot": "ring",
+    "attributeBonuses": [
+      {
+        "attribute": "charisma",
+        "bonus": 2
+      },
+      {
+        "attribute": "intelligence",
+        "bonus": 2
+      }
+    ],
+    "causeStatusEffect": null,
+    "level": 5,
+    "relativeLevel": 1,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": true,
+    "flags": [
+      "salvageable"
+    ],
+    "metadata": {
+      "rarity": "Uncommon",
+      "itemType": "accessory",
+      "value": "350",
+      "weight": "0.1",
+      "properties": "Grants advantage on persuasion checks with guild members; seals documents with unforgeable guild mark",
+      "slot": "ring",
+      "attributeBonuses": [
+        {
+          "attribute": "charisma",
+          "bonus": 2
+        },
+        {
+          "attribute": "intelligence",
+          "bonus": 2
+        }
+      ],
+      "relativeLevel": 1,
+      "level": 5,
+      "isSalvageable": true,
+      "ownerId": "player_1772642915849_yg0e5kxhb",
+      "playerId": "player_1772642915849_yg0e5kxhb",
+      "locationId": "location_1772642705134_f6455ecdce84"
+    },
+    "statusEffects": []
+  },
+  "thing_1772642942422_dafa2094278d": {
+    "id": "thing_1772642942422_dafa2094278d",
+    "name": "Iron-Bound Ledger of Admissions",
+    "description": "A massive tome with brass-reinforced corners and pages yellowed by age and constant handling. Its columns record every adventurer who has registered with the guild, their last known status, and next of kin—information worth more than gold to those who know how to use it. Type: tool | Slot: hands | Rarity: Common | Value: 25 | Weight: 6 | Properties: Contains records of all guild-registered adventurers; reference checks take 10 minutes",
+    "shortDescription": "Heavy registration tome tracking all guild adventurers and their fates",
+    "thingType": "item",
+    "imageId": null,
+    "createdAt": "2026-03-04T16:49:02.422Z",
+    "lastUpdated": "2026-03-04T16:49:02.422Z",
+    "rarity": "Common",
+    "itemTypeDetail": "tool",
+    "slot": "hands",
+    "causeStatusEffect": null,
+    "level": 4,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": true,
+    "flags": [
+      "salvageable"
+    ],
+    "metadata": {
+      "rarity": "Common",
+      "itemType": "tool",
+      "value": "25",
+      "weight": "6",
+      "properties": "Contains records of all guild-registered adventurers; reference checks take 10 minutes",
+      "slot": "hands",
+      "relativeLevel": 0,
+      "level": 4,
+      "isSalvageable": true,
+      "ownerId": "player_1772642915849_yg0e5kxhb",
+      "playerId": "player_1772642915849_yg0e5kxhb",
+      "locationId": "location_1772642705134_f6455ecdce84"
+    },
+    "statusEffects": []
+  },
+  "thing_1772642942422_2627e2f1a1fa": {
+    "id": "thing_1772642942422_2627e2f1a1fa",
+    "name": "Silver-Handled Reading Monocle",
+    "description": "An elegant monocle with a silver frame and leather cord, its lens ground from high-quality crystal to precisely correct the wearer's vision. Scrivener uses it to examine the fine print in contracts and detect forgeries by revealing inconsistencies in ink and parchment. Type: tool | Slot: eyewear | Rarity: Uncommon | Value: 120 | Weight: 0.1 | Properties: Grants advantage on investigation checks involving written documents; reveals hidden ink and forgeries | Bonuses: wisdom +2",
+    "shortDescription": "Elegant monocle for detecting forgeries and reading fine print",
+    "thingType": "item",
+    "imageId": null,
+    "createdAt": "2026-03-04T16:49:02.422Z",
+    "lastUpdated": "2026-03-04T16:49:02.422Z",
+    "rarity": "Uncommon",
+    "itemTypeDetail": "tool",
+    "slot": "eyewear",
+    "attributeBonuses": [
+      {
+        "attribute": "wisdom",
+        "bonus": 2
+      }
+    ],
+    "causeStatusEffect": null,
+    "level": 4,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": true,
+    "flags": [
+      "salvageable"
+    ],
+    "metadata": {
+      "rarity": "Uncommon",
+      "itemType": "tool",
+      "value": "120",
+      "weight": "0.1",
+      "properties": "Grants advantage on investigation checks involving written documents; reveals hidden ink and forgeries",
+      "slot": "eyewear",
+      "attributeBonuses": [
+        {
+          "attribute": "wisdom",
+          "bonus": 2
+        }
+      ],
+      "relativeLevel": 0,
+      "level": 4,
+      "isSalvageable": true,
+      "ownerId": "player_1772642915849_yg0e5kxhb",
+      "playerId": "player_1772642915849_yg0e5kxhb",
+      "locationId": "location_1772642705134_f6455ecdce84"
+    },
+    "statusEffects": []
+  },
+  "thing_1772642942423_76f3d0868272": {
+    "id": "thing_1772642942423_76f3d0868272",
+    "name": "Bronze Summoning Bell",
+    "description": "A small but heavy bell cast from dark bronze, its clapper wrapped in cloth to prevent accidental ringing. When struck with intention, it produces no audible sound but summons a guild servant through some unseen mechanism—magic or mechanism, none can say. Type: tool | Slot: hands | Rarity: Common | Value: 45 | Weight: 1 | Properties: Silently summons guild servants within the Guildhall; requires attunement to Guild Master position",
+    "shortDescription": "Silent bell that summons servants when struck with intent",
+    "thingType": "item",
+    "imageId": null,
+    "createdAt": "2026-03-04T16:49:02.423Z",
+    "lastUpdated": "2026-03-04T16:49:02.423Z",
+    "rarity": "Common",
+    "itemTypeDetail": "tool",
+    "slot": "hands",
+    "causeStatusEffect": null,
+    "level": 4,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": true,
+    "flags": [
+      "salvageable"
+    ],
+    "metadata": {
+      "rarity": "Common",
+      "itemType": "tool",
+      "value": "45",
+      "weight": "1",
+      "properties": "Silently summons guild servants within the Guildhall; requires attunement to Guild Master position",
+      "slot": "hands",
+      "relativeLevel": 0,
+      "level": 4,
+      "isSalvageable": true,
+      "ownerId": "player_1772642915849_yg0e5kxhb",
+      "playerId": "player_1772642915849_yg0e5kxhb",
+      "locationId": "location_1772642705134_f6455ecdce84"
+    },
+    "statusEffects": []
+  },
+  "thing_1772642942423_ba18b10e75a6": {
+    "id": "thing_1772642942423_ba18b10e75a6",
+    "name": "Cabinet of Preserved Specimens",
+    "description": "A glass-fronted cabinet mounted on the office wall containing small artifacts recovered from the dungeon—preserved fungal samples, a petrified eye, and a fragment of crystallized magic. These specimens serve as both reference materials and reminders of the labyrinth's dangers. Type: container | Rarity: Uncommon | Value: 200 | Weight: 80 | Properties: Contains rare specimens useful for alchemy or dungeon research; cannot be removed from wall",
+    "shortDescription": "Mounted display cabinet of preserved dungeon specimens and artifacts",
+    "thingType": "item",
+    "imageId": null,
+    "createdAt": "2026-03-04T16:49:02.423Z",
+    "lastUpdated": "2026-03-04T16:49:02.423Z",
+    "rarity": "Uncommon",
+    "itemTypeDetail": "container",
+    "causeStatusEffect": null,
+    "level": 5,
+    "relativeLevel": 1,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": true,
+    "isSalvageable": true,
+    "flags": [
+      "harvestable",
+      "salvageable"
+    ],
+    "metadata": {
+      "rarity": "Uncommon",
+      "itemType": "container",
+      "value": "200",
+      "weight": "80",
+      "properties": "Contains rare specimens useful for alchemy or dungeon research; cannot be removed from wall",
+      "relativeLevel": 1,
+      "level": 5,
+      "isHarvestable": true,
+      "isSalvageable": true,
+      "ownerId": "player_1772642915849_yg0e5kxhb",
+      "playerId": "player_1772642915849_yg0e5kxhb",
+      "locationId": "location_1772642705134_f6455ecdce84"
+    },
+    "statusEffects": []
+  },
+  "thing_1772642962981_d592aec70330": {
+    "id": "thing_1772642962981_d592aec70330",
+    "name": "Worn Prayer Beads",
+    "description": "A strand of fifty wooden beads carved from sanctified oak, each one smoothed by years of nervous fingers turning them in prayer or desperation. The beads hang from a braided leather cord that has been replaced more times than Osric cares to remember, and faint traces of countless blessings linger in the wood like warmth in sun-baked stone. Type: tool | Slot: accessory | Rarity: Uncommon | Value: 25 | Weight: 0.2 | Properties: Grants advantage on prayer and meditation checks; each bead can be used once per day to cast a minor blessing that heals 1d4 hit points | Bonuses: wisdom +2",
+    "shortDescription": "Fifty sanctified oak beads on leather cord, worn smooth by years of prayer",
+    "thingType": "item",
+    "imageId": null,
+    "createdAt": "2026-03-04T16:49:22.981Z",
+    "lastUpdated": "2026-03-04T16:49:22.982Z",
+    "rarity": "Uncommon",
+    "itemTypeDetail": "tool",
+    "slot": "accessory",
+    "attributeBonuses": [
+      {
+        "attribute": "wisdom",
+        "bonus": 2
+      }
+    ],
+    "causeStatusEffect": null,
+    "level": 4,
+    "relativeLevel": 1,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": false,
+    "metadata": {
+      "rarity": "Uncommon",
+      "itemType": "tool",
+      "value": "25",
+      "weight": "0.2",
+      "properties": "Grants advantage on prayer and meditation checks; each bead can be used once per day to cast a minor blessing that heals 1d4 hit points",
+      "slot": "accessory",
+      "attributeBonuses": [
+        {
+          "attribute": "wisdom",
+          "bonus": 2
+        }
+      ],
+      "relativeLevel": 1,
+      "level": 4,
+      "ownerId": "player_1772642915854_rb6f99mgj",
+      "playerId": "player_1772642915854_rb6f99mgj",
+      "locationId": "location_1772642705135_23cb59d7df9e"
+    },
+    "statusEffects": []
+  },
+  "thing_1772642962982_050511b6ddd0": {
+    "id": "thing_1772642962982_050511b6ddd0",
+    "name": "Iron-Bound Healer's Kit",
+    "description": "A heavy leather satchel reinforced with iron bands at the corners, containing bandages, needles, thread, a bone saw, tourniquets, and jars of salves and unguents with labels worn to illegibility. The kit smells of dried herbs and iron—the latter from both the bands and the bloodstains that no amount of cleaning has ever fully removed. Type: tool | Slot: hands | Rarity: Common | Value: 15 | Weight: 3 | Properties: Allows stabilization of dying characters and treatment of wounds; contains enough supplies for 10 uses before needing restocking",
+    "shortDescription": "Leather satchel with medical supplies and tools for treating wounds",
+    "thingType": "item",
+    "imageId": null,
+    "createdAt": "2026-03-04T16:49:22.982Z",
+    "lastUpdated": "2026-03-04T16:49:22.982Z",
+    "rarity": "Common",
+    "itemTypeDetail": "tool",
+    "slot": "hands",
+    "causeStatusEffect": null,
+    "level": 3,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": true,
+    "flags": [
+      "salvageable"
+    ],
+    "metadata": {
+      "rarity": "Common",
+      "itemType": "tool",
+      "value": "15",
+      "weight": "3",
+      "properties": "Allows stabilization of dying characters and treatment of wounds; contains enough supplies for 10 uses before needing restocking",
+      "slot": "hands",
+      "relativeLevel": 0,
+      "level": 3,
+      "isSalvageable": true,
+      "ownerId": "player_1772642915854_rb6f99mgj",
+      "playerId": "player_1772642915854_rb6f99mgj",
+      "locationId": "location_1772642705135_23cb59d7df9e"
+    },
+    "statusEffects": []
+  },
+  "thing_1772642962982_5262e903f141": {
+    "id": "thing_1772642962982_5262e903f141",
+    "name": "Blessed Candle Lantern",
+    "description": "A small iron lantern with panels of thick glass, its wick fed by consecrated oil that burns with a steady amber flame regardless of wind or draft. The lantern was a gift from a dying priest who claimed it would never extinguish so long as the bearer's faith held true—a claim Osric has never tested to its limits. Type: tool | Slot: hands | Rarity: Uncommon | Value: 35 | Weight: 1.5 | Status Effect: Target: Illuminated - The target is bathed in warm, sacred light that reveals hidden truths and weakens shadow-based creatures. | Properties: Sheds light in a 30-foot radius; undead and shadow creatures make attack rolls at disadvantage within the light; never needs refueling | Bonuses: wisdom +2",
+    "shortDescription": "Iron lantern burning consecrated oil with eternal amber flame",
+    "thingType": "item",
+    "imageId": null,
+    "createdAt": "2026-03-04T16:49:22.982Z",
+    "lastUpdated": "2026-03-04T16:49:32.804Z",
+    "rarity": "Uncommon",
+    "itemTypeDetail": "tool",
+    "slot": "hands",
+    "attributeBonuses": [
+      {
+        "attribute": "wisdom",
+        "bonus": 2
+      }
+    ],
+    "causeStatusEffectOnTarget": {
+      "name": "Illuminated",
+      "description": "Sacred radiance clings to the target, casting no shadows and revealing that which prefers darkness. The light burns against creatures of shadow and undead, while clarifying perception and strengthening magical connection.",
+      "attributes": [
+        {
+          "attribute": "wisdom",
+          "modifier": 3
+        },
+        {
+          "attribute": "charisma",
+          "modifier": 2
+        }
+      ],
+      "skills": [
+        {
+          "skill": "Perception",
+          "modifier": 4
+        },
+        {
+          "skill": "Trap Detection",
+          "modifier": 3
+        },
+        {
+          "skill": "Stealth",
+          "modifier": -4
+        }
+      ],
+      "needBars": [
+        {
+          "name": "Mana",
+          "delta": 1
+        }
+      ],
+      "duration": 10,
+      "appliedAt": null
+    },
+    "causeStatusEffect": {
+      "name": "Illuminated",
+      "description": "Sacred radiance clings to the target, casting no shadows and revealing that which prefers darkness. The light burns against creatures of shadow and undead, while clarifying perception and strengthening magical connection.",
+      "attributes": [
+        {
+          "attribute": "wisdom",
+          "modifier": 3
+        },
+        {
+          "attribute": "charisma",
+          "modifier": 2
+        }
+      ],
+      "skills": [
+        {
+          "skill": "Perception",
+          "modifier": 4
+        },
+        {
+          "skill": "Trap Detection",
+          "modifier": 3
+        },
+        {
+          "skill": "Stealth",
+          "modifier": -4
+        }
+      ],
+      "needBars": [
+        {
+          "name": "Mana",
+          "delta": 1
+        }
+      ],
+      "duration": 10,
+      "appliedAt": null,
+      "applyToTarget": true,
+      "applyToEquipper": false
+    },
+    "level": 4,
+    "relativeLevel": 1,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": false,
+    "metadata": {
+      "rarity": "Uncommon",
+      "itemType": "tool",
+      "value": "35",
+      "weight": "1.5",
+      "properties": "Sheds light in a 30-foot radius; undead and shadow creatures make attack rolls at disadvantage within the light; never needs refueling",
+      "slot": "hands",
+      "attributeBonuses": [
+        {
+          "attribute": "wisdom",
+          "bonus": 2
+        }
+      ],
+      "causeStatusEffectOnTarget": {
+        "name": "Illuminated",
+        "description": "Sacred radiance clings to the target, casting no shadows and revealing that which prefers darkness. The light burns against creatures of shadow and undead, while clarifying perception and strengthening magical connection.",
+        "attributes": [
+          {
+            "attribute": "wisdom",
+            "modifier": 3
+          },
+          {
+            "attribute": "charisma",
+            "modifier": 2
+          }
+        ],
+        "skills": [
+          {
+            "skill": "Perception",
+            "modifier": 4
+          },
+          {
+            "skill": "Trap Detection",
+            "modifier": 3
+          },
+          {
+            "skill": "Stealth",
+            "modifier": -4
+          }
+        ],
+        "needBars": [
+          {
+            "name": "Mana",
+            "delta": 1
+          }
+        ],
+        "duration": 10,
+        "appliedAt": null
+      },
+      "relativeLevel": 1,
+      "level": 4,
+      "ownerId": "player_1772642915854_rb6f99mgj",
+      "playerId": "player_1772642915854_rb6f99mgj",
+      "locationId": "location_1772642705135_23cb59d7df9e"
+    },
+    "statusEffects": []
+  },
+  "thing_1772642962987_f64d306bf757": {
+    "id": "thing_1772642962987_f64d306bf757",
+    "name": "Key to the Shrine Cabinet",
+    "description": "A simple iron key worn smooth by use, hanging from a cord around Osric's neck. It opens the locked cabinet behind the dormitory shrine where he stores healing potions, holy water, and emergency supplies—things too precious or dangerous to leave unsecured in a room full of desperate strangers. Type: misc | Slot: neck | Rarity: Common | Value: 5 | Weight: 0.1 | Properties: Opens the shrine cabinet in the Guildhall dormitory; Osric guards it jealously",
+    "shortDescription": "Simple iron key to locked shrine cabinet on cord necklace",
+    "thingType": "item",
+    "imageId": null,
+    "createdAt": "2026-03-04T16:49:22.987Z",
+    "lastUpdated": "2026-03-04T16:49:22.987Z",
+    "rarity": "Common",
+    "itemTypeDetail": "misc",
+    "slot": "neck",
+    "causeStatusEffect": null,
+    "level": 3,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": false,
+    "metadata": {
+      "rarity": "Common",
+      "itemType": "misc",
+      "value": "5",
+      "weight": "0.1",
+      "properties": "Opens the shrine cabinet in the Guildhall dormitory; Osric guards it jealously",
+      "slot": "neck",
+      "relativeLevel": 0,
+      "level": 3,
+      "ownerId": "player_1772642915854_rb6f99mgj",
+      "playerId": "player_1772642915854_rb6f99mgj",
+      "locationId": "location_1772642705135_23cb59d7df9e"
+    },
+    "statusEffects": []
+  },
+  "thing_1772643045854_a7751af50858": {
+    "id": "thing_1772643045854_a7751af50858",
+    "name": "Notice Board",
+    "description": "A rain-warped wooden board mounted on iron brackets beside the Guildhall entrance, layered thick with curling parchment notices seeking missing companions, warning of newly discovered hazards, and advertising vacancies in expeditions preparing to descend.",
+    "shortDescription": "Rain-warped board layered with expedition notices and warnings",
+    "thingType": "scenery",
+    "imageId": "img_20260304_165336_5krnmcsw",
+    "createdAt": "2026-03-04T16:50:45.854Z",
+    "lastUpdated": "2026-03-04T16:53:48.582Z",
+    "rarity": "Common",
+    "itemTypeDetail": "furniture",
+    "causeStatusEffect": null,
+    "level": 1,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": true,
+    "flags": [
+      "salvageable"
+    ],
+    "metadata": {
+      "locationId": "location_1772642705133_c64222056ec5",
+      "locationName": "Guildhall Exterior",
+      "value": "0",
+      "weight": "120",
+      "properties": "Contains publicly posted notices about expeditions, bounties, and warnings. Notices can be taken or read.",
+      "relativeLevel": 0,
+      "isSalvageable": true,
+      "level": 1
+    },
+    "statusEffects": []
+  },
+  "thing_1772643045855_b25cebbdf477": {
+    "id": "thing_1772643045855_b25cebbdf477",
+    "name": "Dented Lantern Post",
+    "description": "An iron lantern post driven deep into the mud beside the Guildhall porch, its glass panels cracked and clouded with soot from years of burning low-grade oil. The lantern within still burns with a sickly orange flame, maintained by Guild staff to guide returning adventurers through the pre-dawn darkness.",
+    "shortDescription": "Soot-stained iron post with cracked lantern guiding arrivals",
+    "thingType": "scenery",
+    "imageId": "img_20260304_165348_cjigy73r",
+    "createdAt": "2026-03-04T16:50:45.855Z",
+    "lastUpdated": "2026-03-04T16:54:02.751Z",
+    "rarity": "Common",
+    "itemTypeDetail": "furniture",
+    "causeStatusEffect": null,
+    "level": 1,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": true,
+    "flags": [
+      "salvageable"
+    ],
+    "metadata": {
+      "locationId": "location_1772642705133_c64222056ec5",
+      "locationName": "Guildhall Exterior",
+      "value": "0",
+      "weight": "180",
+      "properties": "Provides dim illumination in a 15-foot radius. The lantern oil can be refilled.",
+      "relativeLevel": 0,
+      "isSalvageable": true,
+      "level": 1
+    },
+    "statusEffects": []
+  },
+  "thing_1772643045855_a9004580f359": {
+    "id": "thing_1772643045855_a9004580f359",
+    "name": "Bench of the Fallen",
+    "description": "A stone bench worn smooth by countless grieving companions, its surface carved with dozens of names—adventurers who never returned from the depths. Small offerings of coins, dried flowers, and trinkets accumulate in the crevices, left by those who survive to remember.",
+    "shortDescription": "Stone memorial bench carved with names of the lost",
+    "thingType": "scenery",
+    "imageId": "img_20260304_165431_csh3pxlo",
+    "createdAt": "2026-03-04T16:50:45.855Z",
+    "lastUpdated": "2026-03-04T16:54:45.219Z",
+    "rarity": "Uncommon",
+    "itemTypeDetail": "furniture",
+    "causeStatusEffect": null,
+    "level": 2,
+    "relativeLevel": 1,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": true,
+    "flags": [
+      "salvageable"
+    ],
+    "metadata": {
+      "locationId": "location_1772642705133_c64222056ec5",
+      "locationName": "Guildhall Exterior",
+      "value": "0",
+      "weight": "800",
+      "properties": "Small offerings left by mourners. Those who sit here in quiet contemplation for at least ten minutes feel a subtle sense of peace and resolve.",
+      "relativeLevel": 1,
+      "isSalvageable": true,
+      "level": 2
+    },
+    "statusEffects": []
+  },
+  "thing_1772643045855_7dad786e6760": {
+    "id": "thing_1772643045855_7dad786e6760",
+    "name": "Guard Station Awning",
+    "description": "A heavy canvas awning stretched between iron poles, providing shelter for the Guildhall guards from snow and rain. Underneath stands a wooden weapons rack containing practice swords and spears, alongside a brazier of glowing coals that keeps the watch warm during long, cold shifts.",
+    "shortDescription": "Canvas-sheltered guard post with brazier and weapon rack",
+    "thingType": "scenery",
+    "imageId": "img_20260304_165402_g2fmiugx",
+    "createdAt": "2026-03-04T16:50:45.855Z",
+    "lastUpdated": "2026-03-04T16:54:16.906Z",
+    "rarity": "Uncommon",
+    "itemTypeDetail": "furniture",
+    "causeStatusEffect": null,
+    "level": 1,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": true,
+    "isSalvageable": true,
+    "flags": [
+      "harvestable",
+      "salvageable"
+    ],
+    "metadata": {
+      "locationId": "location_1772642705133_c64222056ec5",
+      "locationName": "Guildhall Exterior",
+      "value": "0",
+      "weight": "200",
+      "properties": "Provides shelter from weather. The brazier provides warmth and can be used to light torches or tinderboxes. Practice weapons are available for sparring.",
+      "relativeLevel": 0,
+      "isHarvestable": true,
+      "isSalvageable": true,
+      "level": 1
+    },
+    "statusEffects": []
+  },
+  "thing_1772643045855_118f6b30862f": {
+    "id": "thing_1772643045855_118f6b30862f",
+    "name": "Mud-Caked Adventurer's Boot",
+    "description": "A single heavy leather boot abandoned in the muck, its sole half-torn and coated in gray dungeon clay that seems to cling with unnatural tenacity. The boot's former owner clearly encountered something unpleasant in the depths—dark stains discolor the leather around a torn strap.",
+    "shortDescription": "Single torn leather boot coated in gray dungeon clay",
+    "thingType": "item",
+    "imageId": "img_20260304_165445_jnvavxq3",
+    "createdAt": "2026-03-04T16:50:45.855Z",
+    "lastUpdated": "2026-03-04T16:55:00.033Z",
+    "rarity": "Common",
+    "itemTypeDetail": "armor",
+    "slot": "feet",
+    "attributeBonuses": [
+      {
+        "attribute": "dexterity",
+        "bonus": -1
+      }
+    ],
+    "causeStatusEffect": null,
+    "level": 1,
+    "relativeLevel": -1,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": true,
+    "flags": [
+      "salvageable"
+    ],
+    "metadata": {
+      "locationId": "location_1772642705133_c64222056ec5",
+      "locationName": "Guildhall Exterior",
+      "value": "3",
+      "weight": "2",
+      "properties": "Half of a pair. The dungeon clay coating it resists cleaning and leaves gray smudges on everything it touches.",
+      "slot": "feet",
+      "relativeLevel": -1,
+      "isSalvageable": true,
+      "level": 1,
+      "attributeBonuses": [
+        {
+          "attribute": "dexterity",
+          "bonus": -1
+        }
+      ]
+    },
+    "statusEffects": []
+  },
+  "thing_1772643045855_0c365655809d": {
+    "id": "thing_1772643045855_0c365655809d",
+    "name": "Recovered Token Pouch",
+    "description": "A small leather pouch marked with the Guild's lantern crest, used to hold identification tokens of adventurers who died in the labyrinth. This one still contains three tarnished bronze discs, each etched with a name and registration number—unclaimed remains of a failed expedition.",
+    "shortDescription": "Pouch containing fallen adventurers' identification tokens",
+    "thingType": "item",
+    "imageId": "img_20260304_165500_9662xh33",
+    "createdAt": "2026-03-04T16:50:45.855Z",
+    "lastUpdated": "2026-03-04T16:55:14.349Z",
+    "rarity": "Uncommon",
+    "itemTypeDetail": "accessory",
+    "slot": "waist",
+    "attributeBonuses": [
+      {
+        "attribute": "wisdom",
+        "bonus": 2
+      }
+    ],
+    "causeStatusEffect": null,
+    "level": 2,
+    "relativeLevel": 1,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": true,
+    "flags": [
+      "salvageable"
+    ],
+    "metadata": {
+      "locationId": "location_1772642705133_c64222056ec5",
+      "locationName": "Guildhall Exterior",
+      "value": "25",
+      "weight": "0.5",
+      "properties": "Contains 3 bronze ID tokens. Guild authorities may reward the return of these tokens to next of kin. The lingering spiritual residue grants occasional premonitions of danger.",
+      "slot": "waist",
+      "relativeLevel": 1,
+      "isSalvageable": true,
+      "level": 2,
+      "attributeBonuses": [
+        {
+          "attribute": "wisdom",
+          "bonus": 2
+        }
+      ]
+    },
+    "statusEffects": []
+  },
+  "thing_1772643045856_c428d8165f09": {
+    "id": "thing_1772643045856_c428d8165f09",
+    "name": "Carved Boundary Stone",
+    "description": "A moss-covered stone marker at the edge of the Guildhall porch, etched with ancient protective runes that have faded to near-invisibility. Legend claims the stones were placed by the first Guild Master to hold the dungeon's influence at bay, though few now believe such superstitions.",
+    "shortDescription": "Mossy runestone with faded protective enchantments",
+    "thingType": "scenery",
+    "imageId": "img_20260304_165417_27x48zxp",
+    "createdAt": "2026-03-04T16:50:45.856Z",
+    "lastUpdated": "2026-03-04T16:54:31.063Z",
+    "rarity": "Uncommon",
+    "itemTypeDetail": "landmark",
+    "causeStatusEffect": null,
+    "level": 3,
+    "relativeLevel": 2,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": true,
+    "flags": [
+      "salvageable"
+    ],
+    "metadata": {
+      "locationId": "location_1772642705133_c64222056ec5",
+      "locationName": "Guildhall Exterior",
+      "value": "0",
+      "weight": "400",
+      "properties": "The faint protective magic reduces the severity of curse effects on those who touch the stone before entering the dungeon. The runes can be examined by those knowledgeable in arcana.",
+      "relativeLevel": 2,
+      "isSalvageable": true,
+      "level": 3
+    },
+    "statusEffects": []
+  },
+  "thing_1772643109917_8fff99773b83": {
+    "id": "thing_1772643109917_8fff99773b83",
+    "name": "Pact Dagger",
+    "description": "A ritualistic blade of darkened steel etched with infernal sigils that seem to shift when viewed from the corner of one's eye. The weapon serves as both a focus for Malphis's eldritch invocations and a conduit for his patron's power. Type: weapon | Slot: hands | Rarity: Uncommon | Value: 85 | Weight: 1.5 | Properties: Serves as a spellcasting focus; can be used to perform a minor blood ritual to recover a small amount of magical energy once per day | Bonuses: charisma +2",
+    "shortDescription": "Ritual blade etched with shifting infernal sigils",
+    "thingType": "item",
+    "imageId": null,
+    "createdAt": "2026-03-04T16:51:49.917Z",
+    "lastUpdated": "2026-03-04T16:51:49.917Z",
+    "rarity": "Uncommon",
+    "itemTypeDetail": "weapon",
+    "slot": "hands",
+    "attributeBonuses": [
+      {
+        "attribute": "charisma",
+        "bonus": 2
+      }
+    ],
+    "causeStatusEffect": null,
+    "level": 3,
+    "relativeLevel": 1,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": true,
+    "flags": [
+      "salvageable"
+    ],
+    "metadata": {
+      "rarity": "Uncommon",
+      "itemType": "weapon",
+      "value": "85",
+      "weight": "1.5",
+      "properties": "Serves as a spellcasting focus; can be used to perform a minor blood ritual to recover a small amount of magical energy once per day",
+      "slot": "hands",
+      "attributeBonuses": [
+        {
+          "attribute": "charisma",
+          "bonus": 2
+        }
+      ],
+      "relativeLevel": 1,
+      "level": 3,
+      "isSalvageable": true,
+      "ownerId": "player_1772643077917_wcrt69zyu",
+      "playerId": "player_1772643077917_wcrt69zyu",
+      "locationId": "location_1772642705133_c64222056ec5"
+    },
+    "statusEffects": []
+  },
+  "thing_1772643109917_750f757b9dff": {
+    "id": "thing_1772643109917_750f757b9dff",
+    "name": "Shadowweave Cloak",
+    "description": "His dark travelling cloak is woven from fabric that seems to drink in the surrounding light, making its wearer difficult to see in dim illumination. Faint shadowy wisps occasionally drift from its hem, remnants of the fell magic used in its creation. Type: armor | Slot: back | Rarity: Uncommon | Value: 120 | Weight: 2 | Status Effect: Equipper: Shadow's Embrace - The wearer becomes slightly harder to notice in dim light or darkness, their outline blurring at the edges. | Properties: Advantage on Stealth checks in dim light or darkness | Bonuses: dexterity +2",
+    "shortDescription": "Light-drinking cloak that blurs the wearer's outline",
+    "thingType": "item",
+    "imageId": null,
+    "createdAt": "2026-03-04T16:51:49.917Z",
+    "lastUpdated": "2026-03-04T16:51:58.394Z",
+    "rarity": "Uncommon",
+    "itemTypeDetail": "armor",
+    "slot": "back",
+    "attributeBonuses": [
+      {
+        "attribute": "dexterity",
+        "bonus": 2
+      }
+    ],
+    "causeStatusEffectOnEquipper": {
+      "name": "Shadow's Embrace",
+      "description": "The wearer's form bleeds into surrounding darkness, their edges becoming indistinct and difficult to focus upon. In bright light this offers no benefit, but in shadows the effect is disconcerting to observers.",
+      "attributes": [
+        {
+          "attribute": "dexterity",
+          "modifier": 2
+        }
+      ],
+      "skills": [
+        {
+          "skill": "Stealth",
+          "modifier": 4
+        }
+      ],
+      "needBars": [],
+      "duration": 240,
+      "appliedAt": null
+    },
+    "causeStatusEffect": {
+      "name": "Shadow's Embrace",
+      "description": "The wearer's form bleeds into surrounding darkness, their edges becoming indistinct and difficult to focus upon. In bright light this offers no benefit, but in shadows the effect is disconcerting to observers.",
+      "attributes": [
+        {
+          "attribute": "dexterity",
+          "modifier": 2
+        }
+      ],
+      "skills": [
+        {
+          "skill": "Stealth",
+          "modifier": 4
+        }
+      ],
+      "needBars": [],
+      "duration": 240,
+      "appliedAt": null,
+      "applyToTarget": false,
+      "applyToEquipper": true
+    },
+    "level": 3,
+    "relativeLevel": 1,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": true,
+    "flags": [
+      "salvageable"
+    ],
+    "metadata": {
+      "rarity": "Uncommon",
+      "itemType": "armor",
+      "value": "120",
+      "weight": "2",
+      "properties": "Advantage on Stealth checks in dim light or darkness",
+      "slot": "back",
+      "attributeBonuses": [
+        {
+          "attribute": "dexterity",
+          "bonus": 2
+        }
+      ],
+      "causeStatusEffectOnEquipper": {
+        "name": "Shadow's Embrace",
+        "description": "The wearer's form bleeds into surrounding darkness, their edges becoming indistinct and difficult to focus upon. In bright light this offers no benefit, but in shadows the effect is disconcerting to observers.",
+        "attributes": [
+          {
+            "attribute": "dexterity",
+            "modifier": 2
+          }
+        ],
+        "skills": [
+          {
+            "skill": "Stealth",
+            "modifier": 4
+          }
+        ],
+        "needBars": [],
+        "duration": 240,
+        "appliedAt": null
+      },
+      "relativeLevel": 1,
+      "level": 3,
+      "isSalvageable": true,
+      "ownerId": "player_1772643077917_wcrt69zyu",
+      "playerId": "player_1772643077917_wcrt69zyu",
+      "locationId": "location_1772642705133_c64222056ec5"
+    },
+    "statusEffects": []
+  },
+  "thing_1772643109920_5368b842aaf3": {
+    "id": "thing_1772643109920_5368b842aaf3",
+    "name": "Component Pouch",
+    "description": "A leather satchel containing various arcane materials—obsidian chips, dried newt eyes, small vials of sulfur, and strips of parchment inscribed with corrupted prayers. These components are essential for certain invocations and rituals. Type: tool | Slot: waist | Rarity: Common | Value: 25 | Weight: 2 | Properties: Contains spell components for warlock rituals; must be restocked periodically",
+    "shortDescription": "Leather satchel of arcane components and ritual materials",
+    "thingType": "item",
+    "imageId": null,
+    "createdAt": "2026-03-04T16:51:49.920Z",
+    "lastUpdated": "2026-03-04T16:51:49.920Z",
+    "rarity": "Common",
+    "itemTypeDetail": "tool",
+    "slot": "waist",
+    "causeStatusEffect": null,
+    "level": 2,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": true,
+    "flags": [
+      "salvageable"
+    ],
+    "metadata": {
+      "rarity": "Common",
+      "itemType": "tool",
+      "value": "25",
+      "weight": "2",
+      "properties": "Contains spell components for warlock rituals; must be restocked periodically",
+      "slot": "waist",
+      "relativeLevel": 0,
+      "level": 2,
+      "isSalvageable": true,
+      "ownerId": "player_1772643077917_wcrt69zyu",
+      "playerId": "player_1772643077917_wcrt69zyu",
+      "locationId": "location_1772642705133_c64222056ec5"
+    },
+    "statusEffects": []
+  },
+  "thing_1772643109921_7451b686e351": {
+    "id": "thing_1772643109921_7451b686e351",
+    "name": "Tarnished Bronze Ring",
+    "description": "A simple band of aged bronze bearing an inscription in Infernal that glows faintly when its wearer channels magical energy. Malphis received this ring as part of his initial pact, a physical token of the bond between warlock and patron. Type: accessory | Slot: ring | Rarity: Uncommon | Value: 65 | Weight: 0.1 | Properties: Glow intensifies when casting warlock spells; allows the wearer to sense the general direction of their patron's influence | Bonuses: wisdom +2",
+    "shortDescription": "Pact token that glows when channeling magic",
+    "thingType": "item",
+    "imageId": null,
+    "createdAt": "2026-03-04T16:51:49.921Z",
+    "lastUpdated": "2026-03-04T16:51:49.921Z",
+    "rarity": "Uncommon",
+    "itemTypeDetail": "accessory",
+    "slot": "ring",
+    "attributeBonuses": [
+      {
+        "attribute": "wisdom",
+        "bonus": 2
+      }
+    ],
+    "causeStatusEffect": null,
+    "level": 2,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": true,
+    "flags": [
+      "salvageable"
+    ],
+    "metadata": {
+      "rarity": "Uncommon",
+      "itemType": "accessory",
+      "value": "65",
+      "weight": "0.1",
+      "properties": "Glow intensifies when casting warlock spells; allows the wearer to sense the general direction of their patron's influence",
+      "slot": "ring",
+      "attributeBonuses": [
+        {
+          "attribute": "wisdom",
+          "bonus": 2
+        }
+      ],
+      "relativeLevel": 0,
+      "level": 2,
+      "isSalvageable": true,
+      "ownerId": "player_1772643077917_wcrt69zyu",
+      "playerId": "player_1772643077917_wcrt69zyu",
+      "locationId": "location_1772642705133_c64222056ec5"
+    },
+    "statusEffects": []
+  },
+  "thing_1772643111945_2a765f1a6131": {
+    "id": "thing_1772643111945_2a765f1a6131",
+    "name": "Wheeldon's Partially Complete Dungeon Atlas",
+    "description": "A bulging leather map case containing dozens of parchment sheets covered in Tobin's meticulous notation and careful cartography. The maps detail the Faded Halls in impressive detail, but grow increasingly sparse and speculative the deeper they purport to show, with entire sections labeled \"rumored\" or \"conjectural.\" Type: tool | Slot: hands | Rarity: Common | Value: 25 | Weight: 3",
+    "shortDescription": "Bulging map case with detailed charts of upper dungeon levels",
+    "thingType": "item",
+    "imageId": null,
+    "createdAt": "2026-03-04T16:51:51.945Z",
+    "lastUpdated": "2026-03-04T16:51:51.945Z",
+    "rarity": "Common",
+    "itemTypeDetail": "tool",
+    "slot": "hands",
+    "causeStatusEffect": null,
+    "level": 1,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": false,
+    "metadata": {
+      "rarity": "Common",
+      "itemType": "tool",
+      "value": "25",
+      "weight": "3",
+      "slot": "hands",
+      "relativeLevel": 0,
+      "level": 1,
+      "ownerId": "player_1772643077916_mb6e62p9b",
+      "playerId": "player_1772643077916_mb6e62p9b",
+      "locationId": "location_1772642705133_c64222056ec5"
+    },
+    "statusEffects": []
+  },
+  "thing_1772643111945_975754c8f9f9": {
+    "id": "thing_1772643111945_975754c8f9f9",
+    "name": "Brass Magnifying Spectacles",
+    "description": "Thick-lensed brass spectacles with adjustable arms that make Tobin's eyes appear comically large. The lenses are scratched from years of close work, but still serve their purpose of magnifying fine details for cartographic precision. Type: tool | Slot: eyewear | Rarity: Common | Value: 15 | Weight: 0.5 | Bonuses: intelligence +1",
+    "shortDescription": "Scratched brass lenses that magnify fine details",
+    "thingType": "item",
+    "imageId": null,
+    "createdAt": "2026-03-04T16:51:51.946Z",
+    "lastUpdated": "2026-03-04T16:51:51.946Z",
+    "rarity": "Common",
+    "itemTypeDetail": "tool",
+    "slot": "eyewear",
+    "attributeBonuses": [
+      {
+        "attribute": "intelligence",
+        "bonus": 1
+      }
+    ],
+    "causeStatusEffect": null,
+    "level": 1,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": false,
+    "metadata": {
+      "rarity": "Common",
+      "itemType": "tool",
+      "value": "15",
+      "weight": "0.5",
+      "slot": "eyewear",
+      "attributeBonuses": [
+        {
+          "attribute": "intelligence",
+          "bonus": 1
+        }
+      ],
+      "relativeLevel": 0,
+      "level": 1,
+      "ownerId": "player_1772643077916_mb6e62p9b",
+      "playerId": "player_1772643077916_mb6e62p9b",
+      "locationId": "location_1772642705133_c64222056ec5"
+    },
+    "statusEffects": []
+  },
+  "thing_1772643111946_ae9704707a29": {
+    "id": "thing_1772643111946_ae9704707a29",
+    "name": "Cartographer's Field Kit",
+    "description": "A worn leather satchel containing charcoal sticks, pots of ink in three colors, a bone-handled drafting compass, a metal straightedge, and several stubs of eraser. Everything a dungeon mapper needs to record what they find, assuming they survive long enough to draw it. Type: tool | Rarity: Common | Value: 12 | Weight: 2",
+    "shortDescription": "Worn satchel with ink, charcoal, compass and drafting tools",
+    "thingType": "item",
+    "imageId": null,
+    "createdAt": "2026-03-04T16:51:51.946Z",
+    "lastUpdated": "2026-03-04T16:51:51.946Z",
+    "rarity": "Common",
+    "itemTypeDetail": "tool",
+    "causeStatusEffect": null,
+    "level": 1,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": true,
+    "flags": [
+      "salvageable"
+    ],
+    "metadata": {
+      "rarity": "Common",
+      "itemType": "tool",
+      "value": "12",
+      "weight": "2",
+      "relativeLevel": 0,
+      "level": 1,
+      "isSalvageable": true,
+      "ownerId": "player_1772643077916_mb6e62p9b",
+      "playerId": "player_1772643077916_mb6e62p9b",
+      "locationId": "location_1772642705133_c64222056ec5"
+    },
+    "statusEffects": []
+  },
+  "thing_1772643111946_236e9ea276d5": {
+    "id": "thing_1772643111946_236e9ea276d5",
+    "name": "Gnomish Boot-Dagger",
+    "description": "A small blade barely longer than a human finger, sized for a gnome's grip and worn in a hidden sheath inside Tobin's boot. More useful for cutting parchment or whittling charcoal than actual combat, but better than nothing when giant rats get too curious about his maps. Type: weapon | Rarity: Common | Value: 8 | Weight: 1",
+    "shortDescription": "Tiny hidden blade for last-resort defense and utility",
+    "thingType": "item",
+    "imageId": null,
+    "createdAt": "2026-03-04T16:51:51.946Z",
+    "lastUpdated": "2026-03-04T16:51:51.946Z",
+    "rarity": "Common",
+    "itemTypeDetail": "weapon",
+    "causeStatusEffect": null,
+    "level": 1,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": true,
+    "flags": [
+      "salvageable"
+    ],
+    "metadata": {
+      "rarity": "Common",
+      "itemType": "weapon",
+      "value": "8",
+      "weight": "1",
+      "relativeLevel": 0,
+      "level": 1,
+      "isSalvageable": true,
+      "ownerId": "player_1772643077916_mb6e62p9b",
+      "playerId": "player_1772643077916_mb6e62p9b",
+      "locationId": "location_1772642705133_c64222056ec5"
+    },
+    "statusEffects": []
+  },
+  "thing_1772643111946_ecdb793ec0f5": {
+    "id": "thing_1772643111946_ecdb793ec0f5",
+    "name": "Lucky Moth-Eaten Scarf",
+    "description": "A faded wool scarf in what was once forest green, now more of a sickly sage after years of dungeon dampness. Tobin insists it's brought him through every expedition safely, though given he's never ventured past the Faded Halls, that's not saying much. Type: armor | Slot: neck | Rarity: Junk | Value: 2 | Weight: 0.5 | Bonuses: constitution -1",
+    "shortDescription": "Faded damp wool scarf of questionable protective value",
+    "thingType": "item",
+    "imageId": null,
+    "createdAt": "2026-03-04T16:51:51.947Z",
+    "lastUpdated": "2026-03-04T16:51:51.947Z",
+    "rarity": "Junk",
+    "itemTypeDetail": "armor",
+    "slot": "neck",
+    "attributeBonuses": [
+      {
+        "attribute": "constitution",
+        "bonus": -1
+      }
+    ],
+    "causeStatusEffect": null,
+    "level": 1,
+    "relativeLevel": -1,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": false,
+    "metadata": {
+      "rarity": "Junk",
+      "itemType": "armor",
+      "value": "2",
+      "weight": "0.5",
+      "slot": "neck",
+      "attributeBonuses": [
+        {
+          "attribute": "constitution",
+          "bonus": -1
+        }
+      ],
+      "relativeLevel": -1,
+      "level": 1,
+      "ownerId": "player_1772643077916_mb6e62p9b",
+      "playerId": "player_1772643077916_mb6e62p9b",
+      "locationId": "location_1772642705133_c64222056ec5"
+    },
+    "statusEffects": []
+  },
+  "thing_1772643143522_b0656d57b5c4": {
+    "id": "thing_1772643143522_b0656d57b5c4",
+    "name": "Worn Iron Longsword",
+    "description": "A reliable blade bearing the marks of honest use, its edge recently honed by a Guild weaponsmith. The leather-wrapped grip has been stained dark by sweat and blood from countless drills. Type: weapon | Slot: hands | Rarity: Common | Value: 15 | Weight: 3 | Properties: A standard weapon for those who rely on strength and reach in combat. | Bonuses: strength +1, dexterity -1",
+    "shortDescription": "A reliable used blade with a recently honed edge and worn leather grip.",
+    "thingType": "item",
+    "imageId": null,
+    "createdAt": "2026-03-04T16:52:23.522Z",
+    "lastUpdated": "2026-03-04T16:52:23.522Z",
+    "rarity": "Common",
+    "itemTypeDetail": "weapon",
+    "slot": "hands",
+    "attributeBonuses": [
+      {
+        "attribute": "strength",
+        "bonus": 1
+      },
+      {
+        "attribute": "dexterity",
+        "bonus": -1
+      }
+    ],
+    "causeStatusEffect": null,
+    "level": 1,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": true,
+    "flags": [
+      "salvageable"
+    ],
+    "metadata": {
+      "rarity": "Common",
+      "itemType": "weapon",
+      "value": "15",
+      "weight": "3",
+      "properties": "A standard weapon for those who rely on strength and reach in combat.",
+      "slot": "hands",
+      "attributeBonuses": [
+        {
+          "attribute": "strength",
+          "bonus": 1
+        },
+        {
+          "attribute": "dexterity",
+          "bonus": -1
+        }
+      ],
+      "relativeLevel": 0,
+      "level": 1,
+      "isSalvageable": true,
+      "ownerId": "player_1772642625317_c20sagwp2",
+      "playerId": "player_1772642625317_c20sagwp2",
+      "locationId": "location_1772642705133_c64222056ec5"
+    },
+    "statusEffects": []
+  },
+  "thing_1772643143522_398a77ec522c": {
+    "id": "thing_1772643143522_398a77ec522c",
+    "name": "Padded Leather Armor",
+    "description": "Layers of boiled leather reinforced with quilted cloth at the joints, offering protection without sacrificing mobility. The straps show wear but remain functional. Type: armor | Slot: body | Rarity: Common | Value: 20 | Weight: 10 | Properties: Provides basic protection against physical attacks.",
+    "shortDescription": "Boiled leather layers with quilted cloth reinforcement at the joints.",
+    "thingType": "item",
+    "imageId": null,
+    "createdAt": "2026-03-04T16:52:23.522Z",
+    "lastUpdated": "2026-03-04T16:52:23.523Z",
+    "rarity": "Common",
+    "itemTypeDetail": "armor",
+    "slot": "body",
+    "causeStatusEffect": null,
+    "level": 1,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": true,
+    "flags": [
+      "salvageable"
+    ],
+    "metadata": {
+      "rarity": "Common",
+      "itemType": "armor",
+      "value": "20",
+      "weight": "10",
+      "properties": "Provides basic protection against physical attacks.",
+      "slot": "body",
+      "relativeLevel": 0,
+      "level": 1,
+      "isSalvageable": true,
+      "ownerId": "player_1772642625317_c20sagwp2",
+      "playerId": "player_1772642625317_c20sagwp2",
+      "locationId": "location_1772642705133_c64222056ec5"
+    },
+    "statusEffects": []
+  },
+  "thing_1772643143524_414c3a84438a": {
+    "id": "thing_1772643143524_414c3a84438a",
+    "name": "Traveler's Rations",
+    "description": "A wrapped bundle containing dried meat, hard biscuits, and a wedge of wax-sealed cheese. Enough sustenance for three days of delving. Type: consumable | Rarity: Common | Value: 3 | Weight: 2 | Properties: Contains 3 days of food. Essential for extended expeditions.",
+    "shortDescription": "Dried meat, hard biscuits, and wax-sealed cheese for three days.",
+    "thingType": "item",
+    "imageId": null,
+    "createdAt": "2026-03-04T16:52:23.524Z",
+    "lastUpdated": "2026-03-04T16:52:23.524Z",
+    "rarity": "Common",
+    "itemTypeDetail": "consumable",
+    "causeStatusEffect": null,
+    "level": 1,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": false,
+    "metadata": {
+      "rarity": "Common",
+      "itemType": "consumable",
+      "value": "3",
+      "weight": "2",
+      "properties": "Contains 3 days of food. Essential for extended expeditions.",
+      "relativeLevel": 0,
+      "level": 1,
+      "ownerId": "player_1772642625317_c20sagwp2",
+      "playerId": "player_1772642625317_c20sagwp2",
+      "locationId": "location_1772642705133_c64222056ec5"
+    },
+    "statusEffects": []
+  },
+  "thing_1772643663799_9b9c05058aac": {
+    "id": "thing_1772643663799_9b9c05058aac",
+    "name": "Master Faldrin's Incomplete Survey Charts",
+    "description": "A bundle of yellowed vellum sheets covered in precise cartographic notation, detailing roughly two-thirds of the Faded Halls before the ink trails off into frantic scribbles. Several passages are marked with warning symbols and question marks, and the final sheet contains a half-finished sketch of something called \"the Breathing Stair.\" Type: tool | Rarity: Uncommon | Value: 75 | Weight: 1 | Properties: Grants advantage on navigation checks within the Faded Halls; contains clues to hidden passages and secret doors | Bonuses: wisdom +2",
+    "shortDescription": "Half-finished dungeon maps with warning notations",
+    "thingType": "item",
+    "imageId": null,
+    "createdAt": "2026-03-04T17:01:03.800Z",
+    "lastUpdated": "2026-03-04T17:01:03.800Z",
+    "rarity": "Uncommon",
+    "itemTypeDetail": "tool",
+    "attributeBonuses": [
+      {
+        "attribute": "wisdom",
+        "bonus": 2
+      }
+    ],
+    "causeStatusEffect": null,
+    "level": 3,
+    "relativeLevel": 1,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": false,
+    "metadata": {
+      "rarity": "Uncommon",
+      "itemType": "tool",
+      "value": "75",
+      "weight": "1",
+      "properties": "Grants advantage on navigation checks within the Faded Halls; contains clues to hidden passages and secret doors",
+      "attributeBonuses": [
+        {
+          "attribute": "wisdom",
+          "bonus": 2
+        }
+      ],
+      "relativeLevel": 1,
+      "level": 3,
+      "ownerId": "player_1772643626135_gwr4ogjat",
+      "playerId": "player_1772643626135_gwr4ogjat",
+      "locationId": "location_1772642705140_74500ef4468b"
+    },
+    "statusEffects": []
+  },
+  "thing_1772643663800_8b13e5214b04": {
+    "id": "thing_1772643663800_8b13e5214b04",
+    "name": "Brass-Bound Map Case",
+    "description": "A cylindrical case of treated leather reinforced with brass fittings at both ends, designed to keep precious documents safe from water, mold, and the dungeon's hostile environment. The clasp sticks slightly, requiring a practiced touch to open quickly. Type: container | Slot: waist | Rarity: Common | Value: 15 | Weight: 2 | Properties: Waterproof; protects documents from environmental damage",
+    "shortDescription": "Waterproof document container with brass fittings",
+    "thingType": "item",
+    "imageId": null,
+    "createdAt": "2026-03-04T17:01:03.800Z",
+    "lastUpdated": "2026-03-04T17:01:03.800Z",
+    "rarity": "Common",
+    "itemTypeDetail": "container",
+    "slot": "waist",
+    "causeStatusEffect": null,
+    "level": 2,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": true,
+    "flags": [
+      "salvageable"
+    ],
+    "metadata": {
+      "rarity": "Common",
+      "itemType": "container",
+      "value": "15",
+      "weight": "2",
+      "properties": "Waterproof; protects documents from environmental damage",
+      "slot": "waist",
+      "relativeLevel": 0,
+      "level": 2,
+      "isSalvageable": true,
+      "ownerId": "player_1772643626135_gwr4ogjat",
+      "playerId": "player_1772643626135_gwr4ogjat",
+      "locationId": "location_1772642705140_74500ef4468b"
+    },
+    "statusEffects": []
+  },
+  "thing_1772643663800_0b2724f4205c": {
+    "id": "thing_1772643663800_0b2724f4205c",
+    "name": "Cartographer's Field Instruments",
+    "description": "A leather roll containing a brass compass, calibrated measuring cord, drafting pens, bottles of waterproof ink in three colors, and a small slate board for field notes. Each tool shows signs of frequent use but has been meticulously maintained. Type: tool | Slot: hands | Rarity: Common | Value: 25 | Weight: 3 | Properties: Required for creating accurate maps; can measure distances and angles in dungeon environments | Bonuses: intelligence +1",
+    "shortDescription": "Mapping tools with compass, pens, and measuring cord",
+    "thingType": "item",
+    "imageId": null,
+    "createdAt": "2026-03-04T17:01:03.801Z",
+    "lastUpdated": "2026-03-04T17:01:03.801Z",
+    "rarity": "Common",
+    "itemTypeDetail": "tool",
+    "slot": "hands",
+    "attributeBonuses": [
+      {
+        "attribute": "intelligence",
+        "bonus": 1
+      }
+    ],
+    "causeStatusEffect": null,
+    "level": 2,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": true,
+    "flags": [
+      "salvageable"
+    ],
+    "metadata": {
+      "rarity": "Common",
+      "itemType": "tool",
+      "value": "25",
+      "weight": "3",
+      "properties": "Required for creating accurate maps; can measure distances and angles in dungeon environments",
+      "slot": "hands",
+      "attributeBonuses": [
+        {
+          "attribute": "intelligence",
+          "bonus": 1
+        }
+      ],
+      "relativeLevel": 0,
+      "level": 2,
+      "isSalvageable": true,
+      "ownerId": "player_1772643626135_gwr4ogjat",
+      "playerId": "player_1772643626135_gwr4ogjat",
+      "locationId": "location_1772642705140_74500ef4468b"
+    },
+    "statusEffects": []
+  },
+  "thing_1772643663801_a86afcb5d329": {
+    "id": "thing_1772643663801_a86afcb5d329",
+    "name": "Thick Magnifying Spectacles",
+    "description": "Clouded lenses in wire frames that magnify the wearer's eyes to comical proportions, making their pale grey irises appear enormous. The magnification is powerful enough to read faded manuscript text or examine fine details in stonework. Type: tool | Slot: eyewear | Rarity: Common | Value: 12 | Weight: 0.25 | Properties: Grants bonus to perception checks involving fine detail; slightly impairs distant vision while worn | Bonuses: wisdom +1, charisma -1",
+    "shortDescription": "Powerful magnifying lenses for examining fine details",
+    "thingType": "item",
+    "imageId": null,
+    "createdAt": "2026-03-04T17:01:03.801Z",
+    "lastUpdated": "2026-03-04T17:01:03.801Z",
+    "rarity": "Common",
+    "itemTypeDetail": "tool",
+    "slot": "eyewear",
+    "attributeBonuses": [
+      {
+        "attribute": "wisdom",
+        "bonus": 1
+      },
+      {
+        "attribute": "charisma",
+        "bonus": -1
+      }
+    ],
+    "causeStatusEffect": null,
+    "level": 2,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": false,
+    "metadata": {
+      "rarity": "Common",
+      "itemType": "tool",
+      "value": "12",
+      "weight": "0.25",
+      "properties": "Grants bonus to perception checks involving fine detail; slightly impairs distant vision while worn",
+      "slot": "eyewear",
+      "attributeBonuses": [
+        {
+          "attribute": "wisdom",
+          "bonus": 1
+        },
+        {
+          "attribute": "charisma",
+          "bonus": -1
+        }
+      ],
+      "relativeLevel": 0,
+      "level": 2,
+      "ownerId": "player_1772643626135_gwr4ogjat",
+      "playerId": "player_1772643626135_gwr4ogjat",
+      "locationId": "location_1772642705140_74500ef4468b"
+    },
+    "statusEffects": []
+  },
+  "thing_1772643663801_b638fdc40515": {
+    "id": "thing_1772643663801_b638fdc40515",
+    "name": "Stubby Iron-Shod Staff",
+    "description": "A walking staff cut short for a small frame, its base banded with iron to grip uneven stone. The wood is worn smooth from years of nervous handling, and small notches are carved near the grip—tally marks counting something the owner prefers not to discuss. Type: weapon | Slot: hands | Rarity: Common | Value: 8 | Weight: 3 | Properties: Functions as a walking stick; iron tip useful for probing unstable ground or striking",
+    "shortDescription": "Short walking staff with iron tip",
+    "thingType": "item",
+    "imageId": null,
+    "createdAt": "2026-03-04T17:01:03.801Z",
+    "lastUpdated": "2026-03-04T17:01:03.801Z",
+    "rarity": "Common",
+    "itemTypeDetail": "weapon",
+    "slot": "hands",
+    "causeStatusEffect": null,
+    "level": 2,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": true,
+    "flags": [
+      "salvageable"
+    ],
+    "metadata": {
+      "rarity": "Common",
+      "itemType": "weapon",
+      "value": "8",
+      "weight": "3",
+      "properties": "Functions as a walking stick; iron tip useful for probing unstable ground or striking",
+      "slot": "hands",
+      "relativeLevel": 0,
+      "level": 2,
+      "isSalvageable": true,
+      "ownerId": "player_1772643626135_gwr4ogjat",
+      "playerId": "player_1772643626135_gwr4ogjat",
+      "locationId": "location_1772642705140_74500ef4468b"
+    },
+    "statusEffects": []
+  },
+  "thing_1772643733194_1be220f5e6fb": {
+    "id": "thing_1772643733194_1be220f5e6fb",
+    "name": "Vornath's Survivor Ledger",
+    "description": "A leather-bound journal filled with cramped, meticulous handwriting documenting departure times, party compositions, and return statistics. Certain entries are circled in red ink, marking routes or team configurations that resulted in zero survivors. Type: tool | Slot: hands | Rarity: Uncommon | Value: 75 | Weight: 2 | Properties: Grants advantage on checks to identify safe routes through the dungeon when consulted. Contains compiled survival data that Vornath trades selectively. | Bonuses: wisdom +2, intelligence +2",
+    "shortDescription": "Leather journal tracking dungeon survival patterns and deadly routes",
+    "thingType": "item",
+    "imageId": null,
+    "createdAt": "2026-03-04T17:02:13.194Z",
+    "lastUpdated": "2026-03-04T17:02:13.194Z",
+    "rarity": "Uncommon",
+    "itemTypeDetail": "tool",
+    "slot": "hands",
+    "attributeBonuses": [
+      {
+        "attribute": "wisdom",
+        "bonus": 2
+      },
+      {
+        "attribute": "intelligence",
+        "bonus": 2
+      }
+    ],
+    "causeStatusEffect": null,
+    "level": 6,
+    "relativeLevel": 1,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": false,
+    "metadata": {
+      "rarity": "Uncommon",
+      "itemType": "tool",
+      "value": "75",
+      "weight": "2",
+      "properties": "Grants advantage on checks to identify safe routes through the dungeon when consulted. Contains compiled survival data that Vornath trades selectively.",
+      "slot": "hands",
+      "attributeBonuses": [
+        {
+          "attribute": "wisdom",
+          "bonus": 2
+        },
+        {
+          "attribute": "intelligence",
+          "bonus": 2
+        }
+      ],
+      "relativeLevel": 1,
+      "level": 6,
+      "ownerId": "player_1772643709321_gx5y8yfn5",
+      "playerId": "player_1772643709321_gx5y8yfn5",
+      "locationId": "location_1772643622937_84323546b005"
+    },
+    "statusEffects": []
+  },
+  "thing_1772643733194_f3a837fe9687": {
+    "id": "thing_1772643733194_f3a837fe9687",
+    "name": "Vornath's Duty Crossbow",
+    "description": "A sturdy, well-maintained crossbow with reinforced arms and a hair-trigger mechanism. The stock bears dozens of tally marks scratched into the wood—a grim count of warnings issued to those who threatened the checkpoint's fragile peace. Type: weapon | Slot: hands | Rarity: Common | Value: 45 | Weight: 6 | Properties: Reliable and easy to maintain. Vornath keeps it loaded but uncocked at all times. | Bonuses: dexterity +2",
+    "shortDescription": "Sturdy crossbow marked with tallies of warnings issued",
+    "thingType": "item",
+    "imageId": null,
+    "createdAt": "2026-03-04T17:02:13.194Z",
+    "lastUpdated": "2026-03-04T17:02:19.106Z",
+    "rarity": "Common",
+    "itemTypeDetail": "weapon",
+    "slot": "hands",
+    "attributeBonuses": [
+      {
+        "attribute": "dexterity",
+        "bonus": 2
+      }
+    ],
+    "causeStatusEffect": null,
+    "level": 5,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": true,
+    "flags": [
+      "salvageable"
+    ],
+    "metadata": {
+      "rarity": "Common",
+      "itemType": "weapon",
+      "value": "45",
+      "weight": "6",
+      "properties": "Reliable and easy to maintain. Vornath keeps it loaded but uncocked at all times.",
+      "slot": "hands",
+      "attributeBonuses": [
+        {
+          "attribute": "dexterity",
+          "bonus": 2
+        }
+      ],
+      "relativeLevel": 0,
+      "level": 5,
+      "isSalvageable": true,
+      "ownerId": "player_1772643709321_gx5y8yfn5",
+      "playerId": "player_1772643709321_gx5y8yfn5",
+      "locationId": "location_1772643622937_84323546b005"
+    },
+    "statusEffects": []
+  },
+  "thing_1772643733194_e6e72b969785": {
+    "id": "thing_1772643733194_e6e72b969785",
+    "name": "Stained Guild Tabard",
+    "description": "A once-crimson tabard now faded to dull rust, embroidered with the Adventurer's Guild crest over chainmail. Old stains from blood, mud, and cheaper ale have proven impossible to remove, giving the garment a lived-in appearance. Type: armor | Slot: body | Rarity: Common | Value: 20 | Weight: 4 | Properties: Identifies wearer as Guild-affiliated. Provides basic protection and authority at official checkpoints.",
+    "shortDescription": "Faded Guild tabard worn over chainmail with old stains",
+    "thingType": "item",
+    "imageId": null,
+    "createdAt": "2026-03-04T17:02:13.194Z",
+    "lastUpdated": "2026-03-04T17:02:13.195Z",
+    "rarity": "Common",
+    "itemTypeDetail": "armor",
+    "slot": "body",
+    "causeStatusEffect": null,
+    "level": 5,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": true,
+    "flags": [
+      "salvageable"
+    ],
+    "metadata": {
+      "rarity": "Common",
+      "itemType": "armor",
+      "value": "20",
+      "weight": "4",
+      "properties": "Identifies wearer as Guild-affiliated. Provides basic protection and authority at official checkpoints.",
+      "slot": "body",
+      "relativeLevel": 0,
+      "level": 5,
+      "isSalvageable": true,
+      "ownerId": "player_1772643709321_gx5y8yfn5",
+      "playerId": "player_1772643709321_gx5y8yfn5",
+      "locationId": "location_1772643622937_84323546b005"
+    },
+    "statusEffects": []
+  },
+  "thing_1772643733195_67a3238e766b": {
+    "id": "thing_1772643733195_67a3238e766b",
+    "name": "Chained Registration Ledger",
+    "description": "A massive tome secured to the checkpoint desk by a heavy iron chain, its pages yellowed and water-damaged from years of exposure to the dungeon's exhaled mist. Adventurers are required to log their names, intended routes, and expected return dates—entries that go largely unread. Type: tool | Rarity: Junk | Value: 5 | Weight: 15 | Properties: Required registration point for dungeon expeditions. Too heavy and well-secured to be easily stolen.",
+    "shortDescription": "Heavy chained ledger for expedition registration",
+    "thingType": "item",
+    "imageId": null,
+    "createdAt": "2026-03-04T17:02:13.195Z",
+    "lastUpdated": "2026-03-04T17:02:13.195Z",
+    "rarity": "Junk",
+    "itemTypeDetail": "tool",
+    "causeStatusEffect": null,
+    "level": 5,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": false,
+    "metadata": {
+      "rarity": "Junk",
+      "itemType": "tool",
+      "value": "5",
+      "weight": "15",
+      "properties": "Required registration point for dungeon expeditions. Too heavy and well-secured to be easily stolen.",
+      "relativeLevel": 0,
+      "level": 5,
+      "ownerId": "player_1772643709321_gx5y8yfn5",
+      "playerId": "player_1772643709321_gx5y8yfn5",
+      "locationId": "location_1772643622937_84323546b005"
+    },
+    "statusEffects": []
+  },
+  "thing_1772643738593_1692727cd4b9": {
+    "id": "thing_1772643738593_1692727cd4b9",
+    "name": "Twilight Mold Phial",
+    "description": "A thumb-sized glass Twilight Mold Phial containing a small colony of luminescent mold harvested from the Twilight Depths, its soft blue-green glow pulses faintly through the cork stopper. When exposed to air and moisture, the spores rapidly colonize organic surfaces, making them valuable for marking paths or creating distractions in the dungeon's darkness. Type: consumable | Rarity: Uncommon | Value: 45 | Weight: 0.1 | Status Effect: Target: Glowing Trail - The target area becomes faintly luminescent, leaving a visible trail that persists for hours and marks the path for others to follow. | Properties: Can be used to mark paths in darkness; slowly replenishes its spores if kept in a damp, dark environment",
+    "shortDescription": "Bioluminescent fungus spores in a sealed vial",
+    "thingType": "item",
+    "imageId": null,
+    "createdAt": "2026-03-04T17:02:18.593Z",
+    "lastUpdated": "2026-03-04T17:02:28.067Z",
+    "rarity": "Uncommon",
+    "itemTypeDetail": "consumable",
+    "causeStatusEffectOnTarget": {
+      "name": "Glowing Trail",
+      "description": "A phosphorescent trail marks the passage of those affected, shedding faint light and making stealth nearly impossible while illuminating the path ahead.",
+      "attributes": [
+        {
+          "attribute": "charisma",
+          "modifier": -4
+        }
+      ],
+      "skills": [
+        {
+          "skill": "Stealth",
+          "modifier": -8
+        },
+        {
+          "skill": "Dungeoneering",
+          "modifier": 6
+        },
+        {
+          "skill": "Perception",
+          "modifier": 3
+        }
+      ],
+      "needBars": [
+        {
+          "name": "Mana",
+          "delta": -1
+        }
+      ],
+      "duration": 240,
+      "appliedAt": null
+    },
+    "causeStatusEffect": {
+      "name": "Glowing Trail",
+      "description": "A phosphorescent trail marks the passage of those affected, shedding faint light and making stealth nearly impossible while illuminating the path ahead.",
+      "attributes": [
+        {
+          "attribute": "charisma",
+          "modifier": -4
+        }
+      ],
+      "skills": [
+        {
+          "skill": "Stealth",
+          "modifier": -8
+        },
+        {
+          "skill": "Dungeoneering",
+          "modifier": 6
+        },
+        {
+          "skill": "Perception",
+          "modifier": 3
+        }
+      ],
+      "needBars": [
+        {
+          "name": "Mana",
+          "delta": -1
+        }
+      ],
+      "duration": 240,
+      "appliedAt": null,
+      "applyToTarget": true,
+      "applyToEquipper": false
+    },
+    "level": 6,
+    "relativeLevel": 1,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": false,
+    "metadata": {
+      "rarity": "Uncommon",
+      "itemType": "consumable",
+      "value": "45",
+      "weight": "0.1",
+      "properties": "Can be used to mark paths in darkness; slowly replenishes its spores if kept in a damp, dark environment",
+      "causeStatusEffectOnTarget": {
+        "name": "Glowing Trail",
+        "description": "A phosphorescent trail marks the passage of those affected, shedding faint light and making stealth nearly impossible while illuminating the path ahead.",
+        "attributes": [
+          {
+            "attribute": "charisma",
+            "modifier": -4
+          }
+        ],
+        "skills": [
+          {
+            "skill": "Stealth",
+            "modifier": -8
+          },
+          {
+            "skill": "Dungeoneering",
+            "modifier": 6
+          },
+          {
+            "skill": "Perception",
+            "modifier": 3
+          }
+        ],
+        "needBars": [
+          {
+            "name": "Mana",
+            "delta": -1
+          }
+        ],
+        "duration": 240,
+        "appliedAt": null
+      },
+      "relativeLevel": 1,
+      "level": 6,
+      "ownerId": "player_1772643709322_0b01l9oqi",
+      "playerId": "player_1772643709322_0b01l9oqi",
+      "locationId": "location_1772643622936_675966334234"
+    },
+    "statusEffects": []
+  },
+  "thing_1772643738600_a7c02adba660": {
+    "id": "thing_1772643738600_a7c02adba660",
+    "name": "Sporekeeper's Gloves",
+    "description": "Thin leather gloves stained with faded streaks of blue and green, their fingertips reinforced with treated silk that allows precise handling of delicate fungal specimens without contamination. The palm contains a hidden pocket designed to hold a single dose of powdered reagent for quick application. Type: armor | Slot: gloves | Rarity: Uncommon | Value: 120 | Weight: 0.5 | Properties: Hidden palm pocket holds one dose of powdered reagent; provides resistance to contact poisons and irritating spores | Bonuses: dexterity +2, intelligence +2",
+    "shortDescription": "Alchemist's leather gloves with hidden reagent pocket",
+    "thingType": "item",
+    "imageId": null,
+    "createdAt": "2026-03-04T17:02:18.600Z",
+    "lastUpdated": "2026-03-04T17:02:18.600Z",
+    "rarity": "Uncommon",
+    "itemTypeDetail": "armor",
+    "slot": "gloves",
+    "attributeBonuses": [
+      {
+        "attribute": "dexterity",
+        "bonus": 2
+      },
+      {
+        "attribute": "intelligence",
+        "bonus": 2
+      }
+    ],
+    "causeStatusEffect": null,
+    "level": 6,
+    "relativeLevel": 1,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": true,
+    "flags": [
+      "salvageable"
+    ],
+    "metadata": {
+      "rarity": "Uncommon",
+      "itemType": "armor",
+      "value": "120",
+      "weight": "0.5",
+      "properties": "Hidden palm pocket holds one dose of powdered reagent; provides resistance to contact poisons and irritating spores",
+      "slot": "gloves",
+      "attributeBonuses": [
+        {
+          "attribute": "dexterity",
+          "bonus": 2
+        },
+        {
+          "attribute": "intelligence",
+          "bonus": 2
+        }
+      ],
+      "relativeLevel": 1,
+      "level": 6,
+      "isSalvageable": true,
+      "ownerId": "player_1772643709322_0b01l9oqi",
+      "playerId": "player_1772643709322_0b01l9oqi",
+      "locationId": "location_1772643622936_675966334234"
+    },
+    "statusEffects": []
+  },
+  "thing_1772643738600_7e12a195cca1": {
+    "id": "thing_1772643738600_7e12a195cca1",
+    "name": "Draught of Clear Lungs",
+    "description": "A bitter-tasting liquid in a ceramic flask, this remedy coats the throat and lungs with a protective film that neutralizes inhaled toxins and spores before they can take hold. Ithelwen brews fresh batches weekly, though she keeps a few older vials set aside for customers she suspects won't return. Type: consumable | Rarity: Common | Value: 25 | Weight: 0.3 | Status Effect: Equipper: Spore Resistance - Grants temporary immunity to inhaled poisons, spores, and noxious gases for the duration. | Properties: Duration: 1 hour; stale batches have reduced effectiveness but are sold at full price to the unwary",
+    "shortDescription": "Protects against inhaled toxins and dungeon spores",
+    "thingType": "item",
+    "imageId": null,
+    "createdAt": "2026-03-04T17:02:18.601Z",
+    "lastUpdated": "2026-03-04T17:02:27.917Z",
+    "rarity": "Common",
+    "itemTypeDetail": "consumable",
+    "causeStatusEffectOnEquipper": {
+      "name": "Spore Resistance",
+      "description": "A protective barrier coats the lungs and throat, rendering breathing safe even in the most toxic fungal chambers or gas-filled corridors of the Twilight Depths.",
+      "attributes": [
+        {
+          "attribute": "constitution",
+          "modifier": 5
+        }
+      ],
+      "skills": [
+        {
+          "skill": "Survival",
+          "modifier": 4
+        },
+        {
+          "skill": "Dungeoneering",
+          "modifier": 3
+        }
+      ],
+      "needBars": [],
+      "duration": 60,
+      "appliedAt": null
+    },
+    "causeStatusEffect": {
+      "name": "Spore Resistance",
+      "description": "A protective barrier coats the lungs and throat, rendering breathing safe even in the most toxic fungal chambers or gas-filled corridors of the Twilight Depths.",
+      "attributes": [
+        {
+          "attribute": "constitution",
+          "modifier": 5
+        }
+      ],
+      "skills": [
+        {
+          "skill": "Survival",
+          "modifier": 4
+        },
+        {
+          "skill": "Dungeoneering",
+          "modifier": 3
+        }
+      ],
+      "needBars": [],
+      "duration": 60,
+      "appliedAt": null,
+      "applyToTarget": false,
+      "applyToEquipper": true
+    },
+    "level": 5,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": false,
+    "metadata": {
+      "rarity": "Common",
+      "itemType": "consumable",
+      "value": "25",
+      "weight": "0.3",
+      "properties": "Duration: 1 hour; stale batches have reduced effectiveness but are sold at full price to the unwary",
+      "causeStatusEffectOnEquipper": {
+        "name": "Spore Resistance",
+        "description": "A protective barrier coats the lungs and throat, rendering breathing safe even in the most toxic fungal chambers or gas-filled corridors of the Twilight Depths.",
+        "attributes": [
+          {
+            "attribute": "constitution",
+            "modifier": 5
+          }
+        ],
+        "skills": [
+          {
+            "skill": "Survival",
+            "modifier": 4
+          },
+          {
+            "skill": "Dungeoneering",
+            "modifier": 3
+          }
+        ],
+        "needBars": [],
+        "duration": 60,
+        "appliedAt": null
+      },
+      "relativeLevel": 0,
+      "level": 5,
+      "ownerId": "player_1772643709322_0b01l9oqi",
+      "playerId": "player_1772643709322_0b01l9oqi",
+      "locationId": "location_1772643622936_675966334234"
+    },
+    "statusEffects": []
+  },
+  "thing_1772643738606_ac0721505c2e": {
+    "id": "thing_1772643738606_ac0721505c2e",
+    "name": "Preserved Corpsecap Mushroom",
+    "description": "A squat, dun-colored mushroom suspended in amber liquid within a rounded glass jar, harvested from the decaying matter of undead creatures in the lower strata. The specimen is carefully preserved for alchemical use, retaining its unique properties that allow it to absorb and neutralize small amounts of necrotic energy. Type: reagent | Rarity: Rare | Value: 180 | Weight: 1 | Properties: Essential component for potions of necrotic resistance; a single specimen yields 2-3 doses when properly processed | Bonuses: wisdom +3",
+    "shortDescription": "Rare mushroom for necrotic resistance potions",
+    "thingType": "item",
+    "imageId": null,
+    "createdAt": "2026-03-04T17:02:18.606Z",
+    "lastUpdated": "2026-03-04T17:02:18.606Z",
+    "rarity": "Rare",
+    "itemTypeDetail": "reagent",
+    "attributeBonuses": [
+      {
+        "attribute": "wisdom",
+        "bonus": 3
+      }
+    ],
+    "causeStatusEffect": null,
+    "level": 7,
+    "relativeLevel": 2,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": false,
+    "metadata": {
+      "rarity": "Rare",
+      "itemType": "reagent",
+      "value": "180",
+      "weight": "1",
+      "properties": "Essential component for potions of necrotic resistance; a single specimen yields 2-3 doses when properly processed",
+      "attributeBonuses": [
+        {
+          "attribute": "wisdom",
+          "bonus": 3
+        }
+      ],
+      "relativeLevel": 2,
+      "level": 7,
+      "ownerId": "player_1772643709322_0b01l9oqi",
+      "playerId": "player_1772643709322_0b01l9oqi",
+      "locationId": "location_1772643622936_675966334234"
+    },
+    "statusEffects": []
+  },
+  "thing_1772643830403_a47de85fb422": {
+    "id": "thing_1772643830403_a47de85fb422",
+    "name": "Chalk Marked Warning Stone",
+    "description": "A river-smooth stone painted with crude chalk markings—a skull and arrow pointing downward—left by a previous adventuring party to warn others of a trap or danger they encountered in the Faded Halls.",
+    "shortDescription": "River stone with chalk skull marking warning of danger",
+    "thingType": "item",
+    "imageId": "img_20260304_170935_uy8yj1fh",
+    "createdAt": "2026-03-04T17:03:50.403Z",
+    "lastUpdated": "2026-03-04T17:09:49.794Z",
+    "rarity": "Common",
+    "itemTypeDetail": "tool",
+    "causeStatusEffect": null,
+    "level": 2,
+    "relativeLevel": -1,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": false,
+    "metadata": {
+      "locationId": "location_1772643622936_675966334234",
+      "locationName": "Last Chance Market",
+      "value": "2",
+      "weight": "1",
+      "properties": "Can be left as a marker for others to find; may contain useful information about dungeon hazards",
+      "relativeLevel": -1,
+      "level": 2
+    },
+    "statusEffects": []
+  },
+  "thing_1772643830403_1e09fd8e7e50": {
+    "id": "thing_1772643830403_1e09fd8e7e50",
+    "name": "Dried Mushroom Jerky Strip",
+    "description": "A tough, leathery strip of salted dungeon mushroom sold by a vendor who insists it's \"better than it smells.\" The chewy provision provides surprisingly decent sustenance for those who can stomach its earthy, slightly bitter taste.",
+    "shortDescription": "Chewy salted mushroom strip for dungeon sustenance",
+    "thingType": "item",
+    "imageId": "img_20260304_170949_cypui6wc",
+    "createdAt": "2026-03-04T17:03:50.403Z",
+    "lastUpdated": "2026-03-04T17:10:04.134Z",
+    "rarity": "Common",
+    "itemTypeDetail": "consumable",
+    "causeStatusEffect": null,
+    "level": 3,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": false,
+    "metadata": {
+      "locationId": "location_1772643622936_675966334234",
+      "locationName": "Last Chance Market",
+      "value": "3",
+      "weight": "0.2",
+      "properties": "Restores minor stamina; lasts longer than fresh provisions without spoiling",
+      "relativeLevel": 0,
+      "level": 3
+    },
+    "statusEffects": []
+  },
+  "thing_1772643830403_b54fa13431fa": {
+    "id": "thing_1772643830403_b54fa13431fa",
+    "name": "Cracked Memorial Stele",
+    "description": "A weathered stone slab set into the retaining wall, its surface covered with dozens of carved names—adventurers who entered the labyrinth and never returned. Fresh chalk X's mark those recently confirmed dead, while faded names slowly erode into illegibility.",
+    "shortDescription": "Stone memorial wall carved with names of lost adventurers",
+    "thingType": "scenery",
+    "imageId": "img_20260304_170920_3yn5r59f",
+    "createdAt": "2026-03-04T17:03:50.403Z",
+    "lastUpdated": "2026-03-04T17:09:35.055Z",
+    "rarity": "Common",
+    "itemTypeDetail": "monument",
+    "causeStatusEffect": null,
+    "level": 3,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": false,
+    "metadata": {
+      "locationId": "location_1772643622936_675966334234",
+      "locationName": "Last Chance Market",
+      "value": "N/A",
+      "weight": "800",
+      "properties": "Can be examined to learn the names of fallen adventurers; locals sometimes leave coins or flowers at its base",
+      "relativeLevel": 0,
+      "level": 3
+    },
+    "statusEffects": []
+  },
+  "thing_1772643830404_a6db85798c29": {
+    "id": "thing_1772643830404_a6db85798c29",
+    "name": "Merchant's Collapsible Stall Frame",
+    "description": "A cleverly jointed wooden framework that unfolds into a serviceable market stall, its canvas awning faded but still functional. The merchant who owns it has carved protective sigils into the legs—superstition, perhaps, but the stall has survived three seasons at the dungeon's mouth.",
+    "shortDescription": "Jointed wooden stall frame with protective carved sigils",
+    "thingType": "scenery",
+    "imageId": "img_20260304_170908_tdcp9fsi",
+    "createdAt": "2026-03-04T17:03:50.404Z",
+    "lastUpdated": "2026-03-04T17:09:20.897Z",
+    "rarity": "Uncommon",
+    "itemTypeDetail": "furniture",
+    "causeStatusEffect": null,
+    "level": 4,
+    "relativeLevel": 1,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": true,
+    "flags": [
+      "salvageable"
+    ],
+    "metadata": {
+      "locationId": "location_1772643622936_675966334234",
+      "locationName": "Last Chance Market",
+      "value": "75",
+      "weight": "120",
+      "properties": "Provides shelter from weather; the protective sigils may offer minor resistance against dungeon-born miasmas",
+      "relativeLevel": 1,
+      "isSalvageable": true,
+      "level": 4
+    },
+    "statusEffects": []
+  },
+  "thing_1772643830404_bcfa51c1d5e1": {
+    "id": "thing_1772643830404_bcfa51c1d5e1",
+    "name": "Despairing Beggar's Shrine",
+    "description": "A small niche hollowed into the crumbling brick wall, filled with melted candle stubs, faded silk ribbons, and a crude clay figurine representing some saint of lost causes. The hollow-eyed woman maintains it meticulously, though her prayers seem to go unanswered.",
+    "shortDescription": "Niche shrine with candles and figurine for lost causes",
+    "thingType": "scenery",
+    "imageId": "img_20260304_171004_lolbgwnp",
+    "createdAt": "2026-03-04T17:03:50.404Z",
+    "lastUpdated": "2026-03-04T17:10:18.288Z",
+    "rarity": "Uncommon",
+    "itemTypeDetail": "monument",
+    "causeStatusEffect": null,
+    "level": 4,
+    "relativeLevel": 1,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": true,
+    "isSalvageable": false,
+    "flags": [
+      "harvestable"
+    ],
+    "metadata": {
+      "locationId": "location_1772643622936_675966334234",
+      "locationName": "Last Chance Market",
+      "value": "N/A",
+      "weight": "200",
+      "properties": "Can be harvested for candle stubs or ribbons; leaving an offering may grant a minor blessing or information from the woman",
+      "relativeLevel": 1,
+      "isHarvestable": true,
+      "level": 4
+    },
+    "statusEffects": []
+  },
+  "thing_1772643949100_f7aaa7bd81e3": {
+    "id": "thing_1772643949100_f7aaa7bd81e3",
+    "name": "Notched Iron Longsword",
+    "description": "A serviceable blade recovered from the Faded Halls, its edge marred by goblin teeth marks and what looks uncomfortably like old bloodstains that never quite scrubbed out. Holt insists the notches give it \"character\" and has priced it accordingly. Type: weapon | Slot: hands | Rarity: Common | Value: 35 | Weight: 3 | Properties: Bloodstained: Previous owner met a violent end",
+    "shortDescription": "Worn blade with mysterious stains and notched edge",
+    "thingType": "item",
+    "imageId": null,
+    "createdAt": "2026-03-04T17:05:49.100Z",
+    "lastUpdated": "2026-03-04T17:05:49.100Z",
+    "rarity": "Common",
+    "itemTypeDetail": "weapon",
+    "slot": "hands",
+    "causeStatusEffect": null,
+    "level": 3,
+    "relativeLevel": -1,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": true,
+    "flags": [
+      "salvageable"
+    ],
+    "metadata": {
+      "rarity": "Common",
+      "itemType": "weapon",
+      "value": "35",
+      "weight": "3",
+      "properties": "Bloodstained: Previous owner met a violent end",
+      "slot": "hands",
+      "relativeLevel": -1,
+      "level": 3,
+      "isSalvageable": true,
+      "ownerId": "player_1772643929499_ij33h5ivb",
+      "playerId": "player_1772643929499_ij33h5ivb",
+      "locationId": "location_1772643622936_675966334234"
+    },
+    "statusEffects": []
+  },
+  "thing_1772643949100_0d7f8e56a243": {
+    "id": "thing_1772643949100_0d7f8e56a243",
+    "name": "Reinforced Leather Gambeson",
+    "description": "A quilted defense of boiled leather and padded cloth, stitched with iron rings at the vital points. The previous owner's initials are clumsily crossed out on the collar, and a lucky rabbit's foot still dangles from one shoulder strap. Type: armor | Slot: body | Rarity: Common | Value: 65 | Weight: 8 | Properties: Lucky charm attached, previous owner's marks crossed out",
+    "shortDescription": "Padded leather armor with iron ring reinforcement",
+    "thingType": "item",
+    "imageId": null,
+    "createdAt": "2026-03-04T17:05:49.100Z",
+    "lastUpdated": "2026-03-04T17:05:49.100Z",
+    "rarity": "Common",
+    "itemTypeDetail": "armor",
+    "slot": "body",
+    "causeStatusEffect": null,
+    "level": 4,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": true,
+    "flags": [
+      "salvageable"
+    ],
+    "metadata": {
+      "rarity": "Common",
+      "itemType": "armor",
+      "value": "65",
+      "weight": "8",
+      "properties": "Lucky charm attached, previous owner's marks crossed out",
+      "slot": "body",
+      "relativeLevel": 0,
+      "level": 4,
+      "isSalvageable": true,
+      "ownerId": "player_1772643929499_ij33h5ivb",
+      "playerId": "player_1772643929499_ij33h5ivb",
+      "locationId": "location_1772643622936_675966334234"
+    },
+    "statusEffects": []
+  },
+  "thing_1772643949100_cc2a8094efe5": {
+    "id": "thing_1772643949100_cc2a8094efe5",
+    "name": "Merchant's Assessment Ledger",
+    "description": "A water-stained book filled with Holt's cramped handwriting documenting purchase prices, sale prices, and terse notes like \"didn't ask\" and \"sold as-is.\" The back pages contain a running tally of debts owed by various adventurers—several names have been crossed out with finality. Type: tool | Rarity: Common | Value: 5 | Weight: 1 | Properties: Contains records of transactions and debts",
+    "shortDescription": "Water-damaged ledger tracking prices and debts",
+    "thingType": "item",
+    "imageId": null,
+    "createdAt": "2026-03-04T17:05:49.100Z",
+    "lastUpdated": "2026-03-04T17:05:49.101Z",
+    "rarity": "Common",
+    "itemTypeDetail": "tool",
+    "causeStatusEffect": null,
+    "level": 4,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": false,
+    "metadata": {
+      "rarity": "Common",
+      "itemType": "tool",
+      "value": "5",
+      "weight": "1",
+      "properties": "Contains records of transactions and debts",
+      "relativeLevel": 0,
+      "level": 4,
+      "ownerId": "player_1772643929499_ij33h5ivb",
+      "playerId": "player_1772643929499_ij33h5ivb",
+      "locationId": "location_1772643622936_675966334234"
+    },
+    "statusEffects": []
+  },
+  "thing_1772643949101_ae68998890ca": {
+    "id": "thing_1772643949101_ae68998890ca",
+    "name": "Portable Grinding Wheel",
+    "description": "A compact sharpening stone mounted on a folding wooden frame with a foot pedal mechanism. Holt uses this to touch up blades between sales, though the stone itself is worn concave from years of restoring edges to weapons that have seen better days. Type: tool | Rarity: Common | Value: 40 | Weight: 25 | Properties: Can sharpen and maintain bladed weapons",
+    "shortDescription": "Folding sharpening stone for blade maintenance",
+    "thingType": "item",
+    "imageId": null,
+    "createdAt": "2026-03-04T17:05:49.101Z",
+    "lastUpdated": "2026-03-04T17:05:49.101Z",
+    "rarity": "Common",
+    "itemTypeDetail": "tool",
+    "causeStatusEffect": null,
+    "level": 4,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": true,
+    "flags": [
+      "salvageable"
+    ],
+    "metadata": {
+      "rarity": "Common",
+      "itemType": "tool",
+      "value": "40",
+      "weight": "25",
+      "properties": "Can sharpen and maintain bladed weapons",
+      "relativeLevel": 0,
+      "level": 4,
+      "isSalvageable": true,
+      "ownerId": "player_1772643929499_ij33h5ivb",
+      "playerId": "player_1772643929499_ij33h5ivb",
+      "locationId": "location_1772643622936_675966334234"
+    },
+    "statusEffects": []
+  },
+  "thing_1772643955561_e30c9fcf5ff3": {
+    "id": "thing_1772643955561_e30c9fcf5ff3",
+    "name": "Brunhilda's Seasoned Iron Pot",
+    "description": "A heavy cast-iron cooking pot blackened by decades of cook-fires, its interior seasoned to a mirror sheen. The enchanted iron distributes heat perfectly, ensuring nothing burns—even when its owner gets to telling one of her stories. Type: tool | Slot: hands | Rarity: Uncommon | Value: 45 | Weight: 12 | Properties: Never burns food; keeps meals warm for 6 hours | Bonuses: constitution +2",
+    "shortDescription": "Well-seasoned iron cooking pot, never burns food",
+    "thingType": "item",
+    "imageId": null,
+    "createdAt": "2026-03-04T17:05:55.561Z",
+    "lastUpdated": "2026-03-04T17:05:55.562Z",
+    "rarity": "Uncommon",
+    "itemTypeDetail": "tool",
+    "slot": "hands",
+    "attributeBonuses": [
+      {
+        "attribute": "constitution",
+        "bonus": 2
+      }
+    ],
+    "causeStatusEffect": null,
+    "level": 6,
+    "relativeLevel": 1,
+    "isVehicle": false,
+    "isCraftingStation": true,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": true,
+    "flags": [
+      "crafting station",
+      "salvageable"
+    ],
+    "metadata": {
+      "rarity": "Uncommon",
+      "itemType": "tool",
+      "value": "45",
+      "weight": "12",
+      "properties": "Never burns food; keeps meals warm for 6 hours",
+      "slot": "hands",
+      "attributeBonuses": [
+        {
+          "attribute": "constitution",
+          "bonus": 2
+        }
+      ],
+      "relativeLevel": 1,
+      "level": 6,
+      "isCraftingStation": true,
+      "isSalvageable": true,
+      "ownerId": "player_1772643929500_1za4ecx7i",
+      "playerId": "player_1772643929500_1za4ecx7i",
+      "locationId": "location_1772643622936_675966334234"
+    },
+    "statusEffects": []
+  },
+  "thing_1772643955562_5ac206a60433": {
+    "id": "thing_1772643955562_5ac206a60433",
+    "name": "Stirring Spoon of the Deepdelver Clan",
+    "description": "A worn wooden spoon carved from underground ironwood, its handle etched with dwarven runes marking generations of use. The runes glow faintly when the spoon detects poison or spoilage in food—a practical safeguard from a practical people. Type: tool | Slot: hands | Rarity: Common | Value: 15 | Weight: 1 | Properties: Glowing runes detect poison or spoiled food",
+    "shortDescription": "Runed wooden spoon that detects poison and spoilage",
+    "thingType": "item",
+    "imageId": null,
+    "createdAt": "2026-03-04T17:05:55.562Z",
+    "lastUpdated": "2026-03-04T17:05:55.562Z",
+    "rarity": "Common",
+    "itemTypeDetail": "tool",
+    "slot": "hands",
+    "causeStatusEffect": null,
+    "level": 5,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": true,
+    "flags": [
+      "salvageable"
+    ],
+    "metadata": {
+      "rarity": "Common",
+      "itemType": "tool",
+      "value": "15",
+      "weight": "1",
+      "properties": "Glowing runes detect poison or spoiled food",
+      "slot": "hands",
+      "relativeLevel": 0,
+      "level": 5,
+      "isSalvageable": true,
+      "ownerId": "player_1772643929500_1za4ecx7i",
+      "playerId": "player_1772643929500_1za4ecx7i",
+      "locationId": "location_1772643622936_675966334234"
+    },
+    "statusEffects": []
+  },
+  "thing_1772643955562_fd2f98829c62": {
+    "id": "thing_1772643955562_fd2f98829c62",
+    "name": "Delver's Luck Pendant",
+    "description": "A tarnished brass locket containing a tiny portrait of a dwarf with kind eyes and a braided beard. It smells faintly of pipe smoke and something unmentionable—a keepsake from Brunhilda's delving days, worn smooth by nervous fingers. Type: accessory | Slot: neck | Rarity: Common | Value: 20 | Weight: 0 | Properties: Once per day, wearer may reroll a single saving throw | Bonuses: wisdom +2",
+    "shortDescription": "Sentimental brass locket, grants luck in danger",
+    "thingType": "item",
+    "imageId": null,
+    "createdAt": "2026-03-04T17:05:55.562Z",
+    "lastUpdated": "2026-03-04T17:05:55.562Z",
+    "rarity": "Common",
+    "itemTypeDetail": "accessory",
+    "slot": "neck",
+    "attributeBonuses": [
+      {
+        "attribute": "wisdom",
+        "bonus": 2
+      }
+    ],
+    "causeStatusEffect": null,
+    "level": 5,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": true,
+    "flags": [
+      "salvageable"
+    ],
+    "metadata": {
+      "rarity": "Common",
+      "itemType": "accessory",
+      "value": "20",
+      "weight": "0",
+      "properties": "Once per day, wearer may reroll a single saving throw",
+      "slot": "neck",
+      "attributeBonuses": [
+        {
+          "attribute": "wisdom",
+          "bonus": 2
+        }
+      ],
+      "relativeLevel": 0,
+      "level": 5,
+      "isSalvageable": true,
+      "ownerId": "player_1772643929500_1za4ecx7i",
+      "playerId": "player_1772643929500_1za4ecx7i",
+      "locationId": "location_1772643622936_675966334234"
+    },
+    "statusEffects": []
+  },
+  "thing_1772643955563_ff3226ef06d8": {
+    "id": "thing_1772643955563_ff3226ef06d8",
+    "name": "Field Kitchen Workstation",
+    "description": "A collapsible wooden frame fitted with hooks for pots, a built-in cutting board, and drawers for spices and utensils. Brunhilda can set it up or break it down in minutes, though the years have added a few extra creaks to its joints. Type: furniture | Rarity: Common | Value: 35 | Weight: 45 | Properties: Collapsible; provides bonuses to cooking-related checks",
+    "shortDescription": "Collapsible outdoor kitchen with hooks and drawers",
+    "thingType": "item",
+    "imageId": null,
+    "createdAt": "2026-03-04T17:05:55.563Z",
+    "lastUpdated": "2026-03-04T17:05:55.563Z",
+    "rarity": "Common",
+    "itemTypeDetail": "furniture",
+    "causeStatusEffect": null,
+    "level": 5,
+    "isVehicle": false,
+    "isCraftingStation": true,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": true,
+    "flags": [
+      "crafting station",
+      "salvageable"
+    ],
+    "metadata": {
+      "rarity": "Common",
+      "itemType": "furniture",
+      "value": "35",
+      "weight": "45",
+      "properties": "Collapsible; provides bonuses to cooking-related checks",
+      "relativeLevel": 0,
+      "level": 5,
+      "isCraftingStation": true,
+      "isSalvageable": true,
+      "ownerId": "player_1772643929500_1za4ecx7i",
+      "playerId": "player_1772643929500_1za4ecx7i",
+      "locationId": "location_1772643622936_675966334234"
+    },
+    "statusEffects": []
+  },
+  "thing_1772643964868_600dc07cceab": {
+    "id": "thing_1772643964868_600dc07cceab",
+    "name": "Iron-knuckled Enforcer's Gauntlets",
+    "description": "These heavy leather gauntlets are reinforced with iron plates across the knuckles and palms, designed for delivering bone-cracking blows while protecting the wearer's hands. Scuff marks and dried blood testify to their frequent use in pacifying unruly patrons. Type: armor | Slot: gloves | Rarity: Uncommon | Value: 85 | Weight: 3 | Status Effect: Target: Dazed - A concussive blow leaves the target momentarily disoriented, causing them to stumble and struggle to focus their thoughts or coordinate their movements. | Properties: Increases unarmed damage; provides minor protection when parrying | Bonuses: strength +2, dexterity -2",
+    "shortDescription": "Reinforced leather gauntlets with iron knuckles for subduing troublemakers",
+    "thingType": "item",
+    "imageId": null,
+    "createdAt": "2026-03-04T17:06:04.868Z",
+    "lastUpdated": "2026-03-04T17:06:14.722Z",
+    "rarity": "Uncommon",
+    "itemTypeDetail": "armor",
+    "slot": "gloves",
+    "attributeBonuses": [
+      {
+        "attribute": "strength",
+        "bonus": 2
+      },
+      {
+        "attribute": "dexterity",
+        "bonus": -2
+      }
+    ],
+    "causeStatusEffectOnTarget": {
+      "name": "Dazed",
+      "description": "Ears ring and vision swims after a powerful impact. Thoughts come slowly and limbs feel disconnected, making precise actions difficult and reactions sluggish.",
+      "attributes": [
+        {
+          "attribute": "dexterity",
+          "modifier": -6
+        },
+        {
+          "attribute": "intelligence",
+          "modifier": -4
+        }
+      ],
+      "skills": [
+        {
+          "skill": "Dodge",
+          "modifier": -7
+        },
+        {
+          "skill": "Perception",
+          "modifier": -5
+        },
+        {
+          "skill": "Melee Combat",
+          "modifier": -5
+        },
+        {
+          "skill": "Ranged Combat",
+          "modifier": -6
+        }
+      ],
+      "needBars": [
+        {
+          "name": "Stamina",
+          "delta": -8
+        }
+      ],
+      "duration": 1,
+      "appliedAt": null
+    },
+    "causeStatusEffect": {
+      "name": "Dazed",
+      "description": "Ears ring and vision swims after a powerful impact. Thoughts come slowly and limbs feel disconnected, making precise actions difficult and reactions sluggish.",
+      "attributes": [
+        {
+          "attribute": "dexterity",
+          "modifier": -6
+        },
+        {
+          "attribute": "intelligence",
+          "modifier": -4
+        }
+      ],
+      "skills": [
+        {
+          "skill": "Dodge",
+          "modifier": -7
+        },
+        {
+          "skill": "Perception",
+          "modifier": -5
+        },
+        {
+          "skill": "Melee Combat",
+          "modifier": -5
+        },
+        {
+          "skill": "Ranged Combat",
+          "modifier": -6
+        }
+      ],
+      "needBars": [
+        {
+          "name": "Stamina",
+          "delta": -8
+        }
+      ],
+      "duration": 1,
+      "appliedAt": null,
+      "applyToTarget": true,
+      "applyToEquipper": false
+    },
+    "level": 6,
+    "relativeLevel": 1,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": true,
+    "flags": [
+      "salvageable"
+    ],
+    "metadata": {
+      "rarity": "Uncommon",
+      "itemType": "armor",
+      "value": "85",
+      "weight": "3",
+      "properties": "Increases unarmed damage; provides minor protection when parrying",
+      "slot": "gloves",
+      "attributeBonuses": [
+        {
+          "attribute": "strength",
+          "bonus": 2
+        },
+        {
+          "attribute": "dexterity",
+          "bonus": -2
+        }
+      ],
+      "causeStatusEffectOnTarget": {
+        "name": "Dazed",
+        "description": "Ears ring and vision swims after a powerful impact. Thoughts come slowly and limbs feel disconnected, making precise actions difficult and reactions sluggish.",
+        "attributes": [
+          {
+            "attribute": "dexterity",
+            "modifier": -6
+          },
+          {
+            "attribute": "intelligence",
+            "modifier": -4
+          }
+        ],
+        "skills": [
+          {
+            "skill": "Dodge",
+            "modifier": -7
+          },
+          {
+            "skill": "Perception",
+            "modifier": -5
+          },
+          {
+            "skill": "Melee Combat",
+            "modifier": -5
+          },
+          {
+            "skill": "Ranged Combat",
+            "modifier": -6
+          }
+        ],
+        "needBars": [
+          {
+            "name": "Stamina",
+            "delta": -8
+          }
+        ],
+        "duration": 1,
+        "appliedAt": null
+      },
+      "relativeLevel": 1,
+      "level": 6,
+      "isSalvageable": true,
+      "ownerId": "player_1772643929501_9ilslrbhg",
+      "playerId": "player_1772643929501_9ilslrbhg",
+      "locationId": "location_1772643622936_675966334234"
+    },
+    "statusEffects": []
+  },
+  "thing_1772643964879_7f40bfc66dd0": {
+    "id": "thing_1772643964879_7f40bfc66dd0",
+    "name": "Market Bouncer's Badge",
+    "description": "A tarnished bronze medallion stamped with the crossed sword and coin symbol of the Dusthollow Merchant Consortium, identifying the bearer as an authorized enforcer. The back bears Magra's name etched in crude but legible script, along with a sequential number indicating she was the seventh to receive this designation. Type: accessory | Slot: neck | Rarity: Common | Value: 15 | Weight: 0.25 | Properties: Grants authority to remove troublemakers from market premises; recognized by Dusthollow merchants and Guild representatives",
+    "shortDescription": "Bronze medallion identifying an authorized market enforcer",
+    "thingType": "item",
+    "imageId": null,
+    "createdAt": "2026-03-04T17:06:04.879Z",
+    "lastUpdated": "2026-03-04T17:06:04.879Z",
+    "rarity": "Common",
+    "itemTypeDetail": "accessory",
+    "slot": "neck",
+    "causeStatusEffect": null,
+    "level": 5,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": true,
+    "flags": [
+      "salvageable"
+    ],
+    "metadata": {
+      "rarity": "Common",
+      "itemType": "accessory",
+      "value": "15",
+      "weight": "0.25",
+      "properties": "Grants authority to remove troublemakers from market premises; recognized by Dusthollow merchants and Guild representatives",
+      "slot": "neck",
+      "relativeLevel": 0,
+      "level": 5,
+      "isSalvageable": true,
+      "ownerId": "player_1772643929501_9ilslrbhg",
+      "playerId": "player_1772643929501_9ilslrbhg",
+      "locationId": "location_1772643622936_675966334234"
+    },
+    "statusEffects": []
+  },
+  "thing_1772643964879_a5d3694b4e23": {
+    "id": "thing_1772643964879_a5d3694b4e23",
+    "name": "Healing Potion, Standard Issue",
+    "description": "A palm-sized glass vial containing a viscous crimson liquid that glimmers faintly when agitated, stoppered with wax-sealed cork. These mass-produced restoratives are purchased in bulk by the Merchant Consortium for their enforcers—potent enough to knit minor wounds but too diluted for serious injuries. Type: consumable | Rarity: Common | Value: 45 | Weight: 0.5 | Properties: Restores moderate health when consumed; single use",
+    "shortDescription": "Standard healing potion for treating minor to moderate wounds",
+    "thingType": "item",
+    "imageId": null,
+    "createdAt": "2026-03-04T17:06:04.879Z",
+    "lastUpdated": "2026-03-04T17:06:04.879Z",
+    "rarity": "Common",
+    "itemTypeDetail": "consumable",
+    "causeStatusEffect": null,
+    "level": 5,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": false,
+    "metadata": {
+      "rarity": "Common",
+      "itemType": "consumable",
+      "value": "45",
+      "weight": "0.5",
+      "properties": "Restores moderate health when consumed; single use",
+      "relativeLevel": 0,
+      "level": 5,
+      "ownerId": "player_1772643929501_9ilslrbhg",
+      "playerId": "player_1772643929501_9ilslrbhg",
+      "locationId": "location_1772643622936_675966334234"
+    },
+    "statusEffects": []
+  },
+  "thing_1772643964879_6e99ce8d5afe": {
+    "id": "thing_1772643964879_6e99ce8d5afe",
+    "name": "Thick Canvas Belt with Pouches",
+    "description": "A sturdy reinforced belt worn low on the hips, fitted with a weathered iron buckle and four small pouches containing odds and ends—twine, a few copper coins, a stub of pencil, and dried meat strips. The leather has darkened from sweat and age but remains supple and reliable. Type: armor | Slot: waist | Rarity: Common | Value: 12 | Weight: 1.5 | Properties: Provides minor storage capacity; pouches contain small miscellaneous items",
+    "shortDescription": "Practical belt with pouches carrying everyday necessities",
+    "thingType": "item",
+    "imageId": null,
+    "createdAt": "2026-03-04T17:06:04.879Z",
+    "lastUpdated": "2026-03-04T17:06:04.880Z",
+    "rarity": "Common",
+    "itemTypeDetail": "armor",
+    "slot": "waist",
+    "causeStatusEffect": null,
+    "level": 5,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": true,
+    "flags": [
+      "salvageable"
+    ],
+    "metadata": {
+      "rarity": "Common",
+      "itemType": "armor",
+      "value": "12",
+      "weight": "1.5",
+      "properties": "Provides minor storage capacity; pouches contain small miscellaneous items",
+      "slot": "waist",
+      "relativeLevel": 0,
+      "level": 5,
+      "isSalvageable": true,
+      "ownerId": "player_1772643929501_9ilslrbhg",
+      "playerId": "player_1772643929501_9ilslrbhg",
+      "locationId": "location_1772643622936_675966334234"
+    },
+    "statusEffects": []
+  },
+  "thing_1772643981054_fc0cabf4c98f": {
+    "id": "thing_1772643981054_fc0cabf4c98f",
+    "name": "Rumor Ledger",
+    "description": "A dog-eared leather notebook bursting with cramped handwriting, crossed-out entries, and ink stains of varying colors. Pages are tabbed with scraps of cloth, dried leaves, and one suspiciously human-looking fingernail bone, each marking a different category of intelligence gathered from taverns and waystations throughout Dusthollow. Type: tool | Slot: hands | Rarity: Common | Value: 15 | Weight: 1 | Bonuses: intelligence +1",
+    "shortDescription": "Crumpled notebook crammed with gossip and intelligence",
+    "thingType": "item",
+    "imageId": null,
+    "createdAt": "2026-03-04T17:06:21.054Z",
+    "lastUpdated": "2026-03-04T17:06:21.054Z",
+    "rarity": "Common",
+    "itemTypeDetail": "tool",
+    "slot": "hands",
+    "attributeBonuses": [
+      {
+        "attribute": "intelligence",
+        "bonus": 1
+      }
+    ],
+    "causeStatusEffect": null,
+    "level": 3,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": false,
+    "metadata": {
+      "rarity": "Common",
+      "itemType": "tool",
+      "value": "15",
+      "weight": "1",
+      "slot": "hands",
+      "attributeBonuses": [
+        {
+          "attribute": "intelligence",
+          "bonus": 1
+        }
+      ],
+      "relativeLevel": 0,
+      "level": 3,
+      "ownerId": "player_1772643929502_1g5b7iv0k",
+      "playerId": "player_1772643929502_1g5b7iv0k",
+      "locationId": "location_1772643622936_675966334234"
+    },
+    "statusEffects": []
+  },
+  "thing_1772643981054_41b442cd2a4c": {
+    "id": "thing_1772643981054_41b442cd2a4c",
+    "name": "Bartered Truth Amulet",
+    "description": "A tarnished silver pendant containing a tiny mirror on one side and a hidden compartment on the other, just large enough for a pinch of powder or a folded note. Runes etched along its edge allow the wearer to perfectly recall any conversation from the past day. Type: accessory | Slot: neck | Rarity: Uncommon | Value: 85 | Weight: 0 | Status Effect: Equipper: Perfect Recall - The wearer can flawlessly remember any conversation heard while the Bartered Truth Amulet is worn. | Bonuses: charisma +2, wisdom +2",
+    "shortDescription": "Silver locket granting perfect conversational memory",
+    "thingType": "item",
+    "imageId": null,
+    "createdAt": "2026-03-04T17:06:21.054Z",
+    "lastUpdated": "2026-03-04T17:06:35.778Z",
+    "rarity": "Uncommon",
+    "itemTypeDetail": "accessory",
+    "slot": "neck",
+    "attributeBonuses": [
+      {
+        "attribute": "charisma",
+        "bonus": 2
+      },
+      {
+        "attribute": "wisdom",
+        "bonus": 2
+      }
+    ],
+    "causeStatusEffectOnEquipper": {
+      "name": "Perfect Recall",
+      "description": "Memories of overheard conversations crystalize with unnatural clarity, allowing the wearer to recall every word, tone, and subtle inflection days later as if hearing them anew.",
+      "attributes": [
+        {
+          "attribute": "intelligence",
+          "modifier": 3
+        }
+      ],
+      "skills": [
+        {
+          "skill": "Insight",
+          "modifier": 4
+        },
+        {
+          "skill": "Negotiation",
+          "modifier": 3
+        },
+        {
+          "skill": "Deception",
+          "modifier": 2
+        }
+      ],
+      "needBars": [],
+      "duration": 480,
+      "appliedAt": null
+    },
+    "causeStatusEffect": {
+      "name": "Perfect Recall",
+      "description": "Memories of overheard conversations crystalize with unnatural clarity, allowing the wearer to recall every word, tone, and subtle inflection days later as if hearing them anew.",
+      "attributes": [
+        {
+          "attribute": "intelligence",
+          "modifier": 3
+        }
+      ],
+      "skills": [
+        {
+          "skill": "Insight",
+          "modifier": 4
+        },
+        {
+          "skill": "Negotiation",
+          "modifier": 3
+        },
+        {
+          "skill": "Deception",
+          "modifier": 2
+        }
+      ],
+      "needBars": [],
+      "duration": 480,
+      "appliedAt": null,
+      "applyToTarget": false,
+      "applyToEquipper": true
+    },
+    "level": 4,
+    "relativeLevel": 1,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": true,
+    "flags": [
+      "salvageable"
+    ],
+    "metadata": {
+      "rarity": "Uncommon",
+      "itemType": "accessory",
+      "value": "85",
+      "weight": "0",
+      "slot": "neck",
+      "attributeBonuses": [
+        {
+          "attribute": "charisma",
+          "bonus": 2
+        },
+        {
+          "attribute": "wisdom",
+          "bonus": 2
+        }
+      ],
+      "causeStatusEffectOnEquipper": {
+        "name": "Perfect Recall",
+        "description": "Memories of overheard conversations crystalize with unnatural clarity, allowing the wearer to recall every word, tone, and subtle inflection days later as if hearing them anew.",
+        "attributes": [
+          {
+            "attribute": "intelligence",
+            "modifier": 3
+          }
+        ],
+        "skills": [
+          {
+            "skill": "Insight",
+            "modifier": 4
+          },
+          {
+            "skill": "Negotiation",
+            "modifier": 3
+          },
+          {
+            "skill": "Deception",
+            "modifier": 2
+          }
+        ],
+        "needBars": [],
+        "duration": 480,
+        "appliedAt": null
+      },
+      "relativeLevel": 1,
+      "level": 4,
+      "isSalvageable": true,
+      "ownerId": "player_1772643929502_1g5b7iv0k",
+      "playerId": "player_1772643929502_1g5b7iv0k",
+      "locationId": "location_1772643622936_675966334234"
+    },
+    "statusEffects": []
+  },
+  "thing_1772643981065_96b87aa1a49a": {
+    "id": "thing_1772643981065_96b87aa1a49a",
+    "name": "Too-Many Pouch Belt",
+    "description": "A worn leather belt hung with no fewer than fourteen pouches of varying sizes, some tied shut with colored string to indicate contents. The belt creaks and jingles with each movement, though the pouches seem to redistribute their weight in oddly helpful ways. Type: armor | Slot: waist | Rarity: Common | Value: 25 | Weight: 3 | Properties: Contains 14 small pouches for storing odds and ends | Bonuses: dexterity -1, constitution +1",
+    "shortDescription": "Leather belt with fourteen pouches, slightly cumbersome",
+    "thingType": "item",
+    "imageId": null,
+    "createdAt": "2026-03-04T17:06:21.065Z",
+    "lastUpdated": "2026-03-04T17:06:21.065Z",
+    "rarity": "Common",
+    "itemTypeDetail": "armor",
+    "slot": "waist",
+    "attributeBonuses": [
+      {
+        "attribute": "dexterity",
+        "bonus": -1
+      },
+      {
+        "attribute": "constitution",
+        "bonus": 1
+      }
+    ],
+    "causeStatusEffect": null,
+    "level": 3,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": true,
+    "flags": [
+      "salvageable"
+    ],
+    "metadata": {
+      "rarity": "Common",
+      "itemType": "armor",
+      "value": "25",
+      "weight": "3",
+      "properties": "Contains 14 small pouches for storing odds and ends",
+      "slot": "waist",
+      "attributeBonuses": [
+        {
+          "attribute": "dexterity",
+          "bonus": -1
+        },
+        {
+          "attribute": "constitution",
+          "bonus": 1
+        }
+      ],
+      "relativeLevel": 0,
+      "level": 3,
+      "isSalvageable": true,
+      "ownerId": "player_1772643929502_1g5b7iv0k",
+      "playerId": "player_1772643929502_1g5b7iv0k",
+      "locationId": "location_1772643622936_675966334234"
+    },
+    "statusEffects": []
+  },
+  "thing_1772643981065_9f1fccf72150": {
+    "id": "thing_1772643981065_9f1fccf72150",
+    "name": "Conspirator's Bent Coin",
+    "description": "A bent copper coin stamped with a forgotten lord's face, worn smooth on one side from nervous thumb-rubbing. Gnomish enchantment allows two such coins to transmit faint murmurs across the span of a large tavern or marketplace—useful for coordinating informants or warning of approaching trouble. Type: tool | Rarity: Uncommon | Value: 60 | Weight: 0 | Properties: Paired coins transmit faint murmurs over short distances | Bonuses: charisma +2",
+    "shortDescription": "Bent coin transmitting whispers between paired pieces",
+    "thingType": "item",
+    "imageId": null,
+    "createdAt": "2026-03-04T17:06:21.065Z",
+    "lastUpdated": "2026-03-04T17:06:35.778Z",
+    "rarity": "Uncommon",
+    "itemTypeDetail": "tool",
+    "attributeBonuses": [
+      {
+        "attribute": "charisma",
+        "bonus": 2
+      }
+    ],
+    "causeStatusEffect": null,
+    "level": 4,
+    "relativeLevel": 1,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": true,
+    "flags": [
+      "salvageable"
+    ],
+    "metadata": {
+      "rarity": "Uncommon",
+      "itemType": "tool",
+      "value": "60",
+      "weight": "0",
+      "properties": "Paired coins transmit faint whispers over short distances",
+      "attributeBonuses": [
+        {
+          "attribute": "charisma",
+          "bonus": 2
+        }
+      ],
+      "relativeLevel": 1,
+      "level": 4,
+      "isSalvageable": true,
+      "ownerId": "player_1772643929502_1g5b7iv0k",
+      "playerId": "player_1772643929502_1g5b7iv0k",
+      "locationId": "location_1772643622936_675966334234"
+    },
+    "statusEffects": []
+  },
+  "thing_1772644209453_84091bc75880": {
+    "id": "thing_1772644209453_84091bc75880",
+    "name": "Ribbon of Quiet Promises",
+    "description": "A pale silk ribbon once tied around a memorial stone, now weathered to a ghostly gray. Adventurers sometimes tie these to stones before descending, a small promise to return for them.",
+    "shortDescription": "Weathered silk ribbon tied to memorial stones by hopeful adventurers",
+    "thingType": "item",
+    "imageId": "img_20260304_171156_s790xkno",
+    "createdAt": "2026-03-04T17:10:09.453Z",
+    "lastUpdated": "2026-03-04T17:12:11.091Z",
+    "rarity": "Common",
+    "itemTypeDetail": "accessory",
+    "slot": "accessory",
+    "causeStatusEffect": null,
+    "level": 3,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": true,
+    "flags": [
+      "salvageable"
+    ],
+    "metadata": {
+      "locationId": "location_1772643622936_d96355885fb6",
+      "locationName": "Memorial Walk",
+      "value": "3",
+      "weight": "0.1",
+      "properties": "Often found blowing against memorial stones; considered a good omen by some, bad luck by others",
+      "slot": "accessory",
+      "relativeLevel": 0,
+      "isSalvageable": true,
+      "level": 3
+    },
+    "statusEffects": []
+  },
+  "thing_1772644209454_584906296714": {
+    "id": "thing_1772644209454_584906296714",
+    "name": "Last Word Chit",
+    "description": "A small copper coin engraved with a single word on each side—\"Return\" and \"Remember.\" Adventurers press these into the hands of those who stay behind, a compact to speak for them if they never return.",
+    "shortDescription": "Copper coin engraved with promises, steadying nerves against fear",
+    "thingType": "item",
+    "imageId": "img_20260304_171211_tix849ed",
+    "createdAt": "2026-03-04T17:10:09.454Z",
+    "lastUpdated": "2026-03-04T17:12:25.701Z",
+    "rarity": "Uncommon",
+    "itemTypeDetail": "accessory",
+    "slot": "neck",
+    "attributeBonuses": [
+      {
+        "attribute": "wisdom",
+        "bonus": 2
+      },
+      {
+        "attribute": "charisma",
+        "bonus": 2
+      }
+    ],
+    "causeStatusEffect": null,
+    "level": 4,
+    "relativeLevel": 1,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": true,
+    "flags": [
+      "salvageable"
+    ],
+    "metadata": {
+      "locationId": "location_1772643622936_d96355885fb6",
+      "locationName": "Memorial Walk",
+      "value": "35",
+      "weight": "0.2",
+      "properties": "Grants advantage on saves against fear when worn; some say the coin grows warm when death approaches",
+      "slot": "neck",
+      "relativeLevel": 1,
+      "isSalvageable": true,
+      "level": 4,
+      "attributeBonuses": [
+        {
+          "attribute": "wisdom",
+          "bonus": 2
+        },
+        {
+          "attribute": "charisma",
+          "bonus": 2
+        }
+      ]
+    },
+    "statusEffects": []
+  },
+  "thing_1772644209454_47f4514e3f6b": {
+    "id": "thing_1772644209454_47f4514e3f6b",
+    "name": "Shattered Veteran's Staff",
+    "description": "The splintered remains of a quarterstaff lies half-buried in the rocky soil, its wood gray and cracked from years of exposure. One end still bears a corroded iron cap, the other a dark stain that might be old blood or simply age.",
+    "shortDescription": "Splintered quarterstaff remains, weathered and stained",
+    "thingType": "scenery",
+    "imageId": "img_20260304_171115_fbfz1gqs",
+    "createdAt": "2026-03-04T17:10:09.454Z",
+    "lastUpdated": "2026-03-04T17:11:28.008Z",
+    "rarity": "Junk",
+    "itemTypeDetail": "junk",
+    "causeStatusEffect": null,
+    "level": 1,
+    "relativeLevel": -2,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": true,
+    "flags": [
+      "salvageable"
+    ],
+    "metadata": {
+      "locationId": "location_1772643622936_d96355885fb6",
+      "locationName": "Memorial Walk",
+      "value": "0",
+      "weight": "4",
+      "properties": "Can be salvaged for firewood or crude wooden chunks; a melancholy reminder of someone who fell",
+      "relativeLevel": -2,
+      "isSalvageable": true,
+      "level": 1
+    },
+    "statusEffects": []
+  },
+  "thing_1772644209454_203c3c6be583": {
+    "id": "thing_1772644209454_203c3c6be583",
+    "name": "Weeping Memorial Stone",
+    "description": "A massive slab of dark granite carved with dozens of names, its surface perpetually damp with moisture that seeps from within the stone itself. The water collects in a natural basin at its base, clear and faintly luminescent, and locals claim it reflects not the viewer's face but their true self.",
+    "shortDescription": "Massive granite monument that weeps luminescent water of self-reflection",
+    "thingType": "scenery",
+    "imageId": "img_20260304_171128_b6d9b9tg",
+    "createdAt": "2026-03-04T17:10:09.454Z",
+    "lastUpdated": "2026-03-04T17:11:42.162Z",
+    "rarity": "Rare",
+    "itemTypeDetail": "monument",
+    "causeStatusEffect": null,
+    "level": 5,
+    "relativeLevel": 2,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": true,
+    "isSalvageable": false,
+    "flags": [
+      "harvestable"
+    ],
+    "metadata": {
+      "locationId": "location_1772643622936_d96355885fb6",
+      "locationName": "Memorial Walk",
+      "value": "0",
+      "weight": "2000",
+      "properties": "The water can be collected as Phial of Weeping Water (consumable, grants brief insight into one's own fate); replenishes at midnight; looking into the basin for too long causes melancholy",
+      "relativeLevel": 2,
+      "isHarvestable": true,
+      "level": 5
+    },
+    "statusEffects": []
+  },
+  "thing_1772644209454_206b96edf12c": {
+    "id": "thing_1772644209454_206b96edf12c",
+    "name": "Wind-Carved Warning Post",
+    "description": "A weathered wooden post driven into the rocky ground, its surface dense with carved warnings in multiple languages—some barely legible, others freshly cut. Bits of cloth, bone fragments, and small tokens hang from nails driven into its sides, offerings from survivors or desperate pleas from those about to descend.",
+    "shortDescription": "Warning post covered in carved messages and survivor offerings",
+    "thingType": "scenery",
+    "imageId": "img_20260304_171142_1959fbbk",
+    "createdAt": "2026-03-04T17:10:09.454Z",
+    "lastUpdated": "2026-03-04T17:11:56.320Z",
+    "rarity": "Uncommon",
+    "itemTypeDetail": "landmark",
+    "causeStatusEffect": null,
+    "level": 4,
+    "relativeLevel": 1,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": false,
+    "metadata": {
+      "locationId": "location_1772643622936_d96355885fb6",
+      "locationName": "Memorial Walk",
+      "value": "0",
+      "weight": "150",
+      "properties": "Reading the warnings grants a small bonus to perception of dungeon hazards; sometimes contains clues about recent dangers; the offerings can occasionally be taken (minor trinkets)",
+      "relativeLevel": 1,
+      "level": 4
+    },
+    "statusEffects": []
+  },
+  "thing_1772644245918_6047975fa461": {
+    "id": "thing_1772644245918_6047975fa461",
+    "name": "Notched Greataxe of the Deep Delver",
+    "description": "This massive two-handed axe has been reforged from deeper dungeon steel, its edge nicked from countless battles against chitin-hard shells and animated bones. The half-orc runes etched along the haft glow faintly when danger approaches—a practical enchantment paid for with a month's worth of abyssal pearls. Type: weapon | Slot: hands | Rarity: Uncommon | Value: 385 | Weight: 12 | Status Effect: Target: Bleeding Wound - A deep wound that continues to bleed, causing ongoing damage until properly treated. | Properties: Critical hits cause target to bleed for additional damage over time. Glows faintly blue when creatures from the Abyssal Reaches or lower are within 60 feet. | Bonuses: strength +4, constitution +2",
+    "shortDescription": "Massive battle-scarred two-handed axe that glows near deep dungeon threats",
+    "thingType": "item",
+    "imageId": null,
+    "createdAt": "2026-03-04T17:10:45.918Z",
+    "lastUpdated": "2026-03-04T17:10:53.279Z",
+    "rarity": "Uncommon",
+    "itemTypeDetail": "weapon",
+    "slot": "hands",
+    "attributeBonuses": [
+      {
+        "attribute": "strength",
+        "bonus": 4
+      },
+      {
+        "attribute": "constitution",
+        "bonus": 2
+      }
+    ],
+    "causeStatusEffectOnTarget": {
+      "name": "Bleeding Wound",
+      "description": "Arterial blood flows freely from a deep gash, weakening the body with each passing moment. The wound requires immediate medical attention or the application of pressure to stem the crimson tide.",
+      "attributes": [
+        {
+          "attribute": "constitution",
+          "modifier": -6
+        },
+        {
+          "attribute": "strength",
+          "modifier": -4
+        }
+      ],
+      "skills": [
+        {
+          "skill": "Melee Combat",
+          "modifier": -5
+        },
+        {
+          "skill": "Acrobatics",
+          "modifier": -4
+        }
+      ],
+      "needBars": [
+        {
+          "name": "Stamina",
+          "delta": -3
+        },
+        {
+          "name": "Health",
+          "delta": -5
+        }
+      ],
+      "duration": 3,
+      "appliedAt": null
+    },
+    "causeStatusEffect": {
+      "name": "Bleeding Wound",
+      "description": "Arterial blood flows freely from a deep gash, weakening the body with each passing moment. The wound requires immediate medical attention or the application of pressure to stem the crimson tide.",
+      "attributes": [
+        {
+          "attribute": "constitution",
+          "modifier": -6
+        },
+        {
+          "attribute": "strength",
+          "modifier": -4
+        }
+      ],
+      "skills": [
+        {
+          "skill": "Melee Combat",
+          "modifier": -5
+        },
+        {
+          "skill": "Acrobatics",
+          "modifier": -4
+        }
+      ],
+      "needBars": [
+        {
+          "name": "Stamina",
+          "delta": -3
+        },
+        {
+          "name": "Health",
+          "delta": -5
+        }
+      ],
+      "duration": 3,
+      "appliedAt": null,
+      "applyToTarget": true,
+      "applyToEquipper": false
+    },
+    "level": 7,
+    "relativeLevel": 2,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": true,
+    "flags": [
+      "salvageable"
+    ],
+    "metadata": {
+      "rarity": "Uncommon",
+      "itemType": "weapon",
+      "value": "385",
+      "weight": "12",
+      "properties": "Critical hits cause target to bleed for additional damage over time. Glows faintly blue when creatures from the Abyssal Reaches or lower are within 60 feet.",
+      "slot": "hands",
+      "attributeBonuses": [
+        {
+          "attribute": "strength",
+          "bonus": 4
+        },
+        {
+          "attribute": "constitution",
+          "bonus": 2
+        }
+      ],
+      "causeStatusEffectOnTarget": {
+        "name": "Bleeding Wound",
+        "description": "Arterial blood flows freely from a deep gash, weakening the body with each passing moment. The wound requires immediate medical attention or the application of pressure to stem the crimson tide.",
+        "attributes": [
+          {
+            "attribute": "constitution",
+            "modifier": -6
+          },
+          {
+            "attribute": "strength",
+            "modifier": -4
+          }
+        ],
+        "skills": [
+          {
+            "skill": "Melee Combat",
+            "modifier": -5
+          },
+          {
+            "skill": "Acrobatics",
+            "modifier": -4
+          }
+        ],
+        "needBars": [
+          {
+            "name": "Stamina",
+            "delta": -3
+          },
+          {
+            "name": "Health",
+            "delta": -5
+          }
+        ],
+        "duration": 3,
+        "appliedAt": null
+      },
+      "relativeLevel": 2,
+      "level": 7,
+      "isSalvageable": true,
+      "ownerId": "player_1772644212669_kmgppmrh2",
+      "playerId": "player_1772644212669_kmgppmrh2",
+      "locationId": "location_1772643622936_d96355885fb6"
+    },
+    "statusEffects": []
+  },
+  "thing_1772644245928_81100c352c3d": {
+    "id": "thing_1772644245928_81100c352c3d",
+    "name": "Chainmail of the Unreturned",
+    "description": "Once fine chainmail now shows rust spots and permanent bloodstains that no amount of cleaning will remove. Four small memorial pins are woven into the left shoulder—tokens from companions who died wearing similar armor in the depths below. Type: armor | Slot: body | Rarity: Common | Value: 75 | Weight: 40 | Properties: Provides reliable protection but the rusted links occasionally catch at inopportune moments, slightly reducing agility. | Bonuses: constitution +2, dexterity -2",
+    "shortDescription": "Rust-spotted chainmail armor with memorial pins woven into shoulder",
+    "thingType": "item",
+    "imageId": null,
+    "createdAt": "2026-03-04T17:10:45.928Z",
+    "lastUpdated": "2026-03-04T17:10:53.641Z",
+    "rarity": "Common",
+    "itemTypeDetail": "armor",
+    "slot": "body",
+    "attributeBonuses": [
+      {
+        "attribute": "constitution",
+        "bonus": 2
+      },
+      {
+        "attribute": "dexterity",
+        "bonus": -2
+      }
+    ],
+    "causeStatusEffect": null,
+    "level": 5,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": true,
+    "flags": [
+      "salvageable"
+    ],
+    "metadata": {
+      "rarity": "Common",
+      "itemType": "armor",
+      "value": "75",
+      "weight": "40",
+      "properties": "Provides reliable protection but the rusted links occasionally catch at inopportune moments, slightly reducing agility.",
+      "slot": "body",
+      "attributeBonuses": [
+        {
+          "attribute": "constitution",
+          "bonus": 2
+        },
+        {
+          "attribute": "dexterity",
+          "bonus": -2
+        }
+      ],
+      "relativeLevel": 0,
+      "level": 5,
+      "isSalvageable": true,
+      "ownerId": "player_1772644212669_kmgppmrh2",
+      "playerId": "player_1772644212669_kmgppmrh2",
+      "locationId": "location_1772643622936_d96355885fb6"
+    },
+    "statusEffects": []
+  },
+  "thing_1772644245928_d3409dcd1b83": {
+    "id": "thing_1772644245928_d3409dcd1b83",
+    "name": "Mourner's Cloak",
+    "description": "A heavy wool cloak the color of dried blood, its hood lined with fur from a creature that dwells in the Twilight Depths. The fabric has been treated with simple warding magic that offers marginal protection against the dungeon's supernatural cold. Type: armor | Slot: back | Rarity: Common | Value: 45 | Weight: 4 | Properties: Provides resistance to environmental cold and dampness common in the dungeon's upper levels. | Bonuses: wisdom +2",
+    "shortDescription": "Heavy blood-colored cloak with warded lining against dungeon cold",
+    "thingType": "item",
+    "imageId": null,
+    "createdAt": "2026-03-04T17:10:45.928Z",
+    "lastUpdated": "2026-03-04T17:10:45.928Z",
+    "rarity": "Common",
+    "itemTypeDetail": "armor",
+    "slot": "back",
+    "attributeBonuses": [
+      {
+        "attribute": "wisdom",
+        "bonus": 2
+      }
+    ],
+    "causeStatusEffect": null,
+    "level": 5,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": true,
+    "flags": [
+      "salvageable"
+    ],
+    "metadata": {
+      "rarity": "Common",
+      "itemType": "armor",
+      "value": "45",
+      "weight": "4",
+      "properties": "Provides resistance to environmental cold and dampness common in the dungeon's upper levels.",
+      "slot": "back",
+      "attributeBonuses": [
+        {
+          "attribute": "wisdom",
+          "bonus": 2
+        }
+      ],
+      "relativeLevel": 0,
+      "level": 5,
+      "isSalvageable": true,
+      "ownerId": "player_1772644212669_kmgppmrh2",
+      "playerId": "player_1772644212669_kmgppmrh2",
+      "locationId": "location_1772643622936_d96355885fb6"
+    },
+    "statusEffects": []
+  },
+  "thing_1772644245928_b1b3ba07c525": {
+    "id": "thing_1772644245928_b1b3ba07c525",
+    "name": "Twilight Fungus Rations",
+    "description": "Dried strips of bioluminescent fungus from the second stratum, packed in waxed cloth to preserve their faint nutritional value. Though bitter and vaguely metallic in taste, they provide sustenance and their faint glow can serve as emergency light. Type: consumable | Rarity: Common | Value: 8 | Weight: 0.5 | Properties: Provides one day's worth of rations. Glows dimly for 10 feet of illumination for 1 hour if removed from packaging.",
+    "shortDescription": "Dried bioluminescent fungus strips that glow as emergency light",
+    "thingType": "item",
+    "imageId": null,
+    "createdAt": "2026-03-04T17:10:45.928Z",
+    "lastUpdated": "2026-03-04T17:10:45.929Z",
+    "rarity": "Common",
+    "itemTypeDetail": "consumable",
+    "causeStatusEffect": null,
+    "level": 5,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": false,
+    "metadata": {
+      "rarity": "Common",
+      "itemType": "consumable",
+      "value": "8",
+      "weight": "0.5",
+      "properties": "Provides one day's worth of rations. Glows dimly for 10 feet of illumination for 1 hour if removed from packaging.",
+      "relativeLevel": 0,
+      "level": 5,
+      "ownerId": "player_1772644212669_kmgppmrh2",
+      "playerId": "player_1772644212669_kmgppmrh2",
+      "locationId": "location_1772643622936_d96355885fb6"
+    },
+    "statusEffects": []
+  },
+  "thing_1772644493223_e3c9542796ec": {
+    "id": "thing_1772644493223_e3c9542796ec",
+    "name": "Corroded Iron Spike of the Fallen",
+    "description": "A corroded iron spike recovered from some poor soul's gear, bent at an angle that suggests it was driven into something—or someone—with tremendous force. The metal has taken on a sickly greenish patina from prolonged exposure to the dungeon's breath.",
+    "shortDescription": "A corroded, bent iron spike with a sickly greenish patina from dungeon exposure.",
+    "thingType": "item",
+    "imageId": "img_20260304_171702_84zjpe5s",
+    "createdAt": "2026-03-04T17:14:53.223Z",
+    "lastUpdated": "2026-03-04T17:17:18.777Z",
+    "rarity": "Junk",
+    "itemTypeDetail": "miscellaneous",
+    "attributeBonuses": [
+      {
+        "attribute": "charisma",
+        "bonus": -1
+      }
+    ],
+    "causeStatusEffect": null,
+    "level": 1,
+    "relativeLevel": -2,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": true,
+    "flags": [
+      "salvageable"
+    ],
+    "metadata": {
+      "locationId": "location_1772643622937_e489509c6174",
+      "locationName": "Warning Post",
+      "value": "1",
+      "weight": "0.5",
+      "properties": "Salvageable into scrap iron. Serves as grim proof of the dungeon's dangers.",
+      "relativeLevel": -2,
+      "isSalvageable": true,
+      "level": 1,
+      "attributeBonuses": [
+        {
+          "attribute": "charisma",
+          "bonus": -1
+        }
+      ]
+    },
+    "statusEffects": []
+  },
+  "thing_1772644493224_dbcc77c8b0e2": {
+    "id": "thing_1772644493224_dbcc77c8b0e2",
+    "name": "Guidepost Scout's Monocle",
+    "description": "A brass-rimmed monocle with a hairline crack running through the lens, formerly property of a Guild scout who made a living guiding parties to newly discovered entrances. The previous owner's initials are etched on the chain clip, along with a date that matches one of the newer memorial stones down the road.",
+    "shortDescription": "A cracked brass monocle that enhances perception despite its damage.",
+    "thingType": "item",
+    "imageId": "img_20260304_171718_d6vxmv20",
+    "createdAt": "2026-03-04T17:14:53.224Z",
+    "lastUpdated": "2026-03-04T17:17:33.171Z",
+    "rarity": "Uncommon",
+    "itemTypeDetail": "tool",
+    "slot": "eyewear",
+    "attributeBonuses": [
+      {
+        "attribute": "wisdom",
+        "bonus": 3
+      },
+      {
+        "attribute": "intelligence",
+        "bonus": 2
+      }
+    ],
+    "causeStatusEffect": null,
+    "level": 4,
+    "relativeLevel": 1,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": true,
+    "flags": [
+      "salvageable"
+    ],
+    "metadata": {
+      "locationId": "location_1772643622937_e489509c6174",
+      "locationName": "Warning Post",
+      "value": "45",
+      "weight": "0.2",
+      "properties": "Grants advantage on checks to spot hidden details or read distant text. The crack sometimes catches light in distracting ways.",
+      "slot": "eyewear",
+      "relativeLevel": 1,
+      "isSalvageable": true,
+      "level": 4,
+      "attributeBonuses": [
+        {
+          "attribute": "wisdom",
+          "bonus": 3
+        },
+        {
+          "attribute": "intelligence",
+          "bonus": 2
+        }
+      ]
+    },
+    "statusEffects": []
+  },
+  "thing_1772644493224_d71a0de158a9": {
+    "id": "thing_1772644493224_d71a0de158a9",
+    "name": "Casualty Tally Board",
+    "description": "A massive wooden board mounted on thick timber posts, its surface covered in layers of painted statistics that never quite dry before the next rain washes them into streaking ribbons of color. The current week's death toll competes with faded older numbers beneath, creating a palimpsest of misery that grows denser toward the bottom.",
+    "shortDescription": "A rain-streaked board displaying casualty statistics and Guild notices.",
+    "thingType": "scenery",
+    "imageId": "img_20260304_171607_n03etny7",
+    "createdAt": "2026-03-04T17:14:53.224Z",
+    "lastUpdated": "2026-03-04T17:16:20.159Z",
+    "rarity": "Common",
+    "itemTypeDetail": "furniture",
+    "causeStatusEffect": null,
+    "level": 3,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": false,
+    "metadata": {
+      "locationId": "location_1772643622937_e489509c6174",
+      "locationName": "Warning Post",
+      "value": "0",
+      "weight": "400",
+      "properties": "Displays weekly casualty statistics, Guild notices, and reward postings. Notices can be torn down or added.",
+      "relativeLevel": 0,
+      "level": 3
+    },
+    "statusEffects": []
+  },
+  "thing_1772644493224_975c4499354b": {
+    "id": "thing_1772644493224_975c4499354b",
+    "name": "Mourner's Stake of Dusthollow",
+    "description": "A simple wooden stake driven into the rocky ground, from which dangles a collection of tarnished tags, faded ribbons, and scraps of cloth—mementos left by survivors for those who didn't return. The wood has silvered with age and exposure, and small offerings of coins and dried flowers have accumulated at its base.",
+    "shortDescription": "A memorial stake hung with mementos for fallen adventurers.",
+    "thingType": "scenery",
+    "imageId": "img_20260304_171620_ea5ch6su",
+    "createdAt": "2026-03-04T17:14:53.224Z",
+    "lastUpdated": "2026-03-04T17:16:34.305Z",
+    "rarity": "Uncommon",
+    "itemTypeDetail": "landmark",
+    "causeStatusEffect": null,
+    "level": 3,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": true,
+    "isSalvageable": false,
+    "flags": [
+      "harvestable"
+    ],
+    "metadata": {
+      "locationId": "location_1772643622937_e489509c6174",
+      "locationName": "Warning Post",
+      "value": "0",
+      "weight": "150",
+      "properties": "Visitors sometimes leave small offerings. Occasionally contains coins or trinkets that can be taken, though doing so is considered deeply unlucky.",
+      "relativeLevel": 0,
+      "isHarvestable": true,
+      "level": 3
+    },
+    "statusEffects": []
+  },
+  "thing_1772644493224_e9ccd8f0804d": {
+    "id": "thing_1772644493224_e9ccd8f0804d",
+    "name": "Smuggler's Hollow Stone",
+    "description": "One of several seemingly ordinary rocks along the path that contains a hidden compartment large enough for small items. The hollow interior shows signs of frequent use, with wax drippings and scratch marks from hurried hands. Those who know the signal can access goods moved past Guild oversight—for a price.",
+    "shortDescription": "A false rock hiding a compartment used for illicit trade.",
+    "thingType": "scenery",
+    "imageId": "img_20260304_171634_cad4pjxw",
+    "createdAt": "2026-03-04T17:14:53.224Z",
+    "lastUpdated": "2026-03-04T17:16:48.453Z",
+    "rarity": "Uncommon",
+    "itemTypeDetail": "container",
+    "causeStatusEffect": null,
+    "level": 4,
+    "relativeLevel": 1,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": true,
+    "isSalvageable": false,
+    "flags": [
+      "harvestable"
+    ],
+    "metadata": {
+      "locationId": "location_1772643622937_e489509c6174",
+      "locationName": "Warning Post",
+      "value": "0",
+      "weight": "80",
+      "properties": "Hidden cache used for smuggling goods past Guild inspection. Contents vary based on recent activity.",
+      "relativeLevel": 1,
+      "isHarvestable": true,
+      "level": 4
+    },
+    "statusEffects": []
+  },
+  "thing_1772644493224_c8b5f08e21b8": {
+    "id": "thing_1772644493224_c8b5f08e21b8",
+    "name": "Guard's Wind-Sheltered Brazier",
+    "description": "A heavy iron brazier mounted on a stone platform, partially shielded by a clever arrangement of slate tiles that keep the flame alive even when cold winds rush up from the sinkhole. The coals glow with a faintly unnatural orange hue—mixed with something alchemical to burn longer and smoke less, though breathing too deeply brings on a mild headache.",
+    "shortDescription": "A shielded iron brazier burning long-lasting alchemical coals.",
+    "thingType": "scenery",
+    "imageId": "img_20260304_171648_rvqzsgio",
+    "createdAt": "2026-03-04T17:14:53.225Z",
+    "lastUpdated": "2026-03-04T17:17:02.607Z",
+    "rarity": "Uncommon",
+    "itemTypeDetail": "furniture",
+    "causeStatusEffect": null,
+    "level": 3,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": false,
+    "metadata": {
+      "locationId": "location_1772643622937_e489509c6174",
+      "locationName": "Warning Post",
+      "value": "0",
+      "weight": "120",
+      "properties": "Provides warmth and light in a small radius. The alchemical coals can be harvested carefully, though they're hazardous to handle directly.",
+      "relativeLevel": 0,
+      "level": 3
+    },
+    "statusEffects": []
+  },
+  "thing_1772644515078_fc775d26598d": {
+    "id": "thing_1772644515078_fc775d26598d",
+    "name": "Guard's Ledger",
+    "description": "A leather-bound registry thick with water-warped pages, listing every soul who has passed through this checkpoint—and the grim notations beside names indicating \"returned,\" \"confirmed dead,\" or simply left blank. The senior guard updates it with the mechanical efficiency of someone who stopped feeling each death long ago. Type: tool | Rarity: Common | Value: 5 | Weight: 2",
+    "shortDescription": "Water-damaged registry tracking dungeon expeditions",
+    "thingType": "item",
+    "imageId": null,
+    "createdAt": "2026-03-04T17:15:15.078Z",
+    "lastUpdated": "2026-03-04T17:15:15.079Z",
+    "rarity": "Common",
+    "itemTypeDetail": "tool",
+    "causeStatusEffect": null,
+    "level": 3,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": true,
+    "flags": [
+      "salvageable"
+    ],
+    "metadata": {
+      "rarity": "Common",
+      "itemType": "tool",
+      "value": "5",
+      "weight": "2",
+      "relativeLevel": 0,
+      "level": 3,
+      "isSalvageable": true,
+      "ownerId": "player_1772644471016_dnsb0eb75",
+      "playerId": "player_1772644471016_dnsb0eb75",
+      "locationId": "location_1772643622937_e489509c6174"
+    },
+    "statusEffects": []
+  },
+  "thing_1772644515079_60f680663d25": {
+    "id": "thing_1772644515079_60f680663d25",
+    "name": "Battered Guild Armband",
+    "description": "A faded crimson brassard bearing the embroidered crest of the Adventurer's Guild, its edges frayed and the fabric stiff from repeated exposure to the dungeon's damp exhalations. Worn over chainmail, it marks the bearer as an official representative of the Guild's authority—at least in theory. Type: clothing | Slot: shoulders | Rarity: Common | Value: 15 | Weight: 0.5 | Bonuses: charisma +1",
+    "shortDescription": "Faded brassard marking Guild authority",
+    "thingType": "item",
+    "imageId": null,
+    "createdAt": "2026-03-04T17:15:15.079Z",
+    "lastUpdated": "2026-03-04T17:15:15.079Z",
+    "rarity": "Common",
+    "itemTypeDetail": "clothing",
+    "slot": "shoulders",
+    "attributeBonuses": [
+      {
+        "attribute": "charisma",
+        "bonus": 1
+      }
+    ],
+    "causeStatusEffect": null,
+    "level": 3,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": true,
+    "flags": [
+      "salvageable"
+    ],
+    "metadata": {
+      "rarity": "Common",
+      "itemType": "clothing",
+      "value": "15",
+      "weight": "0.5",
+      "slot": "shoulders",
+      "attributeBonuses": [
+        {
+          "attribute": "charisma",
+          "bonus": 1
+        }
+      ],
+      "relativeLevel": 0,
+      "level": 3,
+      "isSalvageable": true,
+      "ownerId": "player_1772644471016_dnsb0eb75",
+      "playerId": "player_1772644471016_dnsb0eb75",
+      "locationId": "location_1772643622937_e489509c6174"
+    },
+    "statusEffects": []
+  },
+  "thing_1772644515079_a8142fdc9f6f": {
+    "id": "thing_1772644515079_a8142fdc9f6f",
+    "name": "Dented Signal Horn",
+    "description": "A tarnished brass horn hanging from a frayed cord, its surface dinged from years of hard use and its mouthpiece worn smooth. When blown, it produces a discordant note that echoes strangely against the dungeon's entrance—supposedly alerting the garrison at Dusthollow, though no one can recall it actually being used in earnest. Type: tool | Rarity: Common | Value: 8 | Weight: 1",
+    "shortDescription": "Worn brass horn for signaling emergencies",
+    "thingType": "item",
+    "imageId": null,
+    "createdAt": "2026-03-04T17:15:15.079Z",
+    "lastUpdated": "2026-03-04T17:15:15.079Z",
+    "rarity": "Common",
+    "itemTypeDetail": "tool",
+    "causeStatusEffect": null,
+    "level": 3,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": true,
+    "flags": [
+      "salvageable"
+    ],
+    "metadata": {
+      "rarity": "Common",
+      "itemType": "tool",
+      "value": "8",
+      "weight": "1",
+      "relativeLevel": 0,
+      "level": 3,
+      "isSalvageable": true,
+      "ownerId": "player_1772644471016_dnsb0eb75",
+      "playerId": "player_1772644471016_dnsb0eb75",
+      "locationId": "location_1772643622937_e489509c6174"
+    },
+    "statusEffects": []
+  },
+  "thing_1772644515080_872ed8c20595": {
+    "id": "thing_1772644515080_872ed8c20595",
+    "name": "Checkpoint Lantern",
+    "description": "A hooded iron lantern burning with oil infused to produce a steady white flame, its glass cracked but functional. The light pushes back the creeping mist from the dungeon's maw, and the hook on its base allows it to hang from the warning post's timbers during long night watches. Type: tool | Slot: hands | Rarity: Common | Value: 12 | Weight: 3",
+    "shortDescription": "Hooded iron lantern with white flame",
+    "thingType": "item",
+    "imageId": null,
+    "createdAt": "2026-03-04T17:15:15.080Z",
+    "lastUpdated": "2026-03-04T17:15:15.080Z",
+    "rarity": "Common",
+    "itemTypeDetail": "tool",
+    "slot": "hands",
+    "causeStatusEffect": null,
+    "level": 3,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": true,
+    "flags": [
+      "salvageable"
+    ],
+    "metadata": {
+      "rarity": "Common",
+      "itemType": "tool",
+      "value": "12",
+      "weight": "3",
+      "slot": "hands",
+      "relativeLevel": 0,
+      "level": 3,
+      "isSalvageable": true,
+      "ownerId": "player_1772644471016_dnsb0eb75",
+      "playerId": "player_1772644471016_dnsb0eb75",
+      "locationId": "location_1772643622937_e489509c6174"
+    },
+    "statusEffects": []
+  },
+  "thing_1772644591398_4553893d5891": {
+    "id": "thing_1772644591398_4553893d5891",
+    "name": "Guard's Spear",
+    "description": "A sturdy iron-tipped spear with a ash haft worn smooth from years of handling. The weapon is practical rather than decorative, designed to keep trouble at bay rather than for heroic combat. Type: weapon | Slot: hands | Rarity: Common | Value: 15 | Weight: 6 | Bonuses: strength +1",
+    "shortDescription": "Well-maintained iron-tipped spear with worn ash haft",
+    "thingType": "item",
+    "imageId": null,
+    "createdAt": "2026-03-04T17:16:31.398Z",
+    "lastUpdated": "2026-03-04T17:16:31.399Z",
+    "rarity": "Common",
+    "itemTypeDetail": "weapon",
+    "slot": "hands",
+    "attributeBonuses": [
+      {
+        "attribute": "strength",
+        "bonus": 1
+      }
+    ],
+    "causeStatusEffect": null,
+    "level": 4,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": true,
+    "flags": [
+      "salvageable"
+    ],
+    "metadata": {
+      "rarity": "Common",
+      "itemType": "weapon",
+      "value": "15",
+      "weight": "6",
+      "slot": "hands",
+      "attributeBonuses": [
+        {
+          "attribute": "strength",
+          "bonus": 1
+        }
+      ],
+      "relativeLevel": 0,
+      "level": 4,
+      "isSalvageable": true,
+      "ownerId": "player_1772644565902_036vcsm1r",
+      "playerId": "player_1772644565902_036vcsm1r",
+      "locationId": "location_1772643622937_e489509c6174"
+    },
+    "statusEffects": []
+  },
+  "thing_1772644591399_ae5731e7fda6": {
+    "id": "thing_1772644591399_ae5731e7fda6",
+    "name": "Wineskin of Watered Wine",
+    "description": "A leather wineskin containing cheap wine cut with water, the sort that keeps a man functional but takes the edge off long watches. The stopper is carved with a crude face laughing at some private joke. Type: consumable | Rarity: Junk | Value: 2 | Weight: 1",
+    "shortDescription": "Leather wineskin of cheap watered wine",
+    "thingType": "item",
+    "imageId": null,
+    "createdAt": "2026-03-04T17:16:31.399Z",
+    "lastUpdated": "2026-03-04T17:16:31.399Z",
+    "rarity": "Junk",
+    "itemTypeDetail": "consumable",
+    "causeStatusEffect": null,
+    "level": 3,
+    "relativeLevel": -1,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": false,
+    "metadata": {
+      "rarity": "Junk",
+      "itemType": "consumable",
+      "value": "2",
+      "weight": "1",
+      "relativeLevel": -1,
+      "level": 3,
+      "ownerId": "player_1772644565902_036vcsm1r",
+      "playerId": "player_1772644565902_036vcsm1r",
+      "locationId": "location_1772643622937_e489509c6174"
+    },
+    "statusEffects": []
+  },
+  "thing_1772644591399_96f9fb476120": {
+    "id": "thing_1772644591399_96f9fb476120",
+    "name": "Cartel Signal Whistle",
+    "description": "A small silver whistle on a chain, seemingly innocent but bearing tiny etchings that identify the bearer to the Dusthollow Cartel's agents. Three short bursts signals a profitable opportunity; one long blast warns of Guild investigators nearby. Type: tool | Slot: accessory | Rarity: Uncommon | Value: 25 | Weight: 0 | Bonuses: charisma +2",
+    "shortDescription": "Silver whistle with secret Cartel signal codes",
+    "thingType": "item",
+    "imageId": null,
+    "createdAt": "2026-03-04T17:16:31.399Z",
+    "lastUpdated": "2026-03-04T17:16:31.399Z",
+    "rarity": "Uncommon",
+    "itemTypeDetail": "tool",
+    "slot": "accessory",
+    "attributeBonuses": [
+      {
+        "attribute": "charisma",
+        "bonus": 2
+      }
+    ],
+    "causeStatusEffect": null,
+    "level": 5,
+    "relativeLevel": 1,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": true,
+    "flags": [
+      "salvageable"
+    ],
+    "metadata": {
+      "rarity": "Uncommon",
+      "itemType": "tool",
+      "value": "25",
+      "weight": "0",
+      "slot": "accessory",
+      "attributeBonuses": [
+        {
+          "attribute": "charisma",
+          "bonus": 2
+        }
+      ],
+      "relativeLevel": 1,
+      "level": 5,
+      "isSalvageable": true,
+      "ownerId": "player_1772644565902_036vcsm1r",
+      "playerId": "player_1772644565902_036vcsm1r",
+      "locationId": "location_1772643622937_e489509c6174"
+    },
+    "statusEffects": []
+  },
+  "thing_1772644591400_4b641b7e1fed": {
+    "id": "thing_1772644591400_4b641b7e1fed",
+    "name": "Bone Dice Set",
+    "description": "A set of six dice carved from animal bone, stained yellow with age and use. The dots are filled with blackened wax, and one die rolls suspiciously high more often than chance should allow. Type: tool | Rarity: Common | Value: 5 | Weight: 0",
+    "shortDescription": "Worn bone dice with one suspiciously lucky die",
+    "thingType": "item",
+    "imageId": null,
+    "createdAt": "2026-03-04T17:16:31.400Z",
+    "lastUpdated": "2026-03-04T17:16:31.400Z",
+    "rarity": "Common",
+    "itemTypeDetail": "tool",
+    "causeStatusEffect": null,
+    "level": 4,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": false,
+    "metadata": {
+      "rarity": "Common",
+      "itemType": "tool",
+      "value": "5",
+      "weight": "0",
+      "relativeLevel": 0,
+      "level": 4,
+      "ownerId": "player_1772644565902_036vcsm1r",
+      "playerId": "player_1772644565902_036vcsm1r",
+      "locationId": "location_1772643622937_e489509c6174"
+    },
+    "statusEffects": []
+  },
+  "thing_1772644591400_67119c51a663": {
+    "id": "thing_1772644591400_67119c51a663",
+    "name": "Holt's Ledger",
+    "description": "A small leather-bound book ostensibly used for recording shift reports and passing travelers, but containing a coded list of names, dates, and payments received from Cartel informants. Written in a cipher only Brannick understands. Type: tool | Rarity: Uncommon | Value: 50 | Weight: 1 | Bonuses: intelligence +2",
+    "shortDescription": "Coded ledger tracking Cartel payments and informants",
+    "thingType": "item",
+    "imageId": null,
+    "createdAt": "2026-03-04T17:16:31.400Z",
+    "lastUpdated": "2026-03-04T17:16:31.400Z",
+    "rarity": "Uncommon",
+    "itemTypeDetail": "tool",
+    "attributeBonuses": [
+      {
+        "attribute": "intelligence",
+        "bonus": 2
+      }
+    ],
+    "causeStatusEffect": null,
+    "level": 5,
+    "relativeLevel": 1,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": false,
+    "metadata": {
+      "rarity": "Uncommon",
+      "itemType": "tool",
+      "value": "50",
+      "weight": "1",
+      "attributeBonuses": [
+        {
+          "attribute": "intelligence",
+          "bonus": 2
+        }
+      ],
+      "relativeLevel": 1,
+      "level": 5,
+      "ownerId": "player_1772644565902_036vcsm1r",
+      "playerId": "player_1772644565902_036vcsm1r",
+      "locationId": "location_1772643622937_e489509c6174"
+    },
+    "statusEffects": []
+  },
+  "thing_1772644593929_9ea44b870b6d": {
+    "id": "thing_1772644593929_9ea44b870b6d",
+    "name": "Valdros Surveyor's Case",
+    "description": "A battered leather case reinforced with bronze corners, containing telescoping measuring rods, calibrated chains, and a precision astrolabe. The interior lining is stained with ink from a long-ago spill, and several compartments hold chalk sticks and charcoal for marking corridor walls. Type: tool | Slot: hands | Rarity: Uncommon | Value: 85 | Weight: 6 | Properties: Grants advantage on checks to map passages, detect architectural anomalies, and track movement patterns within the labyrinth. The telescoping rods can measure distances up to 30 feet. | Bonuses: intelligence +2, wisdom +2",
+    "shortDescription": "Leather case with surveying instruments for dungeon mapping",
+    "thingType": "item",
+    "imageId": null,
+    "createdAt": "2026-03-04T17:16:33.929Z",
+    "lastUpdated": "2026-03-04T17:16:33.929Z",
+    "rarity": "Uncommon",
+    "itemTypeDetail": "tool",
+    "slot": "hands",
+    "attributeBonuses": [
+      {
+        "attribute": "intelligence",
+        "bonus": 2
+      },
+      {
+        "attribute": "wisdom",
+        "bonus": 2
+      }
+    ],
+    "causeStatusEffect": null,
+    "level": 4,
+    "relativeLevel": 1,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": true,
+    "flags": [
+      "salvageable"
+    ],
+    "metadata": {
+      "rarity": "Uncommon",
+      "itemType": "tool",
+      "value": "85",
+      "weight": "6",
+      "properties": "Grants advantage on checks to map passages, detect architectural anomalies, and track movement patterns within the labyrinth. The telescoping rods can measure distances up to 30 feet.",
+      "slot": "hands",
+      "attributeBonuses": [
+        {
+          "attribute": "intelligence",
+          "bonus": 2
+        },
+        {
+          "attribute": "wisdom",
+          "bonus": 2
+        }
+      ],
+      "relativeLevel": 1,
+      "level": 4,
+      "isSalvageable": true,
+      "ownerId": "player_1772644565903_sd00xx9lw",
+      "playerId": "player_1772644565903_sd00xx9lw",
+      "locationId": "location_1772643622937_e489509c6174"
+    },
+    "statusEffects": []
+  },
+  "thing_1772644593929_da30e4d6580b": {
+    "id": "thing_1772644593929_da30e4d6580b",
+    "name": "Copper-Wrapped Research Journal",
+    "description": "A thick-bound journal wrapped in protective oilcloth, its covers reinforced with thin copper plates etched with lunar phase diagrams. Hundreds of pages are filled with cramped handwriting, architectural sketches, celestial calculations, and increasingly obsessive marginalia about the Sinking Stairs. Type: tool | Slot: hands | Rarity: Common | Value: 15 | Weight: 2 | Properties: Contains Sycorax's accumulated research on lunar-correlated passage shifts. A knowledgeable reader might glean useful navigation insights, though the disorganized notes require patience to interpret.",
+    "shortDescription": "Scholar's journal with lunar phase research and corridor sketches",
+    "thingType": "item",
+    "imageId": null,
+    "createdAt": "2026-03-04T17:16:33.929Z",
+    "lastUpdated": "2026-03-04T17:16:33.929Z",
+    "rarity": "Common",
+    "itemTypeDetail": "tool",
+    "slot": "hands",
+    "causeStatusEffect": null,
+    "level": 3,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": true,
+    "flags": [
+      "salvageable"
+    ],
+    "metadata": {
+      "rarity": "Common",
+      "itemType": "tool",
+      "value": "15",
+      "weight": "2",
+      "properties": "Contains Sycorax's accumulated research on lunar-correlated passage shifts. A knowledgeable reader might glean useful navigation insights, though the disorganized notes require patience to interpret.",
+      "slot": "hands",
+      "relativeLevel": 0,
+      "level": 3,
+      "isSalvageable": true,
+      "ownerId": "player_1772644565903_sd00xx9lw",
+      "playerId": "player_1772644565903_sd00xx9lw",
+      "locationId": "location_1772643622937_e489509c6174"
+    },
+    "statusEffects": []
+  },
+  "thing_1772644593930_3197c246bb72": {
+    "id": "thing_1772644593930_3197c246bb72",
+    "name": "Scholar's Traveling Robes",
+    "description": "Heavy wool robes dyed a deep midnight blue, patched at the elbows and hemmed short to avoid trailing on wet stone. Numerous inner pockets hold vials of ink, spare quills, and wrapped rations, while a cleverly concealed pocket near the heart can secure small valuables. Type: armor | Slot: body | Rarity: Common | Value: 28 | Weight: 4 | Properties: Provides minor protection against cold and damp. The many pockets allow easy access to writing implements and small tools without searching through a pack.",
+    "shortDescription": "Patched midnight blue robes with numerous inner pockets",
+    "thingType": "item",
+    "imageId": null,
+    "createdAt": "2026-03-04T17:16:33.930Z",
+    "lastUpdated": "2026-03-04T17:16:33.930Z",
+    "rarity": "Common",
+    "itemTypeDetail": "armor",
+    "slot": "body",
+    "causeStatusEffect": null,
+    "level": 3,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": true,
+    "flags": [
+      "salvageable"
+    ],
+    "metadata": {
+      "rarity": "Common",
+      "itemType": "armor",
+      "value": "28",
+      "weight": "4",
+      "properties": "Provides minor protection against cold and damp. The many pockets allow easy access to writing implements and small tools without searching through a pack.",
+      "slot": "body",
+      "relativeLevel": 0,
+      "level": 3,
+      "isSalvageable": true,
+      "ownerId": "player_1772644565903_sd00xx9lw",
+      "playerId": "player_1772644565903_sd00xx9lw",
+      "locationId": "location_1772643622937_e489509c6174"
+    },
+    "statusEffects": []
+  },
+  "thing_1772644593930_e6c93c2705c8": {
+    "id": "thing_1772644593930_e6c93c2705c8",
+    "name": "Lunar-Phase Astrolabe",
+    "description": "A palm-sized brass astrolabe engraved with three overlapping dial faces representing the moon's phases, the dungeon's tidal magical fluctuations, and something called the \"Deep Rhythm\" in faded gilt lettering. A small crystal lens focuses ambient light onto the calibration marks. Type: accessory | Slot: accessory | Rarity: Uncommon | Value: 120 | Weight: 1 | Properties: Once per day, can determine the current lunar phase and predict which stair configurations are most likely in the Sinking Stairs. The crystal lens can detect faint magical residues within 10 feet. | Bonuses: wisdom +3",
+    "shortDescription": "Brass astronomical instrument for tracking lunar phases and dungeon shifts",
+    "thingType": "item",
+    "imageId": null,
+    "createdAt": "2026-03-04T17:16:33.930Z",
+    "lastUpdated": "2026-03-04T17:16:33.930Z",
+    "rarity": "Uncommon",
+    "itemTypeDetail": "accessory",
+    "slot": "accessory",
+    "attributeBonuses": [
+      {
+        "attribute": "wisdom",
+        "bonus": 3
+      }
+    ],
+    "causeStatusEffect": null,
+    "level": 5,
+    "relativeLevel": 2,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": true,
+    "flags": [
+      "salvageable"
+    ],
+    "metadata": {
+      "rarity": "Uncommon",
+      "itemType": "accessory",
+      "value": "120",
+      "weight": "1",
+      "properties": "Once per day, can determine the current lunar phase and predict which stair configurations are most likely in the Sinking Stairs. The crystal lens can detect faint magical residues within 10 feet.",
+      "slot": "accessory",
+      "attributeBonuses": [
+        {
+          "attribute": "wisdom",
+          "bonus": 3
+        }
+      ],
+      "relativeLevel": 2,
+      "level": 5,
+      "isSalvageable": true,
+      "ownerId": "player_1772644565903_sd00xx9lw",
+      "playerId": "player_1772644565903_sd00xx9lw",
+      "locationId": "location_1772643622937_e489509c6174"
+    },
+    "statusEffects": []
+  },
+  "thing_1772644943988_28559fdfd222": {
+    "id": "thing_1772644943988_28559fdfd222",
+    "name": "Slipstone Crampons",
+    "description": "Iron spikes strapped to heavy leather frames, designed to grip the unnaturally smooth patches of stone found throughout the Sinking Stairs. Veterans swear by them after watching too many novices slide into the mist.",
+    "shortDescription": "Iron climbing spikes for treacherous smooth stone surfaces",
+    "thingType": "item",
+    "imageId": "img_20260304_172430_0sevyc4p",
+    "createdAt": "2026-03-04T17:22:23.988Z",
+    "lastUpdated": "2026-03-04T17:24:44.839Z",
+    "rarity": "Common",
+    "itemTypeDetail": "tool",
+    "slot": "feet",
+    "attributeBonuses": [
+      {
+        "attribute": "dexterity",
+        "bonus": 1
+      },
+      {
+        "attribute": "charisma",
+        "bonus": -1
+      }
+    ],
+    "causeStatusEffect": null,
+    "level": 4,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": true,
+    "flags": [
+      "salvageable"
+    ],
+    "metadata": {
+      "locationId": "location_1772643622937_ff41d67841de",
+      "locationName": "The Sinking Stairs",
+      "value": "15",
+      "weight": "3",
+      "properties": "Grants advantage on checks to maintain footing on smooth or slippery surfaces. Disadvantage on stealth checks due to clicking on stone.",
+      "slot": "feet",
+      "relativeLevel": 0,
+      "isSalvageable": true,
+      "level": 4,
+      "attributeBonuses": [
+        {
+          "attribute": "dexterity",
+          "bonus": 1
+        },
+        {
+          "attribute": "charisma",
+          "bonus": -1
+        }
+      ]
+    },
+    "statusEffects": []
+  },
+  "thing_1772644943989_12fc25d4faa6": {
+    "id": "thing_1772644943989_12fc25d4faa6",
+    "name": "Coarse Hemp Rope Coil",
+    "description": "A sturdy fifty-foot length of rope favored by thrifty adventurers who haven't yet lost one to a pit trap, gelatinous cube, or desperate escape. Smells faintly of tar and fear.",
+    "shortDescription": "Sturdy fifty-foot rope for climbing and safety lines",
+    "thingType": "item",
+    "imageId": null,
+    "createdAt": "2026-03-04T17:22:23.989Z",
+    "lastUpdated": "2026-03-04T17:22:23.989Z",
+    "rarity": "Common",
+    "itemTypeDetail": "tool",
+    "slot": "waist",
+    "causeStatusEffect": null,
+    "level": 4,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": true,
+    "flags": [
+      "salvageable"
+    ],
+    "metadata": {
+      "locationId": "location_1772643622937_ff41d67841de",
+      "locationName": "The Sinking Stairs",
+      "value": "8",
+      "weight": "5",
+      "properties": "Can be uncoiled and secured to create a safety line or climbing aid. Breaks under extreme strain.",
+      "slot": "waist",
+      "relativeLevel": 0,
+      "isSalvageable": true,
+      "level": 4
+    },
+    "statusEffects": []
+  },
+  "thing_1772644943989_ba55c5b5ff93": {
+    "id": "thing_1772644943989_ba55c5b5ff93",
+    "name": "Shattered Wayfinder Lantern",
+    "description": "A brass lantern cracked beyond repair, its glass shattered and oil reservoir long dried. Whoever carried this must have dropped it during a hasty retreat—or something took it from them.",
+    "shortDescription": "Broken brass lantern dropped by some past adventurer",
+    "thingType": "scenery",
+    "imageId": "img_20260304_172349_kvmz2nuz",
+    "createdAt": "2026-03-04T17:22:23.989Z",
+    "lastUpdated": "2026-03-04T17:24:01.907Z",
+    "rarity": "Junk",
+    "itemTypeDetail": "junk",
+    "causeStatusEffect": null,
+    "level": 2,
+    "relativeLevel": -2,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": true,
+    "flags": [
+      "salvageable"
+    ],
+    "metadata": {
+      "locationId": "location_1772643622937_ff41d67841de",
+      "locationName": "The Sinking Stairs",
+      "value": "1",
+      "weight": "4",
+      "properties": "Can be salvaged for small amounts of brass and glass shards.",
+      "relativeLevel": -2,
+      "isSalvageable": true,
+      "level": 2
+    },
+    "statusEffects": []
+  },
+  "thing_1772644943989_e4d45edc30ab": {
+    "id": "thing_1772644943989_e4d45edc30ab",
+    "name": "Worn Rest Niche",
+    "description": "A shallow alcove carved into the switchback wall, just deep enough to shelter one or two people from the rising cold air. Centuries of use have worn the stone smooth, and someone has scratched a crude blessing above the opening.",
+    "shortDescription": "Shallow carved alcove sheltering climbers from cold drafts",
+    "thingType": "scenery",
+    "imageId": "img_20260304_172402_blfg7ox3",
+    "createdAt": "2026-03-04T17:22:23.989Z",
+    "lastUpdated": "2026-03-04T17:24:16.065Z",
+    "rarity": "Common",
+    "itemTypeDetail": "landmark",
+    "causeStatusEffect": null,
+    "level": 4,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": false,
+    "metadata": {
+      "locationId": "location_1772643622937_ff41d67841de",
+      "locationName": "The Sinking Stairs",
+      "value": "0",
+      "weight": "0",
+      "properties": "Provides shelter from cold updrafts. Often used for brief rests before the final descent.",
+      "relativeLevel": 0,
+      "level": 4
+    },
+    "statusEffects": []
+  },
+  "thing_1772644943989_ebf20a245bcb": {
+    "id": "thing_1772644943989_ebf20a245bcb",
+    "name": "Tether Ring and Iron Staple",
+    "description": "A rusted iron ring set deep into the rock face with a heavy staple, intended for securing ropes during descents. Weathered but still solid enough to trust—probably.",
+    "shortDescription": "Rusted iron ring bolted to rock for securing descent ropes",
+    "thingType": "scenery",
+    "imageId": "img_20260304_172416_auqhghrr",
+    "createdAt": "2026-03-04T17:22:23.990Z",
+    "lastUpdated": "2026-03-04T17:24:30.217Z",
+    "rarity": "Common",
+    "itemTypeDetail": "landmark",
+    "causeStatusEffect": null,
+    "level": 4,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": false,
+    "metadata": {
+      "locationId": "location_1772643622937_ff41d67841de",
+      "locationName": "The Sinking Stairs",
+      "value": "0",
+      "weight": "0",
+      "properties": "Can be used to secure ropes for rappelling. Requires inspection before trusting with weight.",
+      "relativeLevel": 0,
+      "level": 4
+    },
+    "statusEffects": []
+  },
+  "thing_1772644943990_bea8b4620625": {
+    "id": "thing_1772644943990_bea8b4620625",
+    "name": "Voice of the Sinking Stairs",
+    "description": "An unusual acoustic phenomenon where the sinkhole's geometry creates natural amplification. Whispers spoken near this worn patch of wall echo strangely, sometimes carrying fragments of conversations from climbers far below—or perhaps from somewhere else entirely.",
+    "shortDescription": "Natural acoustic phenomenon amplifying whispers and distant sounds",
+    "thingType": "scenery",
+    "imageId": "img_20260304_172444_4kzrnnnh",
+    "createdAt": "2026-03-04T17:22:23.990Z",
+    "lastUpdated": "2026-03-04T17:24:58.998Z",
+    "rarity": "Uncommon",
+    "itemTypeDetail": "mystery",
+    "causeStatusEffect": null,
+    "level": 5,
+    "relativeLevel": 1,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": false,
+    "metadata": {
+      "locationId": "location_1772643622937_ff41d67841de",
+      "locationName": "The Sinking Stairs",
+      "value": "0",
+      "weight": "0",
+      "properties": "Can amplify whispered messages to carry further into the dungeon. Sometimes reveals distant sounds or voices from unknown origin.",
+      "relativeLevel": 1,
+      "level": 5
+    },
+    "statusEffects": []
+  },
+  "thing_1772644985175_069829bac709": {
+    "id": "thing_1772644985175_069829bac709",
+    "name": "Corroded Imperial Longsword",
+    "description": "A notched blade bearing the faint etching of a sunburst crest, its edge dulled by centuries yet still capable of cleaving flesh. The metal has darkened with age and something darker seems to cling to the steel, whispering faintly when drawn. Type: weapon | Slot: hands | Rarity: Uncommon | Value: 45 | Weight: 3 | Status Effect: Target: Necrotic Chill - The wound frosts over and the flesh around it turns gray and numb, slowing movement and dulling reflexes. | Bonuses: strength +2, dexterity -2",
+    "shortDescription": "Notched ancient blade that numbs wounded flesh",
+    "thingType": "item",
+    "imageId": null,
+    "createdAt": "2026-03-04T17:23:05.175Z",
+    "lastUpdated": "2026-03-04T17:23:15.914Z",
+    "rarity": "Uncommon",
+    "itemTypeDetail": "weapon",
+    "slot": "hands",
+    "attributeBonuses": [
+      {
+        "attribute": "strength",
+        "bonus": 2
+      },
+      {
+        "attribute": "dexterity",
+        "bonus": -2
+      }
+    ],
+    "causeStatusEffectOnTarget": {
+      "name": "Necrotic Chill",
+      "description": "Frost spreads through wounded flesh, turning skin gray and numb. The creeping cold slows movements and makes fine motor control difficult.",
+      "attributes": [
+        {
+          "attribute": "dexterity",
+          "modifier": -3
+        },
+        {
+          "attribute": "constitution",
+          "modifier": -2
+        }
+      ],
+      "skills": [
+        {
+          "skill": "Melee Combat",
+          "modifier": -2
+        },
+        {
+          "skill": "Dodge",
+          "modifier": -3
+        },
+        {
+          "skill": "Acrobatics",
+          "modifier": -3
+        }
+      ],
+      "needBars": [
+        {
+          "name": "Stamina",
+          "delta": -1
+        }
+      ],
+      "duration": 3,
+      "appliedAt": null
+    },
+    "causeStatusEffect": {
+      "name": "Necrotic Chill",
+      "description": "Frost spreads through wounded flesh, turning skin gray and numb. The creeping cold slows movements and makes fine motor control difficult.",
+      "attributes": [
+        {
+          "attribute": "dexterity",
+          "modifier": -3
+        },
+        {
+          "attribute": "constitution",
+          "modifier": -2
+        }
+      ],
+      "skills": [
+        {
+          "skill": "Melee Combat",
+          "modifier": -2
+        },
+        {
+          "skill": "Dodge",
+          "modifier": -3
+        },
+        {
+          "skill": "Acrobatics",
+          "modifier": -3
+        }
+      ],
+      "needBars": [
+        {
+          "name": "Stamina",
+          "delta": -1
+        }
+      ],
+      "duration": 3,
+      "appliedAt": null,
+      "applyToTarget": true,
+      "applyToEquipper": false
+    },
+    "level": 3,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": true,
+    "flags": [
+      "salvageable"
+    ],
+    "metadata": {
+      "rarity": "Uncommon",
+      "itemType": "weapon",
+      "value": "45",
+      "weight": "3",
+      "slot": "hands",
+      "attributeBonuses": [
+        {
+          "attribute": "strength",
+          "bonus": 2
+        },
+        {
+          "attribute": "dexterity",
+          "bonus": -2
+        }
+      ],
+      "causeStatusEffectOnTarget": {
+        "name": "Necrotic Chill",
+        "description": "Frost spreads through wounded flesh, turning skin gray and numb. The creeping cold slows movements and makes fine motor control difficult.",
+        "attributes": [
+          {
+            "attribute": "dexterity",
+            "modifier": -3
+          },
+          {
+            "attribute": "constitution",
+            "modifier": -2
+          }
+        ],
+        "skills": [
+          {
+            "skill": "Melee Combat",
+            "modifier": -2
+          },
+          {
+            "skill": "Dodge",
+            "modifier": -3
+          },
+          {
+            "skill": "Acrobatics",
+            "modifier": -3
+          }
+        ],
+        "needBars": [
+          {
+            "name": "Stamina",
+            "delta": -1
+          }
+        ],
+        "duration": 3,
+        "appliedAt": null
+      },
+      "relativeLevel": 0,
+      "level": 3,
+      "isSalvageable": true,
+      "ownerId": "player_1772644953014_0psyfa4dx",
+      "playerId": "player_1772644953014_0psyfa4dx",
+      "locationId": "location_1772643622937_ff41d67841de"
+    },
+    "statusEffects": []
+  },
+  "thing_1772644985186_4697c97d7875": {
+    "id": "thing_1772644985186_4697c97d7875",
+    "name": "Flaking Chainmail Hauberk",
+    "description": "Rusted links that shed orange flakes with every movement, this armor once protected an imperial guardsman. Though corroded, the mail still turns aside weaker blows and carries lingering protective enchantments. Type: armor | Slot: body | Rarity: Common | Value: 30 | Weight: 25 | Bonuses: constitution +1, dexterity -1",
+    "shortDescription": "Rusted chainmail with fading protective magic",
+    "thingType": "item",
+    "imageId": null,
+    "createdAt": "2026-03-04T17:23:05.186Z",
+    "lastUpdated": "2026-03-04T17:23:05.186Z",
+    "rarity": "Common",
+    "itemTypeDetail": "armor",
+    "slot": "body",
+    "attributeBonuses": [
+      {
+        "attribute": "constitution",
+        "bonus": 1
+      },
+      {
+        "attribute": "dexterity",
+        "bonus": -1
+      }
+    ],
+    "causeStatusEffect": null,
+    "level": 2,
+    "relativeLevel": -1,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": true,
+    "flags": [
+      "salvageable"
+    ],
+    "metadata": {
+      "rarity": "Common",
+      "itemType": "armor",
+      "value": "30",
+      "weight": "25",
+      "slot": "body",
+      "attributeBonuses": [
+        {
+          "attribute": "constitution",
+          "bonus": 1
+        },
+        {
+          "attribute": "dexterity",
+          "bonus": -1
+        }
+      ],
+      "relativeLevel": -1,
+      "level": 2,
+      "isSalvageable": true,
+      "ownerId": "player_1772644953014_0psyfa4dx",
+      "playerId": "player_1772644953014_0psyfa4dx",
+      "locationId": "location_1772643622937_ff41d67841de"
+    },
+    "statusEffects": []
+  },
+  "thing_1772644985186_fe6ec71bd5ab": {
+    "id": "thing_1772644985186_fe6ec71bd5ab",
+    "name": "Bone Guardian's Signet",
+    "description": "A tarnished bronze ring set with a cracked carnelian, inscribed with symbols of fealty to an empire long dust. It pulses faintly when danger approaches, the gemstone's fracture weeping a slow, reddish light. Type: accessory | Slot: ring | Rarity: Uncommon | Value: 65 | Weight: 0 | Status Effect: Equipper: Death's Sight - The wearer can sense the presence of undead creatures within sixty feet as a cold pressure against their mind. | Bonuses: wisdom +2",
+    "shortDescription": "Cracked bronze ring sensing nearby undead",
+    "thingType": "item",
+    "imageId": null,
+    "createdAt": "2026-03-04T17:23:05.186Z",
+    "lastUpdated": "2026-03-04T17:23:13.593Z",
+    "rarity": "Uncommon",
+    "itemTypeDetail": "accessory",
+    "slot": "ring",
+    "attributeBonuses": [
+      {
+        "attribute": "wisdom",
+        "bonus": 2
+      }
+    ],
+    "causeStatusEffectOnEquipper": {
+      "name": "Death's Sight",
+      "description": "A supernatural awareness that manifests as an icy weight behind the eyes when undead draw near. The sensation grows stronger with proximity, allowing rough estimation of distance and direction.",
+      "attributes": [
+        {
+          "attribute": "wisdom",
+          "modifier": 2
+        }
+      ],
+      "skills": [
+        {
+          "skill": "Perception",
+          "modifier": 3
+        },
+        {
+          "skill": "Necromancy Resistance",
+          "modifier": 2
+        }
+      ],
+      "needBars": [
+        {
+          "name": "Mana",
+          "delta": -1
+        }
+      ],
+      "duration": 480,
+      "appliedAt": null
+    },
+    "causeStatusEffect": {
+      "name": "Death's Sight",
+      "description": "A supernatural awareness that manifests as an icy weight behind the eyes when undead draw near. The sensation grows stronger with proximity, allowing rough estimation of distance and direction.",
+      "attributes": [
+        {
+          "attribute": "wisdom",
+          "modifier": 2
+        }
+      ],
+      "skills": [
+        {
+          "skill": "Perception",
+          "modifier": 3
+        },
+        {
+          "skill": "Necromancy Resistance",
+          "modifier": 2
+        }
+      ],
+      "needBars": [
+        {
+          "name": "Mana",
+          "delta": -1
+        }
+      ],
+      "duration": 480,
+      "appliedAt": null,
+      "applyToTarget": false,
+      "applyToEquipper": true
+    },
+    "level": 3,
+    "isVehicle": false,
+    "isCraftingStation": false,
+    "isProcessingStation": false,
+    "isHarvestable": false,
+    "isSalvageable": false,
+    "metadata": {
+      "rarity": "Uncommon",
+      "itemType": "accessory",
+      "value": "65",
+      "weight": "0",
+      "slot": "ring",
+      "attributeBonuses": [
+        {
+          "attribute": "wisdom",
+          "bonus": 2
+        }
+      ],
+      "causeStatusEffectOnEquipper": {
+        "name": "Death's Sight",
+        "description": "A supernatural awareness that manifests as an icy weight behind the eyes when undead draw near. The sensation grows stronger with proximity, allowing rough estimation of distance and direction.",
+        "attributes": [
+          {
+            "attribute": "wisdom",
+            "modifier": 2
+          }
+        ],
+        "skills": [
+          {
+            "skill": "Perception",
+            "modifier": 3
+          },
+          {
+            "skill": "Necromancy Resistance",
+            "modifier": 2
+          }
+        ],
+        "needBars": [
+          {
+            "name": "Mana",
+            "delta": -1
+          }
+        ],
+        "duration": 480,
+        "appliedAt": null
+      },
+      "relativeLevel": 0,
+      "level": 3,
+      "ownerId": "player_1772644953014_0psyfa4dx",
+      "playerId": "player_1772644953014_0psyfa4dx",
+      "locationId": "location_1772643622937_ff41d67841de"
+    },
+    "statusEffects": []
+  }
+}

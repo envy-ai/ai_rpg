@@ -1,0 +1,708 @@
+[
+  {
+    "role": "assistant",
+    "content": "The morning air bites at your face as you stand before the Adventurer's Guildhall, breath misting in the weak winter light. Dusthollow sprawls around you—a frontier town built on equal parts hope and desperation, its muddy streets churned by countless boots that walked toward the depths and far fewer that returned. The building itself looms three stories of reinforced oak and cracked stone, its entrance flanked by guards whose eyes flick over you with practiced assessment.\n\nAdventurers cluster on the covered porch, checking equipment and speaking in low tones about routes through the Faded Halls. A wiry gnome with magnifying spectacles clutches a bulging map case, watching passersby with hopeful anxiety. Nearby, a tiefling in a shadow-dark cloak waits with patient calm, his golden eyes and small curved horns drawing wary looks from those who pass.\n\nCarved above the Guildhall door, a lantern descends into darkness—the Guild's crest, and an omen. Somewhere beneath your feet lies the Sunken Labyrinth of Valdros, twisting through the earth like a wound that refuses to heal. The notice board inside will have contracts, the storeroom will have supplies, and the depths will have whatever fate awaits those bold enough—or foolish enough—to descend.",
+    "summary": "The morning air bites at your face as you stand before the Adventurer's Guildhall, breath misting in the weak winter light. Dusthollow sprawls around you—a frontier town built on equal parts hope and desperation, its muddy streets churned by countless boots that walked toward the depths and far fewer that returned. The building itself looms three stories of reinforced oak and cracked stone, its entrance flanked by guards whose eyes flick over you with practiced assessment.\n\nAdventurers cluster on the covered porch, checking equipment and speaking in low tones about routes through the Faded Halls. A wiry gnome with magnifying spectacles clutches a bulging map case, watching passersby with hopeful anxiety. Nearby, a tiefling in a shadow-dark cloak waits with patient calm, his golden eyes and small curved horns drawing wary looks from those who pass.\n\nCarved above the Guildhall door, a lantern descends into darkness—the Guild's crest, and an omen. Somewhere beneath your feet lies the Sunken Labyrinth of Valdros, twisting through the earth like a wound that refuses to heal. The notice board inside will have contracts, the storeroom will have supplies, and the depths will have whatever fate awaits those bold enough—or foolish enough—to descend.",
+    "type": "game-intro",
+    "locationId": "location_1772642705133_c64222056ec5",
+    "id": "c55b7b26-3d72-4a32-8481-d58a752d5e37",
+    "timestamp": "2026-03-04T16:53:29.024Z",
+    "parentId": null,
+    "metadata": {
+      "locationId": "location_1772642705133_c64222056ec5",
+      "npcNames": [
+        "Malphis Kethras",
+        "Tobin Wheeldon"
+      ]
+    }
+  },
+  {
+    "role": "assistant",
+    "type": "slop-remover",
+    "timestamp": "2026-03-04T16:53:29.024Z",
+    "parentId": "c55b7b26-3d72-4a32-8481-d58a752d5e37",
+    "slopRemoval": {
+      "slopWords": [
+        "faded",
+        "glances",
+        "hushed",
+        "stillness",
+        "weathered"
+      ],
+      "slopNgrams": []
+    },
+    "locationId": "location_1772642705133_c64222056ec5",
+    "id": "16f24ef0-8436-44e9-aec8-34717ede71b7",
+    "metadata": {
+      "locationId": "location_1772642705133_c64222056ec5",
+      "npcNames": [
+        "Malphis Kethras",
+        "Tobin Wheeldon"
+      ]
+    }
+  },
+  {
+    "role": "user",
+    "content": "Wanderer moved to Dungeon Entrance Road.",
+    "travel": true,
+    "locationId": "location_1772642705133_c64222056ec5",
+    "metadata": {
+      "requestId": "req-mmca34ys-c3y5uxg52gq",
+      "locationId": "location_1772642705133_c64222056ec5",
+      "traveledToLocationId": "location_1772643622936_675966334234"
+    },
+    "id": "d8455897-ca28-47a7-b68b-0b6f1d6638a4",
+    "timestamp": "2026-03-04T16:58:14.822Z",
+    "parentId": null
+  },
+  {
+    "role": "assistant",
+    "content": "You step off the Guildhall's covered porch, leaving behind the hopeful clusters of adventurers checking their gear. The wiry gnome with his map case watches you go, his magnified eyes tracking your departure with wistful longing.\n\nThe Dungeon Entrance Road stretches before you, packed earth frozen into hard ruts beneath the weak winter sun. Frost clings to the scraggly brush lining the path, and the temperature drops with each step as the road slopes downward.\n\nAhead, the earth opens. A great maw of worked stone swallows the road into darkness—the entrance to the Sunken Labyrinth. Mist rises from the depths, the frozen breath curling into the morning air, carrying the mineral smell of deep places that have never seen light.\n\nAdventurers pass in both directions: parties descending with grim determination, others returning hollow-eyed and silent. A carved boundary stone marks the threshold, its protective wards worn to a thin pulse of warmth beneath your palm. Beyond it, true darkness waits.",
+    "type": "player-action",
+    "locationId": "location_1772642705133_c64222056ec5",
+    "id": "22a0f6b8-1b18-46ad-87ef-024ef47dd297",
+    "timestamp": "2026-03-04T16:59:19.480Z",
+    "parentId": null,
+    "metadata": {
+      "locationId": "location_1772642705133_c64222056ec5",
+      "npcNames": [
+        "Malphis Kethras",
+        "Tobin Wheeldon"
+      ],
+      "traveledToLocationId": "location_1772643622936_675966334234"
+    }
+  },
+  {
+    "role": "assistant",
+    "type": "slop-remover",
+    "timestamp": "2026-03-04T16:59:19.480Z",
+    "parentId": "22a0f6b8-1b18-46ad-87ef-024ef47dd297",
+    "slopRemoval": {
+      "slopWords": [
+        "enchantments",
+        "faded",
+        "faint",
+        "scent",
+        "dungeon"
+      ],
+      "slopNgrams": []
+    },
+    "locationId": "location_1772642705133_c64222056ec5",
+    "id": "491af2f9-3853-4a3c-a89d-dcf030130be9",
+    "metadata": {
+      "locationId": "location_1772642705133_c64222056ec5",
+      "npcNames": [
+        "Malphis Kethras",
+        "Tobin Wheeldon"
+      ],
+      "traveledToLocationId": "location_1772643622936_675966334234"
+    }
+  },
+  {
+    "role": "assistant",
+    "content": "📋 Events – Guildhall Exterior\n• 🙋 Wiry Gnome arrived",
+    "summary": "📋 Events – Guildhall Exterior\n• 🙋 Wiry Gnome arrived",
+    "timestamp": "2026-03-04T16:59:19.480Z",
+    "parentId": "22a0f6b8-1b18-46ad-87ef-024ef47dd297",
+    "type": "event-summary",
+    "summaryTitle": "📋 Events – Guildhall Exterior",
+    "summaryItems": [
+      {
+        "icon": "🙋",
+        "text": "Wiry Gnome arrived"
+      }
+    ],
+    "locationId": "location_1772642705133_c64222056ec5",
+    "id": "00a4d782-e495-4cd7-94cf-26225e978e64",
+    "metadata": {
+      "locationId": "location_1772642705133_c64222056ec5",
+      "npcNames": [
+        "Malphis Kethras",
+        "Tobin Wheeldon"
+      ],
+      "traveledToLocationId": "location_1772643622936_675966334234"
+    }
+  },
+  {
+    "role": "assistant",
+    "type": "plausibility",
+    "timestamp": "2026-03-04T16:59:19.480Z",
+    "parentId": "22a0f6b8-1b18-46ad-87ef-024ef47dd297",
+    "plausibility": {
+      "raw": "<plausibility>\n  <reason>Exit listed in current location, no obstacles preventing movement.</reason>\n  <type>Plausible</type>\n  <skillCheck>\n    <reason>No skill check required for normal travel to a listed exit.</reason>\n    <skill>N/A</skill>\n    <attribute>N/A</attribute>\n    <difficulty>\n      <unopposedCheck>\n        <difficultyLevel>Trivial</difficultyLevel>\n      </unopposedCheck>\n    </difficulty>\n    <curcumstanceModifiers>\n      <circumstanceModifier>\n        <amount>0</amount>\n        <reason>N/A</reason>\n      </circumstanceModifier>\n    </curcumstanceModifiers>\n  </skillCheck>\n  <itemsMentioned>\n  </itemsMentioned>\n  <abilitiesMentioned>\n  </abilitiesMentioned>\n</plausibility>",
+      "structured": {
+        "type": "Plausible",
+        "reason": "Exit listed in current location, no obstacles preventing movement.",
+        "skillCheck": {
+          "skill": null,
+          "attribute": null,
+          "difficulty": "Trivial",
+          "reason": "No skill check required for normal travel to a listed exit.",
+          "checkType": "unopposed",
+          "unopposedCheck": {
+            "difficultyLevel": "Trivial"
+          },
+          "circumstanceModifiers": [
+            {
+              "amount": 0,
+              "reason": null
+            }
+          ],
+          "circumstanceModifier": 0
+        },
+        "itemsMentioned": [],
+        "abilitiesMentioned": []
+      }
+    },
+    "locationId": "location_1772642705133_c64222056ec5",
+    "id": "6b7cec04-87b4-4f12-980f-49da3bd47759",
+    "metadata": {
+      "locationId": "location_1772642705133_c64222056ec5",
+      "npcNames": [
+        "Malphis Kethras",
+        "Tobin Wheeldon"
+      ],
+      "traveledToLocationId": "location_1772643622936_675966334234"
+    }
+  },
+  {
+    "role": "assistant",
+    "type": "skill-check",
+    "timestamp": "2026-03-04T16:59:19.480Z",
+    "parentId": "22a0f6b8-1b18-46ad-87ef-024ef47dd297",
+    "skillCheck": {
+      "label": "success",
+      "degree": "success",
+      "success": true,
+      "type": "Plausible",
+      "reason": "Exit listed in current location, no obstacles preventing movement.",
+      "roll": null,
+      "difficulty": {
+        "label": "Trivial",
+        "dc": null
+      },
+      "skill": null,
+      "attribute": null,
+      "margin": null,
+      "checkType": "unopposed"
+    },
+    "locationId": "location_1772642705133_c64222056ec5",
+    "id": "5b1cdf67-49d2-4703-b0e9-4822392a8ef7",
+    "metadata": {
+      "locationId": "location_1772642705133_c64222056ec5",
+      "npcNames": [
+        "Malphis Kethras",
+        "Tobin Wheeldon"
+      ]
+    }
+  },
+  {
+    "role": "assistant",
+    "content": "• Ithelwen: Concerned about cold-damaged stock, needs reliable Twilight Depths specimen source, evaluating customers for survival likelihood\n• Wiry Gnome: Growing desperate after 3 weeks of rejections, torn between finding a party and selling up/facing defeat, noticed Wanderer leaving\n\n[Mystery Boxes - Decided]\n• Thistlewick's Compass: Drains Aldric's soul to function; Aldric becoming part of labyrinth; compass seeks to reunite master and apprentice before transformation completes\n• Ithelwen's Screaming Specimen: Parasitic fungus that replaces nervous tissue; the adventurer who brought it died 3 days later; Ithelwen hasn't connected these facts\n\n[Tension Check]\n• All tension from established threats (dungeon environment) and emergent character situations (gnome's desperation) - no artificial obstacles introduced",
+    "summary": "• Ithelwen: Concerned about cold-damaged stock, needs reliable Twilight Depths specimen source, evaluating customers for survival likelihood\n• Wiry Gnome: Growing desperate after 3 weeks of rejections, torn between finding a party and selling up/facing defeat, noticed Wanderer leaving\n\n[Mystery Boxes - Decided]\n• Thistlewick's Compass: Drains Aldric's soul to function; Aldric becoming part of labyrinth; compass seeks to reunite master and apprentice before transformation completes\n• Ithelwen's Screaming Specimen: Parasitic fungus that replaces nervous tissue; the adventurer who brought it died 3 days later; Ithelwen hasn't connected these facts\n\n[Tension Check]\n• All tension from established threats (dungeon environment) and emergent character situations (gnome's desperation) - no artificial obstacles introduced",
+    "type": "supplemental-story-info",
+    "parentId": "22a0f6b8-1b18-46ad-87ef-024ef47dd297",
+    "locationId": "location_1772642705133_c64222056ec5",
+    "id": "43faecc1-a63c-4551-8ecf-7f66cd49e28a",
+    "timestamp": "2026-03-04T17:03:16.427Z",
+    "metadata": {
+      "locationId": "location_1772642705133_c64222056ec5",
+      "npcNames": [
+        "Malphis Kethras",
+        "Tobin Wheeldon"
+      ]
+    }
+  },
+  {
+    "role": "user",
+    "content": "Wanderer moved to Memorial Walk.",
+    "travel": true,
+    "locationId": "location_1772643622936_675966334234",
+    "metadata": {
+      "requestId": "req-mmcafg4i-ir72q6d64fo",
+      "locationId": "location_1772643622936_675966334234",
+      "traveledToLocationId": "location_1772643622936_d96355885fb6"
+    },
+    "id": "3f4e736d-a8ac-475f-8291-075c091daf0b",
+    "timestamp": "2026-03-04T17:08:05.777Z",
+    "parentId": null
+  },
+  {
+    "role": "assistant",
+    "content": "The Last Chance Market fades behind you, its vendor cries growing distant as you leave the final cluster of commerce behind.\n\nThe Memorial Walk stretches before you, descending through rows of stone markers that crowd both sides of the path. Some monuments stand waist-high, carved with careful epitaphs and dates. Others are rough stones, barely shaped, bearing only a name—or nothing at all.\n\nFrost whitens the older inscriptions, but you catch fragments: \"Beloved son,\" \"The depths keep,\" \"Gone but not—\" The sentence never finishes. The stone is cracked clean through.\n\nHere there is only the crunch of your boots on frozen ground and the weight of accumulated loss. A single fresh-cut flower lies before one marker, petals black with frost.\n\nBelow, the Warning Post waits where the path curves. Beyond it, mist rises from something vast.",
+    "type": "player-action",
+    "locationId": "location_1772643622936_675966334234",
+    "id": "241310a7-fcba-47c6-afbe-514acdb35ba9",
+    "timestamp": "2026-03-04T17:08:41.656Z",
+    "parentId": null,
+    "metadata": {
+      "locationId": "location_1772643622936_675966334234",
+      "npcNames": [
+        "Brunhilda Deepdelver",
+        "Holt Brennan",
+        "Ithelwen Moss-Tender",
+        "Magra Ironhand",
+        "Tibbit Quickwhisper",
+        "Wiry Gnome"
+      ],
+      "traveledToLocationId": "location_1772643622936_d96355885fb6"
+    }
+  },
+  {
+    "role": "assistant",
+    "content": "📋 Events – Last Chance Market\n• 🚶 Travelled to Memorial Walk.",
+    "summary": "📋 Events – Last Chance Market\n• 🚶 Travelled to Memorial Walk.",
+    "timestamp": "2026-03-04T17:08:41.656Z",
+    "parentId": "241310a7-fcba-47c6-afbe-514acdb35ba9",
+    "type": "event-summary",
+    "summaryTitle": "📋 Events – Last Chance Market",
+    "summaryItems": [
+      {
+        "icon": "🚶",
+        "text": "Travelled to Memorial Walk."
+      }
+    ],
+    "locationId": "location_1772643622936_675966334234",
+    "id": "6ebcec16-76bb-49bf-bfdf-a68120be77c6",
+    "metadata": {
+      "locationId": "location_1772643622936_675966334234",
+      "npcNames": [
+        "Brunhilda Deepdelver",
+        "Holt Brennan",
+        "Ithelwen Moss-Tender",
+        "Magra Ironhand",
+        "Tibbit Quickwhisper",
+        "Wiry Gnome"
+      ],
+      "traveledToLocationId": "location_1772643622936_d96355885fb6"
+    }
+  },
+  {
+    "role": "assistant",
+    "type": "plausibility",
+    "timestamp": "2026-03-04T17:08:41.656Z",
+    "parentId": "241310a7-fcba-47c6-afbe-514acdb35ba9",
+    "plausibility": {
+      "raw": "<plausibility>\n  <reason>Memorial Walk is a listed exit from Last Chance Market; no obstacles mentioned.</reason>\n  <type>Plausible</type>\n  <skillCheck>\n    <reason>No skill check required for normal travel between adjacent locations on the Dungeon Entrance Road.</reason>\n    <skill>N/A</skill>\n    <attribute>N/A</attribute>\n    <difficulty>\n      <unopposedCheck>\n        <difficultyLevel>Trivial</difficultyLevel>\n      </unopposedCheck>\n    </difficulty>\n    <curcumstanceModifiers>\n      <circumstanceModifier>\n        <amount>0</amount>\n        <reason>N/A</reason>\n      </circumstanceModifier>\n    </curcumstanceModifiers>\n  </skillCheck>\n  <itemsMentioned>\n  </itemsMentioned>\n  <abilitiesMentioned>\n  </abilitiesMentioned>\n</plausibility>",
+      "structured": {
+        "type": "Plausible",
+        "reason": "Memorial Walk is a listed exit from Last Chance Market; no obstacles mentioned.",
+        "skillCheck": {
+          "skill": null,
+          "attribute": null,
+          "difficulty": "Trivial",
+          "reason": "No skill check required for normal travel between adjacent locations on the Dungeon Entrance Road.",
+          "checkType": "unopposed",
+          "unopposedCheck": {
+            "difficultyLevel": "Trivial"
+          },
+          "circumstanceModifiers": [
+            {
+              "amount": 0,
+              "reason": null
+            }
+          ],
+          "circumstanceModifier": 0
+        },
+        "itemsMentioned": [],
+        "abilitiesMentioned": []
+      }
+    },
+    "locationId": "location_1772643622936_675966334234",
+    "id": "5ce3626c-db7d-4508-8343-381d1460ed32",
+    "metadata": {
+      "locationId": "location_1772643622936_675966334234",
+      "npcNames": [
+        "Brunhilda Deepdelver",
+        "Holt Brennan",
+        "Ithelwen Moss-Tender",
+        "Magra Ironhand",
+        "Tibbit Quickwhisper",
+        "Wiry Gnome"
+      ],
+      "traveledToLocationId": "location_1772643622936_d96355885fb6"
+    }
+  },
+  {
+    "role": "assistant",
+    "type": "skill-check",
+    "timestamp": "2026-03-04T17:08:41.656Z",
+    "parentId": "241310a7-fcba-47c6-afbe-514acdb35ba9",
+    "skillCheck": {
+      "label": "success",
+      "degree": "success",
+      "success": true,
+      "type": "Plausible",
+      "reason": "Memorial Walk is a listed exit from Last Chance Market; no obstacles mentioned.",
+      "roll": null,
+      "difficulty": {
+        "label": "Trivial",
+        "dc": null
+      },
+      "skill": null,
+      "attribute": null,
+      "margin": null,
+      "checkType": "unopposed"
+    },
+    "locationId": "location_1772643622936_675966334234",
+    "id": "4f308406-a46d-489e-9ae3-a46b10d15fa5",
+    "metadata": {
+      "locationId": "location_1772643622936_675966334234",
+      "npcNames": [
+        "Brunhilda Deepdelver",
+        "Holt Brennan",
+        "Ithelwen Moss-Tender",
+        "Magra Ironhand",
+        "Tibbit Quickwhisper",
+        "Wiry Gnome"
+      ]
+    }
+  },
+  {
+    "role": "user",
+    "content": "Wanderer moved to Warning Post.",
+    "travel": true,
+    "locationId": "location_1772643622936_d96355885fb6",
+    "metadata": {
+      "requestId": "req-mmcalcap-rbeh5ruhc3",
+      "locationId": "location_1772643622936_d96355885fb6",
+      "traveledToLocationId": "location_1772643622937_e489509c6174"
+    },
+    "id": "d4600c11-59fc-4a47-a527-bd299f18111d",
+    "timestamp": "2026-03-04T17:12:24.108Z",
+    "parentId": null
+  },
+  {
+    "role": "assistant",
+    "content": "Behind, the half-orc remains motionless among his stones, yellow eyes tracking your descent.\n\nThe memorial stones thin as you continue downward, their silent congregation giving way to open air.\n\nA wooden platform overlooks the descent, where two guards in battered chainmail stand beside a carved post covered in scratched warnings, survivor prayers, and names of the dead.\n\nBeyond the checkpoint, the path steepens sharply. The Switchback Shelter is visible below, carved into the cliff face, but it's the view beyond that steals your breath—the Sinking Stairs, an endless staircase carved into living rock, spiraling down into a sinkhole that breathes frozen fog.\n\nThe guards barely acknowledge you. They've seen hundreds pass this way.",
+    "type": "player-action",
+    "locationId": "location_1772643622936_d96355885fb6",
+    "id": "ef588c2f-f4f5-445d-a4b4-927f0c5248e0",
+    "timestamp": "2026-03-04T17:13:12.299Z",
+    "parentId": null,
+    "metadata": {
+      "locationId": "location_1772643622936_d96355885fb6",
+      "npcNames": [
+        "Brakkus Heavyhand"
+      ],
+      "traveledToLocationId": "location_1772643622937_e489509c6174"
+    }
+  },
+  {
+    "role": "assistant",
+    "type": "slop-remover",
+    "timestamp": "2026-03-04T17:13:12.299Z",
+    "parentId": "ef588c2f-f4f5-445d-a4b4-927f0c5248e0",
+    "slopRemoval": {
+      "slopWords": [
+        "impossibly",
+        "weathered"
+      ],
+      "slopNgrams": []
+    },
+    "locationId": "location_1772643622936_d96355885fb6",
+    "id": "11ae77de-3c67-4530-aa0b-dae79693ae93",
+    "metadata": {
+      "locationId": "location_1772643622936_d96355885fb6",
+      "npcNames": [
+        "Brakkus Heavyhand"
+      ],
+      "traveledToLocationId": "location_1772643622937_e489509c6174"
+    }
+  },
+  {
+    "role": "assistant",
+    "content": "📋 Events – Memorial Walk\n• 🚶 Travelled to Warning Post.",
+    "summary": "📋 Events – Memorial Walk\n• 🚶 Travelled to Warning Post.",
+    "timestamp": "2026-03-04T17:13:12.299Z",
+    "parentId": "ef588c2f-f4f5-445d-a4b4-927f0c5248e0",
+    "type": "event-summary",
+    "summaryTitle": "📋 Events – Memorial Walk",
+    "summaryItems": [
+      {
+        "icon": "🚶",
+        "text": "Travelled to Warning Post."
+      }
+    ],
+    "locationId": "location_1772643622936_d96355885fb6",
+    "id": "35a69ad6-f01c-42ae-88e5-29941cab21b6",
+    "metadata": {
+      "locationId": "location_1772643622936_d96355885fb6",
+      "npcNames": [
+        "Brakkus Heavyhand"
+      ],
+      "traveledToLocationId": "location_1772643622937_e489509c6174"
+    }
+  },
+  {
+    "role": "assistant",
+    "type": "plausibility",
+    "timestamp": "2026-03-04T17:13:12.299Z",
+    "parentId": "ef588c2f-f4f5-445d-a4b4-927f0c5248e0",
+    "plausibility": {
+      "raw": "<plausibility>\n  <reason>Warning Post is a listed exit from Memorial Walk.</reason>\n  <type>Plausible</type>\n  <skillCheck>\n    <reason>Movement to an adjacent listed location requires no skill check.</reason>\n    <skill>N/A</skill>\n    <attribute>N/A</attribute>\n    <difficulty>\n      <unopposedCheck>\n        <difficultyLevel>Trivial</difficultyLevel>\n      </unopposedCheck>\n    </difficulty>\n    <curcumstanceModifiers>\n      <circumstanceModifier>\n        <amount>0</amount>\n        <reason>N/A</reason>\n      </circumstanceModifier>\n    </curcumstanceModifiers>\n  </skillCheck>\n  <itemsMentioned>\n  </itemsMentioned>\n  <abilitiesMentioned>\n  </abilitiesMentioned>\n</plausibility>",
+      "structured": {
+        "type": "Plausible",
+        "reason": "Warning Post is a listed exit from Memorial Walk.",
+        "skillCheck": {
+          "skill": null,
+          "attribute": null,
+          "difficulty": "Trivial",
+          "reason": "Movement to an adjacent listed location requires no skill check.",
+          "checkType": "unopposed",
+          "unopposedCheck": {
+            "difficultyLevel": "Trivial"
+          },
+          "circumstanceModifiers": [
+            {
+              "amount": 0,
+              "reason": null
+            }
+          ],
+          "circumstanceModifier": 0
+        },
+        "itemsMentioned": [],
+        "abilitiesMentioned": []
+      }
+    },
+    "locationId": "location_1772643622936_d96355885fb6",
+    "id": "09dc30e1-84ec-4d18-a400-144f6fefd8e0",
+    "metadata": {
+      "locationId": "location_1772643622936_d96355885fb6",
+      "npcNames": [
+        "Brakkus Heavyhand"
+      ],
+      "traveledToLocationId": "location_1772643622937_e489509c6174"
+    }
+  },
+  {
+    "role": "assistant",
+    "content": "📋 Events – Warning Post\n• 🙋 Guards arrived",
+    "summary": "📋 Events – Warning Post\n• 🙋 Guards arrived",
+    "timestamp": "2026-03-04T17:13:12.299Z",
+    "parentId": "ef588c2f-f4f5-445d-a4b4-927f0c5248e0",
+    "type": "event-summary",
+    "summaryTitle": "📋 Events – Warning Post",
+    "summaryItems": [
+      {
+        "icon": "🙋",
+        "text": "Guards arrived"
+      }
+    ],
+    "locationId": "location_1772643622936_d96355885fb6",
+    "id": "b69b8c66-880b-4c3a-9707-75531036d9e6",
+    "metadata": {
+      "locationId": "location_1772643622936_d96355885fb6",
+      "npcNames": [
+        "Brakkus Heavyhand"
+      ],
+      "traveledToLocationId": "location_1772643622937_e489509c6174"
+    }
+  },
+  {
+    "role": "assistant",
+    "type": "skill-check",
+    "timestamp": "2026-03-04T17:13:12.299Z",
+    "parentId": "ef588c2f-f4f5-445d-a4b4-927f0c5248e0",
+    "skillCheck": {
+      "label": "success",
+      "degree": "success",
+      "success": true,
+      "type": "Plausible",
+      "reason": "Warning Post is a listed exit from Memorial Walk.",
+      "roll": null,
+      "difficulty": {
+        "label": "Trivial",
+        "dc": null
+      },
+      "skill": null,
+      "attribute": null,
+      "margin": null,
+      "checkType": "unopposed"
+    },
+    "locationId": "location_1772643622936_d96355885fb6",
+    "id": "a5669601-0475-47f8-adcf-588802ee2d59",
+    "metadata": {
+      "locationId": "location_1772643622936_d96355885fb6",
+      "npcNames": [
+        "Brakkus Heavyhand"
+      ]
+    }
+  },
+  {
+    "role": "assistant",
+    "content": "• Marta: Seven years at the Warning Post, keeps private tally of incomplete parties returning, emotionally armored against the steady stream of death, hasn't connected the blinking portrait to the woman she watched descend eight years ago\n• Thorum: Third month on the job, still flinches at thick mist, talks too much from nerves, hasn't developed the cynicism that would let him function long-term\n\n[Mystery Boxes - Decided]\n• Mourner's Stake Locket: Enchanted portrait that blinks; owner died 3 years ago but portrait keeps appearing on different memorial stakes; matches woman Marta saw descend 8 years ago\n• Smuggler's Hollow Stone: Contains Veiled Cartel coded message about Guild patrol schedules; dead drop to be collected today\n• Casualty Board's Running Paint: Alchemical solvent reveals hidden messages beneath official tallies; currently shows \"North passage sealed by—\"\n\n[Tension Check]\n• All tension from established environmental threats and character situations—no artificial obstacles",
+    "summary": "• Marta: Seven years at the Warning Post, keeps private tally of incomplete parties returning, emotionally armored against the steady stream of death, hasn't connected the blinking portrait to the woman she watched descend eight years ago\n• Thorum: Third month on the job, still flinches at thick mist, talks too much from nerves, hasn't developed the cynicism that would let him function long-term\n\n[Mystery Boxes - Decided]\n• Mourner's Stake Locket: Enchanted portrait that blinks; owner died 3 years ago but portrait keeps appearing on different memorial stakes; matches woman Marta saw descend 8 years ago\n• Smuggler's Hollow Stone: Contains Veiled Cartel coded message about Guild patrol schedules; dead drop to be collected today\n• Casualty Board's Running Paint: Alchemical solvent reveals hidden messages beneath official tallies; currently shows \"North passage sealed by—\"\n\n[Tension Check]\n• All tension from established environmental threats and character situations—no artificial obstacles",
+    "type": "supplemental-story-info",
+    "parentId": "ef588c2f-f4f5-445d-a4b4-927f0c5248e0",
+    "locationId": "location_1772643622936_d96355885fb6",
+    "id": "f42b2a43-e5d0-4427-b5e4-b9228a660c14",
+    "timestamp": "2026-03-04T17:15:48.224Z",
+    "metadata": {
+      "locationId": "location_1772643622936_d96355885fb6",
+      "npcNames": [
+        "Brakkus Heavyhand"
+      ]
+    }
+  },
+  {
+    "role": "user",
+    "content": "Wanderer moved to The Sinking Stairs.",
+    "travel": true,
+    "locationId": "location_1772643622937_e489509c6174",
+    "metadata": {
+      "requestId": "req-mmcauo7y-hbgod8jarog",
+      "locationId": "location_1772643622937_e489509c6174",
+      "traveledToLocationId": "location_1772643622937_ff41d67841de"
+    },
+    "id": "35af477d-3152-469d-bf38-cc1fe7f4edf8",
+    "timestamp": "2026-03-04T17:19:39.482Z",
+    "parentId": null
+  },
+  {
+    "role": "assistant",
+    "content": "The guards don't look up. They've watched too many descend.\n\nSycorax Stone-Etcher looks up from her calipers, amber eyes bright. \"Third step shifts east during waning phase,\" she says rapidly. \"Step forty-seven's temperamental. If you notice the displacement, tell me when you return—I need the data.\"\n\nShe's already sketching again.\n\nYou descend past the checkpoint. The first steps are broad, worn smooth by countless boots. Then the wall opens to your left—the sinkhole's vast darkness, cold air rising like breath from something vast and patient below.\n\nThe Sinking Stairs spiral down along the sinkhole's inner edge, hewn from the stone centuries ago. Weak winter light fades within a dozen steps. Below, darkness swallows everything. The mist thickens as you descend, carrying the smell of wet stone, old water, and another odor—something organic, like spoiled mushrooms.\n\nWater drips somewhere far below. The rhythm is almost deliberate.",
+    "type": "player-action",
+    "locationId": "location_1772643622937_e489509c6174",
+    "id": "3ca6a1b5-4fd8-4705-8252-997234d8752f",
+    "timestamp": "2026-03-04T17:20:52.380Z",
+    "parentId": null,
+    "metadata": {
+      "locationId": "location_1772643622937_e489509c6174",
+      "npcNames": [
+        "Brannick Holt",
+        "Guards",
+        "Sycorax Stone-Etcher"
+      ],
+      "traveledToLocationId": "location_1772643622937_ff41d67841de"
+    }
+  },
+  {
+    "role": "assistant",
+    "type": "slop-remover",
+    "timestamp": "2026-03-04T17:20:52.381Z",
+    "parentId": "3ca6a1b5-4fd8-4705-8252-997234d8752f",
+    "slopRemoval": {
+      "slopWords": [
+        "faintly",
+        "glances"
+      ],
+      "slopNgrams": [
+        "carved living rock",
+        "something else something"
+      ]
+    },
+    "locationId": "location_1772643622937_e489509c6174",
+    "id": "3779e049-49a9-4f65-9d03-0e60bb1e25cc",
+    "metadata": {
+      "locationId": "location_1772643622937_e489509c6174",
+      "npcNames": [
+        "Brannick Holt",
+        "Guards",
+        "Sycorax Stone-Etcher"
+      ],
+      "traveledToLocationId": "location_1772643622937_ff41d67841de"
+    }
+  },
+  {
+    "role": "assistant",
+    "content": "📋 Events – Warning Post\n• 🚶 Travelled to The Sinking Stairs.",
+    "summary": "📋 Events – Warning Post\n• 🚶 Travelled to The Sinking Stairs.",
+    "timestamp": "2026-03-04T17:20:52.380Z",
+    "parentId": "3ca6a1b5-4fd8-4705-8252-997234d8752f",
+    "type": "event-summary",
+    "summaryTitle": "📋 Events – Warning Post",
+    "summaryItems": [
+      {
+        "icon": "🚶",
+        "text": "Travelled to The Sinking Stairs."
+      }
+    ],
+    "locationId": "location_1772643622937_e489509c6174",
+    "id": "c9d375c2-3bd0-46f7-8d9d-091d21ab522f",
+    "metadata": {
+      "locationId": "location_1772643622937_e489509c6174",
+      "npcNames": [
+        "Brannick Holt",
+        "Guards",
+        "Sycorax Stone-Etcher"
+      ],
+      "traveledToLocationId": "location_1772643622937_ff41d67841de"
+    }
+  },
+  {
+    "role": "assistant",
+    "type": "plausibility",
+    "timestamp": "2026-03-04T17:20:52.380Z",
+    "parentId": "3ca6a1b5-4fd8-4705-8252-997234d8752f",
+    "plausibility": {
+      "raw": "<plausibility>\n  <reason>Exit listed, no obstacles, player able to move.</reason>\n  <type>Plausible</type>\n  <skillCheck>\n    <reason>No skill check needed for simple movement to an accessible location.</reason>\n    <skill>N/A</skill>\n    <attribute>N/A</attribute>\n    <difficulty>\n      <unopposedCheck>\n        <difficultyLevel>Trivial</difficultyLevel>\n      </unopposedCheck>\n    </difficulty>\n    <curcumstanceModifiers>\n      <circumstanceModifier>\n        <amount>0</amount>\n        <reason>N/A</reason>\n      </circumstanceModifier>\n    </curcumstanceModifiers>\n  </skillCheck>\n  <itemsMentioned>\n  </itemsMentioned>\n  <abilitiesMentioned>\n  </abilitiesMentioned>\n</plausibility>",
+      "structured": {
+        "type": "Plausible",
+        "reason": "Exit listed, no obstacles, player able to move.",
+        "skillCheck": {
+          "skill": null,
+          "attribute": null,
+          "difficulty": "Trivial",
+          "reason": "No skill check needed for simple movement to an accessible location.",
+          "checkType": "unopposed",
+          "unopposedCheck": {
+            "difficultyLevel": "Trivial"
+          },
+          "circumstanceModifiers": [
+            {
+              "amount": 0,
+              "reason": null
+            }
+          ],
+          "circumstanceModifier": 0
+        },
+        "itemsMentioned": [],
+        "abilitiesMentioned": []
+      }
+    },
+    "locationId": "location_1772643622937_e489509c6174",
+    "id": "d4d0a99e-895d-4a90-a797-d7513311d5ca",
+    "metadata": {
+      "locationId": "location_1772643622937_e489509c6174",
+      "npcNames": [
+        "Brannick Holt",
+        "Guards",
+        "Sycorax Stone-Etcher"
+      ],
+      "traveledToLocationId": "location_1772643622937_ff41d67841de"
+    }
+  },
+  {
+    "role": "assistant",
+    "type": "skill-check",
+    "timestamp": "2026-03-04T17:20:52.380Z",
+    "parentId": "3ca6a1b5-4fd8-4705-8252-997234d8752f",
+    "skillCheck": {
+      "label": "success",
+      "degree": "success",
+      "success": true,
+      "type": "Plausible",
+      "reason": "Exit listed, no obstacles, player able to move.",
+      "roll": null,
+      "difficulty": {
+        "label": "Trivial",
+        "dc": null
+      },
+      "skill": null,
+      "attribute": null,
+      "margin": null,
+      "checkType": "unopposed"
+    },
+    "locationId": "location_1772643622937_e489509c6174",
+    "id": "b8a630db-2196-4302-9824-565d869fa3fb",
+    "metadata": {
+      "locationId": "location_1772643622937_e489509c6174",
+      "npcNames": [
+        "Brannick Holt",
+        "Guards",
+        "Sycorax Stone-Etcher"
+      ]
+    }
+  }
+]

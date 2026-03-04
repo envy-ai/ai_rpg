@@ -173,6 +173,117 @@ function resolveCliConfigOverridePath(argv = process.argv) {
     return resolvedPath;
 }
 
+function normalizeCliTestModeToken(rawToken) {
+    if (typeof rawToken !== 'string') {
+        return '';
+    }
+    const normalized = rawToken.trim().toLowerCase().replace(/_/g, '-');
+    return normalized;
+}
+
+function parseCliTestModesValue(rawValue) {
+    if (typeof rawValue !== 'string' || rawValue.trim().length === 0) {
+        throw new Error('Command line option --test requires a non-empty value.');
+    }
+
+    const modes = rawValue
+        .split(',')
+        .map(entry => normalizeCliTestModeToken(entry))
+        .filter(Boolean);
+
+    if (!modes.length) {
+        throw new Error('Command line option --test requires at least one non-empty mode.');
+    }
+
+    return modes;
+}
+
+function resolveCliTestModes(argv = process.argv) {
+    if (!Array.isArray(argv)) {
+        throw new Error('Command line arguments must be an array.');
+    }
+
+    const args = argv.slice(2);
+    const resolvedModes = new Set();
+
+    for (let i = 0; i < args.length; i += 1) {
+        const arg = args[i];
+        if (arg === '--test') {
+            const value = args[i + 1];
+            if (value === undefined || (typeof value === 'string' && value.startsWith('--'))) {
+                throw new Error('Command line option --test requires a value (for example: --test=region-exits).');
+            }
+            parseCliTestModesValue(value).forEach(mode => resolvedModes.add(mode));
+            i += 1;
+            continue;
+        }
+
+        if (typeof arg === 'string' && arg.startsWith('--test=')) {
+            const value = arg.slice('--test='.length);
+            parseCliTestModesValue(value).forEach(mode => resolvedModes.add(mode));
+        }
+    }
+
+    return resolvedModes;
+}
+
+function parseCliBooleanOption(optionName, rawValue) {
+    if (typeof optionName !== 'string' || optionName.trim().length === 0) {
+        throw new Error('Command line option name must be a non-empty string.');
+    }
+    if (typeof rawValue !== 'string' || rawValue.trim().length === 0) {
+        throw new Error(`Command line option ${optionName} requires a boolean value.`);
+    }
+
+    const normalized = rawValue.trim().toLowerCase();
+    if (['1', 'true', 'yes', 'on'].includes(normalized)) {
+        return true;
+    }
+    if (['0', 'false', 'no', 'off'].includes(normalized)) {
+        return false;
+    }
+
+    throw new Error(
+        `Command line option ${optionName} must be one of: true, false, 1, 0, yes, no, on, off.`,
+    );
+}
+
+function resolveCliRegionExitDebugFlag(argv = process.argv) {
+    if (!Array.isArray(argv)) {
+        throw new Error('Command line arguments must be an array.');
+    }
+
+    const args = argv.slice(2);
+    let resolvedValue = false;
+    let wasProvided = false;
+
+    const setResolvedValue = ({ implicit = false, value = null } = {}) => {
+        if (wasProvided) {
+            throw new Error('Command line option --debug-region-exits may only be provided once.');
+        }
+        if (implicit) {
+            resolvedValue = true;
+        } else {
+            resolvedValue = parseCliBooleanOption('--debug-region-exits', value);
+        }
+        wasProvided = true;
+    };
+
+    for (const arg of args) {
+        if (arg === '--debug-region-exits') {
+            setResolvedValue({ implicit: true });
+            continue;
+        }
+
+        if (typeof arg === 'string' && arg.startsWith('--debug-region-exits=')) {
+            const value = arg.slice('--debug-region-exits='.length);
+            setResolvedValue({ implicit: false, value });
+        }
+    }
+
+    return resolvedValue;
+}
+
 function loadMergedConfig(configOverridePath = null) {
     const defaultConfigPath = path.join(__dirname, 'config.default.yaml');
     const defaultConfigRaw = fs.readFileSync(defaultConfigPath, 'utf8');
@@ -430,12 +541,30 @@ fs.readdirSync(logsDir)
 // Load configuration
 let config;
 let cliConfigOverridePath = null;
+let cliTestModes = new Set();
+let cliRegionExitDebug = false;
 try {
     cliConfigOverridePath = resolveCliConfigOverridePath();
+    cliTestModes = resolveCliTestModes();
+    cliRegionExitDebug = cliTestModes.has('all') || cliTestModes.has('region-exits');
+
+    const legacyRegionExitDebug = resolveCliRegionExitDebugFlag();
+    if (legacyRegionExitDebug) {
+        cliRegionExitDebug = true;
+        console.warn('⚠️  --debug-region-exits is deprecated; use --test=region-exits');
+    }
+
     config = loadMergedConfig(cliConfigOverridePath);
     Globals.config = config;
+    Globals.cliTestModes = new Set(cliTestModes);
     if (cliConfigOverridePath) {
         console.log(`🔧 Applied config override: ${cliConfigOverridePath}`);
+    }
+    if (cliTestModes.size) {
+        console.log(`🧪 Enabled CLI test modes: ${Array.from(cliTestModes).sort().join(', ')}`);
+    }
+    if (cliRegionExitDebug) {
+        console.log('🐞 Region-exit debug logging enabled via --test=region-exits');
     }
 } catch (error) {
     console.error('Error loading configuration:', error.message);
@@ -7914,9 +8043,6 @@ function ensureExitConnection(fromLocation, toLocation, { description, bidirecti
         throw error;
     }
 
-    //console.log(`🧭 ensureExitConnection: ${fromLabel} -> ${toLabel} | requested bidirectional=${Boolean(bidirectional)} isVehicle=${isVehicle === undefined ? 'keep' : Boolean(isVehicle)} vehicleType=${vehicleType === undefined ? 'keep' : (vehicleType || 'null')} destinationRegion=${destinationRegion || 'null'}`);
-    //console.trace();
-
     if (destinationRegion !== undefined && destinationRegion !== null && typeof destinationRegion !== 'string') {
         throw new Error('[ensureExitConnection] destinationRegion must be a string, null, or undefined.');
     }
@@ -7926,6 +8052,19 @@ function ensureExitConnection(fromLocation, toLocation, { description, bidirecti
             ? (destinationRegion.trim() || null)
             : null)
         : undefined;
+    const shouldLogConnectionDetail = Boolean(normalizedDestinationRegion)
+        || Boolean(fromLocation?.stubMetadata?.isRegionEntryStub)
+        || Boolean(toLocation?.stubMetadata?.isRegionEntryStub);
+
+    if (cliRegionExitDebug && shouldLogConnectionDetail) {
+        console.log(
+            `[ensureExitConnection] ${fromLabel} -> ${toLabel} `
+            + `bidirectional=${Boolean(bidirectional)} `
+            + `destinationRegion=${normalizedDestinationRegion || 'null'} `
+            + `isVehicle=${isVehicle === undefined ? 'keep' : Boolean(isVehicle)} `
+            + `vehicleType=${vehicleType === undefined ? 'keep' : (vehicleType || 'null')}`,
+        );
+    }
 
     const { getAvailableDirections, getExit, addExit } = fromLocation || {};
 
@@ -7979,7 +8118,13 @@ function ensureExitConnection(fromLocation, toLocation, { description, bidirecti
             addExit.call(fromLocation, directionKey, exit);
         }
         gameLocationExits.set(exit.id, exit);
-        console.log(`  ↳ created new exit ${exit.id} on direction "${directionKey}" (bidirectional=${exit.bidirectional})`);
+        if (cliRegionExitDebug) {
+            console.log(
+                `  ↳ created new exit ${exit.id} `
+                + `${fromLabel} -> ${toLabel} `
+                + `on direction "${directionKey}" (bidirectional=${exit.bidirectional})`,
+            );
+        }
     } else {
         if (description) {
             try {
@@ -7998,7 +8143,13 @@ function ensureExitConnection(fromLocation, toLocation, { description, bidirecti
         } catch (_) {
             exit.update({ bidirectional: Boolean(bidirectional) });
         }
-        console.log(`  ↳ reusing existing exit ${exit.id} on direction "${directionKey}"`);
+        if (cliRegionExitDebug) {
+            console.log(
+                `  ↳ reusing existing exit ${exit.id} `
+                + `${fromLabel} -> ${toLabel} `
+                + `on direction "${directionKey}"`,
+            );
+        }
     }
 
     if (isVehicle !== undefined) {
@@ -8014,7 +8165,17 @@ function ensureExitConnection(fromLocation, toLocation, { description, bidirecti
         ? (vehicleType || null)
         : (exit?.vehicleType || null);
 
-    console.log(`  ↳ final exit state: id=${exit.id} isVehicle=${exit.isVehicle} vehicleType=${exit.vehicleType || 'null'} bidirectional=${exit.bidirectional} direction="${directionKey}" destinationRegion=${exit.destinationRegion || 'null'}`);
+    if (cliRegionExitDebug) {
+        console.log(
+            `  ↳ final exit state: id=${exit.id} `
+            + `${fromLabel} -> ${toLabel} `
+            + `isVehicle=${exit.isVehicle} `
+            + `vehicleType=${exit.vehicleType || 'null'} `
+            + `bidirectional=${exit.bidirectional} `
+            + `direction="${directionKey}" `
+            + `destinationRegion=${exit.destinationRegion || 'null'}`,
+        );
+    }
 
     if (bidirectional) {
         let reverseDestinationRegion = null;
@@ -8025,7 +8186,9 @@ function ensureExitConnection(fromLocation, toLocation, { description, bidirecti
             reverseDestinationRegion = fromLocation.stubMetadata.regionId;
         }
 
-        console.log(`  ↳ ensuring reverse connection ${toLabel} -> ${fromLabel} (destinationRegion=${reverseDestinationRegion || 'null'})`);
+        if (cliRegionExitDebug) {
+            console.log(`  ↳ ensuring reverse connection ${toLabel} -> ${fromLabel} (destinationRegion=${reverseDestinationRegion || 'null'})`);
+        }
         ensureExitConnection(
             toLocation,
             fromLocation,
@@ -8973,6 +9136,61 @@ async function expandRegionEntryStub(stubLocation) {
                 return null;
             }
 
+            const sourceRegionId = pendingInfo?.sourceRegionId
+                || pendingInfo?.originRegionId
+                || metadata.originRegionId
+                || (originLocation
+                    ? (findRegionByLocationId(originLocation.id)?.id
+                        || originLocation.regionId
+                        || originLocation.stubMetadata?.regionId
+                        || null)
+                    : null);
+            const sourceRegion = sourceRegionId ? (regions.get(sourceRegionId) || null) : null;
+            const sourceRegionName = sourceRegion?.name || null;
+            const normalizedSourceRegionName = normalizeRegionLocationName(sourceRegionName);
+
+            let filteredExitDefinitions = exitDefinitions;
+            if (exitDefinitions.length && sourceRegionId) {
+                filteredExitDefinitions = exitDefinitions.filter(definition => {
+                    const definitionName = typeof definition?.name === 'string'
+                        ? definition.name.trim()
+                        : '';
+                    if (!definitionName) {
+                        return true;
+                    }
+
+                    const definitionRegionByName = typeof Region.getByName === 'function'
+                        ? Region.getByName(definitionName)
+                        : null;
+                    const matchesSourceById = Boolean(definitionRegionByName && definitionRegionByName.id === sourceRegionId);
+                    const matchesSourceByName = Boolean(
+                        normalizedSourceRegionName
+                        && normalizeRegionLocationName(definitionName) === normalizedSourceRegionName,
+                    );
+
+                    if (!matchesSourceById && !matchesSourceByName) {
+                        return true;
+                    }
+
+                    if (cliRegionExitDebug) {
+                        console.log(
+                            `[RegionEntryExpansion] Skipping generated connected-region definition `
+                            + `"${definitionName}" from "${regionName}" because it targets source region `
+                            + `"${sourceRegionName || sourceRegionId}".`,
+                        );
+                    }
+                    return false;
+                });
+            }
+
+            if (cliRegionExitDebug && exitDefinitions.length) {
+                console.log(
+                    `[RegionEntryExpansion] Parsed ${exitDefinitions.length} connected-region definition(s) `
+                    + `for "${regionName}" (${targetRegionId}); `
+                    + `${filteredExitDefinitions.length} retained after source-region filtering.`,
+                );
+            }
+
             if (!Number.isFinite(metadata.regionAverageLevel)) {
                 console.log(`ℹ️ Region stub '${pendingInfo?.name || targetRegionId}' missing regionAverageLevel metadata; defaulting to player level ${currentPlayer?.level || 1}.`);
             }
@@ -9046,7 +9264,7 @@ async function expandRegionEntryStub(stubLocation) {
                     themeHint,
                     regionAverageLevel,
                     settingDescription,
-                    predefinedExitDefinitions: exitDefinitions
+                    predefinedExitDefinitions: filteredExitDefinitions
                 });
             } catch (instantiationError) {
                 console.warn('Failed to instantiate region from stub:', instantiationError.message);
@@ -9440,6 +9658,49 @@ async function finalizeRegionEntry({ stubLocation, entranceLocation, region, ori
                     vehicleType: sourceExit.vehicleType || null
                 });
             }
+        }
+    }
+
+    if (cliRegionExitDebug && originRegionId && typeof entranceLocation.getAvailableDirections === 'function' && typeof entranceLocation.getExit === 'function') {
+        const exitsBackToOriginRegion = entranceLocation.getAvailableDirections().map(direction => {
+            const exit = entranceLocation.getExit(direction);
+            if (!exit) {
+                return null;
+            }
+            const destinationLocation = exit.destination ? gameLocations.get(exit.destination) : null;
+            const destinationRegionId = exit.destinationRegion
+                || destinationLocation?.regionId
+                || destinationLocation?.stubMetadata?.regionId
+                || destinationLocation?.stubMetadata?.targetRegionId
+                || null;
+            if (destinationRegionId !== originRegionId) {
+                return null;
+            }
+            return {
+                direction,
+                destination: exit.destination || null,
+                destinationName: destinationLocation?.name || null,
+                destinationRegion: destinationRegionId
+            };
+        }).filter(Boolean);
+
+        const summary = exitsBackToOriginRegion.map(exit => {
+            const label = exit.destinationName || exit.destination || 'unknown';
+            return `${exit.direction}->${label}`;
+        }).join(', ');
+
+        if (exitsBackToOriginRegion.length > 1) {
+            console.warn(
+                `[RegionEntryExpansion] Entrance "${entranceLocation.name || entranceLocation.id}" has `
+                + `${exitsBackToOriginRegion.length} exits back to origin region "${originRegionId}": `
+                + `${summary || 'none'}`,
+            );
+        } else {
+            console.log(
+                `[RegionEntryExpansion] Entrance "${entranceLocation.name || entranceLocation.id}" has `
+                + `${exitsBackToOriginRegion.length} exit back to origin region "${originRegionId}".`
+                + `${summary ? ` (${summary})` : ''}`,
+            );
         }
     }
 

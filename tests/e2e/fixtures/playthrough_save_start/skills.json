@@ -1,0 +1,157 @@
+[
+  {
+    "name": "Ranged Combat",
+    "description": "Enables accurate attacks with bows, crossbows, and thrown weapons against distant foes in the dungeon's gloom.",
+    "attribute": "dexterity"
+  },
+  {
+    "name": "Melee Combat",
+    "description": "Enables effective close-quarters fighting with swords, axes, maces, and other hand-held weapons against dungeon denizens.",
+    "attribute": "strength"
+  },
+  {
+    "name": "Perception",
+    "description": "Enables detection of hidden enemies, secret doors, ambushes, and subtle environmental changes in the shifting labyrinth.",
+    "attribute": "wisdom"
+  },
+  {
+    "name": "Stealth",
+    "description": "Enables silent movement through shadowed corridors and the ability to slip past patrolling horrors unnoticed.",
+    "attribute": "dexterity"
+  },
+  {
+    "name": "First Aid",
+    "description": "Enables emergency medical treatment to stabilize wounds, bandage injuries, and prevent death in the field.",
+    "attribute": "wisdom"
+  },
+  {
+    "name": "Scavenging",
+    "description": "Enables thorough searching of corpses, rubble, and forgotten corners to salvage useful supplies and forgotten coin.",
+    "attribute": "intelligence"
+  },
+  {
+    "name": "Negotiation",
+    "description": "Enables bargaining with merchants, hiring retainers, and establishing terms with potential allies in Dusthollow's rough markets.",
+    "attribute": "charisma"
+  },
+  {
+    "name": "Intimidation",
+    "description": "Enables extracting information and compliance through threats, menacing presence, and the implicit promise of violence.",
+    "attribute": "strength"
+  },
+  {
+    "name": "Charm",
+    "description": "Enables winning favor, gaining trust, and eliciting generosity from skeptical strangers through warmth and magnetic personality.",
+    "attribute": "charisma"
+  },
+  {
+    "name": "Bluff",
+    "description": "Enables convincing others of falsehoods through confident delivery and carefully constructed fabrications.",
+    "attribute": "charisma"
+  },
+  {
+    "name": "Insight",
+    "description": "Enables reading hidden motives, detecting lies, and sensing danger behind seemingly friendly faces.",
+    "attribute": "wisdom"
+  },
+  {
+    "name": "Lockpicking",
+    "description": "Enables opening sealed doors, treasure chests, and ancient mechanisms without keys through manual manipulation.",
+    "attribute": "dexterity"
+  },
+  {
+    "name": "Sleight of Hand",
+    "description": "Enables pickpocketing, palming small objects, and performing manual tricks without being noticed.",
+    "attribute": "dexterity"
+  },
+  {
+    "name": "Survival",
+    "description": "Enables finding safe passages through hostile terrain, foraging for edible fungi, and enduring the dungeon's environmental hazards.",
+    "attribute": "constitution"
+  },
+  {
+    "name": "Crafting",
+    "description": "Enables creating weapons, armor, tools, and useful items from raw materials gathered during expeditions.",
+    "attribute": "intelligence"
+  },
+  {
+    "name": "Repair",
+    "description": "Enables restoring damaged equipment, patching armor, and maintaining gear essential for survival in the depths.",
+    "attribute": "intelligence"
+  },
+  {
+    "name": "Acrobatics",
+    "description": "Enables balancing across crumbling ledges, tumbling past enemies, and landing safely from dangerous falls.",
+    "attribute": "dexterity"
+  },
+  {
+    "name": "Deception",
+    "description": "Enables misdirection, disguise, and creating false impressions to manipulate how others perceive reality.",
+    "attribute": "charisma"
+  },
+  {
+    "name": "Dodge",
+    "description": "Enables evading enemy attacks through quick reflexes and anticipatory movement in combat.",
+    "attribute": "dexterity"
+  },
+  {
+    "name": "Farming/Botany",
+    "description": "Enables identifying magical and mundane plants, cultivating rare fungi, and recognizing botanical hazards in bioluminescent chambers.",
+    "attribute": "intelligence"
+  },
+  {
+    "name": "Animal Handling",
+    "description": "Enables calming, directing, and training beasts, from dungeon vermin to the pack animals vital for long expeditions.",
+    "attribute": "wisdom"
+  },
+  {
+    "name": "Trap Detection",
+    "description": "Enables spotting pressure plates, tripwires, magical sensors, and the Architects' cruel mechanisms before they trigger.",
+    "attribute": "intelligence"
+  },
+  {
+    "name": "Arcane Lore",
+    "description": "Enables understanding the history of Valdros's magical empire, recognizing mystical phenomena, and comprehending spell theory.",
+    "attribute": "intelligence"
+  },
+  {
+    "name": "Divine Magic",
+    "description": "Enables channeling sacred power to heal wounds, bless allies, and turn back the undead horrors lurking in the depths.",
+    "attribute": "wisdom"
+  },
+  {
+    "name": "Arcane Magic",
+    "description": "Enables casting devastating spells, manipulating magical energies, and unleashing the destructive potential of the arcane arts.",
+    "attribute": "intelligence"
+  },
+  {
+    "name": "Item Identification",
+    "description": "Enables analyzing discovered artifacts to reveal their properties, origins, and potential curses before use.",
+    "attribute": "intelligence"
+  },
+  {
+    "name": "Dungeoneering",
+    "description": "Enables navigating the labyrinth's shifting architecture, recognizing structural patterns, and anticipating environmental hazards.",
+    "attribute": "wisdom"
+  },
+  {
+    "name": "Cartography",
+    "description": "Enables creating accurate maps that retain coherence even as the labyrinth attempts to confound recorded paths.",
+    "attribute": "intelligence"
+  },
+  {
+    "name": "Necromancy Resistance",
+    "description": "Enables shrugging off life-draining effects, resisting possession, and enduring the suffocating aura of undead abominations.",
+    "attribute": "constitution"
+  },
+  {
+    "name": "Rune Reading",
+    "description": "Enables deciphering ancient sigils, activating magical wards, and interpreting the binding scripts that empower constructs.",
+    "attribute": "intelligence"
+  },
+  {
+    "name": "Alchemy",
+    "description": "Enables brewing healing potions, explosive compounds, and transformative elixirs from rare ingredients harvested below.",
+    "attribute": "intelligence"
+  }
+]

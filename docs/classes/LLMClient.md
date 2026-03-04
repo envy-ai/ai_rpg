@@ -22,6 +22,7 @@ Centralized client for LLM chat completions with concurrency limits, streaming p
 - `waitForPromptDrain({ timeoutMs, pollIntervalMs })`: waits until tracked prompt activity is fully drained.
 - `ensureAiConfig()`: validates `Globals.config.ai`.
 - `getMaxConcurrent(aiConfigOverride)`: reads `max_concurrent_requests`.
+- `resetForcedOutputState()`: clears cached forced-output fixture data/counters.
 - `writeLogFile({ prefix, metadataLabel, payload, serializeJson, onFailureMessage, error, append })`: writes error logs.
 - `formatMessagesForErrorLog(messages)`: formats messages into a readable log.
 - `logPrompt({...})`: writes prompt/response logs to `logs/`.
@@ -30,6 +31,11 @@ Centralized client for LLM chat completions with concurrency limits, streaming p
 - `chatCompletion({ messages, metadataLabel, timeoutMs, temperature, stream, ... })`:
   - Handles retries, streaming, logging, and optional image preprocessing.
   - Supports deterministic `forceOutput` mode for tests: skips AI network calls but still runs response post-processing/validation and emits normalized `onResponse` data.
+  - Supports fixture-driven deterministic outputs via `LLM_FORCE_OUTPUTS_FILE` env or `ai.force_outputs_file` config:
+    - Fixture maps prompt labels to response arrays (consumed in order per label).
+    - Label lookup prefers exact `metadataLabel`, then normalized underscore form.
+    - Additional fixture-key fallbacks: `prompt_<label>` and grouped `<label>_group_N` buckets (flattened by numeric `N` order).
+    - In strict mode (default), missing labels or exhausted arrays throw explicit errors.
   - Normalizes response payloads for both stream and non-stream calls so `choices[0].message.tool_calls` is available to callers.
   - Assembles streamed `delta.tool_calls` chunks into full function calls and validates that each call has parseable JSON `function.arguments`.
   - Uses `LLMClient.logPrompt` and emits prompt progress via `Globals.realtimeHub`.
