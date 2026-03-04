@@ -689,9 +689,10 @@ class Globals {
     const totalMinutes = normalizedWorldTime.timeMinutes;
     const hour = Math.floor(totalMinutes / 60) % 24;
     const minute = ((totalMinutes % 60) + 60) % 60;
-    const paddedHour = String(hour).padStart(2, '0');
+    const period = hour >= 12 ? 'PM' : 'AM';
+    const hour12 = hour % 12 || 12;
     const paddedMinute = String(minute).padStart(2, '0');
-    return `${paddedHour}:${paddedMinute}`;
+    return `${hour12}:${paddedMinute} ${period}`;
   }
 
   static formatDate(worldTime = Globals.worldTime, { skipEnsure = false } = {}) {

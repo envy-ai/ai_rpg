@@ -17,7 +17,7 @@ The main UI is rendered by `views/index.njk` and powered by `public/js/chat.js` 
 ## Adventure tab structure
 
 - **Location panel** (`.location-block`):
-  - Compact world-time chip at the top (`#worldTimeIndicator`) showing `HH:MM`, date label, and segment/season.
+  - Compact world-time chip at the top (`#worldTimeIndicator`) showing `h:MM AM/PM`, date label, and segment/season.
   - Image + context menu for edit/summon/regenerate.
   - On mobile (`max-width: 768px`), item/NPC/location tooltips are constrained to `80vw` for readability.
   - Equippable item tooltips include stacked comparison cards for currently equipped compatible-slot items (using the active actor context).
@@ -31,6 +31,7 @@ The main UI is rendered by `views/index.njk` and powered by `public/js/chat.js` 
 - **Chat panel** (`.chat-container`):
   - Message list (`#chatLog`) with user/AI messages and event-summary batches.
   - Input area (`#messageInput`, `#sendButton`) with slash command support.
+  - `?` prefix-help modal includes an explicit roll-override note: include `<N>` anywhere in action/crafting text to force the die roll to integer `N`.
   - Prefix actions preserve raw input markers in the API payload (`?`, `@`, `@@`, `@@@`) even though optimistic local entries render marker-stripped content.
 - **Sidebar** (`.chat-sidebar`):
   - Player card (portrait, health, need bars, quick actions, and a top-left warning triangle when unspent skill/attribute points are present).
@@ -53,7 +54,7 @@ The main UI is rendered by `views/index.njk` and powered by `public/js/chat.js` 
   - Party summary list.
 - **World-time chip** (`#worldTimeIndicator`):
   - Rendered in the Adventure tab's left location panel (compact sidebar style).
-  - Shows canonical world time (`HH:MM`), date label, and current segment/season.
+  - Shows canonical world time (`h:MM AM/PM`), date label, and current segment/season.
   - Shows the current light-level description as an unlabeled line when available.
   - Shows a bottom weather line (`Weather: <name>`) when a concrete local weather type is available.
   - Emits event-summary updates when weather changes and when light-level descriptions cross into a new threshold/segment; light-level updates are suppressed for locations marked as no local weather.
@@ -122,8 +123,8 @@ LLM-backed modal submits close immediately (no visible waiting state); errors su
 - `#addNpcModal` (adds an NPC via `/api/locations/:id/npcs`; supports concurrent submissions when the modal is reopened during an in-flight request).
 - `#thingEditModal` create mode (adds item/scenery via `/api/locations/:id/things`; name is optional and can be generated).
 - `#newExitModal` (creates/edits exits via `/api/locations/:id/exits`).
-- `#craftingModal` (crafting/processing via `/api/craft`, including a no-prose submit path for craft/process).
-- `#salvageIntentModal` (salvage/harvest via `/api/craft`, including `Harvest (no prose)` / `Salvage (no prose)` submits).
+- `#craftingModal` (crafting/processing via `/api/craft`, including a no-prose submit path for craft/process, with notes placeholders that mention `<N>` roll override support).
+- `#salvageIntentModal` (salvage/harvest via `/api/craft`, including `Harvest (no prose)` / `Salvage (no prose)` submits, with intent placeholders that mention `<N>` roll override support).
 
 ## Insights and attachments
 

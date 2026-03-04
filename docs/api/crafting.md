@@ -37,10 +37,11 @@ Response:
 Notes:
 - Salvage/harvest require exactly one slot item.
 - When `actionType` is supplied, it overrides `mode` in some cases.
+- Inline die-roll override is supported in crafting description fields: `notes`, `salvageNotes`, and `harvestNotes`. Tokens matching `<-?\d+>` are stripped from those fields before prompt processing, and the first parsed value is used as the player d20 roll for crafting plausibility/skill-check resolution (no clamping).
 - When `noProse` is true, the server skips the prose prompt and does not run craft/salvage/harvest event-summary/additional-effect mechanics for that action. Quest checks still run using a deterministic action summary line.
 - Deterministic/action summary lines now include source context:
   - Harvest/salvage lines use `from <source>`.
   - Craft/process lines use `using <inputs>`.
 - Crafting/harvest prompts omit prior craft/harvest/process entries from base-context history to reduce duplicate actions.
 - Player-action prose generation uses `_includes/player-action-craft.njk` via `promptType=player-action-craft` and expects XML in `<result><description>...</description></result>` (with optional `<otherEffectDescription>`).
-- `timeTaken` is parsed from each crafting/salvage/harvest `<result>` using the shared duration parser (`HH:MM`, integer minutes, or explicit day/hour/minute units). If a result has an invalid `timeTaken`, the server logs a warning, skips that result entry, and continues parsing the others. A minimum of 1 minute is always advanced (including `timeTaken = 0`).
+- `timeTaken` is parsed from each crafting/salvage/harvest `<result>` using the shared duration parser (`HH:MM`, integer minutes, or explicit day/hour/minute/round units). If a result has an invalid `timeTaken`, the server logs a warning, skips that result entry, and continues parsing the others. A minimum of 1 minute is always advanced (including `timeTaken = 0`).

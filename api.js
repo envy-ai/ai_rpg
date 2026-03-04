@@ -7145,7 +7145,7 @@ module.exports = function registerApiRoutes(scope) {
             };
         };
 
-        const computeAttackOutcome = ({ attackEntry, attacker, defender, weaponName }) => {
+        const computeAttackOutcome = ({ attackEntry, attacker, defender, weaponName, dieRollOverride = null }) => {
             if (!attackEntry || !attacker) {
                 return null;
             }
@@ -7219,10 +7219,15 @@ module.exports = function registerApiRoutes(scope) {
                 : 0;
             const damageAttributeModifier = damageAttributeBaseModifier + attackLevelBonus;
 
-            const rollResult = diceModule && typeof diceModule.rollDice === 'function'
-                ? diceModule.rollDice('1d20')
-                : { total: Math.floor(Math.random() * 20) + 1, detail: '1d20 (fallback)' };
-            const dieRoll = Number.isFinite(rollResult.total) ? rollResult.total : Math.floor(Math.random() * 20) + 1;
+            const hasInjectedDieRoll = Number.isInteger(dieRollOverride);
+            const rollResult = hasInjectedDieRoll
+                ? { total: dieRollOverride, detail: `1d20 (injected: ${dieRollOverride})` }
+                : (diceModule && typeof diceModule.rollDice === 'function'
+                    ? diceModule.rollDice('1d20')
+                    : { total: Math.floor(Math.random() * 20) + 1, detail: '1d20 (fallback)' });
+            const dieRoll = hasInjectedDieRoll
+                ? dieRollOverride
+                : (Number.isFinite(rollResult.total) ? rollResult.total : Math.floor(Math.random() * 20) + 1);
 
             const defenseCandidates = [];
             const addDefenseCandidate = (name, source) => {
@@ -7405,6 +7410,7 @@ module.exports = function registerApiRoutes(scope) {
                     raw: unmitigatedDamage,
                     mitigated: mitigatedDamage,
                     toughnessReduction,
+                    weaponThingId: weaponData.thingId,
                     baseWeaponDamage: weaponData.baseDamage,
                     weaponLevel: weaponData.level,
                     weaponRating: weaponData.rating,
@@ -7517,7 +7523,7 @@ module.exports = function registerApiRoutes(scope) {
             return summary;
         };
 
-        function buildAttackContextForActor({ attackCheckInfo, actor, location }) {
+        function buildAttackContextForActor({ attackCheckInfo, actor, location, dieRollOverride = null }) {
             if (!attackCheckInfo || !attackCheckInfo.structured || !actor) {
                 return { isAttack: false };
             }
@@ -7646,7 +7652,8 @@ module.exports = function registerApiRoutes(scope) {
                 attackEntry: actorAttack,
                 attacker: actor,
                 defender: targetActor,
-                weaponName: attackerWeapon
+                weaponName: attackerWeapon,
+                dieRollOverride
             });
 
             if (computedOutcome) {
@@ -7829,6 +7836,25 @@ module.exports = function registerApiRoutes(scope) {
 
             const appliedStatusEffects = [];
             const weaponEffect = (() => {
+                const resolvedWeaponId = attackOutcome?.damage?.weaponThingId || null;
+                if (resolvedWeaponId) {
+                    const byResolvedId = Thing.getById(resolvedWeaponId);
+                    if (byResolvedId?.causeStatusEffectOnTarget) {
+                        return byResolvedId.causeStatusEffectOnTarget;
+                    }
+                }
+
+                const attackWeaponName = sanitizeNamedValue(
+                    attackContext?.attackEntry?.weapon
+                    || attackOutcome?.damage?.weaponName
+                );
+                if (attackWeaponName) {
+                    const byAttackName = resolveWeaponThing(attacker, attackWeaponName);
+                    if (byAttackName?.causeStatusEffectOnTarget) {
+                        return byAttackName.causeStatusEffectOnTarget;
+                    }
+                }
+
                 if (!attacker || typeof attacker.getEquippedItemIdForType !== 'function') {
                     return null;
                 }
@@ -9819,7 +9845,7 @@ module.exports = function registerApiRoutes(scope) {
                             attackOutcome.appliedStatusEffects = damageResult.appliedStatusEffects;
                             attackContext.appliedStatusEffects = damageResult.appliedStatusEffects;
                             const targetName = attackContext?.target?.name || 'the target';
-                            newChatEntries.push({
+                            entryCollector.push({
                                 role: 'system',
                                 content: `Applied status effect to ${targetName}: ${damageResult.appliedStatusEffects.map(effect => effect.name || 'Status Effect').join(', ')}`,
                                 ephemeral: true
@@ -10731,6 +10757,7 @@ module.exports = function registerApiRoutes(scope) {
                 let attackContextForPlausibility = null;
                 let actionResolution = null;
                 let attackDamageApplication = null;
+                let injectedDieRollOverride = null;
 
                 const isCommentOnlyAction = firstVisibleIndex > -1 && trimmedVisibleContent.startsWith('#');
 
@@ -10798,13 +10825,38 @@ module.exports = function registerApiRoutes(scope) {
                     return trimmed;
                 };
 
-                const sanitizedUserContent = isForcedEventAction
+                const extractInlineDieRollOverride = (text) => {
+                    if (typeof text !== 'string' || !text.length) {
+                        return { text, dieRoll: null };
+                    }
+                    let parsedDieRoll = null;
+                    const stripped = text.replace(/<(-?\d+)>/g, (_, rawValue) => {
+                        if (parsedDieRoll === null) {
+                            parsedDieRoll = Number.parseInt(rawValue, 10);
+                        }
+                        return '';
+                    });
+                    const normalized = stripped
+                        .replace(/[ \t]{2,}/g, ' ')
+                        .replace(/ *\n */g, '\n')
+                        .trim();
+                    return {
+                        text: normalized,
+                        dieRoll: Number.isInteger(parsedDieRoll) ? parsedDieRoll : null
+                    };
+                };
+
+                let sanitizedUserContent = isForcedEventAction
                     ? (forcedEventText || '')
                     : (isCreativeModeAction
                         ? (creativeActionText || '')
                         : (isQuestionAction
                             ? (questionActionText || '')
                             : (isGenericPromptAction ? (genericPromptText || '') : trimLeadingMarkers(originalUserContent))));
+
+                const inlineDieRollData = extractInlineDieRollOverride(sanitizedUserContent);
+                sanitizedUserContent = inlineDieRollData.text;
+                injectedDieRollOverride = inlineDieRollData.dieRoll;
 
                 if (isForcedEventAction) {
                     stream.status('player_action:forced_event', 'Processing forced event override.');
@@ -10927,7 +10979,8 @@ module.exports = function registerApiRoutes(scope) {
                             attackContextForPlausibility = buildAttackContextForActor({
                                 attackCheckInfo,
                                 actor: currentPlayer,
-                                location
+                                location,
+                                dieRollOverride: injectedDieRollOverride
                             });
                             //console.log('Attack context for plausibility check:', attackContextForPlausibility);
                         } catch (attackError) {
@@ -10938,14 +10991,17 @@ module.exports = function registerApiRoutes(scope) {
                         try {
                             stream.status('player_action:plausibility', 'Evaluating plausibility.');
                             plausibilityInfo = await runPlausibilityCheck({
-                                actionText: userMessage.content,
+                                actionText: typeof sanitizedUserContent === 'string'
+                                    ? sanitizedUserContent
+                                    : userMessage.content,
                                 locationId: currentPlayer.currentLocation || null,
                                 attackContext: attackContextForPlausibility
                             });
                             if (plausibilityInfo?.structured) {
                                 actionResolution = resolveActionOutcome({
                                     plausibility: plausibilityInfo.structured,
-                                    player: currentPlayer
+                                    player: currentPlayer,
+                                    dieRollOverride: injectedDieRollOverride
                                 });
                             }
                         } catch (plausibilityError) {
@@ -10963,7 +11019,8 @@ module.exports = function registerApiRoutes(scope) {
                         if (currentPlayer) {
                             actionResolution = resolveActionOutcome({
                                 plausibility: plausibilityInfo.structured,
-                                player: currentPlayer
+                                player: currentPlayer,
+                                dieRollOverride: injectedDieRollOverride
                             });
                         }
                     }
@@ -20551,9 +20608,29 @@ module.exports = function registerApiRoutes(scope) {
                 const intendedItemName = typeof payload.intendedItemName === 'string'
                     ? payload.intendedItemName.trim()
                     : '';
-                const craftingNotes = typeof payload.notes === 'string'
-                    ? payload.notes.trim()
-                    : '';
+                const craftingRollState = { value: null };
+                const extractInlineDieRollFromCraftText = (value) => {
+                    if (typeof value !== 'string' || !value.length) {
+                        return '';
+                    }
+                    let parsedDieRoll = null;
+                    const stripped = value.replace(/<(-?\d+)>/g, (_, rawValue) => {
+                        if (parsedDieRoll === null) {
+                            parsedDieRoll = Number.parseInt(rawValue, 10);
+                        }
+                        return '';
+                    });
+                    if (craftingRollState.value === null && Number.isInteger(parsedDieRoll)) {
+                        craftingRollState.value = parsedDieRoll;
+                    }
+                    return stripped
+                        .replace(/[ \t]{2,}/g, ' ')
+                        .replace(/ *\n */g, '\n')
+                        .trim();
+                };
+                const craftingNotes = extractInlineDieRollFromCraftText(
+                    typeof payload.notes === 'string' ? payload.notes.trim() : ''
+                );
                 const craftTargetTypeInput = typeof payload.craftTargetType === 'string'
                     ? payload.craftTargetType.trim().toLowerCase()
                     : '';
@@ -20599,11 +20676,15 @@ module.exports = function registerApiRoutes(scope) {
                 const salvageItemId = typeof payload.salvageItemId === 'string' ? payload.salvageItemId.trim() : '';
                 const salvageItemName = typeof payload.salvageItemName === 'string' ? payload.salvageItemName.trim() : '';
                 const salvageItemDescription = typeof payload.salvageItemDescription === 'string' ? payload.salvageItemDescription.trim() : '';
-                const salvageNotes = typeof payload.salvageNotes === 'string' ? payload.salvageNotes.trim() : '';
+                const salvageNotes = extractInlineDieRollFromCraftText(
+                    typeof payload.salvageNotes === 'string' ? payload.salvageNotes.trim() : ''
+                );
                 const harvestItemId = typeof payload.harvestItemId === 'string' ? payload.harvestItemId.trim() : '';
                 const harvestItemName = typeof payload.harvestItemName === 'string' ? payload.harvestItemName.trim() : '';
                 const harvestItemDescription = typeof payload.harvestItemDescription === 'string' ? payload.harvestItemDescription.trim() : '';
-                const harvestNotes = typeof payload.harvestNotes === 'string' ? payload.harvestNotes.trim() : '';
+                const harvestNotes = extractInlineDieRollFromCraftText(
+                    typeof payload.harvestNotes === 'string' ? payload.harvestNotes.trim() : ''
+                );
 
                 if ((isSalvageAction || isHarvestAction) && slotItems.length !== 1) {
                     return res.status(400).json({
@@ -20719,7 +20800,8 @@ module.exports = function registerApiRoutes(scope) {
 
                 const actionOutcome = resolveActionOutcome({
                     plausibility,
-                    player: currentPlayer
+                    player: currentPlayer,
+                    dieRollOverride: craftingRollState.value
                 });
                 if (!actionOutcome) {
                     throw new Error('Failed to resolve crafting outcome.');

@@ -6667,7 +6667,7 @@ function resolveOpposedActor({ opponentName, actingActor = null }) {
     return findActorByLooseName(trimmed) || null;
 }
 
-function resolveActionOutcome({ plausibility, player }) {
+function resolveActionOutcome({ plausibility, player, dieRollOverride = null }) {
     if (!plausibility || !player) {
         return null;
     }
@@ -6815,8 +6815,11 @@ function resolveActionOutcome({ plausibility, player }) {
         const opponentBaseAttributeBonus = Number.isFinite(opponentBaseAttributeBonusRaw) ? opponentBaseAttributeBonusRaw : 0;
         const opponentAttributeBonus = opponentSkillInfo.key ? opponentBaseAttributeBonus : opponentBaseAttributeBonus * 2;
 
-        const rollResult = diceModule.rollDice('1d20');
-        const dieRoll = rollResult.total;
+        const hasInjectedDieRoll = Number.isInteger(dieRollOverride);
+        const rollResult = hasInjectedDieRoll
+            ? { total: dieRollOverride, detail: `1d20 (injected: ${dieRollOverride})` }
+            : diceModule.rollDice('1d20');
+        const dieRoll = hasInjectedDieRoll ? dieRollOverride : rollResult.total;
         const total = dieRoll + skillValue + attributeBonus + circumstanceModifier;
 
         const opponentRollResult = diceModule.rollDice('1d20');
@@ -6890,8 +6893,11 @@ function resolveActionOutcome({ plausibility, player }) {
         };
     }
 
-    const rollResult = diceModule.rollDice('1d20');
-    const dieRoll = rollResult.total;
+    const hasInjectedDieRoll = Number.isInteger(dieRollOverride);
+    const rollResult = hasInjectedDieRoll
+        ? { total: dieRollOverride, detail: `1d20 (injected: ${dieRollOverride})` }
+        : diceModule.rollDice('1d20');
+    const dieRoll = hasInjectedDieRoll ? dieRollOverride : rollResult.total;
     const total = dieRoll + skillValue + attributeBonus + circumstanceModifier;
     const margin = total - dc;
     const outcome = classifyOutcomeMargin(margin, dieRoll, resolvedDifficulty);

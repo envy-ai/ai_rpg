@@ -56,24 +56,6 @@ The below context is an account of the current game state, including the setting
 {{ setting.skills | join("\n") }}
 </skills>
   </setting>
-  <worldTime>
-    <dayIndex>{{ worldTime.dayIndex }}</dayIndex>
-    <timeMinutes>{{ worldTime.timeMinutes }}</timeMinutes>
-    <timeLabel>{{ worldTime.timeLabel }}</timeLabel>
-    <segment>{{ worldTime.segment }}</segment>
-    <season>{{ worldTime.season }}</season>
-    <seasonDescription>{{ worldTime.seasonDescription | default('', true) }}</seasonDescription>
-    <dateLabel>{{ worldTime.dateLabel }}</dateLabel>
-    {% if worldTime.holiday %}
-    <holiday>
-      <name>{{ worldTime.holiday.name }}</name>
-      <description>{{ worldTime.holiday.description | default('', true) }}</description>
-      <month>{{ worldTime.holiday.month }}</month>
-      <day>{{ worldTime.holiday.day }}</day>
-    </holiday>
-    {% endif %}
-    <lighting>{{ worldTime.lighting }}</lighting>
-  </worldTime>
   <itemRarityLevels>{% for rarity in rarityDefinitions %}
     {{ rarity.label }}: {{ rarity.description }}
 {% endfor %}  </itemRarityLevels>
@@ -560,7 +542,22 @@ The below context is an account of the current game state, including the setting
   <recentStoryHistory>{{ recentGameHistory }}</recentStoryHistory>
 </gameState>
 <currentConditions>
-  <time>{{ worldTime.timeLabel | default('--:--', true) }}</time>
+  <worldTime>
+    <dateLabel>{{ worldTime.dateLabel }}</dateLabel>
+    <currentTime>{{ worldTime.timeLabel }}</currentTime>
+    <timeSegment>{{ worldTime.segment }}</timeSegment>
+    <season>{{ worldTime.season }}</season>
+    <seasonDescription>{{ worldTime.seasonDescription | default('', true) }}</seasonDescription>
+    {% if worldTime.holiday %}
+    <holiday>
+      <name>{{ worldTime.holiday.name }}</name>
+      <description>{{ worldTime.holiday.description | default('', true) }}</description>
+      <month>{{ worldTime.holiday.month }}</month>
+      <day>{{ worldTime.holiday.day }}</day>
+    </holiday>
+    {% endif %}
+    <lighting>{{ worldTime.lighting }}</lighting>
+  </worldTime>
   {% if worldTime.hasLocalWeather %}
   <weather>
     <name>{{ worldTime.weatherName | default('Unspecified weather', true) }}</name>

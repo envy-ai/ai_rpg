@@ -1359,6 +1359,106 @@ class LLMClient {
         return normalized;
     }
 
+    static #resolveForcedOutput(forceOutput, {
+        sourceLabel = 'forced output',
+        requestedModel = null
+    } = {}) {
+        let content = '';
+        let rawToolCalls = [];
+        let usage = null;
+        let finishReason = null;
+        let fallbackModel = requestedModel;
+        let fallbackId = null;
+        let rawResponseData = null;
+
+        if (typeof forceOutput === 'string') {
+            content = forceOutput;
+            finishReason = 'stop';
+        } else if (forceOutput && typeof forceOutput === 'object') {
+            if (Array.isArray(forceOutput.choices)) {
+                rawResponseData = forceOutput;
+                const firstChoice = forceOutput.choices[0] || null;
+                const responseMessage = firstChoice?.message || null;
+                content = LLMClient.#extractTextContent(responseMessage?.content);
+                rawToolCalls = Array.isArray(responseMessage?.tool_calls)
+                    ? responseMessage.tool_calls
+                    : [];
+                usage = forceOutput?.usage && typeof forceOutput.usage === 'object'
+                    ? { ...forceOutput.usage }
+                    : null;
+                finishReason = typeof firstChoice?.finish_reason === 'string'
+                    ? firstChoice.finish_reason
+                    : null;
+                if (typeof forceOutput.model === 'string' && forceOutput.model.trim()) {
+                    fallbackModel = forceOutput.model.trim();
+                }
+                if (typeof forceOutput.id === 'string' && forceOutput.id.trim()) {
+                    fallbackId = forceOutput.id.trim();
+                }
+            } else {
+                const directMessage = forceOutput.message && typeof forceOutput.message === 'object'
+                    ? forceOutput.message
+                    : null;
+                if (forceOutput.content !== undefined) {
+                    content = LLMClient.#extractTextContent(forceOutput.content);
+                } else {
+                    content = LLMClient.#extractTextContent(directMessage?.content);
+                }
+                if (Array.isArray(forceOutput.tool_calls)) {
+                    rawToolCalls = forceOutput.tool_calls;
+                } else if (Array.isArray(forceOutput.toolCalls)) {
+                    rawToolCalls = forceOutput.toolCalls;
+                } else if (Array.isArray(directMessage?.tool_calls)) {
+                    rawToolCalls = directMessage.tool_calls;
+                } else {
+                    rawToolCalls = [];
+                }
+                usage = forceOutput?.usage && typeof forceOutput.usage === 'object'
+                    ? { ...forceOutput.usage }
+                    : null;
+                if (typeof forceOutput.finish_reason === 'string') {
+                    finishReason = forceOutput.finish_reason;
+                } else if (typeof forceOutput.finishReason === 'string') {
+                    finishReason = forceOutput.finishReason;
+                }
+                if (typeof forceOutput.model === 'string' && forceOutput.model.trim()) {
+                    fallbackModel = forceOutput.model.trim();
+                }
+                if (typeof forceOutput.id === 'string' && forceOutput.id.trim()) {
+                    fallbackId = forceOutput.id.trim();
+                }
+            }
+        } else {
+            throw new Error('forceOutput must be a string or an object when provided.');
+        }
+
+        const toolCalls = LLMClient.#normalizeToolCalls(rawToolCalls, {
+            sourceLabel,
+            requireJsonArguments: true
+        });
+        const normalizedResponseData = LLMClient.#buildNormalizedResponseData({
+            rawResponseData,
+            fallbackModel,
+            fallbackId,
+            content,
+            toolCalls,
+            finishReason,
+            usage
+        });
+
+        return {
+            normalizedResponseData,
+            content: LLMClient.#extractTextContent(
+                normalizedResponseData?.choices?.[0]?.message?.content
+            ),
+            toolCalls,
+            usage: normalizedResponseData?.usage && typeof normalizedResponseData.usage === 'object'
+                ? { ...normalizedResponseData.usage }
+                : null,
+            finishReason: normalizedResponseData?.choices?.[0]?.finish_reason || null
+        };
+    }
+
     static async chatCompletion({
         messages,
         maxTokens,
@@ -1392,6 +1492,7 @@ class LLMClient {
         runInBackground = false,
         maxConcurrent = null,
         multimodal = false,
+        forceOutput = null,
     } = {}) {
         const resolvedOutput = LLMClient.resolveOutput(output);
         const isSilent = resolvedOutput === 'silent';
@@ -1447,6 +1548,7 @@ class LLMClient {
                 seed,
                 topP,
                 multimodal,
+                forceOutput: forceOutput !== null && forceOutput !== undefined ? '[provided]' : null
             });
         }
         let currentTime = Date.now();
@@ -1694,6 +1796,7 @@ class LLMClient {
             let streamTrackerId = null;
             let startTimer = null;
             let lastTotalTokens = null;
+            const hasForcedOutput = forceOutput !== null && forceOutput !== undefined;
             const resolvedRequiredRegex = (() => {
                 if (!requiredRegex) {
                     return null;
@@ -1739,69 +1842,100 @@ class LLMClient {
                 let streamStartTimeoutMs = 40000;
                 let streamContinueTimeoutMs = 10000;
                 const controller = new AbortController();
+                let response = null;
                 try {
-                    attemptRuntime = resolveAttemptRuntime({ attemptNumber: attempt });
-                    payload = attemptRuntime.payload;
-                    resolvedModel = attemptRuntime.resolvedModel;
-                    resolvedEndpoint = attemptRuntime.resolvedEndpoint;
-                    resolvedTimeout = attemptRuntime.resolvedTimeout;
-                    waitAfterErrorSeconds = attemptRuntime.resolvedWaitAfterError;
-                    waitAfterRateLimitErrorSeconds = attemptRuntime.resolvedWaitAfterRateLimitError;
-                    streamStartTimeoutMs = attemptRuntime.streamStartTimeoutMs;
-                    streamContinueTimeoutMs = attemptRuntime.streamContinueTimeoutMs;
-
-                    if (typeof captureRequestPayload === 'function') {
-                        try {
-                            captureRequestPayload(JSON.parse(JSON.stringify(payload)));
-                        } catch (_) {
-                            captureRequestPayload(payload);
+                    if (hasForcedOutput) {
+                        payload = {
+                            forceOutput,
+                            messages,
+                            stream: false
+                        };
+                        if (typeof captureRequestPayload === 'function') {
+                            try {
+                                captureRequestPayload(JSON.parse(JSON.stringify(payload)));
+                            } catch (_) {
+                                captureRequestPayload(payload);
+                            }
                         }
-                    }
 
-                    attemptSemaphore = LLMClient.#ensureSemaphore(
-                        attemptRuntime.semaphoreKey,
-                        attemptRuntime.effectiveMaxConcurrent,
-                        log
-                    );
-                    await attemptSemaphore.acquire();
-
-                    const axiosOptions = { ...attemptRuntime.baseAxiosOptions, signal: controller.signal };
-                    streamTrackerId = payload.stream && !isSilent
-                        ? LLMClient.#trackStreamStart(metadataLabel, {
-                            startTimeoutMs: streamStartTimeoutMs,
-                            continueTimeoutMs: streamContinueTimeoutMs,
-                            isBackground: Boolean(runInBackground),
-                            model: resolvedModel
-                        })
-                        : null;
-                    if (streamTrackerId) {
-                        LLMClient.#abortControllers.set(streamTrackerId, controller);
-                    }
-                    if (payload.stream) {
-                        startTimer = setTimeout(() => {
-                            controller.abort(new Error('Stream start timeout'));
-                        }, streamStartTimeoutMs);
-                    }
-                    const response = await axios.post(resolvedEndpoint, payload, axiosOptions);
-                    if (startTimer) {
-                        clearTimeout(startTimer);
-                        startTimer = null;
-                    }
-                    if (response?.data?.usage && Number.isFinite(response.data.usage.total_tokens)) {
-                        lastTotalTokens = response.data.usage.total_tokens;
-                    }
-
-                    // On any 5xx response, wait waitAfterError seconds and then retry
-                    if (response.status == 429 || (response.status >= 500 && response.status < 600)) {
-                        errorLog(`Server error from LLM (status ${response.status}) on attempt ${attempt + 1}.`);
-                        const retryWaitSeconds = response.status == 429
-                            ? waitAfterRateLimitErrorSeconds
-                            : waitAfterErrorSeconds;
-                        if (retryWaitSeconds > 0) {
-                            log(`Waiting ${retryWaitSeconds} seconds before retrying...`);
-                            await new Promise(resolve => setTimeout(resolve, retryWaitSeconds * 1000));
+                        const forcedResponse = LLMClient.#resolveForcedOutput(forceOutput, {
+                            sourceLabel: `forced output (${metadataLabel || 'chat'})`,
+                            requestedModel: model || null
+                        });
+                        response = {
+                            status: 200,
+                            statusText: 'OK',
+                            headers: {},
+                            config: {},
+                            data: forcedResponse.normalizedResponseData
+                        };
+                        if (response?.data?.usage && Number.isFinite(response.data.usage.total_tokens)) {
+                            lastTotalTokens = response.data.usage.total_tokens;
                         }
-                        throw new Error(`Server error from LLM (status ${response.status}).`);
+                    } else {
+                        attemptRuntime = resolveAttemptRuntime({ attemptNumber: attempt });
+                        payload = attemptRuntime.payload;
+                        resolvedModel = attemptRuntime.resolvedModel;
+                        resolvedEndpoint = attemptRuntime.resolvedEndpoint;
+                        resolvedTimeout = attemptRuntime.resolvedTimeout;
+                        waitAfterErrorSeconds = attemptRuntime.resolvedWaitAfterError;
+                        waitAfterRateLimitErrorSeconds = attemptRuntime.resolvedWaitAfterRateLimitError;
+                        streamStartTimeoutMs = attemptRuntime.streamStartTimeoutMs;
+                        streamContinueTimeoutMs = attemptRuntime.streamContinueTimeoutMs;
+
+                        if (typeof captureRequestPayload === 'function') {
+                            try {
+                                captureRequestPayload(JSON.parse(JSON.stringify(payload)));
+                            } catch (_) {
+                                captureRequestPayload(payload);
+                            }
+                        }
+
+                        attemptSemaphore = LLMClient.#ensureSemaphore(
+                            attemptRuntime.semaphoreKey,
+                            attemptRuntime.effectiveMaxConcurrent,
+                            log
+                        );
+                        await attemptSemaphore.acquire();
+
+                        const axiosOptions = { ...attemptRuntime.baseAxiosOptions, signal: controller.signal };
+                        streamTrackerId = payload.stream && !isSilent
+                            ? LLMClient.#trackStreamStart(metadataLabel, {
+                                startTimeoutMs: streamStartTimeoutMs,
+                                continueTimeoutMs: streamContinueTimeoutMs,
+                                isBackground: Boolean(runInBackground),
+                                model: resolvedModel
+                            })
+                            : null;
+                        if (streamTrackerId) {
+                            LLMClient.#abortControllers.set(streamTrackerId, controller);
+                        }
+                        if (payload.stream) {
+                            startTimer = setTimeout(() => {
+                                controller.abort(new Error('Stream start timeout'));
+                            }, streamStartTimeoutMs);
+                        }
+                        response = await axios.post(resolvedEndpoint, payload, axiosOptions);
+                        if (startTimer) {
+                            clearTimeout(startTimer);
+                            startTimer = null;
+                        }
+                        if (response?.data?.usage && Number.isFinite(response.data.usage.total_tokens)) {
+                            lastTotalTokens = response.data.usage.total_tokens;
+                        }
+
+                        // On any 5xx response, wait waitAfterError seconds and then retry
+                        if (response.status == 429 || (response.status >= 500 && response.status < 600)) {
+                            errorLog(`Server error from LLM (status ${response.status}) on attempt ${attempt + 1}.`);
+                            const retryWaitSeconds = response.status == 429
+                                ? waitAfterRateLimitErrorSeconds
+                                : waitAfterErrorSeconds;
+                            if (retryWaitSeconds > 0) {
+                                log(`Waiting ${retryWaitSeconds} seconds before retrying...`);
+                                await new Promise(resolve => setTimeout(resolve, retryWaitSeconds * 1000));
+                            }
+                            throw new Error(`Server error from LLM (status ${response.status}).`);
+                        }
                     }
 
                     const handleStream = (streamId) => new Promise((resolve, reject) => {

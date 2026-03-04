@@ -8,7 +8,7 @@ Collection of static utility helpers used across the server: set math, text simi
 - `roundAwayFromZero(value)`.
 - `longestCommonSubstringLength(a, b)`.
 - `capitalizeProperNoun(str, { remove_articles = false })`: title-cases and normalizes item/location names, optionally stripping a/an/the from the start.
-- `parseDurationToMinutes(value, { fieldName })`: strict shared duration parser accepting integer minutes, `HH:MM`, and day/hour/minute unit text; parse failures emit a console backtrace before throwing.
+- `parseDurationToMinutes(value, { fieldName })`: strict shared duration parser accepting integer minutes, `HH:MM`, and day/hour/minute/round unit text; parse failures emit a console backtrace before throwing.
 - K-gram utilities:
   - `pruneContainedKgrams(ngrams)`.
   - `hasKgramOverlap(a, b, { k, minMatches })`.

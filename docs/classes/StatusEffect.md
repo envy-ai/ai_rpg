@@ -9,7 +9,7 @@ Represents a temporary or permanent modifier applied to an entity, including att
   - `attributes` and `skills` are arrays of `{ attribute|skill, modifier }`.
   - `needBars` is an array of `{ name, delta }`.
   - `duration` is normalized to **minutes**:
-    - Accepted formats include `HH:MM`, integer minutes, and explicit day/hour/minute units.
+    - Accepted formats include `HH:MM`, integer minutes, and explicit day/hour/minute/round units.
     - Bare numeric strings and numeric inputs are treated as **minutes** (including `-1` as permanent/infinite).
     - `'instant'` -> `1`, `'permanent'`/`'continuous'` -> `-1`, `'none'`/`'n/a'` -> `null`.
     - Numeric values must be integer minute counts (non-integer values throw).

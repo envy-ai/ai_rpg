@@ -56,3 +56,4 @@ Centralized static state and helpers used across the server. Provides access to 
 - `calendarDefinition.seasons[*].timeDescriptions` is normalized and used to
   derive `worldTime.lightLevelDescription` (with segment-based lighting as
   fallback when no seasonal time descriptions are present).
+- `formatTime()` renders display labels as 12-hour `h:MM AM/PM`.

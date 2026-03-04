@@ -8,8 +8,8 @@ This document defines the migration from decimal-hour canonical time to minute-b
 2. `startTime` for new game remains **hour-only** (`0`-`23`).
 3. Duration inputs accepted from LLM/user-facing time fields:
    - `HH:MM` duration format
-   - `Z days, X hours, Y minutes` (any subset/combination of units)
-   - Single-unit forms like `X hours`, `Y minutes`, `Z days`
+   - `Z days, X hours, Y minutes` (any subset/combination of units, including rounds)
+   - Single-unit forms like `X hours`, `Y minutes`, `Z days`, `N rounds`
 
 ## Current-State Summary
 
@@ -35,7 +35,7 @@ All internal elapsed/absolute time values become minute-based.
 - Status effects:
   - `duration` and `appliedAt` stored/processed in minutes.
 
-`timeLabel` remains `HH:MM` for display.
+`timeLabel` uses 12-hour `h:MM AM/PM` display formatting.
 
 ## Parsing Contract
 
@@ -76,7 +76,7 @@ Changes:
 2. Replace `getTotalWorldHours()` with minute-based equivalent (new name should reflect minutes).
 3. Replace `advanceTime(hours)` with minute-based API (new name/signature should reflect minutes).
 4. Update transition payload fields from `atTimeHours` to `atTimeMinutes`.
-5. Keep `formatTime()` output as `HH:MM`, but compute from minute canonical values directly.
+5. Set `formatTime()` output to 12-hour `h:MM AM/PM`, computed from minute canonical values directly.
 
 ## 2) Event Time Parsing and Advancement
 
@@ -213,7 +213,7 @@ Required prompt language updates:
 1. Remove decimal-hour instruction language.
 2. Explicitly allow:
    - `HH:MM`
-   - day/hour/minute combinations
+   - day/hour/minute/round combinations
 3. Align duration wording that still says “turns” to minute/hour/day durations (for status durations).
 4. Ensure all prompts continue to produce parseable, explicit durations.
 

@@ -676,6 +676,7 @@
                         </tr>
                     </tbody>
                 </table>
+                <p class="modal__instruction">Roll override: include <code>&lt;N&gt;</code> anywhere in action or crafting text to force your die roll to that integer.</p>
             </div>
         </div>
     </div>
@@ -1037,7 +1038,7 @@
                 </div>
                 <div class="crafting-modal__notes">
                     <label for="craftingNotesInput" class="sr-only">Crafting notes</label>
-                    <textarea id="craftingNotesInput" class="crafting-modal__notes-input" rows="2" placeholder="Optionally, describe what you are trying to craft."></textarea>
+                    <textarea id="craftingNotesInput" class="crafting-modal__notes-input" rows="2" placeholder="Optionally, describe what you are trying to craft. Include &lt;N&gt; to force your roll."></textarea>
                 </div>
             </div>
             <footer class="modal__footer crafting-modal__footer">
@@ -1059,7 +1060,7 @@
             <div class="modal__body">
                 <p id="salvageIntentMessage" class="modal__instruction">Optionally describe what you hope to recover. Leave blank to continue.</p>
                 <label for="salvageIntentInput" class="sr-only">Desired outcome</label>
-                <textarea id="salvageIntentInput" class="crafting-modal__notes-input" rows="2" placeholder="Optionally describe what you hope to recover."></textarea>
+                <textarea id="salvageIntentInput" class="crafting-modal__notes-input" rows="2" placeholder="Optionally describe what you hope to recover. Include &lt;N&gt; to force your roll."></textarea>
             </div>
             <footer class="modal__footer">
                 <button type="button" class="button button-secondary" id="salvageIntentCancelBtn">Cancel</button>
@@ -13588,8 +13589,8 @@
             if (salvageIntentInput) {
                 salvageIntentInput.value = '';
                 salvageIntentInput.placeholder = isHarvestMode
-                    ? 'Optionally describe what you hope to harvest.'
-                    : 'Optionally describe what you hope to salvage.';
+                    ? 'Optionally describe what you hope to harvest. Include <N> to force your roll.'
+                    : 'Optionally describe what you hope to salvage. Include <N> to force your roll.';
             }
             if (salvageIntentSubmitBtn) {
                 salvageIntentSubmitBtn.textContent = isHarvestMode ? 'Start Harvest' : 'Start Salvage';
@@ -13698,8 +13699,8 @@
             if (craftingNotesInput) {
                 craftingNotesInput.value = '';
                 craftingNotesInput.placeholder = currentCraftingMode === 'process'
-                    ? 'Optionally, describe what you are trying to create via processing.'
-                    : `Optionally, describe what you are trying to craft (${craftTargetLabel}).`;
+                    ? 'Optionally, describe what you are trying to create via processing. Include <N> to force your roll.'
+                    : `Optionally, describe what you are trying to craft (${craftTargetLabel}). Include <N> to force your roll.`;
             }
 
             craftingModal.removeAttribute('hidden');

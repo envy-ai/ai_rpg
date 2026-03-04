@@ -97,7 +97,7 @@ class Utils {
       .replace(/\s+/g, ' ')
       .trim();
 
-    const unitPattern = /(\d+)\s*(days?|d|hours?|hrs?|hr|h|minutes?|mins?|min|m)\b/g;
+    const unitPattern = /(\d+)\s*(days?|d|hours?|hrs?|hr|h|minutes?|mins?|min|m|rounds?|rnds?|rnd)\b/g;
     let cursor = 0;
     let matched = false;
     let totalMinutes = 0;
@@ -126,6 +126,8 @@ class Utils {
         totalMinutes += amount * 60;
       } else if (unit === 'minute' || unit === 'minutes' || unit === 'min' || unit === 'mins' || unit === 'm') {
         totalMinutes += amount;
+      } else if (unit === 'round' || unit === 'rounds' || unit === 'rnd' || unit === 'rnds') {
+        totalMinutes += amount;
       } else {
         throwWithTrace(`${label} contains an unsupported unit "${unitRaw}".`);
       }
@@ -134,7 +136,7 @@ class Utils {
     }
 
     if (!matched) {
-      throwWithTrace(`${label} is invalid ('${value}'). Expected HH:MM, integer minutes, or day/hour/minute units.`);
+      throwWithTrace(`${label} is invalid ('${value}'). Expected HH:MM, integer minutes, or day/hour/minute/round units.`);
     }
 
     if (normalized.slice(cursor).trim()) {

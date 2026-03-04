@@ -29,6 +29,7 @@ Centralized client for LLM chat completions with concurrency limits, streaming p
 - `resolveChatEndpoint(endpoint)` / `resolveTemperature(explicit, fallback)` / `resolveOutput(output, fallback)`.
 - `chatCompletion({ messages, metadataLabel, timeoutMs, temperature, stream, ... })`:
   - Handles retries, streaming, logging, and optional image preprocessing.
+  - Supports deterministic `forceOutput` mode for tests: skips AI network calls but still runs response post-processing/validation and emits normalized `onResponse` data.
   - Normalizes response payloads for both stream and non-stream calls so `choices[0].message.tool_calls` is available to callers.
   - Assembles streamed `delta.tool_calls` chunks into full function calls and validates that each call has parseable JSON `function.arguments`.
   - Uses `LLMClient.logPrompt` and emits prompt progress via `Globals.realtimeHub`.
