@@ -43,7 +43,8 @@
                                     <span class="world-time-indicator__weather" id="worldTimeIndicatorWeather" hidden>Weather: Unknown</span>
                                 </div>
                                 <div class="location-header">
-                                    <h4>📍 <span class="location-name" id="locationName">Unknown Location</span></h4>
+                                    <h4><span id="locationNameIcon" class="location-name-icon" aria-hidden="true">📍</span> <span class="location-name" id="locationName">Unknown Location</span></h4>
+                                    <div id="locationVehicleCurrentLocation" hidden></div>
                                 </div>
                                 <div class="location-content" id="locationContent">
                                     <div class="location-image-wrapper" id="locationImageWrapper">
@@ -1643,6 +1644,9 @@
                     <label for="locationEditFaction">Controlling Faction</label>
                     <select id="locationEditFaction"></select>
                 </div>
+                {% set vehicleFormPrefix = 'locationEdit' %}
+                {% set vehicleSectionTitle = 'Vehicle Information' %}
+                {% include "_includes/vehicle-info-fields.njk" %}
                 <div class="location-edit-field location-edit-field--static">
                     <span class="location-edit-label">Absolute Level</span>
                     <span id="locationEditAbsoluteLevel" class="location-edit-value">—</span>
@@ -1700,6 +1704,9 @@
                     <label for="regionEditFaction">Controlling Faction</label>
                     <select id="regionEditFaction" name="controllingFactionId"></select>
                 </div>
+                {% set vehicleFormPrefix = 'regionEdit' %}
+                {% set vehicleSectionTitle = 'Vehicle Information' %}
+                {% include "_includes/vehicle-info-fields.njk" %}
                 <details class="region-edit-secrets" id="regionEditSecretsDetails">
                     <summary>Region Secrets</summary>
                     <p class="region-edit-secrets-help">Optional hidden notes for this region.</p>
@@ -6188,6 +6195,8 @@
         let editingExitContext = null;
         let locationEditMode = 'location';
         let stubEditContext = null;
+        let locationEditVehicleInfoSnapshot = null;
+        let regionEditVehicleInfoSnapshot = null;
         let factionOptionsCache = { list: [], map: new Map(), loadedAt: 0 };
         let factionOptionsPromise = null;
         const addNpcModal = document.getElementById('addNpcModal');
@@ -6318,6 +6327,14 @@
         const locationEditRelativeLevelInput = document.getElementById('locationEditRelativeLevel');
         const locationEditLevelInput = document.getElementById('locationEditLevel');
         const locationEditFactionSelect = document.getElementById('locationEditFaction');
+        const locationEditIsVehicleInput = document.getElementById('locationEditIsVehicle');
+        const locationEditVehicleSection = document.getElementById('locationEditVehicleSection');
+        const locationEditVehicleFieldset = document.getElementById('locationEditVehicleFieldset');
+        const locationEditVehicleIconInput = document.getElementById('locationEditVehicleIcon');
+        const locationEditVehicleCurrentDestinationInput = document.getElementById('locationEditVehicleCurrentDestination');
+        const locationEditVehicleDestinationsInput = document.getElementById('locationEditVehicleDestinations');
+        const locationEditVehicleEtaInput = document.getElementById('locationEditVehicleETA');
+        const locationEditVehicleExitIdInput = document.getElementById('locationEditVehicleExitId');
         const locationEditAbsoluteLevel = document.getElementById('locationEditAbsoluteLevel');
         const locationEditStatus = document.getElementById('locationEditStatus');
         const locationEditCancelBtn = document.getElementById('locationEditCancelBtn');
@@ -6349,6 +6366,13 @@
         const regionEditParentSelect = document.getElementById('regionEditParent');
         const regionEditAverageLevelInput = document.getElementById('regionEditAverageLevel');
         const regionEditFactionSelect = document.getElementById('regionEditFaction');
+        const regionEditIsVehicleInput = document.getElementById('regionEditIsVehicle');
+        const regionEditVehicleFieldset = document.getElementById('regionEditVehicleFieldset');
+        const regionEditVehicleIconInput = document.getElementById('regionEditVehicleIcon');
+        const regionEditVehicleCurrentDestinationInput = document.getElementById('regionEditVehicleCurrentDestination');
+        const regionEditVehicleDestinationsInput = document.getElementById('regionEditVehicleDestinations');
+        const regionEditVehicleEtaInput = document.getElementById('regionEditVehicleETA');
+        const regionEditVehicleExitIdInput = document.getElementById('regionEditVehicleExitId');
         const regionEditSecretsDetails = document.getElementById('regionEditSecretsDetails');
         const regionEditSecretsList = document.getElementById('regionEditSecretsList');
         const regionEditSecretsAddBtn = document.getElementById('regionEditSecretsAddBtn');
@@ -6356,6 +6380,25 @@
         const regionEditCancelBtn = document.getElementById('regionEditCancelBtn');
         const regionEditCloseBtn = document.getElementById('regionEditCloseBtn');
         const regionEditSaveBtn = document.getElementById('regionEditSaveBtn');
+        const locationVehicleEditor = {
+            section: locationEditVehicleSection,
+            isVehicleInput: locationEditIsVehicleInput,
+            fieldset: locationEditVehicleFieldset,
+            iconInput: locationEditVehicleIconInput,
+            currentDestinationInput: locationEditVehicleCurrentDestinationInput,
+            destinationsInput: locationEditVehicleDestinationsInput,
+            etaInput: locationEditVehicleEtaInput,
+            vehicleExitIdInput: locationEditVehicleExitIdInput
+        };
+        const regionVehicleEditor = {
+            isVehicleInput: regionEditIsVehicleInput,
+            fieldset: regionEditVehicleFieldset,
+            iconInput: regionEditVehicleIconInput,
+            currentDestinationInput: regionEditVehicleCurrentDestinationInput,
+            destinationsInput: regionEditVehicleDestinationsInput,
+            etaInput: regionEditVehicleEtaInput,
+            vehicleExitIdInput: regionEditVehicleExitIdInput
+        };
         const npcViewName = document.getElementById('npcViewName');
         const npcViewDescription = document.getElementById('npcViewDescription');
         const npcViewClass = document.getElementById('npcViewClass');
@@ -15264,6 +15307,37 @@
             throw new Error(`Exit ${exit.id || exit.destination || '<unknown>'} is missing a destination name.`);
         }
 
+        function normalizeVehicleIconValue(value) {
+            if (typeof value !== 'string') {
+                return null;
+            }
+            const trimmed = value.trim();
+            return trimmed || null;
+        }
+
+        function setExitButtonLabel(button, label, { showVehicleIcon = false, vehicleIcon = null } = {}) {
+            if (!button) {
+                return;
+            }
+
+            const normalizedLabel = typeof label === 'string' ? label : '';
+            const normalizedVehicleIcon = normalizeVehicleIconValue(vehicleIcon);
+            button.textContent = '';
+
+            if (showVehicleIcon) {
+                const icon = document.createElement('span');
+                icon.className = 'exit-button-icon';
+                icon.setAttribute('aria-hidden', 'true');
+                icon.textContent = normalizedVehicleIcon || '🚗';
+                button.appendChild(icon);
+            }
+
+            const labelSpan = document.createElement('span');
+            labelSpan.className = 'exit-button-label';
+            labelSpan.textContent = normalizedLabel;
+            button.appendChild(labelSpan);
+        }
+
         async function ensureLocationNameCached(destinationId) {
             if (!destinationId) {
                 return null;
@@ -15901,6 +15975,221 @@
             }
         }
 
+        function normalizeVehicleInfoSnapshot(vehicleInfo = null) {
+            if (!vehicleInfo || typeof vehicleInfo !== 'object' || Array.isArray(vehicleInfo)) {
+                return null;
+            }
+
+            const icon = typeof vehicleInfo.icon === 'string'
+                ? vehicleInfo.icon.trim()
+                : '';
+            const currentDestination = typeof vehicleInfo.currentDestination === 'string'
+                ? vehicleInfo.currentDestination.trim()
+                : '';
+            const destinations = Array.isArray(vehicleInfo.destinations)
+                ? Array.from(new Set(
+                    vehicleInfo.destinations
+                        .filter(entry => typeof entry === 'string')
+                        .map(entry => entry.trim())
+                        .filter(Boolean)
+                ))
+                : [];
+            const etaSource = Object.prototype.hasOwnProperty.call(vehicleInfo, 'ETA')
+                ? vehicleInfo.ETA
+                : vehicleInfo.eta;
+            const etaNumeric = Number(etaSource);
+            const ETA = Number.isFinite(etaNumeric) && Number.isInteger(etaNumeric) && etaNumeric >= 0
+                ? etaNumeric
+                : null;
+            const vehicleExitId = typeof vehicleInfo.vehicleExitId === 'string'
+                ? vehicleInfo.vehicleExitId.trim()
+                : '';
+            const terrainTypes = typeof vehicleInfo.terrainTypes === 'string'
+                ? vehicleInfo.terrainTypes.trim()
+                : '';
+
+            return {
+                terrainTypes: terrainTypes || null,
+                icon: icon || null,
+                currentDestination: currentDestination || null,
+                destinations,
+                ETA,
+                vehicleExitId: vehicleExitId || null
+            };
+        }
+
+        function setVehicleIconInputValue(iconInput, value) {
+            if (!iconInput) {
+                return;
+            }
+            const normalized = typeof value === 'string' ? value.trim() : '';
+            if (!normalized) {
+                iconInput.value = '';
+                return;
+            }
+
+            const existingOption = Array.from(iconInput.options || []).find(option => option.value === normalized);
+            if (!existingOption) {
+                const option = document.createElement('option');
+                option.value = normalized;
+                option.textContent = `${normalized} Custom`;
+                option.dataset.dynamicVehicleIcon = 'true';
+                iconInput.appendChild(option);
+            }
+            iconInput.value = normalized;
+        }
+
+        function parseVehicleDestinationsInput(value) {
+            if (typeof value !== 'string') {
+                return [];
+            }
+            return Array.from(new Set(
+                value
+                    .split(/[\n,]/)
+                    .map(entry => entry.trim())
+                    .filter(Boolean)
+            ));
+        }
+
+        function setVehicleEditorEnabled(editor, enabled) {
+            if (!editor || !editor.fieldset) {
+                return;
+            }
+            editor.fieldset.disabled = !Boolean(enabled);
+        }
+
+        function resetVehicleEditor(editor) {
+            if (!editor) {
+                return;
+            }
+            if (editor.isVehicleInput) {
+                editor.isVehicleInput.checked = false;
+            }
+            if (editor.currentDestinationInput) {
+                editor.currentDestinationInput.value = '';
+            }
+            if (editor.iconInput) {
+                editor.iconInput.value = '';
+            }
+            if (editor.destinationsInput) {
+                editor.destinationsInput.value = '';
+            }
+            if (editor.etaInput) {
+                editor.etaInput.value = '';
+            }
+            if (editor.vehicleExitIdInput) {
+                editor.vehicleExitIdInput.value = '';
+            }
+            setVehicleEditorEnabled(editor, false);
+        }
+
+        function populateVehicleEditor(editor, vehicleInfo) {
+            if (!editor) {
+                return;
+            }
+            const normalized = normalizeVehicleInfoSnapshot(vehicleInfo);
+            if (editor.isVehicleInput) {
+                editor.isVehicleInput.checked = Boolean(normalized);
+            }
+            setVehicleIconInputValue(editor.iconInput, normalized?.icon || '');
+            if (editor.currentDestinationInput) {
+                editor.currentDestinationInput.value = normalized?.currentDestination || '';
+            }
+            if (editor.destinationsInput) {
+                editor.destinationsInput.value = normalized?.destinations?.length
+                    ? normalized.destinations.join(', ')
+                    : '';
+            }
+            if (editor.etaInput) {
+                editor.etaInput.value = Number.isFinite(normalized?.ETA)
+                    ? String(normalized.ETA)
+                    : '';
+            }
+            if (editor.vehicleExitIdInput) {
+                editor.vehicleExitIdInput.value = normalized?.vehicleExitId || '';
+            }
+            setVehicleEditorEnabled(editor, Boolean(normalized));
+        }
+
+        function collectVehicleInfoFromEditor(editor, fallbackSnapshot = null) {
+            const isVehicle = Boolean(editor?.isVehicleInput?.checked);
+            if (!isVehicle) {
+                return {
+                    isVehicle: false,
+                    vehicleInfo: null,
+                    error: null,
+                    focusTarget: null
+                };
+            }
+
+            const currentDestinationRaw = editor?.currentDestinationInput?.value ?? '';
+            const currentDestination = typeof currentDestinationRaw === 'string'
+                ? currentDestinationRaw.trim()
+                : '';
+            const iconRaw = editor?.iconInput?.value ?? '';
+            const icon = typeof iconRaw === 'string'
+                ? iconRaw.trim()
+                : '';
+            const destinationsRaw = editor?.destinationsInput?.value ?? '';
+            const destinations = parseVehicleDestinationsInput(destinationsRaw);
+            const etaRaw = editor?.etaInput?.value ?? '';
+            const etaTrimmed = String(etaRaw).trim();
+            let ETA = null;
+            if (etaTrimmed) {
+                const parsedEta = Number(etaTrimmed);
+                if (!Number.isFinite(parsedEta) || !Number.isInteger(parsedEta) || parsedEta < 0) {
+                    return {
+                        isVehicle: true,
+                        vehicleInfo: null,
+                        error: 'Vehicle ETA must be a non-negative whole number.',
+                        focusTarget: editor?.etaInput || null
+                    };
+                }
+                ETA = parsedEta;
+            }
+
+            if (ETA !== null && !currentDestination) {
+                return {
+                    isVehicle: true,
+                    vehicleInfo: null,
+                    error: 'Vehicle current destination is required when ETA is set.',
+                    focusTarget: editor?.currentDestinationInput || null
+                };
+            }
+
+            if (currentDestination && destinations.length > 0 && !destinations.includes(currentDestination)) {
+                return {
+                    isVehicle: true,
+                    vehicleInfo: null,
+                    error: 'Vehicle current destination must be one of the listed destinations.',
+                    focusTarget: editor?.currentDestinationInput || null
+                };
+            }
+
+            const vehicleExitIdRaw = editor?.vehicleExitIdInput?.value ?? '';
+            const vehicleExitId = typeof vehicleExitIdRaw === 'string'
+                ? vehicleExitIdRaw.trim()
+                : '';
+            const fallback = normalizeVehicleInfoSnapshot(fallbackSnapshot);
+            const payload = {
+                icon: icon || null,
+                currentDestination: currentDestination || null,
+                destinations,
+                ETA,
+                vehicleExitId: vehicleExitId || null
+            };
+            if (fallback?.terrainTypes) {
+                payload.terrainTypes = fallback.terrainTypes;
+            }
+
+            return {
+                isVehicle: true,
+                vehicleInfo: payload,
+                error: null,
+                focusTarget: null
+            };
+        }
+
         const UNKNOWN_LEVEL_DISPLAY = '—';
 
         function updateLocationAbsoluteLevelDisplay(value) {
@@ -16098,6 +16387,7 @@
             toggleLocationEditSection(locationEditStatusSection, !isStubMode);
             toggleLocationEditSection(locationEditShortDescriptionGroup, !isStubMode);
             toggleLocationEditSection(locationEditRelativeLevelGroup, isStubMode);
+            toggleLocationEditSection(locationVehicleEditor.section, !isStubMode);
 
             if (locationEditLevelInput) {
                 locationEditLevelInput.disabled = isStubMode;
@@ -16117,6 +16407,15 @@
                 if (isStubMode) {
                     locationEditShortDescriptionInput.value = '';
                 }
+            }
+            if (locationVehicleEditor.isVehicleInput) {
+                locationVehicleEditor.isVehicleInput.disabled = isStubMode;
+            }
+            if (isStubMode) {
+                locationEditVehicleInfoSnapshot = null;
+                resetVehicleEditor(locationVehicleEditor);
+            } else {
+                setVehicleEditorEnabled(locationVehicleEditor, Boolean(locationVehicleEditor.isVehicleInput?.checked));
             }
         }
 
@@ -16161,9 +16460,13 @@
                 });
             }
             if (stubContext) {
+                locationEditVehicleInfoSnapshot = null;
+                resetVehicleEditor(locationVehicleEditor);
                 renderLocationStatusEffects([]);
                 updateLocationAbsoluteLevelDisplay(null);
             } else {
+                locationEditVehicleInfoSnapshot = normalizeVehicleInfoSnapshot(targetLocation.vehicleInfo);
+                populateVehicleEditor(locationVehicleEditor, locationEditVehicleInfoSnapshot);
                 renderLocationStatusEffects(statusEffects);
                 updateLocationAbsoluteLevelDisplay(numericLevel);
             }
@@ -16226,6 +16529,8 @@
             setLocationEditStatus('', null);
             updateLocationAbsoluteLevelDisplay(null);
             setLocationEditMode('location', null);
+            locationEditVehicleInfoSnapshot = null;
+            resetVehicleEditor(locationVehicleEditor);
             clearLocationMenuContext();
         }
 
@@ -16375,6 +16680,14 @@
 
             const statusEffectsValue = collectLocationStatusEffects();
             payload.statusEffects = statusEffectsValue;
+            const vehicleResult = collectVehicleInfoFromEditor(locationVehicleEditor, locationEditVehicleInfoSnapshot);
+            if (vehicleResult.error) {
+                setLocationEditStatus(vehicleResult.error, 'error');
+                vehicleResult.focusTarget?.focus();
+                return;
+            }
+            payload.isVehicle = vehicleResult.isVehicle;
+            payload.vehicleInfo = vehicleResult.vehicleInfo;
 
             let controllingFactionId = null;
             if (locationEditFactionSelect) {
@@ -17209,6 +17522,8 @@
             if (regionEditForm) {
                 regionEditForm.reset();
             }
+            regionEditVehicleInfoSnapshot = null;
+            resetVehicleEditor(regionVehicleEditor);
             resetRegionSecretsEditor();
             populateRegionParentOptions([], null);
             if (regionEditSaveBtn) {
@@ -17252,6 +17567,8 @@
                         : '';
                     regionEditAverageLevelInput.value = averaged;
                 }
+                regionEditVehicleInfoSnapshot = normalizeVehicleInfoSnapshot(data.region.vehicleInfo);
+                populateVehicleEditor(regionVehicleEditor, regionEditVehicleInfoSnapshot);
                 populateRegionParentOptions(data.parentOptions || [], data.region.parentRegionId || null);
                 if (regionEditFactionSelect) {
                     await populateFactionSelect(regionEditFactionSelect, {
@@ -17278,6 +17595,8 @@
                 if (regionEditAverageLevelInput) {
                     regionEditAverageLevelInput.value = '';
                 }
+                regionEditVehicleInfoSnapshot = null;
+                resetVehicleEditor(regionVehicleEditor);
                 renderRegionSecrets([]);
             }
         }
@@ -17298,6 +17617,8 @@
                 regionEditSaveBtn.disabled = false;
             }
             editingRegionId = null;
+            regionEditVehicleInfoSnapshot = null;
+            resetVehicleEditor(regionVehicleEditor);
             if (regionEditAverageLevelInput) {
                 regionEditAverageLevelInput.value = '';
             }
@@ -17343,13 +17664,21 @@
             }
 
             const parentValueRaw = regionEditParentSelect?.value ?? '';
+            const vehicleResult = collectVehicleInfoFromEditor(regionVehicleEditor, regionEditVehicleInfoSnapshot);
+            if (vehicleResult.error) {
+                setRegionEditStatus(vehicleResult.error, 'error');
+                vehicleResult.focusTarget?.focus();
+                return;
+            }
             const payload = {
                 name: nameValue.trim(),
                 description: descriptionValue.trim(),
                 shortDescription: (regionEditShortDescriptionInput?.value ?? '').trim(),
                 parentRegionId: parentValueRaw && parentValueRaw.trim() ? parentValueRaw.trim() : null,
                 averageLevel: normalizedAverageLevel,
-                secrets: collectRegionSecrets()
+                secrets: collectRegionSecrets(),
+                isVehicle: vehicleResult.isVehicle,
+                vehicleInfo: vehicleResult.vehicleInfo
             };
 
             if (regionEditFactionSelect) {
@@ -17720,6 +18049,19 @@
             }
         });
 
+        resetVehicleEditor(locationVehicleEditor);
+        resetVehicleEditor(regionVehicleEditor);
+        if (locationEditIsVehicleInput) {
+            locationEditIsVehicleInput.addEventListener('change', () => {
+                setVehicleEditorEnabled(locationVehicleEditor, Boolean(locationEditIsVehicleInput.checked));
+            });
+        }
+        if (regionEditIsVehicleInput) {
+            regionEditIsVehicleInput.addEventListener('change', () => {
+                setVehicleEditorEnabled(regionVehicleEditor, Boolean(regionEditIsVehicleInput.checked));
+            });
+        }
+
         if (locationEditCancelBtn) {
             locationEditCancelBtn.addEventListener('click', () => closeLocationEditModal());
         }
@@ -17970,6 +18312,8 @@
 
         window.updateLocationDisplay = async function(location) {
                 const locationName = document.getElementById('locationName');
+                const locationNameIcon = document.getElementById('locationNameIcon');
+                const locationVehicleCurrentLocation = document.getElementById('locationVehicleCurrentLocation');
                 const locationTooltip = document.getElementById('locationTooltip');
                 const locationHint = document.getElementById('locationHint');
                 const locationLevel = document.getElementById('locationLevel');
@@ -17999,6 +18343,182 @@
                     return resolvedThings;
                 };
 
+                const resolveVehicleIconFromInfo = (vehicleInfo) => {
+                    if (!vehicleInfo || typeof vehicleInfo !== 'object' || Array.isArray(vehicleInfo)) {
+                        return null;
+                    }
+                    const icon = typeof vehicleInfo.icon === 'string' ? vehicleInfo.icon.trim() : '';
+                    return icon || null;
+                };
+
+                const resolveVehicleLocationIcon = (loc) => {
+                    if (!loc || typeof loc !== 'object') {
+                        return null;
+                    }
+                    const regionInfo = loc.region && typeof loc.region === 'object' ? loc.region : null;
+                    const regionIsVehicle = regionInfo?.isVehicle === true
+                        || (regionInfo?.vehicleInfo && typeof regionInfo.vehicleInfo === 'object' && !Array.isArray(regionInfo.vehicleInfo));
+                    if (regionIsVehicle) {
+                        return resolveVehicleIconFromInfo(regionInfo?.vehicleInfo) || '🚗';
+                    }
+
+                    const locationIsVehicle = loc.isVehicle === true
+                        || (loc.vehicleInfo && typeof loc.vehicleInfo === 'object' && !Array.isArray(loc.vehicleInfo));
+                    if (locationIsVehicle) {
+                        return resolveVehicleIconFromInfo(loc.vehicleInfo) || '🚗';
+                    }
+
+                    return null;
+                };
+
+                const shouldUseVehicleLocationIcon = (loc) => {
+                    return resolveVehicleLocationIcon(loc) !== null;
+                };
+
+                const isVehicleRegion = (loc) => {
+                    if (!loc || typeof loc !== 'object') {
+                        return false;
+                    }
+                    const regionInfo = loc.region && typeof loc.region === 'object' ? loc.region : null;
+                    if (!regionInfo) {
+                        return false;
+                    }
+                    if (regionInfo.isVehicle === true) {
+                        return true;
+                    }
+                    if (regionInfo.vehicleInfo && typeof regionInfo.vehicleInfo === 'object' && !Array.isArray(regionInfo.vehicleInfo)) {
+                        return true;
+                    }
+                    return false;
+                };
+
+                const resolveVehicleRegionDisplayName = (loc) => {
+                    if (!loc || typeof loc !== 'object') {
+                        return null;
+                    }
+                    const regionName = typeof loc.regionName === 'string' ? loc.regionName.trim() : '';
+                    if (regionName) {
+                        return regionName;
+                    }
+                    const regionInfo = loc.region && typeof loc.region === 'object' ? loc.region : null;
+                    const fallback = typeof regionInfo?.name === 'string' ? regionInfo.name.trim() : '';
+                    return fallback || null;
+                };
+
+                const buildLocationHeaderName = (loc) => {
+                    const baseName = typeof loc?.name === 'string' && loc.name.trim()
+                        ? loc.name.trim()
+                        : 'Unknown Location';
+                    if (!isVehicleRegion(loc)) {
+                        return baseName;
+                    }
+                    const regionName = resolveVehicleRegionDisplayName(loc);
+                    if (!regionName) {
+                        return baseName;
+                    }
+                    return `${regionName}: ${baseName}`;
+                };
+
+                const resolveVehicleInfoForContext = (loc) => {
+                    if (!loc || typeof loc !== 'object') {
+                        return null;
+                    }
+                    const regionInfo = loc.region && typeof loc.region === 'object' ? loc.region : null;
+                    if (
+                        regionInfo
+                        && (
+                            regionInfo.isVehicle === true
+                            || (regionInfo.vehicleInfo && typeof regionInfo.vehicleInfo === 'object' && !Array.isArray(regionInfo.vehicleInfo))
+                        )
+                    ) {
+                        return regionInfo.vehicleInfo && typeof regionInfo.vehicleInfo === 'object' && !Array.isArray(regionInfo.vehicleInfo)
+                            ? regionInfo.vehicleInfo
+                            : null;
+                    }
+
+                    if (
+                        loc.isVehicle === true
+                        || (loc.vehicleInfo && typeof loc.vehicleInfo === 'object' && !Array.isArray(loc.vehicleInfo))
+                    ) {
+                        return loc.vehicleInfo && typeof loc.vehicleInfo === 'object' && !Array.isArray(loc.vehicleInfo)
+                            ? loc.vehicleInfo
+                            : null;
+                    }
+
+                    return null;
+                };
+
+                const resolveVehicleCurrentLocationNameForDisplay = async (loc) => {
+                    if (!loc || typeof loc !== 'object') {
+                        return null;
+                    }
+
+                    const payloadName = typeof loc.vehicleCurrentLocationName === 'string'
+                        ? loc.vehicleCurrentLocationName.trim()
+                        : '';
+                    if (payloadName) {
+                        return payloadName;
+                    }
+
+                    const vehicleInfo = resolveVehicleInfoForContext(loc);
+                    if (!vehicleInfo) {
+                        return null;
+                    }
+
+                    const vehicleExitId = typeof vehicleInfo.vehicleExitId === 'string'
+                        ? vehicleInfo.vehicleExitId.trim()
+                        : '';
+                    if (vehicleExitId && loc.exits && typeof loc.exits === 'object') {
+                        const matchedExit = Object.values(loc.exits).find(exit =>
+                            exit
+                            && typeof exit === 'object'
+                            && typeof exit.id === 'string'
+                            && exit.id.trim() === vehicleExitId
+                        );
+                        if (matchedExit) {
+                            const destinationName = typeof matchedExit.destinationName === 'string'
+                                ? matchedExit.destinationName.trim()
+                                : '';
+                            if (destinationName) {
+                                return destinationName;
+                            }
+                            const destinationId = typeof matchedExit.destination === 'string'
+                                ? matchedExit.destination.trim()
+                                : '';
+                            if (destinationId) {
+                                const cachedName = typeof locationCache[destinationId] === 'string'
+                                    ? locationCache[destinationId].trim()
+                                    : '';
+                                if (cachedName) {
+                                    return cachedName;
+                                }
+                                const fetchedName = await ensureLocationNameCached(destinationId);
+                                if (fetchedName && typeof fetchedName.name === 'string' && fetchedName.name.trim()) {
+                                    return fetchedName.name.trim();
+                                }
+                            }
+                        }
+                    }
+
+                    const currentDestinationId = typeof vehicleInfo.currentDestination === 'string'
+                        ? vehicleInfo.currentDestination.trim()
+                        : '';
+                    if (currentDestinationId) {
+                        const cachedName = typeof locationCache[currentDestinationId] === 'string'
+                            ? locationCache[currentDestinationId].trim()
+                            : '';
+                        if (cachedName) {
+                            return cachedName;
+                        }
+                        const fetchedName = await ensureLocationNameCached(currentDestinationId);
+                        if (fetchedName && typeof fetchedName.name === 'string' && fetchedName.name.trim()) {
+                            return fetchedName.name.trim();
+                        }
+                    }
+
+                    return null;
+                };
+
                 if (location) {
                     const locationDescriptionHtml = location.description || 'No description available.';
                     const locationDescriptionText = locationDescriptionHtml
@@ -18006,7 +18526,27 @@
                         .replace(/\s+/g, ' ')
                         .trim() || 'No description available.';
 
-                    locationName.textContent = location.name || 'Unknown Location';
+                    locationName.textContent = buildLocationHeaderName(location);
+                    if (locationNameIcon) {
+                        const resolvedVehicleIcon = resolveVehicleLocationIcon(location);
+                        locationNameIcon.textContent = resolvedVehicleIcon || '📍';
+                    }
+                    if (locationVehicleCurrentLocation) {
+                        const isVehicleContext = shouldUseVehicleLocationIcon(location);
+                        if (isVehicleContext) {
+                            const currentVehicleLocationName = await resolveVehicleCurrentLocationNameForDisplay(location);
+                            if (currentVehicleLocationName) {
+                                locationVehicleCurrentLocation.textContent = `Current location: ${currentVehicleLocationName}`;
+                                locationVehicleCurrentLocation.removeAttribute('hidden');
+                            } else {
+                                locationVehicleCurrentLocation.textContent = '';
+                                locationVehicleCurrentLocation.setAttribute('hidden', '');
+                            }
+                        } else {
+                            locationVehicleCurrentLocation.textContent = '';
+                            locationVehicleCurrentLocation.setAttribute('hidden', '');
+                        }
+                    }
                     if (locationTooltip) {
                         locationTooltip.innerHTML = locationDescriptionHtml;
                         locationTooltip.setAttribute('hidden', '');
@@ -18147,6 +18687,7 @@
                                 locationExitsList.innerHTML = '<div class="no-exits">No exits discovered yet.</div>';
                             } else {
                                 locationExitsList.innerHTML = '';
+                                const currentContextIsVehicle = shouldUseVehicleLocationIcon(location);
                                 orderedExitEntries.forEach(({ key, exit, destinationRegionId, isRegionExit }) => {
                                     const exitId = typeof exit.id === 'string' && exit.id.trim() ? exit.id.trim() : null;
                                     const container = document.createElement('div');
@@ -18160,10 +18701,9 @@
                                     travelButton.type = 'button';
                                     travelButton.className = 'exit-button';
                                     const destinationName = resolveDestinationNameStrict(exit);
-                                    const isVehicle = Boolean(exit.isVehicle);
-                                    const vehiclePrefix = isVehicle
-                                        ? `${exit.vehicleType ? `${exit.vehicleType}` : 'Vehicle'} to `
-                                        : '';
+                                    const isVehicleExit = Boolean(exit.isVehicle);
+                                    const vehicleIcon = typeof exit.vehicleIcon === 'string' ? exit.vehicleIcon.trim() : '';
+                                    let travelButtonLabel = destinationName;
 
                                     if (isRegionExit || exit.destinationIsRegionEntryStub) {
                                         travelButton.classList.add('region-exit');
@@ -18172,18 +18712,28 @@
                                             : destinationName;
                                         const locationName = destinationName;
                                         if (exit.destinationRegionExpanded) {
-                                            travelButton.textContent = `${vehiclePrefix}${regionName}: ${locationName}`;
+                                            travelButtonLabel = `${regionName}: ${locationName}`;
                                             travelButton.classList.add('region-exit-expanded');
                                         } else {
-                                            travelButton.textContent = `${vehiclePrefix}Unexplored Region: ${regionName}`;
+                                            travelButtonLabel = isVehicleExit
+                                                ? `Unexplored huge vehicle: ${regionName}`
+                                                : `Unexplored Region: ${regionName}`;
                                             travelButton.classList.add('region-exit-unexplored');
                                         }
                                         if (destinationRegionId) {
                                             travelButton.dataset.regionId = destinationRegionId;
                                         }
-                                    } else {
-                                        travelButton.textContent = destinationName;
                                     }
+
+                                    const isOutboundVehicleExit = isVehicleExit && currentContextIsVehicle;
+                                    if (isOutboundVehicleExit) {
+                                        travelButtonLabel = `⬅️ Exit Vehicle: ${travelButtonLabel}`;
+                                    }
+
+                                    setExitButtonLabel(travelButton, travelButtonLabel, {
+                                        showVehicleIcon: isVehicleExit && !isOutboundVehicleExit,
+                                        vehicleIcon: vehicleIcon || null
+                                    });
 
                                     travelButton.dataset.destinationId = exit.destination;
                                     const destinationIsStub = Boolean(exit.destinationIsStub);
@@ -18473,6 +19023,13 @@
                     }
                 } else {
                     locationName.textContent = 'Unknown Location';
+                    if (locationNameIcon) {
+                        locationNameIcon.textContent = '📍';
+                    }
+                    if (locationVehicleCurrentLocation) {
+                        locationVehicleCurrentLocation.textContent = '';
+                        locationVehicleCurrentLocation.setAttribute('hidden', '');
+                    }
                     if (locationTooltip) {
                         locationTooltip.innerHTML = 'Your current location will appear here when you start exploring.';
                         locationTooltip.setAttribute('hidden', '');

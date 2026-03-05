@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const Utils = require('./Utils.js');
 const StatusEffect = require('./StatusEffect.js');
+const VehicleInfo = require('./VehicleInfo.js');
 
 let CachedLocationModule = null;
 function getLocationModule() {
@@ -26,6 +27,7 @@ class Region {
   #relativeLevel;
   #numImportantNPCs;
   #controllingFactionId;
+  #vehicleInfo;
   #weather;
   #weatherState;
   #lastVisitedTime = null;  // Minutes since last visit by player.
@@ -42,7 +44,7 @@ class Region {
     return `region_${timestamp}_${random}`;
   }
 
-  constructor({ name, description, shortDescription = null, locations = [], locationIds = [], entranceLocationId = null, parentRegionId = null, id = null, statusEffects = [], averageLevel = null, lastVisitedTime = null, randomEvents = [], characterConcepts = [], enemyConcepts = [], secrets = [], numImportantNPCs = null, controllingFactionId = null, weather = null, weatherState = null } = {}) {
+  constructor({ name, description, shortDescription = null, locations = [], locationIds = [], entranceLocationId = null, parentRegionId = null, id = null, statusEffects = [], averageLevel = null, lastVisitedTime = null, randomEvents = [], characterConcepts = [], enemyConcepts = [], secrets = [], numImportantNPCs = null, controllingFactionId = null, vehicleInfo = null, weather = null, weatherState = null } = {}) {
     if (!name || typeof name !== 'string') {
       throw new Error('Region name is required and must be a string');
     }
@@ -92,6 +94,7 @@ class Region {
     this.#characterConcepts = Array.isArray(characterConcepts) ? [...characterConcepts] : [];
     this.#enemyConcepts = Array.isArray(enemyConcepts) ? [...enemyConcepts] : [];
     this.#secrets = Array.isArray(secrets) ? [...secrets] : [];
+    this.#vehicleInfo = Region.#normalizeVehicleInfo(vehicleInfo);
     this.#weather = Region.#normalizeWeatherDefinition(weather);
     this.#weatherState = Region.#normalizeWeatherState(weatherState);
 
@@ -301,6 +304,19 @@ class Region {
     };
   }
 
+  static #normalizeVehicleInfo(vehicleInfo = null) {
+    if (vehicleInfo === null || vehicleInfo === undefined) {
+      return null;
+    }
+    if (vehicleInfo instanceof VehicleInfo) {
+      return VehicleInfo.fromJSON(vehicleInfo.toJSON());
+    }
+    if (typeof vehicleInfo !== 'object' || Array.isArray(vehicleInfo)) {
+      throw new Error('Region vehicleInfo must be an object, VehicleInfo instance, or null');
+    }
+    return VehicleInfo.fromJSON(vehicleInfo);
+  }
+
   static #normalizeBlueprint(blueprint = {}) {
     const name = typeof blueprint.name === 'string' ? blueprint.name.trim() : null;
     if (!name) {
@@ -436,6 +452,7 @@ class Region {
       entranceLocationId: data.entranceLocationId || null,
       parentRegionId: data.parentRegionId || null,
       controllingFactionId: data.controllingFactionId || null,
+      vehicleInfo: data.vehicleInfo ?? null,
       statusEffects: Array.isArray(data.statusEffects) ? data.statusEffects : [],
       averageLevel: data.averageLevel || null,
       lastVisitedTime: Number.isFinite(Number(data.lastVisitedTime)) ? Number(data.lastVisitedTime) : null,
@@ -701,7 +718,17 @@ class Region {
       throw new Error('Region XML missing <regionDescription>');
     }
 
-    const blueprintElements = Array.from(regionElement.getElementsByTagName('location'));
+    const locationsContainer = childElements.find(child => (
+      child.tagName
+      && child.tagName.toLowerCase() === 'locations'
+    )) || null;
+    const blueprintElements = locationsContainer
+      ? Array.from(locationsContainer.childNodes).filter(node => (
+        node.nodeType === 1
+        && node.tagName
+        && node.tagName.toLowerCase() === 'location'
+      ))
+      : [];
     const locationBlueprints = blueprintElements.map((node, index) => {
       const attrId = node.getAttribute('id')?.trim();
       const attrName = node.getAttribute('name')?.trim();
@@ -829,6 +856,19 @@ class Region {
 
   get isStub() {
     return !Array.isArray(this.#locationIds) || this.#locationIds.length === 0;
+  }
+
+  get isVehicle() {
+    return this.#vehicleInfo !== null;
+  }
+
+  get vehicleInfo() {
+    return this.#vehicleInfo ? this.#vehicleInfo.toJSON() : null;
+  }
+
+  set vehicleInfo(value) {
+    this.#vehicleInfo = Region.#normalizeVehicleInfo(value);
+    this.#lastUpdated = new Date().toISOString();
   }
 
   set randomEvents(events) {
@@ -1247,6 +1287,8 @@ class Region {
       entranceLocationId: this.#entranceLocationId,
       parentRegionId: this.#parentRegionId,
       controllingFactionId: this.#controllingFactionId,
+      isVehicle: this.isVehicle,
+      vehicleInfo: this.vehicleInfo,
       createdAt: this.#createdAt,
       lastUpdated: this.#lastUpdated,
       statusEffects: this.getStatusEffects(),

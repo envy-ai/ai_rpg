@@ -13,7 +13,7 @@ This page maps routes to templates and the client scripts/styles they load.
 - Inline script responsibilities:
   - Tab switching (`initTabs`), map triggers, party/faction/quest panels, and Story Tools history paging/editor panel.
   - Location display, edit modals, crafting/salvage modals.
-  - Region edit modal field handling (name/description/short description, parent region, average level, controlling faction dropdown sourced from `/api/factions`, and a collapsed-by-default `Region Secrets` editor with add/remove rows); scrolling is handled by the modal overlay and the region dialog has no max-height cap so expanded sections remain usable.
+  - Region edit modal field handling (name/description/short description, parent region, average level, controlling faction dropdown sourced from `/api/factions`, shared vehicle-info editor fields, and a collapsed-by-default `Region Secrets` editor with add/remove rows); scrolling is handled by the modal overlay and the region dialog has no max-height cap so expanded sections remain usable.
   - Image rendering helpers (`renderEntityImage`) and tooltip helpers.
 - Data injected by `server.js`:
   - `chatHistory`, `player`, `availableSkills`, `currentSetting`.
@@ -21,6 +21,7 @@ This page maps routes to templates and the client scripts/styles they load.
   - `rarityDefinitions`, `needBarDefinitions`, `checkMovePlausibility`.
   - `baseWeaponDamage`, `clientMessageHistory`, `saveMetadata`.
 - Notes: the player "View" modal reuses shared allocation partials for attributes/skills; NPCs use read-only controls, while players can spend points and submit through `/api/player/update-stats` (negative pools blocked, positive pools confirmed). Unspent pools are computed server-side from submitted level/attributes/skills.
+- Notes: location and region edit forms share `views/_includes/vehicle-info-fields.njk` for vehicle editing (`isVehicle` toggle plus `icon` dropdown and `currentDestination`/`destinations`/`ETA`/`vehicleExitId` fields).
 - Notes: client-side name rendering for character/item/scenery cards applies a `font-size: 0.75em` span when a name exceeds 40 characters.
 - Notes: after a successful Load Game action, if save metadata indicates `npcAliasesGenerated=false` (or missing), the client shows a confirmation dialog; accepting runs `/api/npcs/generate-aliases` before page reload (20 NPCs per prompt batch), declining leaves aliases empty.
 - Notes: the shared player/NPC edit modal includes aliases (one alias per line) plus resistances/vulnerabilities text fields, submitted through `PUT /api/npcs/:id`.

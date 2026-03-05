@@ -4,6 +4,7 @@ const Utils = require('./Utils.js');
 const StatusEffect = require('./StatusEffect.js');
 const Region = require('./Region.js');
 const Globals = require('./Globals.js');
+const VehicleInfo = require('./VehicleInfo.js');
 
 
 /**
@@ -33,6 +34,7 @@ class Location {
   #randomEvents;
   #regionId;
   #controllingFactionId;
+  #vehicleInfo;
   #lastVisitedTime = null; // Minute timestamp of last visit by player
   #characterConcepts = [];
   #enemyConcepts = [];
@@ -55,7 +57,7 @@ class Location {
    * @param {string} [options.id] - Custom ID (if not provided, one will be generated)
    * @param {string} [options.imageId] - Image ID for generated location scene (defaults to null)
    */
-  constructor({ description, shortDescription = null, baseLevel = 1, id = null, imageId = null, name = null, isStub = false, stubMetadata = null, hasGeneratedStubs = false, statusEffects = [], npcIds = [], thingIds = [], generationHints = null, randomEvents = [], regionId = null, controllingFactionId = null, checkRegionId = true, lastVisitedTime = null, characterConcepts = [], enemyConcepts = [] } = {}) {
+  constructor({ description, shortDescription = null, baseLevel = 1, id = null, imageId = null, name = null, isStub = false, stubMetadata = null, hasGeneratedStubs = false, statusEffects = [], npcIds = [], thingIds = [], generationHints = null, randomEvents = [], regionId = null, controllingFactionId = null, vehicleInfo = null, checkRegionId = true, lastVisitedTime = null, characterConcepts = [], enemyConcepts = [] } = {}) {
     const creatingStub = Boolean(isStub);
 
     if (!creatingStub) {
@@ -142,6 +144,7 @@ class Location {
     this.#lastVisitedTime = Number.isFinite(lastVisitedTime) ? lastVisitedTime : null;
     this.#characterConcepts = Array.isArray(characterConcepts) ? [...characterConcepts] : [];
     this.#enemyConcepts = Array.isArray(enemyConcepts) ? [...enemyConcepts] : [];
+    this.#vehicleInfo = Location.#normalizeVehicleInfo(vehicleInfo);
 
     // Index by ID and name if provided
     Location.#indexById.set(this.#id, this);
@@ -731,6 +734,19 @@ class Location {
     return this.#isStub;
   }
 
+  get isVehicle() {
+    return this.#vehicleInfo !== null;
+  }
+
+  get vehicleInfo() {
+    return this.#vehicleInfo ? this.#vehicleInfo.toJSON() : null;
+  }
+
+  set vehicleInfo(value) {
+    this.#vehicleInfo = Location.#normalizeVehicleInfo(value);
+    this.#lastUpdated = new Date();
+  }
+
   get stubMetadata() {
     return this.#stubMetadata ? { ...this.#stubMetadata } : null;
   }
@@ -896,6 +912,8 @@ class Location {
       imageId: this.#imageId,
       regionId: this.#regionId,
       controllingFactionId: this.#controllingFactionId,
+      isVehicle: this.isVehicle,
+      vehicleInfo: this.vehicleInfo,
       exitCount: this.#exits.size,
       availableDirections: this.getAvailableDirections(),
       createdAt: this.#createdAt.toISOString(),
@@ -944,6 +962,8 @@ class Location {
       exits: exits,
       regionId: this.#regionId,
       controllingFactionId: this.#controllingFactionId,
+      isVehicle: this.isVehicle,
+      vehicleInfo: this.vehicleInfo,
       createdAt: this.#createdAt.toISOString(),
       lastUpdated: this.#lastUpdated.toISOString(),
       isStub: this.#isStub,
@@ -1351,6 +1371,19 @@ class Location {
       numHostiles: normalize(hints.numHostiles),
       hasWeather: normalizeBoolean(hints.hasWeather)
     };
+  }
+
+  static #normalizeVehicleInfo(vehicleInfo = null) {
+    if (vehicleInfo === null || vehicleInfo === undefined) {
+      return null;
+    }
+    if (vehicleInfo instanceof VehicleInfo) {
+      return VehicleInfo.fromJSON(vehicleInfo.toJSON());
+    }
+    if (typeof vehicleInfo !== 'object' || Array.isArray(vehicleInfo)) {
+      throw new Error('Location vehicleInfo must be an object, VehicleInfo instance, or null');
+    }
+    return VehicleInfo.fromJSON(vehicleInfo);
   }
 
   getStatusEffects() {

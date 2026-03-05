@@ -116,6 +116,40 @@ Very important: follow the instructions in &lt;writingStyleNotes&gt; and any ton
         <exit>Name of other location in region</exit>
         <!-- Repeat <exit> elements as needed; 0-4 per location is typical. -->
       </exits>
+      <vehicles>
+        <!-- Omit this element if there are no vehicles. Otherwise, list any vehicles that are present at this location, such as cars, boats, starships, mine elevators, mounts, or any other mode of transportation that can be used to leave the location. -->
+        <vehicle>
+          <name>Name of the vehicle</name>
+          <description>Brief description of the vehicle, including its appearance, how it moves, and any standout features.</description>
+          <shortDescription>10 words or fewer summarizing the vehicle</shortDescription>
+          <controllingFaction><!-- Full faction name from the list or "None" --></controllingFaction>
+          <size>Can be one of small/medium/large/huge. Descriptions of each:
+            - Small: Equippable, like a jetpack or mech suit.
+            - Medium: Something mount-sized, like a horse or motorcycle.
+            - Large: Something car-sized, like a car, small boat, small bus, or small starship ("large" vehicles are implemented as single locations, so they should be small enough to fit into one location, but large enough to fit multiple people).
+            - Huge: Any vehicle large enough to have at least two rooms at least two rooms ("huge" vehicles are implemented as regions, so they can be larger than a single location, and can fit multiple rooms and many people).
+            
+            Building interiors generally only have small (equippable) vehicles, and larger ones only under specific circumstances where it makes sense (a car or bike in a garage, a horse in a stable, or even a "huge" starship in space station hangar bay, etc).
+            <!-- example: <size>medium</size> -->
+          </size>
+          <destinations>
+            <!-- If the vehicle has fixed destinations, list the locations or regions that this vehicle can take you to. If the destination is within the current region, just list the location name. If the destination is in another region, list the region name and optionally the specific location in that region. Mainly for vehicles on rails or other fixed routes (trains, ferries, elevators, etc). Omit <destinations> for vehicles without fixed routes. -->
+            <destination>
+              <region>Exact name of the region this vehicle can take you to. Omit if the destination is within the current region.</region>
+              <location>Exact name of the location this vehicle can take you to.</location>
+            </destination>
+            <!-- Repeat <destination> elements as needed. -->
+          </destinations>
+
+          <!-- Note: Omit the below fields if the vehicle is small or medium -->
+          <numNPCs>Integer number of NPCs likely to be inside the vehicle at once (0-4)</numNPCs>
+          <numHostiles>Integer number of enemies likely to be inside the vehicle at once (0-4)</numHostiles>
+          <icon>Pick one of these icons to best represent the vehicle, or leave blank if none apply: 🚗🚙🚐🚚🚛🚜🚌🚍🚎🚋🚃🚊🚇🚝🚞🚟🚓🚑🚒🚕🛶⛵🚤🛥️⛴️🛳️🚢✈️🛩️🚁🚀🛸🏍️🛵🛴🚲🛺
+          <!-- example: <icon>🚗</icon> --> 
+          </icon>
+        </vehicle>
+        <!-- Repeat <vehicle> elements as needed. -->
+      </vehicles>
       <regionExits>
         <!-- If this location is a building exterior, list the building interior region here. Otherwise, omit this element entirely. -->
         <stubRegion type="building">

@@ -6,6 +6,7 @@ Represents a game location, including description, exits, NPCs, items/scenery, a
 ## Key State
 - Core fields: `#id`, `#name`, `#description`, `#shortDescription`, `#baseLevel`, `#imageId`.
 - Region linkage: `#regionId`, `#controllingFactionId`.
+- Vehicle state: `#vehicleInfo` (`VehicleInfo` or `null`).
 - Exits: `#exits` (Map of direction -> LocationExit).
 - NPC/Thing references: `#npcIds`, `#thingIds`.
 - Status effects: `#statusEffects`.
@@ -31,6 +32,7 @@ Represents a game location, including description, exits, NPCs, items/scenery, a
 - Basic fields: `id`, `name`, `description`, `shortDescription`, `baseLevel`, `imageId`, `createdAt`, `lastUpdated`.
 - Visit tracking: `visited` (get/set), `lastVisitedTime` (get/set, minutes), `hoursSinceLastVisit()` (legacy name; returns elapsed minutes).
 - Stub metadata: `isStub`, `stubMetadata` (get/set), `hasGeneratedStubs` (get/set).
+- Vehicle metadata: `isVehicle` (derived get), `vehicleInfo` (get/set; serialized object or `null`).
 - `generationHints` (get/set).
 - Random events: `randomEvents` (get/set).
 - Entities: `npcIds`, `npcs`, `thingIds`, `things`, `items`, `scenery`.
@@ -51,6 +53,7 @@ Represents a game location, including description, exits, NPCs, items/scenery, a
 - `#normalizeStatusEffects(effects)`.
 - `#normalizeRandomEvents(events)`.
 - `#normalizeGenerationHints(hints)`.
+- `#normalizeVehicleInfo(vehicleInfo)`.
 
 ## Notes
 - Stub locations now carry both a long `stubDescription` and a one-sentence `stubShortDescription` in `stubMetadata`; those are treated as authoritative during stub expansion and reused without regeneration. Stub short descriptions are also copied into `location.shortDescription` on creation/load so stubs render properly in base-context world outlines.
@@ -59,3 +62,4 @@ Represents a game location, including description, exits, NPCs, items/scenery, a
 - Status effects are stored as `StatusEffect` instances; getters return JSON snapshots.
 - Stub expansion prompts include authoritative stub fields (description/shortDescription, relative/base level, controlling faction, numNpcs/numHostiles). When present, these fields are omitted from the LLM output and filled from the stub during parsing; if the LLM provides a different value, the server warns and overrides with the stub values. For description/shortDescription, if the LLM output starts with the stub text (after whitespace normalization), the expanded text is accepted instead of being overridden.
 - `generationHints` now optionally carries `hasWeather` (boolean/null) so outdoor/indoor weather applicability can persist through stub promotion and save/load.
+- Locations can now act as vehicles by setting `vehicleInfo`; `isVehicle` is derived from `vehicleInfo !== null`. `getSummary()`/`getDetails()`/`toJSON()` include both `isVehicle` and serialized `vehicleInfo`.

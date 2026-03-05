@@ -59,14 +59,19 @@ Request:
   - `name` (string or null, optional)
   - `shortDescription` (string or null, optional)
   - `controllingFactionId` (string or null, optional)
+  - `isVehicle` (boolean, optional)
+  - `vehicleInfo` (object or null, optional)
   - `statusEffects` (array or null, optional)
 
 Responses:
-- 200: `{ success: true, message, location: LocationResponse, imageCleared: boolean, changes: { name, description, level } }`
+- 200: `{ success: true, message, location: LocationResponse, imageCleared: boolean, changes: { name, description, shortDescription, level, vehicle } }`
 - 400/404/500: `{ success: false, error }`
 
 Notes:
 - `controllingFactionId` must reference an existing faction id or be `null` to clear.
+- Vehicle edits use `isVehicle` + `vehicleInfo` together:
+  - `isVehicle=false` clears vehicle info.
+  - `isVehicle=true` requires valid vehicle data (`vehicleInfo` object or existing values when omitted, including optional `icon`).
 
 ## DELETE /api/locations/:id
 

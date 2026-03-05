@@ -65,9 +65,10 @@ Most modals live in `views/index.njk` and are wired up by the inline script or `
 
 ## Location and region editing
 
-- `#locationEditModal`: edit location name/description/level/status effects and controlling faction.
-- `#regionEditModal`: edit region name/description/parent/level and controlling faction.
+- `#locationEditModal`: edit location name/description/level/status effects, controlling faction, and vehicle fields.
+- `#regionEditModal`: edit region name/description/parent/level, controlling faction, and vehicle fields.
   - Both include a short description field directly under the main description.
+  - Both include a shared vehicle editor partial with an `Is Vehicle` checkbox that enables/disables `currentDestination`, `destinations`, `ETA`, and `vehicleExitId`.
 - `#newExitModal`: create new exits (new region/location, optional image).
 - `#summonNpcModal`: summon an existing NPC into current location, with a live substring filter over NPC name/location.
 - `#summonThingModal`: summon an existing item/scenery into current location, with a live substring filter over name/type/origin label (including inventory origins like `Bob's inventory`).

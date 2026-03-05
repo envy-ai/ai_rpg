@@ -1,0 +1,70 @@
+{% set _vehiclePrefix = vehicleFormPrefix %}
+{% set _vehicleHeading = vehicleSectionTitle or 'Vehicle Information' %}
+<div class="location-edit-section vehicle-edit-section" id="{{ _vehiclePrefix }}VehicleSection">
+    <div class="npc-edit-section-header">
+        <h3>{{ _vehicleHeading }}</h3>
+    </div>
+    <div class="location-edit-field">
+        <label>
+            <input type="checkbox" id="{{ _vehiclePrefix }}IsVehicle" name="{{ _vehiclePrefix }}IsVehicle">
+            Is Vehicle
+        </label>
+    </div>
+    <fieldset id="{{ _vehiclePrefix }}VehicleFieldset" class="vehicle-edit-fieldset">
+        <div class="location-edit-field">
+            <label for="{{ _vehiclePrefix }}VehicleIcon">Vehicle Icon</label>
+            <select id="{{ _vehiclePrefix }}VehicleIcon">
+                <option value="">None</option>
+                <option value="🚗">🚗 Car</option>
+                <option value="🚙">🚙 SUV</option>
+                <option value="🚐">🚐 Van</option>
+                <option value="🚚">🚚 Delivery Truck</option>
+                <option value="🚛">🚛 Articulated Truck</option>
+                <option value="🚜">🚜 Tractor</option>
+                <option value="🚌">🚌 Bus</option>
+                <option value="🚍">🚍 Oncoming Bus</option>
+                <option value="🚎">🚎 Trolleybus</option>
+                <option value="🚋">🚋 Tram</option>
+                <option value="🚃">🚃 Railway Car</option>
+                <option value="🚊">🚊 Tram Car</option>
+                <option value="🚇">🚇 Metro</option>
+                <option value="🚝">🚝 Monorail</option>
+                <option value="🚞">🚞 Mountain Railway</option>
+                <option value="🚟">🚟 Suspension Railway</option>
+                <option value="🚓">🚓 Police Car</option>
+                <option value="🚑">🚑 Ambulance</option>
+                <option value="🚒">🚒 Fire Engine</option>
+                <option value="🚕">🚕 Taxi</option>
+                <option value="🛶">🛶 Canoe</option>
+                <option value="⛵">⛵ Sailboat</option>
+                <option value="🚤">🚤 Speedboat</option>
+                <option value="🛥️">🛥️ Motor Boat</option>
+                <option value="⛴️">⛴️ Ferry</option>
+                <option value="🛳️">🛳️ Passenger Ship</option>
+                <option value="🚢">🚢 Ship</option>
+                <option value="✈️">✈️ Airplane</option>
+                <option value="🛩️">🛩️ Small Airplane</option>
+                <option value="🚁">🚁 Helicopter</option>
+                <option value="🚀">🚀 Rocket</option>
+                <option value="🛸">🛸 Flying Saucer</option>
+            </select>
+        </div>
+        <div class="location-edit-field">
+            <label for="{{ _vehiclePrefix }}VehicleCurrentDestination">Current Destination (Location ID)</label>
+            <input type="text" id="{{ _vehiclePrefix }}VehicleCurrentDestination" autocomplete="off">
+        </div>
+        <div class="location-edit-field">
+            <label for="{{ _vehiclePrefix }}VehicleDestinations">Destinations (Location IDs)</label>
+            <textarea id="{{ _vehiclePrefix }}VehicleDestinations" rows="3" placeholder="Comma or newline separated location IDs"></textarea>
+            <p class="region-edit-secrets-help">Leave empty for vehicles without fixed routes.</p>
+        </div>
+        <div class="location-edit-field">
+            <label for="{{ _vehiclePrefix }}VehicleETA">ETA (minutes since game start)</label>
+            <input type="number" id="{{ _vehiclePrefix }}VehicleETA" min="0" step="1" inputmode="numeric">
+        </div>
+        <div class="location-edit-field">
+            <label for="{{ _vehiclePrefix }}VehicleExitId">Vehicle Exit ID</label>
+            <input type="text" id="{{ _vehiclePrefix }}VehicleExitId" autocomplete="off">
+        </div>
+    </fieldset>
+</div>

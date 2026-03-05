@@ -18,11 +18,16 @@ The main UI is rendered by `views/index.njk` and powered by `public/js/chat.js` 
 
 - **Location panel** (`.location-block`):
   - Compact world-time chip at the top (`#worldTimeIndicator`) showing `h:MM AM/PM`, date label, and segment/season.
+  - The location-name prefix icon (`#locationNameIcon`) switches from map pin (`📍`) to a vehicle icon when the current location is a vehicle or its containing region is a vehicle; it prefers `vehicleInfo.icon` and falls back to `🚗`.
+  - When in a vehicle context, a second header line renders under the location name as `Current location: <name>` using the active vehicle exit destination.
+  - When the containing region is a vehicle, the header name is rendered as `<vehicle region>: <location>` (example: `Starship Enterprise: Captain's Quarters`).
   - Image + context menu for edit/summon/regenerate.
   - On mobile (`max-width: 768px`), item/NPC/location tooltips are constrained to `80vw` for readability.
   - Equippable item tooltips include stacked comparison cards for currently equipped compatible-slot items (using the active actor context).
   - On touch/coarse-pointer devices, tapping any entity `•••` context-menu button temporarily suppresses floating tooltips so the menu remains reachable.
   - Exits list + "New Exit" button.
+  - Vehicle exits that lead into a vehicle render a left-side vehicle icon on the travel button, using the destination vehicle's `vehicleInfo.icon` when available.
+  - Vehicle exits that leave a vehicle context render as `⬅️ Exit Vehicle: <destination>` and do not show the vehicle icon.
   - NPC list + "Add NPC" button.
   - Items/Scenery grids + "Craft" and "New Item/Scenery" buttons.
   - Drag/drop behavior:

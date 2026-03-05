@@ -65,6 +65,18 @@ Region round-trip mode shortcut:
 npm run test:e2e:playthrough-region-roundtrip
 ```
 
+Deterministic new-game vehicle region regression (uses captured `region_generation` log output as forced prompt output, starts a new game, and verifies generated vehicle locations carry `vehicleInfo`):
+
+```bash
+PLAYWRIGHT_NEW_GAME_VEHICLE_REGRESSION=1 npm run test:e2e:headless -- tests/e2e/new-game.vehicles.spec.js
+```
+
+Notes:
+- This test is gated behind `PLAYWRIGHT_NEW_GAME_VEHICLE_REGRESSION=1` so regular e2e runs stay unchanged.
+- It copies `tests/e2e/fixtures/new_game_vehicle_region_forced_outputs.json` into `tmp/` at runtime, then cleans it up.
+- The fixture’s `region_generation` payload is derived from `logs/2026-03-05T01-02-17-626Z_region_generation_region_generation.log`.
+- It performs a final `/api/save` and intentionally retains that save in `saves/` so the generated world can be loaded and inspected manually after the test.
+
 One-off settings-page capture + validation against an already-running server:
 
 ```bash

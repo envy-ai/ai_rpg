@@ -1280,6 +1280,7 @@ class Utils {
         id: locationData.id,
         regionId: locationData.regionId ?? null,
         controllingFactionId: locationData.controllingFactionId ?? null,
+        vehicleInfo: locationData.vehicleInfo ?? null,
         checkRegionId: false,
         name: locationData.name ?? null,
         imageId: locationData.imageId ?? null,

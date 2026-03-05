@@ -13,7 +13,7 @@ Response (list):
 
 Response (scope=current):
 - 200: `{ success: true, region, parentOptions }`
-  - `region`: `{ id, name, description, shortDescription, parentRegionId, parentRegionName?, averageLevel, controllingFactionId, secrets }`
+  - `region`: `{ id, name, description, shortDescription, parentRegionId, parentRegionName?, averageLevel, controllingFactionId, isVehicle, vehicleInfo, secrets }`
   - `parentOptions`: array of `{ id, name, description, parentRegionId }`
 - 404: `{ success: false, error }` if no current region
 
@@ -22,14 +22,14 @@ Fetch a region by id.
 
 Response:
 - 200: `{ success: true, region, parentOptions }`
-  - `region`: `{ id, name, description, shortDescription, parentRegionId, parentRegionName?, averageLevel, controllingFactionId, secrets }`
+  - `region`: `{ id, name, description, shortDescription, parentRegionId, parentRegionName?, averageLevel, controllingFactionId, isVehicle, vehicleInfo, secrets }`
 - 400/404/500 with `{ success: false, error }`
 
 ## PUT /api/regions/:id
 Update a region.
 
 Request:
-- Body: `{ name: string, description: string, shortDescription?: string|null, parentRegionId?: string|null, averageLevel?: number|null, controllingFactionId?: string|null, secrets?: string[] }`
+- Body: `{ name: string, description: string, shortDescription?: string|null, parentRegionId?: string|null, averageLevel?: number|null, controllingFactionId?: string|null, isVehicle?: boolean, vehicleInfo?: object|null, secrets?: string[] }`
 
 Response:
 - 200: `{ success: true, message, region, parentOptions }`
@@ -39,6 +39,10 @@ Notes:
 - Parent cycles are rejected.
 - `averageLevel` accepts numeric values or `null`/empty string to clear.
 - `controllingFactionId` must reference an existing faction id or be `null` to clear.
+- Vehicle edits use `isVehicle` + `vehicleInfo` together:
+  - `isVehicle=false` clears vehicle info (and `vehicleInfo` must be null/omitted).
+  - `isVehicle=true` requires a valid `vehicleInfo` object (or existing data when `vehicleInfo` is omitted).
+  - `vehicleInfo` is validated by `VehicleInfo` rules (`icon` optional string, `ETA` non-negative integer, fixed-route consistency checks).
 - `secrets` must be an array of strings; entries are trimmed and empty values are dropped.
 
 ## POST /api/regions/generate

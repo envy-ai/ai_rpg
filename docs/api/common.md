@@ -74,6 +74,15 @@ Fields:
 - `appliedAt`: number | null (world-time minutes when the effect was last applied/ticked)
 - Modifier arrays are only included when non-empty.
 
+## VehicleInfo (VehicleInfo.toJSON)
+Fields:
+- `terrainTypes` (string | null)
+- `icon` (string | null)
+- `currentDestination` (string | null)
+- `destinations` (string[])
+- `ETA` (number | null)
+- `vehicleExitId` (string | null)
+
 ## NpcProfile (serializeNpcForClient)
 Returned in many player/NPC endpoints and location responses.
 
@@ -178,12 +187,14 @@ Fields:
 Extends `LocationDetails` with:
 - `pendingImageJobId`
 - `regionName` (resolved name)
-- `region` (object: `id`, `name`, `description`, `parentRegionId`, `averageLevel`)
+- `region` (object: `id`, `name`, `description`, `parentRegionId`, `averageLevel`, `isVehicle`, `vehicleInfo`)
 - `regionPath` (array of `{ id, name }`)
 - `exits` entries gain:
   - `destinationName`, `destinationRegionName`, `destinationRegionExpanded`
   - `destinationIsStub`, `destinationIsRegionEntryStub`
+  - `vehicleIcon` (string | null; when `isVehicle` is true and a destination vehicle icon is known)
   - `relativeLevel` (when known)
+- `vehicleCurrentLocationName` (string | undefined; present when current location/region is a vehicle and the active vehicle exit resolves)
 - `npcs` (NpcProfile[])
 - `things` (ThingProfile[])
 

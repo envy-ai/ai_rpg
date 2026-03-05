@@ -6,6 +6,7 @@ const { getCurrencyLabel } = require('./public/js/currency-utils.js');
 const Utils = require('./Utils.js');
 const { XMLSerializer } = require('@xmldom/xmldom');
 const Location = require('./Location.js');
+const VehicleInfo = require('./VehicleInfo.js');
 const Globals = require('./Globals.js');
 const LLMClient = require('./LLMClient.js');
 const SlashCommandRegistry = require('./SlashCommandRegistry.js');
@@ -14076,6 +14077,8 @@ module.exports = function registerApiRoutes(scope) {
                         name: regionRecord.name || null,
                         description: regionRecord.description || null,
                         parentRegionId: regionRecord.parentRegionId || null,
+                        isVehicle: regionRecord.isVehicle,
+                        vehicleInfo: regionRecord.vehicleInfo,
                         averageLevel: Number.isFinite(regionRecord.averageLevel)
                             ? Number(regionRecord.averageLevel)
                             : null
@@ -14117,6 +14120,69 @@ module.exports = function registerApiRoutes(scope) {
                 locationData.region = regionPayload;
             }
             locationData.regionPath = regionPath;
+
+            const resolveVehicleIconFromInfo = (vehicleInfo) => {
+                if (!vehicleInfo || typeof vehicleInfo !== 'object' || Array.isArray(vehicleInfo)) {
+                    return null;
+                }
+                const rawIcon = typeof vehicleInfo.icon === 'string' ? vehicleInfo.icon.trim() : '';
+                return rawIcon || null;
+            };
+
+            const resolveVehicleCurrentLocationNameFromInfo = (vehicleInfo, { contextLabel = 'Vehicle' } = {}) => {
+                if (!vehicleInfo || typeof vehicleInfo !== 'object' || Array.isArray(vehicleInfo)) {
+                    return null;
+                }
+                let normalizedInfo = null;
+                try {
+                    normalizedInfo = new VehicleInfo(vehicleInfo);
+                } catch (error) {
+                    throw new Error(`${contextLabel} info is invalid: ${error?.message || error}`);
+                }
+
+                const resolvedLocation = normalizedInfo.location;
+                if (!resolvedLocation || typeof resolvedLocation !== 'object') {
+                    return null;
+                }
+
+                const candidateNames = [
+                    resolvedLocation.name,
+                    resolvedLocation.shortDescription,
+                    resolvedLocation.id
+                ];
+                for (const candidate of candidateNames) {
+                    if (typeof candidate === 'string') {
+                        const trimmed = candidate.trim();
+                        if (trimmed) {
+                            return trimmed;
+                        }
+                    }
+                }
+                return null;
+            };
+
+            const regionRepresentsVehicle = Boolean(
+                regionPayload
+                && (
+                    regionPayload.isVehicle === true
+                    || (regionPayload.vehicleInfo && typeof regionPayload.vehicleInfo === 'object' && !Array.isArray(regionPayload.vehicleInfo))
+                )
+            );
+            const locationRepresentsVehicle = Boolean(
+                locationData.isVehicle === true
+                || (locationData.vehicleInfo && typeof locationData.vehicleInfo === 'object' && !Array.isArray(locationData.vehicleInfo))
+            );
+            const activeVehicleInfo = regionRepresentsVehicle
+                ? regionPayload?.vehicleInfo
+                : (locationRepresentsVehicle ? locationData.vehicleInfo : null);
+            if (activeVehicleInfo && typeof activeVehicleInfo === 'object' && !Array.isArray(activeVehicleInfo)) {
+                const currentVehicleLocationName = resolveVehicleCurrentLocationNameFromInfo(activeVehicleInfo, {
+                    contextLabel: regionRepresentsVehicle ? 'Region vehicle' : 'Location vehicle'
+                });
+                if (currentVehicleLocationName) {
+                    locationData.vehicleCurrentLocationName = currentVehicleLocationName;
+                }
+            }
 
             if (locationData.exits) {
                 for (const exit of Object.values(locationData.exits)) {
@@ -14164,6 +14230,22 @@ module.exports = function registerApiRoutes(scope) {
                     exit.destinationIsRegionEntryStub = destinationIsRegionEntryStub;
 
                     const pendingStub = destinationRegionId ? pendingRegionStubs.get(destinationRegionId) : null;
+                    let vehicleIcon = null;
+                    if (exit.isVehicle) {
+                        vehicleIcon = resolveVehicleIconFromInfo(destinationLocation?.vehicleInfo);
+                        if (!vehicleIcon && destinationRegionId && regions.has(destinationRegionId)) {
+                            const destinationRegion = regions.get(destinationRegionId);
+                            vehicleIcon = resolveVehicleIconFromInfo(destinationRegion?.vehicleInfo);
+                        }
+                        if (!vehicleIcon) {
+                            vehicleIcon = resolveVehicleIconFromInfo(pendingStub?.vehicleInfo);
+                        }
+                        if (!vehicleIcon) {
+                            vehicleIcon = resolveVehicleIconFromInfo(destinationLocation?.stubMetadata?.vehicleInfo);
+                        }
+                    }
+                    exit.vehicleIcon = vehicleIcon;
+
                     const stubMetadata = destinationLocation?.stubMetadata || null;
                     const relativeLevelValue = Number.isFinite(pendingStub?.relativeLevel)
                         ? pendingStub.relativeLevel
@@ -14209,6 +14291,83 @@ module.exports = function registerApiRoutes(scope) {
             if (!(factions instanceof Map) || !factions.has(factionId)) {
                 throw new Error(`${fieldLabel} "${factionId}" not found.`);
             }
+        }
+
+        function resolveVehicleInfoUpdate(body, { currentVehicleInfo = null, label = 'Vehicle' } = {}) {
+            if (!body || typeof body !== 'object' || Array.isArray(body)) {
+                return { hasUpdate: false, isVehicle: false, vehicleInfo: null };
+            }
+
+            const hasOwn = Object.prototype.hasOwnProperty;
+            const hasIsVehicle = hasOwn.call(body, 'isVehicle');
+            const hasVehicleInfo = hasOwn.call(body, 'vehicleInfo');
+            if (!hasIsVehicle && !hasVehicleInfo) {
+                return { hasUpdate: false, isVehicle: false, vehicleInfo: null };
+            }
+
+            if (hasIsVehicle && typeof body.isVehicle !== 'boolean') {
+                throw new Error(`${label} flag must be a boolean.`);
+            }
+
+            if (hasIsVehicle && body.isVehicle === false) {
+                if (hasVehicleInfo && body.vehicleInfo !== null && body.vehicleInfo !== undefined) {
+                    throw new Error(`${label} info must be null when ${label.toLowerCase()} flag is false.`);
+                }
+                return { hasUpdate: true, isVehicle: false, vehicleInfo: null };
+            }
+
+            const shouldBeVehicle = hasIsVehicle
+                ? body.isVehicle
+                : body.vehicleInfo !== null;
+
+            if (!shouldBeVehicle) {
+                return { hasUpdate: true, isVehicle: false, vehicleInfo: null };
+            }
+
+            let candidateVehicleInfo = null;
+            if (hasVehicleInfo) {
+                if (body.vehicleInfo === null || body.vehicleInfo === undefined) {
+                    throw new Error(`${label} info is required when ${label.toLowerCase()} flag is true.`);
+                }
+                if (typeof body.vehicleInfo !== 'object' || Array.isArray(body.vehicleInfo)) {
+                    throw new Error(`${label} info must be an object.`);
+                }
+                candidateVehicleInfo = { ...body.vehicleInfo };
+            } else if (currentVehicleInfo && typeof currentVehicleInfo === 'object' && !Array.isArray(currentVehicleInfo)) {
+                candidateVehicleInfo = { ...currentVehicleInfo };
+            } else {
+                candidateVehicleInfo = {};
+            }
+
+            if (!hasOwn.call(candidateVehicleInfo, 'terrainTypes')
+                && currentVehicleInfo
+                && typeof currentVehicleInfo === 'object'
+                && !Array.isArray(currentVehicleInfo)
+                && typeof currentVehicleInfo.terrainTypes === 'string'
+                && currentVehicleInfo.terrainTypes.trim()) {
+                candidateVehicleInfo.terrainTypes = currentVehicleInfo.terrainTypes.trim();
+            }
+            if (!hasOwn.call(candidateVehicleInfo, 'icon')
+                && currentVehicleInfo
+                && typeof currentVehicleInfo === 'object'
+                && !Array.isArray(currentVehicleInfo)
+                && typeof currentVehicleInfo.icon === 'string'
+                && currentVehicleInfo.icon.trim()) {
+                candidateVehicleInfo.icon = currentVehicleInfo.icon.trim();
+            }
+
+            let normalized = null;
+            try {
+                normalized = new VehicleInfo(candidateVehicleInfo);
+            } catch (validationError) {
+                throw new Error(validationError?.message || `Invalid ${label.toLowerCase()} info.`);
+            }
+
+            return {
+                hasUpdate: true,
+                isVehicle: true,
+                vehicleInfo: normalized.toJSON()
+            };
         }
 
         function buildRegionParentOptions({ excludeId = null } = {}) {
@@ -14260,6 +14419,8 @@ module.exports = function registerApiRoutes(scope) {
                     parentRegionId: region.parentRegionId || null,
                     averageLevel: Number.isFinite(region.averageLevel) ? region.averageLevel : null,
                     controllingFactionId: region.controllingFactionId || null,
+                    isVehicle: region.isVehicle,
+                    vehicleInfo: region.vehicleInfo,
                     secrets: Array.isArray(region.secrets) ? [...region.secrets] : []
                 };
 
@@ -14406,6 +14567,19 @@ module.exports = function registerApiRoutes(scope) {
                     }
                 }
 
+                let vehicleUpdate = { hasUpdate: false, isVehicle: false, vehicleInfo: null };
+                try {
+                    vehicleUpdate = resolveVehicleInfoUpdate(body, {
+                        currentVehicleInfo: region.vehicleInfo,
+                        label: 'Region vehicle'
+                    });
+                } catch (validationError) {
+                    return res.status(400).json({
+                        success: false,
+                        error: validationError?.message || 'Invalid region vehicle fields'
+                    });
+                }
+
                 try {
                     const trimmedName = name.trim();
                     const trimmedDescription = description.trim();
@@ -14480,6 +14654,17 @@ module.exports = function registerApiRoutes(scope) {
                     }
                 }
 
+                if (vehicleUpdate.hasUpdate) {
+                    try {
+                        region.vehicleInfo = vehicleUpdate.vehicleInfo;
+                    } catch (validationError) {
+                        return res.status(400).json({
+                            success: false,
+                            error: validationError?.message || 'Invalid region vehicle values'
+                        });
+                    }
+                }
+
                 const parentOptions = buildRegionParentOptions({ excludeId: regionId });
                 const payload = {
                     id: region.id,
@@ -14489,6 +14674,8 @@ module.exports = function registerApiRoutes(scope) {
                     parentRegionId: region.parentRegionId || null,
                     averageLevel: Number.isFinite(region.averageLevel) ? region.averageLevel : null,
                     controllingFactionId: region.controllingFactionId || null,
+                    isVehicle: region.isVehicle,
+                    vehicleInfo: region.vehicleInfo,
                     secrets: Array.isArray(region.secrets) ? [...region.secrets] : []
                 };
 
@@ -16472,6 +16659,8 @@ module.exports = function registerApiRoutes(scope) {
                         parentRegionId: canonicalRegion.parentRegionId || null,
                         averageLevel: Number.isFinite(canonicalRegion.averageLevel) ? canonicalRegion.averageLevel : null,
                         controllingFactionId: canonicalRegion.controllingFactionId || null,
+                        isVehicle: canonicalRegion.isVehicle,
+                        vehicleInfo: canonicalRegion.vehicleInfo,
                         secrets: Array.isArray(canonicalRegion.secrets) ? [...canonicalRegion.secrets] : []
                     };
 
@@ -18222,6 +18411,19 @@ module.exports = function registerApiRoutes(scope) {
                     }
                 }
 
+                let vehicleUpdate = { hasUpdate: false, isVehicle: false, vehicleInfo: null };
+                try {
+                    vehicleUpdate = resolveVehicleInfoUpdate(body, {
+                        currentVehicleInfo: location.vehicleInfo,
+                        label: 'Location vehicle'
+                    });
+                } catch (validationError) {
+                    return res.status(400).json({
+                        success: false,
+                        error: validationError?.message || 'Invalid location vehicle fields'
+                    });
+                }
+
                 if (!hasDescription) {
                     return res.status(400).json({ success: false, error: 'Description is required' });
                 }
@@ -18301,6 +18503,7 @@ module.exports = function registerApiRoutes(scope) {
                 const previousShortDescription = location.shortDescription || null;
                 const previousLevel = location.baseLevel;
                 const previousImageId = location.imageId;
+                const previousVehicleInfo = JSON.stringify(location.vehicleInfo ?? null);
 
                 let nameChanged = false;
                 if (hasName && resolvedName !== previousName) {
@@ -18324,6 +18527,19 @@ module.exports = function registerApiRoutes(scope) {
                 if (hasLevel && previousLevel !== resolvedLevel) {
                     location.baseLevel = resolvedLevel;
                     levelChanged = true;
+                }
+
+                let vehicleChanged = false;
+                if (vehicleUpdate.hasUpdate) {
+                    try {
+                        location.vehicleInfo = vehicleUpdate.vehicleInfo;
+                    } catch (validationError) {
+                        return res.status(400).json({
+                            success: false,
+                            error: validationError?.message || 'Invalid location vehicle values'
+                        });
+                    }
+                    vehicleChanged = JSON.stringify(location.vehicleInfo ?? null) !== previousVehicleInfo;
                 }
 
                 const shouldClearImage = (nameChanged || descriptionChanged) && previousImageId;
@@ -18352,7 +18568,8 @@ module.exports = function registerApiRoutes(scope) {
                         name: nameChanged,
                         description: descriptionChanged,
                         shortDescription: shortDescriptionChanged,
-                        level: levelChanged
+                        level: levelChanged,
+                        vehicle: vehicleChanged
                     }
                 });
             } catch (error) {

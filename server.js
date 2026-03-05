@@ -9115,6 +9115,7 @@ async function expandRegionEntryStub(stubLocation) {
 
             const locationDefinitions = parseRegionStubLocations(stubResponse);
             const exitDefinitions = parseRegionExitsResponse(stubResponse);
+            const vehicleDefinitions = parseRegionVehicleDefinitions(stubResponse);
             const weatherDefinition = parseRegionWeatherResponse(stubResponse);
             const characterConcepts = extractRegionCharacterConcepts(stubResponse);
             const numImportantNPCs = extractRegionImportantNpcCount(stubResponse);
@@ -9228,6 +9229,13 @@ async function expandRegionEntryStub(stubLocation) {
                 }
                 resolvedControllingFactionId = existingRegionFactionId;
             }
+            const pendingVehicleInfo = pendingInfo?.vehicleInfo && typeof pendingInfo.vehicleInfo === 'object'
+                ? pendingInfo.vehicleInfo
+                : null;
+            const metadataVehicleInfo = metadata?.vehicleInfo && typeof metadata.vehicleInfo === 'object'
+                ? metadata.vehicleInfo
+                : null;
+            const resolvedVehicleInfo = pendingVehicleInfo || metadataVehicleInfo || null;
 
             region = new Region({
                 id: targetRegionId,
@@ -9250,6 +9258,7 @@ async function expandRegionEntryStub(stubLocation) {
                 parentRegionId: parentRegionId,
                 averageLevel: Number.isFinite(regionAverageLevel) ? regionAverageLevel : null,
                 controllingFactionId: resolvedControllingFactionId,
+                vehicleInfo: resolvedVehicleInfo,
                 secrets,
                 numImportantNPCs,
                 weather: weatherDefinition
@@ -9264,7 +9273,8 @@ async function expandRegionEntryStub(stubLocation) {
                     themeHint,
                     regionAverageLevel,
                     settingDescription,
-                    predefinedExitDefinitions: filteredExitDefinitions
+                    predefinedExitDefinitions: filteredExitDefinitions,
+                    predefinedVehicleDefinitions: vehicleDefinitions
                 });
             } catch (instantiationError) {
                 console.warn('Failed to instantiate region from stub:', instantiationError.message);
@@ -9317,6 +9327,21 @@ async function expandRegionEntryStub(stubLocation) {
         }
 
         applyStubControllingFaction(region);
+
+        const existingPendingVehicleInfo = pendingInfo?.vehicleInfo && typeof pendingInfo.vehicleInfo === 'object'
+            ? pendingInfo.vehicleInfo
+            : null;
+        const existingMetadataVehicleInfo = metadata?.vehicleInfo && typeof metadata.vehicleInfo === 'object'
+            ? metadata.vehicleInfo
+            : null;
+        const existingResolvedVehicleInfo = existingPendingVehicleInfo || existingMetadataVehicleInfo || null;
+        if (existingResolvedVehicleInfo) {
+            try {
+                region.vehicleInfo = existingResolvedVehicleInfo;
+            } catch (error) {
+                console.warn(`Failed to apply vehicleInfo to existing region ${region?.name || region?.id}:`, error.message);
+            }
+        }
 
         await finalizeRegionEntry({
             stubLocation,
@@ -22489,6 +22514,147 @@ function parseRegionStubLocations(xmlSnippet) {
     }).filter(Boolean);
 }
 
+function parseRegionVehicleDefinitions(xmlSnippet) {
+    if (!xmlSnippet || typeof xmlSnippet !== 'string') {
+        return [];
+    }
+
+    const sanitize = (input) => `<root>${input}</root>`
+        .replace(/&(?![#a-zA-Z0-9]+;)/g, '&amp;')
+        .replace(/<\s*br\s*>/gi, '<br/>')
+        .replace(/<\s*hr\s*>/gi, '<hr/>');
+
+    let doc;
+    try {
+        doc = Utils.parseXmlDocument(sanitize(xmlSnippet.trim()), 'text/xml');
+    } catch (error) {
+        console.warn('Failed to parse region vehicle XML:', error.message);
+        return [];
+    }
+
+    if (!doc || doc.getElementsByTagName('parsererror')?.length) {
+        console.warn('Region vehicle XML contained parser errors.');
+        return [];
+    }
+
+    const getDirectChildByTag = (node, tagName) => {
+        if (!node || !tagName) {
+            return null;
+        }
+        const lowered = tagName.toLowerCase();
+        return Array.from(node.childNodes || []).find(child =>
+            child
+            && child.nodeType === 1
+            && child.tagName
+            && child.tagName.toLowerCase() === lowered
+        ) || null;
+    };
+
+    const getDirectChildrenByTag = (node, tagName) => {
+        if (!node || !tagName) {
+            return [];
+        }
+        const lowered = tagName.toLowerCase();
+        return Array.from(node.childNodes || []).filter(child =>
+            child
+            && child.nodeType === 1
+            && child.tagName
+            && child.tagName.toLowerCase() === lowered
+        );
+    };
+
+    const getDirectChildText = (node, tagName) => {
+        const child = getDirectChildByTag(node, tagName);
+        if (!child || typeof child.textContent !== 'string') {
+            return null;
+        }
+        const trimmed = child.textContent.trim();
+        return trimmed || null;
+    };
+
+    const resolveLocationNodes = () => {
+        const regionNode = doc.getElementsByTagName('region')[0];
+        if (regionNode) {
+            const locationsParent = getDirectChildByTag(regionNode, 'locations');
+            if (locationsParent) {
+                const nodes = getDirectChildrenByTag(locationsParent, 'location');
+                if (nodes.length) {
+                    return nodes;
+                }
+            }
+        }
+
+        const directLocationsParent = doc.getElementsByTagName('locations')?.[0];
+        if (directLocationsParent) {
+            const nodes = Array.from(directLocationsParent.getElementsByTagName('location'));
+            if (nodes.length) {
+                return nodes;
+            }
+        }
+
+        return Array.from(doc.getElementsByTagName('location'));
+    };
+
+    const locationNodes = resolveLocationNodes();
+    const results = [];
+
+    for (const locationNode of locationNodes) {
+        const sourceLocationName = getDirectChildText(locationNode, 'name');
+        if (!sourceLocationName) {
+            continue;
+        }
+
+        const vehiclesNode = getDirectChildByTag(locationNode, 'vehicles');
+        if (!vehiclesNode) {
+            continue;
+        }
+
+        const vehicleNodes = getDirectChildrenByTag(vehiclesNode, 'vehicle');
+        for (const vehicleNode of vehicleNodes) {
+            const name = getDirectChildText(vehicleNode, 'name');
+            if (!name) {
+                continue;
+            }
+
+            const sizeRaw = getDirectChildText(vehicleNode, 'size');
+            const size = typeof sizeRaw === 'string' ? sizeRaw.trim().toLowerCase() : null;
+            if (size !== 'large' && size !== 'huge') {
+                continue;
+            }
+
+            const destinations = [];
+            const destinationsNode = getDirectChildByTag(vehicleNode, 'destinations');
+            if (destinationsNode) {
+                const destinationNodes = getDirectChildrenByTag(destinationsNode, 'destination');
+                for (const destinationNode of destinationNodes) {
+                    const regionName = getDirectChildText(destinationNode, 'region');
+                    const locationName = getDirectChildText(destinationNode, 'location');
+                    if (!regionName && !locationName) {
+                        continue;
+                    }
+                    destinations.push({
+                        regionName: regionName || null,
+                        locationName: locationName || null
+                    });
+                }
+            }
+
+            results.push({
+                sourceLocationName,
+                name,
+                description: getDirectChildText(vehicleNode, 'description') || null,
+                shortDescription: getDirectChildText(vehicleNode, 'shortDescription') || null,
+                controllingFaction: getDirectChildText(vehicleNode, 'controllingFaction') || null,
+                size,
+                icon: getDirectChildText(vehicleNode, 'icon') || null,
+                destinations
+            });
+        }
+    }
+
+    return results;
+}
+
 function generateRegionStubId() {
     const timestamp = Date.now();
     const random = Math.random().toString(36).slice(2, 10);
@@ -22754,6 +22920,393 @@ async function generateRegionExitStubs({
     }
 }
 
+async function generateVehicleStubs({
+    region,
+    stubMap,
+    settingDescription,
+    regionAverageLevel,
+    predefinedDefinitions = null
+}) {
+    if (!region) {
+        return;
+    }
+
+    const definitions = Array.isArray(predefinedDefinitions)
+        ? predefinedDefinitions.filter(Boolean)
+        : [];
+
+    if (!definitions.length) {
+        return;
+    }
+
+    const normalizeName = (value) => normalizeRegionLocationName(value);
+
+    const resolveRegionLocationByName = (name) => {
+        const normalized = normalizeName(name);
+        if (!normalized) {
+            return null;
+        }
+
+        const fromStubMap = stubMap.get(normalized) || null;
+        if (fromStubMap) {
+            return fromStubMap;
+        }
+
+        return (region.locationIds || [])
+            .map(id => gameLocations.get(id))
+            .find(location => normalizeName(location?.name) === normalized) || null;
+    };
+
+    const resolvePendingRegionByName = (name) => {
+        const normalized = normalizeName(name);
+        if (!normalized) {
+            return null;
+        }
+        for (const pending of pendingRegionStubs.values()) {
+            const candidateName = pending?.originalName || pending?.name || null;
+            if (normalizeName(candidateName) === normalized) {
+                return pending;
+            }
+        }
+        return null;
+    };
+
+    const resolveDestinationLocationId = (destination) => {
+        if (!destination || typeof destination !== 'object') {
+            return null;
+        }
+
+        const destinationRegionName = typeof destination.regionName === 'string' ? destination.regionName.trim() : '';
+        const destinationLocationName = typeof destination.locationName === 'string' ? destination.locationName.trim() : '';
+
+        if (destinationRegionName) {
+            const pending = resolvePendingRegionByName(destinationRegionName);
+            if (pending?.entranceStubId && gameLocations.get(pending.entranceStubId)) {
+                if (!destinationLocationName || normalizeName(gameLocations.get(pending.entranceStubId)?.name) === normalizeName(destinationLocationName)) {
+                    return pending.entranceStubId;
+                }
+            }
+
+            const targetRegion = findRegionByNameLoose(destinationRegionName);
+            if (targetRegion) {
+                if (destinationLocationName) {
+                    const matchedLocation = (targetRegion.locationIds || [])
+                        .map(id => gameLocations.get(id))
+                        .find(location => normalizeName(location?.name) === normalizeName(destinationLocationName));
+                    if (matchedLocation) {
+                        return matchedLocation.id;
+                    }
+                }
+
+                if (targetRegion.entranceLocationId && gameLocations.get(targetRegion.entranceLocationId)) {
+                    return targetRegion.entranceLocationId;
+                }
+
+                const firstLocation = (targetRegion.locationIds || [])
+                    .map(id => gameLocations.get(id))
+                    .find(Boolean);
+                if (firstLocation) {
+                    return firstLocation.id;
+                }
+            }
+        }
+
+        if (destinationLocationName) {
+            const localMatch = resolveRegionLocationByName(destinationLocationName);
+            if (localMatch) {
+                return localMatch.id;
+            }
+
+            const globalMatch = findLocationByNameLoose(destinationLocationName);
+            if (globalMatch) {
+                return globalMatch.id;
+            }
+        }
+
+        return null;
+    };
+
+    const groups = new Map();
+    for (const definition of definitions) {
+        const rawName = typeof definition?.name === 'string' ? definition.name.trim() : '';
+        const size = typeof definition?.size === 'string' ? definition.size.trim().toLowerCase() : '';
+        if (!rawName || (size !== 'large' && size !== 'huge')) {
+            continue;
+        }
+
+        const key = `${size}:${normalizeName(rawName) || rawName.toLowerCase()}`;
+        if (!groups.has(key)) {
+            groups.set(key, {
+                name: rawName,
+                size,
+                description: typeof definition.description === 'string' && definition.description.trim() ? definition.description.trim() : null,
+                shortDescription: typeof definition.shortDescription === 'string' && definition.shortDescription.trim() ? definition.shortDescription.trim() : null,
+                controllingFaction: typeof definition.controllingFaction === 'string' && definition.controllingFaction.trim() ? definition.controllingFaction.trim() : null,
+                icon: typeof definition.icon === 'string' && definition.icon.trim() ? definition.icon.trim() : null,
+                sourceLocationNames: new Set(),
+                destinations: new Map()
+            });
+        }
+
+        const group = groups.get(key);
+        if (!group.description && typeof definition.description === 'string' && definition.description.trim()) {
+            group.description = definition.description.trim();
+        }
+        if (!group.shortDescription && typeof definition.shortDescription === 'string' && definition.shortDescription.trim()) {
+            group.shortDescription = definition.shortDescription.trim();
+        }
+        if (!group.controllingFaction && typeof definition.controllingFaction === 'string' && definition.controllingFaction.trim()) {
+            group.controllingFaction = definition.controllingFaction.trim();
+        }
+        if (!group.icon && typeof definition.icon === 'string' && definition.icon.trim()) {
+            group.icon = definition.icon.trim();
+        }
+
+        const sourceLocationName = typeof definition.sourceLocationName === 'string' ? definition.sourceLocationName.trim() : '';
+        if (sourceLocationName) {
+            group.sourceLocationNames.add(sourceLocationName);
+        }
+
+        const destinationEntries = Array.isArray(definition.destinations) ? definition.destinations : [];
+        for (const destinationEntry of destinationEntries) {
+            if (!destinationEntry || typeof destinationEntry !== 'object') {
+                continue;
+            }
+            const regionName = typeof destinationEntry.regionName === 'string' ? destinationEntry.regionName.trim() : null;
+            const locationName = typeof destinationEntry.locationName === 'string' ? destinationEntry.locationName.trim() : null;
+            if (!regionName && !locationName) {
+                continue;
+            }
+            const destinationKey = `${normalizeName(regionName) || ''}::${normalizeName(locationName) || ''}`;
+            if (!group.destinations.has(destinationKey)) {
+                group.destinations.set(destinationKey, {
+                    regionName: regionName || null,
+                    locationName: locationName || null
+                });
+            }
+        }
+    }
+
+    for (const group of groups.values()) {
+        const sourceLocations = Array.from(group.sourceLocationNames)
+            .map(name => resolveRegionLocationByName(name))
+            .filter(Boolean);
+        const dedupedSourceLocations = Array.from(new Map(sourceLocations.map(location => [location.id, location])).values());
+        const fallbackLocation = (region.entranceLocationId && gameLocations.get(region.entranceLocationId))
+            || (region.locationIds || []).map(id => gameLocations.get(id)).find(Boolean)
+            || null;
+        if (!dedupedSourceLocations.length && fallbackLocation) {
+            dedupedSourceLocations.push(fallbackLocation);
+        }
+
+        const primarySourceLocation = dedupedSourceLocations[0] || null;
+        if (!primarySourceLocation) {
+            console.warn(`Skipping vehicle stub "${group.name}" because no source location could be resolved in region "${region.name || region.id}".`);
+            continue;
+        }
+
+        const destinationLocationIds = [];
+        for (const destination of group.destinations.values()) {
+            const destinationId = resolveDestinationLocationId(destination);
+            if (!destinationId) {
+                console.warn(`Unable to resolve vehicle destination for "${group.name}": region="${destination.regionName || ''}", location="${destination.locationName || ''}"`);
+                continue;
+            }
+            if (!destinationLocationIds.includes(destinationId)) {
+                destinationLocationIds.push(destinationId);
+            }
+        }
+
+        const currentDestinationId = destinationLocationIds.length ? destinationLocationIds[0] : null;
+        const controllingFactionResolution = resolveFactionNameToId(group.controllingFaction, {
+            fieldLabel: `Vehicle controlling faction for "${group.name}"`
+        });
+
+        if (group.size === 'large') {
+            const normalizedVehicleName = normalizeName(group.name);
+            let vehicleLocation = (region.locationIds || [])
+                .map(id => gameLocations.get(id))
+                .find(location =>
+                    normalizeName(location?.name) === normalizedVehicleName
+                    && (
+                        location?.isVehicle
+                        || Boolean(location?.stubMetadata?.isVehicleStub)
+                    )
+                )
+                || null;
+
+            if (!vehicleLocation) {
+                let stubName = group.name;
+                if (typeof Location.findByName === 'function') {
+                    let suffix = 2;
+                    let candidateName = stubName;
+                    while (Location.findByName(candidateName)) {
+                        candidateName = `${stubName} ${suffix++}`;
+                    }
+                    stubName = candidateName;
+                }
+
+                const baseLevel = Number.isFinite(regionAverageLevel) ? regionAverageLevel : null;
+                const computedBaseLevel = baseLevel !== null
+                    ? clampLevel(baseLevel, baseLevel)
+                    : null;
+                const stubShortDescription = group.shortDescription || `A vehicle known as ${group.name}.`;
+                const stubDescription = group.description || `A vehicle known as ${group.name}.`;
+
+                vehicleLocation = new Location({
+                    name: stubName,
+                    description: null,
+                    shortDescription: stubShortDescription,
+                    baseLevel: computedBaseLevel,
+                    isStub: true,
+                    regionId: region.id,
+                    checkRegionId: false,
+                    controllingFactionId: controllingFactionResolution.id,
+                    stubMetadata: {
+                        regionId: region.id,
+                        regionName: region.name,
+                        blueprintDescription: stubDescription,
+                        stubDescription,
+                        stubShortDescription,
+                        shortDescription: stubShortDescription,
+                        locationPurpose: `Interior of the vehicle "${group.name}".`,
+                        allowRename: false,
+                        isVehicleStub: true,
+                        vehicleType: group.name,
+                        isVehicle: true,
+                        sourceLocationName: primarySourceLocation.name || null,
+                        settingDescription
+                    }
+                });
+
+                gameLocations.set(vehicleLocation.id, vehicleLocation);
+                region.addLocationId(vehicleLocation.id);
+
+                try {
+                    await ensureLocationNameAllowed(vehicleLocation);
+                } catch (error) {
+                    console.warn(`Failed to ensure location name for vehicle stub ${vehicleLocation.id}:`, error.message);
+                }
+            }
+
+            const vehicleNameAliases = new Set([
+                normalizeName(vehicleLocation.name),
+                normalizeName(group.name)
+            ]);
+            vehicleNameAliases.forEach(alias => {
+                if (alias) {
+                    stubMap.set(alias, vehicleLocation);
+                }
+            });
+
+            for (const sourceLocation of dedupedSourceLocations) {
+                ensureExitConnection(sourceLocation, vehicleLocation, {
+                    description: group.name,
+                    bidirectional: true,
+                    destinationRegion: region.id,
+                    isVehicle: true,
+                    vehicleType: null
+                });
+            }
+
+            let vehicleExitId = null;
+            if (typeof vehicleLocation.getAvailableDirections === 'function'
+                && typeof vehicleLocation.getExit === 'function') {
+                for (const direction of vehicleLocation.getAvailableDirections()) {
+                    const exit = vehicleLocation.getExit(direction);
+                    if (exit && exit.destination === primarySourceLocation.id) {
+                        vehicleExitId = exit.id || null;
+                        break;
+                    }
+                }
+            }
+
+            vehicleLocation.vehicleInfo = {
+                terrainTypes: null,
+                icon: group.icon || null,
+                currentDestination: currentDestinationId,
+                destinations: destinationLocationIds,
+                ETA: null,
+                vehicleExitId
+            };
+            const vehicleMetadata = vehicleLocation.stubMetadata || {};
+            vehicleMetadata.vehicleInfo = vehicleLocation.vehicleInfo;
+            vehicleLocation.stubMetadata = vehicleMetadata;
+            continue;
+        }
+
+        const regionEntryStub = await createRegionStubFromEvent({
+            name: group.name,
+            originLocation: primarySourceLocation,
+            description: group.description || group.shortDescription || `Transport aboard ${group.name}.`,
+            parentRegionId: region.id,
+            vehicleType: null,
+            isVehicle: true,
+            relativeLevel: 0
+        });
+
+        if (!regionEntryStub) {
+            console.warn(`Failed to create huge vehicle region stub for "${group.name}".`);
+            continue;
+        }
+
+        const destinationRegionId = regionEntryStub.stubMetadata?.targetRegionId
+            || regionEntryStub.regionId
+            || null;
+
+        for (const sourceLocation of dedupedSourceLocations) {
+            ensureExitConnection(sourceLocation, regionEntryStub, {
+                description: group.name,
+                bidirectional: true,
+                destinationRegion: destinationRegionId,
+                isVehicle: true,
+                vehicleType: null
+            });
+        }
+
+        let vehicleExitId = null;
+        if (typeof regionEntryStub.getAvailableDirections === 'function'
+            && typeof regionEntryStub.getExit === 'function') {
+            for (const direction of regionEntryStub.getAvailableDirections()) {
+                const exit = regionEntryStub.getExit(direction);
+                if (exit && exit.destination === primarySourceLocation.id) {
+                    vehicleExitId = exit.id || null;
+                    break;
+                }
+            }
+        }
+
+        const hugeVehicleInfo = {
+            terrainTypes: null,
+            icon: group.icon || null,
+            currentDestination: currentDestinationId,
+            destinations: destinationLocationIds,
+            ETA: null,
+            vehicleExitId
+        };
+        regionEntryStub.vehicleInfo = hugeVehicleInfo;
+
+        const stubMetadata = regionEntryStub.stubMetadata || {};
+        stubMetadata.vehicleInfo = hugeVehicleInfo;
+        regionEntryStub.stubMetadata = stubMetadata;
+
+        if (destinationRegionId && pendingRegionStubs.has(destinationRegionId)) {
+            const pendingInfo = pendingRegionStubs.get(destinationRegionId) || {};
+            pendingInfo.vehicleInfo = hugeVehicleInfo;
+            pendingInfo.isVehicle = true;
+            pendingInfo.vehicleType = group.name;
+            pendingRegionStubs.set(destinationRegionId, pendingInfo);
+        } else if (destinationRegionId && regions.has(destinationRegionId)) {
+            const existingRegion = regions.get(destinationRegionId);
+            try {
+                existingRegion.vehicleInfo = hugeVehicleInfo;
+            } catch (error) {
+                console.warn(`Failed to set vehicleInfo on existing region ${existingRegion?.name || destinationRegionId}:`, error.message);
+            }
+        }
+    }
+}
+
 
 async function connectExistingRegion({
     region,
@@ -22879,7 +23432,8 @@ async function instantiateRegionLocations({
     themeHint,
     regionAverageLevel,
     settingDescription,
-    predefinedExitDefinitions = null
+    predefinedExitDefinitions = null,
+    predefinedVehicleDefinitions = null
 }) {
     const stubMap = new Map();
 
@@ -23091,6 +23645,14 @@ async function instantiateRegionLocations({
         predefinedDefinitions: predefinedExitDefinitions
     });
 
+    await generateVehicleStubs({
+        region,
+        stubMap,
+        settingDescription,
+        regionAverageLevel,
+        predefinedDefinitions: predefinedVehicleDefinitions
+    });
+
     return stubMap;
 }
 
@@ -23248,6 +23810,7 @@ async function generateRegionFromPrompt(options = {}) {
         }
         region.controllingFactionId = factionResolution.id;
         const connectedRegionDefinitions = parseRegionExitsResponse(aiResponse);
+        const vehicleDefinitions = parseRegionVehicleDefinitions(aiResponse);
         regions.set(region.id, region);
         report('region:parse', { message: 'Interpreting region blueprint...' });
 
@@ -23266,7 +23829,8 @@ async function generateRegionFromPrompt(options = {}) {
                 themeHint,
                 regionAverageLevel,
                 settingDescription,
-                predefinedExitDefinitions: connectedRegionDefinitions
+                predefinedExitDefinitions: connectedRegionDefinitions,
+                predefinedVehicleDefinitions: vehicleDefinitions
             });
         } catch (instantiationError) {
             console.warn('Failed to instantiate region structure:', instantiationError.message);
