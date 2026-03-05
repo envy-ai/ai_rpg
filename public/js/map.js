@@ -38,6 +38,43 @@ let lastGhostPosition = null;
 let edgeContextMenu = null;
 const LINK_GHOST_NODE_ID = '__link-ghost__';
 const LINK_GHOST_EDGE_ID = '__link-ghost-edge__';
+const VEHICLE_OVERLAY_NODE_PREFIX = '__vehicle-overlay__';
+
+function getVehicleOverlayNodeId(targetNodeId) {
+  return `${VEHICLE_OVERLAY_NODE_PREFIX}${targetNodeId}`;
+}
+
+function buildVehicleOverlayNode(targetNodeId, icon = '🚗') {
+  return {
+    data: {
+      id: getVehicleOverlayNodeId(targetNodeId),
+      targetId: targetNodeId,
+      icon: typeof icon === 'string' && icon.trim() ? icon.trim() : '🚗'
+    },
+    classes: 'vehicle-overlay',
+    grabbable: false,
+    selectable: false
+  };
+}
+
+function syncVehicleOverlayPositions(cy) {
+  if (!cy) {
+    return;
+  }
+  cy.nodes('.vehicle-overlay').forEach(overlayNode => {
+    const targetId = overlayNode.data('targetId');
+    if (!targetId) {
+      return;
+    }
+    const targetNode = cy.getElementById(targetId);
+    if (!targetNode || targetNode.empty()) {
+      return;
+    }
+    overlayNode.unlock();
+    overlayNode.position(targetNode.position());
+    overlayNode.lock();
+  });
+}
 
 function ensureCytoscape(container) {
   if (cyInstance) {
@@ -134,6 +171,24 @@ function ensureCytoscape(container) {
         'height': 1,
         'opacity': 0,
         'border-width': 0
+      }
+    },
+    {
+      selector: 'node.vehicle-overlay',
+      style: {
+        'width': 1,
+        'height': 1,
+        'background-opacity': 0,
+        'border-width': 0,
+        'label': 'data(icon)',
+        'font-size': '24px',
+        'text-valign': 'center',
+        'text-halign': 'center',
+        'text-margin-y': 0,
+        'text-background-opacity': 0,
+        'events': 'no',
+        'z-index': 9999,
+        'z-compound-depth': 'top'
       }
     },
     {
@@ -263,16 +318,30 @@ function renderMap(region) {
   activeRegionId = region.regionId || null;
 
   const locationIdSet = new Set((region.locations || []).map(loc => loc.id));
+  const vehicleOverlayNodes = [];
+  const vehicleOverlayTargets = new Set();
+  const addVehicleOverlay = (targetNodeId, icon = '🚗') => {
+    if (!targetNodeId || vehicleOverlayTargets.has(targetNodeId)) {
+      return;
+    }
+    vehicleOverlayTargets.add(targetNodeId);
+    vehicleOverlayNodes.push(buildVehicleOverlayNode(targetNodeId, icon));
+  };
 
   const nodes = region.locations.map(loc => {
     const data = {
       id: loc.id,
       label: loc.name,
       isStub: Boolean(loc.isStub),
-      visited: Boolean(loc.visited)
+      visited: Boolean(loc.visited),
+      isVehicle: Boolean(loc.isVehicle),
+      vehicleIcon: typeof loc.vehicleIcon === 'string' ? loc.vehicleIcon.trim() : null
     };
     if (loc.image && typeof loc.image.url === 'string' && loc.image.url.trim()) {
       data.imageUrl = loc.image.url;
+    }
+    if (data.isVehicle) {
+      addVehicleOverlay(loc.id, data.vehicleIcon || '🚗');
     }
     return { data };
   });
@@ -309,11 +378,16 @@ function renderMap(region) {
               regionName,
               targetRegionId: destinationRegionId,
               expanded,
+              isVehicle: Boolean(exit?.isVehicle),
+              vehicleIcon: typeof exit?.vehicleIcon === 'string' ? exit.vehicleIcon.trim() : null,
               isStub: Boolean(isRegionStubTarget),
               stubId: isRegionStubTarget ? destinationId : null
             },
             classes: expanded ? 'region-exit region-exit-expanded' : 'region-exit region-exit-unexpanded'
           });
+          if (exit?.isVehicle) {
+            addVehicleOverlay(exitNodeId, exit?.vehicleIcon || '🚗');
+          }
         }
 
         regionExitEdges.push({
@@ -365,6 +439,7 @@ function renderMap(region) {
   cy.add([
     ...nodes,
     ...Array.from(regionExitNodes.values()),
+    ...vehicleOverlayNodes,
     ...internalEdges,
     ...regionExitEdges
   ]);
@@ -382,12 +457,32 @@ function renderMap(region) {
       fit: false,
       ...options
     });
+    layout.on('layoutstop', () => {
+      syncVehicleOverlayPositions(cyInstance);
+    });
     layout.run();
   };
 
   runLayout({ randomize: true, fit: true });
   cy.boxSelectionEnabled(false);
   cy.nodes().grabify();
+  cy.nodes('.vehicle-overlay').ungrabify();
+  cy.nodes('.vehicle-overlay').lock();
+  syncVehicleOverlayPositions(cy);
+
+  cy.on('position', 'node', event => {
+    const node = event.target;
+    if (!node || node.hasClass('vehicle-overlay')) {
+      return;
+    }
+    const overlayNode = cy.getElementById(getVehicleOverlayNodeId(node.id()));
+    if (!overlayNode || overlayNode.empty()) {
+      return;
+    }
+    overlayNode.unlock();
+    overlayNode.position(node.position());
+    overlayNode.lock();
+  });
 
   cy.nodes().removeClass('current');
   if (region.currentLocationId) {
@@ -405,7 +500,7 @@ function renderMap(region) {
 
   cy.on('tap', 'node', event => {
     const node = event.target;
-    if (!node || node.hasClass('region-exit')) {
+    if (!node || node.hasClass('region-exit') || node.hasClass('vehicle-overlay')) {
       return;
     }
     const locationId = node.id();
@@ -430,6 +525,9 @@ function renderMap(region) {
   cy.on('cxttap', 'node', event => {
     const node = event.target;
     if (!node) {
+      return;
+    }
+    if (node.hasClass('vehicle-overlay')) {
       return;
     }
     const isStubNode = Boolean(node.data('isStub'));

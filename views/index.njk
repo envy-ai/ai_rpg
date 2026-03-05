@@ -4597,7 +4597,10 @@
                         .filter(entry => entry && entry.id && typeof entry.label === 'string' && entry.label.trim())
                         .map(entry => ({
                             id: entry.id,
+                            name: typeof entry.name === 'string' ? entry.name.trim() : '',
+                            regionName: typeof entry.regionName === 'string' ? entry.regionName.trim() : '',
                             label: entry.label.trim(),
+                            normalizedName: (typeof entry.name === 'string' ? entry.name.trim().toLowerCase() : ''),
                             normalizedLabel: entry.label.trim().toLowerCase()
                         }))
                         .sort((a, b) => a.normalizedLabel.localeCompare(b.normalizedLabel));
@@ -4617,6 +4620,10 @@
 
         function invalidateTeleportLocationCache() {
             teleportLocationOptionsCache = null;
+        }
+
+        async function loadNamedLocationOptions() {
+            return loadTeleportLocationOptions();
         }
 
         async function applyTeleportLocationUpdate(locationPayload) {
@@ -6332,7 +6339,13 @@
         const locationEditVehicleFieldset = document.getElementById('locationEditVehicleFieldset');
         const locationEditVehicleIconInput = document.getElementById('locationEditVehicleIcon');
         const locationEditVehicleCurrentDestinationInput = document.getElementById('locationEditVehicleCurrentDestination');
+        const locationEditVehicleCurrentDestinationSelection = document.getElementById('locationEditVehicleCurrentDestinationSelection');
+        const locationEditVehicleCurrentDestinationSearchInput = document.getElementById('locationEditVehicleCurrentDestinationSearch');
+        const locationEditVehicleCurrentDestinationSuggestions = document.getElementById('locationEditVehicleCurrentDestinationSuggestions');
         const locationEditVehicleDestinationsInput = document.getElementById('locationEditVehicleDestinations');
+        const locationEditVehicleDestinationsList = document.getElementById('locationEditVehicleDestinationsList');
+        const locationEditVehicleDestinationsSearchInput = document.getElementById('locationEditVehicleDestinationsSearch');
+        const locationEditVehicleDestinationsSuggestions = document.getElementById('locationEditVehicleDestinationsSuggestions');
         const locationEditVehicleEtaInput = document.getElementById('locationEditVehicleETA');
         const locationEditVehicleExitIdInput = document.getElementById('locationEditVehicleExitId');
         const locationEditAbsoluteLevel = document.getElementById('locationEditAbsoluteLevel');
@@ -6370,7 +6383,13 @@
         const regionEditVehicleFieldset = document.getElementById('regionEditVehicleFieldset');
         const regionEditVehicleIconInput = document.getElementById('regionEditVehicleIcon');
         const regionEditVehicleCurrentDestinationInput = document.getElementById('regionEditVehicleCurrentDestination');
+        const regionEditVehicleCurrentDestinationSelection = document.getElementById('regionEditVehicleCurrentDestinationSelection');
+        const regionEditVehicleCurrentDestinationSearchInput = document.getElementById('regionEditVehicleCurrentDestinationSearch');
+        const regionEditVehicleCurrentDestinationSuggestions = document.getElementById('regionEditVehicleCurrentDestinationSuggestions');
         const regionEditVehicleDestinationsInput = document.getElementById('regionEditVehicleDestinations');
+        const regionEditVehicleDestinationsList = document.getElementById('regionEditVehicleDestinationsList');
+        const regionEditVehicleDestinationsSearchInput = document.getElementById('regionEditVehicleDestinationsSearch');
+        const regionEditVehicleDestinationsSuggestions = document.getElementById('regionEditVehicleDestinationsSuggestions');
         const regionEditVehicleEtaInput = document.getElementById('regionEditVehicleETA');
         const regionEditVehicleExitIdInput = document.getElementById('regionEditVehicleExitId');
         const regionEditSecretsDetails = document.getElementById('regionEditSecretsDetails');
@@ -6386,18 +6405,34 @@
             fieldset: locationEditVehicleFieldset,
             iconInput: locationEditVehicleIconInput,
             currentDestinationInput: locationEditVehicleCurrentDestinationInput,
+            currentDestinationSelection: locationEditVehicleCurrentDestinationSelection,
+            currentDestinationSearchInput: locationEditVehicleCurrentDestinationSearchInput,
+            currentDestinationSuggestions: locationEditVehicleCurrentDestinationSuggestions,
             destinationsInput: locationEditVehicleDestinationsInput,
+            destinationsList: locationEditVehicleDestinationsList,
+            destinationsSearchInput: locationEditVehicleDestinationsSearchInput,
+            destinationsSuggestions: locationEditVehicleDestinationsSuggestions,
             etaInput: locationEditVehicleEtaInput,
-            vehicleExitIdInput: locationEditVehicleExitIdInput
+            vehicleExitIdInput: locationEditVehicleExitIdInput,
+            destinationSelections: new Map(),
+            currentDestinationOption: null
         };
         const regionVehicleEditor = {
             isVehicleInput: regionEditIsVehicleInput,
             fieldset: regionEditVehicleFieldset,
             iconInput: regionEditVehicleIconInput,
             currentDestinationInput: regionEditVehicleCurrentDestinationInput,
+            currentDestinationSelection: regionEditVehicleCurrentDestinationSelection,
+            currentDestinationSearchInput: regionEditVehicleCurrentDestinationSearchInput,
+            currentDestinationSuggestions: regionEditVehicleCurrentDestinationSuggestions,
             destinationsInput: regionEditVehicleDestinationsInput,
+            destinationsList: regionEditVehicleDestinationsList,
+            destinationsSearchInput: regionEditVehicleDestinationsSearchInput,
+            destinationsSuggestions: regionEditVehicleDestinationsSuggestions,
             etaInput: regionEditVehicleEtaInput,
-            vehicleExitIdInput: regionEditVehicleExitIdInput
+            vehicleExitIdInput: regionEditVehicleExitIdInput,
+            destinationSelections: new Map(),
+            currentDestinationOption: null
         };
         const npcViewName = document.getElementById('npcViewName');
         const npcViewDescription = document.getElementById('npcViewDescription');
@@ -16051,11 +16086,632 @@
             ));
         }
 
+        function ensureVehicleDestinationSelectionMap(editor) {
+            if (!editor) {
+                return new Map();
+            }
+            if (!(editor.destinationSelections instanceof Map)) {
+                editor.destinationSelections = new Map();
+            }
+            return editor.destinationSelections;
+        }
+
+        function normalizeNamedLocationOption(option, fallbackId = '') {
+            const id = typeof option?.id === 'string' ? option.id.trim() : '';
+            const resolvedId = id || (typeof fallbackId === 'string' ? fallbackId.trim() : '');
+            if (!resolvedId) {
+                return null;
+            }
+            const name = typeof option?.name === 'string' ? option.name.trim() : '';
+            const regionName = typeof option?.regionName === 'string' ? option.regionName.trim() : '';
+            const label = typeof option?.label === 'string' ? option.label.trim() : '';
+            const resolvedName = name || resolvedId;
+            const resolvedLabel = label || resolvedName;
+            return {
+                id: resolvedId,
+                name: resolvedName,
+                regionName: regionName || '',
+                label: resolvedLabel,
+                normalizedName: resolvedName.toLowerCase(),
+                normalizedLabel: resolvedLabel.toLowerCase()
+            };
+        }
+
+        function syncVehicleDestinationInputValue(editor) {
+            if (!editor?.destinationsInput) {
+                return;
+            }
+            const selections = ensureVehicleDestinationSelectionMap(editor);
+            editor.destinationsInput.value = Array.from(selections.keys()).join(', ');
+        }
+
+        function hideVehicleDestinationSuggestions(editor) {
+            if (!editor?.destinationsSuggestions) {
+                return;
+            }
+            editor.destinationsSuggestions.innerHTML = '';
+            editor.destinationsSuggestions.setAttribute('hidden', '');
+        }
+
+        function renderVehicleDestinationSelections(editor) {
+            if (!editor?.destinationsList) {
+                syncVehicleDestinationInputValue(editor);
+                return;
+            }
+            const selections = ensureVehicleDestinationSelectionMap(editor);
+            editor.destinationsList.innerHTML = '';
+
+            if (!selections.size) {
+                const emptyMessage = document.createElement('p');
+                emptyMessage.className = 'vehicle-destination-empty';
+                emptyMessage.textContent = 'No destinations selected.';
+                editor.destinationsList.appendChild(emptyMessage);
+                syncVehicleDestinationInputValue(editor);
+                return;
+            }
+
+            const fragment = document.createDocumentFragment();
+            for (const [locationId, option] of selections.entries()) {
+                const row = document.createElement('div');
+                row.className = 'vehicle-destination-row';
+                row.setAttribute('role', 'listitem');
+
+                const labelWrapper = document.createElement('div');
+                labelWrapper.className = 'vehicle-destination-label';
+
+                const name = document.createElement('span');
+                name.className = 'vehicle-destination-name';
+                name.textContent = option?.name || locationId;
+                labelWrapper.appendChild(name);
+
+                if (option?.regionName) {
+                    const region = document.createElement('span');
+                    region.className = 'vehicle-destination-region';
+                    region.textContent = `[${option.regionName}]`;
+                    labelWrapper.appendChild(region);
+                }
+
+                const removeButton = document.createElement('button');
+                removeButton.type = 'button';
+                removeButton.className = 'vehicle-destination-remove';
+                removeButton.dataset.vehicleDestinationId = locationId;
+                removeButton.textContent = 'Remove';
+
+                row.appendChild(labelWrapper);
+                row.appendChild(removeButton);
+                fragment.appendChild(row);
+            }
+
+            editor.destinationsList.appendChild(fragment);
+            syncVehicleDestinationInputValue(editor);
+        }
+
+        async function refreshVehicleDestinationSelectionLabels(editor) {
+            if (!editor) {
+                return;
+            }
+            const selections = ensureVehicleDestinationSelectionMap(editor);
+            if (!selections.size) {
+                return;
+            }
+
+            const options = await loadNamedLocationOptions();
+            const optionsById = new Map(
+                options
+                    .filter(option => option && typeof option.id === 'string' && option.id.trim())
+                    .map(option => [option.id, option])
+            );
+
+            let changed = false;
+            for (const [locationId, existing] of selections.entries()) {
+                const normalizedExisting = normalizeNamedLocationOption(existing, locationId);
+                const resolvedOption = normalizeNamedLocationOption(optionsById.get(locationId), locationId);
+                const next = resolvedOption || normalizedExisting;
+                if (!next) {
+                    continue;
+                }
+
+                const beforeSignature = JSON.stringify(normalizedExisting || {});
+                const afterSignature = JSON.stringify(next);
+                if (beforeSignature !== afterSignature) {
+                    selections.set(locationId, next);
+                    changed = true;
+                }
+            }
+
+            if (changed) {
+                renderVehicleDestinationSelections(editor);
+            }
+        }
+
+        function setVehicleDestinationSelections(editor, destinationIds = []) {
+            if (!editor) {
+                return;
+            }
+            const selections = ensureVehicleDestinationSelectionMap(editor);
+            selections.clear();
+
+            const normalizedIds = Array.from(new Set(
+                Array.isArray(destinationIds)
+                    ? destinationIds
+                        .filter(entry => typeof entry === 'string')
+                        .map(entry => entry.trim())
+                        .filter(Boolean)
+                    : []
+            ));
+
+            normalizedIds.forEach(locationId => {
+                const fallbackOption = normalizeNamedLocationOption({ id: locationId, name: locationId, label: locationId }, locationId);
+                if (fallbackOption) {
+                    selections.set(locationId, fallbackOption);
+                }
+            });
+
+            renderVehicleDestinationSelections(editor);
+            void refreshVehicleDestinationSelectionLabels(editor);
+        }
+
+        function addVehicleDestinationSelection(editor, option) {
+            if (!editor) {
+                return;
+            }
+            const normalizedOption = normalizeNamedLocationOption(option);
+            if (!normalizedOption) {
+                return;
+            }
+            const selections = ensureVehicleDestinationSelectionMap(editor);
+            if (selections.has(normalizedOption.id)) {
+                return;
+            }
+            selections.set(normalizedOption.id, normalizedOption);
+            renderVehicleDestinationSelections(editor);
+            if (editor.destinationsSearchInput) {
+                editor.destinationsSearchInput.value = '';
+            }
+            hideVehicleDestinationSuggestions(editor);
+        }
+
+        function removeVehicleDestinationSelection(editor, locationId) {
+            if (!editor || typeof locationId !== 'string' || !locationId.trim()) {
+                return;
+            }
+            const selections = ensureVehicleDestinationSelectionMap(editor);
+            if (!selections.delete(locationId.trim())) {
+                return;
+            }
+            renderVehicleDestinationSelections(editor);
+        }
+
+        function renderVehicleDestinationSuggestions(editor, matches = []) {
+            if (!editor?.destinationsSuggestions) {
+                return;
+            }
+            editor.destinationsSuggestions.innerHTML = '';
+            if (!Array.isArray(matches) || !matches.length) {
+                editor.destinationsSuggestions.setAttribute('hidden', '');
+                return;
+            }
+
+            const fragment = document.createDocumentFragment();
+            matches.forEach(option => {
+                const normalizedOption = normalizeNamedLocationOption(option);
+                if (!normalizedOption) {
+                    return;
+                }
+
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.className = 'vehicle-destination-suggestion';
+                button.dataset.locationId = normalizedOption.id;
+
+                const name = document.createElement('span');
+                name.className = 'vehicle-destination-suggestion-name';
+                name.textContent = normalizedOption.name || normalizedOption.id;
+                button.appendChild(name);
+
+                if (normalizedOption.regionName) {
+                    const region = document.createElement('span');
+                    region.className = 'vehicle-destination-suggestion-region';
+                    region.textContent = `[${normalizedOption.regionName}]`;
+                    button.appendChild(region);
+                }
+
+                button.addEventListener('mousedown', (event) => {
+                    event.preventDefault();
+                    addVehicleDestinationSelection(editor, normalizedOption);
+                });
+
+                fragment.appendChild(button);
+            });
+
+            editor.destinationsSuggestions.appendChild(fragment);
+            editor.destinationsSuggestions.removeAttribute('hidden');
+        }
+
+        async function handleVehicleDestinationSearchInput(editor) {
+            if (!editor?.destinationsSearchInput) {
+                return;
+            }
+            const query = editor.destinationsSearchInput.value.trim().toLowerCase();
+            if (!query) {
+                hideVehicleDestinationSuggestions(editor);
+                return;
+            }
+
+            const selections = ensureVehicleDestinationSelectionMap(editor);
+            const options = await loadNamedLocationOptions();
+            const matches = options
+                .filter(option => {
+                    const normalizedOption = normalizeNamedLocationOption(option);
+                    if (!normalizedOption) {
+                        return false;
+                    }
+                    if (selections.has(normalizedOption.id)) {
+                        return false;
+                    }
+                    return normalizedOption.normalizedName.includes(query)
+                        || normalizedOption.normalizedLabel.includes(query);
+                })
+                .slice(0, 10);
+
+            renderVehicleDestinationSuggestions(editor, matches);
+        }
+
+        async function handleVehicleDestinationSearchKeydown(editor, event) {
+            if (!editor?.destinationsSearchInput || !event) {
+                return;
+            }
+
+            if (event.key === 'Escape') {
+                hideVehicleDestinationSuggestions(editor);
+                return;
+            }
+
+            if (event.key !== 'Enter') {
+                return;
+            }
+
+            event.preventDefault();
+
+            const query = editor.destinationsSearchInput.value.trim().toLowerCase();
+            if (!query) {
+                hideVehicleDestinationSuggestions(editor);
+                return;
+            }
+
+            const selections = ensureVehicleDestinationSelectionMap(editor);
+            const options = await loadNamedLocationOptions();
+            const firstMatch = options.find(option => {
+                const normalizedOption = normalizeNamedLocationOption(option);
+                if (!normalizedOption || selections.has(normalizedOption.id)) {
+                    return false;
+                }
+                return normalizedOption.normalizedName.includes(query)
+                    || normalizedOption.normalizedLabel.includes(query);
+            }) || null;
+
+            if (!firstMatch) {
+                hideVehicleDestinationSuggestions(editor);
+                return;
+            }
+
+            addVehicleDestinationSelection(editor, firstMatch);
+        }
+
+        function initializeVehicleDestinationEditor(editor) {
+            if (!editor) {
+                return;
+            }
+
+            if (editor.destinationsList) {
+                editor.destinationsList.addEventListener('click', (event) => {
+                    const removeButton = event.target?.closest?.('.vehicle-destination-remove');
+                    if (!removeButton) {
+                        return;
+                    }
+                    const locationId = removeButton.dataset.vehicleDestinationId || '';
+                    removeVehicleDestinationSelection(editor, locationId);
+                });
+            }
+
+            if (editor.destinationsSearchInput) {
+                editor.destinationsSearchInput.addEventListener('input', () => {
+                    void handleVehicleDestinationSearchInput(editor);
+                });
+                editor.destinationsSearchInput.addEventListener('keydown', (event) => {
+                    void handleVehicleDestinationSearchKeydown(editor, event);
+                });
+                editor.destinationsSearchInput.addEventListener('focus', () => {
+                    void handleVehicleDestinationSearchInput(editor);
+                });
+                editor.destinationsSearchInput.addEventListener('blur', () => {
+                    window.setTimeout(() => {
+                        hideVehicleDestinationSuggestions(editor);
+                    }, 100);
+                });
+            }
+
+            hideVehicleDestinationSuggestions(editor);
+            renderVehicleDestinationSelections(editor);
+        }
+
+        function syncVehicleCurrentDestinationInputValue(editor) {
+            if (!editor?.currentDestinationInput) {
+                return;
+            }
+            const currentOption = normalizeNamedLocationOption(editor.currentDestinationOption);
+            editor.currentDestinationInput.value = currentOption?.id || '';
+        }
+
+        function renderVehicleCurrentDestinationSelection(editor) {
+            if (!editor?.currentDestinationSelection) {
+                syncVehicleCurrentDestinationInputValue(editor);
+                return;
+            }
+
+            const container = editor.currentDestinationSelection;
+            container.innerHTML = '';
+            const currentOption = normalizeNamedLocationOption(editor.currentDestinationOption);
+
+            if (!currentOption) {
+                const emptyMessage = document.createElement('p');
+                emptyMessage.className = 'vehicle-destination-empty';
+                emptyMessage.textContent = 'No current destination selected.';
+                container.appendChild(emptyMessage);
+                syncVehicleCurrentDestinationInputValue(editor);
+                return;
+            }
+
+            const row = document.createElement('div');
+            row.className = 'vehicle-destination-row vehicle-current-destination-row';
+            row.setAttribute('role', 'listitem');
+
+            const labelWrapper = document.createElement('div');
+            labelWrapper.className = 'vehicle-destination-label';
+
+            const name = document.createElement('span');
+            name.className = 'vehicle-destination-name';
+            name.textContent = currentOption.name || currentOption.id;
+            labelWrapper.appendChild(name);
+
+            if (currentOption.regionName) {
+                const region = document.createElement('span');
+                region.className = 'vehicle-destination-region';
+                region.textContent = `[${currentOption.regionName}]`;
+                labelWrapper.appendChild(region);
+            }
+
+            const clearButton = document.createElement('button');
+            clearButton.type = 'button';
+            clearButton.className = 'vehicle-destination-remove vehicle-current-destination-clear';
+            clearButton.textContent = 'Clear';
+
+            row.appendChild(labelWrapper);
+            row.appendChild(clearButton);
+            container.appendChild(row);
+            syncVehicleCurrentDestinationInputValue(editor);
+        }
+
+        function setVehicleCurrentDestinationSelection(editor, value = null) {
+            if (!editor) {
+                return;
+            }
+            if (typeof value === 'string') {
+                const normalizedId = value.trim();
+                editor.currentDestinationOption = normalizedId
+                    ? normalizeNamedLocationOption({
+                        id: normalizedId,
+                        name: normalizedId,
+                        label: normalizedId
+                    }, normalizedId)
+                    : null;
+            } else {
+                editor.currentDestinationOption = normalizeNamedLocationOption(value);
+            }
+            renderVehicleCurrentDestinationSelection(editor);
+        }
+
+        async function refreshVehicleCurrentDestinationSelectionLabel(editor) {
+            if (!editor) {
+                return;
+            }
+            const currentOption = normalizeNamedLocationOption(editor.currentDestinationOption);
+            if (!currentOption?.id) {
+                return;
+            }
+
+            const options = await loadNamedLocationOptions();
+            const matchingOption = options.find(option => option?.id === currentOption.id) || null;
+            const normalizedMatching = normalizeNamedLocationOption(matchingOption, currentOption.id);
+            if (!normalizedMatching) {
+                return;
+            }
+
+            const beforeSignature = JSON.stringify(currentOption);
+            const afterSignature = JSON.stringify(normalizedMatching);
+            if (beforeSignature === afterSignature) {
+                return;
+            }
+
+            editor.currentDestinationOption = normalizedMatching;
+            renderVehicleCurrentDestinationSelection(editor);
+        }
+
+        function hideVehicleCurrentDestinationSuggestions(editor) {
+            if (!editor?.currentDestinationSuggestions) {
+                return;
+            }
+            editor.currentDestinationSuggestions.innerHTML = '';
+            editor.currentDestinationSuggestions.setAttribute('hidden', '');
+        }
+
+        function renderVehicleCurrentDestinationSuggestions(editor, matches = []) {
+            if (!editor?.currentDestinationSuggestions) {
+                return;
+            }
+            const suggestionContainer = editor.currentDestinationSuggestions;
+            suggestionContainer.innerHTML = '';
+
+            if (!Array.isArray(matches) || !matches.length) {
+                suggestionContainer.setAttribute('hidden', '');
+                return;
+            }
+
+            const fragment = document.createDocumentFragment();
+            matches.forEach(option => {
+                const normalizedOption = normalizeNamedLocationOption(option);
+                if (!normalizedOption) {
+                    return;
+                }
+
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.className = 'vehicle-destination-suggestion';
+                button.dataset.locationId = normalizedOption.id;
+
+                const name = document.createElement('span');
+                name.className = 'vehicle-destination-suggestion-name';
+                name.textContent = normalizedOption.name || normalizedOption.id;
+                button.appendChild(name);
+
+                if (normalizedOption.regionName) {
+                    const region = document.createElement('span');
+                    region.className = 'vehicle-destination-suggestion-region';
+                    region.textContent = `[${normalizedOption.regionName}]`;
+                    button.appendChild(region);
+                }
+
+                button.addEventListener('mousedown', (event) => {
+                    event.preventDefault();
+                    setVehicleCurrentDestinationSelection(editor, normalizedOption);
+                    if (editor.currentDestinationSearchInput) {
+                        editor.currentDestinationSearchInput.value = '';
+                    }
+                    hideVehicleCurrentDestinationSuggestions(editor);
+                });
+
+                fragment.appendChild(button);
+            });
+
+            suggestionContainer.appendChild(fragment);
+            suggestionContainer.removeAttribute('hidden');
+        }
+
+        async function handleVehicleCurrentDestinationSearchInput(editor) {
+            if (!editor?.currentDestinationSearchInput) {
+                return;
+            }
+
+            const query = editor.currentDestinationSearchInput.value.trim().toLowerCase();
+            if (!query) {
+                hideVehicleCurrentDestinationSuggestions(editor);
+                return;
+            }
+
+            const options = await loadNamedLocationOptions();
+            const matches = options
+                .filter(option => {
+                    const normalizedOption = normalizeNamedLocationOption(option);
+                    if (!normalizedOption) {
+                        return false;
+                    }
+                    return normalizedOption.normalizedName.includes(query)
+                        || normalizedOption.normalizedLabel.includes(query);
+                })
+                .slice(0, 10);
+
+            renderVehicleCurrentDestinationSuggestions(editor, matches);
+        }
+
+        async function handleVehicleCurrentDestinationSearchKeydown(editor, event) {
+            if (!editor?.currentDestinationSearchInput || !event) {
+                return;
+            }
+
+            if (event.key === 'Escape') {
+                hideVehicleCurrentDestinationSuggestions(editor);
+                return;
+            }
+
+            if (event.key !== 'Enter') {
+                return;
+            }
+
+            event.preventDefault();
+
+            const query = editor.currentDestinationSearchInput.value.trim().toLowerCase();
+            if (!query) {
+                hideVehicleCurrentDestinationSuggestions(editor);
+                return;
+            }
+
+            const options = await loadNamedLocationOptions();
+            const firstMatch = options.find(option => {
+                const normalizedOption = normalizeNamedLocationOption(option);
+                if (!normalizedOption) {
+                    return false;
+                }
+                return normalizedOption.normalizedName.includes(query)
+                    || normalizedOption.normalizedLabel.includes(query);
+            }) || null;
+
+            if (!firstMatch) {
+                hideVehicleCurrentDestinationSuggestions(editor);
+                return;
+            }
+
+            setVehicleCurrentDestinationSelection(editor, firstMatch);
+            if (editor.currentDestinationSearchInput) {
+                editor.currentDestinationSearchInput.value = '';
+            }
+            hideVehicleCurrentDestinationSuggestions(editor);
+        }
+
+        function initializeVehicleCurrentDestinationEditor(editor) {
+            if (!editor) {
+                return;
+            }
+
+            if (editor.currentDestinationSelection) {
+                editor.currentDestinationSelection.addEventListener('click', (event) => {
+                    const clearButton = event.target?.closest?.('.vehicle-current-destination-clear');
+                    if (!clearButton) {
+                        return;
+                    }
+                    setVehicleCurrentDestinationSelection(editor, null);
+                });
+            }
+
+            if (editor.currentDestinationSearchInput) {
+                editor.currentDestinationSearchInput.addEventListener('input', () => {
+                    void handleVehicleCurrentDestinationSearchInput(editor);
+                });
+                editor.currentDestinationSearchInput.addEventListener('keydown', (event) => {
+                    void handleVehicleCurrentDestinationSearchKeydown(editor, event);
+                });
+                editor.currentDestinationSearchInput.addEventListener('focus', () => {
+                    void handleVehicleCurrentDestinationSearchInput(editor);
+                });
+                editor.currentDestinationSearchInput.addEventListener('blur', () => {
+                    window.setTimeout(() => {
+                        hideVehicleCurrentDestinationSuggestions(editor);
+                    }, 100);
+                });
+            }
+
+            hideVehicleCurrentDestinationSuggestions(editor);
+            renderVehicleCurrentDestinationSelection(editor);
+        }
+
         function setVehicleEditorEnabled(editor, enabled) {
             if (!editor || !editor.fieldset) {
                 return;
             }
             editor.fieldset.disabled = !Boolean(enabled);
+            if (!enabled) {
+                hideVehicleDestinationSuggestions(editor);
+                hideVehicleCurrentDestinationSuggestions(editor);
+            }
         }
 
         function resetVehicleEditor(editor) {
@@ -16065,14 +16721,18 @@
             if (editor.isVehicleInput) {
                 editor.isVehicleInput.checked = false;
             }
-            if (editor.currentDestinationInput) {
-                editor.currentDestinationInput.value = '';
-            }
             if (editor.iconInput) {
                 editor.iconInput.value = '';
             }
-            if (editor.destinationsInput) {
-                editor.destinationsInput.value = '';
+            setVehicleCurrentDestinationSelection(editor, null);
+            hideVehicleCurrentDestinationSuggestions(editor);
+            if (editor.currentDestinationSearchInput) {
+                editor.currentDestinationSearchInput.value = '';
+            }
+            setVehicleDestinationSelections(editor, []);
+            hideVehicleDestinationSuggestions(editor);
+            if (editor.destinationsSearchInput) {
+                editor.destinationsSearchInput.value = '';
             }
             if (editor.etaInput) {
                 editor.etaInput.value = '';
@@ -16092,14 +16752,9 @@
                 editor.isVehicleInput.checked = Boolean(normalized);
             }
             setVehicleIconInputValue(editor.iconInput, normalized?.icon || '');
-            if (editor.currentDestinationInput) {
-                editor.currentDestinationInput.value = normalized?.currentDestination || '';
-            }
-            if (editor.destinationsInput) {
-                editor.destinationsInput.value = normalized?.destinations?.length
-                    ? normalized.destinations.join(', ')
-                    : '';
-            }
+            setVehicleCurrentDestinationSelection(editor, normalized?.currentDestination || null);
+            void refreshVehicleCurrentDestinationSelectionLabel(editor);
+            setVehicleDestinationSelections(editor, normalized?.destinations || []);
             if (editor.etaInput) {
                 editor.etaInput.value = Number.isFinite(normalized?.ETA)
                     ? String(normalized.ETA)
@@ -16130,8 +16785,13 @@
             const icon = typeof iconRaw === 'string'
                 ? iconRaw.trim()
                 : '';
+            const destinationsFromSelections = editor?.destinationSelections instanceof Map
+                ? Array.from(editor.destinationSelections.keys())
+                : [];
             const destinationsRaw = editor?.destinationsInput?.value ?? '';
-            const destinations = parseVehicleDestinationsInput(destinationsRaw);
+            const destinations = destinationsFromSelections.length
+                ? destinationsFromSelections
+                : parseVehicleDestinationsInput(destinationsRaw);
             const etaRaw = editor?.etaInput?.value ?? '';
             const etaTrimmed = String(etaRaw).trim();
             let ETA = null;
@@ -16153,7 +16813,7 @@
                     isVehicle: true,
                     vehicleInfo: null,
                     error: 'Vehicle current destination is required when ETA is set.',
-                    focusTarget: editor?.currentDestinationInput || null
+                    focusTarget: editor?.currentDestinationSearchInput || editor?.currentDestinationInput || null
                 };
             }
 
@@ -16162,7 +16822,7 @@
                     isVehicle: true,
                     vehicleInfo: null,
                     error: 'Vehicle current destination must be one of the listed destinations.',
-                    focusTarget: editor?.currentDestinationInput || null
+                    focusTarget: editor?.currentDestinationSearchInput || editor?.currentDestinationInput || null
                 };
             }
 
@@ -18049,6 +18709,10 @@
             }
         });
 
+        initializeVehicleCurrentDestinationEditor(locationVehicleEditor);
+        initializeVehicleCurrentDestinationEditor(regionVehicleEditor);
+        initializeVehicleDestinationEditor(locationVehicleEditor);
+        initializeVehicleDestinationEditor(regionVehicleEditor);
         resetVehicleEditor(locationVehicleEditor);
         resetVehicleEditor(regionVehicleEditor);
         if (locationEditIsVehicleInput) {

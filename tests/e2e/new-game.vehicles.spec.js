@@ -17,6 +17,55 @@ let runtimeForcedOutputsPath = '';
 let runtimeSettingId = '';
 let runtimeSavedGameName = '';
 
+const REGION_STUB_FORCED_OUTPUT = [
+    '<region>',
+    '  <regionName>Luminara\'s Sigh</regionName>',
+    '  <regionDescription>The elven vessel opens into a quiet crystalline interior threaded with living light.</regionDescription>',
+    '  <shortDescription>A serene crystal-lined starship interior.</shortDescription>',
+    '  <relativeLevel>0</relativeLevel>',
+    '  <numImportantNPCs>0</numImportantNPCs>',
+    '  <weather>',
+    '    <hasDynamicWeather>false</hasDynamicWeather>',
+    '  </weather>',
+    '  <locations>',
+    '    <location>',
+    '      <name>Starlight Vestibule</name>',
+    '      <description>A luminous arrival deck of curved crystal and soft starlight, with an obvious route back to Docking Bay 17.</description>',
+    '      <shortDescription>A quiet crystalline entry deck.</shortDescription>',
+    '      <hasWeather>false</hasWeather>',
+    '      <controllingFaction>None</controllingFaction>',
+    '      <relativeLevel>0</relativeLevel>',
+    '      <notesAboutExits>Connects back to Docking Bay 17.</notesAboutExits>',
+    '      <numNPCs>0</numNPCs>',
+    '      <numHostiles>0</numHostiles>',
+    '      <exits>',
+    '        <exit>Docking Bay 17</exit>',
+    '      </exits>',
+    '    </location>',
+    '  </locations>',
+    '  <randomStoryEvents />',
+    '  <characterConcepts />',
+    '  <enemyConcepts />',
+    '  <secrets />',
+    '</region>'
+].join('\n');
+
+const LOCATION_GENERATION_FORCED_OUTPUT = [
+    '<location>',
+    '  <name>Deterministic Expanded Location</name>',
+    '  <description>A deterministic expanded location used by the vehicle regression fixture.</description>',
+    '  <shortDescription>A deterministic expanded location.</shortDescription>',
+    '  <relativeLevel>0</relativeLevel>',
+    '  <numItems>0</numItems>',
+    '  <numScenery>0</numScenery>',
+    '  <numNpcs>0</numNpcs>',
+    '  <numHostiles>0</numHostiles>',
+    '  <hasWeather>false</hasWeather>',
+    '  <notesAboutExits>Connects back to the source area.</notesAboutExits>',
+    '  <exits></exits>',
+    '</location>'
+].join('\n');
+
 function requireFixture(pathToCheck, label) {
     if (!fs.existsSync(pathToCheck)) {
         throw new Error(`${label} not found at ${pathToCheck}`);
@@ -72,6 +121,45 @@ async function configureDeterministicRuntime(request) {
     await setConfigValue(request, 'factions.count', '0');
 }
 
+function injectRegionStubForcedOutput(pathToForcedOutputs) {
+    const raw = fs.readFileSync(pathToForcedOutputs, 'utf8');
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        throw new Error('Forced outputs fixture must be an object.');
+    }
+    if (!parsed.byMetadataLabel || typeof parsed.byMetadataLabel !== 'object' || Array.isArray(parsed.byMetadataLabel)) {
+        parsed.byMetadataLabel = {};
+    }
+    const existing = parsed.byMetadataLabel.region_stub_locations;
+    const normalizedExisting = Array.isArray(existing) ? existing : [];
+    parsed.byMetadataLabel.region_stub_locations = [...normalizedExisting, REGION_STUB_FORCED_OUTPUT];
+
+    const locationGenerationExisting = parsed.byMetadataLabel.location_generation;
+    const normalizedLocationGenerationExisting = Array.isArray(locationGenerationExisting) ? locationGenerationExisting : [];
+    parsed.byMetadataLabel.location_generation = [
+        ...normalizedLocationGenerationExisting,
+        LOCATION_GENERATION_FORCED_OUTPUT,
+        LOCATION_GENERATION_FORCED_OUTPUT,
+        LOCATION_GENERATION_FORCED_OUTPUT,
+        LOCATION_GENERATION_FORCED_OUTPUT,
+        LOCATION_GENERATION_FORCED_OUTPUT,
+        LOCATION_GENERATION_FORCED_OUTPUT
+    ];
+
+    const entranceExisting = parsed.byMetadataLabel.region_entrance_selection;
+    const normalizedEntranceExisting = Array.isArray(entranceExisting) ? entranceExisting : [];
+    if (normalizedEntranceExisting.length > 0) {
+        parsed.byMetadataLabel.region_entrance_selection = [
+            ...normalizedEntranceExisting,
+            normalizedEntranceExisting[0],
+            normalizedEntranceExisting[0],
+            normalizedEntranceExisting[0]
+        ];
+    }
+
+    fs.writeFileSync(pathToForcedOutputs, `${JSON.stringify(parsed, null, 2)}\n`, 'utf8');
+}
+
 async function createAndApplyDeterministicSetting(request) {
     const settingName = `Vehicle Regression Setting ${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const createResponse = await request.post('/api/settings', {
@@ -118,6 +206,7 @@ test.describe('new game vehicle region regression', () => {
         const runSuffix = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
         runtimeForcedOutputsPath = path.join(TMP_ROOT, `new_game_vehicle_regression_${runSuffix}_forced_outputs.json`);
         fs.copyFileSync(FIXTURE_FORCED_OUTPUTS_PATH, runtimeForcedOutputsPath);
+        injectRegionStubForcedOutput(runtimeForcedOutputsPath);
         await createAndApplyDeterministicSetting(request);
     });
 
@@ -211,6 +300,40 @@ test.describe('new game vehicle region regression', () => {
             const vehicleExit = exits.find(exit => exit && exit.id === location.vehicleInfo.vehicleExitId);
             expect(vehicleExit, `"${expectedVehicle.name}" vehicleExitId should map to an actual exit`).toBeTruthy();
         }
+
+        const luminarasSigh = locationByName.get("luminara's sigh");
+        expect(luminarasSigh).toBeTruthy();
+
+        const currentBeforeMovePayload = await getJson(request, '/api/locations?scope=current');
+        const currentBeforeMove = currentBeforeMovePayload?.location;
+        expect(currentBeforeMove?.id).toBeTruthy();
+
+        const movePayload = await getJson(request, '/api/player/move', 'POST', {
+            destinationId: luminarasSigh.id,
+            expectedOriginLocationId: currentBeforeMove.id
+        });
+        expect(movePayload?.success).toBeTruthy();
+
+        const currentAfterMovePayload = await getJson(request, '/api/locations?scope=current');
+        const currentAfterMove = currentAfterMovePayload?.location;
+        expect(currentAfterMove?.id).toBeTruthy();
+        expect(typeof currentAfterMove?.vehicleCurrentLocationName).toBe('string');
+        expect(currentAfterMove.vehicleCurrentLocationName.trim().length).toBeGreaterThan(0);
+
+        const expandedVehicleRegionLocationPayload = await getJson(request, `/api/locations/${currentAfterMove.id}`);
+        const expandedVehicleRegionLocation = expandedVehicleRegionLocationPayload?.location;
+        expect(expandedVehicleRegionLocation?.region?.isVehicle).toBe(true);
+
+        const regionVehicleInfo = expandedVehicleRegionLocation?.region?.vehicleInfo;
+        expect(regionVehicleInfo).toBeTruthy();
+        expect(typeof regionVehicleInfo.vehicleExitId).toBe('string');
+        expect(regionVehicleInfo.vehicleExitId.length).toBeGreaterThan(0);
+
+        const expandedExits = (expandedVehicleRegionLocation?.exits && typeof expandedVehicleRegionLocation.exits === 'object')
+            ? Object.values(expandedVehicleRegionLocation.exits)
+            : [];
+        const remappedVehicleExit = expandedExits.find(exit => exit && exit.id === regionVehicleInfo.vehicleExitId);
+        expect(remappedVehicleExit, 'Region vehicleExitId should resolve after region-entry stub expansion').toBeTruthy();
 
         const savePayload = await getJson(request, '/api/save', 'POST', {});
         expect(typeof savePayload?.saveName).toBe('string');

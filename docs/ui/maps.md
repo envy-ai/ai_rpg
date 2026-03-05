@@ -14,8 +14,10 @@ Rendered inside `#mapContainer` in the Map tab.
   - `current` (active location),
   - `visited`,
   - `stub` (unexpanded stub).
+- Vehicle-capable location nodes get a centered emoji overlay from `vehicleInfo.icon` (fallback `🚗`).
 - Edges represent exits. Bidirectional edges get a `bidirectional` class.
 - Region exits are rendered as separate "exit nodes" with an icon and dashed styling.
+  - Vehicle-capable region-exit nodes also get a centered vehicle emoji overlay.
 
 ### Interactions
 - Context menu on nodes and edges for edit/delete actions.
@@ -42,6 +44,7 @@ Rendered inside `#worldMapContainer` in the World Map tab.
   - region group nodes,
   - location nodes,
   - region exit nodes.
+- Vehicle-capable location nodes and vehicle region labels get centered emoji overlays from vehicle icon metadata.
 - Convex hull overlays are drawn around region groupings using
   `public/js/cytoscape-convex-hull.js`.
 - `window.adjustBubblePadding()` can tweak hull padding and corner radius.

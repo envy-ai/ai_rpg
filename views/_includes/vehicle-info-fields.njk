@@ -50,12 +50,45 @@
             </select>
         </div>
         <div class="location-edit-field">
-            <label for="{{ _vehiclePrefix }}VehicleCurrentDestination">Current Destination (Location ID)</label>
-            <input type="text" id="{{ _vehiclePrefix }}VehicleCurrentDestination" autocomplete="off">
+            <label for="{{ _vehiclePrefix }}VehicleCurrentDestinationSearch">Current Destination</label>
+            <div class="vehicle-current-destination-editor" id="{{ _vehiclePrefix }}VehicleCurrentDestinationEditor">
+                <div
+                    id="{{ _vehiclePrefix }}VehicleCurrentDestinationSelection"
+                    class="vehicle-destination-list vehicle-current-destination-selection"
+                    role="list"></div>
+                <div class="vehicle-destination-add">
+                    <input
+                        type="search"
+                        id="{{ _vehiclePrefix }}VehicleCurrentDestinationSearch"
+                        placeholder="Type a location name to set current destination"
+                        autocomplete="off">
+                    <div
+                        id="{{ _vehiclePrefix }}VehicleCurrentDestinationSuggestions"
+                        class="vehicle-destination-suggestions"
+                        role="listbox"
+                        hidden></div>
+                </div>
+                <input type="hidden" id="{{ _vehiclePrefix }}VehicleCurrentDestination">
+            </div>
         </div>
         <div class="location-edit-field">
-            <label for="{{ _vehiclePrefix }}VehicleDestinations">Destinations (Location IDs)</label>
-            <textarea id="{{ _vehiclePrefix }}VehicleDestinations" rows="3" placeholder="Comma or newline separated location IDs"></textarea>
+            <label for="{{ _vehiclePrefix }}VehicleDestinationsSearch">Destinations (Fixed Route)</label>
+            <div class="vehicle-destination-editor" id="{{ _vehiclePrefix }}VehicleDestinationsEditor">
+                <div id="{{ _vehiclePrefix }}VehicleDestinationsList" class="vehicle-destination-list" role="list"></div>
+                <div class="vehicle-destination-add">
+                    <input
+                        type="search"
+                        id="{{ _vehiclePrefix }}VehicleDestinationsSearch"
+                        placeholder="Type a location name to add"
+                        autocomplete="off">
+                    <div
+                        id="{{ _vehiclePrefix }}VehicleDestinationsSuggestions"
+                        class="vehicle-destination-suggestions"
+                        role="listbox"
+                        hidden></div>
+                </div>
+                <input type="hidden" id="{{ _vehiclePrefix }}VehicleDestinations">
+            </div>
             <p class="region-edit-secrets-help">Leave empty for vehicles without fixed routes.</p>
         </div>
         <div class="location-edit-field">

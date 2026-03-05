@@ -5,6 +5,11 @@
   let hullOverlayInstance = null;
   let convexHullPadding = 100;
   let convexHullCornerRadius = 100;
+  const VEHICLE_OVERLAY_NODE_PREFIX = 'vehicle-overlay::';
+
+  function getVehicleOverlayNodeId(targetNodeId) {
+    return `${VEHICLE_OVERLAY_NODE_PREFIX}${targetNodeId}`;
+  }
 
   function destroyWorldCyInstance() {
     if (hullOverlayInstance) {
@@ -224,6 +229,24 @@
           'shadow-blur': 18,
           'shadow-color': '#ea580c'
         }
+      },
+      {
+        selector: 'node.vehicle-overlay',
+        style: {
+          'width': 1,
+          'height': 1,
+          'background-opacity': 0,
+          'border-width': 0,
+          'label': 'data(icon)',
+          'font-size': '22px',
+          'text-valign': 'center',
+          'text-halign': 'center',
+          'text-margin-y': 0,
+          'text-background-opacity': 0,
+          'events': 'no',
+          'z-index': 9999,
+          'z-compound-depth': 'top'
+        }
       }
     ]);
 
@@ -404,6 +427,8 @@
           parent: parentId,
           visited: Boolean(location.visited),
           isStub: Boolean(location.isStub),
+          isVehicle: Boolean(location.isVehicle),
+          vehicleIcon: typeof location.vehicleIcon === 'string' ? location.vehicleIcon.trim() : null,
           imageUrl: location.image?.url || null,
           regionMembership: membership
         },
@@ -512,6 +537,67 @@
     }
 
     return Array.from(edgeMap.values());
+  }
+
+  function buildVehicleOverlayNodes(regions = [], locations = []) {
+    const overlays = [];
+    const addedTargets = new Set();
+    const addOverlay = (targetNodeId, icon = '🚗') => {
+      if (!targetNodeId || addedTargets.has(targetNodeId)) {
+        return;
+      }
+      addedTargets.add(targetNodeId);
+      overlays.push({
+        data: {
+          id: getVehicleOverlayNodeId(targetNodeId),
+          targetId: targetNodeId,
+          icon: typeof icon === 'string' && icon.trim() ? icon.trim() : '🚗'
+        },
+        classes: 'vehicle-overlay',
+        grabbable: false,
+        selectable: false
+      });
+    };
+
+    for (const location of locations) {
+      if (!location || !location.id || !location.isVehicle) {
+        continue;
+      }
+      addOverlay(location.id, location.vehicleIcon || '🚗');
+    }
+
+    for (const region of regions) {
+      if (!region || !region.id || !region.isVehicle) {
+        continue;
+      }
+      addOverlay(`${REGION_NODE_PREFIX}${region.id}`, region.vehicleIcon || '🚗');
+    }
+
+    return overlays;
+  }
+
+  function syncVehicleOverlayPositions(cy) {
+    if (!cy) {
+      return;
+    }
+    cy.nodes('.vehicle-overlay').forEach(overlayNode => {
+      const targetId = overlayNode.data('targetId');
+      if (!targetId) {
+        return;
+      }
+      const targetNode = cy.getElementById(targetId);
+      if (!targetNode || targetNode.empty()) {
+        return;
+      }
+      const targetHidden = targetNode.style('display') === 'none';
+      overlayNode.style('display', targetHidden ? 'none' : 'element');
+      if (targetHidden) {
+        return;
+      }
+      overlayNode.unlock();
+      overlayNode.position(targetNode.position());
+      overlayNode.lock();
+    });
   }
 
   function positionRegionLabels(cy, regions = []) {
@@ -701,17 +787,36 @@
     const regionLabelNodes = buildRegionLabelNodes(regions, regionColorLookup);
     const locationIdSet = new Set(locationNodes.map(node => node.data.id));
     const edges = buildLocationEdges(world.locations || [], locationIdSet);
+    const vehicleOverlayNodes = buildVehicleOverlayNodes(regions, world.locations || []);
 
     cy.add([
       ...regionLabelNodes,
       ...regionGroupNodes,
       ...locationNodes,
+      ...vehicleOverlayNodes,
       ...exitNodes,
       ...edges,
       ...exitEdges
     ]);
 
     attachWorldMapEvents(cy, container);
+    cy.nodes('.vehicle-overlay').ungrabify();
+    cy.nodes('.vehicle-overlay').lock();
+    syncVehicleOverlayPositions(cy);
+
+    cy.on('position', 'node.location-node, node.region-label', event => {
+      const node = event.target;
+      if (!node) {
+        return;
+      }
+      const overlayNode = cy.getElementById(getVehicleOverlayNodeId(node.id()));
+      if (!overlayNode || overlayNode.empty()) {
+        return;
+      }
+      overlayNode.unlock();
+      overlayNode.position(node.position());
+      overlayNode.lock();
+    });
 
     cy.nodes('node.location-node').forEach(node => {
       node.toggleClass('visited', Boolean(node.data('visited')));
@@ -768,6 +873,7 @@
 
     layout.on('layoutstop', () => {
       positionRegionLabels(cy, regions);
+      syncVehicleOverlayPositions(cy);
       hullOverlayInstance?.destroy();
       hullOverlayInstance = applyRegionConvexHulls(
         cy,

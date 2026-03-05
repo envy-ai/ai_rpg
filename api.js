@@ -26,6 +26,14 @@ const e = require('express');
 const { getLorebookManager } = require('./lorebook.js');
 const console = require('console');
 
+const INFORMATION_GATHERING_CHAT_TOOL_NAMES = new Set([
+    'moreInfo',
+    'getHistory',
+    'listLocationEntities',
+    'locateNpcs',
+    'locateThings'
+]);
+
 let eventsProcessedThisTurn = false;
 function markEventsProcessed() {
     eventsProcessedThisTurn = true;
@@ -11612,7 +11620,19 @@ module.exports = function registerApiRoutes(scope) {
                 if (Number.isFinite(repetitionPenalty) && repetitionPenalty > 0) {
                     additionalPayload.repetition_penalty = repetitionPenalty;
                 }
-                additionalPayload.tools = CHAT_TOOL_DEFINITIONS;
+                const allowWorldMutationTools = Boolean(isGenericPromptAction);
+                const enabledChatTools = allowWorldMutationTools
+                    ? CHAT_TOOL_DEFINITIONS
+                    : CHAT_TOOL_DEFINITIONS.filter(toolDefinition => {
+                        const functionName = typeof toolDefinition?.function?.name === 'string'
+                            ? toolDefinition.function.name.trim()
+                            : '';
+                        return INFORMATION_GATHERING_CHAT_TOOL_NAMES.has(functionName);
+                    });
+                if (!Array.isArray(enabledChatTools) || enabledChatTools.length === 0) {
+                    throw new Error('No chat tools available for this prompt mode.');
+                }
+                additionalPayload.tools = enabledChatTools;
                 additionalPayload.tool_choice = 'auto';
 
                 const metricsStart = Date.now();
@@ -14176,11 +14196,19 @@ module.exports = function registerApiRoutes(scope) {
                 ? regionPayload?.vehicleInfo
                 : (locationRepresentsVehicle ? locationData.vehicleInfo : null);
             if (activeVehicleInfo && typeof activeVehicleInfo === 'object' && !Array.isArray(activeVehicleInfo)) {
-                const currentVehicleLocationName = resolveVehicleCurrentLocationNameFromInfo(activeVehicleInfo, {
-                    contextLabel: regionRepresentsVehicle ? 'Region vehicle' : 'Location vehicle'
-                });
-                if (currentVehicleLocationName) {
-                    locationData.vehicleCurrentLocationName = currentVehicleLocationName;
+                try {
+                    const currentVehicleLocationName = resolveVehicleCurrentLocationNameFromInfo(activeVehicleInfo, {
+                        contextLabel: regionRepresentsVehicle ? 'Region vehicle' : 'Location vehicle'
+                    });
+                    if (currentVehicleLocationName) {
+                        locationData.vehicleCurrentLocationName = currentVehicleLocationName;
+                    }
+                } catch (vehicleLocationError) {
+                    const contextLabel = regionRepresentsVehicle ? 'Region vehicle' : 'Location vehicle';
+                    console.warn(
+                        `${contextLabel} current location resolution failed for location "${location.id}":`,
+                        vehicleLocationError?.message || vehicleLocationError,
+                    );
                 }
             }
 
@@ -20485,6 +20513,14 @@ module.exports = function registerApiRoutes(scope) {
             }
         });
 
+        function resolveVehicleIconFromInfoForMap(vehicleInfo) {
+            if (!vehicleInfo || typeof vehicleInfo !== 'object' || Array.isArray(vehicleInfo)) {
+                return null;
+            }
+            const rawIcon = typeof vehicleInfo.icon === 'string' ? vehicleInfo.icon.trim() : '';
+            return rawIcon || null;
+        }
+
         function buildMapLocationSummary(location) {
             if (!location) {
                 return null;
@@ -20508,6 +20544,13 @@ module.exports = function registerApiRoutes(scope) {
                                     : location.id)
                         )
                 );
+            const locationRepresentsVehicle = Boolean(
+                location.isVehicle === true
+                || (location.vehicleInfo && typeof location.vehicleInfo === 'object' && !Array.isArray(location.vehicleInfo))
+            );
+            const locationVehicleIcon = locationRepresentsVehicle
+                ? (resolveVehicleIconFromInfoForMap(location.vehicleInfo) || '🚗')
+                : null;
 
             const exits = availableDirections.map(direction => {
                 const exit = typeof location.getExit === 'function' ? location.getExit(direction) : null;
@@ -20523,6 +20566,7 @@ module.exports = function registerApiRoutes(scope) {
 
                 let destinationRegionName = null;
                 let destinationRegionExpanded = false;
+                let vehicleIcon = null;
 
                 if (destinationRegionId) {
                     if (regions instanceof Map && regions.has(destinationRegionId)) {
@@ -20537,6 +20581,24 @@ module.exports = function registerApiRoutes(scope) {
                     }
                 }
 
+                if (exit?.isVehicle) {
+                    vehicleIcon = resolveVehicleIconFromInfoForMap(destinationLocation?.vehicleInfo);
+                    if (!vehicleIcon && destinationRegionId && regions instanceof Map && regions.has(destinationRegionId)) {
+                        const destinationRegion = regions.get(destinationRegionId);
+                        vehicleIcon = resolveVehicleIconFromInfoForMap(destinationRegion?.vehicleInfo);
+                    }
+                    if (!vehicleIcon && destinationRegionId && typeof pendingRegionStubs !== 'undefined' && pendingRegionStubs?.get) {
+                        const pendingRegion = pendingRegionStubs.get(destinationRegionId);
+                        vehicleIcon = resolveVehicleIconFromInfoForMap(pendingRegion?.vehicleInfo);
+                    }
+                    if (!vehicleIcon) {
+                        vehicleIcon = resolveVehicleIconFromInfoForMap(destinationLocation?.stubMetadata?.vehicleInfo);
+                    }
+                    if (!vehicleIcon) {
+                        vehicleIcon = '🚗';
+                    }
+                }
+
                 return {
                     id: exit?.id || `${location.id}_${direction}`,
                     destination: exit?.destination || null,
@@ -20547,6 +20609,7 @@ module.exports = function registerApiRoutes(scope) {
                     bidirectional: exit?.bidirectional !== false,
                     isVehicle: Boolean(exit?.isVehicle),
                     vehicleType: exit?.vehicleType || null,
+                    vehicleIcon,
                     destinationIsStub,
                     destinationIsRegionEntryStub
                 };
@@ -20556,6 +20619,8 @@ module.exports = function registerApiRoutes(scope) {
                 id: location.id,
                 name: resolvedName,
                 isStub: Boolean(location.isStub),
+                isVehicle: locationRepresentsVehicle,
+                vehicleIcon: locationVehicleIcon,
                 visited: Boolean(location.visited),
                 regionId: location.regionId || stubMetadata.regionId || null,
                 exits
@@ -20676,11 +20741,20 @@ module.exports = function registerApiRoutes(scope) {
                     const parentRegionId = typeof region.parentRegionId === 'string' && region.parentRegionId.trim()
                         ? region.parentRegionId.trim()
                         : null;
+                    const regionRepresentsVehicle = Boolean(
+                        region.isVehicle === true
+                        || (region.vehicleInfo && typeof region.vehicleInfo === 'object' && !Array.isArray(region.vehicleInfo))
+                    );
+                    const regionVehicleIcon = regionRepresentsVehicle
+                        ? (resolveVehicleIconFromInfoForMap(region.vehicleInfo) || '🚗')
+                        : null;
 
                     return {
                         id: region.id,
                         name: region.name,
                         parentRegionId,
+                        isVehicle: regionRepresentsVehicle,
+                        vehicleIcon: regionVehicleIcon,
                         isStub: Boolean(region.isStub),
                         locationIds,
                         locationCount: locationIds.length,

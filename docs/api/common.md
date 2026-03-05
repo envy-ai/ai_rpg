@@ -258,11 +258,25 @@ Used by map endpoints.
 
 Fields:
 - `id`, `name`, `isStub`, `visited`, `regionId`
+- `isVehicle` (boolean)
+- `vehicleIcon` (string | null; when `isVehicle` is true)
 - `exits`: array of
   - `id`, `destination`, `destinationRegion`, `destinationRegionName`, `destinationRegionExpanded`
   - `destinationName`, `bidirectional`, `isVehicle`, `vehicleType`
+  - `vehicleIcon` (string | null; when `isVehicle` is true)
   - `destinationIsStub`, `destinationIsRegionEntryStub`
 - `image` (optional): `{ id, url }`
+
+## MapRegionSummary (`/api/map/world`)
+Fields:
+- `id`, `name`, `parentRegionId`
+- `isStub` (boolean)
+- `isVehicle` (boolean)
+- `vehicleIcon` (string | null; when `isVehicle` is true)
+- `locationIds` (string[])
+- `locationCount` (number)
+- `averageLevel` (number | null)
+- `childRegionIds` (string[])
 
 ## Image Job
 `GET /api/jobs` returns `JobSummary[]`:

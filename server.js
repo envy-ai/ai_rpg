@@ -9568,6 +9568,49 @@ async function finalizeRegionEntry({ stubLocation, entranceLocation, region, ori
     }
 
     const metadata = stubLocation.stubMetadata || {};
+    const normalizeId = (value) => (typeof value === 'string' ? value.trim() : '');
+    const findExitByDestination = (location, destinationId) => {
+        const normalizedDestinationId = normalizeId(destinationId);
+        if (!location || !normalizedDestinationId || typeof location.getAvailableDirections !== 'function' || typeof location.getExit !== 'function') {
+            return null;
+        }
+        for (const direction of location.getAvailableDirections()) {
+            const exit = location.getExit(direction);
+            if (exit && normalizeId(exit.destination) === normalizedDestinationId) {
+                return exit;
+            }
+        }
+        return null;
+    };
+    const findExitById = (location, exitId) => {
+        const normalizedExitId = normalizeId(exitId);
+        if (!location || !normalizedExitId || typeof location.getAvailableDirections !== 'function' || typeof location.getExit !== 'function') {
+            return null;
+        }
+        for (const direction of location.getAvailableDirections()) {
+            const exit = location.getExit(direction);
+            if (exit && normalizeId(exit.id) === normalizedExitId) {
+                return exit;
+            }
+        }
+        return null;
+    };
+    const remappedVehicleExitIds = new Map();
+    const registerVehicleExitRemap = (previousExit, replacementExit, { requireReplacement = false, context = 'vehicle exit remap' } = {}) => {
+        const previousId = normalizeId(previousExit?.id);
+        if (!previousId) {
+            return;
+        }
+        const replacementId = normalizeId(replacementExit?.id);
+        if (!replacementId) {
+            if (requireReplacement) {
+                throw new Error(`[region entry finalization] Failed to map ${context} from "${previousId}" to a replacement exit id.`);
+            }
+            return;
+        }
+        remappedVehicleExitIds.set(previousId, replacementId);
+    };
+
     const originLocation = metadata.originLocationId ? gameLocations.get(metadata.originLocationId) : null;
     const originRegionId = originLocation
         ? (findRegionByLocationId(originLocation.id)?.id
@@ -9624,6 +9667,13 @@ async function finalizeRegionEntry({ stubLocation, entranceLocation, region, ori
             destinationRegion: region.id,
             isVehicle: originIsVehicle,
             vehicleType: originVehicleType
+        });
+
+        const stubOriginExit = findExitByDestination(stubLocation, originLocation.id);
+        const entranceOriginExit = findExitByDestination(entranceLocation, originLocation.id);
+        registerVehicleExitRemap(stubOriginExit, entranceOriginExit, {
+            requireReplacement: Boolean(stubOriginExit),
+            context: 'region vehicle origin exit'
         });
     }
 
@@ -9770,13 +9820,35 @@ async function finalizeRegionEntry({ stubLocation, entranceLocation, region, ori
         }
 
         const description = exit.description || `${targetLocation.name || exit.destination}`;
-        ensureExitConnection(entranceLocation, targetLocation, {
+        const replacementExit = ensureExitConnection(entranceLocation, targetLocation, {
             description,
             bidirectional: exit.bidirectional !== false,
             destinationRegion: exit.destinationRegion || null,
             isVehicle: Boolean(exit.isVehicle),
             vehicleType: exit.vehicleType || null
         });
+        registerVehicleExitRemap(exit, replacementExit, {
+            context: `stub exit ${exit.id || direction}`
+        });
+    }
+
+    const regionVehicleInfo = region && region.isVehicle ? region.vehicleInfo : null;
+    if (region && regionVehicleInfo && typeof regionVehicleInfo === 'object' && !Array.isArray(regionVehicleInfo)) {
+        const previousVehicleExitId = normalizeId(regionVehicleInfo.vehicleExitId);
+        if (previousVehicleExitId) {
+            const remappedVehicleExitId = remappedVehicleExitIds.get(previousVehicleExitId) || null;
+            if (remappedVehicleExitId && remappedVehicleExitId !== previousVehicleExitId) {
+                region.vehicleInfo = {
+                    ...regionVehicleInfo,
+                    vehicleExitId: remappedVehicleExitId
+                };
+            } else if (findExitById(stubLocation, previousVehicleExitId)) {
+                throw new Error(
+                    `[region entry finalization] Region "${region.id}" vehicleExitId "${previousVehicleExitId}" `
+                    + `still points to consumed stub "${stubLocation.id}" and could not be remapped.`,
+                );
+            }
+        }
     }
 
     for (const direction of stubDirections) {
@@ -22639,6 +22711,9 @@ function parseRegionVehicleDefinitions(xmlSnippet) {
                 }
             }
 
+            const parsedIcon = getDirectChildText(vehicleNode, 'icon');
+            const vehicleIcon = parsedIcon && parsedIcon.trim() ? parsedIcon.trim() : '🚗';
+
             results.push({
                 sourceLocationName,
                 name,
@@ -22646,7 +22721,7 @@ function parseRegionVehicleDefinitions(xmlSnippet) {
                 shortDescription: getDirectChildText(vehicleNode, 'shortDescription') || null,
                 controllingFaction: getDirectChildText(vehicleNode, 'controllingFaction') || null,
                 size,
-                icon: getDirectChildText(vehicleNode, 'icon') || null,
+                icon: vehicleIcon,
                 destinations
             });
         }
@@ -23118,6 +23193,9 @@ async function generateVehicleStubs({
         }
 
         const currentDestinationId = destinationLocationIds.length ? destinationLocationIds[0] : null;
+        if (destinationLocationIds.length > 0 && primarySourceLocation?.id && !destinationLocationIds.includes(primarySourceLocation.id)) {
+            destinationLocationIds.unshift(primarySourceLocation.id);
+        }
         const controllingFactionResolution = resolveFactionNameToId(group.controllingFaction, {
             fieldLabel: `Vehicle controlling faction for "${group.name}"`
         });
@@ -23223,7 +23301,7 @@ async function generateVehicleStubs({
 
             vehicleLocation.vehicleInfo = {
                 terrainTypes: null,
-                icon: group.icon || null,
+                icon: group.icon || '🚗',
                 currentDestination: currentDestinationId,
                 destinations: destinationLocationIds,
                 ETA: null,
@@ -23278,7 +23356,7 @@ async function generateVehicleStubs({
 
         const hugeVehicleInfo = {
             terrainTypes: null,
-            icon: group.icon || null,
+            icon: group.icon || '🚗',
             currentDestination: currentDestinationId,
             destinations: destinationLocationIds,
             ETA: null,
