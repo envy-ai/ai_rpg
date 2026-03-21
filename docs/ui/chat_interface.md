@@ -20,14 +20,17 @@ The main UI is rendered by `views/index.njk` and powered by `public/js/chat.js` 
   - Compact world-time chip at the top (`#worldTimeIndicator`) showing `h:MM AM/PM`, date label, and segment/season.
   - The location-name prefix icon (`#locationNameIcon`) switches from map pin (`📍`) to a vehicle icon when the current location is a vehicle or its containing region is a vehicle; it prefers `vehicleInfo.icon` and falls back to `🚗`.
   - When in a vehicle context, a second header line renders under the location name as `Current location: <name>` using the active vehicle exit destination.
+  - When in a vehicle context and the outside location has an image, a lower-right picture-in-picture overlay (`#locationVehiclePip`) renders over the main location image at 30% size, `16:9` aspect ratio, with 3% right/bottom margin.
   - When the containing region is a vehicle, the header name is rendered as `<vehicle region>: <location>` (example: `Starship Enterprise: Captain's Quarters`).
   - Image + context menu for edit/summon/regenerate.
   - On mobile (`max-width: 768px`), item/NPC/location tooltips are constrained to `80vw` for readability.
   - Equippable item tooltips include stacked comparison cards for currently equipped compatible-slot items (using the active actor context).
   - On touch/coarse-pointer devices, tapping any entity `•••` context-menu button temporarily suppresses floating tooltips so the menu remains reachable.
   - Exits list + "New Exit" button.
-  - Vehicle exits that lead into a vehicle render a left-side vehicle icon on the travel button, using the destination vehicle's `vehicleInfo.icon` when available.
-  - Vehicle exits that leave a vehicle context render as `⬅️ Exit Vehicle: <destination>` and do not show the vehicle icon.
+  - Exits whose destination is a vehicle render a left-side vehicle icon on the travel button, using the destination vehicle's `vehicleInfo.icon` and falling back to `🚗` when icon metadata is missing.
+  - Vehicle exits that leave a vehicle context render with a left-side `⬅️` icon and an `Exit Vehicle: <destination>` label.
+  - Unexplored region exit labels are destination-driven: vehicle destinations render as `Unexplored huge vehicle: <region>`, while non-vehicle destinations render as `Unexplored Region: <region>`; if the exit itself is marked vehicle to a non-vehicle destination, the label renders as `<vehicleType> to unexplored region: <region>`.
+  - `exit.isVehicle`/`exit.vehicleType` are treated as edge metadata only and must not be used to infer that the destination location/region is itself a vehicle.
   - NPC list + "Add NPC" button.
   - Items/Scenery grids + "Craft" and "New Item/Scenery" buttons.
   - Drag/drop behavior:
@@ -68,8 +71,9 @@ The main UI is rendered by `views/index.njk` and powered by `public/js/chat.js` 
 ## Location name caching
 
 - Inline script maintains a `locationCache` (location id -> display name) used by exit rendering and stub updates.
+- Inline script also maintains `locationDetailsCache` (location id -> `{ id, name, regionName, imageId }`) for richer vehicle-context resolution.
 - Cache entries are refreshed when the current location is rendered, after exit creation responses, and when stubs are renamed.
-- `ensureLocationNameCached` fetches missing names for exits when needed.
+- `ensureLocationDetailsCached` fetches missing location details when needed; `ensureLocationNameCached` now wraps it and returns only name/region fields.
 
 ## Core client controller (public/js/chat.js)
 

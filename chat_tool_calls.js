@@ -184,6 +184,48 @@ const CHAT_TOOL_DEFINITIONS = Object.freeze([
     {
         type: 'function',
         function: {
+            name: 'createLocationStub',
+            description: 'Create a location stub reachable from an origin location and ensure an exit connects to it.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    locationName: {
+                        type: 'string',
+                        description: 'Name for the destination location stub.'
+                    },
+                    originLocation: {
+                        type: 'string',
+                        description: 'Optional origin location ID or name. Defaults to the current player location.'
+                    },
+                    originRegion: {
+                        type: 'string',
+                        description: 'Optional region disambiguator for origin location matching.'
+                    },
+                    description: {
+                        type: 'string',
+                        description: 'Optional stub description and exit label.'
+                    },
+                    targetRegion: {
+                        type: 'string',
+                        description: 'Optional target region ID or name for placing/disambiguating the destination location.'
+                    },
+                    vehicleType: {
+                        type: 'string',
+                        description: 'Optional vehicle type for this exit path.'
+                    },
+                    relativeLevel: {
+                        type: 'integer',
+                        description: 'Optional relative level hint for generation.'
+                    }
+                },
+                required: ['locationName'],
+                additionalProperties: false
+            }
+        }
+    },
+    {
+        type: 'function',
+        function: {
             name: 'createExit',
             description: 'Create an exit from one location to another location or region. This is the canonical way to create new location and region stubs: if the destination does not exist, this tool creates the missing stub and connects it.',
             parameters: {
@@ -2040,6 +2082,121 @@ const createChatToolRuntime = ({
         };
     };
 
+    const executeCreateLocationStubTool = async ({
+        locationName,
+        originLocation = null,
+        originRegion = null,
+        description = null,
+        targetRegion = null,
+        vehicleType = null,
+        relativeLevel = null
+    } = {}) => {
+        const functionName = 'createLocationStub';
+        const targetLocationName = normalizeRequiredString(locationName, {
+            functionName,
+            fieldName: 'locationName'
+        });
+        const originLocationRecord = resolveOriginLocationForCreation({
+            originLocation,
+            originRegion,
+            functionName
+        });
+        const descriptionText = normalizeOptionalString(description);
+        const targetRegionQuery = normalizeOptionalString(targetRegion);
+        const vehicleTypeText = normalizeOptionalString(vehicleType);
+        const relativeLevelValue = normalizeOptionalInteger(relativeLevel, {
+            functionName,
+            fieldName: 'relativeLevel'
+        });
+
+        const resolvedTargetRegion = targetRegionQuery
+            ? resolveRegionReference(targetRegionQuery, {
+                fieldName: 'targetRegion',
+                allowPending: false,
+                allowMissing: false
+            })
+            : null;
+        const targetRegionId = toTrimmedString(resolvedTargetRegion?.id) || null;
+
+        let destinationLocation = resolveLocationReference(targetLocationName, {
+            fieldName: 'locationName',
+            regionQuery: targetRegionQuery,
+            allowMissing: true
+        });
+        let createdLocationStub = false;
+
+        if (!destinationLocation) {
+            destinationLocation = await createLocationFromEvent({
+                name: targetLocationName,
+                originLocation: originLocationRecord,
+                descriptionHint: descriptionText || targetLocationName,
+                directionHint: null,
+                expandStub: false,
+                targetRegionId,
+                vehicleType: vehicleTypeText || null,
+                isVehicle: Boolean(vehicleTypeText),
+                relativeLevel: relativeLevelValue
+            });
+            if (!destinationLocation) {
+                throw new ToolVisibleError(
+                    `Failed to create destination location stub "${targetLocationName}".`,
+                    { code: 'location_stub_create_failed' }
+                );
+            }
+            createdLocationStub = Boolean(destinationLocation.isStub);
+        }
+
+        const destinationRegionId = locationRegionId(destinationLocation);
+        if (targetRegionId && destinationRegionId !== targetRegionId) {
+            throw new ToolVisibleError(
+                `Created or resolved location "${destinationLocation.name || destinationLocation.id}" is in region "${destinationRegionId || 'unknown'}", not requested target region "${targetRegionId}".`,
+                { code: 'location_region_mismatch' }
+            );
+        }
+
+        const originRegionId = locationRegionId(originLocationRecord);
+        const destinationRegionForExit = destinationRegionId && destinationRegionId !== originRegionId
+            ? destinationRegionId
+            : null;
+        ensureExitConnection(originLocationRecord, destinationLocation, {
+            description: descriptionText || `${destinationLocation.name || destinationLocation.id}`,
+            bidirectional: true,
+            destinationRegion: destinationRegionForExit,
+            isVehicle: Boolean(vehicleTypeText),
+            vehicleType: vehicleTypeText || null
+        });
+
+        const lines = [
+            '<createLocationStubResult>',
+            '  <status>success</status>',
+            ...renderXmlNode('originLocation', {
+                id: originLocationRecord.id || null,
+                name: originLocationRecord.name || null,
+                regionId: locationRegionId(originLocationRecord),
+                regionName: locationRegionName(originLocationRecord)
+            }, 1),
+            ...renderXmlNode('location', {
+                id: destinationLocation.id || null,
+                name: destinationLocation.name || null,
+                regionId: destinationRegionId || null,
+                regionName: locationRegionName(destinationLocation),
+                createdLocationStub
+            }, 1),
+            '</createLocationStubResult>'
+        ];
+
+        return {
+            content: lines.join('\n'),
+            metadata: {
+                status: 'success',
+                originLocationId: originLocationRecord.id || null,
+                locationId: destinationLocation.id || null,
+                regionId: destinationRegionId || null,
+                createdLocationStub
+            }
+        };
+    };
+
     const resolveRegionEntranceLocation = (regionId) => {
         const regions = getRegionsMap();
         const pendingRegionStubs = getPendingRegionStubs();
@@ -2060,6 +2217,87 @@ const createChatToolRuntime = ({
             }
             return getLocationByIdLoose(entranceStubId);
         }
+        return null;
+    };
+
+    const findExistingExitToDestination = (originLocation, {
+        destinationLocationId = null,
+        destinationRegionId = null
+    } = {}) => {
+        if (!originLocation || typeof originLocation.getAvailableDirections !== 'function' || typeof originLocation.getExit !== 'function') {
+            return null;
+        }
+        const destinationId = toTrimmedString(destinationLocationId);
+        if (!destinationId) {
+            return null;
+        }
+        const normalizedDestinationRegionId = toTrimmedString(destinationRegionId) || null;
+
+        const directions = originLocation.getAvailableDirections();
+        for (const direction of directions) {
+            const exit = originLocation.getExit(direction);
+            if (!exit) {
+                continue;
+            }
+            const exitDestinationId = toTrimmedString(exit.destination);
+            if (exitDestinationId !== destinationId) {
+                continue;
+            }
+            if (normalizedDestinationRegionId) {
+                const exitDestinationRegionId = toTrimmedString(exit.destinationRegion) || null;
+                if (exitDestinationRegionId && exitDestinationRegionId !== normalizedDestinationRegionId) {
+                    continue;
+                }
+            }
+            return { direction, exit };
+        }
+
+        return null;
+    };
+
+    const findExistingRegionExitByTargetName = (originLocation, rawRegionName) => {
+        if (!originLocation || typeof originLocation.getAvailableDirections !== 'function' || typeof originLocation.getExit !== 'function') {
+            return null;
+        }
+        const normalizedTargetName = toTrimmedString(rawRegionName).toLowerCase();
+        if (!normalizedTargetName) {
+            return null;
+        }
+
+        const regions = getRegionsMap();
+        const pendingRegionStubs = getPendingRegionStubs();
+        const directions = originLocation.getAvailableDirections();
+
+        for (const direction of directions) {
+            const exit = originLocation.getExit(direction);
+            if (!exit) {
+                continue;
+            }
+
+            const destinationRegionId = toTrimmedString(exit.destinationRegion) || null;
+            if (destinationRegionId) {
+                const pending = pendingRegionStubs instanceof Map ? pendingRegionStubs.get(destinationRegionId) : null;
+                const pendingName = toTrimmedString(pending?.originalName || pending?.name).toLowerCase();
+                if (pendingName && pendingName === normalizedTargetName) {
+                    const destinationLocation = getLocationByIdLoose(exit.destination);
+                    return { direction, exit, destinationLocation };
+                }
+
+                const destinationRegion = regions instanceof Map ? regions.get(destinationRegionId) : null;
+                const destinationRegionName = toTrimmedString(destinationRegion?.name).toLowerCase();
+                if (destinationRegionName && destinationRegionName === normalizedTargetName) {
+                    const destinationLocation = getLocationByIdLoose(exit.destination);
+                    return { direction, exit, destinationLocation };
+                }
+            }
+
+            const destinationLocation = getLocationByIdLoose(exit.destination);
+            const stubTargetName = toTrimmedString(destinationLocation?.stubMetadata?.targetRegionName).toLowerCase();
+            if (stubTargetName && stubTargetName === normalizedTargetName) {
+                return { direction, exit, destinationLocation };
+            }
+        }
+
         return null;
     };
 
@@ -2108,6 +2346,8 @@ const createChatToolRuntime = ({
         let destinationKind = null;
         let createdLocationStub = false;
         let createdRegionStub = false;
+        let duplicateIgnored = false;
+        let duplicateExitId = null;
 
         if (toRegionQuery) {
             const resolvedRegion = resolveRegionReference(toRegionQuery, {
@@ -2124,13 +2364,22 @@ const createChatToolRuntime = ({
                         { code: 'region_missing_entrance' }
                     );
                 }
-                ensureExitConnection(originLocation, destinationLocation, {
-                    description: descriptionText || `${destinationLocation.name || destinationLocation.id}`,
-                    bidirectional: true,
-                    destinationRegion: destinationRegionId,
-                    isVehicle: Boolean(vehicleTypeText),
-                    vehicleType: vehicleTypeText || null
+                const existingExit = findExistingExitToDestination(originLocation, {
+                    destinationLocationId: destinationLocation.id,
+                    destinationRegionId
                 });
+                if (existingExit) {
+                    duplicateIgnored = true;
+                    duplicateExitId = toTrimmedString(existingExit.exit?.id) || null;
+                } else {
+                    ensureExitConnection(originLocation, destinationLocation, {
+                        description: descriptionText || `${destinationLocation.name || destinationLocation.id}`,
+                        bidirectional: true,
+                        destinationRegion: destinationRegionId,
+                        isVehicle: Boolean(vehicleTypeText),
+                        vehicleType: vehicleTypeText || null
+                    });
+                }
             } else {
                 const pendingBefore = getPendingRegionStubs();
                 const pendingIdsBefore = pendingBefore instanceof Map
@@ -2145,22 +2394,39 @@ const createChatToolRuntime = ({
                     relativeLevel: relativeLevelValue
                 });
                 if (!destinationLocation) {
-                    throw new ToolVisibleError(
-                        `Failed to create destination region stub "${toRegionQuery}".`,
-                        { code: 'region_stub_create_failed' }
+                    const existingRegionExit = findExistingRegionExitByTargetName(originLocation, toRegionQuery);
+                    if (!existingRegionExit) {
+                        throw new ToolVisibleError(
+                            `Failed to create destination region stub "${toRegionQuery}".`,
+                            { code: 'region_stub_create_failed' }
+                        );
+                    }
+                    duplicateIgnored = true;
+                    duplicateExitId = toTrimmedString(existingRegionExit.exit?.id) || null;
+                    destinationLocation = existingRegionExit.destinationLocation || getLocationByIdLoose(existingRegionExit.exit?.destination);
+                    destinationRegionId = toTrimmedString(existingRegionExit.exit?.destinationRegion)
+                        || locationRegionId(destinationLocation)
+                        || null;
+                } else {
+                    const metadata = destinationLocation.stubMetadata || {};
+                    destinationRegionId = toTrimmedString(metadata.targetRegionId)
+                        || toTrimmedString(metadata.regionId)
+                        || null;
+                    const pendingAfter = getPendingRegionStubs();
+                    createdRegionStub = Boolean(
+                        destinationRegionId
+                        && pendingAfter instanceof Map
+                        && pendingAfter.has(destinationRegionId)
+                        && !pendingIdsBefore.has(destinationRegionId)
                     );
+                    ensureExitConnection(originLocation, destinationLocation, {
+                        description: descriptionText || `${destinationLocation.name || destinationLocation.id}`,
+                        bidirectional: true,
+                        destinationRegion: destinationRegionId,
+                        isVehicle: Boolean(vehicleTypeText),
+                        vehicleType: vehicleTypeText || null
+                    });
                 }
-                const metadata = destinationLocation.stubMetadata || {};
-                destinationRegionId = toTrimmedString(metadata.targetRegionId)
-                    || toTrimmedString(metadata.regionId)
-                    || null;
-                const pendingAfter = getPendingRegionStubs();
-                createdRegionStub = Boolean(
-                    destinationRegionId
-                    && pendingAfter instanceof Map
-                    && pendingAfter.has(destinationRegionId)
-                    && !pendingIdsBefore.has(destinationRegionId)
-                );
             }
             destinationKind = 'region';
         } else {
@@ -2187,7 +2453,6 @@ const createChatToolRuntime = ({
                     );
                 }
                 createdLocationStub = Boolean(destinationLocation.isStub);
-            } else {
                 const destinationLocationRegionId = locationRegionId(destinationLocation);
                 const destinationRegionForExit = destinationLocationRegionId && destinationLocationRegionId !== originRegionId
                     ? destinationLocationRegionId
@@ -2199,14 +2464,37 @@ const createChatToolRuntime = ({
                     isVehicle: Boolean(vehicleTypeText),
                     vehicleType: vehicleTypeText || null
                 });
+            } else {
+                const destinationLocationRegionId = locationRegionId(destinationLocation);
+                const destinationRegionForExit = destinationLocationRegionId && destinationLocationRegionId !== originRegionId
+                    ? destinationLocationRegionId
+                    : null;
+                const existingExit = findExistingExitToDestination(originLocation, {
+                    destinationLocationId: destinationLocation.id,
+                    destinationRegionId: destinationRegionForExit
+                });
+                if (existingExit) {
+                    duplicateIgnored = true;
+                    duplicateExitId = toTrimmedString(existingExit.exit?.id) || null;
+                } else {
+                    ensureExitConnection(originLocation, destinationLocation, {
+                        description: descriptionText || `${destinationLocation.name || destinationLocation.id}`,
+                        bidirectional: true,
+                        destinationRegion: destinationRegionForExit,
+                        isVehicle: Boolean(vehicleTypeText),
+                        vehicleType: vehicleTypeText || null
+                    });
+                }
             }
             destinationKind = 'location';
             destinationRegionId = locationRegionId(destinationLocation);
         }
 
+        const status = duplicateIgnored ? 'unchanged' : 'success';
+
         const lines = [
             '<createExitResult>',
-            '  <status>success</status>',
+            `  <status>${status}</status>`,
             ...renderXmlNode('originLocation', {
                 id: originLocation.id || null,
                 name: originLocation.name || null,
@@ -2220,7 +2508,9 @@ const createChatToolRuntime = ({
                 regionId: destinationRegionId || null,
                 regionName: locationRegionName(destinationLocation),
                 createdLocationStub,
-                createdRegionStub
+                createdRegionStub,
+                duplicateIgnored,
+                duplicateExitId
             }, 1),
             '</createExitResult>'
         ];
@@ -2228,13 +2518,15 @@ const createChatToolRuntime = ({
         return {
             content: lines.join('\n'),
             metadata: {
-                status: 'success',
+                status,
                 originLocationId: originLocation.id || null,
                 destinationKind,
                 destinationLocationId: destinationLocation?.id || null,
                 destinationRegionId: destinationRegionId || null,
                 createdLocationStub,
-                createdRegionStub
+                createdRegionStub,
+                duplicateIgnored,
+                duplicateExitId
             }
         };
     };
@@ -3033,6 +3325,7 @@ const createChatToolRuntime = ({
         'teleportThingToLocation',
         'moveThingFromLocationToCharacterInventory',
         'createRegionStub',
+        'createLocationStub',
         'createExit',
         'listLocationEntities',
         'createThing',
@@ -3045,39 +3338,36 @@ const createChatToolRuntime = ({
             throw new Error('Tool execution requires a tool call object.');
         }
         try {
+            const argumentsObject = toolCall.argumentsObject || {};
+            let toolResult = null;
             if (toolCall.functionName === 'moreInfo') {
-                return executeMoreInfoTool(toolCall.argumentsObject || {});
+                toolResult = executeMoreInfoTool(argumentsObject);
+            } else if (toolCall.functionName === 'getHistory') {
+                toolResult = executeGetHistoryTool(argumentsObject);
+            } else if (toolCall.functionName === 'teleportCharacterToLocation') {
+                toolResult = executeTeleportCharacterToLocationTool(argumentsObject);
+            } else if (toolCall.functionName === 'teleportThingToLocation') {
+                toolResult = executeTeleportThingToLocationTool(argumentsObject);
+            } else if (toolCall.functionName === 'moveThingFromLocationToCharacterInventory') {
+                toolResult = executeMoveThingFromLocationToCharacterInventoryTool(argumentsObject);
+            } else if (toolCall.functionName === 'createRegionStub') {
+                toolResult = executeCreateRegionStubTool(argumentsObject);
+            } else if (toolCall.functionName === 'createLocationStub') {
+                toolResult = executeCreateLocationStubTool(argumentsObject);
+            } else if (toolCall.functionName === 'createExit') {
+                toolResult = executeCreateExitTool(argumentsObject);
+            } else if (toolCall.functionName === 'listLocationEntities') {
+                toolResult = executeListLocationEntitiesTool(argumentsObject);
+            } else if (toolCall.functionName === 'createThing') {
+                toolResult = executeCreateThingTool(argumentsObject);
+            } else if (toolCall.functionName === 'locateNpcs') {
+                toolResult = executeLocateNpcsTool(argumentsObject);
+            } else if (toolCall.functionName === 'locateThings') {
+                toolResult = executeLocateThingsTool(argumentsObject);
+            } else {
+                throw new Error(`Unsupported tool call function "${toolCall.functionName}".`);
             }
-            if (toolCall.functionName === 'getHistory') {
-                return executeGetHistoryTool(toolCall.argumentsObject || {});
-            }
-            if (toolCall.functionName === 'teleportCharacterToLocation') {
-                return executeTeleportCharacterToLocationTool(toolCall.argumentsObject || {});
-            }
-            if (toolCall.functionName === 'teleportThingToLocation') {
-                return executeTeleportThingToLocationTool(toolCall.argumentsObject || {});
-            }
-            if (toolCall.functionName === 'moveThingFromLocationToCharacterInventory') {
-                return executeMoveThingFromLocationToCharacterInventoryTool(toolCall.argumentsObject || {});
-            }
-            if (toolCall.functionName === 'createRegionStub') {
-                return executeCreateRegionStubTool(toolCall.argumentsObject || {});
-            }
-            if (toolCall.functionName === 'createExit') {
-                return executeCreateExitTool(toolCall.argumentsObject || {});
-            }
-            if (toolCall.functionName === 'listLocationEntities') {
-                return executeListLocationEntitiesTool(toolCall.argumentsObject || {});
-            }
-            if (toolCall.functionName === 'createThing') {
-                return executeCreateThingTool(toolCall.argumentsObject || {});
-            }
-            if (toolCall.functionName === 'locateNpcs') {
-                return executeLocateNpcsTool(toolCall.argumentsObject || {});
-            }
-            if (toolCall.functionName === 'locateThings') {
-                return executeLocateThingsTool(toolCall.argumentsObject || {});
-            }
+            return await toolResult;
         } catch (error) {
             if (error instanceof ToolVisibleError) {
                 return buildToolVisibleErrorResult(toolCall.functionName, error);
@@ -3091,7 +3381,6 @@ const createChatToolRuntime = ({
             }
             throw error;
         }
-        throw new Error(`Unsupported tool call function "${toolCall.functionName}".`);
     };
 
     const runChatCompletionWithToolLoop = async ({

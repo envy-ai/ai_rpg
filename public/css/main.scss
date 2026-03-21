@@ -5081,6 +5081,46 @@ body.dark .thing-toggle-hint {
   }
 }
 
+.location-image-vehicle-pip {
+  position: absolute;
+  right: 3%;
+  bottom: 3%;
+  width: 30%;
+  aspect-ratio: 16 / 9;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.6);
+  background: rgba(15, 23, 42, 0.92);
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.5);
+  pointer-events: none;
+  z-index: 1;
+
+  &[hidden] {
+    display: none;
+  }
+}
+
+.location-image-vehicle-pip__image {
+  width: 100%;
+  height: 100%;
+  display: block;
+
+  img {
+    width: 100%;
+    height: 100%;
+    display: block;
+    object-fit: cover;
+  }
+
+  .location-placeholder {
+    width: 100%;
+    height: 100%;
+    aspect-ratio: auto;
+    border: none;
+    background: rgba(51, 65, 85, 0.8);
+  }
+}
+
 .entity-context-menu-button {
   position: absolute;
   top: 8px;

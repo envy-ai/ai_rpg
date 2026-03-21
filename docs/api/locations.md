@@ -107,6 +107,7 @@ Request:
   - `vehicleType` (string)
   - `relativeLevel` (number, -10..10)
   - `clientId` (for realtime notifications)
+  - `bidirectional` (optional boolean; when true, upgrades a newly created location-stub exit to two-way)
   - `imageDataUrl`, `imageDataUrlOriginal` (PNG data URLs for reference images; only for new stubs)
 
 Responses:
@@ -158,20 +159,28 @@ Notes:
 ## GET /api/stubs/:id
 
 Responses:
-- 200: `{ success: true, stub: { id, name, isRegionEntryStub, targetRegionId, targetRegionName, controllingFactionId, npcs } }`
+- 200: `{ success: true, stub: { id, name, isRegionEntryStub, targetRegionId, targetRegionName, controllingFactionId, isVehicle, vehicleInfo, npcs } }`
 - 400/404/500: `{ success: false, error }`
 
 ## PUT /api/stubs/:id
 
 Request:
-- Body: `name` (required), `description` (required), `relativeLevel?` (number), `controllingFactionId?` (string or null)
+- Body:
+  - `name` (required)
+  - `description` (required)
+  - `relativeLevel?` (number)
+  - `controllingFactionId?` (string or null)
+  - `isVehicle?` (boolean)
+  - `vehicleInfo?` (object or null)
 
 Responses:
-- 200: `{ success: true, stub: { id, name, description, relativeLevel, isRegionEntryStub, targetRegionId, targetRegionName, controllingFactionId } }`
+- 200: `{ success: true, stub: { id, name, description, relativeLevel, isRegionEntryStub, targetRegionId, targetRegionName, controllingFactionId, isVehicle, vehicleInfo } }`
 - 400/404/500: `{ success: false, error }`
 
 Notes:
 - `controllingFactionId` must reference an existing faction id or be `null` to clear.
+- Vehicle edits follow the same `isVehicle` + `vehicleInfo` validation semantics as location/region updates.
+- For region-entry stubs, successful vehicle edits are mirrored into pending-region stub records so expansion uses the updated vehicle metadata.
 
 ## DELETE /api/stubs/:id
 

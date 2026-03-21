@@ -43,7 +43,7 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
 - Identity and descriptors: `id`, `name`, `aliases`, `description`, `shortDescription`, `imageId`, `class`, `race`, `gender`, `personalityType`, `personalityTraits`, `personalityNotes`, `resistances`, `vulnerabilities`.
 - Factions: `factionId`.
 - State: `level`, `experience`, `health`, `maxHealth`, `healthAttribute`, `isDead`, `isDisabled`, `inCombat`, `isHostile`, `corpseCountdown`, `elapsedTime`, `createdAt`, `lastUpdated`.
-- Locations: `currentLocation`, `location`, `previousLocationId`, `previousLocation`, `currentLocationObject`, `lastVisitedTime`.
+- Locations: `currentLocation`, `location`, `currentVehicle`, `previousLocationId`, `previousLocation`, `currentLocationObject`, `lastVisitedTime`.
 - Social/party: `partyMembers`, `isInPlayerParty`, `partyMembershipChangedThisTurn`, `partyMembersAddedThisTurn`, `partyMembersRemovedThisTurn`.
 - Quests/goals: `goals`, `characterArc`, `currentQuests`, `completedQuests`.
 - Need bars/memory: `turnsSincePartyMemoryGeneration`, `importantMemories`.
@@ -130,6 +130,7 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
 - Gear and inventory are tightly coupled; equip/unequip flows update health and modifiers.
 - Need bar logic includes per-turn decay and magnitude-based adjustments.
 - `elapsedTime` is minute-canonical; setter validation requires non-negative integer minutes, and load paths normalize to integer minutes.
+- `currentVehicle` returns `null` unless the actor is currently in a vehicle location or vehicle region; when present it includes vehicle name/description, `location` (`<regionName>:<locationName>`), the full `vehicleInfo` object, plus destination and a formatted `timeToDestination` string (`X days, X hours, X minutes`, omitting larger zero units and appending `ago` when negative).
 - Unspent skill/attribute points are formula-derived at read time from current level + assigned stats/skills.
 - Party members are treated as off-location actors: joining party removes them from all location `npcIds` and clears `currentLocation`.
 - Party XP sharing now scales by each recipient's level instead of copying the source actor's already-scaled award.

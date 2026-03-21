@@ -174,6 +174,30 @@ module.exports = function registerApiRoutes(scope) {
             next();
         });
 
+        const isVehicleDebugEnabled = () => {
+            if (scope?.vehicleDebugEnabled === true) {
+                return true;
+            }
+            if (Globals?.debugVehicles === true) {
+                return true;
+            }
+            if (Globals?.cliTestModes instanceof Set) {
+                return Globals.cliTestModes.has('all') || Globals.cliTestModes.has('vehicles');
+            }
+            return false;
+        };
+
+        const logVehicleDebug = (message, payload = null) => {
+            if (!isVehicleDebugEnabled()) {
+                return;
+            }
+            if (payload === null || typeof payload === 'undefined') {
+                console.log(`[vehicle-debug] ${message}`);
+                return;
+            }
+            console.log(`[vehicle-debug] ${message}`, payload);
+        };
+
         function resolveChatCompletionSoundPath(rawValue) {
             if (rawValue === null || rawValue === false || typeof rawValue === 'undefined') {
                 return null;
@@ -1254,6 +1278,159 @@ module.exports = function registerApiRoutes(scope) {
             return lines.join('\n');
         }
 
+        function normalizeTravelProseVehicleField(value) {
+            if (typeof value !== 'string') {
+                return null;
+            }
+
+            const trimmed = value.trim();
+            if (!trimmed) {
+                return null;
+            }
+
+            const normalized = trimmed
+                .toLowerCase()
+                .replace(/\s+/g, ' ')
+                .replace(/[.]+$/g, '');
+            const emptySentinels = new Set([
+                'n/a',
+                'na',
+                'none',
+                'no',
+                'omit',
+                'null',
+                'not applicable',
+                'no vehicle'
+            ]);
+            if (emptySentinels.has(normalized)) {
+                return null;
+            }
+
+            return trimmed;
+        }
+
+        function normalizeTravelProseVehicleTravelTimeField(value) {
+            if (typeof value !== 'string') {
+                return null;
+            }
+
+            const trimmed = value.trim();
+            if (!trimmed) {
+                return null;
+            }
+
+            const normalized = trimmed
+                .toLowerCase()
+                .replace(/\s+/g, ' ')
+                .replace(/[.]+$/g, '');
+            const emptySentinels = new Set([
+                'n/a',
+                'na',
+                'none',
+                'no',
+                'omit',
+                'null',
+                'not applicable'
+            ]);
+            if (emptySentinels.has(normalized)) {
+                return null;
+            }
+
+            return trimmed;
+        }
+
+        function normalizeTravelProseDestinationField(value) {
+            if (typeof value !== 'string') {
+                return null;
+            }
+
+            const trimmed = value.trim();
+            if (!trimmed) {
+                return null;
+            }
+
+            const normalized = trimmed
+                .toLowerCase()
+                .replace(/\s+/g, ' ')
+                .replace(/[.]+$/g, '');
+            const emptySentinels = new Set([
+                'n/a',
+                'na',
+                'none',
+                'no',
+                'omit',
+                'null',
+                'not applicable'
+            ]);
+            if (emptySentinels.has(normalized)) {
+                return null;
+            }
+
+            return trimmed;
+        }
+
+        function getDirectChildElementByTagName(parentNode, tagName) {
+            if (!parentNode || typeof tagName !== 'string' || !tagName.trim()) {
+                return null;
+            }
+
+            const targetTag = tagName.trim().toLowerCase();
+            const childNodes = parentNode.childNodes || [];
+            for (let index = 0; index < childNodes.length; index += 1) {
+                const node = childNodes[index];
+                if (!node || node.nodeType !== 1) {
+                    continue;
+                }
+                const nodeName = typeof node.nodeName === 'string'
+                    ? node.nodeName.toLowerCase()
+                    : '';
+                if (nodeName === targetTag) {
+                    return node;
+                }
+            }
+
+            return null;
+        }
+
+        function getDirectChildTextByTagName(parentNode, tagName) {
+            const childNode = getDirectChildElementByTagName(parentNode, tagName);
+            if (!childNode) {
+                return '';
+            }
+            return typeof childNode.textContent === 'string'
+                ? childNode.textContent
+                : '';
+        }
+
+        function parseStructuredTravelProseDestination(destinationNode, { fieldLabel = 'travelProse destination' } = {}) {
+            if (!destinationNode) {
+                return null;
+            }
+
+            const locationNode = getDirectChildElementByTagName(destinationNode, 'location');
+            const regionNode = getDirectChildElementByTagName(destinationNode, 'region');
+            if (!locationNode && !regionNode) {
+                const destinationText = normalizeTravelProseDestinationField(destinationNode.textContent || '');
+                if (destinationText) {
+                    throw new Error(`${fieldLabel} must use <location> and <region> child tags.`);
+                }
+                return null;
+            }
+
+            const locationText = normalizeTravelProseDestinationField(locationNode ? (locationNode.textContent || '') : '');
+            const regionText = normalizeTravelProseDestinationField(regionNode ? (regionNode.textContent || '') : '');
+            if (!locationText && !regionText) {
+                return null;
+            }
+            if (regionText && !locationText) {
+                return `${regionText}|`;
+            }
+            if (!regionText && locationText) {
+                return locationText;
+            }
+            return `${regionText}|${locationText}`;
+        }
+
         function parsePlayerActionProseFromXml(rawResponse, { logJson = false } = {}) {
             if (typeof rawResponse !== 'string') {
                 throw new TypeError('Player action response must be a string.');
@@ -1278,14 +1455,44 @@ module.exports = function registerApiRoutes(scope) {
             }
             const travelNode = doc.getElementsByTagName('travelProse')[0] || null;
             if (travelNode) {
-                const destinationTagNode = travelNode.getElementsByTagName('destination')[0] || null;
-                const destinationName = destinationTagNode ? (destinationTagNode.textContent || '').trim() : '';
-                if (!destinationName) {
-                    throw new Error('travelProse requires a destination.');
+                const destinationNode = getDirectChildElementByTagName(travelNode, 'destination');
+                const destinationName = parseStructuredTravelProseDestination(destinationNode, {
+                    fieldLabel: 'travelProse player destination'
+                });
+                const vehicleNode = getDirectChildElementByTagName(travelNode, 'vehicle');
+                const vehicleNameNode = vehicleNode
+                    ? getDirectChildElementByTagName(vehicleNode, 'name')
+                    : null;
+                const travelTimeNode = vehicleNode
+                    ? getDirectChildElementByTagName(vehicleNode, 'travelTime')
+                    : null;
+                const vehicleDestinationNode = vehicleNode
+                    ? getDirectChildElementByTagName(vehicleNode, 'destination')
+                    : null;
+                const vehicleName = normalizeTravelProseVehicleField(vehicleNameNode ? (vehicleNameNode.textContent || '') : '');
+                const vehicleTravelTimeCandidate = normalizeTravelProseVehicleTravelTimeField(
+                    travelTimeNode ? (travelTimeNode.textContent || '') : ''
+                );
+                const vehicleDestinationCandidate = parseStructuredTravelProseDestination(vehicleDestinationNode, {
+                    fieldLabel: 'travelProse vehicle destination'
+                });
+                if (!vehicleName && vehicleNode && !vehicleNameNode) {
+                    const legacyVehicleName = normalizeTravelProseVehicleField(vehicleNode.textContent || '');
+                    if (legacyVehicleName) {
+                        throw new Error('travelProse vehicle entries must place vehicle names inside <vehicle><name>...</name></vehicle>.');
+                    }
                 }
-                const originNode = travelNode.getElementsByTagName('originProse')[0] || null;
-                const betweenNode = travelNode.getElementsByTagName('betweenProse')[0] || null;
-                const destinationProseNode = travelNode.getElementsByTagName('destinationProse')[0] || null;
+                if (!vehicleName && vehicleTravelTimeCandidate) {
+                    throw new Error('travelProse vehicle travelTime requires a vehicle name.');
+                }
+                if (!vehicleName && vehicleDestinationCandidate) {
+                    throw new Error('travelProse vehicle destination requires a vehicle name.');
+                }
+                const vehicleTravelTime = vehicleName ? vehicleTravelTimeCandidate : null;
+                const vehicleDestination = vehicleName ? vehicleDestinationCandidate : null;
+                const originNode = getDirectChildElementByTagName(travelNode, 'originProse');
+                const betweenNode = getDirectChildElementByTagName(travelNode, 'betweenProse');
+                const destinationProseNode = getDirectChildElementByTagName(travelNode, 'destinationProse');
                 const origin = originNode ? trimLeadingParagraphSpaces(originNode.textContent || '').trim() : '';
                 const between = betweenNode ? trimLeadingParagraphSpaces(betweenNode.textContent || '').trim() : '';
                 const destinationProse = destinationProseNode ? trimLeadingParagraphSpaces(destinationProseNode.textContent || '').trim() : '';
@@ -1296,7 +1503,11 @@ module.exports = function registerApiRoutes(scope) {
                 return {
                     prose: segments.join('\n\n').trim(),
                     travel: {
-                        destination: destinationName,
+                        vehicle: vehicleName || null,
+                        vehicleTravelTime: vehicleTravelTime || null,
+                        vehicleDestination: vehicleDestination || null,
+                        destination: destinationName || null,
+                        playerDestination: destinationName || null,
                         originProse: origin || null,
                         betweenProse: between || null,
                         destinationProse: destinationProse || null
@@ -2855,58 +3066,109 @@ module.exports = function registerApiRoutes(scope) {
             if (!raw) {
                 throw new Error('Travel prose destination is missing.');
             }
-            const parts = raw.split('|').map(part => part.trim()).filter(Boolean);
-            if (parts.length === 1) {
-                const location = resolveLocationByIdOrName(parts[0]);
+
+            const resolveSingleLocationDestination = async (locationName) => {
+                const normalizedLocationName = typeof locationName === 'string' ? locationName.trim() : '';
+                if (!normalizedLocationName) {
+                    throw new Error('Travel prose destination location is missing.');
+                }
+                const location = resolveLocationByIdOrName(normalizedLocationName);
                 if (!location) {
                     if (!allowCreate) {
-                        throw new Error(`Travel prose destination "${raw}" did not match a known location.`);
+                        throw new Error(`Travel prose destination "${normalizedLocationName}" did not match a known location.`);
                     }
                     if (!originLocation || typeof createLocationFromEvent !== 'function') {
-                        throw new Error(`Unable to create travel destination "${raw}".`);
+                        throw new Error(`Unable to create travel destination "${normalizedLocationName}".`);
                     }
                     const created = await createLocationFromEvent({
-                        name: parts[0],
+                        name: normalizedLocationName,
                         originLocation,
-                        descriptionHint: `Path leading to ${parts[0]}.`,
+                        descriptionHint: `Path leading to ${normalizedLocationName}.`,
                         expandStub: false
                     });
                     if (!created) {
-                        throw new Error(`Failed to create travel destination "${raw}".`);
+                        throw new Error(`Failed to create travel destination "${normalizedLocationName}".`);
                     }
                     return { location: created, region: null };
                 }
                 return { location, region: null };
+            };
+
+            const hasDestinationDelimiter = raw.includes('|');
+            if (!hasDestinationDelimiter) {
+                return resolveSingleLocationDestination(raw);
             }
-            if (parts.length === 2) {
-                const [regionName, locationName] = parts;
-                const region = typeof Region?.getByName === 'function' ? Region.getByName(regionName) : null;
-                if (!region) {
-                    throw new Error(`Travel prose destination region "${regionName}" not found.`);
-                }
-                const location = resolveLocationInRegionByName(region, locationName);
-                if (!location) {
-                    if (!allowCreate) {
-                        throw new Error(`Travel prose destination location "${locationName}" not found in region "${regionName}".`);
-                    }
-                    if (!originLocation || typeof createLocationFromEvent !== 'function') {
-                        throw new Error(`Unable to create travel destination "${locationName}" in region "${regionName}".`);
-                    }
-                    const created = await createLocationFromEvent({
-                        name: locationName,
-                        originLocation,
-                        descriptionHint: `Path leading to ${locationName}.`,
-                        expandStub: false,
-                        targetRegionId: region.id
-                    });
-                    if (!created) {
-                        throw new Error(`Failed to create travel destination "${locationName}" in region "${regionName}".`);
-                    }
-                    return { location: created, region };
-                }
-                return { location, region };
+
+            const destinationParts = raw.split('|');
+            if (destinationParts.length !== 2) {
+                throw new Error(`Travel prose destination "${raw}" must be "location", "region|location", or "region|".`);
             }
-            throw new Error(`Travel prose destination "${raw}" must be "location" or "region|location".`);
+
+            const regionName = destinationParts[0].trim();
+            const locationName = destinationParts[1].trim();
+            if (!regionName && !locationName) {
+                throw new Error('Travel prose destination is missing location and region.');
+            }
+            if (!regionName) {
+                return resolveSingleLocationDestination(locationName);
+            }
+
+            const region = typeof Region?.getByName === 'function' ? Region.getByName(regionName) : null;
+            if (!region) {
+                throw new Error(`Travel prose destination region "${regionName}" not found.`);
+            }
+
+            if (!locationName) {
+                let fallbackLocation = null;
+                const entranceLocationId = typeof region.entranceLocationId === 'string'
+                    ? region.entranceLocationId.trim()
+                    : '';
+                if (entranceLocationId) {
+                    fallbackLocation = resolveLocationByIdOrName(entranceLocationId);
+                }
+                if (!fallbackLocation && Array.isArray(region.locationIds)) {
+                    for (const locationId of region.locationIds) {
+                        if (typeof locationId !== 'string') {
+                            continue;
+                        }
+                        const candidate = resolveLocationByIdOrName(locationId);
+                        if (!candidate) {
+                            continue;
+                        }
+                        fallbackLocation = candidate;
+                        break;
+                    }
+                }
+                if (!fallbackLocation) {
+                    throw new Error(
+                        `Travel prose destination region "${regionName}" is missing a resolvable location; `
+                        + 'include <destination><location>...</location></destination> in travel prose.'
+                    );
+                }
+                return { location: fallbackLocation, region };
+            }
+
+            const location = resolveLocationInRegionByName(region, locationName);
+            if (!location) {
+                if (!allowCreate) {
+                    throw new Error(`Travel prose destination location "${locationName}" not found in region "${regionName}".`);
+                }
+                if (!originLocation || typeof createLocationFromEvent !== 'function') {
+                    throw new Error(`Unable to create travel destination "${locationName}" in region "${regionName}".`);
+                }
+                const created = await createLocationFromEvent({
+                    name: locationName,
+                    originLocation,
+                    descriptionHint: `Path leading to ${locationName}.`,
+                    expandStub: false,
+                    targetRegionId: region.id
+                });
+                if (!created) {
+                    throw new Error(`Failed to create travel destination "${locationName}" in region "${regionName}".`);
+                }
+                return { location: created, region };
+            }
+            return { location, region };
         };
 
         function extractRandomEventSeeds(responseText) {
@@ -3334,6 +3596,35 @@ module.exports = function registerApiRoutes(scope) {
             return seeds;
         }
 
+        const inFlightRandomEventSeedJobs = new Map();
+
+        function getRandomEventSeedJobKey({ mode, locationId = null, regionId = null } = {}) {
+            if (mode === 'location') {
+                return `location:${locationId || 'unknown'}`;
+            }
+            if (mode === 'region') {
+                return `region:${regionId || 'unknown'}`;
+            }
+            throw new Error(`Unsupported random event seed mode '${mode}'.`);
+        }
+
+        function enqueueRandomEventSeedJob({ mode, locationId = null, regionId = null, run }) {
+            if (typeof run !== 'function') {
+                throw new Error('enqueueRandomEventSeedJob requires a run function.');
+            }
+            const key = getRandomEventSeedJobKey({ mode, locationId, regionId });
+            const existing = inFlightRandomEventSeedJobs.get(key);
+            if (existing) {
+                return existing;
+            }
+
+            const job = (async () => run())().finally(() => {
+                inFlightRandomEventSeedJobs.delete(key);
+            });
+            inFlightRandomEventSeedJobs.set(key, job);
+            return job;
+        }
+
         async function ensureRandomEventSeedsForArea(location) {
             if (!location || typeof location !== 'object') {
                 return;
@@ -3364,24 +3655,42 @@ module.exports = function registerApiRoutes(scope) {
                 return;
             }
 
-            const baseContext = await prepareBasePromptContext({ locationOverride: location });
+            let baseContext = null;
+            const getBaseContext = async () => {
+                if (!baseContext) {
+                    baseContext = await prepareBasePromptContext({ locationOverride: location });
+                }
+                return baseContext;
+            };
 
             if (needsLocationSeeds) {
-                const locationSeeds = await generateRandomEventSeeds({
+                const locationSeeds = await enqueueRandomEventSeedJob({
                     mode: 'location',
-                    locationOverride: location,
-                    baseContext
+                    locationId: location.id,
+                    run: async () => generateRandomEventSeeds({
+                        mode: 'location',
+                        locationOverride: location,
+                        baseContext: await getBaseContext()
+                    })
                 });
                 location.randomEvents = locationSeeds;
             }
 
             if (needsRegionSeeds && region) {
-                const regionSeeds = await generateRandomEventSeeds({
+                void enqueueRandomEventSeedJob({
                     mode: 'region',
-                    locationOverride: location,
-                    baseContext
+                    regionId: region.id,
+                    run: async () => generateRandomEventSeeds({
+                        mode: 'region',
+                        locationOverride: location,
+                        baseContext: await getBaseContext()
+                    })
+                }).then((regionSeeds) => {
+                    region.randomEvents = regionSeeds;
+                }).catch((seedError) => {
+                    console.error('Failed to generate random event seeds for region.');
+                    console.error(seedError?.stack || seedError);
                 });
-                region.randomEvents = regionSeeds;
             }
         }
 
@@ -5414,6 +5723,40 @@ module.exports = function registerApiRoutes(scope) {
             };
         }
 
+        function recordVehicleMovementEventEntry({
+            vehicleName = null,
+            vehicleIcon = null,
+            fromLocationName = null,
+            toLocationName = null,
+            timestamp = null,
+            parentId = null,
+            locationId = null
+        } = {}, collector = null) {
+            const toName = typeof toLocationName === 'string' ? toLocationName.trim() : '';
+            if (!toName) {
+                throw new Error('recordVehicleMovementEventEntry requires toLocationName.');
+            }
+            const fromName = typeof fromLocationName === 'string' ? fromLocationName.trim() : '';
+            const icon = typeof vehicleIcon === 'string' && vehicleIcon.trim()
+                ? vehicleIcon.trim()
+                : '🚗';
+            const resolvedVehicleName = typeof vehicleName === 'string' && vehicleName.trim()
+                ? vehicleName.trim()
+                : 'Vehicle';
+
+            const movementText = fromName && fromName !== toName
+                ? `${resolvedVehicleName} moved from ${fromName} to ${toName}.`
+                : `${resolvedVehicleName} moved to ${toName}.`;
+
+            return recordEventSummaryEntry({
+                label: '📋 Events – Vehicle Movement',
+                events: [{ description: movementText, icon }],
+                timestamp,
+                parentId,
+                locationId
+            }, collector);
+        }
+
         function recordPlausibilityEntry({ data, timestamp = null, parentId = null, locationId = null } = {}, collector = null) {
             if (!Array.isArray(chatHistory)) {
                 return null;
@@ -5692,6 +6035,335 @@ module.exports = function registerApiRoutes(scope) {
             return merged;
         };
 
+        const findLocationExitById = (exitId) => {
+            const normalizedExitId = typeof exitId === 'string' ? exitId.trim() : '';
+            if (!normalizedExitId) {
+                return null;
+            }
+
+            if (!(gameLocations instanceof Map)) {
+                return null;
+            }
+
+            for (const sourceLocation of gameLocations.values()) {
+                if (!sourceLocation
+                    || typeof sourceLocation.getAvailableDirections !== 'function'
+                    || typeof sourceLocation.getExit !== 'function') {
+                    continue;
+                }
+
+                const directions = sourceLocation.getAvailableDirections();
+                for (const direction of directions) {
+                    const exit = sourceLocation.getExit(direction);
+                    if (!exit || exit.id !== normalizedExitId) {
+                        continue;
+                    }
+                    return { sourceLocation, direction, exit };
+                }
+            }
+
+            return null;
+        };
+
+        const resolveRegionIdForLocation = (locationRecord) => {
+            if (!locationRecord || typeof locationRecord !== 'object') {
+                return null;
+            }
+
+            if (typeof findRegionByLocationId === 'function' && typeof locationRecord.id === 'string') {
+                const resolvedRegion = findRegionByLocationId(locationRecord.id);
+                if (resolvedRegion?.id) {
+                    return resolvedRegion.id;
+                }
+            }
+
+            if (typeof locationRecord.regionId === 'string' && locationRecord.regionId.trim()) {
+                return locationRecord.regionId.trim();
+            }
+
+            const stubMetadata = locationRecord.stubMetadata || null;
+            if (stubMetadata && typeof stubMetadata === 'object') {
+                if (typeof stubMetadata.regionId === 'string' && stubMetadata.regionId.trim()) {
+                    return stubMetadata.regionId.trim();
+                }
+                if (typeof stubMetadata.targetRegionId === 'string' && stubMetadata.targetRegionId.trim()) {
+                    return stubMetadata.targetRegionId.trim();
+                }
+            }
+
+            return null;
+        };
+
+        const ensureTravelProseDestinationUnstubbed = async (destinationLocation, { travelContext = null } = {}) => {
+            let resolvedDestination = destinationLocation || null;
+            if (!resolvedDestination) {
+                throw new Error('Travel prose destination could not be resolved.');
+            }
+
+            if (resolvedDestination.isStub && resolvedDestination.stubMetadata?.isRegionEntryStub) {
+                if (typeof expandRegionEntryStub !== 'function') {
+                    throw new Error('Region entry stub expansion is unavailable.');
+                }
+                const expanded = await expandRegionEntryStub(resolvedDestination);
+                if (!expanded) {
+                    throw new Error('Region entry expansion returned no location.');
+                }
+                resolvedDestination = expanded;
+                if (travelContext) {
+                    travelContext.destinationLocation = expanded;
+                }
+            }
+
+            if (resolvedDestination.isStub && !resolvedDestination.stubMetadata?.isRegionEntryStub) {
+                if (typeof scheduleStubExpansion !== 'function') {
+                    throw new Error('Location stub expansion is unavailable.');
+                }
+                await scheduleStubExpansion(resolvedDestination);
+                const expandedLocation = (gameLocations instanceof Map)
+                    ? gameLocations.get(resolvedDestination.id) || null
+                    : null;
+                if (!expandedLocation) {
+                    throw new Error(`Location stub expansion did not produce location "${resolvedDestination.id}".`);
+                }
+                if (expandedLocation.isStub) {
+                    throw new Error(`Location stub "${resolvedDestination.id}" is still stubbed after expansion.`);
+                }
+                resolvedDestination = expandedLocation;
+                if (travelContext) {
+                    travelContext.destinationLocation = expandedLocation;
+                }
+            }
+
+            return resolvedDestination;
+        };
+
+        const resolveTravelProseVehicleTarget = (vehicleName) => {
+            const normalizedVehicleName = typeof vehicleName === 'string' ? vehicleName.trim() : '';
+            if (!normalizedVehicleName) {
+                return null;
+            }
+
+            const matchedLocation = typeof Location?.findByName === 'function'
+                ? Location.findByName(normalizedVehicleName)
+                : null;
+            const locationVehicle = matchedLocation && matchedLocation.isVehicle ? matchedLocation : null;
+
+            const matchedRegion = typeof Region?.getByName === 'function'
+                ? Region.getByName(normalizedVehicleName)
+                : null;
+            const regionVehicle = matchedRegion && matchedRegion.isVehicle ? matchedRegion : null;
+
+            if (locationVehicle && regionVehicle) {
+                throw new Error(
+                    `Travel prose vehicle "${normalizedVehicleName}" is ambiguous between vehicle location `
+                    + `"${locationVehicle.name || locationVehicle.id}" and vehicle region "${regionVehicle.name || regionVehicle.id}".`
+                );
+            }
+
+            if (!locationVehicle && !regionVehicle) {
+                throw new Error(`Travel prose vehicle "${normalizedVehicleName}" did not resolve to a vehicle location or region.`);
+            }
+
+            if (locationVehicle) {
+                return {
+                    kind: 'location',
+                    label: locationVehicle.name || locationVehicle.id || normalizedVehicleName,
+                    getVehicleInfo: () => locationVehicle.vehicleInfo,
+                    setVehicleInfo: (vehicleInfoData) => {
+                        locationVehicle.vehicleInfo = vehicleInfoData;
+                        if (locationVehicle.isStub) {
+                            const stubMetadata = locationVehicle.stubMetadata || {};
+                            stubMetadata.vehicleInfo = vehicleInfoData;
+                            locationVehicle.stubMetadata = stubMetadata;
+                        }
+                    },
+                    resolveSourceLocation: () => locationVehicle
+                };
+            }
+
+            const vehicleRegion = regionVehicle;
+            return {
+                kind: 'region',
+                label: vehicleRegion.name || vehicleRegion.id || normalizedVehicleName,
+                getVehicleInfo: () => vehicleRegion.vehicleInfo,
+                setVehicleInfo: (vehicleInfoData) => {
+                    vehicleRegion.vehicleInfo = vehicleInfoData;
+                },
+                resolveSourceLocation: () => {
+                    const playerLocationId = typeof currentPlayer?.currentLocation === 'string'
+                        ? currentPlayer.currentLocation.trim()
+                        : '';
+                    if (playerLocationId && gameLocations instanceof Map && gameLocations.has(playerLocationId)) {
+                        const playerLocation = gameLocations.get(playerLocationId);
+                        if (resolveRegionIdForLocation(playerLocation) === vehicleRegion.id) {
+                            return playerLocation;
+                        }
+                    }
+
+                    const entranceLocationId = typeof vehicleRegion.entranceLocationId === 'string'
+                        ? vehicleRegion.entranceLocationId.trim()
+                        : '';
+                    if (entranceLocationId && gameLocations instanceof Map && gameLocations.has(entranceLocationId)) {
+                        return gameLocations.get(entranceLocationId);
+                    }
+
+                    const regionLocationIds = Array.isArray(vehicleRegion.locationIds) ? vehicleRegion.locationIds : [];
+                    for (const locationId of regionLocationIds) {
+                        if (typeof locationId !== 'string') {
+                            continue;
+                        }
+                        const normalizedLocationId = locationId.trim();
+                        if (!normalizedLocationId || !(gameLocations instanceof Map) || !gameLocations.has(normalizedLocationId)) {
+                            continue;
+                        }
+                        return gameLocations.get(normalizedLocationId);
+                    }
+
+                    throw new Error(`Vehicle region "${vehicleRegion.name || vehicleRegion.id}" has no resolved source location.`);
+                }
+            };
+        };
+
+        const moveVehicleForTravelProse = async ({ vehicleName, destinationLocation }) => {
+            const vehicleTarget = resolveTravelProseVehicleTarget(vehicleName);
+            if (!vehicleTarget) {
+                throw new Error('Vehicle target is required for travel prose vehicle movement.');
+            }
+
+            const rawVehicleInfo = vehicleTarget.getVehicleInfo();
+            if (!rawVehicleInfo || typeof rawVehicleInfo !== 'object' || Array.isArray(rawVehicleInfo)) {
+                throw new Error(`Vehicle "${vehicleTarget.label}" is missing vehicleInfo.`);
+            }
+
+            let normalizedVehicleInfo;
+            try {
+                normalizedVehicleInfo = new VehicleInfo(rawVehicleInfo);
+            } catch (error) {
+                throw new Error(`Vehicle "${vehicleTarget.label}" has invalid vehicleInfo: ${error?.message || error}`);
+            }
+
+            const existingVehicleExitId = typeof normalizedVehicleInfo.vehicleExitId === 'string'
+                ? normalizedVehicleInfo.vehicleExitId.trim()
+                : '';
+            const existingExitRecord = existingVehicleExitId
+                ? findLocationExitById(existingVehicleExitId)
+                : null;
+            let sourceLocation = existingExitRecord?.sourceLocation || null;
+            let vehicleExit = existingExitRecord?.exit || null;
+            if (!sourceLocation) {
+                sourceLocation = vehicleTarget.resolveSourceLocation();
+            }
+            if (!sourceLocation) {
+                throw new Error(`Vehicle "${vehicleTarget.label}" source location could not be resolved.`);
+            }
+
+            const destinationId = requireLocationId(destinationLocation?.id, 'travel prose vehicle destination');
+            const sourceRegionId = resolveRegionIdForLocation(sourceLocation);
+            const destinationRegionId = resolveRegionIdForLocation(destinationLocation);
+            const forwardDestinationRegion = sourceRegionId && destinationRegionId && sourceRegionId !== destinationRegionId
+                ? destinationRegionId
+                : null;
+            const icon = typeof normalizedVehicleInfo.icon === 'string' && normalizedVehicleInfo.icon.trim()
+                ? normalizedVehicleInfo.icon.trim()
+                : '🚗';
+            let previousDestinationId = '';
+            let previousDestinationName = null;
+            let moved = false;
+
+            if (vehicleExit) {
+                previousDestinationId = typeof vehicleExit.destination === 'string'
+                    ? vehicleExit.destination.trim()
+                    : '';
+                const previousDestinationLocation = previousDestinationId
+                    && gameLocations instanceof Map
+                    && gameLocations.has(previousDestinationId)
+                    ? gameLocations.get(previousDestinationId)
+                    : null;
+                previousDestinationName = previousDestinationLocation?.name || null;
+
+                if (vehicleExit.destination !== destinationId) {
+                    vehicleExit.destination = destinationId;
+                    moved = true;
+                }
+                if (vehicleExit.isVehicle !== true) {
+                    vehicleExit.isVehicle = true;
+                }
+
+                if (previousDestinationId && previousDestinationId !== destinationId) {
+                    if (previousDestinationLocation
+                        && typeof previousDestinationLocation.getAvailableDirections === 'function'
+                        && typeof previousDestinationLocation.getExit === 'function'
+                        && typeof previousDestinationLocation.removeExit === 'function') {
+                        for (const direction of previousDestinationLocation.getAvailableDirections()) {
+                            const reverseExit = previousDestinationLocation.getExit(direction);
+                            if (!reverseExit) {
+                                continue;
+                            }
+                            if (reverseExit.destination !== sourceLocation.id) {
+                                continue;
+                            }
+                            if (reverseExit.isVehicle !== true) {
+                                continue;
+                            }
+                            previousDestinationLocation.removeExit(direction);
+                            if (reverseExit.id && gameLocationExits instanceof Map) {
+                                gameLocationExits.delete(reverseExit.id);
+                            }
+                        }
+                    }
+                }
+            } else {
+                if (typeof ensureExitConnection !== 'function') {
+                    throw new Error('ensureExitConnection is unavailable for travel prose vehicle movement.');
+                }
+                moved = true;
+                vehicleExit = ensureExitConnection(sourceLocation, destinationLocation, {
+                    description: vehicleTarget.label,
+                    bidirectional: true,
+                    destinationRegion: forwardDestinationRegion,
+                    isVehicle: true,
+                    vehicleType: null
+                });
+                if (!vehicleExit) {
+                    throw new Error(`Failed to create a vehicle exit for "${vehicleTarget.label}".`);
+                }
+            }
+
+            if (typeof ensureExitConnection === 'function') {
+                const reverseDestinationRegion = sourceRegionId && destinationRegionId && sourceRegionId !== destinationRegionId
+                    ? sourceRegionId
+                    : null;
+                ensureExitConnection(destinationLocation, sourceLocation, {
+                    description: sourceLocation.name || vehicleTarget.label,
+                    bidirectional: false,
+                    destinationRegion: reverseDestinationRegion,
+                    isVehicle: true,
+                    vehicleType: null
+                });
+            }
+
+            normalizedVehicleInfo.vehicleExitId = vehicleExit.id || null;
+            if (normalizedVehicleInfo.destinations.length === 0
+                || normalizedVehicleInfo.destinations.includes(destinationId)) {
+                normalizedVehicleInfo.currentDestination = destinationId;
+            }
+            if (moved && normalizedVehicleInfo.currentDestination === destinationId) {
+                const departureTime = Number.isFinite(Globals?.elapsedTime) ? Globals.elapsedTime : null;
+                normalizedVehicleInfo.departureTime = departureTime;
+            }
+            vehicleTarget.setVehicleInfo(normalizedVehicleInfo.toJSON());
+
+            return {
+                moved,
+                vehicleName: vehicleTarget.label,
+                vehicleIcon: icon,
+                fromLocationId: previousDestinationId || null,
+                fromLocationName: previousDestinationName,
+                toLocationId: destinationId,
+                toLocationName: destinationLocation?.name || destinationId
+            };
+        };
+
         async function runTravelProseEventChecks({
             travelProsePayload,
             location,
@@ -5712,6 +6384,7 @@ module.exports = function registerApiRoutes(scope) {
                     destinationEventResult: null,
                     originEventLocationName: null,
                     destinationEventLocationName: null,
+                    vehicleMovement: null,
                     location,
                     destinationLocation: null,
                     traveledToLocationId
@@ -5721,13 +6394,149 @@ module.exports = function registerApiRoutes(scope) {
             const originProse = typeof travelProsePayload.originProse === 'string'
                 ? travelProsePayload.originProse.trim()
                 : '';
+            const betweenProse = typeof travelProsePayload.betweenProse === 'string'
+                ? travelProsePayload.betweenProse.trim()
+                : '';
             const destinationProse = typeof travelProsePayload.destinationProse === 'string'
                 ? travelProsePayload.destinationProse.trim()
                 : '';
-            const suppressOriginTimeAdvance = Boolean(destinationProse);
+            const combinedProse = [originProse, betweenProse, destinationProse]
+                .filter(Boolean)
+                .join('\n\n')
+                .trim();
+            const travelVehicleName = normalizeTravelProseVehicleField(travelProsePayload.vehicle || '');
+            const requestedVehicleDestinationText = normalizeTravelProseDestinationField(travelProsePayload.vehicleDestination || '');
+            const requestedPlayerDestinationText = normalizeTravelProseDestinationField(
+                typeof travelProsePayload.playerDestination === 'string'
+                    ? travelProsePayload.playerDestination
+                    : (travelProsePayload.destination || '')
+            );
+            const effectiveVehicleDestinationText = travelVehicleName
+                ? (requestedVehicleDestinationText || requestedPlayerDestinationText || null)
+                : null;
+
+            let vehicleCurrentDestinationId = '';
+            let vehicleCurrentDestinationName = '';
+            let vehicleSourceLocationForDestinationResolution = null;
+            if (travelVehicleName) {
+                const vehicleTarget = resolveTravelProseVehicleTarget(travelVehicleName);
+                const rawVehicleInfo = vehicleTarget?.getVehicleInfo ? vehicleTarget.getVehicleInfo() : null;
+                if (!rawVehicleInfo || typeof rawVehicleInfo !== 'object' || Array.isArray(rawVehicleInfo)) {
+                    throw new Error(`Vehicle "${travelVehicleName}" is missing vehicleInfo.`);
+                }
+                const normalizedVehicleInfo = new VehicleInfo(rawVehicleInfo);
+                const vehicleExitId = typeof normalizedVehicleInfo.vehicleExitId === 'string'
+                    ? normalizedVehicleInfo.vehicleExitId.trim()
+                    : '';
+                const vehicleExitRecord = vehicleExitId
+                    ? findLocationExitById(vehicleExitId)
+                    : null;
+                let resolvedVehicleSourceLocation = vehicleExitRecord?.sourceLocation || null;
+                if (!resolvedVehicleSourceLocation) {
+                    resolvedVehicleSourceLocation = vehicleTarget.resolveSourceLocation();
+                }
+                if (!resolvedVehicleSourceLocation) {
+                    throw new Error(`Vehicle "${travelVehicleName}" source location could not be resolved.`);
+                }
+                vehicleSourceLocationForDestinationResolution = resolvedVehicleSourceLocation;
+                const resolvedVehicleDestinationId = typeof vehicleExitRecord?.exit?.destination === 'string'
+                    ? vehicleExitRecord.exit.destination.trim()
+                    : '';
+                if (resolvedVehicleDestinationId) {
+                    vehicleCurrentDestinationId = resolvedVehicleDestinationId;
+                    const resolvedVehicleDestinationLocation = (gameLocations instanceof Map) && gameLocations.has(resolvedVehicleDestinationId)
+                        ? gameLocations.get(resolvedVehicleDestinationId)
+                        : null;
+                    vehicleCurrentDestinationName = typeof resolvedVehicleDestinationLocation?.name === 'string'
+                        ? resolvedVehicleDestinationLocation.name
+                        : '';
+                }
+            }
+
+            const normalizeDestinationComparisonKey = (value) => {
+                if (typeof value !== 'string') {
+                    return '';
+                }
+                return value
+                    .trim()
+                    .toLowerCase()
+                    .replace(/\s*\|\s*/g, '|')
+                    .replace(/\s+/g, ' ');
+            };
+
+            const playerDestinationComparisonKey = normalizeDestinationComparisonKey(requestedPlayerDestinationText);
+            const vehicleDestinationComparisonKey = normalizeDestinationComparisonKey(effectiveVehicleDestinationText);
+            let playerDestinationMatchesVehicleDestination = false;
+            let resolvedPlayerDestinationId = '';
+            let resolvedVehicleDestinationId = '';
+            if (requestedPlayerDestinationText && effectiveVehicleDestinationText) {
+                if (playerDestinationComparisonKey
+                    && vehicleDestinationComparisonKey
+                    && playerDestinationComparisonKey === vehicleDestinationComparisonKey) {
+                    playerDestinationMatchesVehicleDestination = true;
+                }
+
+                try {
+                    const [resolvedPlayerDestination, resolvedVehicleDestination] = await Promise.all([
+                        resolveTravelProseDestination(requestedPlayerDestinationText, {
+                            allowCreate: false,
+                            originLocation: location
+                        }),
+                        resolveTravelProseDestination(effectiveVehicleDestinationText, {
+                            allowCreate: false,
+                            originLocation: location
+                        })
+                    ]);
+                    resolvedPlayerDestinationId = typeof resolvedPlayerDestination?.location?.id === 'string'
+                        ? resolvedPlayerDestination.location.id.trim()
+                        : '';
+                    resolvedVehicleDestinationId = typeof resolvedVehicleDestination?.location?.id === 'string'
+                        ? resolvedVehicleDestination.location.id.trim()
+                        : '';
+                    if (resolvedPlayerDestinationId
+                        && resolvedVehicleDestinationId
+                        && resolvedPlayerDestinationId === resolvedVehicleDestinationId) {
+                        playerDestinationMatchesVehicleDestination = true;
+                    }
+                } catch (_) {
+                    // Ignore destination resolution failures for match detection; exact-text matching still applies.
+                }
+            }
+
+            const matchedDestinationId = resolvedVehicleDestinationId || resolvedPlayerDestinationId;
+            const matchedDestinationComparisonKey = vehicleDestinationComparisonKey || playerDestinationComparisonKey;
+            let vehicleAlreadyAtMatchedDestination = false;
+            if (playerDestinationMatchesVehicleDestination) {
+                vehicleAlreadyAtMatchedDestination = Boolean(
+                    matchedDestinationId
+                    && vehicleCurrentDestinationId
+                    && matchedDestinationId === vehicleCurrentDestinationId
+                );
+                if (!vehicleAlreadyAtMatchedDestination) {
+                    const vehicleCurrentDestinationComparisonKey = normalizeDestinationComparisonKey(vehicleCurrentDestinationName);
+                    vehicleAlreadyAtMatchedDestination = Boolean(
+                        vehicleCurrentDestinationComparisonKey
+                        && matchedDestinationComparisonKey
+                        && vehicleCurrentDestinationComparisonKey === matchedDestinationComparisonKey
+                    );
+                }
+            }
+
+            const shouldIgnorePlayerDestination = Boolean(
+                requestedPlayerDestinationText
+                && playerDestinationMatchesVehicleDestination
+                && !vehicleAlreadyAtMatchedDestination
+            );
+            const effectivePlayerDestinationText = shouldIgnorePlayerDestination
+                ? null
+                : requestedPlayerDestinationText;
+            const shouldSplitEventChecks = Boolean(effectivePlayerDestinationText);
+            const suppressOriginTimeAdvance = shouldSplitEventChecks && Boolean(destinationProse);
 
             let destinationLocation = null;
-            let travelContext = null;
+            let vehicleMovement = null;
+            let vehicleMoved = false;
+            let playerMoved = false;
 
             const originEventLocationName = location?.name
                 || (typeof currentPlayer?.getCurrentLocationName === 'function'
@@ -5736,7 +6545,7 @@ module.exports = function registerApiRoutes(scope) {
                 || originLabelFallback;
 
             let originEventResult = null;
-            if (originProse) {
+            if (shouldSplitEventChecks && originProse) {
                 originEventResult = await Events.runEventChecks({
                     textToCheck: originProse,
                     actionText: (includePlayerActionForEventChecks && userInput)
@@ -5750,57 +6559,92 @@ module.exports = function registerApiRoutes(scope) {
             }
 
             try {
-                if (travelMetadataIsEventDriven && currentActionIsTravel) {
-                    if (typeof resolveTravelContext !== 'function') {
-                        throw new Error('Travel context resolver is unavailable.');
+                if (travelVehicleName && effectiveVehicleDestinationText) {
+                    const vehicleDestinationOriginLocation = vehicleSourceLocationForDestinationResolution || location;
+                    const resolvedVehicleDestination = await resolveTravelProseDestination(effectiveVehicleDestinationText, {
+                        allowCreate: true,
+                        originLocation: vehicleDestinationOriginLocation
+                    });
+                    let vehicleDestinationLocation = resolvedVehicleDestination.location;
+                    if (!vehicleDestinationLocation) {
+                        throw new Error('Travel prose vehicle destination could not be resolved.');
                     }
-                    travelContext = resolveTravelContext();
-                    destinationLocation = travelContext?.destinationLocation || null;
-                } else {
-                    if (typeof resolveTravelProseDestination !== 'function') {
-                        throw new Error('Travel prose destination resolver is unavailable.');
+                    vehicleDestinationLocation = await ensureTravelProseDestinationUnstubbed(vehicleDestinationLocation, {
+                        travelContext: null
+                    });
+                    const vehicleMoveResult = await moveVehicleForTravelProse({
+                        vehicleName: travelVehicleName,
+                        destinationLocation: vehicleDestinationLocation
+                    });
+                    if (vehicleMoveResult?.moved) {
+                        vehicleMovement = vehicleMoveResult;
+                        vehicleMoved = true;
                     }
-                    const resolvedDestination = await resolveTravelProseDestination(travelProsePayload.destination, {
+                }
+
+                if (shouldSplitEventChecks) {
+                    const resolvedDestination = await resolveTravelProseDestination(effectivePlayerDestinationText, {
                         allowCreate: true,
                         originLocation: location
                     });
                     destinationLocation = resolvedDestination.location;
-                }
-
-                if (!destinationLocation) {
-                    throw new Error('Travel prose destination could not be resolved.');
-                }
-
-                if (destinationLocation?.isStub && destinationLocation.stubMetadata?.isRegionEntryStub) {
-                    if (typeof expandRegionEntryStub !== 'function') {
-                        throw new Error('Region entry stub expansion is unavailable.');
+                    if (!destinationLocation) {
+                        throw new Error('Travel prose player destination could not be resolved.');
                     }
-                    const expanded = await expandRegionEntryStub(destinationLocation);
-                    if (!expanded) {
-                        throw new Error('Expansion returned no location.');
+
+                    destinationLocation = await ensureTravelProseDestinationUnstubbed(destinationLocation, {
+                        travelContext: null
+                    });
+
+                    if (currentPlayer && currentPlayer.currentLocation !== destinationLocation.id) {
+                        currentPlayer.setLocation(destinationLocation);
+                        location = destinationLocation;
+                        playerMoved = true;
+                    } else if (currentPlayer?.currentLocation && gameLocations instanceof Map) {
+                        location = gameLocations.get(currentPlayer.currentLocation) || location;
                     }
-                    destinationLocation = expanded;
-                    if (travelContext) {
-                        travelContext.destinationLocation = expanded;
-                    }
+                } else if (currentPlayer?.currentLocation && gameLocations instanceof Map) {
+                    location = gameLocations.get(currentPlayer.currentLocation) || location;
                 }
 
-                if (currentPlayer && destinationLocation && currentPlayer.currentLocation !== destinationLocation.id) {
-                    currentPlayer.setLocation(destinationLocation);
+                if (vehicleMoved || playerMoved) {
+                    Globals.processedMove = true;
+                    assertMovementGraphIntegrity({
+                        player: currentPlayer,
+                        context: 'travel prose movement'
+                    });
                 }
-
-                Globals.processedMove = true;
-                location = destinationLocation || location;
-                assertMovementGraphIntegrity({
-                    player: currentPlayer,
-                    context: 'travel prose movement'
-                });
             } catch (travelMoveError) {
                 throw new Error(`Failed to move for travel prose: ${travelMoveError.message || travelMoveError}`);
             }
 
+            if (!shouldSplitEventChecks) {
+                let combinedEventResult = null;
+                if (combinedProse) {
+                    combinedEventResult = await Events.runEventChecks({
+                        textToCheck: combinedProse,
+                        actionText: (includePlayerActionForEventChecks && userInput)
+                            ? userInput
+                            : null,
+                        stream,
+                        suppressMoveEvents: false
+                    });
+                }
+                return {
+                    eventResult: combinedEventResult,
+                    originEventResult: null,
+                    destinationEventResult: null,
+                    originEventLocationName: null,
+                    destinationEventLocationName: null,
+                    vehicleMovement,
+                    location,
+                    destinationLocation: null,
+                    traveledToLocationId
+                };
+            }
+
             const destinationEventLocationName = destinationLocation?.name
-                || travelProsePayload.destination
+                || effectivePlayerDestinationText
                 || destinationLabelFallback;
 
             let destinationEventResult = null;
@@ -5823,6 +6667,7 @@ module.exports = function registerApiRoutes(scope) {
                 destinationEventResult,
                 originEventLocationName,
                 destinationEventLocationName,
+                vehicleMovement,
                 location,
                 destinationLocation,
                 traveledToLocationId: destinationLocation?.id || traveledToLocationId
@@ -6133,6 +6978,7 @@ module.exports = function registerApiRoutes(scope) {
                 let destinationEventResult = null;
                 let originEventLocationName = null;
                 let destinationEventLocationName = null;
+                let vehicleMovement = null;
                 try {
                     if (travelProsePayload) {
                         const travelResult = await runTravelProseEventChecks({
@@ -6145,6 +6991,7 @@ module.exports = function registerApiRoutes(scope) {
                         destinationEventResult = travelResult.destinationEventResult;
                         originEventLocationName = travelResult.originEventLocationName;
                         destinationEventLocationName = travelResult.destinationEventLocationName;
+                        vehicleMovement = travelResult.vehicleMovement || null;
                         location = travelResult.location;
                     } else {
                         eventChecks = await Events.runEventChecks({
@@ -6172,6 +7019,17 @@ module.exports = function registerApiRoutes(scope) {
                 };
                 if (slopRemovalInfo) {
                     summary.slopRemoval = slopRemovalInfo;
+                }
+                if (vehicleMovement) {
+                    recordVehicleMovementEventEntry({
+                        vehicleName: vehicleMovement.vehicleName,
+                        vehicleIcon: vehicleMovement.vehicleIcon,
+                        fromLocationName: vehicleMovement.fromLocationName,
+                        toLocationName: vehicleMovement.toLocationName,
+                        timestamp: summary.timestamp,
+                        parentId: randomEventEntry?.id || null,
+                        locationId: randomEventLocationId
+                    }, entryCollector);
                 }
                 if (originEventResult?.html) {
                     summary.eventChecksOrigin = originEventResult.html;
@@ -6368,6 +7226,12 @@ module.exports = function registerApiRoutes(scope) {
             const regionEvents = resolvedRegion
                 ? (resolvedRegion.randomEvents || []).filter(event => typeof event === 'string' && event.trim())
                 : [];
+
+            if (resolvedRegion && regionEvents.length === 0) {
+                const regionLabel = resolvedRegion.name || resolvedRegion.id || '(unknown region)';
+                console.info(`Random events skipped: region "${regionLabel}" has no seeded events.`);
+                return null;
+            }
 
             const runLocationSeed = () => {
                 if (!locationEvents.length) {
@@ -11641,6 +12505,9 @@ module.exports = function registerApiRoutes(scope) {
                 const promptMetadataLabel = promptType === 'question'
                     ? 'question'
                     : (promptType === 'generic-prompt' ? 'generic_prompt' : 'player_action');
+                const usesActionXmlResponse = promptType === 'player-action'
+                    || promptType === 'creative-mode-action';
+                const shouldUseRepetitionBusterXml = usesActionXmlResponse && Boolean(Globals.config.repetition_buster);
                 const requestOptions = {
                     messages: finalMessages,
                     metadataLabel: promptMetadataLabel,
@@ -11650,7 +12517,7 @@ module.exports = function registerApiRoutes(scope) {
                     },
                     validateXML: false
                 };
-                if (promptType === 'player-action' && Globals.config.repetition_buster) {
+                if (shouldUseRepetitionBusterXml) {
                     requestOptions.requiredRegex = playerActionProseRegex;
                 }
 
@@ -11708,7 +12575,7 @@ module.exports = function registerApiRoutes(scope) {
                         });
                     }
 
-                    if (promptType === 'player-action' && Globals.config.repetition_buster) {
+                    if (shouldUseRepetitionBusterXml) {
                         const parsedProse = parsePlayerActionProseFromXml(aiResponse, { logJson: true });
                         aiResponse = parsedProse.prose;
                         travelProsePayload = parsedProse.travel;
@@ -11739,9 +12606,13 @@ module.exports = function registerApiRoutes(scope) {
                                         toolInvocations = [...toolInvocations, ...rerunLoopResult.toolInvocations];
                                     }
                                     if (typeof rerunResponse === 'string' && rerunResponse.trim()) {
-                                        const parsedProse = parsePlayerActionProseFromXml(rerunResponse, { logJson: true });
-                                        aiResponse = parsedProse.prose;
-                                        travelProsePayload = parsedProse.travel;
+                                        if (usesActionXmlResponse) {
+                                            const parsedProse = parsePlayerActionProseFromXml(rerunResponse, { logJson: true });
+                                            aiResponse = parsedProse.prose;
+                                            travelProsePayload = parsedProse.travel;
+                                        } else {
+                                            aiResponse = rerunResponse;
+                                        }
                                     }
                                 }
                             }
@@ -11929,6 +12800,7 @@ module.exports = function registerApiRoutes(scope) {
                     let destinationEventResult = null;
                     let originEventLocationName = null;
                     let destinationEventLocationName = null;
+                    let vehicleMovement = null;
                     let userInput = null;
                     if (isForcedEventAction) {
                         eventResult = forcedEventResult;
@@ -11963,6 +12835,7 @@ module.exports = function registerApiRoutes(scope) {
                                 destinationEventResult = travelResult.destinationEventResult;
                                 originEventLocationName = travelResult.originEventLocationName;
                                 destinationEventLocationName = travelResult.destinationEventLocationName;
+                                vehicleMovement = travelResult.vehicleMovement || null;
                                 location = travelResult.location;
                                 traveledToLocationId = travelResult.traveledToLocationId || traveledToLocationId;
                                 questResult = await Events.runQuestChecks();
@@ -11985,6 +12858,18 @@ module.exports = function registerApiRoutes(scope) {
                             console.warn('Failed to run event checks:', eventError.message);
                             console.debug(eventError);
                         }
+                    }
+
+                    if (vehicleMovement) {
+                        recordVehicleMovementEventEntry({
+                            vehicleName: vehicleMovement.vehicleName,
+                            vehicleIcon: vehicleMovement.vehicleIcon,
+                            fromLocationName: vehicleMovement.fromLocationName,
+                            toLocationName: vehicleMovement.toLocationName,
+                            timestamp: aiResponseEntry?.timestamp || new Date().toISOString(),
+                            parentId: aiResponseEntry?.id || null,
+                            locationId: aiResponseLocationId
+                        }, newChatEntries);
                     }
 
                     if (eventResult) {
@@ -14072,6 +14957,66 @@ module.exports = function registerApiRoutes(scope) {
             return payload;
         }
 
+        function isVehicleInTransit(vehicleInfo, { contextLabel = 'Vehicle' } = {}) {
+            if (!vehicleInfo || typeof vehicleInfo !== 'object' || Array.isArray(vehicleInfo)) {
+                return false;
+            }
+            let normalizedInfo = null;
+            try {
+                normalizedInfo = new VehicleInfo(vehicleInfo);
+            } catch (error) {
+                throw new Error(`${contextLabel} info is invalid: ${error?.message || error}`);
+            }
+            return Boolean(normalizedInfo.isUnderway && !normalizedInfo.hasArrived);
+        }
+
+        function shouldHideVehicleExitFromList({
+            exit = null,
+            destinationLocation = null,
+            destinationRegionId = null,
+            pendingRegion = null,
+            contextLabel = 'Vehicle exit'
+        } = {}) {
+            if (!exit || exit.isVehicle !== true) {
+                return false;
+            }
+
+            const destinationRegion = destinationRegionId && regions instanceof Map && regions.has(destinationRegionId)
+                ? regions.get(destinationRegionId)
+                : null;
+            const candidateInfos = [
+                {
+                    label: 'destination location vehicle',
+                    info: destinationLocation?.vehicleInfo
+                },
+                {
+                    label: 'destination region vehicle',
+                    info: destinationRegion?.vehicleInfo
+                },
+                {
+                    label: 'pending destination region vehicle',
+                    info: pendingRegion?.vehicleInfo
+                },
+                {
+                    label: 'destination stub vehicle',
+                    info: destinationLocation?.stubMetadata?.vehicleInfo
+                }
+            ];
+
+            for (const candidate of candidateInfos) {
+                if (!candidate || !candidate.info || typeof candidate.info !== 'object' || Array.isArray(candidate.info)) {
+                    continue;
+                }
+                if (isVehicleInTransit(candidate.info, {
+                    contextLabel: `${contextLabel} (${candidate.label})`
+                })) {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         function buildLocationResponse(location) {
             if (!location) {
                 return null;
@@ -14192,6 +15137,9 @@ module.exports = function registerApiRoutes(scope) {
                 locationData.isVehicle === true
                 || (locationData.vehicleInfo && typeof locationData.vehicleInfo === 'object' && !Array.isArray(locationData.vehicleInfo))
             );
+            const locationVehicleExitId = typeof locationData?.vehicleInfo?.vehicleExitId === 'string'
+                ? locationData.vehicleInfo.vehicleExitId.trim()
+                : '';
             const activeVehicleInfo = regionRepresentsVehicle
                 ? regionPayload?.vehicleInfo
                 : (locationRepresentsVehicle ? locationData.vehicleInfo : null);
@@ -14213,7 +15161,7 @@ module.exports = function registerApiRoutes(scope) {
             }
 
             if (locationData.exits) {
-                for (const exit of Object.values(locationData.exits)) {
+                for (const [direction, exit] of Object.entries(locationData.exits)) {
                     if (!exit) {
                         continue;
                     }
@@ -14251,15 +15199,99 @@ module.exports = function registerApiRoutes(scope) {
                             || destinationLocation.stubMetadata?.blueprintDescription
                             || null;
                     }
+                    const pendingStub = destinationRegionId ? pendingRegionStubs.get(destinationRegionId) : null;
+                    const destinationRegion = destinationRegionId && regions.has(destinationRegionId)
+                        ? regions.get(destinationRegionId)
+                        : null;
+                    const destinationStubMetadata = destinationLocation?.stubMetadata || null;
+                    const destinationLocationRepresentsVehicle = Boolean(
+                        destinationLocation
+                        && (
+                            destinationLocation.isVehicle === true
+                            || (destinationLocation.vehicleInfo && typeof destinationLocation.vehicleInfo === 'object' && !Array.isArray(destinationLocation.vehicleInfo))
+                        )
+                    );
+                    const destinationRegionRepresentsVehicle = Boolean(destinationRegion?.isVehicle === true);
+                    const pendingRegionRepresentsVehicle = Boolean(
+                        pendingStub
+                        && pendingStub.vehicleInfo
+                        && typeof pendingStub.vehicleInfo === 'object'
+                        && !Array.isArray(pendingStub.vehicleInfo)
+                    );
+                    const destinationStubRepresentsVehicle = Boolean(
+                        destinationStubMetadata
+                        && (
+                            destinationStubMetadata.vehicleInfo
+                            && typeof destinationStubMetadata.vehicleInfo === 'object'
+                            && !Array.isArray(destinationStubMetadata.vehicleInfo)
+                        )
+                    );
+                    const destinationRepresentsVehicle = destinationLocationRepresentsVehicle
+                        || (destinationRegionId
+                            ? (destinationRegionExpanded
+                                ? destinationRegionRepresentsVehicle
+                                : (pendingRegionRepresentsVehicle || destinationStubRepresentsVehicle))
+                            : destinationStubRepresentsVehicle);
+                    const destinationVehicleType = (() => {
+                        if (!destinationRepresentsVehicle) {
+                            return null;
+                        }
+                        const candidates = [
+                            destinationRegion?.vehicleInfo?.vehicleType,
+                            pendingStub?.vehicleInfo?.vehicleType,
+                            destinationLocation?.vehicleInfo?.vehicleType,
+                            destinationStubMetadata?.vehicleInfo?.vehicleType,
+                            pendingStub?.vehicleType
+                        ];
+                        for (const candidate of candidates) {
+                            if (typeof candidate !== 'string') {
+                                continue;
+                            }
+                            const trimmed = candidate.trim();
+                            if (trimmed) {
+                                return trimmed;
+                            }
+                        }
+                        return null;
+                    })();
+
+                    if (exit.isVehicle) {
+                        let hideVehicleExit = false;
+                        try {
+                            hideVehicleExit = shouldHideVehicleExitFromList({
+                                exit,
+                                destinationLocation,
+                                destinationRegionId,
+                                pendingRegion: pendingStub,
+                                contextLabel: `Location response exit "${exit.id || direction}" from "${location.id}"`
+                            });
+                        } catch (vehicleTransitError) {
+                            console.warn(
+                                `Failed to evaluate vehicle transit state for location "${location.id}" exit "${exit.id || direction}":`,
+                                vehicleTransitError?.message || vehicleTransitError
+                            );
+                        }
+                        if (hideVehicleExit) {
+                            delete locationData.exits[direction];
+                            logVehicleDebug('buildLocationResponse vehicle exit hidden (vehicle in transit)', {
+                                sourceLocationId: location.id,
+                                exitId: exit.id || null,
+                                destinationId: exit.destination || null,
+                                destinationRegionId
+                            });
+                            continue;
+                        }
+                    }
 
                     exit.destinationRegionName = destinationRegionName;
                     exit.destinationRegionExpanded = destinationRegionExpanded;
                     exit.destinationIsStub = destinationIsStub;
                     exit.destinationIsRegionEntryStub = destinationIsRegionEntryStub;
+                    exit.destinationIsVehicle = destinationRepresentsVehicle;
+                    exit.destinationVehicleType = destinationVehicleType;
 
-                    const pendingStub = destinationRegionId ? pendingRegionStubs.get(destinationRegionId) : null;
                     let vehicleIcon = null;
-                    if (exit.isVehicle) {
+                    if (destinationRepresentsVehicle) {
                         vehicleIcon = resolveVehicleIconFromInfo(destinationLocation?.vehicleInfo);
                         if (!vehicleIcon && destinationRegionId && regions.has(destinationRegionId)) {
                             const destinationRegion = regions.get(destinationRegionId);
@@ -14272,7 +15304,45 @@ module.exports = function registerApiRoutes(scope) {
                             vehicleIcon = resolveVehicleIconFromInfo(destinationLocation?.stubMetadata?.vehicleInfo);
                         }
                     }
+                    const sourceContextIsVehicle = Boolean(regionRepresentsVehicle || locationRepresentsVehicle);
+                    const exitId = typeof exit?.id === 'string' ? exit.id.trim() : '';
+                    const isLocationVehicleOutbound = Boolean(
+                        locationRepresentsVehicle
+                        && !regionRepresentsVehicle
+                        && !destinationRepresentsVehicle
+                        && (
+                            !locationVehicleExitId
+                            || (exitId && exitId === locationVehicleExitId)
+                        )
+                    );
+                    const isVehicleOutbound = Boolean(
+                        (exit.isVehicle && sourceContextIsVehicle)
+                        || isLocationVehicleOutbound
+                    );
+                    const isVehicleInbound = Boolean(exit.isVehicle && !sourceContextIsVehicle);
+                    if (!vehicleIcon && destinationRepresentsVehicle) {
+                        vehicleIcon = '🚗';
+                    }
                     exit.vehicleIcon = vehicleIcon;
+                    exit.isVehicleOutbound = isVehicleOutbound;
+                    exit.isVehicleInbound = isVehicleInbound;
+
+                    if (exit.isVehicle) {
+                        logVehicleDebug('buildLocationResponse vehicle exit resolved', {
+                            sourceLocationId: location.id,
+                            exitId: exit.id || null,
+                            destinationId: exit.destination || null,
+                            destinationRegionId,
+                            sourceContextIsVehicle,
+                            vehicleIcon: vehicleIcon || null,
+                            destinationHasVehicleInfo: Boolean(destinationLocation?.vehicleInfo),
+                            destinationRegionHasVehicleInfo: Boolean(destinationRegionId && regions.has(destinationRegionId) && regions.get(destinationRegionId)?.vehicleInfo),
+                            pendingRegionHasVehicleInfo: Boolean(pendingStub?.vehicleInfo),
+                            destinationStubHasVehicleInfo: Boolean(destinationLocation?.stubMetadata?.vehicleInfo),
+                            destinationRepresentsVehicle,
+                            destinationVehicleType: destinationVehicleType || null
+                        });
+                    }
 
                     const stubMetadata = destinationLocation?.stubMetadata || null;
                     const relativeLevelValue = Number.isFinite(pendingStub?.relativeLevel)
@@ -14382,6 +15452,14 @@ module.exports = function registerApiRoutes(scope) {
                 && typeof currentVehicleInfo.icon === 'string'
                 && currentVehicleInfo.icon.trim()) {
                 candidateVehicleInfo.icon = currentVehicleInfo.icon.trim();
+            }
+            if (!hasOwn.call(candidateVehicleInfo, 'departureTime')
+                && currentVehicleInfo
+                && typeof currentVehicleInfo === 'object'
+                && !Array.isArray(currentVehicleInfo)
+                && Number.isInteger(currentVehicleInfo.departureTime)
+                && currentVehicleInfo.departureTime >= 0) {
+                candidateVehicleInfo.departureTime = currentVehicleInfo.departureTime;
             }
 
             let normalized = null;
@@ -19145,6 +20223,7 @@ module.exports = function registerApiRoutes(scope) {
                     vehicleType: vehicleTypeRaw,
                     relativeLevel: relativeLevelRaw,
                     clientId: initiatorClientIdRaw,
+                    bidirectional: bidirectionalRaw,
                     imageDataUrl: imageDataUrlRaw,
                     imageDataUrlOriginal: imageDataUrlOriginalRaw
                 } = req.body || {};
@@ -19176,6 +20255,40 @@ module.exports = function registerApiRoutes(scope) {
                         });
                     }
                     relativeLevel = Math.max(-10, Math.min(10, Math.round(parsedRelativeLevel)));
+                }
+                let requestedBidirectional = false;
+                if (bidirectionalRaw !== undefined && bidirectionalRaw !== null && bidirectionalRaw !== '') {
+                    if (typeof bidirectionalRaw === 'boolean') {
+                        requestedBidirectional = bidirectionalRaw;
+                    } else if (typeof bidirectionalRaw === 'number') {
+                        if (bidirectionalRaw === 1) {
+                            requestedBidirectional = true;
+                        } else if (bidirectionalRaw === 0) {
+                            requestedBidirectional = false;
+                        } else {
+                            return res.status(400).json({
+                                success: false,
+                                error: 'bidirectional must be a boolean value.'
+                            });
+                        }
+                    } else if (typeof bidirectionalRaw === 'string') {
+                        const normalizedBidirectional = bidirectionalRaw.trim().toLowerCase();
+                        if (['true', '1', 'yes'].includes(normalizedBidirectional)) {
+                            requestedBidirectional = true;
+                        } else if (['false', '0', 'no'].includes(normalizedBidirectional)) {
+                            requestedBidirectional = false;
+                        } else {
+                            return res.status(400).json({
+                                success: false,
+                                error: 'bidirectional must be a boolean value.'
+                            });
+                        }
+                    } else {
+                        return res.status(400).json({
+                            success: false,
+                            error: 'bidirectional must be a boolean value.'
+                        });
+                    }
                 }
 
                 const normalizedType = targetRegionId && resolvedType === 'region' ? 'location' : resolvedType;
@@ -19378,6 +20491,40 @@ module.exports = function registerApiRoutes(scope) {
                             success: false,
                             error: 'Failed to create location exit'
                         });
+                    }
+
+                    if (requestedBidirectional) {
+                        const originRegionId = findRegionByLocationId(originLocation.id)?.id
+                            || originLocation.stubMetadata?.regionId
+                            || null;
+                        const computedDestinationRegionId = targetRegionId
+                            || locationStub.regionId
+                            || locationStub.stubMetadata?.regionId
+                            || locationStub.stubMetadata?.targetRegionId
+                            || null;
+                        const destinationRegionForExit = computedDestinationRegionId && originRegionId !== computedDestinationRegionId
+                            ? computedDestinationRegionId
+                            : null;
+                        const locationStubMetadata = locationStub.stubMetadata || {};
+                        const exitDescription = resolvedDescription
+                            || locationStubMetadata.shortDescription
+                            || locationStubMetadata.blueprintDescription
+                            || locationStubMetadata.targetRegionDescription
+                            || locationStub.description
+                            || locationStub.name
+                            || resolvedName;
+                        const exitOptions = {
+                            description: exitDescription,
+                            bidirectional: true,
+                            destinationRegion: destinationRegionForExit
+                        };
+
+                        if (isVehicleExit) {
+                            exitOptions.isVehicle = true;
+                            exitOptions.vehicleType = normalizedVehicleType;
+                        }
+
+                        ensureExitConnection(originLocation, locationStub, exitOptions);
                     }
 
                     createdInfo = {
@@ -19673,6 +20820,19 @@ module.exports = function registerApiRoutes(scope) {
                         || stubLocation.stubMetadata?.targetRegionName
                         || null)
                     : null;
+                const stubVehicleInfoFromMetadata = stubLocation?.stubMetadata?.vehicleInfo
+                    && typeof stubLocation.stubMetadata.vehicleInfo === 'object'
+                    && !Array.isArray(stubLocation.stubMetadata.vehicleInfo)
+                    ? stubLocation.stubMetadata.vehicleInfo
+                    : null;
+                const resolvedStubVehicleInfo = stubLocation.vehicleInfo
+                    || stubVehicleInfoFromMetadata
+                    || null;
+                const stubRepresentsVehicle = Boolean(
+                    stubLocation.isVehicle
+                    || resolvedStubVehicleInfo
+                    || stubLocation?.stubMetadata?.isVehicle
+                );
 
                 return res.json({
                     success: true,
@@ -19683,6 +20843,8 @@ module.exports = function registerApiRoutes(scope) {
                         targetRegionId: targetRegionId || null,
                         targetRegionName,
                         controllingFactionId: stubLocation.controllingFactionId || null,
+                        isVehicle: stubRepresentsVehicle,
+                        vehicleInfo: resolvedStubVehicleInfo,
                         npcs: npcSummaries
                     }
                 });
@@ -19732,6 +20894,25 @@ module.exports = function registerApiRoutes(scope) {
                             error: validationError?.message || 'Invalid controlling faction value'
                         });
                     }
+                }
+
+                const stubVehicleInfoFromMetadata = stubLocation?.stubMetadata?.vehicleInfo
+                    && typeof stubLocation.stubMetadata.vehicleInfo === 'object'
+                    && !Array.isArray(stubLocation.stubMetadata.vehicleInfo)
+                    ? stubLocation.stubMetadata.vehicleInfo
+                    : null;
+                const currentStubVehicleInfo = stubLocation.vehicleInfo || stubVehicleInfoFromMetadata || null;
+                let vehicleUpdate = { hasUpdate: false, isVehicle: false, vehicleInfo: null };
+                try {
+                    vehicleUpdate = resolveVehicleInfoUpdate(body, {
+                        currentVehicleInfo: currentStubVehicleInfo,
+                        label: 'Stub vehicle'
+                    });
+                } catch (validationError) {
+                    return res.status(400).json({
+                        success: false,
+                        error: validationError?.message || 'Invalid stub vehicle fields'
+                    });
                 }
 
                 if (!hasName) {
@@ -19797,7 +20978,37 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 const stubMetadata = stubLocation.stubMetadata || {};
+                if (vehicleUpdate.hasUpdate) {
+                    try {
+                        stubLocation.vehicleInfo = vehicleUpdate.vehicleInfo;
+                    } catch (validationError) {
+                        return res.status(400).json({
+                            success: false,
+                            error: validationError?.message || 'Invalid stub vehicle values'
+                        });
+                    }
+
+                    stubMetadata.isVehicle = vehicleUpdate.isVehicle;
+                    if (vehicleUpdate.vehicleInfo && typeof vehicleUpdate.vehicleInfo === 'object') {
+                        stubMetadata.vehicleInfo = vehicleUpdate.vehicleInfo;
+                    } else {
+                        stubMetadata.vehicleInfo = null;
+                    }
+                    stubLocation.stubMetadata = stubMetadata;
+                }
+
                 const targetRegionId = stubMetadata.targetRegionId || stubMetadata.regionId || null;
+                if (vehicleUpdate.hasUpdate && stubMetadata.isRegionEntryStub && targetRegionId && pendingRegionStubs.has(targetRegionId)) {
+                    const pendingInfo = pendingRegionStubs.get(targetRegionId) || {};
+                    const nextPendingInfo = { ...pendingInfo };
+                    nextPendingInfo.isVehicle = vehicleUpdate.isVehicle;
+                    nextPendingInfo.vehicleInfo = vehicleUpdate.vehicleInfo;
+                    if (!vehicleUpdate.isVehicle) {
+                        nextPendingInfo.vehicleType = null;
+                    }
+                    pendingRegionStubs.set(targetRegionId, nextPendingInfo);
+                }
+
                 const targetRegionName = targetRegionId
                     ? (pendingRegionStubs.get(targetRegionId)?.name
                         || regions.get(targetRegionId)?.name
@@ -19811,6 +21022,15 @@ module.exports = function registerApiRoutes(scope) {
                 const resolvedRelativeLevel = Number.isFinite(stubMetadata.targetRegionRelativeLevel)
                     ? Number(stubMetadata.targetRegionRelativeLevel)
                     : (Number.isFinite(stubMetadata.relativeLevel) ? Number(stubMetadata.relativeLevel) : null);
+                const resolvedStubVehicleInfo = stubLocation.vehicleInfo
+                    || (stubMetadata.vehicleInfo && typeof stubMetadata.vehicleInfo === 'object' && !Array.isArray(stubMetadata.vehicleInfo)
+                        ? stubMetadata.vehicleInfo
+                        : null);
+                const stubRepresentsVehicle = Boolean(
+                    stubLocation.isVehicle
+                    || resolvedStubVehicleInfo
+                    || stubMetadata.isVehicle
+                );
 
                 return res.json({
                     success: true,
@@ -19822,7 +21042,9 @@ module.exports = function registerApiRoutes(scope) {
                         isRegionEntryStub: Boolean(stubMetadata.isRegionEntryStub),
                         targetRegionId: targetRegionId || null,
                         targetRegionName,
-                        controllingFactionId: stubLocation.controllingFactionId || null
+                        controllingFactionId: stubLocation.controllingFactionId || null,
+                        isVehicle: stubRepresentsVehicle,
+                        vehicleInfo: resolvedStubVehicleInfo
                     }
                 });
             } catch (error) {
@@ -20450,48 +21672,13 @@ module.exports = function registerApiRoutes(scope) {
                     console.log('🧠 Skipping NPC memory generation: consecutive travel actions detected during move request.');
                 }
 
-                const locationData = destinationLocation.toJSON();
-                locationData.pendingImageJobId = pendingLocationImages.get(destinationLocation.id) || null;
-                if (locationData.exits) {
-                    for (const [dirKey, exit] of Object.entries(locationData.exits)) {
-                        if (!exit) continue;
-                        const destLocation = gameLocations.get(exit.destination);
-                        const destinationIsStub = Boolean(destLocation?.isStub);
-                        const destinationIsRegionEntryStub = Boolean(destLocation?.stubMetadata?.isRegionEntryStub);
-                        if (destLocation) {
-                            exit.destinationName = destLocation.name || destLocation.stubMetadata?.blueprintDescription || exit.destination;
-                        }
-
-                        const destinationRegionId = exit.destinationRegion || null;
-                        let destinationRegionName = null;
-                        let destinationRegionExpanded = false;
-
-                        if (destinationRegionId) {
-                            if (regions.has(destinationRegionId)) {
-                                const targetRegion = regions.get(destinationRegionId);
-                                destinationRegionName = targetRegion?.name || null;
-                                destinationRegionExpanded = true;
-                            } else {
-                                const pending = pendingRegionStubs.get(destinationRegionId);
-                                if (pending) {
-                                    destinationRegionName = pending.name || null;
-                                } else if (destLocation?.stubMetadata?.targetRegionName) {
-                                    destinationRegionName = destLocation.stubMetadata.targetRegionName;
-                                }
-                            }
-                        }
-
-                        if (!destinationRegionName && destLocation) {
-                            destinationRegionName = destLocation.name || destLocation.stubMetadata?.blueprintDescription || null;
-                        }
-
-                        exit.destinationRegionName = destinationRegionName;
-                        exit.destinationRegionExpanded = destinationRegionExpanded;
-                        exit.destinationIsStub = destinationIsStub;
-                        exit.destinationIsRegionEntryStub = destinationIsRegionEntryStub;
-                    }
+                const locationData = buildLocationResponse(destinationLocation);
+                if (!locationData) {
+                    return res.status(500).json({
+                        success: false,
+                        error: 'Failed to serialize destination location.'
+                    });
                 }
-                locationData.npcs = buildNpcProfiles(destinationLocation);
 
                 res.json({
                     success: true,
@@ -20548,6 +21735,21 @@ module.exports = function registerApiRoutes(scope) {
                 location.isVehicle === true
                 || (location.vehicleInfo && typeof location.vehicleInfo === 'object' && !Array.isArray(location.vehicleInfo))
             );
+            const sourceRegionId = location.regionId || stubMetadata.regionId || null;
+            const sourceRegion = sourceRegionId && regions instanceof Map && regions.has(sourceRegionId)
+                ? regions.get(sourceRegionId)
+                : null;
+            const sourceRegionRepresentsVehicle = Boolean(
+                sourceRegion
+                && (
+                    sourceRegion.isVehicle === true
+                    || (sourceRegion.vehicleInfo && typeof sourceRegion.vehicleInfo === 'object' && !Array.isArray(sourceRegion.vehicleInfo))
+                )
+            );
+            const sourceContextIsVehicle = Boolean(locationRepresentsVehicle || sourceRegionRepresentsVehicle);
+            const sourceLocationVehicleExitId = typeof location?.vehicleInfo?.vehicleExitId === 'string'
+                ? location.vehicleInfo.vehicleExitId.trim()
+                : '';
             const locationVehicleIcon = locationRepresentsVehicle
                 ? (resolveVehicleIconFromInfoForMap(location.vehicleInfo) || '🚗')
                 : null;
@@ -20563,40 +21765,134 @@ module.exports = function registerApiRoutes(scope) {
                     || null;
                 const destinationIsStub = Boolean(destinationLocation?.isStub);
                 const destinationIsRegionEntryStub = Boolean(destinationLocation?.stubMetadata?.isRegionEntryStub);
+                const pendingRegion = destinationRegionId && typeof pendingRegionStubs !== 'undefined' && pendingRegionStubs?.get
+                    ? pendingRegionStubs.get(destinationRegionId)
+                    : null;
+                const destinationStubMetadata = destinationLocation?.stubMetadata || null;
+                const destinationRegion = destinationRegionId && regions instanceof Map && regions.has(destinationRegionId)
+                    ? regions.get(destinationRegionId)
+                    : null;
+                const destinationLocationRepresentsVehicle = Boolean(
+                    destinationLocation
+                    && (
+                        destinationLocation.isVehicle === true
+                        || (destinationLocation.vehicleInfo && typeof destinationLocation.vehicleInfo === 'object' && !Array.isArray(destinationLocation.vehicleInfo))
+                    )
+                );
+                const destinationRegionRepresentsVehicle = Boolean(
+                    destinationRegion
+                    && (
+                        destinationRegion.isVehicle === true
+                        || (destinationRegion.vehicleInfo && typeof destinationRegion.vehicleInfo === 'object' && !Array.isArray(destinationRegion.vehicleInfo))
+                    )
+                );
+                const pendingRegionRepresentsVehicle = Boolean(
+                    pendingRegion
+                    && pendingRegion.vehicleInfo
+                    && typeof pendingRegion.vehicleInfo === 'object'
+                    && !Array.isArray(pendingRegion.vehicleInfo)
+                );
+                const destinationStubRepresentsVehicle = Boolean(
+                    destinationStubMetadata
+                    && destinationStubMetadata.vehicleInfo
+                    && typeof destinationStubMetadata.vehicleInfo === 'object'
+                    && !Array.isArray(destinationStubMetadata.vehicleInfo)
+                );
 
                 let destinationRegionName = null;
                 let destinationRegionExpanded = false;
+                const isVehicleExit = Boolean(exit?.isVehicle);
+                let isVehicleOutbound = Boolean(isVehicleExit && sourceContextIsVehicle);
+                const isVehicleInbound = Boolean(isVehicleExit && !sourceContextIsVehicle);
                 let vehicleIcon = null;
+
+                if (isVehicleExit) {
+                    let hideVehicleExit = false;
+                    try {
+                        hideVehicleExit = shouldHideVehicleExitFromList({
+                            exit,
+                            destinationLocation,
+                            destinationRegionId,
+                            pendingRegion,
+                            contextLabel: `Map exit "${exit?.id || direction}" from "${location.id}"`
+                        });
+                    } catch (vehicleTransitError) {
+                        console.warn(
+                            `Failed to evaluate vehicle transit state for map exit "${exit?.id || direction}" from "${location.id}":`,
+                            vehicleTransitError?.message || vehicleTransitError
+                        );
+                    }
+
+                    if (hideVehicleExit) {
+                        logVehicleDebug('buildMapLocationSummary vehicle exit hidden (vehicle in transit)', {
+                            sourceLocationId: location.id,
+                            sourceRegionId,
+                            destinationId: exit?.destination || null,
+                            destinationRegionId,
+                            isVehicleOutbound,
+                            isVehicleInbound
+                        });
+                        return null;
+                    }
+                }
 
                 if (destinationRegionId) {
                     if (regions instanceof Map && regions.has(destinationRegionId)) {
                         const targetRegion = regions.get(destinationRegionId);
                         destinationRegionName = targetRegion?.name || null;
                         destinationRegionExpanded = true;
-                    } else if (typeof pendingRegionStubs !== 'undefined' && pendingRegionStubs?.get) {
-                        const pending = pendingRegionStubs.get(destinationRegionId);
-                        if (pending) {
-                            destinationRegionName = pending.name || null;
+                    } else if (pendingRegion) {
+                        if (pendingRegion) {
+                            destinationRegionName = pendingRegion.name || null;
                         }
                     }
                 }
 
-                if (exit?.isVehicle) {
+                const destinationRepresentsVehicle = destinationLocationRepresentsVehicle
+                    || (destinationRegionId
+                        ? (destinationRegionExpanded
+                            ? destinationRegionRepresentsVehicle
+                            : (pendingRegionRepresentsVehicle || destinationStubRepresentsVehicle))
+                        : destinationStubRepresentsVehicle);
+                const exitId = typeof exit?.id === 'string' ? exit.id.trim() : '';
+                const isLocationVehicleOutbound = Boolean(
+                    locationRepresentsVehicle
+                    && !sourceRegionRepresentsVehicle
+                    && !destinationRepresentsVehicle
+                    && (
+                        !sourceLocationVehicleExitId
+                        || (exitId && exitId === sourceLocationVehicleExitId)
+                    )
+                );
+                isVehicleOutbound = Boolean(isVehicleOutbound || isLocationVehicleOutbound);
+
+                if (destinationRepresentsVehicle) {
                     vehicleIcon = resolveVehicleIconFromInfoForMap(destinationLocation?.vehicleInfo);
-                    if (!vehicleIcon && destinationRegionId && regions instanceof Map && regions.has(destinationRegionId)) {
-                        const destinationRegion = regions.get(destinationRegionId);
+                    if (!vehicleIcon && destinationRegion) {
                         vehicleIcon = resolveVehicleIconFromInfoForMap(destinationRegion?.vehicleInfo);
                     }
-                    if (!vehicleIcon && destinationRegionId && typeof pendingRegionStubs !== 'undefined' && pendingRegionStubs?.get) {
-                        const pendingRegion = pendingRegionStubs.get(destinationRegionId);
+                    if (!vehicleIcon && destinationRegionId && pendingRegion) {
                         vehicleIcon = resolveVehicleIconFromInfoForMap(pendingRegion?.vehicleInfo);
                     }
                     if (!vehicleIcon) {
                         vehicleIcon = resolveVehicleIconFromInfoForMap(destinationLocation?.stubMetadata?.vehicleInfo);
                     }
-                    if (!vehicleIcon) {
-                        vehicleIcon = '🚗';
-                    }
+                }
+                if (!vehicleIcon && destinationRepresentsVehicle) {
+                    vehicleIcon = '🚗';
+                }
+
+                if (isVehicleExit) {
+                    logVehicleDebug('buildMapLocationSummary vehicle exit resolved', {
+                        sourceLocationId: location.id,
+                        sourceRegionId,
+                        sourceContextIsVehicle,
+                        destinationId: exit?.destination || null,
+                        destinationRegionId,
+                        isVehicleOutbound,
+                        isVehicleInbound,
+                        vehicleIcon: vehicleIcon || null
+                    });
                 }
 
                 return {
@@ -20607,13 +21903,15 @@ module.exports = function registerApiRoutes(scope) {
                     destinationRegionExpanded,
                     destinationName,
                     bidirectional: exit?.bidirectional !== false,
-                    isVehicle: Boolean(exit?.isVehicle),
+                    isVehicle: isVehicleExit,
+                    isVehicleOutbound,
+                    isVehicleInbound,
                     vehicleType: exit?.vehicleType || null,
                     vehicleIcon,
                     destinationIsStub,
                     destinationIsRegionEntryStub
                 };
-            });
+            }).filter(Boolean);
 
             const payload = {
                 id: location.id,

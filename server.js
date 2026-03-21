@@ -284,6 +284,42 @@ function resolveCliRegionExitDebugFlag(argv = process.argv) {
     return resolvedValue;
 }
 
+function resolveCliVehicleDebugFlag(argv = process.argv) {
+    if (!Array.isArray(argv)) {
+        throw new Error('Command line arguments must be an array.');
+    }
+
+    const args = argv.slice(2);
+    let resolvedValue = false;
+    let wasProvided = false;
+
+    const setResolvedValue = ({ implicit = false, value = null } = {}) => {
+        if (wasProvided) {
+            throw new Error('Command line option --debug-vehicles may only be provided once.');
+        }
+        if (implicit) {
+            resolvedValue = true;
+        } else {
+            resolvedValue = parseCliBooleanOption('--debug-vehicles', value);
+        }
+        wasProvided = true;
+    };
+
+    for (const arg of args) {
+        if (arg === '--debug-vehicles') {
+            setResolvedValue({ implicit: true });
+            continue;
+        }
+
+        if (typeof arg === 'string' && arg.startsWith('--debug-vehicles=')) {
+            const value = arg.slice('--debug-vehicles='.length);
+            setResolvedValue({ implicit: false, value });
+        }
+    }
+
+    return resolvedValue;
+}
+
 function loadMergedConfig(configOverridePath = null) {
     const defaultConfigPath = path.join(__dirname, 'config.default.yaml');
     const defaultConfigRaw = fs.readFileSync(defaultConfigPath, 'utf8');
@@ -543,20 +579,27 @@ let config;
 let cliConfigOverridePath = null;
 let cliTestModes = new Set();
 let cliRegionExitDebug = false;
+let cliVehicleDebug = false;
 try {
     cliConfigOverridePath = resolveCliConfigOverridePath();
     cliTestModes = resolveCliTestModes();
     cliRegionExitDebug = cliTestModes.has('all') || cliTestModes.has('region-exits');
+    cliVehicleDebug = cliTestModes.has('all') || cliTestModes.has('vehicles');
 
     const legacyRegionExitDebug = resolveCliRegionExitDebugFlag();
     if (legacyRegionExitDebug) {
         cliRegionExitDebug = true;
         console.warn('⚠️  --debug-region-exits is deprecated; use --test=region-exits');
     }
+    const explicitVehicleDebug = resolveCliVehicleDebugFlag();
+    if (explicitVehicleDebug) {
+        cliVehicleDebug = true;
+    }
 
     config = loadMergedConfig(cliConfigOverridePath);
     Globals.config = config;
     Globals.cliTestModes = new Set(cliTestModes);
+    Globals.debugVehicles = cliVehicleDebug;
     if (cliConfigOverridePath) {
         console.log(`🔧 Applied config override: ${cliConfigOverridePath}`);
     }
@@ -565,6 +608,9 @@ try {
     }
     if (cliRegionExitDebug) {
         console.log('🐞 Region-exit debug logging enabled via --test=region-exits');
+    }
+    if (cliVehicleDebug) {
+        console.log('🐞 Vehicle debug logging enabled via --debug-vehicles or --test=vehicles');
     }
 } catch (error) {
     console.error('Error loading configuration:', error.message);
@@ -2695,6 +2741,49 @@ function shouldGenerateThingImage(thing) {
     const thingMetadata = thing.metadata || {};
     const itemLocationId = thingMetadata.locationId || null;
     if (itemLocationId && currentPlayer.currentLocation && itemLocationId === currentPlayer.currentLocation) {
+        return true;
+    }
+
+    const resolveCurrentVehicleOutsideLocationId = () => {
+        const playerLocationId = typeof currentPlayer?.currentLocation === 'string'
+            ? currentPlayer.currentLocation.trim()
+            : '';
+        if (!playerLocationId) {
+            return null;
+        }
+
+        const currentLocation = gameLocations.get(playerLocationId) || null;
+        if (!currentLocation) {
+            return null;
+        }
+
+        const currentRegion = currentLocation.region || findRegionByLocationId(currentLocation.id) || null;
+        const activeVehicleInfo = currentRegion?.isVehicle === true
+            ? currentRegion.vehicleInfo
+            : (currentLocation?.isVehicle === true ? currentLocation.vehicleInfo : null);
+        if (!activeVehicleInfo || typeof activeVehicleInfo !== 'object' || Array.isArray(activeVehicleInfo)) {
+            return null;
+        }
+
+        const vehicleExitId = typeof activeVehicleInfo.vehicleExitId === 'string'
+            ? activeVehicleInfo.vehicleExitId.trim()
+            : '';
+        if (!vehicleExitId) {
+            return null;
+        }
+
+        const vehicleExit = gameLocationExits.get(vehicleExitId) || null;
+        const outsideLocationId = typeof vehicleExit?.destination === 'string'
+            ? vehicleExit.destination.trim()
+            : '';
+        if (!outsideLocationId) {
+            return null;
+        }
+        return outsideLocationId;
+    };
+
+    const vehicleOutsideLocationId = resolveCurrentVehicleOutsideLocationId();
+    if (itemLocationId && vehicleOutsideLocationId && itemLocationId === vehicleOutsideLocationId) {
         return true;
     }
 
@@ -5443,6 +5532,13 @@ function buildBasePromptContext({
         lightLevelDescription: worldTimeContext.lightLevelDescription || worldTimeContext.lighting || 'Ambient conditions are unknown.'
     };
 
+    const currentVehicleCandidate = currentPlayer?.currentVehicle || null;
+    const currentVehicle = currentVehicleCandidate
+        && typeof currentVehicleCandidate === 'object'
+        && !Array.isArray(currentVehicleCandidate)
+        ? currentVehicleCandidate
+        : null;
+
     let latestPlotSummary = '';
     let latestPlotExpander = '';
     if (Array.isArray(effectiveHistoryEntries)) {
@@ -5491,6 +5587,7 @@ function buildBasePromptContext({
         currentRegion: currentRegionContext,
         currentLocation: currentLocationContext,
         currentPlayer: currentPlayerContext,
+        currentVehicle,
         worldTime: worldTimeContextWithConditions,
         Globals,
         saveFileSaveVersion: Number(Globals?.saveFileSaveVersion) || 0,
@@ -23994,6 +24091,7 @@ app.get('/', (req, res) => {
         saveMetadata: typeof Globals.getSaveMetadata === 'function'
             ? Globals.getSaveMetadata()
             : (Globals.saveMetadata || null),
+        vehicleDebugEnabled: cliVehicleDebug,
         modScripts: modScripts,
         modStyles: modStyles
     });
@@ -24512,6 +24610,7 @@ const apiScope = {
     imageFileExists,
     realtimeHub,
     addJobSubscriber,
+    vehicleDebugEnabled: cliVehicleDebug,
 
 };
 
@@ -24546,6 +24645,7 @@ if (typeof module !== 'undefined' && module.exports) {
     module.exports.performGameSave = (...args) => apiScope.performGameSave(...args);
     module.exports.performGameLoad = (...args) => apiScope.performGameLoad(...args);
     module.exports.pendingRegionStubs = pendingRegionStubs;
+    module.exports.ensureExitConnection = ensureExitConnection;
 }
 
 function generateImageId() {

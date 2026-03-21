@@ -76,6 +76,7 @@ Notes:
 - It copies `tests/e2e/fixtures/new_game_vehicle_region_forced_outputs.json` into `tmp/` at runtime, then cleans it up.
 - The fixture’s `region_generation` payload is derived from `logs/2026-03-05T01-02-17-626Z_region_generation_region_generation.log`.
 - It performs a final `/api/save` and intentionally retains that save in `saves/` so the generated world can be loaded and inspected manually after the test.
+- It also validates vehicle exit button rendering in the Adventure UI: inbound exits use the configured vehicle icon, and outbound exits in vehicle context render `Exit Vehicle:` without a left-side vehicle icon.
 
 One-off settings-page capture + validation against an already-running server:
 

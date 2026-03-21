@@ -40,6 +40,21 @@ const LINK_GHOST_NODE_ID = '__link-ghost__';
 const LINK_GHOST_EDGE_ID = '__link-ghost-edge__';
 const VEHICLE_OVERLAY_NODE_PREFIX = '__vehicle-overlay__';
 
+function isVehicleDebugEnabledOnClient() {
+  return Boolean(window?.AIRPG_CONFIG?.debugVehicles);
+}
+
+function logVehicleDebugMap(message, payload = null) {
+  if (!isVehicleDebugEnabledOnClient()) {
+    return;
+  }
+  if (payload === null || typeof payload === 'undefined') {
+    console.log(`[vehicle-debug] ${message}`);
+    return;
+  }
+  console.log(`[vehicle-debug] ${message}`, payload);
+}
+
 function getVehicleOverlayNodeId(targetNodeId) {
   return `${VEHICLE_OVERLAY_NODE_PREFIX}${targetNodeId}`;
 }
@@ -341,6 +356,11 @@ function renderMap(region) {
       data.imageUrl = loc.image.url;
     }
     if (data.isVehicle) {
+      logVehicleDebugMap('renderMap location vehicle overlay', {
+        locationId: loc.id,
+        locationName: loc.name || null,
+        vehicleIcon: data.vehicleIcon || '🚗'
+      });
       addVehicleOverlay(loc.id, data.vehicleIcon || '🚗');
     }
     return { data };
@@ -370,6 +390,9 @@ function renderMap(region) {
         const symbolImage = `data:image/svg+xml,${encodeURIComponent(svg)}`;
 
         if (!regionExitNodes.has(exitNodeId)) {
+          const trimmedVehicleIcon = typeof exit?.vehicleIcon === 'string' ? exit.vehicleIcon.trim() : '';
+          const isVehicleInbound = exit?.isVehicleInbound === true;
+          const isVehicleOutbound = exit?.isVehicleOutbound === true;
           regionExitNodes.set(exitNodeId, {
             data: {
               id: exitNodeId,
@@ -379,15 +402,28 @@ function renderMap(region) {
               targetRegionId: destinationRegionId,
               expanded,
               isVehicle: Boolean(exit?.isVehicle),
-              vehicleIcon: typeof exit?.vehicleIcon === 'string' ? exit.vehicleIcon.trim() : null,
+              isVehicleInbound,
+              isVehicleOutbound,
+              vehicleIcon: trimmedVehicleIcon || null,
               isStub: Boolean(isRegionStubTarget),
               stubId: isRegionStubTarget ? destinationId : null
             },
             classes: expanded ? 'region-exit region-exit-expanded' : 'region-exit region-exit-unexpanded'
           });
-          if (exit?.isVehicle) {
-            addVehicleOverlay(exitNodeId, exit?.vehicleIcon || '🚗');
+          if (Boolean(exit?.isVehicle) && isVehicleInbound && trimmedVehicleIcon) {
+            addVehicleOverlay(exitNodeId, trimmedVehicleIcon);
           }
+          logVehicleDebugMap('renderMap region exit vehicle decision', {
+            sourceLocationId: loc.id,
+            exitId: exit?.id || null,
+            destinationId: destinationId || null,
+            destinationRegionId,
+            isVehicle: Boolean(exit?.isVehicle),
+            isVehicleInbound,
+            isVehicleOutbound,
+            vehicleIcon: trimmedVehicleIcon || null,
+            overlayAdded: Boolean(Boolean(exit?.isVehicle) && isVehicleInbound && trimmedVehicleIcon)
+          });
         }
 
         regionExitEdges.push({

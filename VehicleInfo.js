@@ -4,14 +4,16 @@ class VehicleInfo {
   #currentDestination;
   #destinations;
   #ETA;
+  #departureTime;
   #vehicleExitId;
 
-  constructor({ terrainTypes, icon = null, currentDestination = null, destinations = [], ETA = null, vehicleExitId = null } = {}) {
+  constructor({ terrainTypes, icon = null, currentDestination = null, destinations = [], ETA = null, departureTime = null, vehicleExitId = null } = {}) {
     this.terrainTypes = terrainTypes;
     this.icon = icon;
     this.destinations = destinations;
     this.currentDestination = currentDestination;
     this.ETA = ETA;
+    this.departureTime = departureTime;
     this.vehicleExitId = vehicleExitId;
     this.#validateCrossFieldState();
   }
@@ -69,9 +71,22 @@ class VehicleInfo {
     return value;
   }
 
+  static #normalizeDepartureTime(value) {
+    if (value === null || value === undefined || value === '') {
+      return null;
+    }
+    if (typeof value !== 'number' || !Number.isFinite(value) || !Number.isInteger(value) || value < 0) {
+      throw new Error('VehicleInfo departureTime must be a non-negative integer minute value or null');
+    }
+    return value;
+  }
+
   #validateCrossFieldState() {
     if (this.#currentDestination == null && this.#ETA != null) {
       throw new Error('VehicleInfo ETA cannot be set when currentDestination is null');
+    }
+    if (this.#currentDestination == null && this.#departureTime != null) {
+      throw new Error('VehicleInfo departureTime cannot be set when currentDestination is null');
     }
     if (this.#currentDestination != null && this.#destinations.length > 0 && !this.#destinations.includes(this.#currentDestination)) {
       throw new Error('VehicleInfo currentDestination must be one of destinations when destinations is non-empty');
@@ -112,6 +127,67 @@ class VehicleInfo {
   set ETA(value) {
     this.#ETA = VehicleInfo.#normalizeEta(value);
     this.#validateCrossFieldState();
+  }
+
+  get isUnderway() {
+    return typeof this.#ETA === 'number' && this.#ETA > 0;
+  }
+
+  get hasArrived() {
+    return typeof this.#ETA === 'number' && this.#ETA <= 0;
+  }
+
+  get isArriving() {
+    if (typeof this.#ETA !== 'number') {
+      return false;
+    }
+
+    const Globals = require('./Globals.js');
+    const elapsedTime = Number.isFinite(Globals?.elapsedTime) ? Globals.elapsedTime : null;
+    if (typeof elapsedTime !== 'number') {
+      return false;
+    }
+
+    const remaining = this.#ETA - elapsedTime;
+    if (remaining > 0) {
+      return false;
+    }
+
+    if (typeof this.#departureTime === 'number') {
+      return (this.#ETA - this.#departureTime) > 0;
+    }
+
+    return this.#ETA > 0;
+  }
+
+  get departureTime() {
+    return this.#departureTime;
+  }
+
+  set departureTime(value) {
+    this.#departureTime = VehicleInfo.#normalizeDepartureTime(value);
+    this.#validateCrossFieldState();
+  }
+
+  get timeTraveled() {
+    if (typeof this.#departureTime !== 'number') {
+      return 0;
+    }
+    const Globals = require('./Globals.js');
+    const elapsedTime = Number.isFinite(Globals?.elapsedTime) ? Globals.elapsedTime : 0;
+    return Math.max(0, elapsedTime - this.#departureTime);
+  }
+
+  get tripCompleteFraction() {
+    if (typeof this.#departureTime !== 'number' || typeof this.#ETA !== 'number') {
+      return 0;
+    }
+    const totalTripMinutes = this.#ETA - this.#departureTime;
+    if (totalTripMinutes <= 0) {
+      return 1;
+    }
+    const rawFraction = this.timeTraveled / totalTripMinutes;
+    return Math.min(1, Math.max(0, rawFraction));
   }
 
   get vehicleExitId() {
@@ -171,6 +247,7 @@ class VehicleInfo {
       currentDestination: this.#currentDestination,
       destinations: [...this.#destinations],
       ETA: this.#ETA,
+      departureTime: this.#departureTime,
       vehicleExitId: this.#vehicleExitId
     };
   }
@@ -186,6 +263,9 @@ class VehicleInfo {
     const eta = Object.prototype.hasOwnProperty.call(data, 'ETA')
       ? data.ETA
       : data.eta;
+    const departureTime = Object.prototype.hasOwnProperty.call(data, 'departureTime')
+      ? data.departureTime
+      : data.departure_time;
     const vehicleExitId = Object.prototype.hasOwnProperty.call(data, 'vehicleExitId')
       ? data.vehicleExitId
       : data.vehicleExitID;
@@ -196,6 +276,7 @@ class VehicleInfo {
       currentDestination: data.currentDestination ?? null,
       destinations: data.destinations ?? [],
       ETA: eta ?? null,
+      departureTime: departureTime ?? null,
       vehicleExitId: vehicleExitId ?? null
     });
   }

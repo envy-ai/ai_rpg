@@ -565,6 +565,19 @@ The below context is an account of the current game state, including the setting
   </weather>
   <lightLevel>{{ worldTime.lightLevelDescription | default(worldTime.lighting, true) }}</lightLevel>
   {% endif %}
+  {% if currentVehicle %}
+  <vehicle>
+    <name>{{ currentVehicle.name | default('', true) }}</name>
+    <description>{{ currentVehicle.description | default('', true) }}</description>
+    {% if currentVehicle.location and (currentVehicle.location | trim) %}
+    <location>{{ currentVehicle.location | default('', true) }}</location>
+    {% endif %}
+    {% if currentVehicle.destination and (currentVehicle.destination | trim) %}
+    <destination>{{ currentVehicle.destination | default('', true) }}</destination>
+    <timeToDestination>{{ currentVehicle.timeToDestination | default('', true) }}</timeToDestination>
+    {% endif %}
+  </vehicle>
+  {% endif %}
 </currentConditions>
 
 {% include "_includes/" + promptType + ".njk" %}

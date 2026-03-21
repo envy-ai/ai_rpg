@@ -104,6 +104,56 @@ async function getJson(request, url, method = 'GET', data = undefined) {
     return payload;
 }
 
+async function updateVehicleIcon(request, locationId, icon) {
+    const normalizedLocationId = typeof locationId === 'string' ? locationId.trim() : '';
+    const normalizedIcon = typeof icon === 'string' ? icon.trim() : '';
+    if (!normalizedLocationId) {
+        throw new Error('updateVehicleIcon requires a locationId.');
+    }
+    if (!normalizedIcon) {
+        throw new Error('updateVehicleIcon requires a non-empty icon.');
+    }
+
+    const detailPayload = await getJson(request, `/api/locations/${normalizedLocationId}?expandStubs=false`);
+    const location = detailPayload?.location;
+    if (!location) {
+        throw new Error(`Unable to load vehicle location "${normalizedLocationId}" for icon update.`);
+    }
+    if (!location.isVehicle || !location.vehicleInfo) {
+        throw new Error(`Location "${normalizedLocationId}" is not a vehicle with vehicleInfo.`);
+    }
+
+    const level = Number.isFinite(location.baseLevel)
+        ? Number(location.baseLevel)
+        : (Number.isFinite(location.level) ? Number(location.level) : 1);
+    const name = typeof location.name === 'string' ? location.name : null;
+    const description = typeof location.description === 'string' ? location.description : '';
+
+    const updateBody = {
+        name,
+        description,
+        level,
+        isVehicle: true,
+        vehicleInfo: {
+            ...location.vehicleInfo,
+            icon: normalizedIcon
+        }
+    };
+
+    if (Object.prototype.hasOwnProperty.call(location, 'shortDescription')) {
+        updateBody.shortDescription = location.shortDescription;
+    }
+
+    const response = await request.put(`/api/locations/${normalizedLocationId}`, {
+        data: updateBody
+    });
+    const payload = await response.json();
+    if (!response.ok() || payload?.success === false) {
+        throw new Error(`Failed to update vehicle icon for "${normalizedLocationId}" (${response.status()}): ${JSON.stringify(payload)}`);
+    }
+    return payload.location;
+}
+
 async function configureDeterministicRuntime(request) {
     await setConfigValue(request, 'ai.force_outputs_file', runtimeForcedOutputsPath);
     await setConfigValue(request, 'random_event_frequency.enabled', 'false');
@@ -266,9 +316,9 @@ test.describe('new game vehicle region regression', () => {
         expect(medBayAlpha).toBeTruthy();
 
         const expectedVehicles = [
-            { name: 'Small Shuttle for Hire', expectsFixedDestinations: false },
-            { name: "Luminara's Sigh", expectsFixedDestinations: false },
-            { name: 'Starfall Ring Monorail', expectsFixedDestinations: true }
+            { name: 'Small Shuttle for Hire', expectsFixedDestinations: false, icon: '🚁' },
+            { name: "Luminara's Sigh", expectsFixedDestinations: false, icon: '🛸' },
+            { name: 'Starfall Ring Monorail', expectsFixedDestinations: true, icon: '🚈' }
         ];
 
         for (const expectedVehicle of expectedVehicles) {
@@ -299,14 +349,44 @@ test.describe('new game vehicle region regression', () => {
                 : [];
             const vehicleExit = exits.find(exit => exit && exit.id === location.vehicleInfo.vehicleExitId);
             expect(vehicleExit, `"${expectedVehicle.name}" vehicleExitId should map to an actual exit`).toBeTruthy();
+
+            const updatedVehicle = await updateVehicleIcon(request, summary.id, expectedVehicle.icon);
+            expect(updatedVehicle?.vehicleInfo?.icon).toBe(expectedVehicle.icon);
         }
 
+        const dockingBay17 = locationByName.get('docking bay 17');
         const luminarasSigh = locationByName.get("luminara's sigh");
+        expect(dockingBay17).toBeTruthy();
         expect(luminarasSigh).toBeTruthy();
 
-        const currentBeforeMovePayload = await getJson(request, '/api/locations?scope=current');
-        const currentBeforeMove = currentBeforeMovePayload?.location;
+        let currentBeforeMovePayload = await getJson(request, '/api/locations?scope=current');
+        let currentBeforeMove = currentBeforeMovePayload?.location;
         expect(currentBeforeMove?.id).toBeTruthy();
+
+        if (currentBeforeMove.id !== dockingBay17.id) {
+            const repositionPayload = await getJson(request, '/api/player/move', 'POST', {
+                destinationId: dockingBay17.id,
+                expectedOriginLocationId: currentBeforeMove.id
+            });
+            expect(repositionPayload?.success).toBeTruthy();
+            currentBeforeMove = repositionPayload?.location;
+        }
+
+        expect(currentBeforeMove?.id).toBe(dockingBay17.id);
+
+        await page.reload({ waitUntil: 'domcontentloaded' });
+        await expect(page.locator('#locationName')).toContainText('Docking Bay 17');
+
+        const inboundLuminaraButton = page.locator('#locationExitsList .exit-button', { hasText: "Luminara's Sigh" }).first();
+        const inboundShuttleButton = page.locator('#locationExitsList .exit-button', { hasText: 'Small Shuttle for Hire' }).first();
+
+        await expect(inboundLuminaraButton).toBeVisible();
+        await expect(inboundLuminaraButton.locator('.exit-button-icon')).toHaveText('🛸');
+        await expect(inboundLuminaraButton.locator('.exit-button-label')).not.toContainText('⬅️ Exit Vehicle:');
+
+        await expect(inboundShuttleButton).toBeVisible();
+        await expect(inboundShuttleButton.locator('.exit-button-icon')).toHaveText('🚁');
+        await expect(inboundShuttleButton.locator('.exit-button-label')).not.toContainText('⬅️ Exit Vehicle:');
 
         const movePayload = await getJson(request, '/api/player/move', 'POST', {
             destinationId: luminarasSigh.id,
@@ -334,6 +414,32 @@ test.describe('new game vehicle region regression', () => {
             : [];
         const remappedVehicleExit = expandedExits.find(exit => exit && exit.id === regionVehicleInfo.vehicleExitId);
         expect(remappedVehicleExit, 'Region vehicleExitId should resolve after region-entry stub expansion').toBeTruthy();
+
+        const outboundVehicleExitName = 'Vehicle Outbound Regression Target';
+        const createOutboundVehicleExitPayload = await getJson(
+            request,
+            `/api/locations/${expandedVehicleRegionLocation.id}/exits`,
+            'POST',
+            {
+                type: 'location',
+                name: outboundVehicleExitName,
+                description: 'Deterministic outbound vehicle-exit regression target.',
+                vehicleType: 'airlock'
+            }
+        );
+        expect(createOutboundVehicleExitPayload?.success).toBeTruthy();
+        expect(createOutboundVehicleExitPayload?.location?.id).toBe(expandedVehicleRegionLocation.id);
+
+        await page.reload({ waitUntil: 'domcontentloaded' });
+        await expect(page.locator('#locationName')).toContainText("Luminara's Sigh");
+
+        const outboundVehicleButton = page.locator(
+            '#locationExitsList .exit-button',
+            { hasText: outboundVehicleExitName }
+        ).first();
+        await expect(outboundVehicleButton).toBeVisible();
+        await expect(outboundVehicleButton.locator('.exit-button-label')).toContainText('Exit Vehicle:');
+        await expect(outboundVehicleButton.locator('.exit-button-icon')).toHaveText(/⬅/);
 
         const savePayload = await getJson(request, '/api/save', 'POST', {});
         expect(typeof savePayload?.saveName).toBe('string');

@@ -17,6 +17,7 @@ Response:
 Notes:
 - If an existing job is found, the endpoint returns 200 with `success: false` and `existingJob: true`.
 - The final image-generation prompt is automatically prepended with the active setting's `baseContextPreamble` before job execution.
+- Thing/item image generation remains visibility-gated: non-forced requests run only when the item is in the player inventory, at the player's current location, or at the outside location of the player's current vehicle.
 
 ## POST /api/generate-image
 Legacy custom image generation endpoint.

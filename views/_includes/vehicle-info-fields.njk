@@ -96,8 +96,11 @@
             <input type="number" id="{{ _vehiclePrefix }}VehicleETA" min="0" step="1" inputmode="numeric">
         </div>
         <div class="location-edit-field">
-            <label for="{{ _vehiclePrefix }}VehicleExitId">Vehicle Exit ID</label>
-            <input type="text" id="{{ _vehiclePrefix }}VehicleExitId" autocomplete="off">
+            <label for="{{ _vehiclePrefix }}VehicleExitId">Vehicle Exit</label>
+            <select id="{{ _vehiclePrefix }}VehicleExitId">
+                <option value="">None</option>
+            </select>
+            <p class="region-edit-secrets-help">Exits are listed as inside -> outside.</p>
         </div>
     </fieldset>
 </div>

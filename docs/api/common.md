@@ -81,6 +81,7 @@ Fields:
 - `currentDestination` (string | null)
 - `destinations` (string[])
 - `ETA` (number | null)
+- `departureTime` (number | null)
 - `vehicleExitId` (string | null)
 
 ## NpcProfile (serializeNpcForClient)
@@ -192,8 +193,13 @@ Extends `LocationDetails` with:
 - `exits` entries gain:
   - `destinationName`, `destinationRegionName`, `destinationRegionExpanded`
   - `destinationIsStub`, `destinationIsRegionEntryStub`
-  - `vehicleIcon` (string | null; when `isVehicle` is true and a destination vehicle icon is known)
+  - `destinationIsVehicle` (boolean; derived only from destination location/region/pending-stub vehicle state, never from `exit.isVehicle`/`exit.vehicleType`)
+  - `destinationVehicleType` (string | null; destination vehicle type hint when known; never inferred solely from `exit.vehicleType`)
+  - `vehicleIcon` (string | null; populated when the destination location/region is a vehicle; falls back to `🚗` when metadata is missing)
+  - `isVehicleOutbound` (boolean; true when the current location context is a vehicle and the exit leaves it)
+  - `isVehicleInbound` (boolean; true when the exit enters a vehicle destination from a non-vehicle context)
   - `relativeLevel` (when known)
+  - vehicle exits whose destination vehicle is in transit (`isUnderway && !hasArrived`) are omitted from the payload
 - `vehicleCurrentLocationName` (string | undefined; present when current location/region is a vehicle and the active vehicle exit resolves)
 - `npcs` (NpcProfile[])
 - `things` (ThingProfile[])
@@ -263,8 +269,11 @@ Fields:
 - `exits`: array of
   - `id`, `destination`, `destinationRegion`, `destinationRegionName`, `destinationRegionExpanded`
   - `destinationName`, `bidirectional`, `isVehicle`, `vehicleType`
-  - `vehicleIcon` (string | null; when `isVehicle` is true)
+  - `isVehicle`/`vehicleType` describe the travel edge only; they do not imply destination vehicle status
+  - `isVehicleOutbound`, `isVehicleInbound` (booleans)
+  - `vehicleIcon` (string | null; populated from destination vehicle metadata, or `🚗` fallback when destination is a vehicle but icon metadata is missing)
   - `destinationIsStub`, `destinationIsRegionEntryStub`
+  - vehicle exits whose destination vehicle is in transit (`isUnderway && !hasArrived`) are omitted
 - `image` (optional): `{ id, url }`
 
 ## MapRegionSummary (`/api/map/world`)

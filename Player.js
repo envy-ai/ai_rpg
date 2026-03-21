@@ -2160,6 +2160,149 @@ class Player {
         return Location.get(this.#currentLocation) || null;
     }
 
+    get currentVehicle() {
+        const Location = getLocationModule();
+        const currentLocation = Location.get(this.#currentLocation) || null;
+        if (!currentLocation) {
+            return null;
+        }
+
+        const currentRegion = currentLocation.region || null;
+        const regionVehicleInfo = currentRegion?.isVehicle === true
+            ? currentRegion.vehicleInfo
+            : null;
+        const locationVehicleInfo = currentLocation?.isVehicle === true
+            ? currentLocation.vehicleInfo
+            : null;
+        const activeVehicleInfo = regionVehicleInfo || locationVehicleInfo || null;
+        if (!activeVehicleInfo || typeof activeVehicleInfo !== 'object' || Array.isArray(activeVehicleInfo)) {
+            return null;
+        }
+
+        const resolveLocationNameById = (locationId) => {
+            if (typeof locationId !== 'string') {
+                return null;
+            }
+            const trimmedId = locationId.trim();
+            if (!trimmedId) {
+                return null;
+            }
+
+            const resolvedLocation = Location.get(trimmedId) || null;
+            if (!resolvedLocation) {
+                return trimmedId;
+            }
+
+            const resolvedName = typeof resolvedLocation.name === 'string'
+                ? resolvedLocation.name.trim()
+                : '';
+            return resolvedName || trimmedId;
+        };
+
+        const resolveVehicleLocationLabel = (vehicleInfo) => {
+            const vehicleExitId = typeof vehicleInfo?.vehicleExitId === 'string'
+                ? vehicleInfo.vehicleExitId.trim()
+                : '';
+            if (!vehicleExitId) {
+                return null;
+            }
+
+            const allLocations = typeof Location.getAll === 'function'
+                ? Location.getAll()
+                : [];
+            for (const sourceLocation of allLocations) {
+                if (!sourceLocation
+                    || typeof sourceLocation.getAvailableDirections !== 'function'
+                    || typeof sourceLocation.getExit !== 'function') {
+                    continue;
+                }
+
+                const directions = sourceLocation.getAvailableDirections();
+                for (const direction of directions) {
+                    const exit = sourceLocation.getExit(direction);
+                    if (!exit || exit.id !== vehicleExitId) {
+                        continue;
+                    }
+
+                    const outsideLocation = exit.location || null;
+                    const outsideLocationName = typeof outsideLocation?.name === 'string'
+                        ? outsideLocation.name.trim()
+                        : '';
+                    const outsideRegionName = typeof outsideLocation?.region?.name === 'string'
+                        ? outsideLocation.region.name.trim()
+                        : '';
+                    if (!outsideRegionName || !outsideLocationName) {
+                        return null;
+                    }
+                    return `${outsideRegionName}:${outsideLocationName}`;
+                }
+            }
+
+            return null;
+        };
+
+        const destinationId = typeof activeVehicleInfo.currentDestination === 'string'
+            ? activeVehicleInfo.currentDestination.trim()
+            : '';
+        const destination = destinationId
+            ? (resolveLocationNameById(destinationId) || '')
+            : '';
+
+        const etaMinutes = Number(activeVehicleInfo.ETA);
+        const elapsedMinutes = Number(Globals.elapsedTime);
+        const rawTimeToDestination = Number.isFinite(etaMinutes)
+            && Number.isInteger(etaMinutes)
+            && Number.isFinite(elapsedMinutes)
+            && Number.isInteger(elapsedMinutes)
+            ? etaMinutes - elapsedMinutes
+            : null;
+        const formatTimeToDestination = (minutesValue) => {
+            if (!Number.isFinite(minutesValue) || !Number.isInteger(minutesValue)) {
+                return null;
+            }
+
+            const isPast = minutesValue < 0;
+            let remaining = Math.abs(minutesValue);
+            const days = Math.floor(remaining / 1440);
+            remaining -= days * 1440;
+            const hours = Math.floor(remaining / 60);
+            remaining -= hours * 60;
+            const minutes = remaining;
+
+            const parts = [];
+            if (days > 0) {
+                parts.push(`${days} ${days === 1 ? 'day' : 'days'}`);
+            }
+            if (hours > 0) {
+                parts.push(`${hours} ${hours === 1 ? 'hour' : 'hours'}`);
+            }
+            parts.push(`${minutes} ${minutes === 1 ? 'minute' : 'minutes'}`);
+
+            const formatted = parts.join(', ');
+            return isPast ? `${formatted} ago` : formatted;
+        };
+        const timeToDestination = formatTimeToDestination(rawTimeToDestination);
+        const vehicleInfo = {
+            ...activeVehicleInfo
+        };
+        if (Array.isArray(activeVehicleInfo.destinations)) {
+            vehicleInfo.destinations = [...activeVehicleInfo.destinations];
+        }
+
+        return {
+            name: regionVehicleInfo
+                ? (typeof currentRegion?.name === 'string' ? currentRegion.name.trim() : '')
+                : (typeof currentLocation?.name === 'string' ? currentLocation.name.trim() : ''),
+            description: regionVehicleInfo
+                ? (typeof currentRegion?.description === 'string' ? currentRegion.description.trim() : '')
+                : (typeof currentLocation?.description === 'string' ? currentLocation.description.trim() : ''),
+            location: resolveVehicleLocationLabel(activeVehicleInfo) || '',
+            vehicleInfo,
+            destination,
+            timeToDestination
+        };
+    }
+
     get previousLocationId() {
         return this.#previousLocationId;
     }

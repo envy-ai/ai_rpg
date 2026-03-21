@@ -17,14 +17,17 @@ Rendered inside `#mapContainer` in the Map tab.
 - Vehicle-capable location nodes get a centered emoji overlay from `vehicleInfo.icon` (fallback `🚗`).
 - Edges represent exits. Bidirectional edges get a `bidirectional` class.
 - Region exits are rendered as separate "exit nodes" with an icon and dashed styling.
-  - Vehicle-capable region-exit nodes also get a centered vehicle emoji overlay.
+  - Only inbound vehicle region-exit nodes get a centered vehicle emoji overlay.
+  - Outbound vehicle exits (leaving a vehicle context) keep the standard region-exit symbol and do not get a fallback car overlay when icon metadata is missing.
 
 ### Interactions
 - Context menu on nodes and edges for edit/delete actions.
+- Stub node `Edit stub` opens the shared location-stub editor, including vehicle metadata controls (`isVehicle` + `vehicleInfo`) for both location stubs and region-entry stubs; the vehicle-exit field is a select labeled `inside -> outside`.
 - Hydrated location node context menu includes `Delete Location`, which confirms a destructive warning and then calls location cascade deletion (items/NPCs, exits to/from, then location).
 - Link mode for creating new exits (ghost node + edge).
 - New exits call `POST /api/locations/:id/exits` with payload:
   - region/location target, optional relative level, optional image data.
+  - Shift-drag map creation for new location stubs requests `bidirectional: true` so the created connection is two-way.
 - Exit deletions call `DELETE /api/locations/:id/exits/:exitId`.
 - Stub expansion hits `/api/stubs/:stubId` (GET/POST) to fill in stub regions/locations.
 
