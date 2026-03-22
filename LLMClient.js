@@ -160,6 +160,7 @@ class LLMClient {
             label: labelWithCounter,
             model: model || null,
             bytes: 0,
+            previewText: '',
             startTs,
             startDeadline,
             continueDeadline,
@@ -170,7 +171,7 @@ class LLMClient {
         return id;
     }
 
-    static #trackStreamBytes(id, bytes, continueTimeoutMs = null) {
+    static #trackStreamBytes(id, bytes, continueTimeoutMs = null, previewDelta = '') {
         if (!id) return;
         const entry = LLMClient.#streamProgress.active.get(id);
         if (!entry) return;
@@ -179,6 +180,9 @@ class LLMClient {
             entry.firstByteTs = now;
         }
         entry.bytes += bytes;
+        if (typeof previewDelta === 'string' && previewDelta) {
+            entry.previewText += previewDelta;
+        }
         entry.startDeadline = null;
         if (Number.isFinite(continueTimeoutMs)) {
             entry.continueDeadline = now + continueTimeoutMs;
@@ -319,6 +323,7 @@ class LLMClient {
                 label: entry.label,
                 model: entry.model || null,
                 bytes: entry.bytes,
+                previewText: typeof entry.previewText === 'string' ? entry.previewText : '',
                 seconds: Math.round((now - entry.startTs) / 1000),
                 timeoutSeconds,
                 retries: entry.retries ?? 0,
@@ -2228,7 +2233,7 @@ class LLMClient {
                                         assembled += delta;
                                         responseContent = assembled;
                                         const deltaBytes = Buffer.byteLength(delta, 'utf8');
-                                        LLMClient.#trackStreamBytes(streamId, deltaBytes, streamContinueTimeoutMs);
+                                        LLMClient.#trackStreamBytes(streamId, deltaBytes, streamContinueTimeoutMs, delta);
                                     }
                                 } catch (parseError) {
                                     // ignore malformed chunks, but log for visibility

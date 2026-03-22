@@ -80,6 +80,7 @@ class AIRPGChat {
 
         window.AIRPG_CHAT = this;
         this.promptProgressMessage = null;
+        this.promptProgressEntries = [];
         this.promptProgressHideTimer = null;
         this.promptProgressDragState = {
             active: false,
@@ -87,6 +88,8 @@ class AIRPGChat {
             offsetX: 0,
             offsetY: 0
         };
+        this.promptProgressViewer = null;
+        this.promptProgressViewerPromptId = null;
         this.worldTimeIndicator = document.getElementById('worldTimeIndicator');
         this.worldTimeIndicatorTime = document.getElementById('worldTimeIndicatorTime');
         this.worldTimeIndicatorDate = document.getElementById('worldTimeIndicatorDate');
@@ -2665,14 +2668,129 @@ class AIRPGChat {
         overlay.dataset.autoAnchored = 'true';
     }
 
+    getPromptProgressEntry(promptId) {
+        const resolvedId = typeof promptId === 'string' ? promptId.trim() : '';
+        if (!resolvedId || !Array.isArray(this.promptProgressEntries)) {
+            return null;
+        }
+        return this.promptProgressEntries.find(entry => entry && entry.id === resolvedId) || null;
+    }
+
+    closePromptProgressViewer() {
+        this.promptProgressViewerPromptId = null;
+        if (this.promptProgressViewer && this.promptProgressViewer.isConnected) {
+            this.promptProgressViewer.remove();
+        }
+        this.promptProgressViewer = null;
+    }
+
+    ensurePromptProgressViewer() {
+        if (this.promptProgressViewer) {
+            return this.promptProgressViewer;
+        }
+
+        const viewer = document.createElement('aside');
+        viewer.className = 'prompt-progress-viewer';
+        viewer.setAttribute('aria-live', 'polite');
+        viewer.setAttribute('aria-label', 'Streaming prompt response viewer');
+
+        const header = document.createElement('div');
+        header.className = 'prompt-progress-viewer__header';
+
+        const meta = document.createElement('div');
+        meta.className = 'prompt-progress-viewer__meta';
+
+        const title = document.createElement('div');
+        title.className = 'prompt-progress-viewer__title';
+
+        const subtitle = document.createElement('div');
+        subtitle.className = 'prompt-progress-viewer__subtitle';
+
+        const closeButton = document.createElement('button');
+        closeButton.type = 'button';
+        closeButton.className = 'prompt-progress-viewer__close';
+        closeButton.textContent = '×';
+        closeButton.title = 'Close streamed response viewer';
+        closeButton.setAttribute('aria-label', 'Close streamed response viewer');
+        closeButton.addEventListener('click', () => this.closePromptProgressViewer());
+
+        meta.appendChild(title);
+        meta.appendChild(subtitle);
+        header.appendChild(meta);
+        header.appendChild(closeButton);
+
+        const content = document.createElement('div');
+        content.className = 'prompt-progress-viewer__content';
+
+        const text = document.createElement('pre');
+        text.className = 'prompt-progress-viewer__text';
+        content.appendChild(text);
+
+        viewer.appendChild(header);
+        viewer.appendChild(content);
+        this.promptProgressViewer = viewer;
+        return viewer;
+    }
+
+    syncPromptProgressViewer() {
+        const entry = this.getPromptProgressEntry(this.promptProgressViewerPromptId);
+        if (!entry) {
+            this.closePromptProgressViewer();
+            return;
+        }
+
+        const viewer = this.ensurePromptProgressViewer();
+        const title = viewer.querySelector('.prompt-progress-viewer__title');
+        const subtitle = viewer.querySelector('.prompt-progress-viewer__subtitle');
+        const text = viewer.querySelector('.prompt-progress-viewer__text');
+        const previewText = typeof entry.previewText === 'string' ? entry.previewText : '';
+        const byteLabel = Number.isFinite(Number(entry.bytes))
+            ? `${Number(entry.bytes).toLocaleString()} bytes`
+            : null;
+        const metaParts = [entry.model || null, byteLabel].filter(Boolean);
+
+        if (title) {
+            title.textContent = entry.label || 'Streaming response';
+        }
+        if (subtitle) {
+            subtitle.textContent = metaParts.length ? metaParts.join(' • ') : 'Streaming response';
+        }
+        if (text) {
+            text.textContent = previewText || 'Waiting for streamed text...';
+        }
+        viewer.classList.toggle('is-empty', !previewText);
+        viewer.style.top = `${this.getPromptProgressSafeTopOffsetPx()}px`;
+
+        if (!viewer.isConnected) {
+            document.body.appendChild(viewer);
+        }
+    }
+
+    togglePromptProgressViewer(promptId) {
+        const resolvedId = typeof promptId === 'string' ? promptId.trim() : '';
+        if (!resolvedId) {
+            return;
+        }
+        if (this.promptProgressViewerPromptId === resolvedId && this.promptProgressViewer) {
+            this.closePromptProgressViewer();
+            this.renderPromptProgress(this.promptProgressEntries);
+            return;
+        }
+        this.promptProgressViewerPromptId = resolvedId;
+        this.syncPromptProgressViewer();
+        this.renderPromptProgress(this.promptProgressEntries);
+    }
+
     renderPromptProgress(entries = []) {
         if (!Array.isArray(entries)) {
             return;
         }
+        this.promptProgressEntries = entries.filter(entry => entry && typeof entry === 'object');
         const tableHeaderHtml = '<tr><th class="prompt-progress-cancel-header">Actions</th><th>Prompt</th><th>Model</th><th>Bytes</th><th>Seconds</th><th>Timeout In</th><th>Latency</th><th>Avg B/s</th><th>Retries</th></tr>';
         const renderTimestamp = () => new Date().toISOString().replace('T', ' ').replace('Z', '');
 
-        if (!entries.length) {
+        if (!this.promptProgressEntries.length) {
+            this.syncPromptProgressViewer();
             if (this.promptProgressMessage) {
                 const contentDiv = this.promptProgressMessage.querySelector('.prompt-progress-overlay__content');
                 if (contentDiv) {
@@ -2729,11 +2847,21 @@ class AIRPGChat {
         thead.innerHTML = tableHeaderHtml;
         table.appendChild(thead);
         const tbody = document.createElement('tbody');
-        entries.forEach(entry => {
+        this.promptProgressEntries.forEach(entry => {
             const row = document.createElement('tr');
+            const isViewerActive = this.promptProgressViewerPromptId === entry.id;
+            if (isViewerActive) {
+                row.classList.add('prompt-progress-row-viewing');
+            }
             const cancelCell = document.createElement('td');
             const actionWrap = document.createElement('div');
             actionWrap.className = 'prompt-progress-actions';
+            const viewButton = document.createElement('button');
+            viewButton.type = 'button';
+            viewButton.className = 'prompt-progress-view prompt-progress-action';
+            viewButton.textContent = '👁';
+            viewButton.setAttribute('aria-label', `${isViewerActive ? 'Hide' : 'View'} streamed response for ${entry.label || 'prompt'}`);
+            viewButton.title = isViewerActive ? 'Hide streamed response' : 'View streamed response';
             const cancelButton = document.createElement('button');
             cancelButton.type = 'button';
             cancelButton.className = 'prompt-progress-cancel prompt-progress-action';
@@ -2747,9 +2875,16 @@ class AIRPGChat {
             retryButton.setAttribute('aria-label', `Retry prompt ${entry.label || 'prompt'}`);
             retryButton.title = 'Retry prompt attempt';
             if (!entry.id) {
+                viewButton.disabled = true;
                 cancelButton.disabled = true;
                 retryButton.disabled = true;
             } else {
+                if (isViewerActive) {
+                    viewButton.classList.add('is-active');
+                }
+                viewButton.addEventListener('click', () => {
+                    this.togglePromptProgressViewer(entry.id);
+                });
                 cancelButton.addEventListener('click', () => {
                     this.cancelPromptProgress(entry.id, entry.label || 'prompt', {
                         cancelButton,
@@ -2765,6 +2900,7 @@ class AIRPGChat {
                     });
                 });
             }
+            actionWrap.appendChild(viewButton);
             actionWrap.appendChild(cancelButton);
             actionWrap.appendChild(retryButton);
             cancelCell.appendChild(actionWrap);
@@ -2888,6 +3024,7 @@ class AIRPGChat {
             }
             this.applyPromptProgressAutoAnchor(this.promptProgressMessage);
         }
+        this.syncPromptProgressViewer();
     }
 
     setPromptProgressActionState({ cancelButton = null, retryButton = null, row = null, isPending = false } = {}) {

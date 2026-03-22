@@ -258,6 +258,29 @@ Original prompt: For the skill generation modal: close the load game modal first
   - `docs/ui/modals_overlays.md`
   - `docs/README.md`
 - Validation:
+
+Original prompt: Add an eye icon on the left column of the running prompted table that pops up a window that shows the text of the response as it's streaming in.
+
+- Updated `LLMClient.js` prompt-progress tracking to include live `previewText` content for active streamed prompts in the existing realtime `prompt_progress` payload.
+- Updated `public/js/chat.js` prompt-progress overlay:
+  - added an eye action in the left-column action group for each running prompt,
+  - added a floating streamed-response viewer window with close control,
+  - wired the viewer to follow live `previewText` updates as prompt chunks arrive,
+  - highlighted the currently viewed prompt row and closed the viewer automatically when the tracked prompt disappeared.
+- Updated `public/css/main.scss` and rebuilt `public/css/main.css`:
+  - styled the new eye action button,
+  - added active-row highlighting,
+  - added the streamed-response viewer window styling and mobile layout.
+- Updated docs:
+  - `docs/ui/chat_interface.md`
+  - `docs/ui/modals_overlays.md`
+  - `docs/classes/LLMClient.md`
+  - `docs/README.md`
+- Validation:
+  - `npm run scss:build:main` ✅
+  - `node --check LLMClient.js` ✅
+  - `node --check public/js/chat.js` ✅
+  - `npm run test:e2e:headless` ✅
   - `node --check public/js/chat.js` ✅
 
 Original prompt: Trigger item-card long-name compact style when any word is 12+ characters.
