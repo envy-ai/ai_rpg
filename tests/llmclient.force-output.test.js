@@ -285,6 +285,74 @@ test('LLMClient.chatCompletion resolves <label>_group_N buckets in order', async
     }
 });
 
+test('LLMClient.chatCompletion prepends cachebuster to the final user message only', async () => {
+    const originalAxiosPost = axios.post;
+    const originalConfig = Globals.config;
+    const messages = [
+        { role: 'system', content: 'System instructions.' },
+        { role: 'user', content: 'Earlier user message.' },
+        { role: 'assistant', content: 'Intermediate assistant reply.' },
+        { role: 'user', content: 'Main prompt body.' }
+    ];
+    const originalMessagesSnapshot = JSON.stringify(messages);
+    let capturedRequest = null;
+
+    axios.post = async (_endpoint, payload) => ({
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config: {},
+        data: {
+            id: 'mock_response',
+            model: payload.model,
+            choices: [
+                {
+                    message: { content: 'Cachebuster response.' },
+                    finish_reason: 'stop'
+                }
+            ],
+            usage: { total_tokens: 12 }
+        }
+    });
+    Globals.config = {
+        ai: {
+            endpoint: 'https://example.invalid/v1/chat/completions',
+            apiKey: 'test-key',
+            model: 'mock-model',
+            stream: false,
+            cachebuster: true,
+            retryAttempts: 0,
+            supress_seed: true
+        }
+    };
+
+    try {
+        const result = await LLMClient.chatCompletion({
+            messages,
+            validateXML: false,
+            output: 'silent',
+            retryAttempts: 0,
+            captureRequestPayload: (payload) => {
+                capturedRequest = payload;
+            }
+        });
+
+        assert.equal(result, 'Cachebuster response.');
+        assert.ok(capturedRequest);
+        assert.equal(JSON.stringify(messages), originalMessagesSnapshot);
+        assert.equal(capturedRequest.messages[0].content, 'System instructions.');
+        assert.equal(capturedRequest.messages[1].content, 'Earlier user message.');
+        assert.equal(capturedRequest.messages[2].content, 'Intermediate assistant reply.');
+        assert.match(
+            capturedRequest.messages[3].content,
+            /^\[cachebuster:[0-9a-f-]{36}\]\n\nMain prompt body\.$/
+        );
+    } finally {
+        axios.post = originalAxiosPost;
+        Globals.config = originalConfig;
+    }
+});
+
 test('LLMClient.chatCompletion supports forceOutput tool calls and skips regex validation for tool rounds', async () => {
     const originalAxiosPost = axios.post;
     const originalConfig = Globals.config;

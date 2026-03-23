@@ -9,7 +9,8 @@ Most modals live in `views/index.njk` and are wired up by the inline script or `
   - Auto-closes `#loadGameModal` before showing prompt activity.
   - Renders in the upper modal layer so prompt activity stays visible above the full interface.
   - Auto-anchors below the top header/tab controls by default so top navigation remains clickable.
-  - Each prompt row includes an eye action that opens a separate floating viewer window for that prompt's live streamed response text.
+  - Each prompt row includes an eye action that opens a separate floating viewer window with one combined text pane: the full prompt appears first in a differently styled inline span, followed by the live streamed response text, and the viewer header includes a `Copy Prompt` button.
+  - The viewer supports header dragging, native resize, and an internal vertical scrollbar when the combined text pane overflows.
   - Supports drag/resize/contract; manual drag disables auto-anchoring for that session.
 - `#npcModalBackdrop`, `#questEditBackdrop`, `#craftingModalBackdrop`, `#salvageIntentBackdrop`:
   shared backdrops used to dim the page for certain modals.

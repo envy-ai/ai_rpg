@@ -88,6 +88,12 @@ class AIRPGChat {
             offsetX: 0,
             offsetY: 0
         };
+        this.promptProgressViewerDragState = {
+            active: false,
+            pointerId: null,
+            offsetX: 0,
+            offsetY: 0
+        };
         this.promptProgressViewer = null;
         this.promptProgressViewerPromptId = null;
         this.worldTimeIndicator = document.getElementById('worldTimeIndicator');
@@ -2676,12 +2682,109 @@ class AIRPGChat {
         return this.promptProgressEntries.find(entry => entry && entry.id === resolvedId) || null;
     }
 
+    bindPromptProgressViewerInteractions(viewer, header) {
+        if (!viewer || !header || viewer.dataset.dragBound === 'true') {
+            return;
+        }
+
+        const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
+
+        const onPointerMove = (event) => {
+            if (!this.promptProgressViewerDragState.active || event.pointerId !== this.promptProgressViewerDragState.pointerId) {
+                return;
+            }
+            const viewerRect = viewer.getBoundingClientRect();
+            const maxLeft = Math.max(0, window.innerWidth - viewerRect.width);
+            const maxTop = Math.max(0, window.innerHeight - viewerRect.height);
+            const targetLeft = clamp(event.clientX - this.promptProgressViewerDragState.offsetX, 0, maxLeft);
+            const targetTop = clamp(event.clientY - this.promptProgressViewerDragState.offsetY, 0, maxTop);
+            viewer.style.left = `${targetLeft}px`;
+            viewer.style.top = `${targetTop}px`;
+            viewer.style.right = 'auto';
+            viewer.classList.add('is-dragging');
+            viewer.dataset.autoAnchored = 'false';
+        };
+
+        const stopDragging = (event) => {
+            if (!this.promptProgressViewerDragState.active) {
+                return;
+            }
+            if (event && event.pointerId !== undefined && event.pointerId !== this.promptProgressViewerDragState.pointerId) {
+                return;
+            }
+            this.promptProgressViewerDragState.active = false;
+            this.promptProgressViewerDragState.pointerId = null;
+            viewer.classList.remove('is-dragging');
+            window.removeEventListener('pointermove', onPointerMove);
+            window.removeEventListener('pointerup', stopDragging);
+            window.removeEventListener('pointercancel', stopDragging);
+        };
+
+        header.addEventListener('pointerdown', (event) => {
+            if (event.button !== 0) {
+                return;
+            }
+            if (event.target && event.target.closest('.prompt-progress-viewer__actions')) {
+                return;
+            }
+            const rect = viewer.getBoundingClientRect();
+            this.promptProgressViewerDragState.active = true;
+            this.promptProgressViewerDragState.pointerId = event.pointerId;
+            this.promptProgressViewerDragState.offsetX = event.clientX - rect.left;
+            this.promptProgressViewerDragState.offsetY = event.clientY - rect.top;
+            viewer.dataset.autoAnchored = 'false';
+            window.addEventListener('pointermove', onPointerMove);
+            window.addEventListener('pointerup', stopDragging);
+            window.addEventListener('pointercancel', stopDragging);
+            event.preventDefault();
+        });
+
+        viewer.dataset.dragBound = 'true';
+    }
+
+    applyPromptProgressViewerAutoAnchor(viewer) {
+        if (!viewer || viewer.dataset.autoAnchored === 'false') {
+            return;
+        }
+        viewer.style.left = 'auto';
+        viewer.style.right = '16px';
+        viewer.style.top = `${this.getPromptProgressSafeTopOffsetPx()}px`;
+        viewer.dataset.autoAnchored = 'true';
+    }
+
     closePromptProgressViewer() {
         this.promptProgressViewerPromptId = null;
         if (this.promptProgressViewer && this.promptProgressViewer.isConnected) {
             this.promptProgressViewer.remove();
         }
         this.promptProgressViewer = null;
+    }
+
+    async copyTextToClipboard(text) {
+        const value = typeof text === 'string' ? text : '';
+        if (!value) {
+            throw new Error('Nothing to copy.');
+        }
+
+        if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+            await navigator.clipboard.writeText(value);
+            return;
+        }
+
+        const textarea = document.createElement('textarea');
+        textarea.value = value;
+        textarea.setAttribute('readonly', '');
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        textarea.style.pointerEvents = 'none';
+        document.body.appendChild(textarea);
+        textarea.select();
+        textarea.setSelectionRange(0, textarea.value.length);
+        const copied = document.execCommand('copy');
+        textarea.remove();
+        if (!copied) {
+            throw new Error('Clipboard copy failed.');
+        }
     }
 
     ensurePromptProgressViewer() {
@@ -2693,6 +2796,7 @@ class AIRPGChat {
         viewer.className = 'prompt-progress-viewer';
         viewer.setAttribute('aria-live', 'polite');
         viewer.setAttribute('aria-label', 'Streaming prompt response viewer');
+        viewer.dataset.autoAnchored = 'true';
 
         const header = document.createElement('div');
         header.className = 'prompt-progress-viewer__header';
@@ -2706,6 +2810,46 @@ class AIRPGChat {
         const subtitle = document.createElement('div');
         subtitle.className = 'prompt-progress-viewer__subtitle';
 
+        const actions = document.createElement('div');
+        actions.className = 'prompt-progress-viewer__actions';
+
+        const copyPromptButton = document.createElement('button');
+        copyPromptButton.type = 'button';
+        copyPromptButton.className = 'prompt-progress-viewer__copy';
+        copyPromptButton.textContent = 'Copy Prompt';
+        copyPromptButton.title = 'Copy the full prompt to the clipboard';
+        copyPromptButton.setAttribute('aria-label', 'Copy the full prompt to the clipboard');
+        copyPromptButton.addEventListener('click', async () => {
+            const activeEntry = this.getPromptProgressEntry(this.promptProgressViewerPromptId);
+            const promptText = typeof activeEntry?.promptText === 'string' ? activeEntry.promptText : '';
+            if (!promptText) {
+                return;
+            }
+            try {
+                await this.copyTextToClipboard(promptText);
+                copyPromptButton.textContent = 'Copied';
+                copyPromptButton.dataset.feedbackActive = 'true';
+                if (copyPromptButton._feedbackTimer) {
+                    clearTimeout(copyPromptButton._feedbackTimer);
+                }
+                copyPromptButton._feedbackTimer = setTimeout(() => {
+                    copyPromptButton.textContent = 'Copy Prompt';
+                    delete copyPromptButton.dataset.feedbackActive;
+                }, 1600);
+            } catch (error) {
+                console.warn('Failed to copy prompt text:', error);
+                copyPromptButton.textContent = 'Copy Failed';
+                copyPromptButton.dataset.feedbackActive = 'true';
+                if (copyPromptButton._feedbackTimer) {
+                    clearTimeout(copyPromptButton._feedbackTimer);
+                }
+                copyPromptButton._feedbackTimer = setTimeout(() => {
+                    copyPromptButton.textContent = 'Copy Prompt';
+                    delete copyPromptButton.dataset.feedbackActive;
+                }, 1800);
+            }
+        });
+
         const closeButton = document.createElement('button');
         closeButton.type = 'button';
         closeButton.className = 'prompt-progress-viewer__close';
@@ -2717,17 +2861,43 @@ class AIRPGChat {
         meta.appendChild(title);
         meta.appendChild(subtitle);
         header.appendChild(meta);
-        header.appendChild(closeButton);
+        actions.appendChild(copyPromptButton);
+        actions.appendChild(closeButton);
+        header.appendChild(actions);
 
         const content = document.createElement('div');
         content.className = 'prompt-progress-viewer__content';
 
-        const text = document.createElement('pre');
-        text.className = 'prompt-progress-viewer__text';
-        content.appendChild(text);
+        const streamSection = document.createElement('section');
+        streamSection.className = 'prompt-progress-viewer__section prompt-progress-viewer__section--stream';
+
+        const streamLabel = document.createElement('div');
+        streamLabel.className = 'prompt-progress-viewer__section-label';
+        streamLabel.textContent = 'Prompt + Response';
+
+        const streamText = document.createElement('pre');
+        streamText.className = 'prompt-progress-viewer__stream-text';
+
+        const promptText = document.createElement('span');
+        promptText.className = 'prompt-progress-viewer__prompt-inline';
+
+        const separatorText = document.createTextNode('');
+
+        const responseText = document.createElement('span');
+        responseText.className = 'prompt-progress-viewer__response-inline';
+
+        streamText.appendChild(promptText);
+        streamText.appendChild(separatorText);
+        streamText.appendChild(responseText);
+
+        streamSection.appendChild(streamLabel);
+        streamSection.appendChild(streamText);
+
+        content.appendChild(streamSection);
 
         viewer.appendChild(header);
         viewer.appendChild(content);
+        this.bindPromptProgressViewerInteractions(viewer, header);
         this.promptProgressViewer = viewer;
         return viewer;
     }
@@ -2742,12 +2912,26 @@ class AIRPGChat {
         const viewer = this.ensurePromptProgressViewer();
         const title = viewer.querySelector('.prompt-progress-viewer__title');
         const subtitle = viewer.querySelector('.prompt-progress-viewer__subtitle');
-        const text = viewer.querySelector('.prompt-progress-viewer__text');
+        const copyButton = viewer.querySelector('.prompt-progress-viewer__copy');
+        const streamTextElement = viewer.querySelector('.prompt-progress-viewer__stream-text');
+        const promptTextElement = viewer.querySelector('.prompt-progress-viewer__prompt-inline');
+        const responseTextElement = viewer.querySelector('.prompt-progress-viewer__response-inline');
+        const previousPromptId = viewer.dataset.promptId || '';
+        const promptText = typeof entry.promptText === 'string' ? entry.promptText : '';
         const previewText = typeof entry.previewText === 'string' ? entry.previewText : '';
         const byteLabel = Number.isFinite(Number(entry.bytes))
             ? `${Number(entry.bytes).toLocaleString()} bytes`
             : null;
         const metaParts = [entry.model || null, byteLabel].filter(Boolean);
+
+        if (previousPromptId !== (entry.id || '') && copyButton) {
+            if (copyButton._feedbackTimer) {
+                clearTimeout(copyButton._feedbackTimer);
+            }
+            copyButton.textContent = 'Copy Prompt';
+            delete copyButton.dataset.feedbackActive;
+        }
+        viewer.dataset.promptId = entry.id || '';
 
         if (title) {
             title.textContent = entry.label || 'Streaming response';
@@ -2755,11 +2939,29 @@ class AIRPGChat {
         if (subtitle) {
             subtitle.textContent = metaParts.length ? metaParts.join(' • ') : 'Streaming response';
         }
-        if (text) {
-            text.textContent = previewText || 'Waiting for streamed text...';
+        if (copyButton) {
+            copyButton.disabled = !promptText;
+            copyButton.title = promptText
+                ? 'Copy the full prompt to the clipboard'
+                : 'Prompt text is not available to copy';
         }
-        viewer.classList.toggle('is-empty', !previewText);
-        viewer.style.top = `${this.getPromptProgressSafeTopOffsetPx()}px`;
+        const renderedPromptText = promptText || 'Prompt not available for this stream.';
+        const renderedResponseText = previewText || 'Waiting for streamed text...';
+        if (promptTextElement) {
+            promptTextElement.textContent = renderedPromptText;
+        }
+        if (streamTextElement && promptTextElement && responseTextElement) {
+            const separatorNode = promptTextElement.nextSibling;
+            if (separatorNode && separatorNode.nodeType === Node.TEXT_NODE) {
+                separatorNode.textContent = '\n\n';
+            }
+        }
+        if (responseTextElement) {
+            responseTextElement.textContent = renderedResponseText;
+        }
+        viewer.classList.toggle('is-prompt-empty', !promptText);
+        viewer.classList.toggle('is-response-empty', !previewText);
+        this.applyPromptProgressViewerAutoAnchor(viewer);
 
         if (!viewer.isConnected) {
             document.body.appendChild(viewer);

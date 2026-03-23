@@ -97,6 +97,20 @@ Merge semantics:
 - `null` on a specific header key removes that inherited header key.
 - `headers: null` clears inherited headers for that override chain.
 
+## AI prompt cachebuster
+
+`config.ai.cachebuster` prepends a random cachebuster line to the final `user` message sent by `LLMClient.chatCompletion()`.
+
+```yaml
+ai:
+  cachebuster: true
+```
+
+- Must be a boolean when present.
+- When `true`, each outbound request attempt gets a fresh line in the form `[cachebuster:<uuid>]` before the final `user` message body.
+- The original caller-provided `messages` array is not mutated; the tag is applied only to the request payload copy.
+- The live prompt-progress viewer and chat-completion error logs reflect the cachebusted prompt actually sent on that attempt.
+
 ## AI retry wait after errors
 
 `config.ai.waitAfterError` controls how many seconds to wait between automatic retry attempts after retryable non-rate-limit failures (`5xx`).

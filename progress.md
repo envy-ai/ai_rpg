@@ -1,3 +1,48 @@
+Original prompt: NPC ability and skill generation are being really wonky and returning gibberish, and those two prompts are contiunuations of previous prompts, so I'm converting them into base_context prompts instead.
+
+- Added slash command `/respec_skills` in `slashcommands/respec_skills.js` to rebuild an NPC's skills for its current level by requesting a fresh NPC progression assignment, resetting registered skills to baseline, and reapplying the full formula-derived skill budget with rollback on failure.
+- Updated `/respec_skills` target resolution to accept NPC aliases, prefer a unique match at the invoking player's current location when names are ambiguous, and abort with a warning if multiple matches still remain.
+- Added shared slash-command character targeting helpers in `slashcommand_utils/characterTargeting.js` for alias-aware resolution, current-location ambiguity tie-breaking, and raw character-argument extraction from `interaction.argsText`.
+- Updated `/awardxp`, `/setlevel`, `/heal`, `/kill`, `/incapacitate`, and `/respec_abilities` to use the shared character-targeting behavior so alias lookup and ambiguity handling are consistent across character-targeting commands.
+- Added `Globals.respecNpcSkillsForCharacter` in `server.js`, including live-NPC XML seed generation for the progression prompt, strict location/region validation, baseline skill reset, and explicit restoration of the prior skill map on failure.
+- Updated docs:
+  - `docs/slash_commands.md`
+  - `docs/slashcommands/RespecSkillsCommand.md`
+  - `docs/slashcommands/Command.md`
+  - `docs/slashcommands/SetLevelCommand.md`
+  - `docs/slashcommands/HealCommand.md`
+  - `docs/slashcommands/KillCommand.md`
+  - `docs/slashcommands/IncapacitateCommand.md`
+  - `docs/slashcommands/RespecAbilitiesCommand.md`
+  - `docs/README.md`
+
+- Added slash command `/setlevel` in `slashcommands/setlevel.js` to set the invoking player or a named character to an exact level while leaving XP unchanged and still triggering normal level-up side effects on increases.
+- Fixed standalone NPC post-generation prompt resolution by making the skill/ability follow-up prompt bodies resolve directly under `_includes/` with `.njk` filenames so `base-context.xml.njk` can include them by prompt type.
+- Updated `prompts/base-context.xml.njk` so `<currentLocation>` only renders when `currentLocation` is non-null.
+- Reworked NPC post-generation skill/ability prompt construction in `server.js`:
+  - Added a standalone base-context render path for `npc-generate-skills` and `npc-generate-abilities`.
+  - Those prompts now receive `generated_npc_results` from the raw NPC-generation XML response.
+  - They also receive `generatedRegionOrLocation` from the raw region/location generation XML when applicable.
+  - When `generatedRegionOrLocation` is supplied, `currentLocation` is explicitly set to `null` for that prompt render.
+- Removed the continuation-style follow-up behavior for NPC skills/abilities:
+  - Location and region NPC follow-up prompts still run skills and abilities concurrently after NPC generation.
+  - Single-NPC generation now also launches skill and ability prompts concurrently from the same NPC-generation response instead of chaining abilities after the skills prompt.
+- Updated docs:
+  - `docs/server_llm_notes.md`
+  - `docs/README.md`
+
+Original prompt: I've added a cachebuster parameter to the ai config. if true, prepend a random ID to the main prompt
+
+- Implemented `ai.cachebuster` handling in `LLMClient.chatCompletion()`:
+  - When enabled, each outbound request attempt prepends a fresh `[cachebuster:<uuid>]` line to the final `user` message only.
+  - The original caller-provided `messages` array is left unchanged.
+  - The streamed prompt-progress payload and error logging paths now reflect the actual tagged prompt that was sent.
+- Added targeted regression coverage in `tests/llmclient.force-output.test.js` to verify final-user-message-only tagging and non-mutation of the source `messages` array.
+- Updated docs:
+  - `docs/config.md`
+  - `docs/classes/LLMClient.md`
+  - `docs/README.md`
+
 Original prompt: Add a faction dropdown to the Region edit modal.
 
 - Reviewed docs and existing region edit modal wiring.
@@ -284,6 +329,27 @@ Original prompt: Add an eye icon on the left column of the running prompted tabl
   - `node --check public/js/chat.js` ✅
 
 Original prompt: Trigger item-card long-name compact style when any word is 12+ characters.
+
+Original prompt: In the eye button window, also render the full prompt before the response, make it a different color, and add a copy prompt button.
+
+- Updated `LLMClient.js` prompt-progress tracking to include full `promptText` alongside the existing live `previewText` in each realtime `prompt_progress` entry.
+- Updated `public/js/chat.js` prompt viewer:
+  - added a prompt panel above the response panel,
+  - added `Copy Prompt` in the viewer header with clipboard fallback + temporary success/failure feedback,
+  - reset copy-button feedback correctly when switching between tracked prompts.
+- Updated `public/css/main.scss` and rebuilt `public/css/main.css`:
+  - split the viewer into differently colored prompt/response sections,
+  - styled the new copy button and header action group.
+- Updated docs:
+  - `docs/ui/chat_interface.md`
+  - `docs/ui/modals_overlays.md`
+  - `docs/classes/LLMClient.md`
+  - `docs/README.md`
+- Validation:
+  - `npm run scss:build:main` ✅
+  - `node --check LLMClient.js` ✅
+  - `node --check public/js/chat.js` ✅
+  - `npm run test:e2e:headless` ✅
 
 - Updated shared name rendering helper in `views/index.njk`:
   - Added `LONG_NAME_WORD_CHARACTER_LIMIT = 12` and `containsLongWord(...)`.

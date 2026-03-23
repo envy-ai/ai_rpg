@@ -159,6 +159,7 @@ The below context is an account of the current game state, including the setting
       {% endfor %}
     </connectedRegions>
   </currentRegion>
+  {% if currentLocation %}
   <currentLocation>
     <name>{{ currentLocation.name }}</name>
     <description>{{ currentLocation.description }}</description>
@@ -347,6 +348,7 @@ The below context is an account of the current game state, including the setting
       {% endif %}{% endfor %}
     {% endif %}</sceneryList>  
   </currentLocation>
+  {% endif %}
   <player>
     <name>{{ currentPlayer.name }}</name>
     <description>{{ currentPlayer.description }}</description>{#

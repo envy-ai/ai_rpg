@@ -1,21 +1,14 @@
 const Globals = require('../Globals.js');
 const SlashCommandBase = require('../SlashCommandBase.js');
-
-const stripQuotes = (value) => {
-  if (typeof value !== 'string') {
-    return '';
-  }
-  let trimmed = value.trim();
-  if (!trimmed) {
-    return '';
-  }
-  const firstChar = trimmed.charAt(0);
-  const lastChar = trimmed.charAt(trimmed.length - 1);
-  if ((firstChar === '"' && lastChar === '"') || (firstChar === '\'' && lastChar === '\'')) {
-    trimmed = trimmed.slice(1, -1).trim();
-  }
-  return trimmed;
-};
+const {
+  containsNamedArgSyntax,
+  formatAmbiguousCharacterMatches,
+  getInteractionCurrentLocationId,
+  hasExplicitNamedArg,
+  resolveCharacterTarget,
+  stripQuotes,
+  tokenizePositionalArgs
+} = require('../slashcommand_utils/characterTargeting.js');
 
 const parseOptionalLevel = (value) => {
   if (value === undefined || value === null) {
@@ -43,126 +36,12 @@ const hasProvidedValue = (value) => {
   return true;
 };
 
-const sanitizeLookupKey = (value) => {
-  if (typeof value !== 'string') {
-    return '';
-  }
-  return value
-    .replace(/[^\w\s]|_/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .toLowerCase();
-};
-
-const tokenizePositionalArgs = (value) => {
-  if (typeof value !== 'string' || !value.trim()) {
-    return [];
-  }
-
-  const tokens = [];
-  const pattern = /"([^"]*)"|'([^']*)'|(\S+)/g;
-  let match;
-  while ((match = pattern.exec(value)) !== null) {
-    const token = (match[1] ?? match[2] ?? match[3] ?? '').trim();
-    if (token) {
-      tokens.push(token);
-    }
-  }
-  return tokens;
-};
-
-const containsNamedArgSyntax = (value) => {
-  if (typeof value !== 'string') {
-    return false;
-  }
-  return /\b[a-zA-Z0-9_]+\s*=/.test(value);
-};
-
-const hasExplicitNamedArg = (argsText, argName) => {
-  if (typeof argsText !== 'string' || typeof argName !== 'string' || !argName.trim()) {
-    return false;
-  }
-  const escaped = argName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const pattern = new RegExp(`(?:^|\\s)${escaped}\\s*=`, 'i');
-  return pattern.test(argsText);
-};
-
-const resolveCharacterTarget = ({ playersByName, playersById, rawName }) => {
-  const resolvedName = stripQuotes(rawName);
-  if (!resolvedName) {
-    return {
-      target: null,
-      ambiguousMatches: []
-    };
-  }
-
-  let directTarget = null;
-  try {
-    directTarget = playersByName.get(resolvedName);
-  } catch (_) {
-    directTarget = null;
-  }
-  if (directTarget) {
-    return {
-      target: directTarget,
-      ambiguousMatches: []
-    };
-  }
-
-  const key = sanitizeLookupKey(resolvedName);
-  if (!key) {
-    return {
-      target: null,
-      ambiguousMatches: []
-    };
-  }
-
-  const matches = [];
-  const seenIds = new Set();
-
-  for (const candidate of playersById.values()) {
-    if (!candidate || typeof candidate.id !== 'string' || seenIds.has(candidate.id)) {
-      continue;
-    }
-
-    const candidateNames = [];
-    if (typeof candidate.name === 'string') {
-      candidateNames.push(candidate.name);
-    }
-    if (typeof candidate.getAliases === 'function') {
-      const aliases = candidate.getAliases();
-      if (Array.isArray(aliases)) {
-        for (const alias of aliases) {
-          if (typeof alias === 'string') {
-            candidateNames.push(alias);
-          }
-        }
-      }
-    }
-
-    const isMatch = candidateNames.some(name => sanitizeLookupKey(name) === key);
-    if (!isMatch) {
-      continue;
-    }
-
-    seenIds.add(candidate.id);
-    matches.push(candidate);
-  }
-
-  if (matches.length === 1) {
-    return {
-      target: matches[0],
-      ambiguousMatches: []
-    };
-  }
-
-  return {
-    target: null,
-    ambiguousMatches: matches
-  };
-};
-
-const derivePositionalRespecInput = ({ rawArgsText, playersByName }) => {
+const derivePositionalRespecInput = ({
+  rawArgsText,
+  playersByName,
+  playersById,
+  currentLocationId = ''
+}) => {
   if (typeof rawArgsText !== 'string' || !rawArgsText.trim()) {
     return null;
   }
@@ -173,17 +52,20 @@ const derivePositionalRespecInput = ({ rawArgsText, playersByName }) => {
   const trimmedArgsText = rawArgsText.trim();
   const fullTextCandidate = stripQuotes(trimmedArgsText);
   if (fullTextCandidate) {
-    try {
-      const directTarget = playersByName.get(fullTextCandidate);
-      if (directTarget) {
-        return {
-          rawName: fullTextCandidate,
-          startLevel: null,
-          endLevel: null
-        };
-      }
-    } catch (_) {
-      // Ignore lookup errors and continue to tokenized parsing.
+    const { target } = resolveCharacterTarget({
+      rawName: fullTextCandidate,
+      playersByName,
+      playersById,
+      currentLocationId,
+      allowNPCs: true,
+      allowPlayers: true
+    });
+    if (target) {
+      return {
+        rawName: fullTextCandidate,
+        startLevel: null,
+        endLevel: null
+      };
     }
   }
 
@@ -206,12 +88,15 @@ const derivePositionalRespecInput = ({ rawArgsText, playersByName }) => {
     }
 
     const candidateName = nameTokens.join(' ');
-    try {
-      const candidateTarget = playersByName.get(candidateName);
-      if (!candidateTarget) {
-        continue;
-      }
-    } catch (_) {
+    const { target } = resolveCharacterTarget({
+      rawName: candidateName,
+      playersByName,
+      playersById,
+      currentLocationId,
+      allowNPCs: true,
+      allowPlayers: true
+    });
+    if (!target) {
       continue;
     }
 
@@ -289,9 +174,12 @@ class RespecAbilitiesCommand extends SlashCommandBase {
     const hasNamedCharacter = hasExplicitNamedArg(rawArgsText, 'character');
     const hasNamedStartLevel = hasExplicitNamedArg(rawArgsText, 'start_level');
     const hasNamedEndLevel = hasExplicitNamedArg(rawArgsText, 'end_level');
+    const currentLocationId = getInteractionCurrentLocationId(interaction, playersById);
     const positionalInput = derivePositionalRespecInput({
       rawArgsText,
-      playersByName
+      playersByName,
+      playersById,
+      currentLocationId
     });
 
     let rawName = typeof args.character === 'string' ? args.character : null;
@@ -358,17 +246,16 @@ class RespecAbilitiesCommand extends SlashCommandBase {
       const { target: resolvedTarget, ambiguousMatches } = resolveCharacterTarget({
         playersByName,
         playersById,
-        rawName
+        rawName,
+        currentLocationId,
+        allowNPCs: true,
+        allowPlayers: true
       });
       target = resolvedTarget;
 
       if (!target && ambiguousMatches.length > 1) {
-        const names = ambiguousMatches
-          .map(candidate => candidate?.name)
-          .filter(name => typeof name === 'string' && name.trim())
-          .slice(0, 5);
         await interaction.reply({
-          content: `Character "${rawName}" is ambiguous. Matches: ${names.join(', ')}.`,
+          content: `Character "${rawName}" is ambiguous. Matches: ${formatAmbiguousCharacterMatches(ambiguousMatches, { limit: 5 })}.`,
           ephemeral: true
         });
         return;

@@ -1,7 +1,13 @@
-<template>
-    <comment>This prompt runs after NPC generation with prior context included, so it does not define its own system prompt.</comment>
-    <role>NPC progression generator</role>
-<generationPrompt>
+{# The location or region just generated, if applicable #}
+<generatedRegionOrLocation>
+{{ generatedRegionOrLocation }}
+</generatedRegionOrLocation>
+
+{# The XML outputted from the NPC generation prompt #}
+<generatedNPCs>
+{{ generated_npc_results }}
+</generatedNPCs>
+
 <skills>
 {% for skill in skills %}  <skill>
     <name>{{ skill.name }}</name>
@@ -43,5 +49,4 @@ For each NPC generated above, produce priority lists for both skills and attribu
   </npc>
   [... more NPCs ...]
 </npcs>
-</generationPrompt>
-</template>
+

@@ -1,5 +1,11 @@
 const Globals = require('../Globals.js');
 const SlashCommandBase = require('../SlashCommandBase.js');
+const {
+  formatAmbiguousCharacterMatches,
+  getInteractionCurrentLocationId,
+  getTrailingCharacterArgValue,
+  resolveCharacterTarget
+} = require('../slashcommand_utils/characterTargeting.js');
 
 class Command extends SlashCommandBase {
   static get name() {
@@ -25,11 +31,30 @@ class Command extends SlashCommandBase {
     }
 
     let targetPlayer = null;
-    const characterName = args['character'];
+    const characterName = getTrailingCharacterArgValue({
+      interaction,
+      args,
+      argName: 'character',
+      leadingArgCount: 1
+    });
     if (characterName) {
-      // Find the specified character
-      const playersByName = Globals.playersByName;
-      targetPlayer = playersByName.get(characterName);
+      const currentLocationId = getInteractionCurrentLocationId(interaction, Globals.playersById);
+      const { target, ambiguousMatches } = resolveCharacterTarget({
+        rawName: characterName,
+        playersByName: Globals.playersByName,
+        playersById: Globals.playersById,
+        currentLocationId,
+        allowNPCs: true,
+        allowPlayers: true
+      });
+      targetPlayer = target;
+      if (!targetPlayer && ambiguousMatches.length > 1) {
+        interaction.reply({
+          content: `Character "${characterName}" is ambiguous. Matches: ${formatAmbiguousCharacterMatches(ambiguousMatches)}.`,
+          ephemeral: true
+        });
+        return;
+      }
       if (!targetPlayer) {
         interaction.reply({ content: `Character "${characterName}" not found.`, ephemeral: true });
         return;

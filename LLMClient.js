@@ -1,5 +1,6 @@
 const axios = require('axios');
 const { Console } = require('console');
+const { randomUUID } = require('crypto');
 const Globals = require('./Globals.js');
 const { response } = require('express');
 const Utils = require('./Utils.js');
@@ -146,7 +147,7 @@ class LLMClient {
         }, 1000);
     }
 
-    static #trackStreamStart(label, { startTimeoutMs = null, continueTimeoutMs = null, isBackground = false, model = null } = {}) {
+    static #trackStreamStart(label, { startTimeoutMs = null, continueTimeoutMs = null, isBackground = false, model = null, promptText = '' } = {}) {
         if (!LLMClient.#isInteractive()) {
             return null;
         }
@@ -160,6 +161,7 @@ class LLMClient {
             label: labelWithCounter,
             model: model || null,
             bytes: 0,
+            promptText: typeof promptText === 'string' ? promptText : '',
             previewText: '',
             startTs,
             startDeadline,
@@ -323,6 +325,7 @@ class LLMClient {
                 label: entry.label,
                 model: entry.model || null,
                 bytes: entry.bytes,
+                promptText: typeof entry.promptText === 'string' ? entry.promptText : '',
                 previewText: typeof entry.previewText === 'string' ? entry.previewText : '',
                 seconds: Math.round((now - entry.startTs) / 1000),
                 timeoutSeconds,
@@ -555,6 +558,80 @@ class LLMClient {
         }
 
         return lines.join('\n');
+    }
+
+    static #buildPromptCachebusterLine() {
+        return `[cachebuster:${randomUUID()}]`;
+    }
+
+    static #isPromptCachebusterEnabled(rawValue) {
+        if (rawValue === undefined) {
+            return false;
+        }
+        if (rawValue === true || rawValue === false) {
+            return rawValue;
+        }
+        throw new Error('AI cachebuster must be a boolean when configured.');
+    }
+
+    static #prependCachebusterToMessageContent(content, cachebusterLine) {
+        if (typeof cachebusterLine !== 'string' || !cachebusterLine.trim()) {
+            return content;
+        }
+        if (content === null || content === undefined) {
+            return cachebusterLine;
+        }
+        if (typeof content === 'string') {
+            return `${cachebusterLine}\n\n${content}`;
+        }
+        if (Array.isArray(content)) {
+            return [
+                { type: 'text', text: cachebusterLine },
+                ...content
+            ];
+        }
+        if (typeof content === 'object' && typeof content.text === 'string') {
+            return {
+                ...content,
+                text: `${cachebusterLine}\n\n${content.text}`
+            };
+        }
+        throw new Error(
+            'Prompt cachebuster requires the final user message content to be a string, '
+            + 'an array of content parts, or an object with a text field.'
+        );
+    }
+
+    static #applyPromptCachebuster(messages, enabled = false) {
+        if (enabled !== true || !Array.isArray(messages) || messages.length === 0) {
+            return messages;
+        }
+
+        let finalUserMessageIndex = -1;
+        for (let index = messages.length - 1; index >= 0; index -= 1) {
+            const role = typeof messages[index]?.role === 'string'
+                ? messages[index].role.trim().toLowerCase()
+                : '';
+            if (role === 'user') {
+                finalUserMessageIndex = index;
+                break;
+            }
+        }
+
+        if (finalUserMessageIndex < 0) {
+            return messages;
+        }
+
+        const targetMessage = messages[finalUserMessageIndex];
+        const modifiedMessages = messages.slice();
+        modifiedMessages[finalUserMessageIndex] = {
+            ...targetMessage,
+            content: LLMClient.#prependCachebusterToMessageContent(
+                targetMessage?.content,
+                LLMClient.#buildPromptCachebusterLine()
+            )
+        };
+        return modifiedMessages;
     }
 
     static logPrompt({
@@ -1863,7 +1940,11 @@ class LLMClient {
                     ...effectiveCustomArgs,
                     ...basePayload
                 };
-                payload.messages = messages;
+                const requestMessages = LLMClient.#applyPromptCachebuster(
+                    messages,
+                    LLMClient.#isPromptCachebusterEnabled(aiConfig.cachebuster)
+                );
+                payload.messages = requestMessages;
 
                 if (aiConfig.frequency_penalty !== undefined && frequencyPenalty === null) {
                     payload.frequency_penalty = aiConfig.frequency_penalty;
@@ -2002,6 +2083,7 @@ class LLMClient {
                 return {
                     aiConfig,
                     payload,
+                    requestMessages,
                     resolvedModel,
                     resolvedEndpoint,
                     resolvedApiKey,
@@ -2060,6 +2142,7 @@ class LLMClient {
                 let attemptSemaphore = null;
                 let attemptRuntime = null;
                 let payload = null;
+                let requestMessages = messages;
                 let resolvedModel = null;
                 let resolvedEndpoint = null;
                 let resolvedTimeout = null;
@@ -2071,9 +2154,13 @@ class LLMClient {
                 let response = null;
                 try {
                     if (hasForcedOutput) {
+                        requestMessages = LLMClient.#applyPromptCachebuster(
+                            messages,
+                            LLMClient.#isPromptCachebusterEnabled(Globals?.config?.ai?.cachebuster)
+                        );
                         payload = {
                             forceOutput: resolvedForcedOutput,
-                            messages,
+                            messages: requestMessages,
                             stream: false
                         };
                         if (typeof captureRequestPayload === 'function') {
@@ -2101,6 +2188,7 @@ class LLMClient {
                     } else {
                         attemptRuntime = resolveAttemptRuntime({ attemptNumber: attempt });
                         payload = attemptRuntime.payload;
+                        requestMessages = attemptRuntime.requestMessages;
                         resolvedModel = attemptRuntime.resolvedModel;
                         resolvedEndpoint = attemptRuntime.resolvedEndpoint;
                         resolvedTimeout = attemptRuntime.resolvedTimeout;
@@ -2130,7 +2218,8 @@ class LLMClient {
                                 startTimeoutMs: streamStartTimeoutMs,
                                 continueTimeoutMs: streamContinueTimeoutMs,
                                 isBackground: Boolean(runInBackground),
-                                model: resolvedModel
+                                model: resolvedModel,
+                                promptText: LLMClient.formatMessagesForErrorLog(payload.messages)
                             })
                             : null;
                         if (streamTrackerId) {
@@ -2400,7 +2489,7 @@ class LLMClient {
                                 aiConfigOverride: attemptRuntime?.aiConfig,
                                 requestPayload: payload,
                                 rawResponse: response.data,
-                                messages
+                                messages: payload.messages
                             };
 
                             fs.writeFileSync(filePath, JSON.stringify(logPayload, null, 2), 'utf8');
@@ -2419,7 +2508,7 @@ class LLMClient {
                                 prefix: 'invalidXML',
                                 metadataLabel,
                                 error: xmlError,
-                                payload: messages + "\n\nResponse:\n\n" + (responseContent || ''),
+                                payload: `${LLMClient.formatMessagesForErrorLog(payload?.messages || requestMessages || messages)}\n\nResponse:\n\n${responseContent || ''}`,
                                 onFailureMessage: 'Failed to write invalid XML log file'
                             });
                             if (filePath) {
@@ -2491,7 +2580,7 @@ class LLMClient {
                         }
                     }
 
-                    const promptAppend = LLMClient.formatMessagesForErrorLog(messages);
+                    const promptAppend = LLMClient.formatMessagesForErrorLog(payload?.messages || requestMessages || messages);
                     const filePath = LLMClient.writeLogFile({
                         prefix: 'chatCompletionError',
                         metadataLabel,

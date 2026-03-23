@@ -12926,28 +12926,45 @@ async function generateNpcFromEvent({
         const parsedResult = parseLocationNpcs(npcResponse);
         const parsedNpcs = Array.isArray(parsedResult?.npcs) ? parsedResult.npcs : [];
         const generatedMemories = parsedResult?.memories instanceof Map ? parsedResult.memories : new Map();
-        const baseConversation = [
-            ...messages,
-            { role: 'assistant', content: npcResponse }
-        ];
-
         let skillAssignments = new Map();
         let abilityAssignments = new Map();
-        let skillConversation = baseConversation;
+        const currentRegionForNpcFollowup = resolvedRegion
+            ? buildRegionShortDescriptionItem(resolvedRegion)
+            : null;
 
-        try {
-            const skillResult = await requestNpcSkillAssignments({
-                baseMessages: baseConversation
-            });
-            if (skillResult?.assignments instanceof Map) {
-                skillAssignments = skillResult.assignments;
+        const skillPromise = (async () => {
+            try {
+                const skillResult = await requestNpcSkillAssignments({
+                    generatedNpcResults: npcResponse,
+                    generatedRegionOrLocation: '',
+                    locationOverride: resolvedLocation || null,
+                    currentRegion: currentRegionForNpcFollowup,
+                    npcNames: [trimmedName]
+                });
+                if (skillResult?.assignments instanceof Map) {
+                    skillAssignments = skillResult.assignments;
+                }
+            } catch (skillError) {
+                console.warn('Failed to generate skills for single NPC:', skillError?.message || skillError);
             }
-            if (Array.isArray(skillResult?.conversation) && skillResult.conversation.length) {
-                skillConversation = skillResult.conversation;
+        })();
+
+        const abilityPromise = (async () => {
+            try {
+                const abilityResult = await requestNpcAbilityAssignments({
+                    generatedNpcResults: npcResponse,
+                    generatedRegionOrLocation: '',
+                    locationOverride: resolvedLocation || null,
+                    currentRegion: currentRegionForNpcFollowup,
+                    npcNames: [trimmedName]
+                });
+                if (abilityResult?.assignments instanceof Map) {
+                    abilityAssignments = abilityResult.assignments;
+                }
+            } catch (abilityError) {
+                console.warn('Failed to generate abilities for single NPC:', abilityError?.message || abilityError);
             }
-        } catch (skillError) {
-            console.warn('Failed to generate skills for single NPC:', skillError?.message || skillError);
-        }
+        })();
 
         let npcData = parsedNpcs && parsedNpcs.length ? parsedNpcs[0] : null;
         if (npcData) {
@@ -13047,20 +13064,6 @@ async function generateNpcFromEvent({
         };
 
         let aliasAssignments = new Map();
-        const abilityPromise = (async () => {
-            try {
-                const abilityResult = await requestNpcAbilityAssignments({
-                    baseMessages: skillConversation,
-                    npcNames: [npc.name]
-                });
-                if (abilityResult?.assignments instanceof Map) {
-                    abilityAssignments = abilityResult.assignments;
-                }
-            } catch (abilityError) {
-                console.warn('Failed to generate abilities for single NPC:', abilityError?.message || abilityError);
-            }
-        })();
-
         const aliasPromise = (async () => {
             try {
                 const aliasResult = await requestNpcAliasAssignments({
@@ -14019,22 +14022,63 @@ function buildNpcAttributePromptEntries() {
     return entries;
 }
 
-function renderNpcSkillsPrompt({ skills = [], attributes = [] } = {}) {
-    try {
-        const skillList = Array.isArray(skills) ? skills.filter(skill => skill && skill.name) : [];
-        const attributeList = Array.isArray(attributes) ? attributes.filter(attr => attr && attr.name) : [];
-        if (!skillList.length && !attributeList.length) {
-            return null;
-        }
-        return promptEnv.render('npc-generate-skills.xml.njk', {
-            skills: skillList,
-            attributes: attributeList
-        });
-    } catch (error) {
-        console.error('Error rendering NPC progression template:', error);
-        console.debug(error);
-        return null;
+async function buildNpcPostGenerationPromptRequest({
+    promptType = '',
+    generatedNpcResults = '',
+    generatedRegionOrLocation = '',
+    locationOverride = null,
+    currentRegion = null,
+    extraTemplateFields = {}
+} = {}) {
+    const normalizedPromptType = typeof promptType === 'string' ? promptType.trim() : '';
+    if (!normalizedPromptType) {
+        throw new Error('NPC post-generation prompt type is required.');
     }
+
+    const npcResultsXml = typeof generatedNpcResults === 'string' ? generatedNpcResults.trim() : '';
+    if (!npcResultsXml) {
+        throw new Error(`NPC post-generation prompt "${normalizedPromptType}" requires generated NPC XML.`);
+    }
+
+    const regionOrLocationXml = typeof generatedRegionOrLocation === 'string'
+        ? generatedRegionOrLocation.trim()
+        : '';
+
+    const baseContext = await prepareBasePromptContext({
+        locationOverride: locationOverride || null
+    });
+    const effectiveCurrentRegion = currentRegion || baseContext.currentRegion || null;
+
+    const renderedTemplate = promptEnv.render('base-context.xml.njk', {
+        ...baseContext,
+        promptType: normalizedPromptType,
+        currentRegion: effectiveCurrentRegion,
+        contextRegion: effectiveCurrentRegion,
+        currentLocation: regionOrLocationXml ? null : baseContext.currentLocation,
+        generated_npc_results: npcResultsXml,
+        generatedRegionOrLocation: regionOrLocationXml,
+        ...extraTemplateFields
+    });
+    const parsedTemplate = parseXMLTemplate(renderedTemplate);
+    const systemPrompt = parsedTemplate.systemPrompt || '';
+    const generationPrompt = parsedTemplate.generationPrompt || '';
+    if (!generationPrompt.trim()) {
+        throw new Error(`NPC post-generation template "${normalizedPromptType}" missing generationPrompt.`);
+    }
+
+    const messages = [];
+    if (systemPrompt.trim()) {
+        messages.push({ role: 'system', content: systemPrompt });
+    }
+    messages.push({ role: 'user', content: generationPrompt });
+
+    return {
+        promptType: normalizedPromptType,
+        systemPrompt,
+        generationPrompt,
+        temperature: parsedTemplate.temperature,
+        messages
+    };
 }
 
 function parseNpcSkillAssignments(xmlContent) {
@@ -14111,7 +14155,14 @@ function parseNpcSkillAssignments(xmlContent) {
     }
 }
 
-async function requestNpcSkillAssignments({ baseMessages = [], timeoutScale = 1, npcNames = [] }) {
+async function requestNpcSkillAssignments({
+    generatedNpcResults = '',
+    generatedRegionOrLocation = '',
+    locationOverride = null,
+    currentRegion = null,
+    timeoutScale = 1,
+    npcNames = []
+} = {}) {
     console.log(`Requesting NPC progression assignments from LLM... (timeoutScale=${timeoutScale})`);
     try {
         const availableSkillsMap = Player.getAvailableSkills();
@@ -14128,24 +14179,21 @@ async function requestNpcSkillAssignments({ baseMessages = [], timeoutScale = 1,
         if (!skillsForPrompt.length && !attributesForPrompt.length) {
             console.log('No skills or attributes available for NPC progression assignment.');
             return {
-                assignments: new Map(),
-                conversation: [...baseMessages]
+                assignments: new Map()
             };
         }
 
-        const skillsPrompt = renderNpcSkillsPrompt({
-            skills: skillsForPrompt,
-            attributes: attributesForPrompt
+        const promptRequest = await buildNpcPostGenerationPromptRequest({
+            promptType: 'npc-generate-skills',
+            generatedNpcResults,
+            generatedRegionOrLocation,
+            locationOverride,
+            currentRegion,
+            extraTemplateFields: {
+                skills: skillsForPrompt,
+                attributes: attributesForPrompt
+            }
         });
-        if (!skillsPrompt) {
-            console.log('Failed to render NPC progression prompt.');
-            return {
-                assignments: new Map(),
-                conversation: [...baseMessages]
-            };
-        }
-
-        const messages = [...baseMessages, { role: 'user', content: skillsPrompt }];
 
         timeoutScale = Math.max(1, Number(timeoutScale) || 1);
 
@@ -14153,7 +14201,8 @@ async function requestNpcSkillAssignments({ baseMessages = [], timeoutScale = 1,
             ? `:${npcNames.slice(0, 3).map(name => (name || '').trim()).filter(Boolean).join(',')}`
             : '';
         const skillResponse = await LLMClient.chatCompletion({
-            messages,
+            messages: promptRequest.messages,
+            temperature: promptRequest.temperature,
             timeoutScale,
             metadataLabel: `npc_progression_assignments${labelSuffix}`
         });
@@ -14161,8 +14210,7 @@ async function requestNpcSkillAssignments({ baseMessages = [], timeoutScale = 1,
         if (!skillResponse || !skillResponse.trim()) {
             console.log('NPC progression assignments returned empty response.');
             return {
-                assignments: new Map(),
-                conversation: [...baseMessages]
+                assignments: new Map()
             };
         }
 
@@ -14175,26 +14223,238 @@ async function requestNpcSkillAssignments({ baseMessages = [], timeoutScale = 1,
         LLMClient.logPrompt({
             prefix: 'npc_progression_assignments',
             metadataLabel: `npc_progression_assignments${labelSuffix}`,
-            systemPrompt: '',
-            generationPrompt: skillsPrompt,
+            systemPrompt: promptRequest.systemPrompt,
+            generationPrompt: promptRequest.generationPrompt,
             response: skillResponse
         });
 
         const assignments = parseNpcSkillAssignments(skillResponse);
-        const conversation = [...messages, { role: 'assistant', content: skillResponse }];
 
         return {
             assignments,
-            conversation,
-            prompt: skillsPrompt,
+            prompt: promptRequest.generationPrompt,
             response: skillResponse
         };
     } catch (error) {
         console.warn('Failed to request NPC progression assignments:', error.message);
         return {
-            assignments: new Map(),
-            conversation: [...baseMessages]
+            assignments: new Map()
         };
+    }
+}
+
+function escapeXmlText(value) {
+    const text = value === null || value === undefined ? '' : String(value);
+    return text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&apos;');
+}
+
+function buildNpcGenerationSeedXml(npc, { location = null } = {}) {
+    if (!npc || typeof npc !== 'object') {
+        throw new Error('NPC generation seed XML requires a valid NPC.');
+    }
+    const trimmedName = typeof npc.name === 'string' ? npc.name.trim() : '';
+    if (!trimmedName) {
+        throw new Error('NPC generation seed XML requires the NPC to have a name.');
+    }
+
+    const attributeEntries = getCharacterAttributeEntries(npc).map(entry => {
+        const attrName = typeof entry?.name === 'string' ? entry.name.trim() : '';
+        if (!attrName) {
+            return '';
+        }
+        const rawValue = typeof npc.getAttribute === 'function'
+            ? npc.getAttribute(attrName)
+            : npc?.attributes?.[attrName];
+        const numericValue = Number(rawValue);
+        const serializedValue = Number.isFinite(numericValue)
+            ? String(numericValue)
+            : '';
+        return `        <attribute name="${escapeXmlText(attrName)}">${escapeXmlText(serializedValue)}</attribute>`;
+    }).filter(Boolean);
+
+    const goals = Array.isArray(npc?.personality?.goals)
+        ? npc.personality.goals
+            .filter(goal => typeof goal === 'string' && goal.trim())
+            .map(goal => `          <goal>${escapeXmlText(goal.trim())}</goal>`)
+        : [];
+
+    const currentLevel = Number(npc.level);
+    const locationName = typeof location?.name === 'string' ? location.name.trim() : '';
+    const factionName = typeof npc.faction === 'string'
+        ? npc.faction.trim()
+        : (typeof npc.factionId === 'string' ? npc.factionId.trim() : '');
+    const personalityType = typeof npc?.personality?.type === 'string' ? npc.personality.type.trim() : '';
+    const personalityTraits = typeof npc?.personality?.traits === 'string' ? npc.personality.traits.trim() : '';
+    const personalityNotes = typeof npc?.personality?.notes === 'string' ? npc.personality.notes.trim() : '';
+    const lines = [
+        '<response>',
+        '  <npcs>',
+        '    <npc>',
+        `      <name>${escapeXmlText(trimmedName)}</name>`,
+        `      <description>${escapeXmlText(npc.description || '')}</description>`,
+        `      <shortDescription>${escapeXmlText(npc.shortDescription || '')}</shortDescription>`,
+        `      <class>${escapeXmlText(npc.class || '')}</class>`,
+        `      <race>${escapeXmlText(npc.race || '')}</race>`,
+        `      <resistances>${escapeXmlText(npc.resistances || '')}</resistances>`,
+        `      <vulnerabilities>${escapeXmlText(npc.vulnerabilities || '')}</vulnerabilities>`,
+        `      <level>${escapeXmlText(Number.isFinite(currentLevel) ? String(Math.floor(currentLevel)) : '')}</level>`,
+        `      <location>${escapeXmlText(locationName)}</location>`,
+        `      <faction>${escapeXmlText(factionName)}</faction>`,
+        '      <attributes>'
+    ];
+
+    if (attributeEntries.length) {
+        lines.push(...attributeEntries);
+    }
+    lines.push('      </attributes>');
+    lines.push('      <personality>');
+    lines.push(`        <type>${escapeXmlText(personalityType)}</type>`);
+    lines.push(`        <traits>${escapeXmlText(personalityTraits)}</traits>`);
+    lines.push(`        <notes>${escapeXmlText(personalityNotes)}</notes>`);
+    lines.push('        <goals>');
+    if (goals.length) {
+        lines.push(...goals);
+    }
+    lines.push('        </goals>');
+    lines.push('      </personality>');
+    lines.push('    </npc>');
+    lines.push('  </npcs>');
+    lines.push('</response>');
+
+    return lines.join('\n');
+}
+
+function captureSkillSnapshot(character) {
+    if (!character || typeof character.getSkills !== 'function') {
+        throw new Error('Skill snapshot requires a character with getSkills().');
+    }
+    const snapshot = character.getSkills();
+    if (!(snapshot instanceof Map)) {
+        throw new Error('Character skill snapshot must be a Map.');
+    }
+    return new Map(snapshot);
+}
+
+function resetCharacterSkillsToBaseline(character) {
+    if (!character || typeof character.syncSkillsWithAvailable !== 'function' || typeof character.setSkillValue !== 'function') {
+        throw new Error('Skill reset requires a character with skill sync and setter support.');
+    }
+
+    const availableSkills = Player.getAvailableSkills();
+    if (!(availableSkills instanceof Map) || availableSkills.size === 0) {
+        throw new Error('Cannot respec skills without registered available skills.');
+    }
+
+    const currentSkills = character.getSkills();
+    if (!(currentSkills instanceof Map)) {
+        throw new Error('Character skills must be a Map before reset.');
+    }
+
+    for (const skillName of currentSkills.keys()) {
+        if (!availableSkills.has(skillName)) {
+            throw new Error(`Character "${character.name || character.id || 'unknown'}" has unknown skill "${skillName}".`);
+        }
+    }
+
+    character.syncSkillsWithAvailable();
+    for (const skillName of availableSkills.keys()) {
+        const applied = character.setSkillValue(skillName, SKILL_POOL_BASELINE_VALUE);
+        if (!applied) {
+            throw new Error(`Failed to reset skill "${skillName}" for ${character.name || character.id || 'unknown'}.`);
+        }
+    }
+}
+
+function restoreCharacterSkillSnapshot(character, snapshot) {
+    if (!(snapshot instanceof Map)) {
+        throw new Error('Skill restore requires a Map snapshot.');
+    }
+    resetCharacterSkillsToBaseline(character);
+    for (const [skillName, value] of snapshot.entries()) {
+        const applied = character.setSkillValue(skillName, value);
+        if (!applied) {
+            throw new Error(`Failed to restore skill "${skillName}" for ${character.name || character.id || 'unknown'}.`);
+        }
+    }
+}
+
+async function respecNpcSkillsForCharacter(character, { timeoutScale = 1 } = {}) {
+    if (!character || typeof character !== 'object') {
+        throw new Error('NPC skill respec requires a character.');
+    }
+    if (!character.isNPC) {
+        throw new Error('Only NPCs can be respecced with respecNpcSkillsForCharacter().');
+    }
+    if (typeof character.name !== 'string' || !character.name.trim()) {
+        throw new Error('NPC skill respec requires the NPC to have a name.');
+    }
+
+    const currentLevel = Number(character.level);
+    if (!Number.isInteger(currentLevel) || currentLevel < 1) {
+        throw new Error(`NPC "${character.name}" has an invalid current level.`);
+    }
+
+    const locationId = typeof character.currentLocation === 'string' ? character.currentLocation.trim() : '';
+    if (!locationId) {
+        throw new Error(`NPC "${character.name}" is not currently in a location.`);
+    }
+
+    const location = Location.get(locationId);
+    if (!location) {
+        throw new Error(`Current location "${locationId}" for NPC "${character.name}" was not found.`);
+    }
+
+    const region = findRegionByLocationId(location.id);
+    if (!region) {
+        throw new Error(`Could not resolve a region for NPC "${character.name}" at location "${location.name}".`);
+    }
+
+    const generatedNpcResults = buildNpcGenerationSeedXml(character, { location });
+    const promptRequest = await requestNpcSkillAssignments({
+        generatedNpcResults,
+        locationOverride: location,
+        currentRegion: buildRegionShortDescriptionItem(region),
+        timeoutScale,
+        npcNames: [character.name]
+    });
+
+    const assignmentEntry = resolveAssignmentEntry(promptRequest?.assignments, character.name);
+    if (!assignmentEntry || !Array.isArray(assignmentEntry.skills) || assignmentEntry.skills.length === 0) {
+        throw new Error(`No skill assignments were returned for NPC "${character.name}".`);
+    }
+
+    const skillSnapshot = captureSkillSnapshot(character);
+    try {
+        resetCharacterSkillsToBaseline(character);
+        const budget = computeNpcCreationProgressionBudget(character);
+        const spent = applyNpcSkillAllocations(character, assignmentEntry.skills, {
+            points: budget.skillPoints,
+            maxSkill: budget.maxSkill
+        });
+
+        return {
+            assignment: assignmentEntry,
+            spent,
+            level: currentLevel,
+            prompt: promptRequest?.prompt || '',
+            response: promptRequest?.response || '',
+            resultingSkills: character.getSkills()
+        };
+    } catch (error) {
+        try {
+            restoreCharacterSkillSnapshot(character, skillSnapshot);
+        } catch (restoreError) {
+            throw new Error(
+                `Failed to respec skills for "${character.name}" (${error.message}). `
+                + `Rollback also failed: ${restoreError.message}`
+            );
+        }
+        throw error;
     }
 }
 
@@ -14257,16 +14517,6 @@ function applyNpcSkillAllocations(npc, assignment, { points = null, maxSkill = n
     }
 
     return spent;
-}
-
-function renderNpcAbilitiesPrompt() {
-    try {
-        return promptEnv.render('npc-generate-abilities.xml.njk', {});
-    } catch (error) {
-        console.error('Error rendering NPC abilities template:', error);
-        console.debug(error);
-        return null;
-    }
 }
 
 function renderNpcAliasesPrompt({ npcNames = [] } = {}) {
@@ -14410,17 +14660,22 @@ function parseNpcAliasAssignments(xmlContent) {
     }
 }
 
-async function requestNpcAbilityAssignments({ baseMessages = [], timeoutScale = 1, npcNames = [] }) {
+async function requestNpcAbilityAssignments({
+    generatedNpcResults = '',
+    generatedRegionOrLocation = '',
+    locationOverride = null,
+    currentRegion = null,
+    timeoutScale = 1,
+    npcNames = []
+} = {}) {
     try {
-        const abilitiesPrompt = renderNpcAbilitiesPrompt();
-        if (!abilitiesPrompt) {
-            return {
-                assignments: new Map(),
-                conversation: [...baseMessages]
-            };
-        }
-
-        const messages = [...baseMessages, { role: 'user', content: abilitiesPrompt }];
+        const promptRequest = await buildNpcPostGenerationPromptRequest({
+            promptType: 'npc-generate-abilities',
+            generatedNpcResults,
+            generatedRegionOrLocation,
+            locationOverride,
+            currentRegion
+        });
 
         timeoutScale = Math.max(1, Number(timeoutScale) || 1);
 
@@ -14429,41 +14684,38 @@ async function requestNpcAbilityAssignments({ baseMessages = [], timeoutScale = 
             ? `:${npcNames.slice(0, 3).map(name => (name || '').trim()).filter(Boolean).join(',')}`
             : '';
         const abilityResponse = await LLMClient.chatCompletion({
-            messages,
+            messages: promptRequest.messages,
+            temperature: promptRequest.temperature,
             timeoutScale: timeoutScale,
             metadataLabel: `npc_ability_assignments${labelSuffix}`
         });
 
         if (!abilityResponse || !abilityResponse.trim()) {
             return {
-                assignments: new Map(),
-                conversation: [...baseMessages]
+                assignments: new Map()
             };
         }
 
         LLMClient.logPrompt({
             prefix: 'npc_ability_assignments',
             metadataLabel: `npc_ability_assignments${labelSuffix}`,
-            systemPrompt: '',
-            generationPrompt: abilitiesPrompt,
+            systemPrompt: promptRequest.systemPrompt,
+            generationPrompt: promptRequest.generationPrompt,
             response: abilityResponse
         });
 
         const assignments = parseNpcAbilityAssignments(abilityResponse);
-        const conversation = [...messages, { role: 'assistant', content: abilityResponse }];
 
         return {
             assignments,
-            conversation,
-            prompt: abilitiesPrompt,
+            prompt: promptRequest.generationPrompt,
             response: abilityResponse
         };
     } catch (error) {
         console.warn('Failed to request NPC ability assignments:', error.message);
         console.debug(error);
         return {
-            assignments: new Map(),
-            conversation: [...baseMessages]
+            assignments: new Map()
         };
     }
 }
@@ -15629,6 +15881,7 @@ async function generateLevelUpAbilitiesForCharacter(character, {
 Globals.generateLevelUpAbilitiesForCharacter = generateLevelUpAbilitiesForCharacter;
 Globals.resolvePlayerAbilitySelectionState = resolvePlayerAbilitySelectionState;
 Globals.applyPlayerAbilitySelection = applyPlayerAbilitySelection;
+Globals.respecNpcSkillsForCharacter = respecNpcSkillsForCharacter;
 
 function getBannedNpcWords() {
     if (Array.isArray(cachedBannedNpcWords)) {
@@ -19786,10 +20039,12 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
             return true; // Keep this NPC
         });
 
-        const baseConversation = [...messages, { role: 'assistant', content: npcResponse }];
         const npctimeoutScale = Math.max(1, npcs.length || npcCountHint);
-
-
+        const locationRegionForNpcFollowup = findRegionByLocationId(location.id) || null;
+        const currentRegionForNpcFollowup = locationRegionForNpcFollowup
+            ? buildRegionShortDescriptionItem(locationRegionForNpcFollowup)
+            : null;
+        const generatedRegionOrLocationXml = typeof aiResponse === 'string' ? aiResponse : '';
 
         const originalNpcNames = npcs.map(npc => npc?.name || null);
         let npcRenameMap = new Map();
@@ -19830,17 +20085,18 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
                 try {
                     Globals.updateSpinnerText({ message: `Generating NPC skills for location ${location.name || location.id}...` });
                     const skillResult = await requestNpcSkillAssignments({
-                        baseMessages: baseConversation,
+                        generatedNpcResults: npcResponse,
+                        generatedRegionOrLocation: generatedRegionOrLocationXml,
+                        locationOverride: location,
+                        currentRegion: currentRegionForNpcFollowup,
                         timeoutScale: npctimeoutScale,
                         npcNames: npcNamesForPrompt
                     });
                     const rawAssignments = skillResult.assignments || new Map();
                     npcSkillAssignments = rekeyNpcLookupMap(rawAssignments, npcRenameMap) || new Map();
-                    return Array.isArray(skillResult.conversation) ? skillResult.conversation : baseConversation;
                 } catch (skillError) {
                     console.warn(`Failed to generate skills for location NPCs (${location.id}):`, skillError.message);
                     console.debug(skillError);
-                    return baseConversation;
                 }
             })();
 
@@ -19848,7 +20104,10 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
                 try {
                     Globals.updateSpinnerText({ message: `Generating NPC abilities for location ${location.name || location.id}...` });
                     const abilityResult = await requestNpcAbilityAssignments({
-                        baseMessages: baseConversation,
+                        generatedNpcResults: npcResponse,
+                        generatedRegionOrLocation: generatedRegionOrLocationXml,
+                        locationOverride: location,
+                        currentRegion: currentRegionForNpcFollowup,
                         timeoutScale: npctimeoutScale,
                         npcNames: npcNamesForPrompt
                     });
@@ -19872,7 +20131,6 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
                     console.warn(`Failed to generate aliases for location NPCs (${location.id}):`, aliasError.message);
                 }
             })();
-
             await skillsPromise;
         }
 
@@ -20147,8 +20405,10 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
         const parsedRegionResult = parseRegionNpcs(npcResponse);
         let parsedNpcs = Array.isArray(parsedRegionResult?.npcs) ? parsedRegionResult.npcs : [];
         let regionNpcMemories = parsedRegionResult?.memories instanceof Map ? parsedRegionResult.memories : new Map();
-        const baseConversation = [...messages, { role: 'assistant', content: npcResponse }];
         const npctimeoutScale = Math.max(1, parsedNpcs.length || regionLocations.length || 1);
+        const regionLocationForNpcFollowup = regionLocations[0] || null;
+        const currentRegionForNpcFollowup = buildRegionShortDescriptionItem(region);
+        const generatedRegionOrLocationXml = typeof aiResponse === 'string' ? aiResponse : '';
 
         const originalRegionNpcNames = parsedNpcs.map(npc => npc?.name || null);
         let regionNpcRenameMap = new Map();
@@ -20185,7 +20445,10 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
                 try {
                     Globals.updateSpinnerText({ message: `Generating NPC skills for region ${region.name || region.id}...` });
                     const skillResult = await requestNpcSkillAssignments({
-                        baseMessages: baseConversation,
+                        generatedNpcResults: npcResponse,
+                        generatedRegionOrLocation: generatedRegionOrLocationXml,
+                        locationOverride: regionLocationForNpcFollowup,
+                        currentRegion: currentRegionForNpcFollowup,
                         timeoutScale: npctimeoutScale,
                         npcNames: npcNamesForLabel
                     });
@@ -20200,7 +20463,10 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
                 try {
                     Globals.updateSpinnerText({ message: `Generating NPC abilities for region ${region.name || region.id}...` });
                     const abilityResult = await requestNpcAbilityAssignments({
-                        baseMessages: baseConversation,
+                        generatedNpcResults: npcResponse,
+                        generatedRegionOrLocation: generatedRegionOrLocationXml,
+                        locationOverride: regionLocationForNpcFollowup,
+                        currentRegion: currentRegionForNpcFollowup,
                         timeoutScale: npctimeoutScale,
                         npcNames: npcNamesForLabel
                     });

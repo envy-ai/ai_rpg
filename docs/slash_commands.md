@@ -29,6 +29,7 @@ Slash Commands Quick Guide
 - Best practices
   - Fail loudly with clear errors (throw or reply with `ephemeral: true`).
   - Normalize string inputs (trim/strip quotes) before lookups; validate types and existence.
+  - Reuse `slashcommand_utils/characterTargeting.js` for character-name parsing and alias-aware target resolution, including current-location ambiguity tie-breaking.
   - Avoid silent fallbacks; if a helper is unavailable (e.g., `Globals.triggerRandomEvent`), throw with a precise reason.
   - Keep commands side-effect scoped and synchronous when possible; mark `execute` async if awaiting I/O.
   - Prefer existing helpers on `Globals`/models (e.g., `Location.get`, `playersByName`, `generateLevelUpAbilitiesForCharacter`).

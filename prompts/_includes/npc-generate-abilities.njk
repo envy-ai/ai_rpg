@@ -1,7 +1,12 @@
-<template>
-    <comment>This prompt runs after the location generator prompt, the NPC generator prompt, and the NPC skill generator prompt, with the context from the previous prompts still incliuded, hence the lack of a system prompt and other context.</comment>
-    <role>NPC ability generator</role>
-<generationPrompt>
+{# The location or region just generated, if applicable #}
+<generatedRegionOrLocation>
+{{ generatedRegionOrLocation }}
+</generatedRegionOrLocation>
+
+{# The XML outputted from the NPC generation prompt #}
+<generatedNPCs>
+{{ generated_npc_results }}
+</generatedNPCs>
 
 For each NPC generated above, do the following:
 
@@ -14,5 +19,3 @@ Do this for each NPC.
 Output the abilities in this format:
 
 {% include "_includes/ability-format.njk" %}
-</generationPrompt>
-</template>

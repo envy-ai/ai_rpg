@@ -4527,6 +4527,8 @@ body.dark .thing-toggle-hint {
   gap: 12px;
   padding: 12px 14px 10px;
   border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+  cursor: grab;
+  touch-action: none;
 }
 
 .prompt-progress-viewer__meta {
@@ -4547,45 +4549,120 @@ body.dark .thing-toggle-hint {
   word-break: break-word;
 }
 
+.prompt-progress-viewer__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.prompt-progress-viewer__copy,
 .prompt-progress-viewer__close {
-  width: 28px;
-  height: 28px;
-  padding: 0;
+  height: 30px;
   border-radius: 999px;
   border: 1px solid rgba(191, 219, 254, 0.4);
   background: rgba(15, 23, 42, 0.7);
   color: #f8fafc;
-  font-size: 1rem;
-  line-height: 1;
   cursor: pointer;
   flex: 0 0 auto;
   transition: background 0.3s ease;
 }
+.prompt-progress-viewer__copy:hover,
 .prompt-progress-viewer__close:hover {
   background: rgba(59, 130, 246, 0.32);
+}
+.prompt-progress-viewer__copy:disabled,
+.prompt-progress-viewer__close:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.prompt-progress-viewer__copy {
+  padding: 0 12px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #fde68a;
+  border-color: rgba(251, 191, 36, 0.4);
+  background: rgba(120, 53, 15, 0.42);
+}
+.prompt-progress-viewer__copy:hover {
+  background: rgba(180, 83, 9, 0.5);
+}
+
+.prompt-progress-viewer__close {
+  width: 30px;
+  padding: 0;
+  font-size: 1rem;
+  line-height: 1;
 }
 
 .prompt-progress-viewer__content {
   flex: 1 1 auto;
   min-height: 0;
-  overflow: auto;
   padding: 14px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
-.prompt-progress-viewer__text {
+.prompt-progress-viewer__section {
+  min-height: 0;
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  background: linear-gradient(180deg, rgba(8, 47, 73, 0.82), rgba(15, 23, 42, 0.72));
+  border-color: rgba(103, 232, 249, 0.2);
+}
+
+.prompt-progress-viewer__section-label {
+  padding: 10px 12px 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #a5f3fc;
+}
+
+.prompt-progress-viewer__stream-text {
   margin: 0;
-  min-height: 100%;
   color: #f8fafc;
   font-family: "Cascadia Code", "Fira Code", "SFMono-Regular", monospace;
   font-size: 0.8rem;
   line-height: 1.45;
   white-space: pre-wrap;
   word-break: break-word;
+  padding: 12px;
+  overflow-x: auto;
+  overflow-y: auto;
+  min-height: 0;
+  flex: 1 1 auto;
 }
 
-.prompt-progress-viewer.is-empty .prompt-progress-viewer__text {
+.prompt-progress-viewer__prompt-inline,
+.prompt-progress-viewer__response-inline {
+  display: inline;
+}
+
+.prompt-progress-viewer__prompt-inline {
+  color: #fef3c7;
+}
+
+.prompt-progress-viewer__response-inline {
+  color: #f8fafc;
+}
+
+.prompt-progress-viewer.is-prompt-empty .prompt-progress-viewer__prompt-inline,
+.prompt-progress-viewer.is-response-empty .prompt-progress-viewer__response-inline {
   color: rgba(191, 219, 254, 0.82);
   font-style: italic;
+}
+
+.prompt-progress-viewer.is-dragging .prompt-progress-viewer__header {
+  cursor: grabbing;
 }
 
 @media (max-width: 1100px) {
