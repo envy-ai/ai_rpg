@@ -1,4 +1,4 @@
-FROM node:18-bullseye-slim
+FROM node:22-bookworm-slim
 
 WORKDIR /app
 
@@ -14,11 +14,14 @@ RUN npm install --production
 # Copy the rest of the source tree
 COPY . .
 
-# Ensure config directories exist
-RUN mkdir -p config logs saves imagegen
+# Copy defaults after COPY . . so they aren't overwritten
+COPY ./imagegen/ defaults/imagegen/
 
 # Copy template config to target location if none exists at runtime
-RUN cp config.default.yaml config/config.template.yaml
+COPY ./config.default.yaml defaults/config.template.yaml
+
+# Ensure config directories exist
+RUN mkdir -p config logs saves imagegen defaults
 
 RUN chmod +x scripts/docker-entrypoint.sh scripts/docker-config-env.js
 
