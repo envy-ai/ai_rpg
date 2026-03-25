@@ -17,7 +17,7 @@ services:
       IMAGEGEN_API_KEY: "${IMAGEGEN_API_KEY}"
       IMAGEGEN_MODEL: "${IMAGEGEN_MODEL}"
     volumes:
-      - ./config:/app/config
+      - ${CONFIG_DIR:-./config}:/app/config
       - logs:/app/logs
       - saves:/app/saves
       - imagegen:/app/imagegen
