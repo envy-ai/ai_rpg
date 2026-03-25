@@ -27,7 +27,7 @@ Represents a game location, including description, exits, NPCs, items/scenery, a
 - `removeFromIndex(locationOrId)` to prevent stale lookups.
 
 ## Accessors
-- `regionId` (get/set) and `region` (get).
+- `regionId` (get/set) and `region` (get). Reassigning `regionId` now keeps region membership indexes in sync by removing the location from the old region, adding it to the new region, and repairing the old region's `entranceLocationId` if it pointed at the moved location.
 - `controllingFactionId` (get/set).
 - Basic fields: `id`, `name`, `description`, `shortDescription`, `baseLevel`, `imageId`, `createdAt`, `lastUpdated`.
 - Visit tracking: `visited` (get/set), `lastVisitedTime` (get/set, minutes), `hoursSinceLastVisit()` (legacy name; returns elapsed minutes).

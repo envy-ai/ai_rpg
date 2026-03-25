@@ -3447,12 +3447,30 @@ const createChatToolRuntime = ({
 
             if (toolLoopActivated || toolCalls.length) {
                 const roundLabel = `${metadataLabel}_tool_loop_round`;
+                const toolCallSummary = toolCalls.length
+                    ? toolCalls.map((call, index) => {
+                        const argumentText = typeof call.argumentsText === 'string' && call.argumentsText.trim()
+                            ? call.argumentsText.trim()
+                            : '{}';
+                        return [
+                            `${index + 1}. ${call.functionName}`,
+                            `   id: ${call.id || '(none)'}`,
+                            `   arguments: ${argumentText}`
+                        ].join('\n');
+                    }).join('\n\n')
+                    : 'No tool calls returned this round.';
                 LLMClient.logPrompt({
                     prefix: roundLabel,
                     metadataLabel: roundLabel,
                     systemPrompt: '',
                     generationPrompt: LLMClient.formatMessagesForErrorLog(messages),
-                    response: aiResponse || ''
+                    response: aiResponse || '',
+                    sections: [
+                        {
+                            title: 'TOOL CALLS',
+                            content: toolCallSummary
+                        }
+                    ]
                 });
             }
 

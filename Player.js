@@ -8,6 +8,7 @@ const SanitizedStringMap = require('./SanitizedStringMap.js');
 const { findPackageJSON } = require('module');
 const Globals = require('./Globals.js');
 const Quest = require('./Quest.js');
+const VehicleInfo = require('./VehicleInfo.js');
 const FormulaEvaluator = require('./public/js/formula-evaluator.js');
 const { resolvePointPoolFormulas } = require('./utils/point-pool-formulas.js');
 
@@ -2248,14 +2249,17 @@ class Player {
             ? (resolveLocationNameById(destinationId) || '')
             : '';
 
-        const etaMinutes = Number(activeVehicleInfo.ETA);
+        const normalizedVehicleInfo = new VehicleInfo(activeVehicleInfo);
+        const etaMinutes = Number(normalizedVehicleInfo.ETA);
         const elapsedMinutes = Number(Globals.elapsedTime);
-        const rawTimeToDestination = Number.isFinite(etaMinutes)
-            && Number.isInteger(etaMinutes)
-            && Number.isFinite(elapsedMinutes)
-            && Number.isInteger(elapsedMinutes)
+        const hasEtaMinutes = Number.isFinite(etaMinutes) && Number.isInteger(etaMinutes);
+        const hasElapsedMinutes = Number.isFinite(elapsedMinutes) && Number.isInteger(elapsedMinutes);
+        const rawTimeToDestination = hasEtaMinutes && hasElapsedMinutes
             ? etaMinutes - elapsedMinutes
             : null;
+        const isUnderway = normalizedVehicleInfo.isUnderway;
+        const hasArrived = normalizedVehicleInfo.hasArrived;
+        const isArriving = normalizedVehicleInfo.isArriving;
         const formatTimeToDestination = (minutesValue) => {
             if (!Number.isFinite(minutesValue) || !Number.isInteger(minutesValue)) {
                 return null;
@@ -2288,6 +2292,9 @@ class Player {
         if (Array.isArray(activeVehicleInfo.destinations)) {
             vehicleInfo.destinations = [...activeVehicleInfo.destinations];
         }
+        vehicleInfo.isUnderway = isUnderway;
+        vehicleInfo.hasArrived = hasArrived;
+        vehicleInfo.isArriving = isArriving;
 
         return {
             name: regionVehicleInfo
@@ -2299,6 +2306,10 @@ class Player {
             location: resolveVehicleLocationLabel(activeVehicleInfo) || '',
             vehicleInfo,
             destination,
+            minutesToDestination: rawTimeToDestination,
+            isUnderway,
+            hasArrived,
+            isArriving,
             timeToDestination
         };
     }

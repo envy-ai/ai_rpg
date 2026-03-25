@@ -19,9 +19,9 @@ Represents lightweight vehicle travel state for vehicle-capable `Location` and `
 ## Accessors
 - Get/set: `terrainTypes`, `icon`, `currentDestination`, `destinations`, `ETA`, `departureTime`, `vehicleExitId`.
 - Read-only getter: `location` resolves the current outside location from `vehicleExitId`.
-- Read-only getter: `isUnderway` is `true` only when `ETA` is a positive number.
-- Read-only getter: `hasArrived` is `true` only when `ETA` is `<= 0`.
-- Read-only getter: `isArriving` is `true` when remaining time (`ETA - Globals.elapsedTime`) is `<= 0` after having started from a positive remaining-time state.
+- Read-only getter: `isUnderway` is `true` only after a trip has actually started (`departureTime <= Globals.elapsedTime`) and while `ETA > Globals.elapsedTime`.
+- Read-only getter: `hasArrived` is `true` only after a trip has actually started and `ETA <= Globals.elapsedTime`.
+- Read-only getter: `isArriving` becomes `true` once the trip has reached/passed `ETA` after having had a valid departure-to-arrival window; pre-departure states do not count as arriving/arrived.
 - Read-only getter: `timeTraveled` returns minutes elapsed since `departureTime` (or `0` when unset).
 - Read-only getter: `tripCompleteFraction` returns progress from `0` to `1` inclusive.
 
@@ -36,5 +36,6 @@ Represents lightweight vehicle travel state for vehicle-capable `Location` and `
 - `ETA` cannot be set when `currentDestination` is `null`.
 - `departureTime` must be a non-negative integer or `null`.
 - `departureTime` cannot be set when `currentDestination` is `null`.
+- `departureTime` cannot be greater than `ETA`.
 - If `destinations` is non-empty and `currentDestination` is set, `currentDestination` must be present in `destinations`.
 - `location` throws when `vehicleExitId` is set but does not resolve to a valid exit/location.

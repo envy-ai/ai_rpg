@@ -1431,7 +1431,82 @@ module.exports = function registerApiRoutes(scope) {
             return `${regionText}|${locationText}`;
         }
 
-        function parsePlayerActionProseFromXml(rawResponse, { logJson = false } = {}) {
+        function extractXmlFatalErrorText(error) {
+            const rawMessage = typeof error?.message === 'string'
+                ? error.message
+                : String(error || '');
+            return rawMessage
+                .replace(/^Player action XML parse error:\s*/i, '')
+                .replace(/^Failed to parse XML content strictly:\s*/i, '')
+                .trim();
+        }
+
+        async function repairMalformedPlayerActionXml(xmlPayload, { firstFatalError = '' } = {}) {
+            let promptData = null;
+            let xmlFixResponse = '';
+            let repairFailure = null;
+
+            try {
+                const rendered = promptEnv.render('xml-fix.xml.njk', {
+                    xmlToFix: xmlPayload,
+                    firstFatalError: firstFatalError || 'Unknown XML parse error.'
+                });
+                promptData = parseXMLTemplate(rendered);
+                if (!promptData?.systemPrompt || !promptData?.generationPrompt) {
+                    throw new Error('xml-fix template did not produce prompts.');
+                }
+
+                const requestOptions = {
+                    messages: [
+                        { role: 'system', content: promptData.systemPrompt },
+                        { role: 'user', content: promptData.generationPrompt }
+                    ],
+                    metadataLabel: 'xml_fix',
+                    validateXML: false,
+                    requiredRegex: playerActionProseRegex
+                };
+                if (typeof promptData.temperature === 'number') {
+                    requestOptions.temperature = promptData.temperature;
+                }
+
+                xmlFixResponse = await LLMClient.chatCompletion(requestOptions);
+                if (typeof xmlFixResponse !== 'string' || !xmlFixResponse.trim()) {
+                    throw new Error('xml-fix returned an empty response.');
+                }
+
+                const fixedXmlPayload = stripToXmlPayload(xmlFixResponse);
+                if (!fixedXmlPayload) {
+                    throw new Error('xml-fix response missing XML content.');
+                }
+                return fixedXmlPayload;
+            } catch (error) {
+                repairFailure = error?.message || 'Unknown xml-fix failure.';
+                throw error;
+            } finally {
+                const sections = [
+                    {
+                        title: 'FIRST FATAL ERROR',
+                        content: firstFatalError || 'Unknown XML parse error.'
+                    }
+                ];
+                if (repairFailure) {
+                    sections.push({
+                        title: 'Repair Status',
+                        content: `failed: ${repairFailure}`
+                    });
+                }
+                LLMClient.logPrompt({
+                    prefix: 'xml_fix',
+                    metadataLabel: 'xml_fix',
+                    systemPrompt: promptData?.systemPrompt || '',
+                    generationPrompt: promptData?.generationPrompt || '',
+                    response: xmlFixResponse,
+                    sections
+                });
+            }
+        }
+
+        async function parsePlayerActionProseFromXml(rawResponse, { logJson = false } = {}) {
             if (typeof rawResponse !== 'string') {
                 throw new TypeError('Player action response must be a string.');
             }
@@ -1439,10 +1514,32 @@ module.exports = function registerApiRoutes(scope) {
             if (!xmlPayload) {
                 throw new Error('Player action response missing XML content.');
             }
-            const doc = Utils.parseXmlDocument(sanitizeForXml(xmlPayload), 'text/xml');
-            const errorNode = doc.getElementsByTagName('parsererror')[0];
-            if (errorNode) {
-                throw new Error(`Player action XML parse error: ${errorNode.textContent || 'Unknown parse error'}`);
+            let doc = null;
+            try {
+                doc = Utils.parseXmlDocumentStrict(sanitizeForXml(xmlPayload), 'text/xml');
+            } catch (error) {
+                const firstFatalError = extractXmlFatalErrorText(error) || 'Unknown XML parse error.';
+                console.warn(`Player action XML malformed; attempting xml-fix retry: ${firstFatalError}`);
+                let repairedXmlPayload = '';
+                try {
+                    repairedXmlPayload = await repairMalformedPlayerActionXml(xmlPayload, {
+                        firstFatalError
+                    });
+                } catch (repairError) {
+                    throw new Error(
+                        `Player action XML parse error: ${firstFatalError}. `
+                        + `xml-fix failed: ${repairError?.message || repairError}`
+                    );
+                }
+                try {
+                    doc = Utils.parseXmlDocumentStrict(sanitizeForXml(repairedXmlPayload), 'text/xml');
+                } catch (retryError) {
+                    const retryFatalError = extractXmlFatalErrorText(retryError) || 'Unknown XML parse error.';
+                    throw new Error(
+                        `Player action XML parse error: ${firstFatalError}. `
+                        + `xml-fix retry failed: ${retryFatalError}`
+                    );
+                }
             }
             if (logJson) {
                 const jsonPayload = xmlNodeToJson(doc.documentElement);
@@ -1455,19 +1552,33 @@ module.exports = function registerApiRoutes(scope) {
             }
             const travelNode = doc.getElementsByTagName('travelProse')[0] || null;
             if (travelNode) {
-                const destinationNode = getDirectChildElementByTagName(travelNode, 'destination');
-                const destinationName = parseStructuredTravelProseDestination(destinationNode, {
+                const legacyPlayerDestinationNode = getDirectChildElementByTagName(travelNode, 'destination');
+                if (legacyPlayerDestinationNode) {
+                    throw new Error('travelProse player destination must use <playerDestination>...</playerDestination>.');
+                }
+                const playerDestinationNode = getDirectChildElementByTagName(travelNode, 'playerdestination');
+                const playerDestinationName = parseStructuredTravelProseDestination(playerDestinationNode, {
                     fieldLabel: 'travelProse player destination'
                 });
-                const vehicleNode = getDirectChildElementByTagName(travelNode, 'vehicle');
-                const vehicleNameNode = vehicleNode
-                    ? getDirectChildElementByTagName(vehicleNode, 'name')
+                const legacyVehicleNode = getDirectChildElementByTagName(travelNode, 'vehicle');
+                if (legacyVehicleNode) {
+                    throw new Error('travelProse vehicle metadata must use <vehicleInfo>...</vehicleInfo>.');
+                }
+                const vehicleInfoNode = getDirectChildElementByTagName(travelNode, 'vehicleinfo');
+                const vehicleNameNode = vehicleInfoNode
+                    ? getDirectChildElementByTagName(vehicleInfoNode, 'name')
                     : null;
-                const travelTimeNode = vehicleNode
-                    ? getDirectChildElementByTagName(vehicleNode, 'travelTime')
+                const travelTimeNode = vehicleInfoNode
+                    ? getDirectChildElementByTagName(vehicleInfoNode, 'travelTime')
                     : null;
-                const vehicleDestinationNode = vehicleNode
-                    ? getDirectChildElementByTagName(vehicleNode, 'destination')
+                const legacyVehicleDestinationNode = vehicleInfoNode
+                    ? getDirectChildElementByTagName(vehicleInfoNode, 'destination')
+                    : null;
+                if (legacyVehicleDestinationNode) {
+                    throw new Error('travelProse vehicle destination must use <vehicleDestination>...</vehicleDestination>.');
+                }
+                const vehicleDestinationNode = vehicleInfoNode
+                    ? getDirectChildElementByTagName(vehicleInfoNode, 'vehicledestination')
                     : null;
                 const vehicleName = normalizeTravelProseVehicleField(vehicleNameNode ? (vehicleNameNode.textContent || '') : '');
                 const vehicleTravelTimeCandidate = normalizeTravelProseVehicleTravelTimeField(
@@ -1476,10 +1587,10 @@ module.exports = function registerApiRoutes(scope) {
                 const vehicleDestinationCandidate = parseStructuredTravelProseDestination(vehicleDestinationNode, {
                     fieldLabel: 'travelProse vehicle destination'
                 });
-                if (!vehicleName && vehicleNode && !vehicleNameNode) {
-                    const legacyVehicleName = normalizeTravelProseVehicleField(vehicleNode.textContent || '');
+                if (!vehicleName && vehicleInfoNode && !vehicleNameNode) {
+                    const legacyVehicleName = normalizeTravelProseVehicleField(vehicleInfoNode.textContent || '');
                     if (legacyVehicleName) {
-                        throw new Error('travelProse vehicle entries must place vehicle names inside <vehicle><name>...</name></vehicle>.');
+                        throw new Error('travelProse vehicle entries must place vehicle names inside <vehicleInfo><name>...</name></vehicleInfo>.');
                     }
                 }
                 if (!vehicleName && vehicleTravelTimeCandidate) {
@@ -1506,8 +1617,7 @@ module.exports = function registerApiRoutes(scope) {
                         vehicle: vehicleName || null,
                         vehicleTravelTime: vehicleTravelTime || null,
                         vehicleDestination: vehicleDestination || null,
-                        destination: destinationName || null,
-                        playerDestination: destinationName || null,
+                        playerDestination: playerDestinationName || null,
                         originProse: origin || null,
                         betweenProse: between || null,
                         destinationProse: destinationProse || null
@@ -3061,7 +3171,11 @@ module.exports = function registerApiRoutes(scope) {
             return null;
         };
 
-        const resolveTravelProseDestination = async (destinationText, { allowCreate = false, originLocation = null } = {}) => {
+        const resolveTravelProseDestination = async (destinationText, {
+            allowCreate = false,
+            originLocation = null,
+            createOriginExit = true
+        } = {}) => {
             const raw = typeof destinationText === 'string' ? destinationText.trim() : '';
             if (!raw) {
                 throw new Error('Travel prose destination is missing.');
@@ -3084,7 +3198,8 @@ module.exports = function registerApiRoutes(scope) {
                         name: normalizedLocationName,
                         originLocation,
                         descriptionHint: `Path leading to ${normalizedLocationName}.`,
-                        expandStub: false
+                        expandStub: false,
+                        createOriginExit
                     });
                     if (!created) {
                         throw new Error(`Failed to create travel destination "${normalizedLocationName}".`);
@@ -3092,6 +3207,35 @@ module.exports = function registerApiRoutes(scope) {
                     return { location: created, region: null };
                 }
                 return { location, region: null };
+            };
+
+            const resolveRegionFallbackLocation = (region, regionNameLabel) => {
+                let fallbackLocation = null;
+                const entranceLocationId = typeof region?.entranceLocationId === 'string'
+                    ? region.entranceLocationId.trim()
+                    : '';
+                if (entranceLocationId) {
+                    fallbackLocation = resolveLocationByIdOrName(entranceLocationId);
+                }
+                if (!fallbackLocation && Array.isArray(region?.locationIds)) {
+                    for (const locationId of region.locationIds) {
+                        if (typeof locationId !== 'string') {
+                            continue;
+                        }
+                        const candidate = resolveLocationByIdOrName(locationId);
+                        if (!candidate) {
+                            continue;
+                        }
+                        fallbackLocation = candidate;
+                        break;
+                    }
+                }
+                if (!fallbackLocation) {
+                    throw new Error(
+                        `Travel prose destination region "${regionNameLabel}" is missing a resolvable entrance/location.`
+                    );
+                }
+                return fallbackLocation;
             };
 
             const hasDestinationDelimiter = raw.includes('|');
@@ -3113,42 +3257,47 @@ module.exports = function registerApiRoutes(scope) {
                 return resolveSingleLocationDestination(locationName);
             }
 
-            const region = typeof Region?.getByName === 'function' ? Region.getByName(regionName) : null;
+            let region = typeof Region?.getByName === 'function' ? Region.getByName(regionName) : null;
+            let pendingRegionId = '';
+            let createdRegionEntryStub = null;
             if (!region) {
-                throw new Error(`Travel prose destination region "${regionName}" not found.`);
+                if (!allowCreate) {
+                    throw new Error(`Travel prose destination region "${regionName}" not found.`);
+                }
+                if (!originLocation || typeof createRegionStubFromEvent !== 'function') {
+                    throw new Error(`Unable to create travel destination region "${regionName}".`);
+                }
+                createdRegionEntryStub = await createRegionStubFromEvent({
+                    name: regionName,
+                    originLocation,
+                    description: `An unexplored region known as ${regionName}.`,
+                    createOriginExit
+                });
+                if (!createdRegionEntryStub) {
+                    throw new Error(`Failed to create travel destination region "${regionName}".`);
+                }
+                const stubMetadata = createdRegionEntryStub.stubMetadata || {};
+                pendingRegionId = typeof stubMetadata.targetRegionId === 'string'
+                    ? stubMetadata.targetRegionId.trim()
+                    : '';
+                region = typeof Region?.getByName === 'function' ? Region.getByName(regionName) : null;
+                if (!region && pendingRegionId && regions instanceof Map && regions.has(pendingRegionId)) {
+                    region = regions.get(pendingRegionId);
+                }
+                if (!locationName) {
+                    return { location: createdRegionEntryStub, region: region || null };
+                }
             }
 
             if (!locationName) {
-                let fallbackLocation = null;
-                const entranceLocationId = typeof region.entranceLocationId === 'string'
-                    ? region.entranceLocationId.trim()
-                    : '';
-                if (entranceLocationId) {
-                    fallbackLocation = resolveLocationByIdOrName(entranceLocationId);
+                if (createdRegionEntryStub) {
+                    return { location: createdRegionEntryStub, region: region || null };
                 }
-                if (!fallbackLocation && Array.isArray(region.locationIds)) {
-                    for (const locationId of region.locationIds) {
-                        if (typeof locationId !== 'string') {
-                            continue;
-                        }
-                        const candidate = resolveLocationByIdOrName(locationId);
-                        if (!candidate) {
-                            continue;
-                        }
-                        fallbackLocation = candidate;
-                        break;
-                    }
-                }
-                if (!fallbackLocation) {
-                    throw new Error(
-                        `Travel prose destination region "${regionName}" is missing a resolvable location; `
-                        + 'include <destination><location>...</location></destination> in travel prose.'
-                    );
-                }
+                const fallbackLocation = resolveRegionFallbackLocation(region, regionName);
                 return { location: fallbackLocation, region };
             }
 
-            const location = resolveLocationInRegionByName(region, locationName);
+            const location = region ? resolveLocationInRegionByName(region, locationName) : null;
             if (!location) {
                 if (!allowCreate) {
                     throw new Error(`Travel prose destination location "${locationName}" not found in region "${regionName}".`);
@@ -3156,19 +3305,186 @@ module.exports = function registerApiRoutes(scope) {
                 if (!originLocation || typeof createLocationFromEvent !== 'function') {
                     throw new Error(`Unable to create travel destination "${locationName}" in region "${regionName}".`);
                 }
+                const targetRegionId = typeof region?.id === 'string' && region.id.trim()
+                    ? region.id.trim()
+                    : pendingRegionId;
+                if (!targetRegionId) {
+                    throw new Error(`Travel prose destination region "${regionName}" could not resolve a target region id.`);
+                }
                 const created = await createLocationFromEvent({
                     name: locationName,
                     originLocation,
                     descriptionHint: `Path leading to ${locationName}.`,
                     expandStub: false,
-                    targetRegionId: region.id
+                    targetRegionId,
+                    createOriginExit
                 });
                 if (!created) {
                     throw new Error(`Failed to create travel destination "${locationName}" in region "${regionName}".`);
                 }
-                return { location: created, region };
+                return { location: created, region: region || null };
             }
             return { location, region };
+        };
+
+        const normalizeTravelDestinationComparisonKey = (value) => {
+            if (typeof value !== 'string') {
+                return '';
+            }
+            return value
+                .trim()
+                .toLowerCase()
+                .replace(/\s*\|\s*/g, '|')
+                .replace(/\s+/g, ' ');
+        };
+
+        const parseTravelProseDestinationReference = (destinationText) => {
+            const comparisonKey = normalizeTravelDestinationComparisonKey(destinationText);
+            if (!comparisonKey) {
+                return {
+                    locationNameKey: '',
+                    regionNameKey: ''
+                };
+            }
+            if (!comparisonKey.includes('|')) {
+                return {
+                    locationNameKey: comparisonKey,
+                    regionNameKey: ''
+                };
+            }
+            const [regionNameKey = '', locationNameKey = ''] = comparisonKey.split('|');
+            return {
+                locationNameKey: locationNameKey || '',
+                regionNameKey: regionNameKey || ''
+            };
+        };
+
+        const resolveTravelDestinationRegionId = ({ location = null, region = null } = {}) => {
+            const explicitRegionId = typeof region?.id === 'string' ? region.id.trim() : '';
+            if (explicitRegionId) {
+                return explicitRegionId;
+            }
+            return resolveRegionIdForLocation(location) || '';
+        };
+
+        const buildTravelProseDestinationMatchRecord = ({
+            destinationText = null,
+            resolvedLocation = null,
+            resolvedRegion = null
+        } = {}) => {
+            const parsedReference = parseTravelProseDestinationReference(destinationText);
+            const locationId = typeof resolvedLocation?.id === 'string' ? resolvedLocation.id.trim() : '';
+            const regionId = resolveTravelDestinationRegionId({
+                location: resolvedLocation,
+                region: resolvedRegion
+            });
+            const regionRecord = resolvedRegion
+                || (regionId && regions instanceof Map && regions.has(regionId) ? regions.get(regionId) : null);
+            const resolvedRegionName = typeof regionRecord?.name === 'string' ? regionRecord.name : '';
+            const resolvedLocationName = typeof resolvedLocation?.name === 'string' ? resolvedLocation.name : '';
+            return {
+                locationId,
+                regionId,
+                locationNameKey: normalizeTravelDestinationComparisonKey(resolvedLocationName) || parsedReference.locationNameKey,
+                regionNameKey: normalizeTravelDestinationComparisonKey(resolvedRegionName) || parsedReference.regionNameKey
+            };
+        };
+
+        const buildVehicleArrivalMatchRecord = ({
+            vehicleName = null,
+            destinationText = null,
+            destinationLocation = null,
+            destinationRegion = null,
+            moveResult = null
+        } = {}) => {
+            const parsedReference = parseTravelProseDestinationReference(destinationText);
+            const locationId = typeof moveResult?.toLocationId === 'string'
+                ? moveResult.toLocationId.trim()
+                : (typeof destinationLocation?.id === 'string' ? destinationLocation.id.trim() : '');
+            const regionIdFromMoveResult = typeof moveResult?.toRegionId === 'string'
+                ? moveResult.toRegionId.trim()
+                : '';
+            const regionId = regionIdFromMoveResult || resolveTravelDestinationRegionId({
+                location: destinationLocation,
+                region: destinationRegion
+            });
+            const regionRecord = destinationRegion
+                || (regionId && regions instanceof Map && regions.has(regionId) ? regions.get(regionId) : null);
+            const resolvedLocationName = typeof moveResult?.toLocationName === 'string'
+                ? moveResult.toLocationName
+                : destinationLocation?.name;
+            const resolvedRegionName = typeof moveResult?.toRegionName === 'string'
+                ? moveResult.toRegionName
+                : (regionRecord?.name || destinationLocation?.region?.name || '');
+            return {
+                vehicleName: typeof vehicleName === 'string' ? vehicleName : (moveResult?.vehicleName || null),
+                vehicleNameKey: normalizeTravelDestinationComparisonKey(
+                    typeof vehicleName === 'string' && vehicleName.trim()
+                        ? vehicleName
+                        : (moveResult?.vehicleName || '')
+                ),
+                toLocationId: locationId,
+                toRegionId: regionId,
+                toLocationNameKey: normalizeTravelDestinationComparisonKey(resolvedLocationName || '') || parsedReference.locationNameKey,
+                toRegionNameKey: normalizeTravelDestinationComparisonKey(resolvedRegionName || '') || parsedReference.regionNameKey
+            };
+        };
+
+        const vehicleArrivalMatchesDestinationRecord = (arrivalRecord, destinationRecord) => {
+            if (!arrivalRecord || !destinationRecord) {
+                return false;
+            }
+            if (arrivalRecord.toLocationId && destinationRecord.locationId && arrivalRecord.toLocationId === destinationRecord.locationId) {
+                return true;
+            }
+            if (arrivalRecord.toRegionId && destinationRecord.regionId && arrivalRecord.toRegionId === destinationRecord.regionId) {
+                return true;
+            }
+            if (arrivalRecord.toLocationNameKey
+                && destinationRecord.locationNameKey
+                && arrivalRecord.toLocationNameKey === destinationRecord.locationNameKey) {
+                return true;
+            }
+            if (arrivalRecord.toRegionNameKey
+                && destinationRecord.regionNameKey
+                && arrivalRecord.toRegionNameKey === destinationRecord.regionNameKey) {
+                return true;
+            }
+            return false;
+        };
+
+        const resolveActiveVehicleLabelForLocation = (locationRecord) => {
+            if (!locationRecord || typeof locationRecord !== 'object') {
+                return null;
+            }
+            const regionId = resolveRegionIdForLocation(locationRecord);
+            const regionRecord = regionId && regions instanceof Map && regions.has(regionId)
+                ? regions.get(regionId)
+                : null;
+            if (regionRecord?.isVehicle === true) {
+                return regionRecord.name || regionRecord.id || null;
+            }
+            if (locationRecord?.isVehicle === true) {
+                return locationRecord.name || locationRecord.id || null;
+            }
+            return null;
+        };
+
+        const filterVehicleArrivalRecordsForContext = (arrivals, { location = null } = {}) => {
+            if (!Array.isArray(arrivals) || arrivals.length === 0) {
+                return [];
+            }
+            const activeVehicleLabel = resolveActiveVehicleLabelForLocation(location);
+            const activeVehicleLabelKey = normalizeTravelDestinationComparisonKey(activeVehicleLabel || '');
+            if (!activeVehicleLabelKey) {
+                return [];
+            }
+            return arrivals.filter(arrival => {
+                const arrivalVehicleLabelKey = typeof arrival?.vehicleNameKey === 'string' && arrival.vehicleNameKey
+                    ? arrival.vehicleNameKey
+                    : normalizeTravelDestinationComparisonKey(arrival?.vehicleName || '');
+                return arrivalVehicleLabelKey === activeVehicleLabelKey;
+            });
         };
 
         function extractRandomEventSeeds(responseText) {
@@ -6137,6 +6453,62 @@ module.exports = function registerApiRoutes(scope) {
             return resolvedDestination;
         };
 
+        const buildLocationTravelProseVehicleTarget = (locationVehicle, normalizedVehicleName = null) => ({
+            kind: 'location',
+            label: locationVehicle?.name || locationVehicle?.id || normalizedVehicleName || 'Vehicle',
+            getVehicleInfo: () => locationVehicle?.vehicleInfo,
+            setVehicleInfo: (vehicleInfoData) => {
+                locationVehicle.vehicleInfo = vehicleInfoData;
+                if (locationVehicle.isStub) {
+                    const stubMetadata = locationVehicle.stubMetadata || {};
+                    stubMetadata.vehicleInfo = vehicleInfoData;
+                    locationVehicle.stubMetadata = stubMetadata;
+                }
+            },
+            resolveSourceLocation: () => locationVehicle
+        });
+
+        const buildRegionTravelProseVehicleTarget = (vehicleRegion, normalizedVehicleName = null) => ({
+            kind: 'region',
+            label: vehicleRegion?.name || vehicleRegion?.id || normalizedVehicleName || 'Vehicle',
+            getVehicleInfo: () => vehicleRegion?.vehicleInfo,
+            setVehicleInfo: (vehicleInfoData) => {
+                vehicleRegion.vehicleInfo = vehicleInfoData;
+            },
+            resolveSourceLocation: () => {
+                const playerLocationId = typeof currentPlayer?.currentLocation === 'string'
+                    ? currentPlayer.currentLocation.trim()
+                    : '';
+                if (playerLocationId && gameLocations instanceof Map && gameLocations.has(playerLocationId)) {
+                    const playerLocation = gameLocations.get(playerLocationId);
+                    if (resolveRegionIdForLocation(playerLocation) === vehicleRegion.id) {
+                        return playerLocation;
+                    }
+                }
+
+                const entranceLocationId = typeof vehicleRegion.entranceLocationId === 'string'
+                    ? vehicleRegion.entranceLocationId.trim()
+                    : '';
+                if (entranceLocationId && gameLocations instanceof Map && gameLocations.has(entranceLocationId)) {
+                    return gameLocations.get(entranceLocationId);
+                }
+
+                const regionLocationIds = Array.isArray(vehicleRegion.locationIds) ? vehicleRegion.locationIds : [];
+                for (const locationId of regionLocationIds) {
+                    if (typeof locationId !== 'string') {
+                        continue;
+                    }
+                    const normalizedLocationId = locationId.trim();
+                    if (!normalizedLocationId || !(gameLocations instanceof Map) || !gameLocations.has(normalizedLocationId)) {
+                        continue;
+                    }
+                    return gameLocations.get(normalizedLocationId);
+                }
+
+                throw new Error(`Vehicle region "${vehicleRegion.name || vehicleRegion.id}" has no resolved source location.`);
+            }
+        });
+
         const resolveTravelProseVehicleTarget = (vehicleName) => {
             const normalizedVehicleName = typeof vehicleName === 'string' ? vehicleName.trim() : '';
             if (!normalizedVehicleName) {
@@ -6165,67 +6537,42 @@ module.exports = function registerApiRoutes(scope) {
             }
 
             if (locationVehicle) {
-                return {
-                    kind: 'location',
-                    label: locationVehicle.name || locationVehicle.id || normalizedVehicleName,
-                    getVehicleInfo: () => locationVehicle.vehicleInfo,
-                    setVehicleInfo: (vehicleInfoData) => {
-                        locationVehicle.vehicleInfo = vehicleInfoData;
-                        if (locationVehicle.isStub) {
-                            const stubMetadata = locationVehicle.stubMetadata || {};
-                            stubMetadata.vehicleInfo = vehicleInfoData;
-                            locationVehicle.stubMetadata = stubMetadata;
-                        }
-                    },
-                    resolveSourceLocation: () => locationVehicle
-                };
+                return buildLocationTravelProseVehicleTarget(locationVehicle, normalizedVehicleName);
             }
 
-            const vehicleRegion = regionVehicle;
-            return {
-                kind: 'region',
-                label: vehicleRegion.name || vehicleRegion.id || normalizedVehicleName,
-                getVehicleInfo: () => vehicleRegion.vehicleInfo,
-                setVehicleInfo: (vehicleInfoData) => {
-                    vehicleRegion.vehicleInfo = vehicleInfoData;
-                },
-                resolveSourceLocation: () => {
-                    const playerLocationId = typeof currentPlayer?.currentLocation === 'string'
-                        ? currentPlayer.currentLocation.trim()
-                        : '';
-                    if (playerLocationId && gameLocations instanceof Map && gameLocations.has(playerLocationId)) {
-                        const playerLocation = gameLocations.get(playerLocationId);
-                        if (resolveRegionIdForLocation(playerLocation) === vehicleRegion.id) {
-                            return playerLocation;
-                        }
-                    }
-
-                    const entranceLocationId = typeof vehicleRegion.entranceLocationId === 'string'
-                        ? vehicleRegion.entranceLocationId.trim()
-                        : '';
-                    if (entranceLocationId && gameLocations instanceof Map && gameLocations.has(entranceLocationId)) {
-                        return gameLocations.get(entranceLocationId);
-                    }
-
-                    const regionLocationIds = Array.isArray(vehicleRegion.locationIds) ? vehicleRegion.locationIds : [];
-                    for (const locationId of regionLocationIds) {
-                        if (typeof locationId !== 'string') {
-                            continue;
-                        }
-                        const normalizedLocationId = locationId.trim();
-                        if (!normalizedLocationId || !(gameLocations instanceof Map) || !gameLocations.has(normalizedLocationId)) {
-                            continue;
-                        }
-                        return gameLocations.get(normalizedLocationId);
-                    }
-
-                    throw new Error(`Vehicle region "${vehicleRegion.name || vehicleRegion.id}" has no resolved source location.`);
-                }
-            };
+            return buildRegionTravelProseVehicleTarget(regionVehicle, normalizedVehicleName);
         };
 
-        const moveVehicleForTravelProse = async ({ vehicleName, destinationLocation }) => {
-            const vehicleTarget = resolveTravelProseVehicleTarget(vehicleName);
+        const getTravelProseVehicleTargets = () => {
+            const targets = [];
+            if (gameLocations instanceof Map) {
+                for (const locationVehicle of gameLocations.values()) {
+                    if (!locationVehicle
+                        || locationVehicle.isVehicle !== true
+                        || !locationVehicle.vehicleInfo
+                        || typeof locationVehicle.vehicleInfo !== 'object'
+                        || Array.isArray(locationVehicle.vehicleInfo)) {
+                        continue;
+                    }
+                    targets.push(buildLocationTravelProseVehicleTarget(locationVehicle));
+                }
+            }
+            if (regions instanceof Map) {
+                for (const regionVehicle of regions.values()) {
+                    if (!regionVehicle
+                        || regionVehicle.isVehicle !== true
+                        || !regionVehicle.vehicleInfo
+                        || typeof regionVehicle.vehicleInfo !== 'object'
+                        || Array.isArray(regionVehicle.vehicleInfo)) {
+                        continue;
+                    }
+                    targets.push(buildRegionTravelProseVehicleTarget(regionVehicle));
+                }
+            }
+            return targets;
+        };
+
+        const resolveTravelProseVehicleStateFromTarget = (vehicleTarget) => {
             if (!vehicleTarget) {
                 throw new Error('Vehicle target is required for travel prose vehicle movement.');
             }
@@ -6257,15 +6604,76 @@ module.exports = function registerApiRoutes(scope) {
                 throw new Error(`Vehicle "${vehicleTarget.label}" source location could not be resolved.`);
             }
 
-            const destinationId = requireLocationId(destinationLocation?.id, 'travel prose vehicle destination');
-            const sourceRegionId = resolveRegionIdForLocation(sourceLocation);
-            const destinationRegionId = resolveRegionIdForLocation(destinationLocation);
-            const forwardDestinationRegion = sourceRegionId && destinationRegionId && sourceRegionId !== destinationRegionId
-                ? destinationRegionId
-                : null;
             const icon = typeof normalizedVehicleInfo.icon === 'string' && normalizedVehicleInfo.icon.trim()
                 ? normalizedVehicleInfo.icon.trim()
                 : '🚗';
+
+            return {
+                vehicleTarget,
+                normalizedVehicleInfo,
+                sourceLocation,
+                vehicleExit,
+                icon
+            };
+        };
+
+        const resolveTravelProseVehicleState = (vehicleName) => {
+            const vehicleTarget = resolveTravelProseVehicleTarget(vehicleName);
+            return resolveTravelProseVehicleStateFromTarget(vehicleTarget);
+        };
+
+        const moveLocationVehicleToDestinationRegionIfNeeded = ({
+            vehicleTarget,
+            sourceLocation,
+            destinationLocation
+        } = {}) => {
+            if (!vehicleTarget || vehicleTarget.kind !== 'location') {
+                return false;
+            }
+            if (!sourceLocation) {
+                throw new Error('Location vehicle region move requires a source vehicle location.');
+            }
+            if (!destinationLocation) {
+                throw new Error('Location vehicle region move requires a destination location.');
+            }
+
+            const sourceRegionId = resolveRegionIdForLocation(sourceLocation);
+            const destinationRegionId = resolveRegionIdForLocation(destinationLocation);
+            if (!sourceRegionId) {
+                throw new Error(
+                    `Vehicle location "${sourceLocation.name || sourceLocation.id}" is missing a resolved source region.`
+                );
+            }
+            if (!destinationRegionId) {
+                throw new Error(
+                    `Vehicle destination "${destinationLocation.name || destinationLocation.id}" `
+                    + 'is missing a resolved destination region.'
+                );
+            }
+            if (sourceRegionId === destinationRegionId) {
+                return false;
+            }
+
+            sourceLocation.regionId = destinationRegionId;
+            return true;
+        };
+
+        const retargetVehicleExitForTravelTarget = ({
+            vehicleTarget,
+            sourceLocation,
+            vehicleExit = null,
+            destinationLocation,
+            icon = '🚗'
+        } = {}) => {
+            const destinationId = requireLocationId(destinationLocation?.id, 'travel prose vehicle destination');
+            const sourceRegionId = resolveRegionIdForLocation(sourceLocation);
+            const destinationRegionId = resolveRegionIdForLocation(destinationLocation);
+            const destinationRegion = destinationRegionId && regions instanceof Map && regions.has(destinationRegionId)
+                ? regions.get(destinationRegionId)
+                : null;
+            const forwardDestinationRegion = sourceRegionId && destinationRegionId && sourceRegionId !== destinationRegionId
+                ? destinationRegionId
+                : null;
             let previousDestinationId = '';
             let previousDestinationName = null;
             let moved = false;
@@ -6342,26 +6750,173 @@ module.exports = function registerApiRoutes(scope) {
                 });
             }
 
-            normalizedVehicleInfo.vehicleExitId = vehicleExit.id || null;
-            if (normalizedVehicleInfo.destinations.length === 0
-                || normalizedVehicleInfo.destinations.includes(destinationId)) {
-                normalizedVehicleInfo.currentDestination = destinationId;
-            }
-            if (moved && normalizedVehicleInfo.currentDestination === destinationId) {
-                const departureTime = Number.isFinite(Globals?.elapsedTime) ? Globals.elapsedTime : null;
-                normalizedVehicleInfo.departureTime = departureTime;
-            }
-            vehicleTarget.setVehicleInfo(normalizedVehicleInfo.toJSON());
-
             return {
+                vehicleExit,
                 moved,
                 vehicleName: vehicleTarget.label,
                 vehicleIcon: icon,
                 fromLocationId: previousDestinationId || null,
                 fromLocationName: previousDestinationName,
                 toLocationId: destinationId,
-                toLocationName: destinationLocation?.name || destinationId
+                toLocationName: destinationLocation?.name || destinationId,
+                toRegionId: destinationRegionId || null,
+                toRegionName: destinationRegion?.name || null
             };
+        };
+
+        const moveVehicleForTravelProse = async ({ vehicleName, destinationLocation, travelTimeMinutes = null }) => {
+            const {
+                vehicleTarget,
+                normalizedVehicleInfo,
+                sourceLocation,
+                vehicleExit,
+                icon
+            } = resolveTravelProseVehicleState(vehicleName);
+
+            const destinationId = requireLocationId(destinationLocation?.id, 'travel prose vehicle destination');
+            const currentOutsideLocationId = typeof vehicleExit?.destination === 'string'
+                ? vehicleExit.destination.trim()
+                : '';
+            const currentOutsideLocation = currentOutsideLocationId && gameLocations instanceof Map && gameLocations.has(currentOutsideLocationId)
+                ? gameLocations.get(currentOutsideLocationId)
+                : null;
+            const currentOutsideLocationName = currentOutsideLocation?.name || null;
+            const canSetCurrentDestination = normalizedVehicleInfo.destinations.length === 0
+                || normalizedVehicleInfo.destinations.includes(destinationId);
+            if (!canSetCurrentDestination) {
+                throw new Error(
+                    `Vehicle "${vehicleTarget.label}" cannot travel to "${destinationLocation?.name || destinationId}" `
+                    + 'because that destination is not in its allowed route.'
+                );
+            }
+            if (canSetCurrentDestination) {
+                normalizedVehicleInfo.currentDestination = destinationId;
+            }
+
+            const hasTravelTime = Number.isInteger(travelTimeMinutes) && travelTimeMinutes >= 0;
+            if (hasTravelTime && travelTimeMinutes > 0 && !currentOutsideLocationId) {
+                throw new Error(`Vehicle "${vehicleTarget.label}" cannot start timed travel without a resolved current outside location.`);
+            }
+
+            const shouldStartTimedTrip = Boolean(
+                hasTravelTime
+                && travelTimeMinutes > 0
+                && currentOutsideLocationId
+                && currentOutsideLocationId !== destinationId
+            );
+            if (shouldStartTimedTrip) {
+                const departureTime = Number.isFinite(Globals?.elapsedTime) && Number.isInteger(Globals.elapsedTime)
+                    ? Globals.elapsedTime
+                    : null;
+                if (typeof departureTime !== 'number') {
+                    throw new Error('Current elapsed time is unavailable for travel prose vehicle timing.');
+                }
+                normalizedVehicleInfo.vehicleExitId = vehicleExit?.id || null;
+                normalizedVehicleInfo.ETA = departureTime + travelTimeMinutes;
+                normalizedVehicleInfo.departureTime = departureTime;
+                vehicleTarget.setVehicleInfo(normalizedVehicleInfo.toJSON());
+                return {
+                    moved: false,
+                    startedTrip: true,
+                    vehicleName: vehicleTarget.label,
+                    vehicleIcon: icon,
+                    fromLocationId: currentOutsideLocationId || null,
+                    fromLocationName: currentOutsideLocationName,
+                    toLocationId: destinationId,
+                    toLocationName: destinationLocation?.name || destinationId,
+                    toRegionId: resolveRegionIdForLocation(destinationLocation) || null,
+                    toRegionName: destinationLocation?.region?.name || null
+                };
+            }
+
+            moveLocationVehicleToDestinationRegionIfNeeded({
+                vehicleTarget,
+                sourceLocation,
+                destinationLocation
+            });
+
+            const moveResult = retargetVehicleExitForTravelTarget({
+                vehicleTarget,
+                sourceLocation,
+                vehicleExit,
+                destinationLocation,
+                icon
+            });
+
+            normalizedVehicleInfo.vehicleExitId = moveResult.vehicleExit?.id || null;
+            if (canSetCurrentDestination) {
+                normalizedVehicleInfo.currentDestination = destinationId;
+            }
+            normalizedVehicleInfo.ETA = null;
+            normalizedVehicleInfo.departureTime = moveResult.moved
+                ? (Number.isFinite(Globals?.elapsedTime) && Number.isInteger(Globals.elapsedTime) ? Globals.elapsedTime : null)
+                : null;
+            vehicleTarget.setVehicleInfo(normalizedVehicleInfo.toJSON());
+
+            return moveResult;
+        };
+
+        const processDueVehicleArrivals = async () => {
+            const elapsedTime = Number.isFinite(Globals?.elapsedTime) && Number.isInteger(Globals.elapsedTime)
+                ? Globals.elapsedTime
+                : null;
+            if (typeof elapsedTime !== 'number') {
+                return [];
+            }
+
+            const arrivals = [];
+            const vehicleTargets = getTravelProseVehicleTargets();
+            for (const vehicleTarget of vehicleTargets) {
+                const {
+                    normalizedVehicleInfo,
+                    sourceLocation,
+                    vehicleExit,
+                    icon
+                } = resolveTravelProseVehicleStateFromTarget(vehicleTarget);
+
+                if (typeof normalizedVehicleInfo.ETA !== 'number' || normalizedVehicleInfo.ETA > elapsedTime) {
+                    continue;
+                }
+
+                const destinationId = requireLocationId(normalizedVehicleInfo.currentDestination, `vehicle "${vehicleTarget.label}" current destination`);
+                if (!(gameLocations instanceof Map) || !gameLocations.has(destinationId)) {
+                    throw new Error(`Vehicle "${vehicleTarget.label}" arrival destination "${destinationId}" does not exist.`);
+                }
+
+                const resolvedDestination = await ensureTravelProseDestinationUnstubbed(gameLocations.get(destinationId), {
+                    travelContext: null
+                });
+                moveLocationVehicleToDestinationRegionIfNeeded({
+                    vehicleTarget,
+                    sourceLocation,
+                    destinationLocation: resolvedDestination
+                });
+                const moveResult = retargetVehicleExitForTravelTarget({
+                    vehicleTarget,
+                    sourceLocation,
+                    vehicleExit,
+                    destinationLocation: resolvedDestination,
+                    icon
+                });
+
+                normalizedVehicleInfo.vehicleExitId = moveResult.vehicleExit?.id || null;
+                normalizedVehicleInfo.currentDestination = destinationId;
+                normalizedVehicleInfo.ETA = null;
+                normalizedVehicleInfo.departureTime = null;
+                vehicleTarget.setVehicleInfo(normalizedVehicleInfo.toJSON());
+                if (moveResult.moved) {
+                    arrivals.push(moveResult);
+                }
+            }
+
+            if (arrivals.length && currentPlayer) {
+                assertMovementGraphIntegrity({
+                    player: currentPlayer,
+                    context: 'vehicle arrival finalization'
+                });
+            }
+
+            return arrivals;
         };
 
         async function runTravelProseEventChecks({
@@ -6374,6 +6929,7 @@ module.exports = function registerApiRoutes(scope) {
             currentActionIsTravel = false,
             resolveTravelContext = null,
             traveledToLocationId = null,
+            vehicleArrivalsThisTurn = [],
             originLabelFallback = 'Origin',
             destinationLabelFallback = 'Destination'
         } = {}) {
@@ -6405,11 +6961,21 @@ module.exports = function registerApiRoutes(scope) {
                 .join('\n\n')
                 .trim();
             const travelVehicleName = normalizeTravelProseVehicleField(travelProsePayload.vehicle || '');
+            const rawVehicleTravelTime = normalizeTravelProseVehicleTravelTimeField(
+                typeof travelProsePayload.vehicleTravelTime === 'string'
+                    ? travelProsePayload.vehicleTravelTime
+                    : ''
+            );
+            const vehicleTravelTimeMinutes = rawVehicleTravelTime
+                ? Utils.parseDurationToMinutes(rawVehicleTravelTime, {
+                    fieldName: 'travelProse <vehicleInfo><travelTime>'
+                })
+                : null;
             const requestedVehicleDestinationText = normalizeTravelProseDestinationField(travelProsePayload.vehicleDestination || '');
             const requestedPlayerDestinationText = normalizeTravelProseDestinationField(
                 typeof travelProsePayload.playerDestination === 'string'
                     ? travelProsePayload.playerDestination
-                    : (travelProsePayload.destination || '')
+                    : ''
             );
             const effectiveVehicleDestinationText = travelVehicleName
                 ? (requestedVehicleDestinationText || requestedPlayerDestinationText || null)
@@ -6417,9 +6983,13 @@ module.exports = function registerApiRoutes(scope) {
 
             let vehicleCurrentDestinationId = '';
             let vehicleCurrentDestinationName = '';
+            let vehicleCurrentDestinationRegionId = '';
+            let vehicleCurrentOutsideLocationId = '';
             let vehicleSourceLocationForDestinationResolution = null;
+            let vehicleDestinationCreateOriginExit = true;
             if (travelVehicleName) {
                 const vehicleTarget = resolveTravelProseVehicleTarget(travelVehicleName);
+                vehicleDestinationCreateOriginExit = vehicleTarget?.kind !== 'location';
                 const rawVehicleInfo = vehicleTarget?.getVehicleInfo ? vehicleTarget.getVehicleInfo() : null;
                 if (!rawVehicleInfo || typeof rawVehicleInfo !== 'object' || Array.isArray(rawVehicleInfo)) {
                     throw new Error(`Vehicle "${travelVehicleName}" is missing vehicleInfo.`);
@@ -6442,6 +7012,7 @@ module.exports = function registerApiRoutes(scope) {
                 const resolvedVehicleDestinationId = typeof vehicleExitRecord?.exit?.destination === 'string'
                     ? vehicleExitRecord.exit.destination.trim()
                     : '';
+                vehicleCurrentOutsideLocationId = resolvedVehicleDestinationId;
                 if (resolvedVehicleDestinationId) {
                     vehicleCurrentDestinationId = resolvedVehicleDestinationId;
                     const resolvedVehicleDestinationLocation = (gameLocations instanceof Map) && gameLocations.has(resolvedVehicleDestinationId)
@@ -6450,52 +7021,79 @@ module.exports = function registerApiRoutes(scope) {
                     vehicleCurrentDestinationName = typeof resolvedVehicleDestinationLocation?.name === 'string'
                         ? resolvedVehicleDestinationLocation.name
                         : '';
+                    vehicleCurrentDestinationRegionId = resolveRegionIdForLocation(resolvedVehicleDestinationLocation) || '';
                 }
             }
 
-            const normalizeDestinationComparisonKey = (value) => {
-                if (typeof value !== 'string') {
-                    return '';
-                }
-                return value
-                    .trim()
-                    .toLowerCase()
-                    .replace(/\s*\|\s*/g, '|')
-                    .replace(/\s+/g, ' ');
-            };
-
-            const playerDestinationComparisonKey = normalizeDestinationComparisonKey(requestedPlayerDestinationText);
-            const vehicleDestinationComparisonKey = normalizeDestinationComparisonKey(effectiveVehicleDestinationText);
+            const playerDestinationComparisonKey = normalizeTravelDestinationComparisonKey(requestedPlayerDestinationText);
+            const vehicleDestinationComparisonKey = normalizeTravelDestinationComparisonKey(effectiveVehicleDestinationText);
             let playerDestinationMatchesVehicleDestination = false;
             let resolvedPlayerDestinationId = '';
             let resolvedVehicleDestinationId = '';
-            if (requestedPlayerDestinationText && effectiveVehicleDestinationText) {
-                if (playerDestinationComparisonKey
-                    && vehicleDestinationComparisonKey
-                    && playerDestinationComparisonKey === vehicleDestinationComparisonKey) {
-                    playerDestinationMatchesVehicleDestination = true;
-                }
+            let resolvedPlayerDestinationRegionId = '';
+            let resolvedVehicleDestinationRegionId = '';
+            let resolvedPlayerDestination = null;
+            let resolvedVehicleDestination = null;
+            if (playerDestinationComparisonKey
+                && vehicleDestinationComparisonKey
+                && playerDestinationComparisonKey === vehicleDestinationComparisonKey) {
+                playerDestinationMatchesVehicleDestination = true;
+            }
 
+            const destinationResolutionPromises = [];
+            let playerDestinationResolutionIndex = -1;
+            let vehicleDestinationResolutionIndex = -1;
+            if (requestedPlayerDestinationText) {
+                playerDestinationResolutionIndex = destinationResolutionPromises.push(
+                    resolveTravelProseDestination(requestedPlayerDestinationText, {
+                        allowCreate: false,
+                        originLocation: location
+                    })
+                ) - 1;
+            }
+            if (effectiveVehicleDestinationText) {
+                vehicleDestinationResolutionIndex = destinationResolutionPromises.push(
+                    resolveTravelProseDestination(effectiveVehicleDestinationText, {
+                        allowCreate: false,
+                        originLocation: location
+                    })
+                ) - 1;
+            }
+            if (destinationResolutionPromises.length > 0) {
                 try {
-                    const [resolvedPlayerDestination, resolvedVehicleDestination] = await Promise.all([
-                        resolveTravelProseDestination(requestedPlayerDestinationText, {
-                            allowCreate: false,
-                            originLocation: location
-                        }),
-                        resolveTravelProseDestination(effectiveVehicleDestinationText, {
-                            allowCreate: false,
-                            originLocation: location
-                        })
-                    ]);
+                    const resolvedDestinations = await Promise.all(destinationResolutionPromises);
+                    if (playerDestinationResolutionIndex !== -1) {
+                        resolvedPlayerDestination = resolvedDestinations[playerDestinationResolutionIndex] || null;
+                    }
+                    if (vehicleDestinationResolutionIndex !== -1) {
+                        resolvedVehicleDestination = resolvedDestinations[vehicleDestinationResolutionIndex] || null;
+                    }
                     resolvedPlayerDestinationId = typeof resolvedPlayerDestination?.location?.id === 'string'
                         ? resolvedPlayerDestination.location.id.trim()
                         : '';
                     resolvedVehicleDestinationId = typeof resolvedVehicleDestination?.location?.id === 'string'
                         ? resolvedVehicleDestination.location.id.trim()
                         : '';
-                    if (resolvedPlayerDestinationId
+                    resolvedPlayerDestinationRegionId = resolveTravelDestinationRegionId({
+                        location: resolvedPlayerDestination?.location || null,
+                        region: resolvedPlayerDestination?.region || null
+                    });
+                    resolvedVehicleDestinationRegionId = resolveTravelDestinationRegionId({
+                        location: resolvedVehicleDestination?.location || null,
+                        region: resolvedVehicleDestination?.region || null
+                    });
+                    if (resolvedPlayerDestination
+                        && resolvedVehicleDestination
+                        && resolvedPlayerDestinationId
                         && resolvedVehicleDestinationId
                         && resolvedPlayerDestinationId === resolvedVehicleDestinationId) {
+                        playerDestinationMatchesVehicleDestination = true;
+                    }
+                    if (resolvedPlayerDestination
+                        && resolvedVehicleDestination
+                        && resolvedPlayerDestinationRegionId
+                        && resolvedVehicleDestinationRegionId
+                        && resolvedPlayerDestinationRegionId === resolvedVehicleDestinationRegionId) {
                         playerDestinationMatchesVehicleDestination = true;
                     }
                 } catch (_) {
@@ -6512,8 +7110,14 @@ module.exports = function registerApiRoutes(scope) {
                     && vehicleCurrentDestinationId
                     && matchedDestinationId === vehicleCurrentDestinationId
                 );
+                if (!vehicleAlreadyAtMatchedDestination
+                    && resolvedPlayerDestinationRegionId
+                    && vehicleCurrentDestinationRegionId
+                    && resolvedPlayerDestinationRegionId === vehicleCurrentDestinationRegionId) {
+                    vehicleAlreadyAtMatchedDestination = true;
+                }
                 if (!vehicleAlreadyAtMatchedDestination) {
-                    const vehicleCurrentDestinationComparisonKey = normalizeDestinationComparisonKey(vehicleCurrentDestinationName);
+                    const vehicleCurrentDestinationComparisonKey = normalizeTravelDestinationComparisonKey(vehicleCurrentDestinationName);
                     vehicleAlreadyAtMatchedDestination = Boolean(
                         vehicleCurrentDestinationComparisonKey
                         && matchedDestinationComparisonKey
@@ -6522,10 +7126,59 @@ module.exports = function registerApiRoutes(scope) {
                 }
             }
 
+            const playerDestinationMatchRecord = buildTravelProseDestinationMatchRecord({
+                destinationText: requestedPlayerDestinationText,
+                resolvedLocation: resolvedPlayerDestination?.location || null,
+                resolvedRegion: resolvedPlayerDestination?.region || null
+            });
+            const relevantVehicleArrivalsThisTurn = filterVehicleArrivalRecordsForContext(
+                vehicleArrivalsThisTurn,
+                { location }
+            );
+            const vehicleWillStartTimedTrip = Boolean(
+                travelVehicleName
+                && effectiveVehicleDestinationText
+                && Number.isInteger(vehicleTravelTimeMinutes)
+                && vehicleTravelTimeMinutes > 0
+                && vehicleCurrentOutsideLocationId
+                && (
+                    !resolvedVehicleDestinationId
+                    || vehicleCurrentOutsideLocationId !== resolvedVehicleDestinationId
+                )
+            );
+            const vehicleWillArriveThisTurn = Boolean(
+                travelVehicleName
+                && effectiveVehicleDestinationText
+                && !vehicleWillStartTimedTrip
+                && !(
+                    vehicleCurrentOutsideLocationId
+                    && resolvedVehicleDestinationId
+                    && vehicleCurrentOutsideLocationId === resolvedVehicleDestinationId
+                )
+            );
+            const projectedVehicleArrivalThisTurn = vehicleWillArriveThisTurn
+                ? buildVehicleArrivalMatchRecord({
+                    vehicleName: travelVehicleName,
+                    destinationText: effectiveVehicleDestinationText,
+                    destinationLocation: resolvedVehicleDestination?.location || null,
+                    destinationRegion: resolvedVehicleDestination?.region || null
+                })
+                : null;
+            const arrivalsBlockingPlayerMovement = projectedVehicleArrivalThisTurn
+                ? [...relevantVehicleArrivalsThisTurn, projectedVehicleArrivalThisTurn]
+                : relevantVehicleArrivalsThisTurn;
+            const playerDestinationMatchesVehicleArrivalThisTurn = Boolean(
+                requestedPlayerDestinationText
+                && arrivalsBlockingPlayerMovement.some(arrival =>
+                    vehicleArrivalMatchesDestinationRecord(arrival, playerDestinationMatchRecord)
+                )
+            );
             const shouldIgnorePlayerDestination = Boolean(
                 requestedPlayerDestinationText
-                && playerDestinationMatchesVehicleDestination
-                && !vehicleAlreadyAtMatchedDestination
+                && (
+                    (playerDestinationMatchesVehicleDestination && !vehicleAlreadyAtMatchedDestination)
+                    || playerDestinationMatchesVehicleArrivalThisTurn
+                )
             );
             const effectivePlayerDestinationText = shouldIgnorePlayerDestination
                 ? null
@@ -6563,7 +7216,8 @@ module.exports = function registerApiRoutes(scope) {
                     const vehicleDestinationOriginLocation = vehicleSourceLocationForDestinationResolution || location;
                     const resolvedVehicleDestination = await resolveTravelProseDestination(effectiveVehicleDestinationText, {
                         allowCreate: true,
-                        originLocation: vehicleDestinationOriginLocation
+                        originLocation: vehicleDestinationOriginLocation,
+                        createOriginExit: vehicleDestinationCreateOriginExit
                     });
                     let vehicleDestinationLocation = resolvedVehicleDestination.location;
                     if (!vehicleDestinationLocation) {
@@ -6574,7 +7228,8 @@ module.exports = function registerApiRoutes(scope) {
                     });
                     const vehicleMoveResult = await moveVehicleForTravelProse({
                         vehicleName: travelVehicleName,
-                        destinationLocation: vehicleDestinationLocation
+                        destinationLocation: vehicleDestinationLocation,
+                        travelTimeMinutes: vehicleTravelTimeMinutes
                     });
                     if (vehicleMoveResult?.moved) {
                         vehicleMovement = vehicleMoveResult;
@@ -6924,7 +7579,7 @@ module.exports = function registerApiRoutes(scope) {
                 let travelProsePayload = null;
                 let narrativeText = '';
                 if (Globals.config?.repetition_buster) {
-                    const parsedProse = parsePlayerActionProseFromXml(rawResponse, { logJson: true });
+                    const parsedProse = await parsePlayerActionProseFromXml(rawResponse, { logJson: true });
                     narrativeText = parsedProse.prose;
                     travelProsePayload = parsedProse.travel;
                 } else {
@@ -10581,7 +11236,7 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 if (Globals.config.repetition_buster) {
-                    const parsedProse = parsePlayerActionProseFromXml(raw, { logJson: true });
+                    const parsedProse = await parsePlayerActionProseFromXml(raw, { logJson: true });
                     raw = parsedProse.prose;
                 }
 
@@ -11293,6 +11948,24 @@ module.exports = function registerApiRoutes(scope) {
             };
 
             const respond = async (payload, statusCode = 200) => {
+                if (statusCode === 200) {
+                    await processDueVehicleArrivals();
+                    if (payload && typeof payload === 'object') {
+                        const refreshedLocationId = typeof currentPlayer?.currentLocation === 'string'
+                            ? currentPlayer.currentLocation.trim()
+                            : '';
+                        if (payload.location
+                            && refreshedLocationId
+                            && gameLocations instanceof Map
+                            && gameLocations.has(refreshedLocationId)
+                            && typeof buildLocationResponse === 'function') {
+                            payload.location = buildLocationResponse(gameLocations.get(refreshedLocationId));
+                        }
+                        if (Object.prototype.hasOwnProperty.call(payload, 'player') && currentPlayer) {
+                            payload.player = serializeNpcForClient(currentPlayer);
+                        }
+                    }
+                }
                 try {
                     await processLocationChangeMemoriesIfNeeded();
                 } catch (error) {
@@ -11350,6 +12023,7 @@ module.exports = function registerApiRoutes(scope) {
                 'implausible_failure'
             ]);
             let resolvedTravelContext = null;
+            let vehicleArrivalsThisTurn = [];
 
             const resolveTravelContext = () => {
                 if (!travelMetadata || !travelMetadata.exit) {
@@ -11451,6 +12125,8 @@ module.exports = function registerApiRoutes(scope) {
                         throw new Error(`Current player location '${resolvedLocationId}' is missing from gameLocations.`);
                     }
                 }
+
+                vehicleArrivalsThisTurn = await processDueVehicleArrivals();
 
                 if (location) {
                     try {
@@ -12576,7 +13252,7 @@ module.exports = function registerApiRoutes(scope) {
                     }
 
                     if (shouldUseRepetitionBusterXml) {
-                        const parsedProse = parsePlayerActionProseFromXml(aiResponse, { logJson: true });
+                        const parsedProse = await parsePlayerActionProseFromXml(aiResponse, { logJson: true });
                         aiResponse = parsedProse.prose;
                         travelProsePayload = parsedProse.travel;
                     }
@@ -12607,7 +13283,7 @@ module.exports = function registerApiRoutes(scope) {
                                     }
                                     if (typeof rerunResponse === 'string' && rerunResponse.trim()) {
                                         if (usesActionXmlResponse) {
-                                            const parsedProse = parsePlayerActionProseFromXml(rerunResponse, { logJson: true });
+                                            const parsedProse = await parsePlayerActionProseFromXml(rerunResponse, { logJson: true });
                                             aiResponse = parsedProse.prose;
                                             travelProsePayload = parsedProse.travel;
                                         } else {
@@ -12828,7 +13504,8 @@ module.exports = function registerApiRoutes(scope) {
                                     travelMetadataIsEventDriven,
                                     currentActionIsTravel,
                                     resolveTravelContext,
-                                    traveledToLocationId
+                                    traveledToLocationId,
+                                    vehicleArrivalsThisTurn
                                 });
                                 eventResult = travelResult.eventResult;
                                 originEventResult = travelResult.originEventResult;
@@ -14970,15 +15647,63 @@ module.exports = function registerApiRoutes(scope) {
             return Boolean(normalizedInfo.isUnderway && !normalizedInfo.hasArrived);
         }
 
-        function shouldHideVehicleExitFromList({
+        function resolveVehicleExitTransitBlock({
             exit = null,
+            sourceLocation = null,
             destinationLocation = null,
             destinationRegionId = null,
             pendingRegion = null,
             contextLabel = 'Vehicle exit'
         } = {}) {
             if (!exit || exit.isVehicle !== true) {
-                return false;
+                return {
+                    blocked: false,
+                    reason: null
+                };
+            }
+
+            const exitId = typeof exit?.id === 'string' ? exit.id.trim() : '';
+            const sourceLocationVehicleExitId = typeof sourceLocation?.vehicleInfo?.vehicleExitId === 'string'
+                ? sourceLocation.vehicleInfo.vehicleExitId.trim()
+                : '';
+            const sourceRegionId = sourceLocation?.regionId
+                || sourceLocation?.stubMetadata?.regionId
+                || sourceLocation?.stubMetadata?.targetRegionId
+                || null;
+            const sourceRegion = sourceRegionId && regions instanceof Map && regions.has(sourceRegionId)
+                ? regions.get(sourceRegionId)
+                : null;
+            const sourceCandidateInfos = [];
+            if (sourceLocation?.vehicleInfo
+                && typeof sourceLocation.vehicleInfo === 'object'
+                && !Array.isArray(sourceLocation.vehicleInfo)
+                && (
+                    !sourceLocationVehicleExitId
+                    || (exitId && exitId === sourceLocationVehicleExitId)
+                )) {
+                sourceCandidateInfos.push({
+                    label: 'source location vehicle',
+                    info: sourceLocation.vehicleInfo
+                });
+            }
+            if (sourceRegion?.vehicleInfo
+                && typeof sourceRegion.vehicleInfo === 'object'
+                && !Array.isArray(sourceRegion.vehicleInfo)) {
+                sourceCandidateInfos.push({
+                    label: 'source region vehicle',
+                    info: sourceRegion.vehicleInfo
+                });
+            }
+
+            for (const candidate of sourceCandidateInfos) {
+                if (isVehicleInTransit(candidate.info, {
+                    contextLabel: `${contextLabel} (${candidate.label})`
+                })) {
+                    return {
+                        blocked: true,
+                        reason: 'source_underway'
+                    };
+                }
             }
 
             const destinationRegion = destinationRegionId && regions instanceof Map && regions.has(destinationRegionId)
@@ -15010,11 +15735,35 @@ module.exports = function registerApiRoutes(scope) {
                 if (isVehicleInTransit(candidate.info, {
                     contextLabel: `${contextLabel} (${candidate.label})`
                 })) {
-                    return true;
+                    return {
+                        blocked: true,
+                        reason: 'destination_underway'
+                    };
                 }
             }
 
-            return false;
+            return {
+                blocked: false,
+                reason: null
+            };
+        }
+
+        function shouldHideVehicleExitFromList({
+            exit = null,
+            sourceLocation = null,
+            destinationLocation = null,
+            destinationRegionId = null,
+            pendingRegion = null,
+            contextLabel = 'Vehicle exit'
+        } = {}) {
+            return resolveVehicleExitTransitBlock({
+                exit,
+                sourceLocation,
+                destinationLocation,
+                destinationRegionId,
+                pendingRegion,
+                contextLabel
+            }).blocked;
         }
 
         function buildLocationResponse(location) {
@@ -15260,6 +16009,7 @@ module.exports = function registerApiRoutes(scope) {
                         try {
                             hideVehicleExit = shouldHideVehicleExitFromList({
                                 exit,
+                                sourceLocation: location,
                                 destinationLocation,
                                 destinationRegionId,
                                 pendingRegion: pendingStub,
@@ -21520,6 +22270,8 @@ module.exports = function registerApiRoutes(scope) {
                     });
                 }
 
+                const vehicleArrivalsThisTurn = await processDueVehicleArrivals();
+
                 const directions = currentLocation.getAvailableDirections();
                 let matchedExit = null;
                 let matchedDirection = null;
@@ -21536,6 +22288,13 @@ module.exports = function registerApiRoutes(scope) {
                         matchedDirection = dir;
                         break;
                     }
+                }
+
+                if (!matchedExit) {
+                    return res.status(404).json({
+                        success: false,
+                        error: 'Requested exit not found from the current location.'
+                    });
                 }
 
                 let destinationLocation = gameLocations.get(matchedExit.destination);
@@ -21576,6 +22335,51 @@ module.exports = function registerApiRoutes(scope) {
                             success: false,
                             error: `Failed to expand destination location: ${expansionError.message}`
                         });
+                    }
+                }
+
+                try {
+                    const transitBlock = resolveVehicleExitTransitBlock({
+                        exit: matchedExit,
+                        sourceLocation: currentLocation,
+                        destinationLocation,
+                        destinationRegionId: matchedExit.destinationRegion || null,
+                        contextLabel: `Player move exit "${matchedExit.id || matchedDirection || matchedExit.destination}"`
+                    });
+                    if (transitBlock.blocked) {
+                        const errorMessage = transitBlock.reason === 'source_underway'
+                            ? 'Cannot disembark while the vehicle is underway.'
+                            : 'Cannot board a vehicle while it is underway.';
+                        return res.status(409).json({
+                            success: false,
+                            error: errorMessage
+                        });
+                    }
+                } catch (vehicleTransitError) {
+                    return res.status(500).json({
+                        success: false,
+                        error: vehicleTransitError?.message || 'Failed to evaluate vehicle transit state.'
+                    });
+                }
+
+                if (matchedExit.isVehicle === true) {
+                    const activeVehicleArrivalsThisTurn = filterVehicleArrivalRecordsForContext(
+                        vehicleArrivalsThisTurn,
+                        { location: currentLocation }
+                    );
+                    if (activeVehicleArrivalsThisTurn.length > 0) {
+                        const destinationMatchRecord = buildTravelProseDestinationMatchRecord({
+                            resolvedLocation: destinationLocation
+                        });
+                        const arrivedThisTurn = activeVehicleArrivalsThisTurn.some(arrival =>
+                            vehicleArrivalMatchesDestinationRecord(arrival, destinationMatchRecord)
+                        );
+                        if (arrivedThisTurn) {
+                            return res.status(409).json({
+                                success: false,
+                                error: 'Cannot disembark on the same turn the vehicle arrives. Try again next turn.'
+                            });
+                        }
                     }
                 }
 
@@ -21811,6 +22615,7 @@ module.exports = function registerApiRoutes(scope) {
                     try {
                         hideVehicleExit = shouldHideVehicleExitFromList({
                             exit,
+                            sourceLocation: location,
                             destinationLocation,
                             destinationRegionId,
                             pendingRegion,
@@ -23311,6 +24116,7 @@ module.exports = function registerApiRoutes(scope) {
                     ? Math.round(selectedTimeTakenMinutes)
                     : MIN_CRAFT_TIME_ADVANCE_MINUTES;
                 const craftingTimeProgress = Globals.advanceTime(appliedTimeTakenMinutes, { source: 'craft_action' });
+                await processDueVehicleArrivals();
 
                 res.json({
                     success: true,

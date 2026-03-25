@@ -1116,6 +1116,24 @@ class Region {
     }
   }
 
+  removeLocationId(id) {
+    if (!id || typeof id !== 'string') {
+      return false;
+    }
+    const index = this.#locationIds.indexOf(id);
+    if (index === -1) {
+      return false;
+    }
+    this.#locationIds.splice(index, 1);
+    if (this.#entranceLocationId === id) {
+      this.#entranceLocationId = this.#locationIds.length > 0
+        ? this.#locationIds[0]
+        : null;
+    }
+    this.#lastUpdated = new Date().toISOString();
+    return true;
+  }
+
   get entranceLocationId() {
     return this.#entranceLocationId;
   }
@@ -1267,13 +1285,11 @@ class Region {
   }
 
   addLocation(locationId) {
-    if (!locationId || typeof locationId !== 'string') {
-      return;
-    }
-    if (!this.#locationIds.includes(locationId)) {
-      this.#locationIds.push(locationId);
-      this.#lastUpdated = new Date().toISOString();
-    }
+    this.addLocationId(locationId);
+  }
+
+  removeLocation(locationId) {
+    return this.removeLocationId(locationId);
   }
 
   toJSON() {

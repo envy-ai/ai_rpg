@@ -18,6 +18,7 @@ Collection of static utility helpers used across the server: set math, text simi
 ## XML Helpers
 - `innerXML(node)`.
 - `parseXmlDocument(xmlContent, mimeType)` with cheerio-based normalization for malformed XML.
+- `parseXmlDocumentStrict(xmlContent, mimeType)` for strict XML parsing with collected syntax diagnostics; malformed XML throws with parser-reported line/column details instead of being normalized.
 
 ## Game Balance Helpers
 - `getMinimumUnmitigatedWeaponDamage(rarity, level)` (uses rarity definitions from `Thing` and `Globals.config.baseWeaponDamage`).

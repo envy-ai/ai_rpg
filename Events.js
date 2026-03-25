@@ -202,7 +202,7 @@ const EVENT_PROMPT_ORDER = [
         },
         {
             key: "dummy_event",
-            prompt: `Did anything happen this turn (such as an activity, a night of sleep, travel, etc) that would cause time to pass? If yes, describe it in 10 words or less, along with how long it took. Answer N/A if no. Examples: "Took road to town (15 minutes)", "cooked dinner (30 minutes)", "slept for 8 hours (8 hours)", "Moved from town square to tavern (5 minutes)", "waited for someone to arrive (45 minutes)", "Dropped a letter off at the mailbox and talked to passerby (3 minutes)", "Spoke a few sentences (1 minute)", etc. Time can pass even without explicit duration statements. Consider whether described actions (prayer, conversation, travel, crafting, etc.) inherently require time to complete. Don't round down to zero just because something only takes a couple of minutes.`,
+            prompt: `Did anything happen this turn (such as an activity, a night of sleep, travel, etc) that would cause time to pass? If yes, describe it in 10 words or less, along with how long it took. Answer N/A if no. Examples: "Took road to town (15 minutes)", "cooked dinner (30 minutes)", "slept for 8 hours (8 hours)", "Moved from town square to tavern (5 minutes)", "waited for someone to arrive (45 minutes)", "Dropped a letter off at the mailbox and talked to passerby (3 minutes)", "Spoke a few sentences (1 minute)", etc. Time can pass even without explicit duration statements. Consider whether described actions (prayer, conversation, travel, crafting, etc.) inherently require time to complete. Don't round down to zero just because something only takes a couple of minutes. Travelling inside a vehicle doesn't necessarily cause time to pass, unless the player actively chooses to wait some length of time or perform an action that takes time.`,
         },
         {
             key: "time_passed",
@@ -355,6 +355,24 @@ function stripAfterFirstArrow(raw) {
     return segment.trim();
 }
 
+function locationHasExitToDestination(location, destinationId) {
+    const normalizedDestinationId =
+        typeof destinationId === "string" ? destinationId.trim() : "";
+    if (
+        !location ||
+        !normalizedDestinationId ||
+        typeof location.getAvailableDirections !== "function" ||
+        typeof location.getExit !== "function"
+    ) {
+        return false;
+    }
+
+    return location.getAvailableDirections().some((direction) => {
+        const exit = location.getExit(direction);
+        return exit && exit.destination === normalizedDestinationId;
+    });
+}
+
 async function applyExitDiscovery(
     eventsInstance,
     entries = [],
@@ -373,10 +391,13 @@ async function applyExitDiscovery(
     const {
         Location,
         findLocationByNameLoose,
+        findRegionByNameLoose,
+        findRegionByLocationId,
         createLocationFromEvent,
         createRegionStubFromEvent,
         ensureExitConnection,
         regenerateLocationName,
+        gameLocations,
     } = deps;
 
     const originLocation = context.location;
@@ -387,6 +408,14 @@ async function applyExitDiscovery(
     ) {
         return;
     }
+
+    const originRegion =
+        context.region ||
+        (typeof findRegionByLocationId === "function" && originLocation?.id
+            ? findRegionByLocationId(originLocation.id) || null
+            : originLocation?.region || null);
+    const originIsLocationVehicle = Boolean(originLocation?.isVehicle === true);
+    const originIsRegionVehicle = Boolean(originRegion?.isVehicle === true);
 
     const processedDestinations = new SanitizedStringSet();
 
@@ -461,6 +490,64 @@ async function applyExitDiscovery(
         }
 
         const isRegion = entry?.kind === "region";
+        const suppressLocationVehicleExitCreation = originIsLocationVehicle;
+        const suppressRegionVehicleRegionExitCreation =
+            !originIsLocationVehicle && originIsRegionVehicle && isRegion;
+
+        let existingRegionDestination = null;
+        if (
+            !destination &&
+            isRegion &&
+            typeof findRegionByNameLoose === "function"
+        ) {
+            try {
+                const matchedRegion = findRegionByNameLoose(exitName) || null;
+                const entranceLocationId =
+                    typeof matchedRegion?.entranceLocationId === "string"
+                        ? matchedRegion.entranceLocationId.trim()
+                        : "";
+                if (
+                    matchedRegion &&
+                    entranceLocationId &&
+                    gameLocations instanceof Map &&
+                    gameLocations.has(entranceLocationId)
+                ) {
+                    existingRegionDestination =
+                        gameLocations.get(entranceLocationId) || null;
+                }
+            } catch (_) {
+                existingRegionDestination = null;
+            }
+        }
+
+        const alreadyHasMatchingExit =
+            destination?.id && locationHasExitToDestination(originLocation, destination.id)
+                ? true
+                : Boolean(
+                    existingRegionDestination?.id &&
+                    locationHasExitToDestination(originLocation, existingRegionDestination.id),
+                );
+
+        if (
+            (suppressLocationVehicleExitCreation || suppressRegionVehicleRegionExitCreation) &&
+            !alreadyHasMatchingExit
+        ) {
+            const originVehicleLabel = originLocation?.name || originLocation?.id || "unknown location vehicle";
+            if (suppressLocationVehicleExitCreation) {
+                console.warn(
+                    `[${eventLabel}] Suppressed event-created exit from location vehicle `
+                    + `"${originVehicleLabel}" to "${exitName}".`,
+                );
+            } else {
+                const originRegionLabel =
+                    originRegion?.name || originRegion?.id || "unknown region vehicle";
+                console.warn(
+                    `[${eventLabel}] Suppressed event-created region exit from region vehicle `
+                    + `"${originRegionLabel}" to "${exitName}".`,
+                );
+            }
+            continue;
+        }
 
         if (
             !destination &&

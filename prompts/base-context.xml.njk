@@ -571,11 +571,17 @@ The below context is an account of the current game state, including the setting
   <vehicle>
     <name>{{ currentVehicle.name | default('', true) }}</name>
     <description>{{ currentVehicle.description | default('', true) }}</description>
+    <isUnderway>{{ currentVehicle.isUnderway | default(false, true) }}</isUnderway>
+    <hasArrived>{{ currentVehicle.hasArrived | default(false, true) }}</hasArrived>
+    <isArriving>{{ currentVehicle.isArriving | default(false, true) }}</isArriving>
     {% if currentVehicle.location and (currentVehicle.location | trim) %}
     <location>{{ currentVehicle.location | default('', true) }}</location>
     {% endif %}
     {% if currentVehicle.destination and (currentVehicle.destination | trim) %}
     <destination>{{ currentVehicle.destination | default('', true) }}</destination>
+    {% if currentVehicle.minutesToDestination != null %}
+    <minutesToDestination>{{ currentVehicle.minutesToDestination }}</minutesToDestination>
+    {% endif %}
     <timeToDestination>{{ currentVehicle.timeToDestination | default('', true) }}</timeToDestination>
     {% endif %}
   </vehicle>

@@ -48,12 +48,5 @@ OR, if the player travels to a place that would constitute a different scene, an
 2. ...
 3. ...
 4. ...
-<travelProse>
-  <!-- The rationale for this section is so that events can be processed separately at the origin and destination locations. betweenProse may be necessary for the flow of the story, is not processed for events. -->
-  <destination><!-- Full name of destination location. If the location is in an entirely different region, use this format: "region name|location name" --></destination>
-  <!-- ANY COMBINATION OF AT LEAST ONE OF THE BELOW. If no prose applies to one or two sections, omit them -->
-  <originProse><!-- The portion of the prose that contains characters, items, scenery, etc, at the origin location --></originProse>
-  <betweenProse><!-- The portion of the prose that occurs between the origin and destination (generally describing vehicle rides, etc) --></betweenProse>
-  <destinationProse><!-- The portion of the prose that contains characters, items, scenery, etc, at the destination location --></destinationProse>
-</travelProse>
+{% include "_includes/travel-prose.njk" %}
 {% endif %}

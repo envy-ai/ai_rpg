@@ -81,12 +81,34 @@ class VehicleInfo {
     return value;
   }
 
+  static #getElapsedTime() {
+    const Globals = require('./Globals.js');
+    const elapsedTime = Number.isFinite(Globals?.elapsedTime) ? Globals.elapsedTime : null;
+    return Number.isInteger(elapsedTime) && elapsedTime >= 0 ? elapsedTime : null;
+  }
+
+  #hasStartedTrip() {
+    if (typeof this.#ETA !== 'number' || typeof this.#departureTime !== 'number') {
+      return false;
+    }
+
+    const elapsedTime = VehicleInfo.#getElapsedTime();
+    if (typeof elapsedTime !== 'number') {
+      return true;
+    }
+
+    return this.#departureTime <= elapsedTime;
+  }
+
   #validateCrossFieldState() {
     if (this.#currentDestination == null && this.#ETA != null) {
       throw new Error('VehicleInfo ETA cannot be set when currentDestination is null');
     }
     if (this.#currentDestination == null && this.#departureTime != null) {
       throw new Error('VehicleInfo departureTime cannot be set when currentDestination is null');
+    }
+    if (this.#ETA != null && this.#departureTime != null && this.#departureTime > this.#ETA) {
+      throw new Error('VehicleInfo departureTime cannot be after ETA');
     }
     if (this.#currentDestination != null && this.#destinations.length > 0 && !this.#destinations.includes(this.#currentDestination)) {
       throw new Error('VehicleInfo currentDestination must be one of destinations when destinations is non-empty');
@@ -130,34 +152,37 @@ class VehicleInfo {
   }
 
   get isUnderway() {
-    return typeof this.#ETA === 'number' && this.#ETA > 0;
-  }
-
-  get hasArrived() {
-    return typeof this.#ETA === 'number' && this.#ETA <= 0;
-  }
-
-  get isArriving() {
-    if (typeof this.#ETA !== 'number') {
+    if (!this.#hasStartedTrip()) {
       return false;
     }
 
-    const Globals = require('./Globals.js');
-    const elapsedTime = Number.isFinite(Globals?.elapsedTime) ? Globals.elapsedTime : null;
+    const elapsedTime = VehicleInfo.#getElapsedTime();
+    if (typeof elapsedTime !== 'number') {
+      return this.#ETA > this.#departureTime;
+    }
+
+    return this.#ETA > elapsedTime;
+  }
+
+  get hasArrived() {
+    if (!this.#hasStartedTrip()) {
+      return false;
+    }
+
+    const elapsedTime = VehicleInfo.#getElapsedTime();
     if (typeof elapsedTime !== 'number') {
       return false;
     }
 
-    const remaining = this.#ETA - elapsedTime;
-    if (remaining > 0) {
+    return elapsedTime >= this.#ETA;
+  }
+
+  get isArriving() {
+    if (!this.hasArrived) {
       return false;
     }
 
-    if (typeof this.#departureTime === 'number') {
-      return (this.#ETA - this.#departureTime) > 0;
-    }
-
-    return this.#ETA > 0;
+    return this.#departureTime < this.#ETA;
   }
 
   get departureTime() {
@@ -173,8 +198,7 @@ class VehicleInfo {
     if (typeof this.#departureTime !== 'number') {
       return 0;
     }
-    const Globals = require('./Globals.js');
-    const elapsedTime = Number.isFinite(Globals?.elapsedTime) ? Globals.elapsedTime : 0;
+    const elapsedTime = VehicleInfo.#getElapsedTime() ?? 0;
     return Math.max(0, elapsedTime - this.#departureTime);
   }
 

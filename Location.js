@@ -512,11 +512,36 @@ class Location {
     if (!newRegionId || typeof newRegionId !== 'string') {
       throw new Error('Region ID must be a non-empty string');
     }
-    const region = Region.get(newRegionId);
-    if (!region) {
-      throw new Error('Invalid region ID: ' + newRegionId);
+    const normalizedRegionId = newRegionId.trim();
+    if (!normalizedRegionId) {
+      throw new Error('Region ID must be a non-empty string');
     }
-    this.#regionId = newRegionId;
+
+    const nextRegion = Region.get(normalizedRegionId);
+    if (!nextRegion) {
+      throw new Error('Invalid region ID: ' + normalizedRegionId);
+    }
+
+    const currentRegionId = typeof this.#regionId === 'string' ? this.#regionId.trim() : '';
+    if (currentRegionId && currentRegionId !== normalizedRegionId) {
+      const currentRegion = Region.get(currentRegionId);
+      if (!currentRegion) {
+        throw new Error(`Current region "${currentRegionId}" does not exist for location "${this.#name || this.#id}".`);
+      }
+      if (typeof currentRegion.removeLocationId !== 'function') {
+        throw new Error(`Region "${currentRegionId}" cannot remove location membership.`);
+      }
+      currentRegion.removeLocationId(this.#id);
+    }
+
+    this.#regionId = normalizedRegionId;
+    if (this.#stubMetadata && typeof this.#stubMetadata === 'object' && !Array.isArray(this.#stubMetadata)) {
+      this.#stubMetadata.regionId = normalizedRegionId;
+    }
+    if (typeof nextRegion.addLocationId !== 'function') {
+      throw new Error(`Region "${normalizedRegionId}" cannot add location membership.`);
+    }
+    nextRegion.addLocationId(this.#id);
     this.#lastUpdated = new Date();
   }
 

@@ -105,45 +105,7 @@ OR, if the player travels to a place that would constitute a different scene, an
 4. ...
 5. ...
 
-{% if currentVehicle.vehicleInfo.isUnderway -%}
-  <!-- Note: The vehicle "{{ currentVehicle.name | trim }}" is currently enroute to "{{ currentVehicle.destination | trim }}", and the player is on board. Reply with <finalProse> rather than <travelProse> unless:
-  * The vehicle is making an unplanned stop or changing destinations, OR
-  * The player is exiting the vehicle, OR
-  * The player is moving around *inside* the vehicle
-  
-  In other words, if the vehicle the player is on is just moving toward its destination as normal and the player themselves is not moving, ignore all of the conditions and fields below and use <finalProse> instead. If the player is disembarking, you decide if it makes sense for the vehicle to stop. -->
-{% endif -%}
-<travelProse>
-  <!-- The rationale for this section is so that events can be processed separately at the origin and destination locations. betweenProse may be necessary for the flow of the story, is not processed for events. -->
-
-  {% if currentVehicle -%}
-  <!-- Omit the <vehicle> tag and all its contents if the player is not on a vehicle. If the player is moving inside the vehicle (or disembarking) while the vehicle is moving toward its planned destination, omit it as well. If the player isn't moving inside the vehicle and the vehicle isn't stopping or changing destinations, you should be using <finalProse> instead. -->
-  <vehicle>
-    <name><!-- Exact name of the vehicle, for example: "Bob's Car", "The Starship Intrepid","The Shuttlecraft Hermes", etc. --></name>
-    <travelTime><!-- If you included the <vehicle> tag, specify the travel time in the format: 
-  "1 day, 17 hours, 12 minutes", with a minimum of 0 minutes if the vehicle is stopping or 1 minute if it's still moving. --></travelTime>
-    <destination>
-      <location><!-- The exact location of the vehicle's destination, if known. Omit this tag if the destination is a new region or if the specific location isn't known. --></location>
-      <region><!-- The exact region of the vehicle's destination. Omit if the destination is in the current region. --></region>
-    </destination>
-  </vehicle>
-  {% endif -%}
-  <destination>
-    {% if currentVehicle -%}
-    <!-- If the player is on a vehicle, the player's destination may be different from the vehicle's destination if the player is disembarking or transferring. If the player is disembarking at an unplanned time (for instance, jumping out of a moving vehicle, telling the cab driver to stop immediately, etc), come up with a reasonable place for them to arrive at. This can be a new place or an existing one. Omit this tag if the vehicle is moving and the player is not. 
-    
-    Omit this tag entirely if the player is *not* either moving inside the vehicle or disembarking.
-    -->
-    {% endif -%}
-    <location><!-- The exact location of the player's destination, if known. Omit this tag if the destination is a new region or if the specific location isn't known. --></location>
-    <region><!-- The exact region of the player's destination. Omit if the destination is in the current region. --></region>
-  </destination>
-
-  <!-- Use ANY COMBINATION OF AT LEAST ONE OF THE BELOW. If no prose applies to one or two sections, omit them -->
-  <originProse><!-- The portion of the prose that contains characters, items, scenery, etc, at the origin location --></originProse>
-  <betweenProse><!-- The portion of the prose that occurs between the origin and destination (generally describing vehicle rides, etc) --></betweenProse>
-  <destinationProse><!-- The portion of the prose that contains characters, items, scenery, etc, at the destination location --></destinationProse>
-</travelProse>
+{% include "_includes/travel-prose.njk" %}
 {% else %}
 Provide a response, strictly adhering to what you have been tasked with describing.
 {% endif %}

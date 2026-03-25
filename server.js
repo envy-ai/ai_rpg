@@ -8302,7 +8302,7 @@ function ensureExitConnection(fromLocation, toLocation, { description, bidirecti
     return exit;
 }
 
-async function createLocationFromEvent({ name, originLocation = null, descriptionHint = null, directionHint = null, expandStub = true, targetRegionId = null, vehicleType = null, isVehicle = false, relativeLevel = null, imageDataUrl = '', imageDataUrlOriginal = '' } = {}) {
+async function createLocationFromEvent({ name, originLocation = null, descriptionHint = null, directionHint = null, expandStub = true, targetRegionId = null, vehicleType = null, isVehicle = false, relativeLevel = null, imageDataUrl = '', imageDataUrlOriginal = '', createOriginExit = true } = {}) {
     const trimmedName = typeof name === 'string' ? name.trim() : '';
     if (!trimmedName) {
         return null;
@@ -8365,7 +8365,7 @@ async function createLocationFromEvent({ name, originLocation = null, descriptio
                 existing.stubMetadata = metadata;
             }
         }
-        if (originLocation && directionHint) {
+        if (originLocation && directionHint && createOriginExit) {
             if (existing.isStub) {
                 ensureExitConnection(originLocation, existing, {
                     description: descriptionHint || `${existing.name || trimmedName}`,
@@ -8425,7 +8425,7 @@ async function createLocationFromEvent({ name, originLocation = null, descriptio
         console.warn(`Failed to ensure location name for event-created stub ${stub.id}:`, error.message);
     }
 
-    if (originLocation) {
+    if (originLocation && createOriginExit) {
         const destinationRegionForExit = effectiveRegionId && originRegion?.id !== effectiveRegionId
             ? effectiveRegionId
             : null;
@@ -8473,7 +8473,7 @@ async function createLocationFromEvent({ name, originLocation = null, descriptio
     return stub;
 }
 
-async function createRegionStubFromEvent({ name, originLocation = null, description = null, parentRegionId = null, vehicleType = null, isVehicle = false, relativeLevel = null, imageDataUrl = '', imageDataUrlOriginal = '' } = {}) {
+async function createRegionStubFromEvent({ name, originLocation = null, description = null, parentRegionId = null, vehicleType = null, isVehicle = false, relativeLevel = null, imageDataUrl = '', imageDataUrlOriginal = '', createOriginExit = true } = {}) {
     const trimmedName = typeof name === 'string' ? name.trim() : '';
     if (!trimmedName || !originLocation) {
         return null;
@@ -8512,6 +8512,9 @@ async function createRegionStubFromEvent({ name, originLocation = null, descript
 
     const ensureExistingConnection = (targetLocation, destinationRegionId) => {
         if (!targetLocation) {
+            return null;
+        }
+        if (!createOriginExit) {
             return null;
         }
 
@@ -8750,23 +8753,25 @@ async function createRegionStubFromEvent({ name, originLocation = null, descript
         exitOptions.vehicleType = resolvedVehicleType;
     }
 
-    ensureExitConnection(originLocation, regionEntryStub, exitOptions);
+    if (createOriginExit) {
+        ensureExitConnection(originLocation, regionEntryStub, exitOptions);
 
-    let resolvedOriginDirection = directionKey;
-    if (typeof originLocation.getAvailableDirections === 'function'
-        && typeof originLocation.getExit === 'function') {
-        const directions = originLocation.getAvailableDirections();
-        const matchedDirection = directions.find(dir => {
-            const exit = originLocation.getExit(dir);
-            return exit && exit.destination === regionEntryStub.id;
-        });
-        if (matchedDirection) {
-            resolvedOriginDirection = matchedDirection;
+        let resolvedOriginDirection = directionKey;
+        if (typeof originLocation.getAvailableDirections === 'function'
+            && typeof originLocation.getExit === 'function') {
+            const directions = originLocation.getAvailableDirections();
+            const matchedDirection = directions.find(dir => {
+                const exit = originLocation.getExit(dir);
+                return exit && exit.destination === regionEntryStub.id;
+            });
+            if (matchedDirection) {
+                resolvedOriginDirection = matchedDirection;
+            }
         }
-    }
 
-    if (resolvedOriginDirection && resolvedOriginDirection !== directionKey) {
-        stubMetadata.originDirection = resolvedOriginDirection;
+        if (resolvedOriginDirection && resolvedOriginDirection !== directionKey) {
+            stubMetadata.originDirection = resolvedOriginDirection;
+        }
     }
 
     pendingRegionStubs.set(newRegionId, {

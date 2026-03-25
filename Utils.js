@@ -502,6 +502,43 @@ class Utils {
     return sharedDomParser;
   }
 
+  static #buildXmlParseDiagnostics(errorEntries = []) {
+    if (!Array.isArray(errorEntries) || errorEntries.length === 0) {
+      return '';
+    }
+
+    return errorEntries
+      .map((entry) => {
+        if (!entry || typeof entry !== 'object') {
+          return null;
+        }
+        const level = typeof entry.level === 'string' && entry.level.trim()
+          ? entry.level.trim()
+          : 'error';
+        const message = typeof entry.message === 'string' && entry.message.trim()
+          ? entry.message.trim()
+          : 'Unknown XML parse error';
+        const locator = entry.locator && typeof entry.locator === 'object'
+          ? entry.locator
+          : null;
+        const lineNumber = Number.isInteger(locator?.lineNumber) && locator.lineNumber > 0
+          ? locator.lineNumber
+          : null;
+        const columnNumber = Number.isInteger(locator?.columnNumber) && locator.columnNumber > 0
+          ? locator.columnNumber
+          : null;
+        if (lineNumber !== null && columnNumber !== null) {
+          return `${level} at ${lineNumber}:${columnNumber}: ${message}`;
+        }
+        if (lineNumber !== null) {
+          return `${level} at line ${lineNumber}: ${message}`;
+        }
+        return `${level}: ${message}`;
+      })
+      .filter(Boolean)
+      .join('\n');
+  }
+
   static #normalizeXmlWithCheerio(input) {
     if (input === null || input === undefined) {
       return '';
@@ -561,6 +598,43 @@ class Utils {
     } catch (error) {
       console.log('XML Content:', normalized);
       throw new Error(`Failed to parse XML content: ${error.message}`);
+    }
+  }
+
+  static parseXmlDocumentStrict(xmlContent, mimeType = 'text/xml') {
+    if (xmlContent === null || xmlContent === undefined) {
+      throw new TypeError('Utils.parseXmlDocumentStrict requires a string input.');
+    }
+
+    const normalized = typeof xmlContent === 'string'
+      ? xmlContent.trim()
+      : String(xmlContent).trim();
+    const errorEntries = [];
+    const parser = new DOMParser({
+      locator: true,
+      onError: (level, message, context) => {
+        errorEntries.push({
+          level,
+          message,
+          locator: context?.locator || null
+        });
+      }
+    });
+
+    try {
+      const document = parser.parseFromString(normalized, mimeType || 'text/xml');
+      if (errorEntries.length > 0) {
+        const diagnostics = this.#buildXmlParseDiagnostics(errorEntries);
+        throw new Error(diagnostics || 'Unknown strict XML parse error');
+      }
+      return document;
+    } catch (error) {
+      const diagnostics = this.#buildXmlParseDiagnostics(errorEntries);
+      console.log('XML Content:', normalized);
+      if (diagnostics) {
+        throw new Error(`Failed to parse XML content strictly:\n${diagnostics}`);
+      }
+      throw new Error(`Failed to parse XML content strictly: ${error.message}`);
     }
   }
 
