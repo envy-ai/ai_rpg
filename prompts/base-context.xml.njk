@@ -579,6 +579,20 @@ The below context is an account of the current game state, including the setting
     {% endif %}
     {% if currentVehicle.destination and (currentVehicle.destination | trim) %}
     <destination>{{ currentVehicle.destination | default('', true) }}</destination>
+    <destinationResolved>{{ currentVehicle.destinationResolved | default(false, true) }}</destinationResolved>
+    {% if currentVehicle.pendingDestination %}
+    <pendingDestination>
+      {% if currentVehicle.pendingDestination.locationName and (currentVehicle.pendingDestination.locationName | trim) %}
+      <location>{{ currentVehicle.pendingDestination.locationName }}</location>
+      {% endif %}
+      {% if currentVehicle.pendingDestination.regionName and (currentVehicle.pendingDestination.regionName | trim) %}
+      <region>{{ currentVehicle.pendingDestination.regionName }}</region>
+      {% endif %}
+      {% if currentVehicle.pendingDestination.rawText and (currentVehicle.pendingDestination.rawText | trim) %}
+      <rawText>{{ currentVehicle.pendingDestination.rawText }}</rawText>
+      {% endif %}
+    </pendingDestination>
+    {% endif %}
     {% if currentVehicle.minutesToDestination != null %}
     <minutesToDestination>{{ currentVehicle.minutesToDestination }}</minutesToDestination>
     {% endif %}

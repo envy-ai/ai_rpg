@@ -26,7 +26,11 @@ test('Player.currentVehicle exposes computed trip-state fields for prompts', () 
             name: 'Mourning Star',
             description: 'A compact drift-capable starship.',
             vehicleInfo: {
-                currentDestination: 'test-destination-location',
+                pendingDestination: {
+                    rawText: 'Derelict Sector|',
+                    regionName: 'Derelict Sector',
+                    locationId: 'test-destination-location'
+                },
                 ETA: 135,
                 departureTime: 110,
                 vehicleExitId: 'test-vehicle-exit'
@@ -59,7 +63,15 @@ test('Player.currentVehicle exposes computed trip-state fields for prompts', () 
 
         let currentVehicle = player.currentVehicle;
         assert.ok(currentVehicle);
-        assert.equal(currentVehicle.destination, 'Derelict Sector Approach');
+        assert.equal(currentVehicle.destination, 'Derelict Sector');
+        assert.equal(currentVehicle.destinationResolved, false);
+        assert.deepEqual(currentVehicle.pendingDestination, {
+            rawText: 'Derelict Sector|',
+            regionName: 'Derelict Sector',
+            locationName: null,
+            regionId: null,
+            locationId: 'test-destination-location'
+        });
         assert.equal(currentVehicle.minutesToDestination, 35);
         assert.equal(currentVehicle.timeToDestination, '35 minutes');
         assert.equal(currentVehicle.isUnderway, false);
@@ -68,6 +80,7 @@ test('Player.currentVehicle exposes computed trip-state fields for prompts', () 
         assert.equal(currentVehicle.vehicleInfo.isUnderway, false);
         assert.equal(currentVehicle.vehicleInfo.hasArrived, false);
         assert.equal(currentVehicle.vehicleInfo.isArriving, false);
+        assert.equal(currentVehicle.vehicleInfo.destinationResolved, false);
 
         region.vehicleInfo = {
             currentDestination: 'test-destination-location',
@@ -78,6 +91,9 @@ test('Player.currentVehicle exposes computed trip-state fields for prompts', () 
 
         currentVehicle = player.currentVehicle;
         assert.ok(currentVehicle);
+        assert.equal(currentVehicle.destination, 'Derelict Sector Approach');
+        assert.equal(currentVehicle.destinationResolved, true);
+        assert.equal(currentVehicle.pendingDestination, null);
         assert.equal(currentVehicle.minutesToDestination, 35);
         assert.equal(currentVehicle.timeToDestination, '35 minutes');
         assert.equal(currentVehicle.isUnderway, true);

@@ -17,7 +17,8 @@ Slash command `/vehicle_status` to display detailed markdown status for the vehi
   - Player's current inside-vehicle location
   - Vehicle description
   - Current outside location label
-  - Current destination label + location id
+  - Current resolved destination label + location id
+  - Pending destination label + stored region/location id, when the trip target has not been finalized yet
   - Fixed-route destination list
   - Trip-state booleans (`isUnderway`, `hasArrived`, `isArriving`)
   - Travel start time / `departureTime`

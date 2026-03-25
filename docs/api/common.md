@@ -79,6 +79,7 @@ Fields:
 - `terrainTypes` (string | null)
 - `icon` (string | null)
 - `currentDestination` (string | null)
+- `pendingDestination` (`{ rawText, regionName, locationName, regionId, locationId } | null`)
 - `destinations` (string[])
 - `ETA` (number | null)
 - `departureTime` (number | null)

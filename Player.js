@@ -2163,6 +2163,7 @@ class Player {
 
     get currentVehicle() {
         const Location = getLocationModule();
+        const Region = require('./Region.js');
         const currentLocation = Location.get(this.#currentLocation) || null;
         if (!currentLocation) {
             return null;
@@ -2179,6 +2180,8 @@ class Player {
         if (!activeVehicleInfo || typeof activeVehicleInfo !== 'object' || Array.isArray(activeVehicleInfo)) {
             return null;
         }
+
+        const normalizedVehicleInfo = new VehicleInfo(activeVehicleInfo);
 
         const resolveLocationNameById = (locationId) => {
             if (typeof locationId !== 'string') {
@@ -2198,6 +2201,69 @@ class Player {
                 ? resolvedLocation.name.trim()
                 : '';
             return resolvedName || trimmedId;
+        };
+
+        const resolveRegionNameById = (regionId) => {
+            if (typeof regionId !== 'string') {
+                return null;
+            }
+            const trimmedId = regionId.trim();
+            if (!trimmedId) {
+                return null;
+            }
+
+            const resolvedRegion = typeof Region.get === 'function'
+                ? Region.get(trimmedId) || null
+                : null;
+            if (!resolvedRegion) {
+                return trimmedId;
+            }
+
+            const resolvedName = typeof resolvedRegion.name === 'string'
+                ? resolvedRegion.name.trim()
+                : '';
+            return resolvedName || trimmedId;
+        };
+
+        const normalizedPendingDestination = normalizedVehicleInfo.pendingDestination;
+        const pendingDestination = normalizedPendingDestination
+            ? {
+                ...normalizedPendingDestination
+            }
+            : null;
+        const resolvePendingDestinationLabel = (pendingDestinationInfo) => {
+            if (!pendingDestinationInfo || typeof pendingDestinationInfo !== 'object') {
+                return '';
+            }
+
+            const locationName = typeof pendingDestinationInfo.locationName === 'string'
+                ? pendingDestinationInfo.locationName.trim()
+                : '';
+            if (locationName) {
+                return locationName;
+            }
+
+            const regionName = typeof pendingDestinationInfo.regionName === 'string'
+                ? pendingDestinationInfo.regionName.trim()
+                : '';
+            if (regionName) {
+                return regionName;
+            }
+
+            const resolvedLocationName = resolveLocationNameById(pendingDestinationInfo.locationId);
+            if (resolvedLocationName) {
+                return resolvedLocationName;
+            }
+
+            const resolvedRegionName = resolveRegionNameById(pendingDestinationInfo.regionId);
+            if (resolvedRegionName) {
+                return resolvedRegionName;
+            }
+
+            const rawText = typeof pendingDestinationInfo.rawText === 'string'
+                ? pendingDestinationInfo.rawText.trim()
+                : '';
+            return rawText;
         };
 
         const resolveVehicleLocationLabel = (vehicleInfo) => {
@@ -2245,11 +2311,11 @@ class Player {
         const destinationId = typeof activeVehicleInfo.currentDestination === 'string'
             ? activeVehicleInfo.currentDestination.trim()
             : '';
-        const destination = destinationId
+        const destinationResolved = Boolean(destinationId);
+        const destination = destinationResolved
             ? (resolveLocationNameById(destinationId) || '')
-            : '';
+            : resolvePendingDestinationLabel(pendingDestination);
 
-        const normalizedVehicleInfo = new VehicleInfo(activeVehicleInfo);
         const etaMinutes = Number(normalizedVehicleInfo.ETA);
         const elapsedMinutes = Number(Globals.elapsedTime);
         const hasEtaMinutes = Number.isFinite(etaMinutes) && Number.isInteger(etaMinutes);
@@ -2292,9 +2358,11 @@ class Player {
         if (Array.isArray(activeVehicleInfo.destinations)) {
             vehicleInfo.destinations = [...activeVehicleInfo.destinations];
         }
+        vehicleInfo.pendingDestination = pendingDestination ? { ...pendingDestination } : null;
         vehicleInfo.isUnderway = isUnderway;
         vehicleInfo.hasArrived = hasArrived;
         vehicleInfo.isArriving = isArriving;
+        vehicleInfo.destinationResolved = destinationResolved;
 
         return {
             name: regionVehicleInfo
@@ -2306,6 +2374,8 @@ class Player {
             location: resolveVehicleLocationLabel(activeVehicleInfo) || '',
             vehicleInfo,
             destination,
+            destinationResolved,
+            pendingDestination: pendingDestination ? { ...pendingDestination } : null,
             minutesToDestination: rawTimeToDestination,
             isUnderway,
             hasArrived,

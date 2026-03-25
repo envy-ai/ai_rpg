@@ -2,16 +2,27 @@ class VehicleInfo {
   #terrainTypes;
   #icon;
   #currentDestination;
+  #pendingDestination;
   #destinations;
   #ETA;
   #departureTime;
   #vehicleExitId;
 
-  constructor({ terrainTypes, icon = null, currentDestination = null, destinations = [], ETA = null, departureTime = null, vehicleExitId = null } = {}) {
+  constructor({
+    terrainTypes,
+    icon = null,
+    currentDestination = null,
+    pendingDestination = null,
+    destinations = [],
+    ETA = null,
+    departureTime = null,
+    vehicleExitId = null
+  } = {}) {
     this.terrainTypes = terrainTypes;
     this.icon = icon;
     this.destinations = destinations;
     this.currentDestination = currentDestination;
+    this.pendingDestination = pendingDestination;
     this.ETA = ETA;
     this.departureTime = departureTime;
     this.vehicleExitId = vehicleExitId;
@@ -61,6 +72,33 @@ class VehicleInfo {
     return [...new Set(normalized)];
   }
 
+  static #normalizePendingDestination(value) {
+    if (value === null || value === undefined || value === '') {
+      return null;
+    }
+    if (typeof value !== 'object' || Array.isArray(value)) {
+      throw new Error('VehicleInfo pendingDestination must be an object or null');
+    }
+
+    const rawText = VehicleInfo.#normalizeOptionalText(value.rawText, 'pendingDestination.rawText');
+    const regionName = VehicleInfo.#normalizeOptionalText(value.regionName, 'pendingDestination.regionName');
+    const locationName = VehicleInfo.#normalizeOptionalText(value.locationName, 'pendingDestination.locationName');
+    const regionId = VehicleInfo.#normalizeOptionalText(value.regionId, 'pendingDestination.regionId');
+    const locationId = VehicleInfo.#normalizeOptionalText(value.locationId, 'pendingDestination.locationId');
+
+    if (!rawText && !regionName && !locationName && !regionId && !locationId) {
+      throw new Error('VehicleInfo pendingDestination must include at least one destination reference');
+    }
+
+    return {
+      rawText,
+      regionName,
+      locationName,
+      regionId,
+      locationId
+    };
+  }
+
   static #normalizeEta(value) {
     if (value === null || value === undefined || value === '') {
       return null;
@@ -101,17 +139,28 @@ class VehicleInfo {
   }
 
   #validateCrossFieldState() {
-    if (this.#currentDestination == null && this.#ETA != null) {
-      throw new Error('VehicleInfo ETA cannot be set when currentDestination is null');
+    const hasResolvedDestination = this.#currentDestination != null;
+    const hasPendingDestination = this.#pendingDestination != null;
+
+    if (!hasResolvedDestination && !hasPendingDestination && this.#ETA != null) {
+      throw new Error('VehicleInfo ETA cannot be set when both currentDestination and pendingDestination are null');
     }
-    if (this.#currentDestination == null && this.#departureTime != null) {
-      throw new Error('VehicleInfo departureTime cannot be set when currentDestination is null');
+    if (!hasResolvedDestination && !hasPendingDestination && this.#departureTime != null) {
+      throw new Error('VehicleInfo departureTime cannot be set when both currentDestination and pendingDestination are null');
+    }
+    if (hasResolvedDestination && hasPendingDestination) {
+      throw new Error('VehicleInfo currentDestination and pendingDestination cannot both be set');
     }
     if (this.#ETA != null && this.#departureTime != null && this.#departureTime > this.#ETA) {
       throw new Error('VehicleInfo departureTime cannot be after ETA');
     }
     if (this.#currentDestination != null && this.#destinations.length > 0 && !this.#destinations.includes(this.#currentDestination)) {
       throw new Error('VehicleInfo currentDestination must be one of destinations when destinations is non-empty');
+    }
+    if (this.#pendingDestination?.locationId != null
+      && this.#destinations.length > 0
+      && !this.#destinations.includes(this.#pendingDestination.locationId)) {
+      throw new Error('VehicleInfo pendingDestination.locationId must be one of destinations when destinations is non-empty');
     }
   }
 
@@ -130,6 +179,18 @@ class VehicleInfo {
 
   set currentDestination(value) {
     this.#currentDestination = VehicleInfo.#normalizeOptionalText(value, 'currentDestination');
+    this.#validateCrossFieldState();
+  }
+
+  get pendingDestination() {
+    if (!this.#pendingDestination) {
+      return null;
+    }
+    return { ...this.#pendingDestination };
+  }
+
+  set pendingDestination(value) {
+    this.#pendingDestination = VehicleInfo.#normalizePendingDestination(value);
     this.#validateCrossFieldState();
   }
 
@@ -269,6 +330,7 @@ class VehicleInfo {
       terrainTypes: this.#terrainTypes,
       icon: this.#icon,
       currentDestination: this.#currentDestination,
+      pendingDestination: this.#pendingDestination ? { ...this.#pendingDestination } : null,
       destinations: [...this.#destinations],
       ETA: this.#ETA,
       departureTime: this.#departureTime,
@@ -298,6 +360,7 @@ class VehicleInfo {
       terrainTypes: data.terrainTypes,
       icon: data.icon ?? null,
       currentDestination: data.currentDestination ?? null,
+      pendingDestination: data.pendingDestination ?? null,
       destinations: data.destinations ?? [],
       ETA: eta ?? null,
       departureTime: departureTime ?? null,

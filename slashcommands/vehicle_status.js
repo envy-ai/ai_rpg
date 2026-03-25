@@ -68,6 +68,58 @@ function formatDestinationWithId(locationId, fallbackLabel = '') {
   return `${escapeMarkdown(label)} (${formatCode(trimmedId)})`;
 }
 
+function formatPendingDestination(pendingDestination, fallbackLabel = '') {
+  if (!pendingDestination || typeof pendingDestination !== 'object') {
+    return escapeMarkdown(fallbackLabel || '-');
+  }
+
+  const locationId = typeof pendingDestination.locationId === 'string'
+    ? pendingDestination.locationId.trim()
+    : '';
+  const regionId = typeof pendingDestination.regionId === 'string'
+    ? pendingDestination.regionId.trim()
+    : '';
+  const locationName = typeof pendingDestination.locationName === 'string'
+    ? pendingDestination.locationName.trim()
+    : '';
+  const regionName = typeof pendingDestination.regionName === 'string'
+    ? pendingDestination.regionName.trim()
+    : '';
+  const rawText = typeof pendingDestination.rawText === 'string'
+    ? pendingDestination.rawText.trim()
+    : '';
+
+  let label = '';
+  if (locationName && regionName) {
+    label = `${regionName}:${locationName}`;
+  } else if (locationName) {
+    label = locationName;
+  } else if (regionName) {
+    label = regionName;
+  } else if (locationId) {
+    label = resolveLocationLabel(locationId);
+  } else if (regionId) {
+    const region = Region.get(regionId) || null;
+    label = typeof region?.name === 'string' && region.name.trim()
+      ? region.name.trim()
+      : regionId;
+  } else if (rawText) {
+    label = rawText;
+  } else if (typeof fallbackLabel === 'string' && fallbackLabel.trim()) {
+    label = fallbackLabel.trim();
+  } else {
+    label = '-';
+  }
+
+  if (locationId) {
+    return `${escapeMarkdown(label)} (${formatCode(locationId)})`;
+  }
+  if (regionId) {
+    return `${escapeMarkdown(label)} (${formatCode(regionId)})`;
+  }
+  return escapeMarkdown(label);
+}
+
 function formatRouteDestinations(destinations) {
   if (!Array.isArray(destinations) || destinations.length === 0) {
     return '-';
@@ -185,6 +237,9 @@ class VehicleStatusCommand extends SlashCommandBase {
     const currentDestinationId = typeof vehicleInfo.currentDestination === 'string'
       ? vehicleInfo.currentDestination.trim()
       : '';
+    const pendingDestination = vehicleInfo.pendingDestination && typeof vehicleInfo.pendingDestination === 'object'
+      ? vehicleInfo.pendingDestination
+      : null;
     const departureTime = Number.isInteger(vehicleInfo.departureTime) ? vehicleInfo.departureTime : null;
     const eta = Number.isInteger(vehicleInfo.ETA) ? vehicleInfo.ETA : null;
 
@@ -196,7 +251,8 @@ class VehicleStatusCommand extends SlashCommandBase {
       `- Player location inside vehicle: **${escapeMarkdown(formatEntityLabel(activeVehicleRecord.currentLocation, { includeRegion: false }))}** (${formatCode(activeVehicleRecord.currentLocation.id)})`,
       `- Vehicle description: ${escapeMarkdown(currentVehicle.description || activeVehicleRecord.entity.description || '-')}`,
       `- Outside location: **${escapeMarkdown(currentVehicle.location || '-')}**`,
-      `- Current destination: **${formatDestinationWithId(currentDestinationId, currentVehicle.destination || '')}**`,
+      `- Current destination: **${formatDestinationWithId(currentDestinationId)}**`,
+      `- Pending destination: **${formatPendingDestination(pendingDestination, !currentDestinationId ? currentVehicle.destination || '' : '')}**`,
       `- Fixed-route destinations: ${formatRouteDestinations(vehicleInfo.destinations)}`,
       `- Is underway: **${formatBoolean(currentVehicle.isUnderway)}**`,
       `- Has arrived: **${formatBoolean(currentVehicle.hasArrived)}**`,

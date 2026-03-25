@@ -63,3 +63,34 @@ test('VehicleInfo rejects departureTime values after ETA', () => {
         /departureTime cannot be after ETA/
     );
 });
+
+test('VehicleInfo allows timed trips with a pending destination before arrival finalization', () => {
+    const previousPlayer = Globals.currentPlayer;
+    Globals.currentPlayer = { elapsedTime: 100 };
+
+    try {
+        const vehicleInfo = new VehicleInfo({
+            pendingDestination: {
+                rawText: 'Derelict Sector|',
+                regionName: 'Derelict Sector',
+                locationId: 'destination-location'
+            },
+            ETA: 135,
+            departureTime: 100,
+            vehicleExitId: 'vehicle-exit-id'
+        });
+
+        assert.equal(vehicleInfo.currentDestination, null);
+        assert.deepEqual(vehicleInfo.pendingDestination, {
+            rawText: 'Derelict Sector|',
+            regionName: 'Derelict Sector',
+            locationName: null,
+            regionId: null,
+            locationId: 'destination-location'
+        });
+        assert.equal(vehicleInfo.isUnderway, true);
+        assert.equal(vehicleInfo.hasArrived, false);
+    } finally {
+        Globals.currentPlayer = previousPlayer;
+    }
+});
