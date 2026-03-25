@@ -210,7 +210,7 @@ Extends `LocationDetails` with:
   - `isVehicleOutbound` (boolean; true when the current location context is a vehicle and the exit leaves it)
   - `isVehicleInbound` (boolean; true when the exit enters a vehicle destination from a non-vehicle context)
   - `relativeLevel` (when known)
-  - vehicle exits tied to underway vehicle travel are omitted from the payload: boarding exits into a destination vehicle that is in transit, and the active outside/disembark exit from a source vehicle that is in transit
+  - vehicle exits tied to vehicle transit are omitted from the payload: boarding exits into a destination vehicle that is in transit or still finalizing arrival after `ETA`, and the active outside/disembark exit from a source vehicle in the same state
 - `vehicleCurrentLocationName` (string | undefined; present when current location/region is a vehicle and the active vehicle exit resolves)
 - `npcs` (NpcProfile[])
 - `things` (ThingProfile[])
@@ -284,7 +284,7 @@ Fields:
   - `isVehicleOutbound`, `isVehicleInbound` (booleans)
   - `vehicleIcon` (string | null; populated from destination vehicle metadata, or `🚗` fallback when destination is a vehicle but icon metadata is missing)
   - `destinationIsStub`, `destinationIsRegionEntryStub`
-  - vehicle exits tied to underway vehicle travel are omitted: boarding exits into a destination vehicle that is in transit, and the active outside/disembark exit from a source vehicle that is in transit
+  - vehicle exits tied to vehicle transit are omitted: boarding exits into a destination vehicle that is in transit or still finalizing arrival after `ETA`, and the active outside/disembark exit from a source vehicle in the same state
 - `image` (optional): `{ id, url }`
 
 ## MapRegionSummary (`/api/map/world`)

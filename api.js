@@ -15943,9 +15943,12 @@ module.exports = function registerApiRoutes(scope) {
             return payload;
         }
 
-        function isVehicleInTransit(vehicleInfo, { contextLabel = 'Vehicle' } = {}) {
+        function getVehicleExitAvailabilityState(vehicleInfo, { contextLabel = 'Vehicle' } = {}) {
             if (!vehicleInfo || typeof vehicleInfo !== 'object' || Array.isArray(vehicleInfo)) {
-                return false;
+                return {
+                    blocked: false,
+                    reason: null
+                };
             }
             let normalizedInfo = null;
             try {
@@ -15953,7 +15956,22 @@ module.exports = function registerApiRoutes(scope) {
             } catch (error) {
                 throw new Error(`${contextLabel} info is invalid: ${error?.message || error}`);
             }
-            return Boolean(normalizedInfo.isUnderway && !normalizedInfo.hasArrived);
+            if (normalizedInfo.isUnderway && !normalizedInfo.hasArrived) {
+                return {
+                    blocked: true,
+                    reason: 'underway'
+                };
+            }
+            if (normalizedInfo.hasArrived && normalizedInfo.pendingDestination) {
+                return {
+                    blocked: true,
+                    reason: 'arrival_pending'
+                };
+            }
+            return {
+                blocked: false,
+                reason: null
+            };
         }
 
         function resolveVehicleExitTransitBlock({
@@ -16016,12 +16034,15 @@ module.exports = function registerApiRoutes(scope) {
             }
 
             for (const candidate of sourceCandidateInfos) {
-                if (isVehicleInTransit(candidate.info, {
+                const availabilityState = getVehicleExitAvailabilityState(candidate.info, {
                     contextLabel: `${contextLabel} (${candidate.label})`
-                })) {
+                });
+                if (availabilityState.blocked) {
                     return {
                         blocked: true,
-                        reason: 'source_underway'
+                        reason: availabilityState.reason === 'arrival_pending'
+                            ? 'source_arrival_pending'
+                            : 'source_underway'
                     };
                 }
             }
@@ -16052,12 +16073,15 @@ module.exports = function registerApiRoutes(scope) {
                 if (!candidate || !candidate.info || typeof candidate.info !== 'object' || Array.isArray(candidate.info)) {
                     continue;
                 }
-                if (isVehicleInTransit(candidate.info, {
+                const availabilityState = getVehicleExitAvailabilityState(candidate.info, {
                     contextLabel: `${contextLabel} (${candidate.label})`
-                })) {
+                });
+                if (availabilityState.blocked) {
                     return {
                         blocked: true,
-                        reason: 'destination_underway'
+                        reason: availabilityState.reason === 'arrival_pending'
+                            ? 'destination_arrival_pending'
+                            : 'destination_underway'
                     };
                 }
             }
@@ -22785,7 +22809,11 @@ module.exports = function registerApiRoutes(scope) {
                     if (transitBlock.blocked) {
                         const errorMessage = transitBlock.reason === 'source_underway'
                             ? 'Cannot disembark while the vehicle is underway.'
-                            : 'Cannot board a vehicle while it is underway.';
+                            : transitBlock.reason === 'source_arrival_pending'
+                                ? 'Cannot disembark while the vehicle arrival is still being processed.'
+                                : transitBlock.reason === 'destination_arrival_pending'
+                                    ? 'Cannot board a vehicle while its arrival is still being processed.'
+                                    : 'Cannot board a vehicle while it is underway.';
                         return res.status(409).json({
                             success: false,
                             error: errorMessage
