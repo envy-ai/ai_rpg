@@ -9379,8 +9379,12 @@ async function expandRegionEntryStub(stubLocation) {
                     predefinedVehicleDefinitions: vehicleDefinitions
                 });
             } catch (instantiationError) {
-                console.warn('Failed to instantiate region from stub:', instantiationError.message);
-                console.debug(instantiationError);
+                rollbackFailedRegionInstantiation({
+                    region,
+                    context: 'region stub instantiation'
+                });
+                console.warn(`Failed to instantiate region from stub "${region?.name || targetRegionId}": ${instantiationError.message}`);
+                return null;
             }
 
             try {
@@ -22860,12 +22864,38 @@ function parseRegionStubLocations(xmlSnippet) {
         return [];
     }
 
+    const getDirectChildByTag = (node, tagName) => {
+        if (!node || !tagName) {
+            return null;
+        }
+        const lowered = tagName.toLowerCase();
+        return Array.from(node.childNodes || []).find(child =>
+            child
+            && child.nodeType === 1
+            && child.tagName
+            && child.tagName.toLowerCase() === lowered
+        ) || null;
+    };
+
+    const getDirectChildrenByTag = (node, tagName) => {
+        if (!node || !tagName) {
+            return [];
+        }
+        const lowered = tagName.toLowerCase();
+        return Array.from(node.childNodes || []).filter(child =>
+            child
+            && child.nodeType === 1
+            && child.tagName
+            && child.tagName.toLowerCase() === lowered
+        );
+    };
+
     const resolveLocationNodes = () => {
         const regionNode = doc.getElementsByTagName('region')[0];
         if (regionNode) {
-            const locationsParent = regionNode.getElementsByTagName('locations')?.[0];
+            const locationsParent = getDirectChildByTag(regionNode, 'locations');
             if (locationsParent) {
-                const nodes = Array.from(locationsParent.getElementsByTagName('location'));
+                const nodes = getDirectChildrenByTag(locationsParent, 'location');
                 if (nodes.length) {
                     return nodes;
                 }
@@ -22874,13 +22904,21 @@ function parseRegionStubLocations(xmlSnippet) {
 
         const directLocationsParent = doc.getElementsByTagName('locations')?.[0];
         if (directLocationsParent) {
-            const nodes = Array.from(directLocationsParent.getElementsByTagName('location'));
+            const nodes = getDirectChildrenByTag(directLocationsParent, 'location');
             if (nodes.length) {
                 return nodes;
             }
         }
 
-        return Array.from(doc.getElementsByTagName('location'));
+        return Array.from(doc.getElementsByTagName('location')).filter(node => {
+            const parent = node?.parentNode;
+            return Boolean(
+                parent
+                && parent.nodeType === 1
+                && typeof parent.tagName === 'string'
+                && parent.tagName.toLowerCase() === 'locations'
+            );
+        });
     };
 
     const locationNodes = resolveLocationNodes();
@@ -22928,9 +22966,9 @@ function parseRegionStubLocations(xmlSnippet) {
         const numHostilesRaw = getTagValue(node, 'numHostiles');
         const hasWeatherRaw = getTagValue(node, 'hasWeather');
         const controllingFaction = getTagValue(node, 'controllingFaction');
-        const exitsParent = node.getElementsByTagName('exits')?.[0];
+        const exitsParent = getDirectChildByTag(node, 'exits');
         const exits = exitsParent
-            ? Array.from(exitsParent.getElementsByTagName('exit'))
+            ? getDirectChildrenByTag(exitsParent, 'exit')
                 .map(exitNode => exitNode.textContent?.trim())
                 .filter(Boolean)
             : [];
@@ -22952,6 +22990,91 @@ function parseRegionStubLocations(xmlSnippet) {
             hasWeather
         };
     }).filter(Boolean);
+}
+
+function rollbackFailedRegionInstantiation({
+    region,
+    context = 'region instantiation rollback'
+} = {}) {
+    if (!region) {
+        return;
+    }
+
+    const regionId = typeof region.id === 'string' ? region.id.trim() : '';
+    const regionLocationIds = Array.isArray(region.locationIds)
+        ? [...region.locationIds].filter(id => typeof id === 'string' && id.trim())
+        : [];
+    const regionLocationIdSet = new Set(regionLocationIds);
+    const removeExit = (location, direction, exitId = null) => {
+        if (!location || typeof location.removeExit !== 'function' || !direction) {
+            return false;
+        }
+        const removed = location.removeExit(direction);
+        if (removed && exitId && gameLocationExits.has(exitId)) {
+            gameLocationExits.delete(exitId);
+        }
+        return removed;
+    };
+
+    for (const [locationId, location] of gameLocations.entries()) {
+        if (!location || typeof location.getAvailableDirections !== 'function' || typeof location.getExit !== 'function') {
+            continue;
+        }
+
+        const directions = [...location.getAvailableDirections()];
+        for (const direction of directions) {
+            const exit = location.getExit(direction);
+            if (!exit) {
+                continue;
+            }
+            const isOutboundFromRolledBackLocation = regionLocationIdSet.has(locationId);
+            const isInboundToRolledBackLocation = regionLocationIdSet.has(exit.destination);
+            if (!isOutboundFromRolledBackLocation && !isInboundToRolledBackLocation) {
+                continue;
+            }
+            removeExit(location, direction, exit.id || null);
+        }
+    }
+
+    for (const locationId of regionLocationIds) {
+        const location = gameLocations.get(locationId) || Location.get(locationId);
+        if (!location) {
+            continue;
+        }
+
+        if (pendingLocationImages && typeof pendingLocationImages.delete === 'function') {
+            pendingLocationImages.delete(locationId);
+        }
+        if (stubExpansionPromises && typeof stubExpansionPromises.delete === 'function') {
+            stubExpansionPromises.delete(locationId);
+        }
+        if (regionEntryExpansionPromises && typeof regionEntryExpansionPromises.delete === 'function') {
+            regionEntryExpansionPromises.delete(locationId);
+        }
+
+        if (gameLocations.has(locationId)) {
+            gameLocations.delete(locationId);
+        }
+        if (typeof Location.removeFromIndex === 'function') {
+            Location.removeFromIndex(locationId);
+            Location.removeFromIndex(location);
+        }
+    }
+
+    region.locationIds = [];
+    region.entranceLocationId = null;
+
+    if (regionId && regions.get(regionId) === region) {
+        regions.delete(regionId);
+    }
+    if (typeof Region.removeFromIndex === 'function') {
+        Region.removeFromIndex(region);
+        if (regionId) {
+            Region.removeFromIndex(regionId);
+        }
+    }
+
+    console.warn(`[${context}] Rolled back region "${region.name || regionId || 'unknown'}" after instantiation failure.`);
 }
 
 function parseRegionVehicleDefinitions(xmlSnippet) {
@@ -24279,7 +24402,11 @@ async function generateRegionFromPrompt(options = {}) {
                 predefinedVehicleDefinitions: vehicleDefinitions
             });
         } catch (instantiationError) {
-            console.warn('Failed to instantiate region structure:', instantiationError.message);
+            rollbackFailedRegionInstantiation({
+                region,
+                context: 'region generation instantiation'
+            });
+            throw new Error(`Failed to instantiate region structure for "${region?.name || region?.id || 'unknown region'}": ${instantiationError.message}`);
         }
 
         const entranceInfo = await chooseRegionEntrance({

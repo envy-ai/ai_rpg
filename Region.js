@@ -441,6 +441,24 @@ class Region {
     return new Map(Region.#indexByName);
   }
 
+  /**
+   * Remove a region from internal id/name indices.
+   * Useful when rolling back failed region creation so stale lookups do not linger.
+   */
+  static removeFromIndex(regionOrId) {
+    if (!regionOrId) {
+      return;
+    }
+    const id = typeof regionOrId === 'string' ? regionOrId : regionOrId.id;
+    if (id) {
+      Region.#indexById.delete(id);
+    }
+    const name = typeof regionOrId === 'object' ? regionOrId.name : null;
+    if (name && typeof name === 'string') {
+      Region.#indexByName.delete(name.toLowerCase());
+    }
+  }
+
   static fromJSON(data = {}) {
     return new Region({
       id: data.id,

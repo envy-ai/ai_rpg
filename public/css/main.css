@@ -1120,6 +1120,88 @@ p:not(:last-child) {
   padding: 20px;
 }
 
+.location-header {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.location-header h4 {
+  margin: 0;
+}
+
+.location-vehicle-status {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+.location-vehicle-status[hidden] {
+  display: none;
+}
+
+.location-vehicle-status--underway {
+  gap: 4px;
+}
+
+.location-vehicle-status__primary {
+  color: rgba(255, 244, 244, 0.96);
+  font-size: 0.98rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.location-vehicle-status__secondary {
+  color: rgba(255, 219, 219, 0.72);
+  font-size: 0.72rem;
+  letter-spacing: 0.02em;
+  line-height: 1.35;
+}
+.location-vehicle-status__secondary[hidden] {
+  display: none;
+}
+
+.location-vehicle-status__progress {
+  padding-top: 2px;
+  margin-bottom: 1ex;
+}
+.location-vehicle-status__progress[hidden] {
+  display: none;
+}
+
+.location-vehicle-status__progress-track {
+  position: relative;
+  height: 14px;
+  border-radius: 999px;
+  overflow: visible;
+  background: linear-gradient(180deg, rgba(5, 18, 36, 0.98) 0%, rgba(8, 22, 48, 0.98) 52%, rgba(3, 10, 24, 0.98) 100%);
+  border: 1px solid rgba(127, 29, 29, 0.8);
+  box-shadow: inset 0 1px 2px rgba(255, 255, 255, 0.04), inset 0 -1px 2px rgba(0, 0, 0, 0.6);
+}
+
+.location-vehicle-status__progress-fill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  width: 0%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, rgba(90, 10, 10, 0.98) 0%, rgba(185, 28, 28, 0.98) 58%, rgba(239, 68, 68, 0.98) 100%);
+  box-shadow: inset 0 0 10px rgba(255, 163, 163, 0.18), 0 0 10px rgba(185, 28, 28, 0.28);
+  transition: width 0.25s ease;
+}
+
+.location-vehicle-status__progress-icon {
+  position: absolute;
+  top: 50%;
+  left: 0%;
+  transform: translate(-50%, -52%);
+  font-size: 1rem;
+  line-height: 1;
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.55));
+  transition: left 0.25s ease;
+  pointer-events: none;
+}
+
 .map-placeholder {
   display: flex;
   align-items: center;

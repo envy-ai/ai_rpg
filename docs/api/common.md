@@ -85,6 +85,16 @@ Fields:
 - `departureTime` (number | null)
 - `vehicleExitId` (string | null)
 
+When `vehicleInfo` is embedded in location/region response payloads, the server also enriches it with derived display fields:
+- `isUnderway` (boolean)
+- `hasArrived` (boolean)
+- `isArriving` (boolean)
+- `minutesToDestination` (number | null)
+- `timeToDestination` (string | null)
+- `tripCompleteFraction` (number)
+- `destinationResolved` (boolean)
+- `displayDestination` (string | null)
+
 ## NpcProfile (serializeNpcForClient)
 Returned in many player/NPC endpoints and location responses.
 

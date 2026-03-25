@@ -20,6 +20,7 @@ Represents a region containing multiple locations, with metadata like average le
 ## Static API
 - `get(id)` / `getByName(name)` / `getAll()`.
 - `get indexById()` / `get indexByName()` / `getIndexById()` / `getIndexByName()`.
+- `removeFromIndex(regionOrId)` to drop stale rolled-back regions from the static indexes.
 - `clear()`.
 - `fromJSON(data)` / `fromXMLSnippet(xmlSnippet)`.
 - `parseWeatherDefinitionFromXmlSnippet(xmlSnippet)` to parse `<weather>` blocks without instantiating a region.

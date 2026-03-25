@@ -19,7 +19,8 @@ The main UI is rendered by `views/index.njk` and powered by `public/js/chat.js` 
 - **Location panel** (`.location-block`):
   - Compact world-time chip at the top (`#worldTimeIndicator`) showing `h:MM AM/PM`, date label, and segment/season.
   - The location-name prefix icon (`#locationNameIcon`) switches from map pin (`📍`) to a vehicle icon when the current location is a vehicle or its containing region is a vehicle; it prefers `vehicleInfo.icon` and falls back to `🚗`.
-  - When in a vehicle context, a second header line renders under the location name as `Current location: <name>` using the active vehicle exit destination.
+  - When in a vehicle context and the vehicle is not underway, a second header line renders under the location name as `Current location: <name>` using the active vehicle exit destination.
+  - When in a vehicle context and the vehicle is underway, that header block instead renders `Enroute to <destination>`, a smaller `X days, Y hours, Z minutes to arrival` countdown line (omitting zero-value units), and a black/red progress bar with the vehicle icon positioned at the current trip progress point.
   - When in a vehicle context and the outside location has an image, a lower-right picture-in-picture overlay (`#locationVehiclePip`) renders over the main location image at 30% size, `16:9` aspect ratio, with 3% right/bottom margin.
   - When the containing region is a vehicle, the header name is rendered as `<vehicle region>: <location>` (example: `Starship Enterprise: Captain's Quarters`).
   - Image + context menu for edit/summon/regenerate.

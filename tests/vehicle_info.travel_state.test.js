@@ -94,3 +94,59 @@ test('VehicleInfo allows timed trips with a pending destination before arrival f
         Globals.currentPlayer = previousPlayer;
     }
 });
+
+test('VehicleInfo accepts an atomic pending-to-resolved arrival update', () => {
+    const initialVehicleInfo = new VehicleInfo({
+        pendingDestination: {
+            rawText: 'Derelict Sector|Mourning Star Berth',
+            regionName: 'Derelict Sector',
+            locationId: 'destination-location'
+        },
+        ETA: 135,
+        departureTime: 100,
+        vehicleExitId: 'vehicle-exit-id'
+    });
+
+    const vehicleInfo = new VehicleInfo({
+        ...initialVehicleInfo.toJSON(),
+        pendingDestination: null,
+        currentDestination: 'destination-location',
+        ETA: null,
+        departureTime: null
+    });
+
+    assert.equal(vehicleInfo.pendingDestination, null);
+    assert.equal(vehicleInfo.currentDestination, 'destination-location');
+    assert.equal(vehicleInfo.ETA, null);
+    assert.equal(vehicleInfo.departureTime, null);
+});
+
+test('VehicleInfo accepts an atomic resolved-to-pending timed-trip start update', () => {
+    const initialVehicleInfo = new VehicleInfo({
+        currentDestination: 'anchorpoint-docking-bay-7',
+        vehicleExitId: 'vehicle-exit-id'
+    });
+
+    const vehicleInfo = new VehicleInfo({
+        ...initialVehicleInfo.toJSON(),
+        currentDestination: null,
+        pendingDestination: {
+            rawText: 'Derelict Sector|Mourning Star Berth',
+            regionName: 'Derelict Sector',
+            locationId: 'destination-location'
+        },
+        ETA: 135,
+        departureTime: 100
+    });
+
+    assert.equal(vehicleInfo.currentDestination, null);
+    assert.deepEqual(vehicleInfo.pendingDestination, {
+        rawText: 'Derelict Sector|Mourning Star Berth',
+        regionName: 'Derelict Sector',
+        locationName: null,
+        regionId: null,
+        locationId: 'destination-location'
+    });
+    assert.equal(vehicleInfo.ETA, 135);
+    assert.equal(vehicleInfo.departureTime, 100);
+});

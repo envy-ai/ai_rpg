@@ -44,7 +44,16 @@
                                 </div>
                                 <div class="location-header">
                                     <h4><span id="locationNameIcon" class="location-name-icon" aria-hidden="true">📍</span> <span class="location-name" id="locationName">Unknown Location</span></h4>
-                                    <div id="locationVehicleCurrentLocation" hidden></div>
+                                    <div class="location-vehicle-status" id="locationVehicleCurrentLocation" hidden>
+                                        <div class="location-vehicle-status__primary" id="locationVehicleCurrentLocationPrimary"></div>
+                                        <div class="location-vehicle-status__secondary" id="locationVehicleCurrentLocationSecondary" hidden></div>
+                                        <div class="location-vehicle-status__progress" id="locationVehicleCurrentLocationProgress" hidden aria-hidden="true">
+                                            <div class="location-vehicle-status__progress-track">
+                                                <div class="location-vehicle-status__progress-fill" id="locationVehicleCurrentLocationProgressFill"></div>
+                                                <div class="location-vehicle-status__progress-icon" id="locationVehicleCurrentLocationProgressIcon">🚗</div>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
                                 <div class="location-content" id="locationContent">
                                     <div class="location-image-wrapper" id="locationImageWrapper">
@@ -19302,6 +19311,11 @@
                 const locationName = document.getElementById('locationName');
                 const locationNameIcon = document.getElementById('locationNameIcon');
                 const locationVehicleCurrentLocation = document.getElementById('locationVehicleCurrentLocation');
+                const locationVehicleCurrentLocationPrimary = document.getElementById('locationVehicleCurrentLocationPrimary');
+                const locationVehicleCurrentLocationSecondary = document.getElementById('locationVehicleCurrentLocationSecondary');
+                const locationVehicleCurrentLocationProgress = document.getElementById('locationVehicleCurrentLocationProgress');
+                const locationVehicleCurrentLocationProgressFill = document.getElementById('locationVehicleCurrentLocationProgressFill');
+                const locationVehicleCurrentLocationProgressIcon = document.getElementById('locationVehicleCurrentLocationProgressIcon');
                 const locationTooltip = document.getElementById('locationTooltip');
                 const locationHint = document.getElementById('locationHint');
                 const locationLevel = document.getElementById('locationLevel');
@@ -19559,6 +19573,119 @@
                     });
                 };
 
+                const formatVehicleArrivalCountdown = (minutesValue) => {
+                    if (!Number.isFinite(minutesValue) || !Number.isInteger(minutesValue)) {
+                        return '';
+                    }
+
+                    let remaining = Math.max(0, minutesValue);
+                    const days = Math.floor(remaining / 1440);
+                    remaining -= days * 1440;
+                    const hours = Math.floor(remaining / 60);
+                    remaining -= hours * 60;
+                    const minutes = remaining;
+
+                    const parts = [];
+                    if (days > 0) {
+                        parts.push(`${days} ${days === 1 ? 'day' : 'days'}`);
+                    }
+                    if (hours > 0) {
+                        parts.push(`${hours} ${hours === 1 ? 'hour' : 'hours'}`);
+                    }
+                    if (minutes > 0) {
+                        parts.push(`${minutes} ${minutes === 1 ? 'minute' : 'minutes'}`);
+                    }
+
+                    if (parts.length === 0) {
+                        parts.push('0 minutes');
+                    }
+
+                    return parts.join(', ');
+                };
+
+                const clearVehicleHeaderStatus = () => {
+                    if (locationVehicleCurrentLocationPrimary) {
+                        locationVehicleCurrentLocationPrimary.textContent = '';
+                    }
+                    if (locationVehicleCurrentLocationSecondary) {
+                        locationVehicleCurrentLocationSecondary.textContent = '';
+                        locationVehicleCurrentLocationSecondary.setAttribute('hidden', '');
+                    }
+                    if (locationVehicleCurrentLocationProgress) {
+                        locationVehicleCurrentLocationProgress.setAttribute('hidden', '');
+                    }
+                    if (locationVehicleCurrentLocationProgressFill) {
+                        locationVehicleCurrentLocationProgressFill.style.width = '0%';
+                    }
+                    if (locationVehicleCurrentLocationProgressIcon) {
+                        locationVehicleCurrentLocationProgressIcon.textContent = '🚗';
+                        locationVehicleCurrentLocationProgressIcon.style.left = '0%';
+                    }
+                    if (locationVehicleCurrentLocation) {
+                        locationVehicleCurrentLocation.classList.remove('location-vehicle-status--underway');
+                        locationVehicleCurrentLocation.setAttribute('hidden', '');
+                    }
+                };
+
+                const renderVehicleHeaderStatus = ({
+                    primaryText = '',
+                    secondaryText = '',
+                    showProgress = false,
+                    progressFraction = 0,
+                    vehicleIcon = '🚗',
+                    variant = 'default'
+                } = {}) => {
+                    if (!locationVehicleCurrentLocation || !locationVehicleCurrentLocationPrimary) {
+                        return;
+                    }
+
+                    const resolvedPrimaryText = typeof primaryText === 'string' ? primaryText.trim() : '';
+                    if (!resolvedPrimaryText) {
+                        clearVehicleHeaderStatus();
+                        return;
+                    }
+
+                    locationVehicleCurrentLocationPrimary.textContent = resolvedPrimaryText;
+                    locationVehicleCurrentLocation.removeAttribute('hidden');
+                    if (variant === 'underway') {
+                        locationVehicleCurrentLocation.classList.add('location-vehicle-status--underway');
+                    } else {
+                        locationVehicleCurrentLocation.classList.remove('location-vehicle-status--underway');
+                    }
+
+                    const resolvedSecondaryText = typeof secondaryText === 'string' ? secondaryText.trim() : '';
+                    if (locationVehicleCurrentLocationSecondary) {
+                        if (resolvedSecondaryText) {
+                            locationVehicleCurrentLocationSecondary.textContent = resolvedSecondaryText;
+                            locationVehicleCurrentLocationSecondary.removeAttribute('hidden');
+                        } else {
+                            locationVehicleCurrentLocationSecondary.textContent = '';
+                            locationVehicleCurrentLocationSecondary.setAttribute('hidden', '');
+                        }
+                    }
+
+                    const normalizedProgress = Number.isFinite(progressFraction)
+                        ? Math.min(1, Math.max(0, progressFraction))
+                        : 0;
+                    if (locationVehicleCurrentLocationProgress) {
+                        if (showProgress) {
+                            locationVehicleCurrentLocationProgress.removeAttribute('hidden');
+                        } else {
+                            locationVehicleCurrentLocationProgress.setAttribute('hidden', '');
+                        }
+                    }
+                    if (locationVehicleCurrentLocationProgressFill) {
+                        locationVehicleCurrentLocationProgressFill.style.width = `${normalizedProgress * 100}%`;
+                    }
+                    if (locationVehicleCurrentLocationProgressIcon) {
+                        const resolvedIcon = typeof vehicleIcon === 'string' && vehicleIcon.trim()
+                            ? vehicleIcon.trim()
+                            : '🚗';
+                        locationVehicleCurrentLocationProgressIcon.textContent = resolvedIcon;
+                        locationVehicleCurrentLocationProgressIcon.style.left = `clamp(0.85rem, ${normalizedProgress * 100}%, calc(100% - 0.85rem))`;
+                    }
+                };
+
                 if (location) {
                     const locationDescriptionHtml = location.description || 'No description available.';
                     const locationDescriptionText = locationDescriptionHtml
@@ -19573,26 +19700,42 @@
                     }
 
                     const isVehicleContext = shouldUseVehicleLocationIcon(location);
+                    const activeVehicleInfo = isVehicleContext
+                        ? resolveVehicleInfoForContext(location)
+                        : null;
                     const currentVehicleLocationDetails = isVehicleContext
                         ? await resolveVehicleCurrentLocationDetailsForDisplay(location)
                         : null;
 
-                    if (locationVehicleCurrentLocation) {
-                        if (isVehicleContext) {
+                    if (isVehicleContext) {
+                        const vehicleIsUnderway = activeVehicleInfo?.isUnderway === true;
+                        if (vehicleIsUnderway) {
+                            const destinationLabel = typeof activeVehicleInfo?.displayDestination === 'string'
+                                ? activeVehicleInfo.displayDestination.trim()
+                                : '';
+                            const arrivalCountdown = formatVehicleArrivalCountdown(activeVehicleInfo?.minutesToDestination);
+                            renderVehicleHeaderStatus({
+                                primaryText: `Enroute to ${destinationLabel || 'Unknown destination'}`,
+                                secondaryText: arrivalCountdown ? `${arrivalCountdown} to arrival` : '',
+                                showProgress: true,
+                                progressFraction: activeVehicleInfo?.tripCompleteFraction,
+                                vehicleIcon: resolveVehicleLocationIcon(location) || '🚗',
+                                variant: 'underway'
+                            });
+                        } else {
                             const currentVehicleLocationName = typeof currentVehicleLocationDetails?.name === 'string'
                                 ? currentVehicleLocationDetails.name.trim()
                                 : '';
                             if (currentVehicleLocationName) {
-                                locationVehicleCurrentLocation.textContent = `Current location: ${currentVehicleLocationName}`;
-                                locationVehicleCurrentLocation.removeAttribute('hidden');
+                                renderVehicleHeaderStatus({
+                                    primaryText: `Current location: ${currentVehicleLocationName}`
+                                });
                             } else {
-                                locationVehicleCurrentLocation.textContent = '';
-                                locationVehicleCurrentLocation.setAttribute('hidden', '');
+                                clearVehicleHeaderStatus();
                             }
-                        } else {
-                            locationVehicleCurrentLocation.textContent = '';
-                            locationVehicleCurrentLocation.setAttribute('hidden', '');
                         }
+                    } else {
+                        clearVehicleHeaderStatus();
                     }
                     if (isVehicleContext) {
                         await renderVehicleLocationPip(currentVehicleLocationDetails);
@@ -20135,10 +20278,7 @@
                     if (locationNameIcon) {
                         locationNameIcon.textContent = '📍';
                     }
-                    if (locationVehicleCurrentLocation) {
-                        locationVehicleCurrentLocation.textContent = '';
-                        locationVehicleCurrentLocation.setAttribute('hidden', '');
-                    }
+                    clearVehicleHeaderStatus();
                     clearVehicleLocationPip();
                     if (locationTooltip) {
                         locationTooltip.innerHTML = 'Your current location will appear here when you start exploring.';

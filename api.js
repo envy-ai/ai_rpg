@@ -6814,6 +6814,36 @@ module.exports = function registerApiRoutes(scope) {
             return resolveTravelProseVehicleStateFromTarget(vehicleTarget);
         };
 
+        const applyVehicleInfoStateUpdate = ({
+            vehicleTarget,
+            normalizedVehicleInfo,
+            updates,
+            contextLabel = 'Vehicle'
+        } = {}) => {
+            if (!vehicleTarget) {
+                throw new Error(`${contextLabel} target is required for vehicleInfo updates.`);
+            }
+            if (!(normalizedVehicleInfo instanceof VehicleInfo)) {
+                throw new Error(`${contextLabel} vehicleInfo update requires a normalized VehicleInfo instance.`);
+            }
+            if (!updates || typeof updates !== 'object' || Array.isArray(updates)) {
+                throw new Error(`${contextLabel} vehicleInfo update requires an updates object.`);
+            }
+
+            let nextVehicleInfo = null;
+            try {
+                nextVehicleInfo = new VehicleInfo({
+                    ...normalizedVehicleInfo.toJSON(),
+                    ...updates
+                });
+            } catch (error) {
+                throw new Error(`${contextLabel} vehicleInfo update is invalid: ${error?.message || error}`);
+            }
+
+            vehicleTarget.setVehicleInfo(nextVehicleInfo.toJSON());
+            return nextVehicleInfo;
+        };
+
         const moveLocationVehicleToDestinationRegionIfNeeded = ({
             vehicleTarget,
             sourceLocation,
@@ -7029,12 +7059,18 @@ module.exports = function registerApiRoutes(scope) {
                 if (typeof departureTime !== 'number') {
                     throw new Error('Current elapsed time is unavailable for travel prose vehicle timing.');
                 }
-                normalizedVehicleInfo.pendingDestination = pendingDestination;
-                normalizedVehicleInfo.currentDestination = null;
-                normalizedVehicleInfo.vehicleExitId = vehicleExit?.id || null;
-                normalizedVehicleInfo.ETA = departureTime + travelTimeMinutes;
-                normalizedVehicleInfo.departureTime = departureTime;
-                vehicleTarget.setVehicleInfo(normalizedVehicleInfo.toJSON());
+                applyVehicleInfoStateUpdate({
+                    vehicleTarget,
+                    normalizedVehicleInfo,
+                    updates: {
+                        pendingDestination,
+                        currentDestination: null,
+                        vehicleExitId: vehicleExit?.id || null,
+                        ETA: departureTime + travelTimeMinutes,
+                        departureTime
+                    },
+                    contextLabel: `Vehicle "${vehicleTarget.label}"`
+                });
                 return {
                     moved: false,
                     startedTrip: true,
@@ -7067,16 +7103,20 @@ module.exports = function registerApiRoutes(scope) {
                 icon
             });
 
-            normalizedVehicleInfo.vehicleExitId = moveResult.vehicleExit?.id || null;
-            normalizedVehicleInfo.pendingDestination = null;
-            if (canSetCurrentDestination) {
-                normalizedVehicleInfo.currentDestination = destinationId;
-            }
-            normalizedVehicleInfo.ETA = null;
-            normalizedVehicleInfo.departureTime = moveResult.moved
-                ? (Number.isFinite(Globals?.elapsedTime) && Number.isInteger(Globals.elapsedTime) ? Globals.elapsedTime : null)
-                : null;
-            vehicleTarget.setVehicleInfo(normalizedVehicleInfo.toJSON());
+            applyVehicleInfoStateUpdate({
+                vehicleTarget,
+                normalizedVehicleInfo,
+                updates: {
+                    vehicleExitId: moveResult.vehicleExit?.id || null,
+                    pendingDestination: null,
+                    currentDestination: canSetCurrentDestination ? destinationId : normalizedVehicleInfo.currentDestination,
+                    ETA: null,
+                    departureTime: moveResult.moved
+                        ? (Number.isFinite(Globals?.elapsedTime) && Number.isInteger(Globals.elapsedTime) ? Globals.elapsedTime : null)
+                        : null
+                },
+                contextLabel: `Vehicle "${vehicleTarget.label}"`
+            });
 
             return moveResult;
         };
@@ -7143,12 +7183,18 @@ module.exports = function registerApiRoutes(scope) {
                     icon
                 });
 
-                normalizedVehicleInfo.vehicleExitId = moveResult.vehicleExit?.id || null;
-                normalizedVehicleInfo.currentDestination = destinationId;
-                normalizedVehicleInfo.pendingDestination = null;
-                normalizedVehicleInfo.ETA = null;
-                normalizedVehicleInfo.departureTime = null;
-                vehicleTarget.setVehicleInfo(normalizedVehicleInfo.toJSON());
+                applyVehicleInfoStateUpdate({
+                    vehicleTarget,
+                    normalizedVehicleInfo,
+                    updates: {
+                        vehicleExitId: moveResult.vehicleExit?.id || null,
+                        pendingDestination: null,
+                        currentDestination: destinationId,
+                        ETA: null,
+                        departureTime: null
+                    },
+                    contextLabel: `Vehicle "${vehicleTarget.label}"`
+                });
                 if (moveResult.moved) {
                     arrivals.push(moveResult);
                 }
@@ -16032,6 +16078,82 @@ module.exports = function registerApiRoutes(scope) {
             }).blocked;
         }
 
+        function buildVehicleTravelDisplayDetails(vehicleInfo, { contextLabel = 'Vehicle' } = {}) {
+            if (!vehicleInfo || typeof vehicleInfo !== 'object' || Array.isArray(vehicleInfo)) {
+                return null;
+            }
+
+            let normalizedInfo = null;
+            try {
+                normalizedInfo = new VehicleInfo(vehicleInfo);
+            } catch (error) {
+                throw new Error(`${contextLabel} info is invalid: ${error?.message || error}`);
+            }
+
+            const etaMinutes = Number(normalizedInfo.ETA);
+            const elapsedMinutes = Number(Globals.elapsedTime);
+            const hasEtaMinutes = Number.isFinite(etaMinutes) && Number.isInteger(etaMinutes);
+            const hasElapsedMinutes = Number.isFinite(elapsedMinutes) && Number.isInteger(elapsedMinutes);
+            const rawTimeToDestination = hasEtaMinutes && hasElapsedMinutes
+                ? etaMinutes - elapsedMinutes
+                : null;
+            const formatTimeToDestination = (minutesValue) => {
+                if (!Number.isFinite(minutesValue) || !Number.isInteger(minutesValue)) {
+                    return null;
+                }
+
+                const isPast = minutesValue < 0;
+                let remaining = Math.abs(minutesValue);
+                const days = Math.floor(remaining / 1440);
+                remaining -= days * 1440;
+                const hours = Math.floor(remaining / 60);
+                remaining -= hours * 60;
+                const minutes = remaining;
+
+                const parts = [];
+                if (days > 0) {
+                    parts.push(`${days} ${days === 1 ? 'day' : 'days'}`);
+                }
+                if (hours > 0) {
+                    parts.push(`${hours} ${hours === 1 ? 'hour' : 'hours'}`);
+                }
+                parts.push(`${minutes} ${minutes === 1 ? 'minute' : 'minutes'}`);
+
+                const formatted = parts.join(', ');
+                return isPast ? `${formatted} ago` : formatted;
+            };
+
+            const currentDestinationId = typeof normalizedInfo.currentDestination === 'string'
+                ? normalizedInfo.currentDestination.trim()
+                : '';
+            const displayDestination = (() => {
+                if (currentDestinationId && gameLocations instanceof Map && gameLocations.has(currentDestinationId)) {
+                    const locationRecord = gameLocations.get(currentDestinationId);
+                    const locationLabel = typeof locationRecord?.name === 'string'
+                        ? locationRecord.name.trim()
+                        : '';
+                    if (locationLabel) {
+                        return locationLabel;
+                    }
+                }
+                if (currentDestinationId) {
+                    return currentDestinationId;
+                }
+                return formatPendingVehicleDestinationLabel(normalizedInfo.pendingDestination);
+            })();
+
+            return {
+                isUnderway: normalizedInfo.isUnderway,
+                hasArrived: normalizedInfo.hasArrived,
+                isArriving: normalizedInfo.isArriving,
+                minutesToDestination: rawTimeToDestination,
+                timeToDestination: formatTimeToDestination(rawTimeToDestination),
+                tripCompleteFraction: normalizedInfo.tripCompleteFraction,
+                destinationResolved: Boolean(currentDestinationId),
+                displayDestination: displayDestination || null
+            };
+        }
+
         function buildLocationResponse(location) {
             if (!location) {
                 return null;
@@ -16100,6 +16222,29 @@ module.exports = function registerApiRoutes(scope) {
                 locationData.region = regionPayload;
             }
             locationData.regionPath = regionPath;
+
+            const enrichVehicleInfoPayload = (vehicleInfoData, { contextLabel = 'Vehicle' } = {}) => {
+                if (!vehicleInfoData || typeof vehicleInfoData !== 'object' || Array.isArray(vehicleInfoData)) {
+                    return vehicleInfoData;
+                }
+                const travelDetails = buildVehicleTravelDisplayDetails(vehicleInfoData, { contextLabel });
+                return {
+                    ...vehicleInfoData,
+                    ...(travelDetails || {})
+                };
+            };
+
+            if (locationData.vehicleInfo && typeof locationData.vehicleInfo === 'object' && !Array.isArray(locationData.vehicleInfo)) {
+                locationData.vehicleInfo = enrichVehicleInfoPayload(locationData.vehicleInfo, {
+                    contextLabel: `Location "${location.id}" vehicle`
+                });
+            }
+            if (regionPayload?.vehicleInfo && typeof regionPayload.vehicleInfo === 'object' && !Array.isArray(regionPayload.vehicleInfo)) {
+                regionPayload.vehicleInfo = enrichVehicleInfoPayload(regionPayload.vehicleInfo, {
+                    contextLabel: `Region "${regionPayload.id}" vehicle`
+                });
+                locationData.region = regionPayload;
+            }
 
             const resolveVehicleIconFromInfo = (vehicleInfo) => {
                 if (!vehicleInfo || typeof vehicleInfo !== 'object' || Array.isArray(vehicleInfo)) {
