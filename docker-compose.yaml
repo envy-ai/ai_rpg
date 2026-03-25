@@ -1,0 +1,32 @@
+version: '3.9'
+
+services:
+  ai-rpg:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "7777:7777"
+    environment:
+      SERVER_HOST: "0.0.0.0"
+      SERVER_PORT: "7777"
+      AI_ENDPOINT: "${AI_ENDPOINT}"
+      AI_API_KEY: "${AI_API_KEY}"
+      AI_MODEL: "${AI_MODEL}"
+      IMAGEGEN_ENDPOINT: "${IMAGEGEN_ENDPOINT}"
+      IMAGEGEN_API_KEY: "${IMAGEGEN_API_KEY}"
+      IMAGEGEN_MODEL: "${IMAGEGEN_MODEL}"
+    volumes:
+      - ./config:/app/config
+      - logs:/app/logs
+      - saves:/app/saves
+      - imagegen:/app/imagegen
+    restart: unless-stopped
+
+volumes:
+  logs:
+    driver: local
+  saves:
+    driver: local
+  imagegen:
+    driver: local

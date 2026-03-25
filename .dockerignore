@@ -1,0 +1,12 @@
+node_modules
+logs
+saves
+imagegen
+tmp
+.cache
+.git
+.github
+docs/all.md
+tests/e2e/fixtures
+public/css/*.map
+public/js/*.map
