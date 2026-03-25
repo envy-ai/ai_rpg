@@ -18,12 +18,23 @@ class LocationExit {
   #imageId;
   #createdAt;
   #lastUpdated;
+  #backtrace;
 
   // Static private method for generating unique IDs
   static #generateId() {
     const timestamp = Date.now();
     const random = crypto.randomBytes(6).toString('hex');
     return `exit_${timestamp}_${random}`;
+  }
+
+  static #captureBacktrace() {
+    const error = new Error('LocationExit creation backtrace');
+    if (typeof Error.captureStackTrace === 'function') {
+      Error.captureStackTrace(error, LocationExit);
+    }
+    return typeof error.stack === 'string' && error.stack.trim()
+      ? error.stack.trim()
+      : 'LocationExit creation backtrace unavailable';
   }
 
   /**
@@ -74,6 +85,7 @@ class LocationExit {
     }
     this.#createdAt = new Date();
     this.#lastUpdated = this.#createdAt;
+    this.#backtrace = LocationExit.#captureBacktrace();
   }
 
   // Getters for accessing private fields
@@ -457,6 +469,10 @@ class LocationExit {
 
   get lastUpdated() {
     return new Date(this.#lastUpdated);
+  }
+
+  get backtrace() {
+    return this.#backtrace;
   }
 
   // Setters for modifying private fields

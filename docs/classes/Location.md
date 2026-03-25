@@ -57,6 +57,7 @@ Represents a game location, including description, exits, NPCs, items/scenery, a
 
 ## Notes
 - Stub locations now carry both a long `stubDescription` and a one-sentence `stubShortDescription` in `stubMetadata`; those are treated as authoritative during stub expansion and reused without regeneration. Stub short descriptions are also copied into `location.shortDescription` on creation/load so stubs render properly in base-context world outlines.
+- Event/travel-created stubs also persist `stubMetadata.createOriginExit`; when that flag is `false`, later stub expansion skips creating the generic origin/reverse links so vehicle-specific exit wiring can remain authoritative.
 - Legacy stubs without `stubDescription` continue to expand, but only their long description is fixed; the LLM still generates a short description.
 - Adding/removing thing ids updates Thing metadata (location ownership) and removes from other locations via `Thing.removeFromWorldById`.
 - Status effects are stored as `StatusEffect` instances; getters return JSON snapshots.

@@ -8302,6 +8302,40 @@ function ensureExitConnection(fromLocation, toLocation, { description, bidirecti
     return exit;
 }
 
+function buildLocationEventStubMetadata({
+    originLocation = null,
+    resolvedDirection = null,
+    stubShortDescription = '',
+    settingSnapshot = null,
+    effectiveRegionId = null,
+    effectiveRegionName = null,
+    normalizedRelativeLevel = null,
+    resolvedVehicleType = null,
+    resolvedIsVehicle = false,
+    normalizedImageDataUrl = '',
+    createOriginExit = true
+} = {}) {
+    return {
+        originLocationId: originLocation?.id || null,
+        originDirection: resolvedDirection,
+        createOriginExit: createOriginExit !== false,
+        shortDescription: stubShortDescription,
+        locationPurpose: 'Area referenced during event-driven travel.',
+        settingDescription: describeSettingForPrompt(settingSnapshot),
+        regionId: effectiveRegionId,
+        regionName: effectiveRegionName,
+        allowRename: false,
+        relativeLevel: normalizedRelativeLevel,
+        vehicleType: resolvedVehicleType,
+        isVehicle: resolvedIsVehicle,
+        imageDataUrl: normalizedImageDataUrl || null
+    };
+}
+
+function shouldCreateOriginExitFromStubMetadata(stubMetadata = null) {
+    return !stubMetadata || stubMetadata.createOriginExit !== false;
+}
+
 async function createLocationFromEvent({ name, originLocation = null, descriptionHint = null, directionHint = null, expandStub = true, targetRegionId = null, vehicleType = null, isVehicle = false, relativeLevel = null, imageDataUrl = '', imageDataUrlOriginal = '', createOriginExit = true } = {}) {
     const trimmedName = typeof name === 'string' ? name.trim() : '';
     if (!trimmedName) {
@@ -8358,12 +8392,15 @@ async function createLocationFromEvent({ name, originLocation = null, descriptio
 
     let existing = findLocationByNameLoose(trimmedName);
     if (existing) {
-        if (normalizedRelativeLevel !== null && existing.isStub) {
+        if (existing.isStub) {
             const metadata = existing.stubMetadata || {};
-            if (metadata.relativeLevel !== normalizedRelativeLevel) {
+            if (normalizedRelativeLevel !== null && metadata.relativeLevel !== normalizedRelativeLevel) {
                 metadata.relativeLevel = normalizedRelativeLevel;
-                existing.stubMetadata = metadata;
             }
+            if (createOriginExit === false) {
+                metadata.createOriginExit = false;
+            }
+            existing.stubMetadata = metadata;
         }
         if (originLocation && directionHint && createOriginExit) {
             if (existing.isStub) {
@@ -8400,20 +8437,19 @@ async function createLocationFromEvent({ name, originLocation = null, descriptio
         imageId: locationImageId,
         regionId: effectiveRegionId,
         isStub: true,
-        stubMetadata: {
-            originLocationId: originLocation?.id || null,
-            originDirection: resolvedDirection,
-            shortDescription: stubShortDescription,
-            locationPurpose: 'Area referenced during event-driven travel.',
-            settingDescription: describeSettingForPrompt(settingSnapshot),
-            regionId: effectiveRegionId,
-            regionName: effectiveRegionName,
-            allowRename: false,
-            relativeLevel: normalizedRelativeLevel,
-            vehicleType: resolvedVehicleType,
-            isVehicle: resolvedIsVehicle,
-            imageDataUrl: normalizedImageDataUrl || null
-        },
+        stubMetadata: buildLocationEventStubMetadata({
+            originLocation,
+            resolvedDirection,
+            stubShortDescription,
+            settingSnapshot,
+            effectiveRegionId,
+            effectiveRegionName,
+            normalizedRelativeLevel,
+            resolvedVehicleType,
+            resolvedIsVehicle,
+            normalizedImageDataUrl,
+            createOriginExit
+        }),
         checkRegionId: !pendingTargetRegion
     });
 
@@ -8701,6 +8737,7 @@ async function createRegionStubFromEvent({ name, originLocation = null, descript
         originLocationId: originLocation.id,
         originRegionId: currentRegion?.id || null,
         originDirection: directionKey,
+        createOriginExit: createOriginExit !== false,
         regionId: newRegionId,
         shortDescription: descriptionText,
         locationPurpose: `Entrance to ${trimmedName}`,
@@ -8785,6 +8822,7 @@ async function createRegionStubFromEvent({ name, originLocation = null, descript
         sourceRegionId: currentRegion?.id || null,
         exitLocationId: originLocation.id,
         entranceStubId: regionEntryStub.id,
+        createOriginExit: createOriginExit !== false,
         originDirection: stubMetadata.originDirection,
         createdAt: new Date().toISOString(),
         imageDataUrl: normalizedImageDataUrl || null
@@ -9115,7 +9153,7 @@ async function expandRegionEntryStub(stubLocation) {
                         originDescription: metadata.shortDescription || stubLocation.description || `${existingRegionByName.name}`
                     });
 
-                    if (originLocation) {
+                    if (originLocation && metadata.createOriginExit !== false) {
                         const originDescription = metadata.shortDescription || stubLocation.description || `${existingRegionByName.name}`;
                         const originVehicleType = typeof metadata.vehicleType === 'string' ? metadata.vehicleType : null;
                         const originIsVehicle = Boolean(metadata.isVehicleExit || originVehicleType);
@@ -9724,9 +9762,10 @@ async function finalizeRegionEntry({ stubLocation, entranceLocation, region, ori
             || originLocation.stubMetadata?.regionId
             || null)
         : null;
+    const shouldCreateOriginExit = metadata.createOriginExit !== false;
     let originDirection = metadata.originDirection || null;
 
-    if (originLocation) {
+    if (originLocation && shouldCreateOriginExit) {
         const originVehicleType = typeof metadata.vehicleType === 'string' ? metadata.vehicleType : null;
         const originIsVehicle = Boolean(metadata.isVehicleExit || originVehicleType);
 
@@ -9783,7 +9822,7 @@ async function finalizeRegionEntry({ stubLocation, entranceLocation, region, ori
         });
     }
 
-    if (originLocation && typeof originLocation.removeExit === 'function' && originDirection) {
+    if (originLocation && shouldCreateOriginExit && typeof originLocation.removeExit === 'function' && originDirection) {
         // ensureExitConnection already handled replacement; no explicit removal required.
     }
 
@@ -22437,17 +22476,13 @@ async function generateLocationFromPrompt(options = {}) {
 
         const newlyCreatedStubs = [];
 
-        if (isStubExpansion && resolvedOriginLocation) {
-            const travelDirection = stubMetadata.originDirection || 'forward';
+        if (isStubExpansion && resolvedOriginLocation && shouldCreateOriginExitFromStubMetadata(stubMetadata)) {
             const cleanedDescription = `${location.name || 'an adjacent area'}`;
-            const stubVehicleType = typeof stubMetadata?.vehicleType === 'string' ? stubMetadata.vehicleType : null;
-            const stubIsVehicle = Boolean(stubMetadata?.isVehicleExit || stubVehicleType);
             ensureExitConnection(resolvedOriginLocation, location, {
                 description: cleanedDescription,
                 bidirectional: false
             });
 
-            const reverseDirection = getOppositeDirection(travelDirection) || 'back';
             const returnDescription = `${resolvedOriginLocation.name || 'the previous area'}`;
             ensureExitConnection(location, resolvedOriginLocation, {
                 description: returnDescription,
