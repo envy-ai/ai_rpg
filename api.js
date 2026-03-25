@@ -6562,7 +6562,13 @@ module.exports = function registerApiRoutes(scope) {
             return null;
         };
 
-        const ensureTravelProseDestinationUnstubbed = async (destinationLocation, { travelContext = null } = {}) => {
+        const ensureTravelProseDestinationUnstubbed = async (
+            destinationLocation,
+            {
+                travelContext = null,
+                createOriginExit = undefined
+            } = {}
+        ) => {
             let resolvedDestination = destinationLocation || null;
             if (!resolvedDestination) {
                 throw new Error('Travel prose destination could not be resolved.');
@@ -6586,7 +6592,7 @@ module.exports = function registerApiRoutes(scope) {
                 if (typeof scheduleStubExpansion !== 'function') {
                     throw new Error('Location stub expansion is unavailable.');
                 }
-                await scheduleStubExpansion(resolvedDestination);
+                await scheduleStubExpansion(resolvedDestination, { createOriginExit });
                 const expandedLocation = (gameLocations instanceof Map)
                     ? gameLocations.get(resolvedDestination.id) || null
                     : null;
@@ -7164,7 +7170,8 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 resolvedDestination = await ensureTravelProseDestinationUnstubbed(resolvedDestination, {
-                    travelContext: null
+                    travelContext: null,
+                    createOriginExit
                 });
                 const destinationId = requireLocationId(
                     resolvedDestination?.id,
@@ -7522,7 +7529,8 @@ module.exports = function registerApiRoutes(scope) {
                             throw new Error('Travel prose vehicle destination could not be resolved.');
                         }
                         vehicleDestinationLocation = await ensureTravelProseDestinationUnstubbed(vehicleDestinationLocation, {
-                            travelContext: null
+                            travelContext: null,
+                            createOriginExit: vehicleDestinationCreateOriginExit
                         });
                     }
                     const vehicleMoveResult = await moveVehicleForTravelProse({

@@ -8336,6 +8336,20 @@ function shouldCreateOriginExitFromStubMetadata(stubMetadata = null) {
     return !stubMetadata || stubMetadata.createOriginExit !== false;
 }
 
+function applyStubExpansionOverrides(location, { createOriginExit } = {}) {
+    if (!location || !location.isStub) {
+        return;
+    }
+
+    if (createOriginExit === undefined) {
+        return;
+    }
+
+    const metadata = location.stubMetadata || {};
+    metadata.createOriginExit = createOriginExit !== false;
+    location.stubMetadata = metadata;
+}
+
 async function createLocationFromEvent({ name, originLocation = null, descriptionHint = null, directionHint = null, expandStub = true, targetRegionId = null, vehicleType = null, isVehicle = false, relativeLevel = null, imageDataUrl = '', imageDataUrlOriginal = '', createOriginExit = true } = {}) {
     const trimmedName = typeof name === 'string' ? name.trim() : '';
     if (!trimmedName) {
@@ -8926,7 +8940,7 @@ async function createStubNeighbors(location, context = {}) {
 const stubExpansionPromises = new Map();
 const regionEntryExpansionPromises = new Map();
 
-function scheduleStubExpansion(location) {
+function scheduleStubExpansion(location, { createOriginExit } = {}) {
     if (!location || !location.isStub) {
         return null;
     }
@@ -8934,6 +8948,8 @@ function scheduleStubExpansion(location) {
     if (location.stubMetadata?.isRegionEntryStub) {
         return null;
     }
+
+    applyStubExpansionOverrides(location, { createOriginExit });
 
     if (stubExpansionPromises.has(location.id)) {
         return stubExpansionPromises.get(location.id);

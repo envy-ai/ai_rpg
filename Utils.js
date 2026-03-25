@@ -64,10 +64,10 @@ class Utils {
     }
 
     if (typeof value === 'number') {
-      if (!Number.isFinite(value) || value < 0 || !Number.isInteger(value)) {
-        throwWithTrace(`${label} must be a non-negative integer minute value.`);
+      if (!Number.isFinite(value) || value < 0) {
+        throwWithTrace(`${label} must be a non-negative minute value.`);
       }
-      return value;
+      return Math.round(value);
     }
 
     if (typeof value !== 'string') {
@@ -97,7 +97,7 @@ class Utils {
       .replace(/\s+/g, ' ')
       .trim();
 
-    const unitPattern = /(\d+)\s*(days?|d|hours?|hrs?|hr|h|minutes?|mins?|min|m|rounds?|rnds?|rnd)\b/g;
+    const unitPattern = /(\d+(?:\.\d+)?)\s*(days?|d|hours?|hrs?|hr|h|minutes?|mins?|min|m|rounds?|rnds?|rnd)\b/g;
     let cursor = 0;
     let matched = false;
     let totalMinutes = 0;
@@ -143,7 +143,7 @@ class Utils {
       throwWithTrace(`${label} contains malformed separators or unknown units: "${value}".`);
     }
 
-    return totalMinutes;
+    return Math.round(totalMinutes);
   }
 
   static getMinimumUnmitigatedWeaponDamage(rarity, level) {

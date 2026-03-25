@@ -7,8 +7,9 @@ function loadLocationStubOriginExitHelpers() {
     const source = fs.readFileSync(require.resolve('../server.js'), 'utf8');
     const buildStart = source.indexOf('function buildLocationEventStubMetadata({');
     const shouldStart = source.indexOf('\nfunction shouldCreateOriginExitFromStubMetadata(stubMetadata = null) {', buildStart);
-    const createLocationFromEventStart = source.indexOf('\nasync function createLocationFromEvent({', shouldStart);
-    if (buildStart < 0 || shouldStart < 0 || createLocationFromEventStart < 0) {
+    const applyStart = source.indexOf('\nfunction applyStubExpansionOverrides(location, { createOriginExit } = {}) {', shouldStart);
+    const createLocationFromEventStart = source.indexOf('\nasync function createLocationFromEvent({', applyStart);
+    if (buildStart < 0 || shouldStart < 0 || applyStart < 0 || createLocationFromEventStart < 0) {
         throw new Error('Unable to locate location-stub origin-exit helpers in server.js');
     }
 
@@ -20,12 +21,14 @@ function loadLocationStubOriginExitHelpers() {
     vm.runInContext(
         `${functionSource}
 this.buildLocationEventStubMetadata = buildLocationEventStubMetadata;
-this.shouldCreateOriginExitFromStubMetadata = shouldCreateOriginExitFromStubMetadata;`,
+this.shouldCreateOriginExitFromStubMetadata = shouldCreateOriginExitFromStubMetadata;
+this.applyStubExpansionOverrides = applyStubExpansionOverrides;`,
         context
     );
     return {
         buildLocationEventStubMetadata: context.buildLocationEventStubMetadata,
-        shouldCreateOriginExitFromStubMetadata: context.shouldCreateOriginExitFromStubMetadata
+        shouldCreateOriginExitFromStubMetadata: context.shouldCreateOriginExitFromStubMetadata,
+        applyStubExpansionOverrides: context.applyStubExpansionOverrides
     };
 }
 
@@ -59,4 +62,21 @@ test('shouldCreateOriginExitFromStubMetadata honors explicit suppression', () =>
     assert.equal(shouldCreateOriginExitFromStubMetadata({}), true);
     assert.equal(shouldCreateOriginExitFromStubMetadata({ createOriginExit: true }), true);
     assert.equal(shouldCreateOriginExitFromStubMetadata({ createOriginExit: false }), false);
+});
+
+test('applyStubExpansionOverrides stamps suppressed origin-exit intent onto existing stubs', () => {
+    const { applyStubExpansionOverrides } = loadLocationStubOriginExitHelpers();
+    const stubLocation = {
+        isStub: true,
+        stubMetadata: {
+            originLocationId: 'vehicle-location-id',
+            originDirection: 'the_bone_orchard'
+        }
+    };
+
+    applyStubExpansionOverrides(stubLocation, { createOriginExit: false });
+    assert.equal(stubLocation.stubMetadata.createOriginExit, false);
+
+    applyStubExpansionOverrides(stubLocation, { createOriginExit: true });
+    assert.equal(stubLocation.stubMetadata.createOriginExit, true);
 });
