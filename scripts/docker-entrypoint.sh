@@ -11,7 +11,9 @@ fi
 
 cp -r "${CONFIG_DIR}/defaults/imagegen" "/app/imagegen"
 
-ln -s "$TARGET_CONFIG" /app/config.yaml
+if [[ ! -f "/app/config.yaml" ]]; then
+  ln -s "$TARGET_CONFIG" /app/config.yaml
+fi
 # Allow env vars to override the generated config, but leave defaults otherwise.
 node /app/scripts/docker-config-env.js "/app/config.yaml"
 
