@@ -559,7 +559,7 @@ const logsDir = path.join(__dirname, 'logs');
 if (!fs.existsSync(logsDir)) {
     fs.mkdirSync(logsDir, { recursive: true });
 }
-const logsPrevDir = path.join(__dirname, 'logs_prev');
+const logsPrevDir = path.join(__dirname, 'logs', 'logs_prev');
 if (!fs.existsSync(logsPrevDir)) {
     fs.mkdirSync(logsPrevDir, { recursive: true });
 }
@@ -15235,9 +15235,9 @@ async function buildLevelUpAbilityPromptRequest({
         description: (locationObj?.description && typeof locationObj.description === 'string'
             ? locationObj.description.trim()
             : locationObj?.stubMetadata?.stubDescription
-                || locationObj?.stubMetadata?.blueprintDescription
-                || locationObj?.stubMetadata?.shortDescription
-                || 'No description provided.')
+            || locationObj?.stubMetadata?.blueprintDescription
+            || locationObj?.stubMetadata?.shortDescription
+            || 'No description provided.')
     };
 
     const regionObj = locationObj ? findRegionByLocationId(locationObj.id) : null;
