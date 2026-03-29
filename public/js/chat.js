@@ -6069,6 +6069,27 @@ class AIRPGChat {
             return;
         }
 
+        const scopeRaw = typeof payload.scope === 'string' ? payload.scope.trim().toLowerCase() : '';
+        if (scopeRaw === 'new_game') {
+            const pendingAbilitySelection = payload?.pendingAbilitySelection
+                || (payload?.abilitySelection?.pending ? payload.abilitySelection : null);
+            const shouldMarkGameLoaded = payload.gameLoaded === true || Boolean(pendingAbilitySelection);
+            if (shouldMarkGameLoaded) {
+                window.__AIRPG_GAME_LOADED__ = true;
+                if (pendingAbilitySelection && typeof window.handlePendingAbilitySelectionPayload === 'function') {
+                    try {
+                        window.handlePendingAbilitySelectionPayload(pendingAbilitySelection);
+                    } catch (abilitySelectionError) {
+                        console.warn('Failed to handle startup ability selection payload:', abilitySelectionError);
+                    }
+                }
+                this.checkLocationUpdate().catch(error => {
+                    console.warn('Failed to refresh location after new-game readiness update:', error);
+                });
+            }
+            return;
+        }
+
         const stageRaw = typeof payload.stage === 'string' ? payload.stage.trim().toLowerCase() : '';
         if (stageRaw === 'spinner:start') {
             const overlayMessage = typeof payload.message === 'string' && payload.message.trim()
@@ -6395,6 +6416,9 @@ class AIRPGChat {
         } else if (trimmedVisibleContent.startsWith('@')) {
             genericMarkerLength = 1;
             genericPromptStorageMode = 'normal';
+        } else if (trimmedVisibleContent.startsWith('\\')) {
+            genericMarkerLength = 1;
+            genericPromptStorageMode = 'hide_base_context';
         }
         const isGenericPromptEntry = genericMarkerLength > 0;
         const isNoLogGenericPromptEntry = isGenericPromptEntry && genericPromptStorageMode === 'no_log';

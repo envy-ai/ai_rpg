@@ -97,7 +97,7 @@ class Utils {
       .replace(/\s+/g, ' ')
       .trim();
 
-    const unitPattern = /(\d+(?:\.\d+)?)\s*(days?|d|hours?|hrs?|hr|h|minutes?|mins?|min|m|rounds?|rnds?|rnd)\b/g;
+    const unitPattern = /(\d+(?:\.\d+)?)\s*(days?|d|hours?|hrs?|hr|h|minutes?|mins?|min|m|rounds?|rnds?|rnd)(?=$|\s|\d)/g;
     let cursor = 0;
     let matched = false;
     let totalMinutes = 0;
@@ -110,10 +110,6 @@ class Utils {
       if (between.trim()) {
         throwWithTrace(`${label} contains malformed separators or unknown units: "${value}".`);
       }
-      if (cursor !== 0 && between.length === 0) {
-        throwWithTrace(`${label} must separate duration parts with spaces or commas: "${value}".`);
-      }
-
       const amount = Number(numericText);
       if (!Number.isFinite(amount)) {
         throwWithTrace(`${label} contains an invalid numeric value: "${value}".`);
@@ -136,7 +132,7 @@ class Utils {
     }
 
     if (!matched) {
-      throwWithTrace(`${label} is invalid ('${value}'). Expected HH:MM, integer minutes, or day/hour/minute/round units.`);
+      throwWithTrace(`${label} is invalid ('${value}'). Expected HH:MM, integer minutes, or day/hour/minute/round units (including compact forms like 3d4h2m).`);
     }
 
     if (normalized.slice(cursor).trim()) {
@@ -144,6 +140,38 @@ class Utils {
     }
 
     return Math.round(totalMinutes);
+  }
+
+  static formatMinutesAsDuration(value, { includeAgo = false } = {}) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric) || !Number.isInteger(numeric)) {
+      return null;
+    }
+
+    const isPast = numeric < 0;
+    let remaining = Math.abs(numeric);
+    const days = Math.floor(remaining / 1440);
+    remaining -= days * 1440;
+    const hours = Math.floor(remaining / 60);
+    remaining -= hours * 60;
+    const minutes = remaining;
+
+    const parts = [];
+    if (days > 0) {
+      parts.push(`${days} ${days === 1 ? 'day' : 'days'}`);
+    }
+    if (hours > 0) {
+      parts.push(`${hours} ${hours === 1 ? 'hour' : 'hours'}`);
+    }
+    if (minutes > 0) {
+      parts.push(`${minutes} ${minutes === 1 ? 'minute' : 'minutes'}`);
+    }
+    if (!parts.length) {
+      parts.push('0 minutes');
+    }
+
+    const formatted = parts.join(', ');
+    return includeAgo && isPast ? `${formatted} ago` : formatted;
   }
 
   static getMinimumUnmitigatedWeaponDamage(rarity, level) {
@@ -1365,18 +1393,13 @@ class Utils {
         npcIds: locationData.npcIds || [],
         thingIds: locationData.thingIds || [],
         randomEvents: Array.isArray(locationData.randomEvents) ? locationData.randomEvents : [],
+        visited: Object.prototype.hasOwnProperty.call(locationData, 'visited')
+          ? Boolean(locationData.visited)
+          : !Boolean(locationData.isStub),
         lastVisitedTime: Number.isFinite(Number(locationData.lastVisitedTime))
           ? Number(locationData.lastVisitedTime)
           : null
       });
-
-      if (Object.prototype.hasOwnProperty.call(locationData, 'visited')) {
-        try {
-          location.visited = Boolean(locationData.visited);
-        } catch (error) {
-          console.warn(`Failed to restore visited state for location ${location.id}:`, error.message);
-        }
-      }
 
       const exitsByDirection = locationData.exits || {};
       for (const [direction, exitInfo] of Object.entries(exitsByDirection)) {

@@ -3019,6 +3019,7 @@ module.exports = function registerApiRoutes(scope) {
                     locationId: resolvedLocationId
                 }, entryCollector);
             }
+            await runAutosaveIfEnabled();
             return storedEntry;
         }
 
@@ -4635,6 +4636,83 @@ module.exports = function registerApiRoutes(scope) {
             };
         };
 
+        const getRegionsContainingLocation = (locationId) => {
+            const normalizedLocationId = typeof locationId === 'string' ? locationId.trim() : '';
+            if (!normalizedLocationId) {
+                return [];
+            }
+
+            const matches = [];
+            for (const [regionId, region] of regions.entries()) {
+                if (!region || !Array.isArray(region.locationIds)) {
+                    continue;
+                }
+                if (region.locationIds.includes(normalizedLocationId)) {
+                    matches.push({ regionId, region });
+                }
+            }
+            return matches;
+        };
+
+        const reconcileNonStubLocationRegionIntegrity = ({
+            locationId,
+            location,
+            context = 'movement'
+        } = {}) => {
+            if (!location || location.isStub) {
+                return false;
+            }
+
+            const contextLabel = typeof context === 'string' && context.trim() ? context.trim() : 'movement';
+            const normalizedLocationId = typeof locationId === 'string' && locationId.trim()
+                ? locationId.trim()
+                : (typeof location?.id === 'string' ? location.id.trim() : '');
+            if (!normalizedLocationId) {
+                throw new Error(`[${contextLabel}] Non-stub location is missing an id during region reconciliation.`);
+            }
+
+            const declaredRegionId = typeof location.regionId === 'string'
+                ? location.regionId.trim()
+                : '';
+            const declaredRegion = declaredRegionId ? (regions.get(declaredRegionId) || null) : null;
+            const owningRegions = getRegionsContainingLocation(normalizedLocationId);
+            if (owningRegions.length > 1) {
+                const regionList = owningRegions.map(({ regionId }) => `'${regionId}'`).join(', ');
+                throw new Error(
+                    `[${contextLabel}] Non-stub location '${normalizedLocationId}' is listed in multiple regions: ${regionList}.`
+                );
+            }
+
+            const owningRegionId = owningRegions[0]?.regionId || '';
+            const hasDeclaredRegion = Boolean(declaredRegion);
+            const hasOwningRegion = Boolean(owningRegionId);
+            if (!hasDeclaredRegion && !hasOwningRegion) {
+                return false;
+            }
+
+            let repairReason = '';
+            let targetRegionId = '';
+            if (!hasDeclaredRegion && hasOwningRegion) {
+                repairReason = `declared region '${declaredRegionId || '(missing)'}' was unavailable`;
+                targetRegionId = owningRegionId;
+            } else if (hasDeclaredRegion && !hasOwningRegion) {
+                repairReason = `location was missing from declared region '${declaredRegionId}' membership`;
+                targetRegionId = declaredRegionId;
+            } else if (declaredRegionId !== owningRegionId) {
+                repairReason = `declared region '${declaredRegionId}' disagreed with owning region '${owningRegionId}'`;
+                targetRegionId = owningRegionId;
+            } else {
+                return false;
+            }
+
+            location.regionId = targetRegionId;
+            console.warn(
+                `[${contextLabel}] Repaired non-stub location '${normalizedLocationId}' region assignment `
+                + `to '${targetRegionId}' because ${repairReason}.`
+            );
+            return true;
+        };
+
         const assertMovementGraphIntegrity = ({ player = currentPlayer, context = 'movement' } = {}) => {
             const contextLabel = typeof context === 'string' && context.trim() ? context.trim() : 'movement';
 
@@ -4643,6 +4721,17 @@ module.exports = function registerApiRoutes(scope) {
                 : '';
             if (playerLocationId && !gameLocations.has(playerLocationId)) {
                 throw new Error(`[${contextLabel}] Current player location '${playerLocationId}' is missing from gameLocations.`);
+            }
+
+            for (const [locationId, location] of gameLocations.entries()) {
+                if (!location || location.isStub) {
+                    continue;
+                }
+                reconcileNonStubLocationRegionIntegrity({
+                    locationId,
+                    location,
+                    context: contextLabel
+                });
             }
 
             for (const [regionId, region] of regions.entries()) {
@@ -6879,7 +6968,12 @@ module.exports = function registerApiRoutes(scope) {
                 );
             }
             if (sourceRegionId === destinationRegionId) {
-                return false;
+                const declaredSourceRegionId = typeof sourceLocation.regionId === 'string'
+                    ? sourceLocation.regionId.trim()
+                    : '';
+                if (declaredSourceRegionId === destinationRegionId) {
+                    return false;
+                }
             }
 
             sourceLocation.regionId = destinationRegionId;
@@ -6992,6 +7086,141 @@ module.exports = function registerApiRoutes(scope) {
             };
         };
 
+        const normalizeVehicleArrivalDuplicateStubName = (value) => {
+            if (typeof value !== 'string') {
+                return '';
+            }
+            return value.trim().toLowerCase().replace(/\s+/g, ' ');
+        };
+
+        const extractVehicleArrivalDuplicateStubCanonicalName = (locationRecord) => {
+            if (!locationRecord?.isStub || locationRecord?.stubMetadata?.isVehicleStub !== true) {
+                return '';
+            }
+
+            const locationPurpose = typeof locationRecord?.stubMetadata?.locationPurpose === 'string'
+                ? locationRecord.stubMetadata.locationPurpose.trim()
+                : '';
+            const purposeMatch = locationPurpose.match(/^Interior of the vehicle "(.+)"\.$/i);
+            if (purposeMatch && typeof purposeMatch[1] === 'string' && purposeMatch[1].trim()) {
+                return normalizeVehicleArrivalDuplicateStubName(purposeMatch[1]);
+            }
+
+            const rawName = typeof locationRecord?.name === 'string'
+                ? locationRecord.name.trim()
+                : '';
+            return normalizeVehicleArrivalDuplicateStubName(rawName);
+        };
+
+        function reconcileGeneratedVehicleStubForArrival({
+            vehicleTarget,
+            actualVehicleLocation,
+            destinationLocation
+        } = {}) {
+            if (!vehicleTarget || vehicleTarget.kind !== 'location') {
+                return null;
+            }
+            if (!actualVehicleLocation || !destinationLocation || !(gameLocations instanceof Map) || !(regions instanceof Map)) {
+                return null;
+            }
+
+            const actualVehicleId = typeof actualVehicleLocation?.id === 'string'
+                ? actualVehicleLocation.id.trim()
+                : '';
+            const normalizedVehicleName = normalizeVehicleArrivalDuplicateStubName(
+                vehicleTarget.label || actualVehicleLocation?.name || ''
+            );
+            if (!actualVehicleId || !normalizedVehicleName) {
+                return null;
+            }
+
+            const destinationRegionId = resolveRegionIdForLocation(destinationLocation);
+            const actualVehicleRegionId = resolveRegionIdForLocation(actualVehicleLocation);
+            if (!destinationRegionId || !actualVehicleRegionId || destinationRegionId !== actualVehicleRegionId) {
+                return null;
+            }
+
+            const destinationRegion = regions.get(destinationRegionId) || null;
+            if (!destinationRegion || !Array.isArray(destinationRegion.locationIds)) {
+                return null;
+            }
+
+            const duplicateStubs = destinationRegion.locationIds
+                .map(locationId => gameLocations.get(locationId) || null)
+                .filter(locationRecord =>
+                    locationRecord
+                    && locationRecord.id !== actualVehicleId
+                    && locationRecord.isStub === true
+                    && locationRecord.stubMetadata?.isVehicleStub === true
+                    && extractVehicleArrivalDuplicateStubCanonicalName(locationRecord) === normalizedVehicleName
+                );
+
+            if (!duplicateStubs.length) {
+                return null;
+            }
+
+            const removedStubIds = [];
+            let rewiredExitCount = 0;
+            let removedExitCount = 0;
+
+            for (const duplicateStub of duplicateStubs) {
+                const duplicateStubId = typeof duplicateStub?.id === 'string' ? duplicateStub.id.trim() : '';
+                if (!duplicateStubId) {
+                    continue;
+                }
+
+                for (const locationRecord of Array.from(gameLocations.values())) {
+                    if (!locationRecord
+                        || locationRecord === duplicateStub
+                        || typeof locationRecord.getAvailableDirections !== 'function'
+                        || typeof locationRecord.getExit !== 'function') {
+                        continue;
+                    }
+
+                    for (const direction of [...locationRecord.getAvailableDirections()]) {
+                        const exit = locationRecord.getExit(direction);
+                        if (!exit || exit.destination !== duplicateStubId) {
+                            continue;
+                        }
+
+                        const hasDirectExitToActualVehicle = locationRecord.getAvailableDirections().some(candidateDirection => {
+                            if (candidateDirection === direction) {
+                                return false;
+                            }
+                            const candidateExit = locationRecord.getExit(candidateDirection);
+                            return Boolean(candidateExit && candidateExit.destination === actualVehicleId);
+                        });
+
+                        if (hasDirectExitToActualVehicle) {
+                            removeExitStrict(locationRecord, direction, exit.id || null);
+                            removedExitCount += 1;
+                            continue;
+                        }
+
+                        exit.destination = actualVehicleId;
+                        const sourceRegionId = resolveRegionIdForLocation(locationRecord);
+                        exit.destinationRegion = sourceRegionId && actualVehicleRegionId && sourceRegionId !== actualVehicleRegionId
+                            ? actualVehicleRegionId
+                            : null;
+                        rewiredExitCount += 1;
+                    }
+                }
+
+                const stubRemoval = deleteStubLocation(duplicateStub);
+                if (stubRemoval?.stubId) {
+                    removedStubIds.push(stubRemoval.stubId);
+                } else {
+                    removedStubIds.push(duplicateStubId);
+                }
+            }
+
+            return {
+                removedStubIds,
+                rewiredExitCount,
+                removedExitCount
+            };
+        }
+
         const moveVehicleForTravelProse = async ({
             vehicleName,
             destinationText = null,
@@ -7029,14 +7258,18 @@ module.exports = function registerApiRoutes(scope) {
                 || formatPendingVehicleDestinationLabel(pendingDestination)
                 || destinationId
                 || 'unknown destination';
+            const destinationRegionName = typeof destinationRegion?.name === 'string' && destinationRegion.name.trim()
+                ? destinationRegion.name.trim()
+                : (typeof destinationLocation?.region?.name === 'string' && destinationLocation.region.name.trim()
+                    ? destinationLocation.region.name.trim()
+                    : (typeof pendingDestination?.regionName === 'string' && pendingDestination.regionName.trim()
+                        ? pendingDestination.regionName.trim()
+                        : null));
             const canSetCurrentDestination = normalizedVehicleInfo.destinations.length === 0
-                || normalizedVehicleInfo.destinations.includes(destinationId);
-            if (normalizedVehicleInfo.destinations.length > 0 && !destinationId) {
-                throw new Error(
-                    `Vehicle "${vehicleTarget.label}" cannot travel to "${destinationLabel}" `
-                    + 'because that destination is not in its allowed route.'
-                );
-            }
+                || VehicleInfo.destinationsContainRouteTarget(normalizedVehicleInfo.destinations, {
+                    locationId: destinationId || null,
+                    regionName: destinationRegionName
+                });
             if (!canSetCurrentDestination) {
                 throw new Error(
                     `Vehicle "${vehicleTarget.label}" cannot travel to "${destinationLabel}" `
@@ -7189,6 +7422,21 @@ module.exports = function registerApiRoutes(scope) {
                     destinationLocation: resolvedDestination,
                     icon
                 });
+                /*
+                 * Pre-1.0: keep the duplicate-stub cleanup disabled so the
+                 * underlying arrival-ordering bug still surfaces in development.
+                const duplicateVehicleStubCleanup = reconcileGeneratedVehicleStubForArrival({
+                    vehicleTarget,
+                    actualVehicleLocation: sourceLocation,
+                    destinationLocation: resolvedDestination
+                });
+                if (duplicateVehicleStubCleanup?.removedStubIds?.length) {
+                    console.warn(
+                        `Vehicle "${vehicleTarget.label}" arrival removed duplicate generated vehicle stubs: `
+                        + duplicateVehicleStubCleanup.removedStubIds.join(', ')
+                    );
+                }
+                */
 
                 applyVehicleInfoStateUpdate({
                     vehicleTarget,
@@ -12467,6 +12715,7 @@ module.exports = function registerApiRoutes(scope) {
                 let isQuestionAction = false;
                 let questionActionText = null;
                 let isGenericPromptAction = false;
+                let isNoContextPromptAction = false;
                 let genericPromptText = null;
                 let genericPromptStorageMode = 'normal';
                 const extractInlineDieRollOverride = (text) => {
@@ -12512,6 +12761,10 @@ module.exports = function registerApiRoutes(scope) {
                     } else if (firstVisibleIndex > -1 && trimmedVisibleContent.startsWith('@')) {
                         genericMarkerLength = 1;
                         genericPromptStorageMode = 'normal';
+                    } else if (firstVisibleIndex > -1 && trimmedVisibleContent.startsWith('\\')) {
+                        genericMarkerLength = 1;
+                        genericPromptStorageMode = 'hide_base_context';
+                        isNoContextPromptAction = true;
                     }
                     isGenericPromptAction = genericMarkerLength > 0;
                     genericPromptText = isGenericPromptAction
@@ -13060,8 +13313,12 @@ module.exports = function registerApiRoutes(scope) {
                 if (!isForcedEventAction && currentPlayer && userMessage && userMessage.role === 'user') {
                     try {
                         stream.status('player_action:prompt', 'Building prompt for AI response.');
-                        const baseContext = await prepareBasePromptContext({ locationOverride: location });
-                        const templateName = 'base-context.xml.njk';
+                        const baseContext = isNoContextPromptAction
+                            ? null
+                            : await prepareBasePromptContext({ locationOverride: location });
+                        const templateName = isNoContextPromptAction
+                            ? 'generic-prompt-nocontext.xml.njk'
+                            : 'base-context.xml.njk';
 
                         let additionalLore = '';
                         const actionText = isQuestionAction
@@ -13071,7 +13328,20 @@ module.exports = function registerApiRoutes(scope) {
                                 : (isCreativeModeAction ? (creativeActionText || '') : sanitizedUserContent));
 
                         let promptVariables = null;
-                        if (!isQuestionAction && !isGenericPromptAction) {
+                        if (isNoContextPromptAction) {
+                            const settingSnapshot = typeof currentSetting?.toJSON === 'function'
+                                ? currentSetting.toJSON()
+                                : currentSetting;
+                            if (!settingSnapshot || typeof settingSnapshot !== 'object') {
+                                throw new Error('No-context generic prompt requires an active setting.');
+                            }
+                            promptVariables = {
+                                setting: settingSnapshot,
+                                config: Globals.config || {},
+                                promptType: 'generic-prompt-nocontext',
+                                prompt: actionText
+                            };
+                        } else if (!isQuestionAction && !isGenericPromptAction) {
                             const currentLocation = baseContext.currentLocation || null;
                             if (currentLocation && Array.isArray(currentLocation.exits)) {
                                 const exitNames = currentLocation.exits
@@ -13239,6 +13509,7 @@ module.exports = function registerApiRoutes(scope) {
                             usedCreativeTemplate: isCreativeModeAction,
                             usedQuestionTemplate: isQuestionAction,
                             usedGenericPromptTemplate: isGenericPromptAction,
+                            usedGenericPromptNoContextTemplate: isNoContextPromptAction,
                             playerName: currentPlayer.name,
                             playerDescription: currentPlayer.description,
                             systemMessage: trimmedSystemPrompt,
@@ -13254,6 +13525,9 @@ module.exports = function registerApiRoutes(scope) {
                         }
                         if (isGenericPromptAction) {
                             debugInfo.genericPromptText = actionText;
+                            debugInfo.genericPromptTemplateMode = isNoContextPromptAction
+                                ? 'no_context'
+                                : 'base_context';
                         }
                         if (!isCreativeModeAction && !isPromptOnlyAction) {
                             debugInfo.actionOutcomeLabel = actionResolution?.label || 'success';
@@ -13263,6 +13537,8 @@ module.exports = function registerApiRoutes(scope) {
                             console.log('Using creative mode action template for:', currentPlayer.name);
                         } else if (isQuestionAction) {
                             console.log('Using question template for:', currentPlayer.name);
+                        } else if (isNoContextPromptAction) {
+                            console.log(`Using no-context generic prompt template for: ${currentPlayer.name} (${genericPromptStorageMode})`);
                         } else if (isGenericPromptAction) {
                             console.log(`Using generic prompt template for: ${currentPlayer.name} (${genericPromptStorageMode})`);
                         } else {
@@ -13469,27 +13745,32 @@ module.exports = function registerApiRoutes(scope) {
                 if (Number.isFinite(repetitionPenalty) && repetitionPenalty > 0) {
                     additionalPayload.repetition_penalty = repetitionPenalty;
                 }
-                const allowWorldMutationTools = Boolean(isGenericPromptAction);
-                const enabledChatTools = allowWorldMutationTools
-                    ? CHAT_TOOL_DEFINITIONS
-                    : CHAT_TOOL_DEFINITIONS.filter(toolDefinition => {
-                        const functionName = typeof toolDefinition?.function?.name === 'string'
-                            ? toolDefinition.function.name.trim()
-                            : '';
-                        return INFORMATION_GATHERING_CHAT_TOOL_NAMES.has(functionName);
-                    });
-                if (!Array.isArray(enabledChatTools) || enabledChatTools.length === 0) {
-                    throw new Error('No chat tools available for this prompt mode.');
+                const allowWorldMutationTools = Boolean(isGenericPromptAction && !isNoContextPromptAction);
+                const enabledChatTools = isNoContextPromptAction
+                    ? []
+                    : (allowWorldMutationTools
+                        ? CHAT_TOOL_DEFINITIONS
+                        : CHAT_TOOL_DEFINITIONS.filter(toolDefinition => {
+                            const functionName = typeof toolDefinition?.function?.name === 'string'
+                                ? toolDefinition.function.name.trim()
+                                : '';
+                            return INFORMATION_GATHERING_CHAT_TOOL_NAMES.has(functionName);
+                        }));
+                if (Array.isArray(enabledChatTools) && enabledChatTools.length > 0) {
+                    additionalPayload.tools = enabledChatTools;
+                    additionalPayload.tool_choice = 'auto';
                 }
-                additionalPayload.tools = enabledChatTools;
-                additionalPayload.tool_choice = 'auto';
 
                 const metricsStart = Date.now();
                 let capturedResponse = null;
                 let toolInvocations = [];
                 const promptMetadataLabel = promptType === 'question'
                     ? 'question'
-                    : (promptType === 'generic-prompt' ? 'generic_prompt' : 'player_action');
+                    : (promptType === 'generic-prompt'
+                        ? 'generic_prompt'
+                        : (promptType === 'generic-prompt-nocontext'
+                            ? 'generic_prompt_nocontext'
+                            : 'player_action'));
                 const usesActionXmlResponse = promptType === 'player-action'
                     || promptType === 'creative-mode-action';
                 const shouldUseRepetitionBusterXml = usesActionXmlResponse && Boolean(Globals.config.repetition_buster);
@@ -13515,15 +13796,20 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 stream.status('player_action:prompt', 'Awaiting response from AI...');
-                const toolLoopResult = await runChatCompletionWithToolLoop({
-                    requestOptions,
-                    streamEmitter: stream,
-                    metadataLabel: promptMetadataLabel
-                });
-                let aiResponse = toolLoopResult.aiResponse;
-                toolInvocations = Array.isArray(toolLoopResult.toolInvocations)
-                    ? toolLoopResult.toolInvocations
-                    : [];
+                let aiResponse = '';
+                if (Array.isArray(enabledChatTools) && enabledChatTools.length > 0) {
+                    const toolLoopResult = await runChatCompletionWithToolLoop({
+                        requestOptions,
+                        streamEmitter: stream,
+                        metadataLabel: promptMetadataLabel
+                    });
+                    aiResponse = toolLoopResult.aiResponse;
+                    toolInvocations = Array.isArray(toolLoopResult.toolInvocations)
+                        ? toolLoopResult.toolInvocations
+                        : [];
+                } else {
+                    aiResponse = await LLMClient.chatCompletion(requestOptions);
+                }
                 let travelProsePayload = null;
                 //console.log("Player Prose Request Options:", requestOptions);
 
@@ -13534,7 +13820,11 @@ module.exports = function registerApiRoutes(scope) {
                     if (playerActionLogPayload) {
                         const promptLogPrefix = promptType === 'question'
                             ? 'question'
-                            : (promptType === 'generic-prompt' ? 'generic_prompt' : 'player_action');
+                            : (promptType === 'generic-prompt'
+                                ? 'generic_prompt'
+                                : (promptType === 'generic-prompt-nocontext'
+                                    ? 'generic_prompt_nocontext'
+                                    : 'player_action'));
                         LLMClient.logPrompt({
                             prefix: promptLogPrefix,
                             metadataLabel: promptLogPrefix,
@@ -13548,7 +13838,11 @@ module.exports = function registerApiRoutes(scope) {
                     } else if (debugInfo?.systemMessage || debugInfo?.generationPrompt) {
                         const promptLogPrefix = promptType === 'question'
                             ? 'question'
-                            : (promptType === 'generic-prompt' ? 'generic_prompt' : 'player_action');
+                            : (promptType === 'generic-prompt'
+                                ? 'generic_prompt'
+                                : (promptType === 'generic-prompt-nocontext'
+                                    ? 'generic_prompt_nocontext'
+                                    : 'player_action'));
                         LLMClient.logPrompt({
                             prefix: promptLogPrefix,
                             metadataLabel: promptLogPrefix,
@@ -15167,11 +15461,34 @@ module.exports = function registerApiRoutes(scope) {
                     level,
                     selectedAbilityNames
                 });
+                const pendingGameIntro = getPendingGameIntroMetadata();
+                let gameIntroGenerated = false;
+                if (pendingGameIntro && abilitySelection?.pending !== true) {
+                    const pendingIntroLocationId = pendingGameIntro.locationId;
+                    const pendingIntroLocation = gameLocations.get(pendingIntroLocationId)
+                        || (typeof Location?.get === 'function' ? Location.get(pendingIntroLocationId) : null)
+                        || null;
+                    try {
+                        await runGameIntroPrompt({
+                            locationOverride: pendingIntroLocation,
+                            locationId: pendingIntroLocationId
+                        });
+                        gameIntroGenerated = true;
+                    } catch (error) {
+                        console.warn(
+                            'Failed to generate deferred game intro after player ability selection:',
+                            error?.message || error
+                        );
+                    } finally {
+                        setPendingGameIntroMetadata(null);
+                    }
+                }
                 return res.json({
                     success: true,
                     pending: Boolean(abilitySelection?.pending),
                     abilitySelection,
-                    player: serializeNpcForClient(currentPlayer)
+                    player: serializeNpcForClient(currentPlayer),
+                    gameIntroGenerated
                 });
             } catch (error) {
                 return res.status(400).json({
@@ -16129,32 +16446,6 @@ module.exports = function registerApiRoutes(scope) {
             const rawTimeToDestination = hasEtaMinutes && hasElapsedMinutes
                 ? etaMinutes - elapsedMinutes
                 : null;
-            const formatTimeToDestination = (minutesValue) => {
-                if (!Number.isFinite(minutesValue) || !Number.isInteger(minutesValue)) {
-                    return null;
-                }
-
-                const isPast = minutesValue < 0;
-                let remaining = Math.abs(minutesValue);
-                const days = Math.floor(remaining / 1440);
-                remaining -= days * 1440;
-                const hours = Math.floor(remaining / 60);
-                remaining -= hours * 60;
-                const minutes = remaining;
-
-                const parts = [];
-                if (days > 0) {
-                    parts.push(`${days} ${days === 1 ? 'day' : 'days'}`);
-                }
-                if (hours > 0) {
-                    parts.push(`${hours} ${hours === 1 ? 'hour' : 'hours'}`);
-                }
-                parts.push(`${minutes} ${minutes === 1 ? 'minute' : 'minutes'}`);
-
-                const formatted = parts.join(', ');
-                return isPast ? `${formatted} ago` : formatted;
-            };
-
             const currentDestinationId = typeof normalizedInfo.currentDestination === 'string'
                 ? normalizedInfo.currentDestination.trim()
                 : '';
@@ -16179,7 +16470,7 @@ module.exports = function registerApiRoutes(scope) {
                 hasArrived: normalizedInfo.hasArrived,
                 isArriving: normalizedInfo.isArriving,
                 minutesToDestination: rawTimeToDestination,
-                timeToDestination: formatTimeToDestination(rawTimeToDestination),
+                timeToDestination: Utils.formatMinutesAsDuration(rawTimeToDestination, { includeAgo: true }),
                 tripCompleteFraction: normalizedInfo.tripCompleteFraction,
                 destinationResolved: Boolean(currentDestinationId),
                 displayDestination: displayDestination || null
@@ -16361,6 +16652,9 @@ module.exports = function registerApiRoutes(scope) {
                     const destinationLocation = gameLocations.get(exit.destination);
                     const destinationIsStub = Boolean(destinationLocation?.isStub);
                     const destinationIsRegionEntryStub = Boolean(destinationLocation?.stubMetadata?.isRegionEntryStub);
+                    const destinationVisited = destinationLocation
+                        ? Boolean(destinationLocation.visited)
+                        : false;
                     if (destinationLocation) {
                         exit.destinationName = destinationLocation.name
                             || destinationLocation.stubMetadata?.blueprintDescription
@@ -16489,6 +16783,7 @@ module.exports = function registerApiRoutes(scope) {
                     exit.destinationRegionExpanded = destinationRegionExpanded;
                     exit.destinationIsStub = destinationIsStub;
                     exit.destinationIsRegionEntryStub = destinationIsRegionEntryStub;
+                    exit.destinationVisited = destinationVisited;
                     exit.destinationIsVehicle = destinationRepresentsVehicle;
                     exit.destinationVehicleType = destinationVehicleType;
 
@@ -23043,6 +23338,9 @@ module.exports = function registerApiRoutes(scope) {
                     || null;
                 const destinationIsStub = Boolean(destinationLocation?.isStub);
                 const destinationIsRegionEntryStub = Boolean(destinationLocation?.stubMetadata?.isRegionEntryStub);
+                const destinationVisited = destinationLocation
+                    ? Boolean(destinationLocation.visited)
+                    : false;
                 const pendingRegion = destinationRegionId && typeof pendingRegionStubs !== 'undefined' && pendingRegionStubs?.get
                     ? pendingRegionStubs.get(destinationRegionId)
                     : null;
@@ -23195,7 +23493,8 @@ module.exports = function registerApiRoutes(scope) {
                     vehicleType: exit?.vehicleType || null,
                     vehicleIcon,
                     destinationIsStub,
-                    destinationIsRegionEntryStub
+                    destinationIsRegionEntryStub,
+                    destinationVisited
                 };
             }).filter(Boolean);
 
@@ -27304,9 +27603,9 @@ module.exports = function registerApiRoutes(scope) {
             const requestStart = Date.now();
             const body = req.body || {};
             const stream = createStreamEmitter({ clientId: body.clientId, requestId: body.requestId });
-            const report = (stage, message) => {
+            const report = (stage, message, extra = {}) => {
                 if (stream && stream.isEnabled) {
-                    stream.status(stage, message, { scope: 'new_game' });
+                    stream.status(stage, message, { scope: 'new_game', ...(extra || {}) });
                 }
             };
             const reportError = (message) => {
@@ -27434,6 +27733,7 @@ module.exports = function registerApiRoutes(scope) {
                 report('new_game:reset', 'Clearing previous game state...');
 
                 // Clear existing game state
+                Globals.gameLoaded = false;
                 players.clear();
                 if (typeof Player.clearRuntimeRegistries === 'function') {
                     Player.clearRuntimeRegistries();
@@ -27797,21 +28097,55 @@ module.exports = function registerApiRoutes(scope) {
                 console.log(`🧙‍♂️ Created new player: ${newPlayer.name} at ${entranceLocation.name}`);
 
                 report('new_game:finalizing', 'Finalizing world setup...');
+                Globals.gameLoaded = true;
+
+                if (typeof resolvePlayerAbilitySelectionState !== 'function') {
+                    throw new Error('resolvePlayerAbilitySelectionState helper is unavailable.');
+                }
+                const pendingAbilitySelection = await resolvePlayerAbilitySelectionState(newPlayer, {
+                    ensureOptionsForNext: true
+                });
+                const introIsDeferred = pendingAbilitySelection?.pending === true;
+                if (introIsDeferred) {
+                    setPendingGameIntroMetadata({
+                        source: 'new_game_ability_selection',
+                        locationId: entranceLocation.id
+                    });
+                    report(
+                        'new_game:ability_selection',
+                        'Choose your starting abilities before the opening scene begins.',
+                        {
+                            gameLoaded: true,
+                            pendingAbilitySelection,
+                            player: serializeNpcForClient(currentPlayer)
+                        }
+                    );
+                } else {
+                    setPendingGameIntroMetadata(null);
+                    report('new_game:player_ready', 'World ready. Writing opening scene...', {
+                        gameLoaded: true,
+                        player: serializeNpcForClient(currentPlayer)
+                    });
+                }
 
                 const startingLocationData = entranceLocation.toJSON();
                 startingLocationData.pendingImageJobId = pendingLocationImages.get(entranceLocation.id) || null;
                 startingLocationData.npcs = buildNpcProfiles(entranceLocation);
 
-                report('new_game:intro', 'Writing opening scene...');
-                try {
-                    await runGameIntroPrompt({
-                        locationOverride: entranceLocation,
-                        locationId: entranceLocation.id
-                    });
-                    report('new_game:intro_ready', 'Opening scene added to chat history.');
-                } catch (introError) {
-                    console.warn('Failed to generate game intro during new game:', introError?.message || introError);
-                    report('new_game:intro_skipped', 'Opening scene generation failed; continuing without intro.');
+                if (introIsDeferred) {
+                    report('new_game:intro_deferred', 'Opening scene is waiting for your starting ability picks.');
+                } else {
+                    report('new_game:intro', 'Writing opening scene...');
+                    try {
+                        await runGameIntroPrompt({
+                            locationOverride: entranceLocation,
+                            locationId: entranceLocation.id
+                        });
+                        report('new_game:intro_ready', 'Opening scene added to chat history.');
+                    } catch (introError) {
+                        console.warn('Failed to generate game intro during new game:', introError?.message || introError);
+                        report('new_game:intro_skipped', 'Opening scene generation failed; continuing without intro.');
+                    }
                 }
 
                 report('new_game:complete', 'Adventure ready! Redirecting...');
@@ -27825,6 +28159,8 @@ module.exports = function registerApiRoutes(scope) {
                     skills: Array.from(skills.values()).map(skill => (
                         typeof skill?.toJSON === 'function' ? skill.toJSON() : skill
                     )),
+                    pendingAbilitySelection: pendingAbilitySelection || null,
+                    introDeferred: introIsDeferred,
                     gameState: {
                         totalPlayers: players.size,
                         totalLocations: gameLocations.size,
@@ -28008,6 +28344,42 @@ module.exports = function registerApiRoutes(scope) {
             });
             const persisted = persist ? persistCurrentSaveMetadata(metadata) : false;
             return { metadata, persisted };
+        };
+
+        const normalizePendingGameIntroMetadata = (value) => {
+            if (!value || typeof value !== 'object' || Array.isArray(value)) {
+                return null;
+            }
+            const locationId = typeof value.locationId === 'string' ? value.locationId.trim() : '';
+            if (!locationId) {
+                return null;
+            }
+            const source = typeof value.source === 'string' && value.source.trim()
+                ? value.source.trim()
+                : 'new_game';
+            return {
+                source,
+                locationId
+            };
+        };
+
+        const getPendingGameIntroMetadata = () => {
+            const metadata = (typeof Globals.getSaveMetadata === 'function'
+                ? Globals.getSaveMetadata()
+                : Globals.saveMetadata) || null;
+            return normalizePendingGameIntroMetadata(metadata?.pendingGameIntro);
+        };
+
+        const setPendingGameIntroMetadata = (value) => {
+            const normalized = normalizePendingGameIntroMetadata(value);
+            updateRuntimeSaveMetadata((nextMetadata) => {
+                if (normalized) {
+                    nextMetadata.pendingGameIntro = normalized;
+                    return;
+                }
+                delete nextMetadata.pendingGameIntro;
+            });
+            return normalized;
         };
 
         function performGameSave({ requestedSaveName = null, saveRoot = null } = {}) {

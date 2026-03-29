@@ -10,6 +10,8 @@ Represents a temporary or permanent modifier applied to an entity, including att
   - `needBars` is an array of `{ name, delta }`.
   - `duration` is normalized to **minutes**:
     - Accepted formats include `HH:MM`, integer minutes, and explicit day/hour/minute/round units.
+    - Shared abbreviations include `day`/`d`, `hr`/`hrs`/`h`, and `min`/`m`.
+    - Compact adjacent unit strings like `3d4h2m` are accepted, with or without commas/spaces.
     - Bare numeric strings and numeric inputs are treated as **minutes** (including `-1` as permanent/infinite).
     - `'instant'` -> `1`, `'permanent'`/`'continuous'` -> `-1`, `'none'`/`'n/a'` -> `null`.
     - Numeric values must be integer minute counts (non-integer values throw).

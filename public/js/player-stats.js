@@ -140,7 +140,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const durationInput = document.createElement('input');
     durationInput.type = 'text';
     durationInput.className = 'thing-edit-status-duration';
-    durationInput.placeholder = 'Duration';
+    durationInput.placeholder = 'Duration (e.g. 4 hours, 15 minutes or 1d11h30m)';
     if (effect.duration !== undefined && effect.duration !== null && effect.duration !== '') {
       durationInput.value = String(effect.duration);
     }

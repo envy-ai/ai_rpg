@@ -2,6 +2,8 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const Globals = require('../Globals.js');
+const Region = require('../Region.js');
+const Location = require('../Location.js');
 const VehicleInfo = require('../VehicleInfo.js');
 
 test('VehicleInfo treats ETA as an absolute elapsed-time arrival minute', () => {
@@ -149,4 +151,59 @@ test('VehicleInfo accepts an atomic resolved-to-pending timed-trip start update'
     });
     assert.equal(vehicleInfo.ETA, 135);
     assert.equal(vehicleInfo.departureTime, 100);
+});
+
+test('VehicleInfo accepts pending-region route entries for region-only pending destinations', () => {
+    const routeEntry = VehicleInfo.buildPendingRegionRouteEntry('Skyreach');
+    const vehicleInfo = new VehicleInfo({
+        pendingDestination: VehicleInfo.buildPendingRegionPendingDestination('Skyreach'),
+        destinations: [routeEntry],
+        ETA: 135,
+        departureTime: 100,
+        vehicleExitId: 'vehicle-exit-id'
+    });
+
+    assert.deepEqual(vehicleInfo.destinations, [routeEntry]);
+    assert.deepEqual(vehicleInfo.pendingDestination, {
+        rawText: 'Skyreach|',
+        regionName: 'Skyreach',
+        locationName: null,
+        regionId: null,
+        locationId: null
+    });
+});
+
+test('VehicleInfo accepts currentDestination when fixed routes include a matching pending-region route entry', () => {
+    const createdLocations = [];
+    Region.clear();
+
+    try {
+        const region = new Region({
+            id: 'test-pending-route-region',
+            name: 'Skyreach',
+            description: 'A route-matching test region.'
+        });
+        const destination = new Location({
+            id: 'test-pending-route-destination',
+            name: 'Skyreach Dock',
+            description: 'A destination inside Skyreach.',
+            regionId: region.id
+        });
+        createdLocations.push(destination);
+
+        const routeEntry = VehicleInfo.buildPendingRegionRouteEntry('Skyreach');
+        const vehicleInfo = new VehicleInfo({
+            currentDestination: destination.id,
+            destinations: [routeEntry],
+            vehicleExitId: 'vehicle-exit-id'
+        });
+
+        assert.deepEqual(vehicleInfo.destinations, [routeEntry]);
+        assert.equal(vehicleInfo.currentDestination, destination.id);
+    } finally {
+        Region.clear();
+        for (const location of createdLocations) {
+            Location.removeFromIndex(location);
+        }
+    }
 });

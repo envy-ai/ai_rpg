@@ -676,6 +676,10 @@
                             <td>Asks an in-context question using the question prompt.</td>
                         </tr>
                         <tr>
+                            <td><code>\</code></td>
+                            <td>Runs a no-context prompt, logs it, excludes it from base-context history, and disables chat tools.</td>
+                        </tr>
+                        <tr>
                             <td><code>@</code></td>
                             <td>Runs a generic prompt and keeps it in history and base-context history.</td>
                         </tr>
@@ -1576,7 +1580,7 @@
                         </div>
                         <div class="npc-edit-field">
                             <label for="thingEditCauseStatusEffectDuration">Duration</label>
-                            <input id="thingEditCauseStatusEffectDuration" type="text" autocomplete="off" placeholder="e.g. 3 or permanent">
+                            <input id="thingEditCauseStatusEffectDuration" type="text" autocomplete="off" placeholder="e.g. 4 hours, 15 minutes or 1d11h30m">
                         </div>
                     </div>
                     <div class="thing-modifier-section">
@@ -3254,6 +3258,7 @@
                     throw new Error(data?.error || `HTTP ${response.status}`);
                 }
                 if (data.player) {
+                    window.__AIRPG_GAME_LOADED__ = true;
                     updateChatPlayerPanel(data.player);
                     if (Array.isArray(data.player.partyMembers)) {
                         renderChatPartyPanel(data.player.partyMembers);
@@ -3398,6 +3403,13 @@
                     pendingPayload: nextState,
                     force: true
                 });
+                if (data.gameIntroGenerated === true && window.AIRPG_CHAT) {
+                    if (typeof window.AIRPG_CHAT.handleChatHistoryUpdated === 'function') {
+                        window.AIRPG_CHAT.handleChatHistoryUpdated();
+                    } else if (typeof window.AIRPG_CHAT.refreshChatHistory === 'function') {
+                        await window.AIRPG_CHAT.refreshChatHistory();
+                    }
+                }
             } catch (error) {
                 setPlayerAbilitySelectionStatus(`Failed to submit abilities: ${error?.message || error}`, 'error');
             } finally {
@@ -5847,6 +5859,77 @@
             return entries;
         };
 
+        const formatMinutesDurationLabel = (minutesValue, { includeAgo = false } = {}) => {
+            if (!Number.isFinite(minutesValue) || !Number.isInteger(minutesValue)) {
+                return '';
+            }
+
+            const isPast = minutesValue < 0;
+            let remaining = Math.abs(minutesValue);
+            const days = Math.floor(remaining / 1440);
+            remaining -= days * 1440;
+            const hours = Math.floor(remaining / 60);
+            remaining -= hours * 60;
+            const minutes = remaining;
+
+            const parts = [];
+            if (days > 0) {
+                parts.push(`${days} ${days === 1 ? 'day' : 'days'}`);
+            }
+            if (hours > 0) {
+                parts.push(`${hours} ${hours === 1 ? 'hour' : 'hours'}`);
+            }
+            if (minutes > 0) {
+                parts.push(`${minutes} ${minutes === 1 ? 'minute' : 'minutes'}`);
+            }
+            if (!parts.length) {
+                parts.push('0 minutes');
+            }
+
+            const formatted = parts.join(', ');
+            return includeAgo && isPast ? `${formatted} ago` : formatted;
+        };
+
+        const formatStatusEffectDuration = (durationValue) => {
+            if (durationValue === null || durationValue === undefined || durationValue === '') {
+                return '';
+            }
+            const normalizeNumeric = (num) => {
+                if (!Number.isFinite(num)) {
+                    return '';
+                }
+                if (num < 0) {
+                    return 'Permanent';
+                }
+                if (num === 0) {
+                    return 'Expired';
+                }
+                return formatMinutesDurationLabel(num);
+            };
+
+            if (typeof durationValue === 'string') {
+                const trimmed = durationValue.trim();
+                if (!trimmed) {
+                    return '';
+                }
+                const lower = trimmed.toLowerCase();
+                if (lower === 'permanent' || lower === 'continuous') {
+                    return 'Permanent';
+                }
+                if (lower === 'instant') {
+                    return '1 minute';
+                }
+                const parsed = Number(trimmed);
+                if (Number.isFinite(parsed)) {
+                    return normalizeNumeric(parsed);
+                }
+                return trimmed;
+            }
+
+            const numeric = Number(durationValue);
+            return normalizeNumeric(numeric);
+        };
+
         const formatThingTooltip = (thing = {}) => {
             const normalizedType = normalizeThingType(thing);
 
@@ -5936,55 +6019,6 @@
                     return '';
                 }
                 return `<ul class="tooltip-thing-bonuses-list">${valid.join('')}</ul>`;
-            };
-
-            const formatStatusEffectDuration = (durationValue) => {
-                if (durationValue === null || durationValue === undefined || durationValue === '') {
-                    return '';
-                }
-                const normalizeNumeric = (num) => {
-                    if (!Number.isFinite(num)) {
-                        return '';
-                    }
-                    if (num < 0) {
-                        return 'Permanent';
-                    }
-                    const totalMinutes = Math.max(0, Math.round(num * 60));
-                    if (totalMinutes === 0) {
-                        return 'Expired';
-                    }
-                    if (totalMinutes < 60) {
-                        return `${totalMinutes} minute${totalMinutes === 1 ? '' : 's'}`;
-                    }
-                    const hours = Math.floor(totalMinutes / 60);
-                    const minutes = totalMinutes % 60;
-                    if (minutes === 0) {
-                        return `${hours} hour${hours === 1 ? '' : 's'}`;
-                    }
-                    return `${hours}h ${minutes}m`;
-                };
-
-                if (typeof durationValue === 'string') {
-                    const trimmed = durationValue.trim();
-                    if (!trimmed) {
-                        return '';
-                    }
-                    const lower = trimmed.toLowerCase();
-                    if (lower === 'permanent' || lower === 'continuous') {
-                        return 'Permanent';
-                    }
-                    if (lower === 'instant') {
-                        return '1 minute';
-                    }
-                    const parsed = Number(trimmed);
-                    if (Number.isFinite(parsed)) {
-                        return normalizeNumeric(parsed);
-                    }
-                    return trimmed;
-                }
-
-                const numeric = Number(durationValue);
-                return normalizeNumeric(numeric);
             };
 
             const renderEffectSection = (effect, title, { includeDuration = false } = {}) => {
@@ -6355,10 +6389,12 @@
         const locationEditVehicleCurrentDestinationInput = document.getElementById('locationEditVehicleCurrentDestination');
         const locationEditVehicleCurrentDestinationSelection = document.getElementById('locationEditVehicleCurrentDestinationSelection');
         const locationEditVehicleCurrentDestinationSearchInput = document.getElementById('locationEditVehicleCurrentDestinationSearch');
+        const locationEditVehicleCurrentDestinationNewRegionBtn = document.getElementById('locationEditVehicleCurrentDestinationNewRegionBtn');
         const locationEditVehicleCurrentDestinationSuggestions = document.getElementById('locationEditVehicleCurrentDestinationSuggestions');
         const locationEditVehicleDestinationsInput = document.getElementById('locationEditVehicleDestinations');
         const locationEditVehicleDestinationsList = document.getElementById('locationEditVehicleDestinationsList');
         const locationEditVehicleDestinationsSearchInput = document.getElementById('locationEditVehicleDestinationsSearch');
+        const locationEditVehicleDestinationsNewRegionBtn = document.getElementById('locationEditVehicleDestinationsNewRegionBtn');
         const locationEditVehicleDestinationsSuggestions = document.getElementById('locationEditVehicleDestinationsSuggestions');
         const locationEditVehicleEtaInput = document.getElementById('locationEditVehicleETA');
         const locationEditVehicleExitIdInput = document.getElementById('locationEditVehicleExitId');
@@ -6399,10 +6435,12 @@
         const regionEditVehicleCurrentDestinationInput = document.getElementById('regionEditVehicleCurrentDestination');
         const regionEditVehicleCurrentDestinationSelection = document.getElementById('regionEditVehicleCurrentDestinationSelection');
         const regionEditVehicleCurrentDestinationSearchInput = document.getElementById('regionEditVehicleCurrentDestinationSearch');
+        const regionEditVehicleCurrentDestinationNewRegionBtn = document.getElementById('regionEditVehicleCurrentDestinationNewRegionBtn');
         const regionEditVehicleCurrentDestinationSuggestions = document.getElementById('regionEditVehicleCurrentDestinationSuggestions');
         const regionEditVehicleDestinationsInput = document.getElementById('regionEditVehicleDestinations');
         const regionEditVehicleDestinationsList = document.getElementById('regionEditVehicleDestinationsList');
         const regionEditVehicleDestinationsSearchInput = document.getElementById('regionEditVehicleDestinationsSearch');
+        const regionEditVehicleDestinationsNewRegionBtn = document.getElementById('regionEditVehicleDestinationsNewRegionBtn');
         const regionEditVehicleDestinationsSuggestions = document.getElementById('regionEditVehicleDestinationsSuggestions');
         const regionEditVehicleEtaInput = document.getElementById('regionEditVehicleETA');
         const regionEditVehicleExitIdInput = document.getElementById('regionEditVehicleExitId');
@@ -6421,10 +6459,12 @@
             currentDestinationInput: locationEditVehicleCurrentDestinationInput,
             currentDestinationSelection: locationEditVehicleCurrentDestinationSelection,
             currentDestinationSearchInput: locationEditVehicleCurrentDestinationSearchInput,
+            currentDestinationNewRegionBtn: locationEditVehicleCurrentDestinationNewRegionBtn,
             currentDestinationSuggestions: locationEditVehicleCurrentDestinationSuggestions,
             destinationsInput: locationEditVehicleDestinationsInput,
             destinationsList: locationEditVehicleDestinationsList,
             destinationsSearchInput: locationEditVehicleDestinationsSearchInput,
+            destinationsNewRegionBtn: locationEditVehicleDestinationsNewRegionBtn,
             destinationsSuggestions: locationEditVehicleDestinationsSuggestions,
             etaInput: locationEditVehicleEtaInput,
             vehicleExitIdInput: locationEditVehicleExitIdInput,
@@ -6439,10 +6479,12 @@
             currentDestinationInput: regionEditVehicleCurrentDestinationInput,
             currentDestinationSelection: regionEditVehicleCurrentDestinationSelection,
             currentDestinationSearchInput: regionEditVehicleCurrentDestinationSearchInput,
+            currentDestinationNewRegionBtn: regionEditVehicleCurrentDestinationNewRegionBtn,
             currentDestinationSuggestions: regionEditVehicleCurrentDestinationSuggestions,
             destinationsInput: regionEditVehicleDestinationsInput,
             destinationsList: regionEditVehicleDestinationsList,
             destinationsSearchInput: regionEditVehicleDestinationsSearchInput,
+            destinationsNewRegionBtn: regionEditVehicleDestinationsNewRegionBtn,
             destinationsSuggestions: regionEditVehicleDestinationsSuggestions,
             etaInput: regionEditVehicleEtaInput,
             vehicleExitIdInput: regionEditVehicleExitIdInput,
@@ -8890,7 +8932,7 @@
             const durationInput = document.createElement('input');
             durationInput.type = 'text';
             durationInput.className = 'thing-edit-status-duration';
-            durationInput.placeholder = 'Duration (e.g. 3 or permanent)';
+            durationInput.placeholder = 'Duration (e.g. 4 hours, 15 minutes or 1d11h30m)';
             if (effect.duration !== undefined && effect.duration !== null && effect.duration !== '') {
                 durationInput.value = String(effect.duration);
             }
@@ -15548,7 +15590,11 @@
             if (isUnexploredRegionExit(exit)) {
                 return true;
             }
-            return Boolean(exit.destinationIsRegionEntryStub || exit.destinationIsStub);
+            return Boolean(
+                exit.destinationIsRegionEntryStub
+                || exit.destinationIsStub
+                || exit.destinationVisited === false
+            );
         }
 
         function shouldUseEventMove(exit) {
@@ -16121,6 +16167,106 @@
             }
         }
 
+        function normalizePendingVehicleDestinationSnapshot(pendingDestination = null) {
+            if (!pendingDestination || typeof pendingDestination !== 'object' || Array.isArray(pendingDestination)) {
+                return null;
+            }
+
+            const rawText = typeof pendingDestination.rawText === 'string'
+                ? pendingDestination.rawText.trim()
+                : '';
+            const regionName = typeof pendingDestination.regionName === 'string'
+                ? pendingDestination.regionName.trim()
+                : '';
+            const locationName = typeof pendingDestination.locationName === 'string'
+                ? pendingDestination.locationName.trim()
+                : '';
+            const regionId = typeof pendingDestination.regionId === 'string'
+                ? pendingDestination.regionId.trim()
+                : '';
+            const locationId = typeof pendingDestination.locationId === 'string'
+                ? pendingDestination.locationId.trim()
+                : '';
+
+            if (!rawText && !regionName && !locationName && !regionId && !locationId) {
+                return null;
+            }
+
+            return {
+                rawText: rawText || null,
+                regionName: regionName || null,
+                locationName: locationName || null,
+                regionId: regionId || null,
+                locationId: locationId || null
+            };
+        }
+
+        const VEHICLE_PENDING_REGION_ROUTE_PREFIX = 'pending-region:';
+
+        function normalizeVehicleRouteComparisonText(value) {
+            if (typeof value !== 'string') {
+                return '';
+            }
+            return value.trim().toLowerCase().replace(/\s+/g, ' ');
+        }
+
+        function buildVehiclePendingRegionDestinationSnapshot(regionName = '') {
+            const normalizedRegionName = typeof regionName === 'string'
+                ? regionName.trim()
+                : '';
+            if (!normalizedRegionName) {
+                return null;
+            }
+            return {
+                rawText: `${normalizedRegionName}|`,
+                regionName: normalizedRegionName,
+                locationName: null,
+                regionId: null,
+                locationId: null
+            };
+        }
+
+        function buildVehiclePendingRegionRouteEntry(regionName = '') {
+            const pendingDestinationSnapshot = buildVehiclePendingRegionDestinationSnapshot(regionName);
+            if (!pendingDestinationSnapshot) {
+                return null;
+            }
+            return `${VEHICLE_PENDING_REGION_ROUTE_PREFIX}${pendingDestinationSnapshot.regionName}`;
+        }
+
+        function parseVehiclePendingRegionRouteEntry(entry = '') {
+            const normalizedEntry = typeof entry === 'string'
+                ? entry.trim()
+                : '';
+            if (!normalizedEntry || !normalizedEntry.startsWith(VEHICLE_PENDING_REGION_ROUTE_PREFIX)) {
+                return null;
+            }
+
+            const regionName = normalizedEntry.slice(VEHICLE_PENDING_REGION_ROUTE_PREFIX.length).trim();
+            if (!regionName) {
+                throw new Error('Vehicle pending-region route entries must include a region name.');
+            }
+
+            const pendingDestinationSnapshot = buildVehiclePendingRegionDestinationSnapshot(regionName);
+            return {
+                entry: buildVehiclePendingRegionRouteEntry(regionName),
+                regionName: pendingDestinationSnapshot.regionName,
+                comparisonName: normalizeVehicleRouteComparisonText(pendingDestinationSnapshot.regionName),
+                pendingDestinationSnapshot
+            };
+        }
+
+        function normalizeVehicleDestinationEntry(entry = '') {
+            const normalizedEntry = typeof entry === 'string'
+                ? entry.trim()
+                : '';
+            if (!normalizedEntry) {
+                return '';
+            }
+            const pendingRegionRoute = parseVehiclePendingRegionRouteEntry(normalizedEntry);
+            return pendingRegionRoute?.entry || normalizedEntry;
+        }
+
         function normalizeVehicleInfoSnapshot(vehicleInfo = null) {
             if (!vehicleInfo || typeof vehicleInfo !== 'object' || Array.isArray(vehicleInfo)) {
                 return null;
@@ -16132,11 +16278,12 @@
             const currentDestination = typeof vehicleInfo.currentDestination === 'string'
                 ? vehicleInfo.currentDestination.trim()
                 : '';
+            const pendingDestination = normalizePendingVehicleDestinationSnapshot(vehicleInfo.pendingDestination);
             const destinations = Array.isArray(vehicleInfo.destinations)
                 ? Array.from(new Set(
                     vehicleInfo.destinations
                         .filter(entry => typeof entry === 'string')
-                        .map(entry => entry.trim())
+                        .map(entry => normalizeVehicleDestinationEntry(entry))
                         .filter(Boolean)
                 ))
                 : [];
@@ -16146,6 +16293,12 @@
             const etaNumeric = Number(etaSource);
             const ETA = Number.isFinite(etaNumeric) && Number.isInteger(etaNumeric) && etaNumeric >= 0
                 ? etaNumeric
+                : null;
+            const departureTimeNumeric = Number(vehicleInfo.departureTime);
+            const departureTime = Number.isFinite(departureTimeNumeric)
+                && Number.isInteger(departureTimeNumeric)
+                && departureTimeNumeric >= 0
+                ? departureTimeNumeric
                 : null;
             const vehicleExitId = typeof vehicleInfo.vehicleExitId === 'string'
                 ? vehicleInfo.vehicleExitId.trim()
@@ -16158,8 +16311,10 @@
                 terrainTypes: terrainTypes || null,
                 icon: icon || null,
                 currentDestination: currentDestination || null,
+                pendingDestination,
                 destinations,
                 ETA,
+                departureTime,
                 vehicleExitId: vehicleExitId || null
             };
         }
@@ -16192,7 +16347,7 @@
             return Array.from(new Set(
                 value
                     .split(/[\n,]/)
-                    .map(entry => entry.trim())
+                    .map(entry => normalizeVehicleDestinationEntry(entry))
                     .filter(Boolean)
             ));
         }
@@ -16225,6 +16380,234 @@
                 label: resolvedLabel,
                 normalizedName: resolvedName.toLowerCase(),
                 normalizedLabel: resolvedLabel.toLowerCase()
+            };
+        }
+
+        function buildVehiclePendingRegionRouteOption(regionName = '') {
+            const pendingRegionRoute = parseVehiclePendingRegionRouteEntry(
+                buildVehiclePendingRegionRouteEntry(regionName)
+            );
+            if (!pendingRegionRoute) {
+                return null;
+            }
+            return {
+                id: pendingRegionRoute.entry,
+                name: pendingRegionRoute.regionName,
+                regionName: 'New region',
+                label: pendingRegionRoute.regionName,
+                normalizedName: pendingRegionRoute.regionName.toLowerCase(),
+                normalizedLabel: pendingRegionRoute.regionName.toLowerCase(),
+                pendingDestinationSnapshot: pendingRegionRoute.pendingDestinationSnapshot,
+                routeKind: 'pending-region'
+            };
+        }
+
+        function normalizeVehicleDestinationSelectionOption(option, fallbackId = '') {
+            const candidateId = typeof option === 'string'
+                ? option
+                : (typeof option?.id === 'string' ? option.id : fallbackId);
+            const pendingRegionRoute = parseVehiclePendingRegionRouteEntry(candidateId);
+            if (pendingRegionRoute) {
+                const normalizedOption = buildVehiclePendingRegionRouteOption(pendingRegionRoute.regionName);
+                return normalizedOption
+                    ? {
+                        ...normalizedOption,
+                        id: pendingRegionRoute.entry,
+                        pendingDestinationSnapshot: pendingRegionRoute.pendingDestinationSnapshot
+                    }
+                    : null;
+            }
+
+            const normalizedOption = normalizeNamedLocationOption(option, fallbackId);
+            if (!normalizedOption) {
+                return null;
+            }
+
+            return {
+                ...normalizedOption,
+                pendingDestinationSnapshot: null,
+                routeKind: 'location'
+            };
+        }
+
+        function vehicleDestinationsContainRouteTarget(destinations = [], {
+            locationId = null,
+            regionName = null
+        } = {}) {
+            const normalizedDestinations = Array.isArray(destinations)
+                ? Array.from(new Set(
+                    destinations
+                        .filter(entry => typeof entry === 'string')
+                        .map(entry => normalizeVehicleDestinationEntry(entry))
+                        .filter(Boolean)
+                ))
+                : [];
+            if (!normalizedDestinations.length) {
+                return false;
+            }
+
+            const normalizedLocationId = typeof locationId === 'string'
+                ? locationId.trim()
+                : '';
+            if (normalizedLocationId && normalizedDestinations.includes(normalizedLocationId)) {
+                return true;
+            }
+
+            const comparisonRegionName = normalizeVehicleRouteComparisonText(regionName);
+            if (!comparisonRegionName) {
+                return false;
+            }
+
+            return normalizedDestinations.some(entry => {
+                const pendingRegionRoute = parseVehiclePendingRegionRouteEntry(entry);
+                return pendingRegionRoute?.comparisonName === comparisonRegionName;
+            });
+        }
+
+        function vehicleDestinationsContainCurrentSelection(destinations = [], currentDestinationOption = null) {
+            const normalizedOption = normalizeVehicleCurrentDestinationOption(currentDestinationOption);
+            if (!normalizedOption) {
+                return false;
+            }
+            const locationId = typeof normalizedOption.resolvedLocationId === 'string'
+                ? normalizedOption.resolvedLocationId.trim()
+                : '';
+            const pendingDestinationSnapshot = normalizePendingVehicleDestinationSnapshot(normalizedOption.pendingDestinationSnapshot);
+            const regionName = normalizedOption.regionName
+                || pendingDestinationSnapshot?.regionName
+                || '';
+            return vehicleDestinationsContainRouteTarget(destinations, {
+                locationId: locationId || null,
+                regionName: regionName || null
+            });
+        }
+
+        function vehicleDestinationsContainPendingDestination(destinations = [], pendingDestination = null) {
+            const normalizedPendingDestination = normalizePendingVehicleDestinationSnapshot(pendingDestination);
+            if (!normalizedPendingDestination) {
+                return false;
+            }
+            return vehicleDestinationsContainRouteTarget(destinations, {
+                locationId: normalizedPendingDestination.locationId,
+                regionName: normalizedPendingDestination.regionName
+            });
+        }
+
+        function normalizeVehicleCurrentDestinationOption(option, fallbackId = '') {
+            const normalizedOption = normalizeNamedLocationOption(option, fallbackId);
+            const pendingDestinationSnapshot = normalizePendingVehicleDestinationSnapshot(
+                option?.pendingDestinationSnapshot ?? option?.pendingDestination ?? null
+            );
+            if (normalizedOption) {
+                const hasExplicitResolvedLocationId = Boolean(
+                    option
+                    && typeof option === 'object'
+                    && !Array.isArray(option)
+                    && Object.prototype.hasOwnProperty.call(option, 'resolvedLocationId')
+                );
+                const resolvedLocationId = typeof option?.resolvedLocationId === 'string'
+                    ? option.resolvedLocationId.trim()
+                    : '';
+                return {
+                    ...normalizedOption,
+                    resolvedLocationId: hasExplicitResolvedLocationId
+                        ? (resolvedLocationId || null)
+                        : normalizedOption.id,
+                    pendingDestinationSnapshot
+                };
+            }
+
+            if (!pendingDestinationSnapshot) {
+                return null;
+            }
+
+            const displayName = pendingDestinationSnapshot.locationName
+                || pendingDestinationSnapshot.regionName
+                || pendingDestinationSnapshot.rawText
+                || 'Unknown destination';
+            const displayRegionName = pendingDestinationSnapshot.locationName
+                ? (pendingDestinationSnapshot.regionName || '')
+                : '';
+            const selectionId = typeof option?.selectionId === 'string' && option.selectionId.trim()
+                ? option.selectionId.trim()
+                : `pending:${pendingDestinationSnapshot.rawText || displayName}`;
+
+            return {
+                id: selectionId,
+                name: displayName,
+                regionName: displayRegionName,
+                label: displayName,
+                normalizedName: displayName.toLowerCase(),
+                normalizedLabel: displayName.toLowerCase(),
+                resolvedLocationId: null,
+                pendingDestinationSnapshot
+            };
+        }
+
+        function buildVehiclePendingDestinationOption(pendingDestination = null) {
+            const normalizedPendingDestination = normalizePendingVehicleDestinationSnapshot(pendingDestination);
+            if (!normalizedPendingDestination) {
+                return null;
+            }
+
+            const locationId = typeof normalizedPendingDestination.locationId === 'string'
+                ? normalizedPendingDestination.locationId.trim()
+                : '';
+            if (locationId) {
+                return normalizeVehicleCurrentDestinationOption({
+                    id: locationId,
+                    resolvedLocationId: locationId,
+                    name: normalizedPendingDestination.locationName || locationId,
+                    regionName: normalizedPendingDestination.regionName || '',
+                    label: normalizedPendingDestination.locationName || locationId,
+                    pendingDestinationSnapshot: normalizedPendingDestination
+                }, locationId);
+            }
+
+            return normalizeVehicleCurrentDestinationOption({
+                name: normalizedPendingDestination.locationName
+                    || normalizedPendingDestination.regionName
+                    || normalizedPendingDestination.rawText
+                    || 'Unknown destination',
+                regionName: normalizedPendingDestination.locationName
+                    ? (normalizedPendingDestination.regionName || '')
+                    : '',
+                label: normalizedPendingDestination.locationName
+                    || normalizedPendingDestination.regionName
+                    || normalizedPendingDestination.rawText
+                    || 'Unknown destination',
+                resolvedLocationId: null,
+                selectionId: `pending:${normalizedPendingDestination.rawText || normalizedPendingDestination.locationName || normalizedPendingDestination.regionName || 'destination'}`,
+                pendingDestinationSnapshot: normalizedPendingDestination
+            });
+        }
+
+        function buildVehiclePendingDestinationPayload(option = null, fallbackPendingDestination = null) {
+            const normalizedOption = normalizeVehicleCurrentDestinationOption(option);
+            const resolvedLocationId = typeof normalizedOption?.resolvedLocationId === 'string'
+                ? normalizedOption.resolvedLocationId.trim()
+                : '';
+            if (!normalizedOption || !resolvedLocationId) {
+                return null;
+            }
+
+            const normalizedFallback = normalizePendingVehicleDestinationSnapshot(fallbackPendingDestination);
+            const fallbackLocationId = typeof normalizedFallback?.locationId === 'string'
+                ? normalizedFallback.locationId.trim()
+                : '';
+            const reusesFallbackLocation = Boolean(fallbackLocationId && fallbackLocationId === resolvedLocationId);
+            const regionName = normalizedOption.regionName || (reusesFallbackLocation ? normalizedFallback?.regionName : null) || null;
+            const locationName = normalizedOption.name || resolvedLocationId;
+            const rawText = reusesFallbackLocation && normalizedFallback?.rawText
+                ? normalizedFallback.rawText
+                : ([regionName, locationName].filter(Boolean).join('|') || locationName || resolvedLocationId);
+
+            return {
+                rawText,
+                regionName,
+                locationName,
+                regionId: reusesFallbackLocation ? (normalizedFallback?.regionId || null) : null,
+                locationId: resolvedLocationId
             };
         }
 
@@ -16315,8 +16698,19 @@
 
             let changed = false;
             for (const [locationId, existing] of selections.entries()) {
-                const normalizedExisting = normalizeNamedLocationOption(existing, locationId);
-                const resolvedOption = normalizeNamedLocationOption(optionsById.get(locationId), locationId);
+                const normalizedExisting = normalizeVehicleDestinationSelectionOption(existing, locationId);
+                if (parseVehiclePendingRegionRouteEntry(locationId)) {
+                    if (normalizedExisting) {
+                        const beforeSignature = JSON.stringify(existing || {});
+                        const afterSignature = JSON.stringify(normalizedExisting);
+                        if (beforeSignature !== afterSignature) {
+                            changed = true;
+                        }
+                        selections.set(locationId, normalizedExisting);
+                    }
+                    continue;
+                }
+                const resolvedOption = normalizeVehicleDestinationSelectionOption(optionsById.get(locationId), locationId);
                 const next = resolvedOption || normalizedExisting;
                 if (!next) {
                     continue;
@@ -16346,13 +16740,16 @@
                 Array.isArray(destinationIds)
                     ? destinationIds
                         .filter(entry => typeof entry === 'string')
-                        .map(entry => entry.trim())
+                        .map(entry => normalizeVehicleDestinationEntry(entry))
                         .filter(Boolean)
                     : []
             ));
 
             normalizedIds.forEach(locationId => {
-                const fallbackOption = normalizeNamedLocationOption({ id: locationId, name: locationId, label: locationId }, locationId);
+                const fallbackOption = normalizeVehicleDestinationSelectionOption(
+                    { id: locationId, name: locationId, label: locationId },
+                    locationId
+                );
                 if (fallbackOption) {
                     selections.set(locationId, fallbackOption);
                 }
@@ -16366,7 +16763,7 @@
             if (!editor) {
                 return;
             }
-            const normalizedOption = normalizeNamedLocationOption(option);
+            const normalizedOption = normalizeVehicleDestinationSelectionOption(option);
             if (!normalizedOption) {
                 return;
             }
@@ -16405,7 +16802,7 @@
 
             const fragment = document.createDocumentFragment();
             matches.forEach(option => {
-                const normalizedOption = normalizeNamedLocationOption(option);
+                const normalizedOption = normalizeVehicleDestinationSelectionOption(option);
                 if (!normalizedOption) {
                     return;
                 }
@@ -16453,7 +16850,7 @@
             const options = await loadNamedLocationOptions();
             const matches = options
                 .filter(option => {
-                    const normalizedOption = normalizeNamedLocationOption(option);
+                    const normalizedOption = normalizeVehicleDestinationSelectionOption(option);
                     if (!normalizedOption) {
                         return false;
                     }
@@ -16493,7 +16890,7 @@
             const selections = ensureVehicleDestinationSelectionMap(editor);
             const options = await loadNamedLocationOptions();
             const firstMatch = options.find(option => {
-                const normalizedOption = normalizeNamedLocationOption(option);
+                const normalizedOption = normalizeVehicleDestinationSelectionOption(option);
                 if (!normalizedOption || selections.has(normalizedOption.id)) {
                     return false;
                 }
@@ -16507,6 +16904,19 @@
             }
 
             addVehicleDestinationSelection(editor, firstMatch);
+        }
+
+        function promptForVehicleRegionName(promptMessage) {
+            const regionName = window.prompt(promptMessage, '');
+            if (regionName === null) {
+                return null;
+            }
+            const normalizedRegionName = regionName.trim();
+            if (!normalizedRegionName) {
+                window.alert('Region name is required.');
+                return null;
+            }
+            return normalizedRegionName;
         }
 
         function initializeVehicleDestinationEditor(editor) {
@@ -16542,6 +16952,16 @@
                 });
             }
 
+            if (editor.destinationsNewRegionBtn) {
+                editor.destinationsNewRegionBtn.addEventListener('click', () => {
+                    const regionName = promptForVehicleRegionName('Enter the new fixed-route region name:');
+                    if (!regionName) {
+                        return;
+                    }
+                    addVehicleDestinationSelection(editor, buildVehiclePendingRegionRouteOption(regionName));
+                });
+            }
+
             hideVehicleDestinationSuggestions(editor);
             renderVehicleDestinationSelections(editor);
         }
@@ -16550,8 +16970,8 @@
             if (!editor?.currentDestinationInput) {
                 return;
             }
-            const currentOption = normalizeNamedLocationOption(editor.currentDestinationOption);
-            editor.currentDestinationInput.value = currentOption?.id || '';
+            const currentOption = normalizeVehicleCurrentDestinationOption(editor.currentDestinationOption);
+            editor.currentDestinationInput.value = currentOption?.resolvedLocationId || '';
         }
 
         function renderVehicleCurrentDestinationSelection(editor) {
@@ -16562,12 +16982,12 @@
 
             const container = editor.currentDestinationSelection;
             container.innerHTML = '';
-            const currentOption = normalizeNamedLocationOption(editor.currentDestinationOption);
+            const currentOption = normalizeVehicleCurrentDestinationOption(editor.currentDestinationOption);
 
             if (!currentOption) {
                 const emptyMessage = document.createElement('p');
                 emptyMessage.className = 'vehicle-destination-empty';
-                emptyMessage.textContent = 'No current destination selected.';
+                emptyMessage.textContent = 'No destination selected.';
                 container.appendChild(emptyMessage);
                 syncVehicleCurrentDestinationInputValue(editor);
                 return;
@@ -16610,14 +17030,15 @@
             if (typeof value === 'string') {
                 const normalizedId = value.trim();
                 editor.currentDestinationOption = normalizedId
-                    ? normalizeNamedLocationOption({
+                    ? normalizeVehicleCurrentDestinationOption({
                         id: normalizedId,
+                        resolvedLocationId: normalizedId,
                         name: normalizedId,
                         label: normalizedId
                     }, normalizedId)
                     : null;
             } else {
-                editor.currentDestinationOption = normalizeNamedLocationOption(value);
+                editor.currentDestinationOption = normalizeVehicleCurrentDestinationOption(value);
             }
             renderVehicleCurrentDestinationSelection(editor);
         }
@@ -16626,14 +17047,17 @@
             if (!editor) {
                 return;
             }
-            const currentOption = normalizeNamedLocationOption(editor.currentDestinationOption);
-            if (!currentOption?.id) {
+            const currentOption = normalizeVehicleCurrentDestinationOption(editor.currentDestinationOption);
+            const resolvedLocationId = typeof currentOption?.resolvedLocationId === 'string'
+                ? currentOption.resolvedLocationId.trim()
+                : '';
+            if (!resolvedLocationId) {
                 return;
             }
 
             const options = await loadNamedLocationOptions();
-            const matchingOption = options.find(option => option?.id === currentOption.id) || null;
-            const normalizedMatching = normalizeNamedLocationOption(matchingOption, currentOption.id);
+            const matchingOption = options.find(option => option?.id === resolvedLocationId) || null;
+            const normalizedMatching = normalizeVehicleCurrentDestinationOption(matchingOption, resolvedLocationId);
             if (!normalizedMatching) {
                 return;
             }
@@ -16807,6 +17231,24 @@
                     window.setTimeout(() => {
                         hideVehicleCurrentDestinationSuggestions(editor);
                     }, 100);
+                });
+            }
+
+            if (editor.currentDestinationNewRegionBtn) {
+                editor.currentDestinationNewRegionBtn.addEventListener('click', () => {
+                    const regionName = promptForVehicleRegionName('Enter the new destination region name:');
+                    if (!regionName) {
+                        return;
+                    }
+                    const pendingDestinationSnapshot = buildVehiclePendingRegionDestinationSnapshot(regionName);
+                    setVehicleCurrentDestinationSelection(
+                        editor,
+                        buildVehiclePendingDestinationOption(pendingDestinationSnapshot)
+                    );
+                    if (editor.currentDestinationSearchInput) {
+                        editor.currentDestinationSearchInput.value = '';
+                    }
+                    hideVehicleCurrentDestinationSuggestions(editor);
                 });
             }
 
@@ -17052,7 +17494,10 @@
                 editor.isVehicleInput.checked = Boolean(normalized);
             }
             setVehicleIconInputValue(editor.iconInput, normalized?.icon || '');
-            setVehicleCurrentDestinationSelection(editor, normalized?.currentDestination || null);
+            setVehicleCurrentDestinationSelection(
+                editor,
+                normalized?.currentDestination || buildVehiclePendingDestinationOption(normalized?.pendingDestination) || null
+            );
             void refreshVehicleCurrentDestinationSelectionLabel(editor);
             setVehicleDestinationSelections(editor, normalized?.destinations || []);
             if (editor.etaInput) {
@@ -17082,10 +17527,16 @@
                 };
             }
 
-            const currentDestinationRaw = editor?.currentDestinationInput?.value ?? '';
-            const currentDestination = typeof currentDestinationRaw === 'string'
-                ? currentDestinationRaw.trim()
+            const fallback = normalizeVehicleInfoSnapshot(fallbackSnapshot);
+            const fallbackPendingDestination = normalizePendingVehicleDestinationSnapshot(fallback?.pendingDestination);
+            const selectedDestinationOption = normalizeVehicleCurrentDestinationOption(editor?.currentDestinationOption);
+            const selectedPendingDestinationSnapshot = normalizePendingVehicleDestinationSnapshot(
+                selectedDestinationOption?.pendingDestinationSnapshot
+            );
+            const selectedDestinationId = typeof selectedDestinationOption?.resolvedLocationId === 'string'
+                ? selectedDestinationOption.resolvedLocationId.trim()
                 : '';
+            const usesPendingDestination = Boolean(selectedPendingDestinationSnapshot || fallbackPendingDestination);
             const iconRaw = editor?.iconInput?.value ?? '';
             const icon = typeof iconRaw === 'string'
                 ? iconRaw.trim()
@@ -17113,20 +17564,39 @@
                 ETA = parsedEta;
             }
 
-            if (ETA !== null && !currentDestination) {
+            const pendingDestination = usesPendingDestination
+                ? (selectedDestinationOption
+                    ? (selectedDestinationId
+                        ? buildVehiclePendingDestinationPayload(
+                            selectedDestinationOption,
+                            fallbackPendingDestination || selectedPendingDestinationSnapshot
+                        )
+                        : (selectedPendingDestinationSnapshot || null))
+                    : null)
+                : null;
+            const currentDestination = usesPendingDestination
+                ? null
+                : selectedDestinationId;
+            const effectiveDestinationId = currentDestination || pendingDestination?.locationId || '';
+            const hasEffectiveDestination = Boolean(effectiveDestinationId || pendingDestination);
+
+            if (ETA !== null && !hasEffectiveDestination) {
                 return {
                     isVehicle: true,
                     vehicleInfo: null,
-                    error: 'Vehicle current destination is required when ETA is set.',
+                    error: 'Vehicle destination is required when ETA is set.',
                     focusTarget: editor?.currentDestinationSearchInput || editor?.currentDestinationInput || null
                 };
             }
 
-            if (currentDestination && destinations.length > 0 && !destinations.includes(currentDestination)) {
+            const destinationMatchesRoute = currentDestination
+                ? vehicleDestinationsContainCurrentSelection(destinations, selectedDestinationOption)
+                : vehicleDestinationsContainPendingDestination(destinations, pendingDestination);
+            if (hasEffectiveDestination && destinations.length > 0 && !destinationMatchesRoute) {
                 return {
                     isVehicle: true,
                     vehicleInfo: null,
-                    error: 'Vehicle current destination must be one of the listed destinations.',
+                    error: 'Vehicle destination must be one of the listed destinations.',
                     focusTarget: editor?.currentDestinationSearchInput || editor?.currentDestinationInput || null
                 };
             }
@@ -17135,12 +17605,13 @@
             const vehicleExitId = typeof vehicleExitIdRaw === 'string'
                 ? vehicleExitIdRaw.trim()
                 : '';
-            const fallback = normalizeVehicleInfoSnapshot(fallbackSnapshot);
             const payload = {
                 icon: icon || null,
                 currentDestination: currentDestination || null,
+                pendingDestination,
                 destinations,
                 ETA,
+                departureTime: ETA !== null ? (fallback?.departureTime ?? null) : null,
                 vehicleExitId: vehicleExitId || null
             };
             if (fallback?.terrainTypes) {
@@ -17186,7 +17657,7 @@
             const durationInput = document.createElement('input');
             durationInput.type = 'text';
             durationInput.className = 'thing-edit-status-duration';
-            durationInput.placeholder = 'Duration';
+            durationInput.placeholder = 'Duration (e.g. 4 hours, 15 minutes or 1d11h30m)';
             if (effect.duration !== undefined && effect.duration !== null && effect.duration !== '') {
                 durationInput.value = String(effect.duration);
             }
@@ -19577,30 +20048,7 @@
                     if (!Number.isFinite(minutesValue) || !Number.isInteger(minutesValue)) {
                         return '';
                     }
-
-                    let remaining = Math.max(0, minutesValue);
-                    const days = Math.floor(remaining / 1440);
-                    remaining -= days * 1440;
-                    const hours = Math.floor(remaining / 60);
-                    remaining -= hours * 60;
-                    const minutes = remaining;
-
-                    const parts = [];
-                    if (days > 0) {
-                        parts.push(`${days} ${days === 1 ? 'day' : 'days'}`);
-                    }
-                    if (hours > 0) {
-                        parts.push(`${hours} ${hours === 1 ? 'hour' : 'hours'}`);
-                    }
-                    if (minutes > 0) {
-                        parts.push(`${minutes} ${minutes === 1 ? 'minute' : 'minutes'}`);
-                    }
-
-                    if (parts.length === 0) {
-                        parts.push('0 minutes');
-                    }
-
-                    return parts.join(', ');
+                    return formatMinutesDurationLabel(Math.max(0, minutesValue));
                 };
 
                 const clearVehicleHeaderStatus = () => {
@@ -19989,7 +20437,10 @@
 
                                     travelButton.dataset.destinationId = exit.destination;
                                     const destinationIsStub = Boolean(exit.destinationIsStub);
-                                    const isExplored = !destinationIsStub && (!isRegionExit || Boolean(exit.destinationRegionExpanded));
+                                    const destinationIsExplicitlyUnvisited = exit.destinationVisited === false;
+                                    const isExplored = !destinationIsStub
+                                        && !destinationIsExplicitlyUnvisited
+                                        && (!isRegionExit || Boolean(exit.destinationRegionExpanded));
                                     travelButton.classList.add(isExplored ? 'exit-button--explored' : 'exit-button--unexplored');
                                     travelButton.addEventListener('click', () => moveToLocation({
                                         exit,
@@ -22732,6 +23183,7 @@
                 const result = await response.json();
                 
                 if (result.success && result.player) {
+                    window.__AIRPG_GAME_LOADED__ = true;
                     updateChatPlayerPanel(result.player);
                     if (Array.isArray(result.player.partyMembers)) {
                         renderChatPartyPanel(result.player.partyMembers);

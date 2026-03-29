@@ -70,6 +70,10 @@ Very important: follow the instructions in &lt;writingStyleNotes&gt; and any ton
 
 "{{ regionNotes }}".
 
+{% if currentVehicle.name %}The vehicle "{{ currentVehicle.name }}" that is arriving here already exists. Do not generate it or any exits to it.{% endif -%}
+
+{% else %}Generate a region that fits the following description:
+
 {% endif %}Use the following XML structure exactly:
 
 {% if includeLocations %}

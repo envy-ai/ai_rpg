@@ -31,6 +31,7 @@ The main UI is rendered by `views/index.njk` and powered by `public/js/chat.js` 
   - Exits whose destination is a vehicle render a left-side vehicle icon on the travel button, using the destination vehicle's `vehicleInfo.icon` and falling back to `🚗` when icon metadata is missing.
   - Vehicle exits that leave a vehicle context render with a left-side `⬅️` icon and an `Exit Vehicle: <destination>` label.
   - Unexplored region exit labels are destination-driven: vehicle destinations render as `Unexplored huge vehicle: <region>`, while non-vehicle destinations render as `Unexplored Region: <region>`; if the exit itself is marked vehicle to a non-vehicle destination, the label renders as `<vehicleType> to unexplored region: <region>`.
+  - When move plausibility is configured for `unexplored_locations`, exit-button travel uses the chat/event-move path for unresolved region-entry exits and for expanded destination locations whose exit payload reports `destinationVisited === false`; merely being expanded no longer makes a location count as explored.
   - `exit.isVehicle`/`exit.vehicleType` are treated as edge metadata only and must not be used to infer that the destination location/region is itself a vehicle.
   - NPC list + "Add NPC" button.
   - Items/Scenery grids + "Craft" and "New Item/Scenery" buttons.
@@ -41,14 +42,16 @@ The main UI is rendered by `views/index.njk` and powered by `public/js/chat.js` 
   - Message list (`#chatLog`) with user/AI messages and event-summary batches.
   - Input area (`#messageInput`, `#sendButton`) with slash command support.
   - `?` prefix-help modal includes an explicit roll-override note: include `<N>` anywhere in action/crafting text to force the die roll to integer `N`.
-  - Prefix actions preserve raw input markers in the API payload (`?`, `@`, `@@`, `@@@`) even though optimistic local entries render marker-stripped content.
+  - Prefix actions preserve raw input markers in the API payload (`?`, `\`, `@`, `@@`, `@@@`) even though optimistic local entries render marker-stripped content.
+  - The prefix-help modal documents `\` as a no-context prompt that is logged, excluded from future base-context history, and run without chat tools.
 - **Sidebar** (`.chat-sidebar`):
   - Player card (portrait, health, need bars, quick actions, and a top-left warning triangle when unspent skill/attribute points are present).
   - Player "View" opens `#npcViewModal` in editable mode for attributes/skills using shared allocation partials; skills can now be added/removed directly in this modal for the player view. The modal now includes a Faction section above Equipment: NPCs show a single faction, while player view lists all factions with reputation tier labels and associated tier perks. NPCs use the same allocation sections in read-only mode, and their unspent point totals are hidden.
 - **Player level-up ability draft modal** (`#playerAbilitySelectionModal`):
   - Opens when the player has any underfilled level (`player_abilities_per_level`) from level 1 through current level.
-  - Is suppressed entirely when no game is loaded/started.
+  - Is suppressed entirely when no game is loaded/started, but new-game startup now flips the loaded gate before opening-scene generation so the modal can appear during fresh game setup.
   - Opens immediately before option generation with the message `Ability options for level-up are being generated`, then updates to card picks when generation completes.
+  - During new-game startup, pending ability picks block the opening-scene intro until the final submit completes.
   - Passive ability-selection state polls are non-blocking; chat input is only disabled when the modal is actively pending/loading/submitting.
   - Offsets itself below header/tab controls so the top-row buttons remain clickable (including normal pointer cursor behavior) while options generate.
   - Presents card-style options for the next missing level only; after submit, it advances sequentially to the next missing level.
@@ -73,6 +76,7 @@ The main UI is rendered by `views/index.njk` and powered by `public/js/chat.js` 
 
 - Inline script maintains a `locationCache` (location id -> display name) used by exit rendering and stub updates.
 - Inline script also maintains `locationDetailsCache` (location id -> `{ id, name, regionName, imageId }`) for richer vehicle-context resolution.
+- Shared inline helpers `formatMinutesDurationLabel(...)` and `formatStatusEffectDuration(...)` format minute-based duration text for vehicle arrival countdowns, item/status-effect tooltips, and NPC status rows.
 - Cache entries are refreshed when the current location is rendered, after exit creation responses, and when stubs are renamed.
 - `ensureLocationDetailsCached` fetches missing location details when needed; `ensureLocationNameCached` now wraps it and returns only name/region fields.
 

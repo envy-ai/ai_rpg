@@ -101,7 +101,7 @@ Quick refresher on where these systems live and how they're wired.
 
 ### Explicit bypasses
 - `/api/chat` question actions (`?`) bypass slop-remover processing.
-- `/api/chat` generic prompt actions (`@`, `@@`, `@@@`) bypass slop-remover processing.
+- `/api/chat` generic/no-context prompt actions (`@`, `@@`, `@@@`, `\`) bypass slop-remover processing.
 
 ### UI + logging
 - Chat insight icon: 🧹, rendered from `public/js/chat.js`.

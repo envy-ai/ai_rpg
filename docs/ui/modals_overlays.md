@@ -59,7 +59,7 @@ Most modals live in `views/index.njk` and are wired up by the inline script or `
 - `#thingEditModal`: edit items/scenery (metadata, bonuses, on-hit/equip effects, flags).
   - Includes a short description field directly under the main description.
 - `#inventoryTooltip` and `#partyTooltip`: floating tooltips for entity cards.
-  - Item tooltips include inflicted status effect durations when available.
+  - Item tooltips include inflicted status effect durations when available, rendered from canonical minutes as `days/hours/minutes` with zero-value units omitted.
   - Equip status effects only show for equippable items (slots set).
   - Attribute bonuses are hidden for non-equippable items.
   - Hovering an equippable item also stacks additional tooltip cards below it for currently equipped items in compatible slots (player gear in world/location context; viewed actor gear in inventory modal context).
@@ -70,7 +70,8 @@ Most modals live in `views/index.njk` and are wired up by the inline script or `
 - `#locationEditModal`: edit location name/description/level/status effects, controlling faction, and vehicle fields.
 - `#regionEditModal`: edit region name/description/parent/level, controlling faction, and vehicle fields.
   - Both include a short description field directly under the main description.
-  - Both include a shared vehicle editor partial with an `Is Vehicle` checkbox that enables/disables fields, a single-select `currentDestination` typeahead picker, a `Vehicle Exit` select rendered as `inside -> outside`, and a fixed-route destinations picker (add/remove list with live substring suggestions, capped at 10 matches). Region edit vehicle-exit options are limited to exits that leave the region.
+  - Status-effect duration fields accept shared minute-canonical duration input such as `4 hours, 15 minutes`, `1d11h30m`, or bare minute counts.
+  - Both include a shared vehicle editor partial with an `Is Vehicle` checkbox that enables/disables fields, a single-select destination picker, a `Vehicle Exit` select rendered as `inside -> outside`, and a fixed-route destinations picker (add/remove list with live substring suggestions, capped at 10 matches). The destination picker edits the active trip target: `currentDestination` for resolved trips and `pendingDestination` while the vehicle is underway. Unresolved named pending targets still render in the picker even before they resolve to a concrete `locationId`, and region-only pending targets remain intact unless the user explicitly clears or replaces them. Both destination areas also include `New Region` buttons: the active destination button creates a region-only unresolved `pendingDestination`, while the fixed-route button adds a `pending-region:<region name>` route entry that continues to point at that not-yet-generated region name until a timed arrival resolves it. Region edit vehicle-exit options are limited to exits that leave the region.
 - `#newExitModal`: create new exits (new region/location, optional image).
 - `#summonNpcModal`: summon an existing NPC into current location, with a live substring filter over NPC name/location.
 - `#summonThingModal`: summon an existing item/scenery into current location, with a live substring filter over name/type/origin label (including inventory origins like `Bob's inventory`).

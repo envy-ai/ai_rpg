@@ -80,7 +80,7 @@ Fields:
 - `icon` (string | null)
 - `currentDestination` (string | null)
 - `pendingDestination` (`{ rawText, regionName, locationName, regionId, locationId } | null`)
-- `destinations` (string[])
+- `destinations` (`string[]`; entries are concrete location ids or `pending-region:<region name>` fixed-route tokens for unresolved new-region targets)
 - `ETA` (number | null)
 - `departureTime` (number | null)
 - `vehicleExitId` (string | null)
@@ -203,7 +203,7 @@ Extends `LocationDetails` with:
 - `regionPath` (array of `{ id, name }`)
 - `exits` entries gain:
   - `destinationName`, `destinationRegionName`, `destinationRegionExpanded`
-  - `destinationIsStub`, `destinationIsRegionEntryStub`
+  - `destinationIsStub`, `destinationIsRegionEntryStub`, `destinationVisited`
   - `destinationIsVehicle` (boolean; derived only from destination location/region/pending-stub vehicle state, never from `exit.isVehicle`/`exit.vehicleType`)
   - `destinationVehicleType` (string | null; destination vehicle type hint when known; never inferred solely from `exit.vehicleType`)
   - `vehicleIcon` (string | null; populated when the destination location/region is a vehicle; falls back to `🚗` when metadata is missing)
@@ -283,7 +283,7 @@ Fields:
   - `isVehicle`/`vehicleType` describe the travel edge only; they do not imply destination vehicle status
   - `isVehicleOutbound`, `isVehicleInbound` (booleans)
   - `vehicleIcon` (string | null; populated from destination vehicle metadata, or `🚗` fallback when destination is a vehicle but icon metadata is missing)
-  - `destinationIsStub`, `destinationIsRegionEntryStub`
+  - `destinationIsStub`, `destinationIsRegionEntryStub`, `destinationVisited`
   - vehicle exits tied to vehicle transit are omitted: boarding exits into a destination vehicle that is in transit or still finalizing arrival after `ETA`, and the active outside/disembark exit from a source vehicle in the same state
 - `image` (optional): `{ id, url }`
 

@@ -29,6 +29,10 @@ class VehicleInfo {
     this.#validateCrossFieldState();
   }
 
+  static get PENDING_REGION_ROUTE_PREFIX() {
+    return 'pending-region:';
+  }
+
   static #normalizeTerrainTypes(value) {
     if (value === null || value === undefined) {
       return null;
@@ -51,23 +55,70 @@ class VehicleInfo {
     return trimmed || null;
   }
 
+  static #normalizeRouteComparisonText(value) {
+    if (typeof value !== 'string') {
+      return '';
+    }
+    return value.trim().toLowerCase().replace(/\s+/g, ' ');
+  }
+
+  static buildPendingRegionPendingDestination(regionName) {
+    const normalizedRegionName = VehicleInfo.#normalizeOptionalText(regionName, 'pending region route regionName');
+    if (!normalizedRegionName) {
+      throw new Error('VehicleInfo pending region route entries must include a region name');
+    }
+    return {
+      rawText: `${normalizedRegionName}|`,
+      regionName: normalizedRegionName,
+      locationName: null,
+      regionId: null,
+      locationId: null
+    };
+  }
+
+  static buildPendingRegionRouteEntry(regionName) {
+    const pendingDestination = VehicleInfo.buildPendingRegionPendingDestination(regionName);
+    return `${VehicleInfo.PENDING_REGION_ROUTE_PREFIX}${pendingDestination.regionName}`;
+  }
+
+  static parsePendingRegionRouteEntry(value) {
+    const entry = typeof value === 'string' ? value.trim() : '';
+    if (!entry || !entry.startsWith(VehicleInfo.PENDING_REGION_ROUTE_PREFIX)) {
+      return null;
+    }
+
+    const regionName = entry.slice(VehicleInfo.PENDING_REGION_ROUTE_PREFIX.length).trim();
+    if (!regionName) {
+      throw new Error('VehicleInfo pending region route entries must include a region name');
+    }
+
+    const pendingDestination = VehicleInfo.buildPendingRegionPendingDestination(regionName);
+    return {
+      entry: VehicleInfo.buildPendingRegionRouteEntry(regionName),
+      regionName: pendingDestination.regionName,
+      comparisonName: VehicleInfo.#normalizeRouteComparisonText(pendingDestination.regionName),
+      pendingDestination
+    };
+  }
+
   static #normalizeDestinationList(value) {
     if (value === null || value === undefined) {
       return [];
     }
     if (!Array.isArray(value)) {
-      throw new Error('VehicleInfo destinations must be an array of location IDs');
+      throw new Error('VehicleInfo destinations must be an array of route entry strings');
     }
     const normalized = [];
     for (const [index, entry] of value.entries()) {
       if (typeof entry !== 'string') {
-        throw new Error(`VehicleInfo destinations[${index}] must be a string location ID`);
+        throw new Error(`VehicleInfo destinations[${index}] must be a string route entry`);
       }
       const trimmed = entry.trim();
       if (!trimmed) {
         throw new Error(`VehicleInfo destinations[${index}] cannot be empty`);
       }
-      normalized.push(trimmed);
+      const pendingRegionRoute = VehicleInfo.parsePendingRegionRouteEntry(trimmed);
+      normalized.push(pendingRegionRoute ? pendingRegionRoute.entry : trimmed);
     }
     return [...new Set(normalized)];
   }
@@ -125,6 +176,105 @@ class VehicleInfo {
     return Number.isInteger(elapsedTime) && elapsedTime >= 0 ? elapsedTime : null;
   }
 
+  static #resolveRegionNameForLocationId(locationId) {
+    const normalizedLocationId = VehicleInfo.#normalizeOptionalText(locationId, 'route target locationId');
+    if (!normalizedLocationId) {
+      return null;
+    }
+
+    const Location = require('./Location.js');
+    const locationRecord = typeof Location.getById === 'function'
+      ? Location.getById(normalizedLocationId)
+      : null;
+    const regionName = typeof locationRecord?.region?.name === 'string'
+      ? locationRecord.region.name.trim()
+      : '';
+    return regionName || null;
+  }
+
+  static #resolveRegionNameForPendingDestination(pendingDestination) {
+    const normalizedPendingDestination = VehicleInfo.#normalizePendingDestination(pendingDestination);
+    if (!normalizedPendingDestination) {
+      return null;
+    }
+
+    const explicitRegionName = VehicleInfo.#normalizeOptionalText(
+      normalizedPendingDestination.regionName,
+      'pendingDestination.regionName'
+    );
+    if (explicitRegionName) {
+      return explicitRegionName;
+    }
+
+    const locationRegionName = VehicleInfo.#resolveRegionNameForLocationId(normalizedPendingDestination.locationId);
+    if (locationRegionName) {
+      return locationRegionName;
+    }
+
+    const regionId = VehicleInfo.#normalizeOptionalText(normalizedPendingDestination.regionId, 'pendingDestination.regionId');
+    if (!regionId) {
+      return null;
+    }
+
+    const Region = require('./Region.js');
+    const regionRecord = typeof Region.get === 'function'
+      ? Region.get(regionId)
+      : null;
+    const regionName = typeof regionRecord?.name === 'string'
+      ? regionRecord.name.trim()
+      : '';
+    return regionName || null;
+  }
+
+  static destinationsContainRouteTarget(destinations, {
+    locationId = null,
+    regionName = null
+  } = {}) {
+    const normalizedDestinations = VehicleInfo.#normalizeDestinationList(destinations);
+    if (!normalizedDestinations.length) {
+      return false;
+    }
+
+    const normalizedLocationId = VehicleInfo.#normalizeOptionalText(locationId, 'route target locationId');
+    if (normalizedLocationId && normalizedDestinations.includes(normalizedLocationId)) {
+      return true;
+    }
+
+    const regionComparisonName = VehicleInfo.#normalizeRouteComparisonText(regionName);
+    if (!regionComparisonName) {
+      return false;
+    }
+
+    return normalizedDestinations.some(entry => {
+      const pendingRegionRoute = VehicleInfo.parsePendingRegionRouteEntry(entry);
+      return pendingRegionRoute?.comparisonName === regionComparisonName;
+    });
+  }
+
+  static destinationsContainCurrentDestination(destinations, currentDestination = null) {
+    const normalizedCurrentDestination = VehicleInfo.#normalizeOptionalText(currentDestination, 'currentDestination');
+    if (!normalizedCurrentDestination) {
+      return false;
+    }
+
+    return VehicleInfo.destinationsContainRouteTarget(destinations, {
+      locationId: normalizedCurrentDestination,
+      regionName: VehicleInfo.#resolveRegionNameForLocationId(normalizedCurrentDestination)
+    });
+  }
+
+  static destinationsContainPendingDestination(destinations, pendingDestination = null) {
+    const normalizedPendingDestination = VehicleInfo.#normalizePendingDestination(pendingDestination);
+    if (!normalizedPendingDestination) {
+      return false;
+    }
+
+    return VehicleInfo.destinationsContainRouteTarget(destinations, {
+      locationId: normalizedPendingDestination.locationId,
+      regionName: VehicleInfo.#resolveRegionNameForPendingDestination(normalizedPendingDestination)
+    });
+  }
+
   #hasStartedTrip() {
     if (typeof this.#ETA !== 'number' || typeof this.#departureTime !== 'number') {
       return false;
@@ -154,13 +304,15 @@ class VehicleInfo {
     if (this.#ETA != null && this.#departureTime != null && this.#departureTime > this.#ETA) {
       throw new Error('VehicleInfo departureTime cannot be after ETA');
     }
-    if (this.#currentDestination != null && this.#destinations.length > 0 && !this.#destinations.includes(this.#currentDestination)) {
+    if (this.#currentDestination != null
+      && this.#destinations.length > 0
+      && !VehicleInfo.destinationsContainCurrentDestination(this.#destinations, this.#currentDestination)) {
       throw new Error('VehicleInfo currentDestination must be one of destinations when destinations is non-empty');
     }
-    if (this.#pendingDestination?.locationId != null
+    if (this.#pendingDestination != null
       && this.#destinations.length > 0
-      && !this.#destinations.includes(this.#pendingDestination.locationId)) {
-      throw new Error('VehicleInfo pendingDestination.locationId must be one of destinations when destinations is non-empty');
+      && !VehicleInfo.destinationsContainPendingDestination(this.#destinations, this.#pendingDestination)) {
+      throw new Error('VehicleInfo pendingDestination must resolve to one of destinations when destinations is non-empty');
     }
   }
 

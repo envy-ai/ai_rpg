@@ -50,7 +50,7 @@
             </select>
         </div>
         <div class="location-edit-field">
-            <label for="{{ _vehiclePrefix }}VehicleCurrentDestinationSearch">Current Destination</label>
+            <label for="{{ _vehiclePrefix }}VehicleCurrentDestinationSearch">Destination</label>
             <div class="vehicle-current-destination-editor" id="{{ _vehiclePrefix }}VehicleCurrentDestinationEditor">
                 <div
                     id="{{ _vehiclePrefix }}VehicleCurrentDestinationSelection"
@@ -60,8 +60,14 @@
                     <input
                         type="search"
                         id="{{ _vehiclePrefix }}VehicleCurrentDestinationSearch"
-                        placeholder="Type a location name to set current destination"
+                        placeholder="Type a location name to set destination"
                         autocomplete="off">
+                    <button
+                        type="button"
+                        id="{{ _vehiclePrefix }}VehicleCurrentDestinationNewRegionBtn"
+                        class="npc-edit-add-btn">
+                        New Region
+                    </button>
                     <div
                         id="{{ _vehiclePrefix }}VehicleCurrentDestinationSuggestions"
                         class="vehicle-destination-suggestions"
@@ -81,6 +87,12 @@
                         id="{{ _vehiclePrefix }}VehicleDestinationsSearch"
                         placeholder="Type a location name to add"
                         autocomplete="off">
+                    <button
+                        type="button"
+                        id="{{ _vehiclePrefix }}VehicleDestinationsNewRegionBtn"
+                        class="npc-edit-add-btn">
+                        New Region
+                    </button>
                     <div
                         id="{{ _vehiclePrefix }}VehicleDestinationsSuggestions"
                         class="vehicle-destination-suggestions"

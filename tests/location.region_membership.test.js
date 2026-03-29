@@ -55,3 +55,69 @@ test('Location.regionId reassigns region membership and repairs the old entrance
         }
     }
 });
+
+test('Location.regionId can recover from a stale missing previous region during reassignment', () => {
+    const createdLocations = [];
+    Region.clear();
+
+    try {
+        const destinationRegion = new Region({
+            id: 'test-stale-destination-region',
+            name: 'The Mirror Wake',
+            description: 'A ghost-lit drift corridor.'
+        });
+
+        const location = new Location({
+            id: 'test-stale-region-location',
+            name: 'Wayward Skiff',
+            description: 'A vehicle location carrying stale region state.',
+            regionId: 'missing-prior-region',
+            checkRegionId: false
+        });
+        createdLocations.push(location);
+
+        location.regionId = destinationRegion.id;
+
+        assert.equal(location.regionId, destinationRegion.id);
+        assert.equal(destinationRegion.locationIds.includes(location.id), true);
+    } finally {
+        Region.clear();
+        for (const location of createdLocations) {
+            Location.removeFromIndex(location);
+        }
+    }
+});
+
+test('Location.regionId reapplies the declared region to restore missing membership', () => {
+    const createdLocations = [];
+    Region.clear();
+
+    try {
+        const region = new Region({
+            id: 'test-membership-repair-region',
+            name: 'Broken Compass Reach',
+            description: 'A region used to validate membership repair.'
+        });
+
+        const location = new Location({
+            id: 'test-membership-repair-location',
+            name: 'Stormglass Dock',
+            description: 'A location with manually damaged region membership.',
+            regionId: region.id
+        });
+        createdLocations.push(location);
+
+        region.removeLocationId(location.id);
+        assert.equal(region.locationIds.includes(location.id), false);
+
+        location.regionId = region.id;
+
+        assert.equal(location.regionId, region.id);
+        assert.equal(region.locationIds.includes(location.id), true);
+    } finally {
+        Region.clear();
+        for (const location of createdLocations) {
+            Location.removeFromIndex(location);
+        }
+    }
+});

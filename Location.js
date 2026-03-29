@@ -57,7 +57,7 @@ class Location {
    * @param {string} [options.id] - Custom ID (if not provided, one will be generated)
    * @param {string} [options.imageId] - Image ID for generated location scene (defaults to null)
    */
-  constructor({ description, shortDescription = null, baseLevel = 1, id = null, imageId = null, name = null, isStub = false, stubMetadata = null, hasGeneratedStubs = false, statusEffects = [], npcIds = [], thingIds = [], generationHints = null, randomEvents = [], regionId = null, controllingFactionId = null, vehicleInfo = null, checkRegionId = true, lastVisitedTime = null, characterConcepts = [], enemyConcepts = [] } = {}) {
+  constructor({ description, shortDescription = null, baseLevel = 1, id = null, imageId = null, name = null, isStub = false, stubMetadata = null, hasGeneratedStubs = false, statusEffects = [], npcIds = [], thingIds = [], generationHints = null, randomEvents = [], regionId = null, controllingFactionId = null, vehicleInfo = null, checkRegionId = true, visited = false, lastVisitedTime = null, characterConcepts = [], enemyConcepts = [] } = {}) {
     const creatingStub = Boolean(isStub);
 
     if (!creatingStub) {
@@ -129,7 +129,7 @@ class Location {
     this.#controllingFactionId = typeof controllingFactionId === 'string' && controllingFactionId.trim()
       ? controllingFactionId.trim()
       : null;
-    this.#visited = false;
+    this.#visited = Boolean(visited);
     this.#stubMetadata = resolvedStubMetadata;
     this.#hasGeneratedStubs = Boolean(hasGeneratedStubs);
     this.#npcIds = Array.isArray(npcIds)
@@ -526,12 +526,16 @@ class Location {
     if (currentRegionId && currentRegionId !== normalizedRegionId) {
       const currentRegion = Region.get(currentRegionId);
       if (!currentRegion) {
-        throw new Error(`Current region "${currentRegionId}" does not exist for location "${this.#name || this.#id}".`);
+        console.warn(
+          `Location "${this.#name || this.#id}" is leaving missing region "${currentRegionId}" `
+          + `during reassignment to "${normalizedRegionId}".`
+        );
+      } else {
+        if (typeof currentRegion.removeLocationId !== 'function') {
+          throw new Error(`Region "${currentRegionId}" cannot remove location membership.`);
+        }
+        currentRegion.removeLocationId(this.#id);
       }
-      if (typeof currentRegion.removeLocationId !== 'function') {
-        throw new Error(`Region "${currentRegionId}" cannot remove location membership.`);
-      }
-      currentRegion.removeLocationId(this.#id);
     }
 
     this.#regionId = normalizedRegionId;
@@ -638,7 +642,7 @@ class Location {
   set lastVisitedTime(value) {
     if (value === null || value === undefined) {
       this.#lastVisitedTime = null;
-      this.#lastUpdated = new Date().toISOString();
+      this.#lastUpdated = new Date();
       return;
     }
     const num = Number(value);
@@ -647,7 +651,7 @@ class Location {
     }
     this.#lastVisitedTime = num;
     this.region.lastVisitedTime = num;
-    this.#lastUpdated = new Date().toISOString();
+    this.#lastUpdated = new Date();
   }
 
   get lastVisitedTime() {
@@ -752,6 +756,22 @@ class Location {
 
   set visited(value) {
     this.#visited = Boolean(value);
+    this.#lastUpdated = new Date();
+  }
+
+  markVisited(visitedAt = undefined) {
+    this.#visited = true;
+
+    let resolvedVisitedAt = visitedAt;
+    if (resolvedVisitedAt === undefined) {
+      resolvedVisitedAt = Globals?.elapsedTime;
+    }
+
+    if (resolvedVisitedAt !== null && resolvedVisitedAt !== undefined) {
+      this.lastVisitedTime = resolvedVisitedAt;
+      return;
+    }
+
     this.#lastUpdated = new Date();
   }
 
@@ -934,6 +954,7 @@ class Location {
       shortDescription: this.#shortDescription,
       baseLevel: this.#baseLevel,
       visited: this.#visited,
+      lastVisitedTime: this.#lastVisitedTime,
       imageId: this.#imageId,
       regionId: this.#regionId,
       controllingFactionId: this.#controllingFactionId,
@@ -984,6 +1005,7 @@ class Location {
       baseLevel: this.#baseLevel,
       imageId: this.#imageId,
       visited: this.#visited,
+      lastVisitedTime: this.#lastVisitedTime,
       exits: exits,
       regionId: this.#regionId,
       controllingFactionId: this.#controllingFactionId,

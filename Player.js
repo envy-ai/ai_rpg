@@ -8,6 +8,7 @@ const SanitizedStringMap = require('./SanitizedStringMap.js');
 const { findPackageJSON } = require('module');
 const Globals = require('./Globals.js');
 const Quest = require('./Quest.js');
+const Utils = require('./Utils.js');
 const VehicleInfo = require('./VehicleInfo.js');
 const FormulaEvaluator = require('./public/js/formula-evaluator.js');
 const { resolvePointPoolFormulas } = require('./utils/point-pool-formulas.js');
@@ -2326,32 +2327,7 @@ class Player {
         const isUnderway = normalizedVehicleInfo.isUnderway;
         const hasArrived = normalizedVehicleInfo.hasArrived;
         const isArriving = normalizedVehicleInfo.isArriving;
-        const formatTimeToDestination = (minutesValue) => {
-            if (!Number.isFinite(minutesValue) || !Number.isInteger(minutesValue)) {
-                return null;
-            }
-
-            const isPast = minutesValue < 0;
-            let remaining = Math.abs(minutesValue);
-            const days = Math.floor(remaining / 1440);
-            remaining -= days * 1440;
-            const hours = Math.floor(remaining / 60);
-            remaining -= hours * 60;
-            const minutes = remaining;
-
-            const parts = [];
-            if (days > 0) {
-                parts.push(`${days} ${days === 1 ? 'day' : 'days'}`);
-            }
-            if (hours > 0) {
-                parts.push(`${hours} ${hours === 1 ? 'hour' : 'hours'}`);
-            }
-            parts.push(`${minutes} ${minutes === 1 ? 'minute' : 'minutes'}`);
-
-            const formatted = parts.join(', ');
-            return isPast ? `${formatted} ago` : formatted;
-        };
-        const timeToDestination = formatTimeToDestination(rawTimeToDestination);
+        const timeToDestination = Utils.formatMinutesAsDuration(rawTimeToDestination, { includeAgo: true });
         const vehicleInfo = {
             ...activeVehicleInfo
         };
@@ -4428,7 +4404,13 @@ class Player {
         } else if (typeof location === 'object' && location.id) {
             // Store Location object or just its ID
             this.#currentLocation = location.id || location;
-            if (!this.#isNPC) location.visited = true;
+            if (!this.#isNPC) {
+                if (typeof location.markVisited === 'function') {
+                    location.markVisited();
+                } else {
+                    location.visited = true;
+                }
+            }
         } else {
             throw new Error('Location must be a string ID, Location object with ID, or null');
         }

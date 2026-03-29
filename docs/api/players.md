@@ -35,6 +35,7 @@ Response:
 
 Notes:
 - When no game is currently loaded/started (`Globals.gameLoaded === false`), this endpoint returns `pending: false` and does not generate ability options.
+- New-game startup now flips `Globals.gameLoaded` before the opening-scene step so pending startup ability choices can be generated and shown immediately.
 - `abilitySelection.pending` indicates whether gameplay is blocked by unfilled level ability picks.
 - When pending, `abilitySelection.selection` includes:
   - `level`
@@ -52,8 +53,11 @@ Request:
 - Body: `{ level: number, selectedAbilityNames: string[] }`
 
 Response:
-- 200: `{ success: true, pending: boolean, abilitySelection, player: NpcProfile }`
+- 200: `{ success: true, pending: boolean, abilitySelection, player: NpcProfile, gameIntroGenerated: boolean }`
 - 400/404/500: `{ success: false, error }`
+
+Notes:
+- If startup opening-scene generation was deferred for pending new-game ability picks, the final successful submit generates the deferred `game-intro` entry and returns `gameIntroGenerated: true`.
 
 ## GET /api/players
 List all players.

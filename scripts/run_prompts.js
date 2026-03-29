@@ -8,7 +8,7 @@ const nunjucks = require('nunjucks');
 const Globals = require('../Globals.js');
 const LLMClient = require('../LLMClient.js');
 
-const USAGE = 'Usage: node run_prompts.js <systemprompt file> <prompt file> <repeat count> [xmlTag] [requiredRegex]';
+const USAGE = 'Usage: node run_prompts.js [--config <config file>] <systemprompt file> <prompt file> <repeat count> [xmlTag] [requiredRegex]';
 
 const readTextFile = (filePath, label) => {
   if (!filePath || typeof filePath !== 'string') {
@@ -53,6 +53,64 @@ const loadConfig = (configPath) => {
     throw new Error(`Config file missing ai block: ${configPath}`);
   }
   return parsed;
+};
+
+const parseCliArgs = (argv, defaultConfigPath) => {
+  const positionals = [];
+  let configOverride = null;
+
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+
+    if (arg === '--config') {
+      if (configOverride !== null) {
+        throw new Error('Duplicate --config option provided.');
+      }
+      const nextArg = argv[index + 1];
+      if (!nextArg) {
+        throw new Error(`Missing value for --config. ${USAGE}`);
+      }
+      configOverride = nextArg;
+      index += 1;
+      continue;
+    }
+
+    if (arg.startsWith('--config=')) {
+      if (configOverride !== null) {
+        throw new Error('Duplicate --config option provided.');
+      }
+      const value = arg.slice('--config='.length);
+      if (!value) {
+        throw new Error(`Missing value for --config. ${USAGE}`);
+      }
+      configOverride = value;
+      continue;
+    }
+
+    if (arg.startsWith('--')) {
+      throw new Error(`Unknown option: ${arg}. ${USAGE}`);
+    }
+
+    positionals.push(arg);
+  }
+
+  if (positionals.length < 3 || positionals.length > 5) {
+    throw new Error(USAGE);
+  }
+
+  const [systemPath, promptPath, repeatRaw, xmlTagRaw, regexRaw] = positionals;
+  const configPath = configOverride === null
+    ? defaultConfigPath
+    : path.resolve(process.cwd(), configOverride);
+
+  return {
+    configPath,
+    promptPath,
+    regexRaw,
+    repeatRaw,
+    systemPath,
+    xmlTagRaw,
+  };
 };
 
 const extractTagContent = (text, tag) => {
@@ -117,19 +175,22 @@ const runOnce = async (index, systemPrompt, userPrompt, metadataLabel, { xmlTag 
 };
 
 const main = async () => {
-  const [, , systemPath, promptPath, repeatRaw, xmlTagRaw, regexRaw] = process.argv;
-  if (!systemPath || !promptPath || !repeatRaw) {
-    throw new Error(USAGE);
-  }
+  const scriptDir = __dirname;
+  const rootDir = path.resolve(scriptDir, '..');
+  const defaultConfigPath = path.join(scriptDir, 'config.yaml');
+  const {
+    configPath,
+    promptPath,
+    regexRaw,
+    repeatRaw,
+    systemPath,
+    xmlTagRaw,
+  } = parseCliArgs(process.argv.slice(2), defaultConfigPath);
 
   const repeatCount = Number.parseInt(repeatRaw, 10);
   if (!Number.isInteger(repeatCount) || repeatCount < 1) {
     throw new Error('Repeat count must be a positive integer.');
   }
-
-  const scriptDir = __dirname;
-  const rootDir = path.resolve(scriptDir, '..');
-  const configPath = path.join(scriptDir, 'config.yaml');
 
   const config = loadConfig(configPath);
   Globals.baseDir = rootDir;

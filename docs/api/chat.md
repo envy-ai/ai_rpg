@@ -82,13 +82,16 @@ Variants:
   - `@...`: saved normally in chat history as `user-generic-prompt` + `generic-prompt-response`.
   - `@@...`: saved in chat history, but marked so those entries are excluded from base-context history assembly.
   - `@@@...`: not persisted in server chat history at all (ephemeral display only), and skipped in future base-context history.
-  - All three generic prompt variants bypass slop-remover processing for that response.
+- No-context prompt actions route through `prompts/generic-prompt-nocontext.xml.njk` with stripped marker text:
+  - `\...`: saved in chat history as `user-generic-prompt` + `generic-prompt-response`, marked so those entries are excluded from base-context history assembly, and runs with no chat tools.
+- All generic/no-context prompt variants (`@`, `@@`, `@@@`, `\`) bypass slop-remover processing for that response.
 - Inline die-roll override: player action text supports one or more `"<integer>"` tokens (pattern `/<-?\\d+>/`). These tokens are stripped from action text before prompt/check processing and before the user entry is persisted in chat history. When present, the first parsed integer is used as the player's die roll for this request's attack-roll and plausibility skill-check resolution (no clamping).
 - Creative `!` actions now respect `repetition_buster`: when enabled, the response is required/parsing-validated as action XML (`<finalProse>`/`<travelProse>`); when disabled, creative actions remain free-form prose.
 - Tool calling is enabled in the chat generation loop. The model can emit `tool_calls`; the server executes each call, appends `role: tool` messages, and continues generation until normal assistant prose is returned.
 - Tool availability is prompt-mode gated:
-  - Regular prompts (not prefixed by `@`, `@@`, or `@@@`) get information-gathering tools only.
+  - Regular prompts (not prefixed by `@`, `@@`, `@@@`, or `\`) get information-gathering tools only.
   - Generic prompt actions (`@...`, `@@...`, `@@@...`) get the full tool set, including world-mutation tools.
+  - No-context prompt actions (`\...`) do not get any chat tools.
 - Information-gathering tools (always available):
   - `moreInfo({ name, type? })`: returns `<moreInfoResults>...</moreInfoResults>` XML with curated, template-rendered markdown summaries (base-context style) for matching NPCs (including alias matches), things, locations, and regions whose names contain the query substring. Optional `type` may be `character`, `thing`, `location`, or `region`; omitting it searches all categories. Each entity node includes a `<markdown>` field.
   - `getHistory({ query, startIndex?, count? })`: returns `<historyResults>...</historyResults>` XML for assistant prose-like history entries whose content matches all case-insensitive query terms (`query` supports string or string-array inputs with AND semantics). Optional `startIndex` is 1-based and optional `count` limits how many matches are returned; omitting both preserves current behavior (all matches).
