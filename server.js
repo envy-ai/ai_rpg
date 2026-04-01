@@ -69,18 +69,15 @@ const Events = require('./Events.js');
 const RealtimeHub = require('./RealtimeHub.js');
 const QuestConfirmationManager = require('./QuestConfirmationManager.js');
 const ModLoader = require('./ModLoader.js');
+const { diffFrozenEnabledModDirectoryNames } = require('./ModDiscovery.js');
 const { initializeLorebookManager, getLorebookManager } = require('./lorebook.js');
+const { loadMergedDefinitionFile, validateDefinitionOverlays } = require('./DefinitionLoader.js');
 
 Globals.baseDir = __dirname;
 Globals.sceneSummaries = new SceneSummaries();
 
 attachAxiosMetricsLogger(axios);
 
-const BANNED_NPC_NAMES_PATH = path.join(__dirname, 'defs', 'banned_npc_names.yaml');
-const BANNED_LOCATION_NAMES_PATH = path.join(__dirname, 'defs', 'banned_location_names.yaml');
-const SLOPWORDS_PATH = path.join(__dirname, 'defs', 'slopwords.yaml');
-const SYSTEM_PROMPT_PREFIX_BY_PROMPT_PATH = path.join(__dirname, 'defs', 'system_prompt_prefix_by_prompt.yaml');
-const DEFAULT_SKILLS_PATH = path.join(__dirname, 'defs', 'default_skills.yaml');
 let cachedBannedNpcWords = null;
 let cachedBannedNpcRegexes = null;
 let cachedBannedLocationNames = null;
@@ -92,8 +89,11 @@ let cachedPointPoolFormulaRuntime = null;
 
 function loadDefaultSkillsForSettings() {
     try {
-        const raw = fs.readFileSync(DEFAULT_SKILLS_PATH, 'utf8');
-        const parsed = yaml.load(raw);
+        const { value } = loadMergedDefinitionFile({
+            baseDir: Globals.baseDir || __dirname,
+            filename: 'default_skills.yaml'
+        });
+        const parsed = value;
         if (!Array.isArray(parsed)) {
             throw new Error('default_skills.yaml must be a YAML list of skill names.');
         }
@@ -110,7 +110,7 @@ function loadDefaultSkillsForSettings() {
 
         return { skills, error: '' };
     } catch (error) {
-        console.warn(`Failed to load default skills from ${DEFAULT_SKILLS_PATH}: ${error.message}`);
+        console.warn(`Failed to load default skills from defs/default_skills.yaml: ${error.message}`);
         return { skills: [], error: error.message || 'Failed to load default skills.' };
     }
 }
@@ -619,6 +619,8 @@ try {
 
 function reloadConfigAndDefs() {
     const merged = loadMergedConfig(cliConfigOverridePath);
+    const modEnableDiff = diffFrozenEnabledModDirectoryNames(Globals.baseDir || __dirname);
+    validateDefinitionOverlays({ baseDir: Globals.baseDir || __dirname });
 
     if (config && typeof config === 'object') {
         for (const key of Object.keys(config)) {
@@ -648,10 +650,14 @@ function reloadConfigAndDefs() {
     invalidateCache(promptEnv);
     invalidateCache(imagePromptEnv);
 
+    Thing.loadRarityDefinitions({ forceReload: true });
+    Player.reloadDefinitionCaches({ refreshInstances: true });
+
     return {
         success: true,
         message: 'Configuration and definitions reloaded.',
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        modEnableDiff
     };
 }
 
@@ -2450,54 +2456,50 @@ function pushChatEntry(entry, collector = null, locationId = null) {
 }
 
 async function loadSlopwordConfig({ defaultPpmOverride = null } = {}) {
-    let rawSlopwords;
     try {
-        rawSlopwords = await fs.promises.readFile(SLOPWORDS_PATH, 'utf8');
+        const { value } = loadMergedDefinitionFile({
+            baseDir: Globals.baseDir || __dirname,
+            filename: 'slopwords.yaml'
+        });
+        const slopConfig = value || {};
+
+        if (Object.prototype.hasOwnProperty.call(slopConfig, 'trigrams')) {
+            throw new Error('Slopwords config key "trigrams" is no longer supported. Rename it to "ngrams".');
+        }
+        if (Object.prototype.hasOwnProperty.call(slopConfig, 'trigram_default')) {
+            throw new Error('Slopwords config key "trigram_default" is no longer supported. Rename it to "ngram_default".');
+        }
+
+        const overrideProvided = defaultPpmOverride !== null && defaultPpmOverride !== undefined;
+        const resolvedOverride = overrideProvided ? Number(defaultPpmOverride) : null;
+        if (overrideProvided && (!Number.isFinite(resolvedOverride) || resolvedOverride < 0)) {
+            throw new Error('Slopwords default override ppm is invalid.');
+        }
+
+        const defaultPpm = overrideProvided ? resolvedOverride : Number(slopConfig.default);
+        if (!Number.isFinite(defaultPpm) || defaultPpm < 0) {
+            throw new Error('Slopwords default ppm is missing or invalid.');
+        }
+
+        const slopwords = slopConfig.slopwords;
+        if (!slopwords || typeof slopwords !== 'object') {
+            throw new Error('Slopwords list is missing or invalid.');
+        }
+
+        const ngramDefault = Number(slopConfig.ngram_default);
+        if (!Number.isFinite(ngramDefault) || ngramDefault < 0) {
+            throw new Error('Slopwords ngram_default ppm is missing or invalid.');
+        }
+
+        const ngrams = slopConfig.ngrams;
+        if (!ngrams || typeof ngrams !== 'object' || Array.isArray(ngrams)) {
+            throw new Error('Slopwords ngrams list is missing or invalid.');
+        }
+
+        return { defaultPpm, slopwords, ngramDefault, ngrams };
     } catch (error) {
-        throw new Error(`Failed to read slopwords definitions: ${error.message}`);
+        throw new Error(`Failed to load slopwords definitions: ${error.message}`);
     }
-
-    let slopConfig;
-    try {
-        slopConfig = yaml.load(rawSlopwords) || {};
-    } catch (error) {
-        throw new Error(`Failed to parse slopwords YAML: ${error.message}`);
-    }
-
-    if (Object.prototype.hasOwnProperty.call(slopConfig, 'trigrams')) {
-        throw new Error('Slopwords config key "trigrams" is no longer supported. Rename it to "ngrams".');
-    }
-    if (Object.prototype.hasOwnProperty.call(slopConfig, 'trigram_default')) {
-        throw new Error('Slopwords config key "trigram_default" is no longer supported. Rename it to "ngram_default".');
-    }
-
-    const overrideProvided = defaultPpmOverride !== null && defaultPpmOverride !== undefined;
-    const resolvedOverride = overrideProvided ? Number(defaultPpmOverride) : null;
-    if (overrideProvided && (!Number.isFinite(resolvedOverride) || resolvedOverride < 0)) {
-        throw new Error('Slopwords default override ppm is invalid.');
-    }
-
-    const defaultPpm = overrideProvided ? resolvedOverride : Number(slopConfig.default);
-    if (!Number.isFinite(defaultPpm) || defaultPpm < 0) {
-        throw new Error('Slopwords default ppm is missing or invalid.');
-    }
-
-    const slopwords = slopConfig.slopwords;
-    if (!slopwords || typeof slopwords !== 'object') {
-        throw new Error('Slopwords list is missing or invalid.');
-    }
-
-    const ngramDefault = Number(slopConfig.ngram_default);
-    if (!Number.isFinite(ngramDefault) || ngramDefault < 0) {
-        throw new Error('Slopwords ngram_default ppm is missing or invalid.');
-    }
-
-    const ngrams = slopConfig.ngrams;
-    if (!ngrams || typeof ngrams !== 'object' || Array.isArray(ngrams)) {
-        throw new Error('Slopwords ngrams list is missing or invalid.');
-    }
-
-    return { defaultPpm, slopwords, ngramDefault, ngrams };
 }
 
 function tokenizeSlopText(text) {
@@ -3166,7 +3168,7 @@ function serializeNpcForClient(npc, options = {}) {
         inventory,
         currency,
         experience,
-        needBars: typeof npc.getNeedBars === 'function' ? npc.getNeedBars() : [],
+        needBars: typeof npc.getNeedBars === 'function' ? npc.getNeedBars({ scope: 'active' }) : [],
         personality,
         personalityType: personality?.type ?? null,
         personalityTraits: personality?.traits ?? null,
@@ -4747,7 +4749,7 @@ function buildBasePromptContext({
         return [];
     };
 
-    const currentPlayerNeedBars = collectNeedBarsForPrompt(currentPlayer, playerStatus, { includePlayerOnly: true });
+    const currentPlayerNeedBars = collectNeedBarsForPrompt(currentPlayer, playerStatus);
 
     const gearSnapshot = playerStatus?.gear && typeof playerStatus.gear === 'object'
         ? Object.entries(playerStatus.gear).map(([slotName, slotData]) => ({
@@ -4850,7 +4852,7 @@ function buildBasePromptContext({
             const dispositionsTowardsPlayer = computeDispositionsTowardsPlayer(npc);
             const skills = collectActorSkills(npcStatus, npc);
             const personality = extractPersonality(npcStatus, npc);
-            const needBars = collectNeedBarsForPrompt(npc, npcStatus, { includePlayerOnly: false });
+            const needBars = collectNeedBarsForPrompt(npc, npcStatus);
             const importantMemories = sanitizeImportantMemories(
                 npcStatus?.importantMemories
                 || npc?.importantMemories
@@ -4893,7 +4895,7 @@ function buildBasePromptContext({
             const personality = extractPersonality(memberStatus, member);
             const dispositionsTowardsPlayer = computeDispositionsTowardsPlayer(member);
             const skills = collectActorSkills(memberStatus, member);
-            const needBars = collectNeedBarsForPrompt(member, memberStatus, { includePlayerOnly: !member.isNPC });
+            const needBars = collectNeedBarsForPrompt(member, memberStatus);
             const importantMemories = sanitizeImportantMemories(
                 memberStatus?.importantMemories
                 || member?.importantMemories
@@ -16003,8 +16005,11 @@ function getBannedNpcWords() {
     }
 
     try {
-        const raw = fs.readFileSync(BANNED_NPC_NAMES_PATH, 'utf8');
-        const parsed = yaml.load(raw) || {};
+        const { value } = loadMergedDefinitionFile({
+            baseDir: Globals.baseDir || __dirname,
+            filename: 'banned_npc_names.yaml'
+        });
+        const parsed = value || {};
         const words = Array.isArray(parsed.banned_npc_names) ? parsed.banned_npc_names : [];
         cachedBannedNpcWords = words
             .map(word => (typeof word === 'string' ? word.trim().toLowerCase() : ''))
@@ -16027,8 +16032,11 @@ function getSlopWordList() {
     }
 
     try {
-        const raw = fs.readFileSync(SLOPWORDS_PATH, 'utf8');
-        const parsed = yaml.load(raw) || {};
+        const { value } = loadMergedDefinitionFile({
+            baseDir: Globals.baseDir || __dirname,
+            filename: 'slopwords.yaml'
+        });
+        const parsed = value || {};
         const slopwords = parsed.slopwords;
         if (!slopwords || typeof slopwords !== 'object') {
             throw new Error('Slopwords list is missing or invalid.');
@@ -16050,8 +16058,11 @@ function getSystemPromptPrefixByPromptList() {
     }
 
     try {
-        const raw = fs.readFileSync(SYSTEM_PROMPT_PREFIX_BY_PROMPT_PATH, 'utf8');
-        const parsed = yaml.load(raw);
+        const { value } = loadMergedDefinitionFile({
+            baseDir: Globals.baseDir || __dirname,
+            filename: 'system_prompt_prefix_by_prompt.yaml'
+        });
+        const parsed = value;
         const entries = Array.isArray(parsed)
             ? parsed
             : (Array.isArray(parsed?.entries) ? parsed.entries : []);
@@ -16121,8 +16132,11 @@ function getBannedNpcRegexes() {
     cachedBannedNpcRegexes = [];
 
     try {
-        const raw = fs.readFileSync(BANNED_NPC_NAMES_PATH, 'utf8');
-        const parsed = yaml.load(raw) || {};
+        const { value } = loadMergedDefinitionFile({
+            baseDir: Globals.baseDir || __dirname,
+            filename: 'banned_npc_names.yaml'
+        });
+        const parsed = value || {};
         const regexes = Array.isArray(parsed.banned_npc_name_regexes) ? parsed.banned_npc_name_regexes : [];
         for (const regexStr of regexes) {
             if (typeof regexStr !== 'string') {
@@ -16162,8 +16176,11 @@ function getBannedLocationNameSet() {
     }
 
     try {
-        const raw = fs.readFileSync(BANNED_LOCATION_NAMES_PATH, 'utf8');
-        const parsed = yaml.load(raw) || {};
+        const { value } = loadMergedDefinitionFile({
+            baseDir: Globals.baseDir || __dirname,
+            filename: 'banned_location_names.yaml'
+        });
+        const parsed = value || {};
         const names = Array.isArray(parsed.banned_location_names)
             ? parsed.banned_location_names
             : [];
@@ -25136,6 +25153,9 @@ const modLoadResults = modLoader.loadMods(apiScope);
 if (modLoadResults.failed.length > 0) {
     console.warn(`⚠️  ${modLoadResults.failed.length} mod(s) failed to load.`);
 }
+validateDefinitionOverlays({ baseDir: Globals.baseDir || __dirname });
+Thing.loadRarityDefinitions({ forceReload: true });
+Player.reloadDefinitionCaches({ refreshInstances: false });
 
 if (typeof module !== 'undefined' && module.exports) {
     module.exports.performGameSave = (...args) => apiScope.performGameSave(...args);
@@ -25259,14 +25279,12 @@ function getExperiencePointValues() {
         return cachedExperiencePointValues;
     }
 
-    const xpPath = path.join(__dirname, 'defs', 'experience_point_values.yaml');
     try {
-        if (!fs.existsSync(xpPath)) {
-            cachedExperiencePointValues = [];
-            return cachedExperiencePointValues;
-        }
-        const raw = fs.readFileSync(xpPath, 'utf8');
-        const parsed = yaml.load(raw);
+        const { value } = loadMergedDefinitionFile({
+            baseDir: Globals.baseDir || __dirname,
+            filename: 'experience_point_values.yaml'
+        });
+        const parsed = value;
         const results = [];
 
         const addEntry = (action, value) => {

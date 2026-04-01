@@ -2596,7 +2596,7 @@
             } = options;
 
             const barsArray = Array.isArray(bars) ? bars : [];
-            const filtered = includePlayerOnly ? barsArray : barsArray.filter(bar => !bar?.playerOnly);
+            const filtered = barsArray;
 
             container.innerHTML = '';
 
@@ -2664,6 +2664,31 @@
                 wrapper.appendChild(track);
                 container.appendChild(wrapper);
             });
+        }
+
+        function formatNeedBarAudienceLabel(entry) {
+            if (!entry || typeof entry !== 'object') {
+                return '';
+            }
+
+            const labels = [];
+            if (entry.player) {
+                labels.push('Player');
+            }
+            if (entry.party) {
+                labels.push('Party');
+            }
+            if (entry.nonParty) {
+                labels.push('Non-party');
+            }
+
+            if (labels.length === 3) {
+                return 'All actors';
+            }
+            if (!labels.length) {
+                return '';
+            }
+            return labels.join(' + ');
         }
 
         function cloneActorRecord(actor) {
@@ -8430,8 +8455,12 @@
             const isPlayer = Boolean(payload.player && !payload.player.isNPC);
 
             const notes = [`Adjust the need bars for ${name}.`];
-            if (!isPlayer && payload.includePlayerOnly === false) {
-                notes.push('Player-only needs are hidden for NPCs.');
+            if (!isPlayer) {
+                if (payload.audience?.party) {
+                    notes.push('Showing need bars relevant to party members.');
+                } else if (payload.audience?.nonParty) {
+                    notes.push('Showing need bars relevant to non-party NPCs.');
+                }
             }
             npcNeedsSummary.textContent = notes.join(' ');
         }
@@ -8498,9 +8527,10 @@
                     rateLabel.textContent = `Δ/turn ${entry.changePerTurn > 0 ? `+${entry.changePerTurn}` : entry.changePerTurn}`;
                     metaEl.appendChild(rateLabel);
                 }
-                if (entry.playerOnly) {
+                const audienceLabel = formatNeedBarAudienceLabel(entry);
+                if (audienceLabel && audienceLabel !== 'All actors') {
                     const badge = document.createElement('span');
-                    badge.textContent = 'Player-only';
+                    badge.textContent = audienceLabel;
                     badge.style.color = '#fde68a';
                     metaEl.appendChild(badge);
                 }
@@ -13443,7 +13473,15 @@
                     targetId,
                     player: data.player || (type === 'player' ? { id: targetId, name: target.name || 'Player', isNPC: false } : null),
                     npc: data.npc || (type === 'npc' ? { id: targetId, name: target.name || 'NPC', isNPC: true } : null),
-                    includePlayerOnly: data.includePlayerOnly !== undefined ? Boolean(data.includePlayerOnly) : type !== 'npc',
+                    audience: data.audience && typeof data.audience === 'object'
+                        ? {
+                            player: Boolean(data.audience.player),
+                            party: Boolean(data.audience.party),
+                            nonParty: Boolean(data.audience.nonParty)
+                        }
+                        : (type === 'player'
+                            ? { player: true, party: false, nonParty: false }
+                            : { player: false, party: Boolean(target?.isInPlayerParty), nonParty: !Boolean(target?.isInPlayerParty) }),
                     needs: normalizedNeeds
                 };
 
@@ -13555,14 +13593,18 @@
                     }))
                     : [];
 
-            const payload = {
+                const payload = {
                 type: currentNpcNeedsTargetType,
                 targetId: currentNpcNeedsTargetId,
                 player: data.player || currentNpcNeedsData.player || null,
                 npc: data.npc || currentNpcNeedsData.npc || null,
-                    includePlayerOnly: data.includePlayerOnly !== undefined
-                        ? Boolean(data.includePlayerOnly)
-                        : currentNpcNeedsData.includePlayerOnly,
+                    audience: data.audience && typeof data.audience === 'object'
+                        ? {
+                            player: Boolean(data.audience.player),
+                            party: Boolean(data.audience.party),
+                            nonParty: Boolean(data.audience.nonParty)
+                        }
+                        : currentNpcNeedsData.audience,
                     needs: normalizedNeeds
                 };
 

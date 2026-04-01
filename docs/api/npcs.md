@@ -55,7 +55,7 @@ Response:
 Fetch need bars for an NPC.
 
 Response:
-- 200: `{ success: true, needs: NeedBar[], includePlayerOnly, npc, player? }`
+- 200: `{ success: true, needs: NeedBar[], audience: { player, party, nonParty }, npc, player? }`
 - 400/404/500 with `{ success: false, error }`
 
 ## PUT /api/npcs/:id/needs
@@ -65,7 +65,7 @@ Request:
 - Body: `{ needs: Array<{ id: string, value: number }> }`
 
 Response:
-- 200: `{ success: true, message, needs: NeedBar[], includePlayerOnly, npc, applied: NeedBar[] }`
+- 200: `{ success: true, message, needs: NeedBar[], audience: { player, party, nonParty }, npc, applied: NeedBar[] }`
 - 400/404/500 with `{ success: false, error }`
 
 ## GET /api/npcs/:id/dispositions

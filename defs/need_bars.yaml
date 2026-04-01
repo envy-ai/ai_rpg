@@ -7,7 +7,9 @@ need_bars:
   food:
     name: Food
     description: Represents how well-fed the character is. If this reaches 0, the character may suffer penalties to health and attributes. Normal travel does not reduce this need.
-    player_only: true
+    player: true
+    party: false
+    non_party: false
     icon: 🍖
     color: "#FFA500"
     related_attribute: constitution
@@ -58,7 +60,9 @@ need_bars:
     name: Stamina
     description: Represents the character's minute-to-minute energy levels. If this reaches 0, it will be difficult for them to swing weapons or do other strenuous acts. Regenerates very quickly.
     related_attribute: strength
-    player_only: false
+    player: true
+    party: true
+    non_party: true
     color: "#33CC66"
     icon: ⚡
     min: 0
@@ -102,7 +106,9 @@ need_bars:
     name: Rest
     description: Represents how well-rested the character is. If this reaches 0, the character may suffer penalties to health and attributes. Normal travel does not reduce this need.
     related_attribute: constitution
-    player_only: true
+    player: true
+    party: false
+    non_party: false
     color: "#00BFFF"
     icon: 🛌
     min: 0
@@ -155,7 +161,9 @@ need_bars:
     name: Mana
     description: Represents the character's magical energy. Used for casting spells and magical abilities.
     related_attribute: intelligence
-    player_only: false
+    player: true
+    party: true
+    non_party: true
     color: "#8A2BE2"
     icon: ✨
     min: 0

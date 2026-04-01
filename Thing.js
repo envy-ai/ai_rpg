@@ -1,13 +1,11 @@
 const crypto = require('crypto');
-const fs = require('fs');
-const path = require('path');
-const yaml = require('js-yaml');
 const Utils = require('./Utils.js');
 const Globals = require('./Globals.js');
 const { count } = require('console');
 const SanitizedStringMap = require('./SanitizedStringMap.js');
 const SanitizedStringSet = require('./SanitizedStringSet.js');
 const StatusEffect = require('./StatusEffect.js');
+const { loadMergedDefinitionFile } = require('./DefinitionLoader.js');
 
 /**
  * Thing class for AI RPG
@@ -315,12 +313,14 @@ class Thing {
       return this.getAllRarityDefinitions();
     }
 
-    const raritiesPath = path.join(__dirname, 'defs', 'rarities.yaml');
     const parsedEntries = [];
 
     try {
-      const yamlContent = fs.readFileSync(raritiesPath, 'utf8');
-      const parsedYaml = yaml.load(yamlContent) || {};
+      const { value } = loadMergedDefinitionFile({
+        baseDir: Globals.baseDir || __dirname,
+        filename: 'rarities.yaml'
+      });
+      const parsedYaml = value || {};
       const entries = parsedYaml && typeof parsedYaml === 'object' ? parsedYaml.rarities : null;
       if (entries && typeof entries === 'object') {
         let order = 0;
@@ -358,7 +358,7 @@ class Thing {
         }
       }
     } catch (error) {
-      console.warn(`Failed to load rarity definitions from ${raritiesPath}: ${error.message}`);
+      console.warn(`Failed to load rarity definitions from defs/rarities.yaml: ${error.message}`);
     }
 
     this.#rarityDefinitions.clear();

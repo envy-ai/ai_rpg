@@ -1,7 +1,7 @@
 # Player
 
 ## Purpose
-Represents a player or NPC with attributes, skills, inventory, gear, status effects, need bars, dispositions, party membership, quests, progression, and optional alias names. Maintains static indexes and shared definitions (gear slots, dispositions, need bars).
+Represents a player or NPC with attributes, skills, inventory, gear, status effects, need bars, dispositions, party membership, quests, progression, and optional alias names. Maintains static indexes and shared definitions (gear slots, dispositions, need bars), all loaded from root `defs/*.yaml` plus any matching mod defs overlays.
 
 ## Key State
 - Identity: `#id`, `#name`, `#aliases`, `#description`, `#shortDescription`, `#imageId`, `#class`, `#race`, `#gender`, `#isNPC`.
@@ -31,6 +31,7 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
 - Definitions:
   - `getDispositionDefinitions()`, `getDispositionDefinition(name)`, `resolveDispositionIntensity(type, value)`.
   - `getNeedBarDefinitionsForContext()`.
+  - `reloadDefinitionCaches({ refreshInstances })` clears shared defs caches and can reapply merged need-bar definitions to already loaded actors.
   - `setAvailableSkills(skillsInput)`, `getAvailableSkills()`.
 - Global behaviors:
   - `applyStatusEffectNeedBarsToAll()` (uses canonical world minutes, initializes missing `appliedAt` stamps, applies need-bar deltas once per elapsed minute, and decrements finite status-effect durations by elapsed minutes capped to remaining time).
@@ -129,6 +130,7 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
 - The class supports NPCs and players; many behaviors are shared with `isNPC` gating certain flows.
 - Gear and inventory are tightly coupled; equip/unequip flows update health and modifiers.
 - Need bar logic includes per-turn decay and magnitude-based adjustments.
+- Need bars now use explicit audience flags (`player`, `party`, `nonParty`). NPCs retain both party-only and non-party-only bar state internally so values survive party swaps, but active reads, prompt context, endpoint payloads, and per-turn decay only operate on the actor's current audience.
 - `elapsedTime` is minute-canonical; setter validation requires non-negative integer minutes, and load paths normalize to integer minutes.
 - `currentVehicle` returns `null` unless the actor is currently in a vehicle location or vehicle region; when present it includes vehicle name/description, `location` (`<regionName>:<locationName>`), the full `vehicleInfo` object, explicit trip-state booleans (`isUnderway`, `hasArrived`, `isArriving`) mirrored onto `vehicleInfo` for prompt compatibility, `destination`, `destinationResolved`, optional `pendingDestination`, numeric `minutesToDestination`, plus a formatted `timeToDestination` string (`X days, Y hours, Z minutes`, omitting all zero-value units except exact `0 minutes`, and appending `ago` when negative). During timed travel, `destination` can come from `pendingDestination` even when `vehicleInfo.currentDestination` is still `null`, so prompts can see the intended target without forcing early destination generation. These booleans now come from `VehicleInfo` directly, so pre-departure states no longer appear as arrived.
 - Unspent skill/attribute points are formula-derived at read time from current level + assigned stats/skills.

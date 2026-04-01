@@ -1,7 +1,7 @@
 # Thing
 
 ## Purpose
-Represents items and scenery in the game world. Supports rarity metadata, attribute bonuses, status effects (including AI enrichment), and placement in locations or inventories. Maintains indexes by id and name.
+Represents items and scenery in the game world. Supports rarity metadata, attribute bonuses, status effects (including AI enrichment), and placement in locations or inventories. Maintains indexes by id and name. Rarity definitions are loaded from root `defs/rarities.yaml` plus any matching mod defs overlays.
 
 ## Key State
 - Core fields: `#id`, `#name`, `#description`, `#shortDescription`, `#thingType`, `#imageId`.

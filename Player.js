@@ -1,6 +1,3 @@
-const yaml = require('js-yaml');
-const fs = require('fs');
-const path = require('path');
 const Thing = require('./Thing.js');
 const Skill = require('./Skill.js');
 const StatusEffect = require('./StatusEffect.js');
@@ -12,6 +9,7 @@ const Utils = require('./Utils.js');
 const VehicleInfo = require('./VehicleInfo.js');
 const FormulaEvaluator = require('./public/js/formula-evaluator.js');
 const { resolvePointPoolFormulas } = require('./utils/point-pool-formulas.js');
+const { loadMergedDefinitionFile } = require('./DefinitionLoader.js');
 
 const ATTRIBUTE_POOL_BASELINE_VALUE = 10;
 const SKILL_POOL_BASELINE_VALUE = 1;
@@ -261,6 +259,81 @@ class Player {
         return Object.keys(entries).length ? Object.freeze(entries) : null;
     }
 
+    static #normalizeNeedBarAudienceConfig(config = {}) {
+        const hasExplicitAudience = Object.prototype.hasOwnProperty.call(config, 'player')
+            || Object.prototype.hasOwnProperty.call(config, 'party')
+            || Object.prototype.hasOwnProperty.call(config, 'non_party')
+            || Object.prototype.hasOwnProperty.call(config, 'nonParty');
+
+        if (hasExplicitAudience) {
+            return {
+                player: Boolean(config.player),
+                party: Boolean(config.party),
+                nonParty: Boolean(config.non_party ?? config.nonParty)
+            };
+        }
+
+        const legacyPlayerOnly = Boolean(config.player_only ?? config.playerOnly);
+        if (legacyPlayerOnly) {
+            return {
+                player: true,
+                party: false,
+                nonParty: false
+            };
+        }
+
+        return {
+            player: true,
+            party: true,
+            nonParty: true
+        };
+    }
+
+    static #isNeedBarPlayerOnlyAudience(source = {}) {
+        return Boolean(source.player) && !Boolean(source.party) && !Boolean(source.nonParty);
+    }
+
+    static #resolveNeedBarAudienceForActor(actor) {
+        const isNPC = Boolean(actor?.isNPC);
+        if (!isNPC) {
+            return {
+                player: true,
+                party: false,
+                nonParty: false
+            };
+        }
+
+        const isInPlayerParty = Boolean(actor?.isInPlayerParty);
+        return {
+            player: false,
+            party: isInPlayerParty,
+            nonParty: !isInPlayerParty
+        };
+    }
+
+    static #needBarIsActiveForActor(bar, actor) {
+        if (!bar || !actor) {
+            return false;
+        }
+
+        const audience = this.#resolveNeedBarAudienceForActor(actor);
+        return (audience.player && bar.player)
+            || (audience.party && bar.party)
+            || (audience.nonParty && bar.nonParty);
+    }
+
+    static #needBarCanBeStoredForActor(bar, actor) {
+        if (!bar || !actor) {
+            return false;
+        }
+
+        if (actor.isNPC) {
+            return Boolean(bar.party) || Boolean(bar.nonParty);
+        }
+
+        return Boolean(bar.player);
+    }
+
     static #normalizeAliasSet(source, fullName = '') {
         const aliases = new Set();
         const nameToExclude = typeof fullName === 'string' ? fullName.trim().toLowerCase() : '';
@@ -362,7 +435,7 @@ class Player {
         const max = Number.isFinite(Number(config.max)) ? Number(config.max) : 100;
         const changePerTurn = Number.isFinite(Number(config.change_per_turn)) ? Number(config.change_per_turn) : 0;
         const relativeToLevel = Boolean(config.relative_to_level);
-        const playerOnly = Boolean(config.player_only);
+        const audience = this.#normalizeNeedBarAudienceConfig(config);
         const relatedAttribute = typeof config.related_attribute === 'string' ? config.related_attribute : null;
         const initialValue = Number.isFinite(Number(config.initial)) ? Number(config.initial) : null;
 
@@ -394,7 +467,9 @@ class Player {
             max,
             changePerTurn,
             relativeToLevel,
-            playerOnly,
+            player: audience.player,
+            party: audience.party,
+            nonParty: audience.nonParty,
             relatedAttribute,
             initialValue,
             effectThresholds,
@@ -507,7 +582,9 @@ class Player {
             id: typeof definition.id === 'string' ? definition.id : null,
             name: typeof definition.name === 'string' ? definition.name : (definition.id || 'Unknown'),
             description: typeof definition.description === 'string' ? definition.description : '',
-            playerOnly: Boolean(definition.playerOnly),
+            player: Boolean(definition.player),
+            party: Boolean(definition.party),
+            nonParty: Boolean(definition.nonParty),
             relatedAttribute: typeof definition.relatedAttribute === 'string'
                 ? definition.relatedAttribute
                 : null,
@@ -680,9 +757,11 @@ class Player {
     static get needBarDefinitions() {
         if (!this.#needBarDefinitions) {
             try {
-                const needBarsPath = path.join(__dirname, 'defs', 'need_bars.yaml');
-                const raw = fs.readFileSync(needBarsPath, 'utf8');
-                const data = yaml.load(raw) || {};
+                const { value } = loadMergedDefinitionFile({
+                    baseDir: Globals.baseDir || __dirname,
+                    filename: 'need_bars.yaml'
+                });
+                const data = value || {};
                 const source = typeof data.need_bars === 'object' && data.need_bars !== null ? data.need_bars : {};
                 this.#needBarMagnitudeValues = this.#normalizeNeedValueMap(data.need_values);
                 const normalized = {};
@@ -821,6 +900,27 @@ class Player {
         this.#instances.clear();
         this.#indexById = new Map();
         this.#indexByName = new SanitizedStringMap();
+    }
+
+    static reloadDefinitionCaches({ refreshInstances = true } = {}) {
+        this.#needBarDefinitions = null;
+        this.#needBarMagnitudeValues = undefined;
+        this.#gearSlotDefinitions = null;
+        this.#dispositionDefinitions = null;
+        this.#pointPoolFormulaRuntime = null;
+
+        if (!refreshInstances) {
+            return;
+        }
+
+        for (const instance of this.#instances) {
+            if (!(instance instanceof Player)) {
+                continue;
+            }
+            instance.#definitions = instance.#loadDefinitions();
+            const existingNeedBars = instance.getNeedBars({ scope: 'stored' });
+            instance.#initializeNeedBars(existingNeedBars);
+        }
     }
 
     static getByName(name) {
@@ -1094,9 +1194,11 @@ class Player {
 
     static #loadGearSlotDefinitions() {
         try {
-            const gearPath = path.join(__dirname, 'defs', 'gear_slots.yaml');
-            const raw = fs.readFileSync(gearPath, 'utf8');
-            const data = yaml.load(raw) || {};
+            const { value } = loadMergedDefinitionFile({
+                baseDir: Globals.baseDir || __dirname,
+                filename: 'gear_slots.yaml'
+            });
+            const data = value || {};
             const gearSlots = data.gear_slots && typeof data.gear_slots === 'object' ? data.gear_slots : {};
 
             const byType = new Map();
@@ -1156,9 +1258,11 @@ class Player {
 
     static #loadDispositionDefinitions() {
         try {
-            const dispositionPath = path.join(__dirname, 'defs', 'dispositions.yaml');
-            const raw = fs.readFileSync(dispositionPath, 'utf8');
-            const data = yaml.load(raw) || {};
+            const { value } = loadMergedDefinitionFile({
+                baseDir: Globals.baseDir || __dirname,
+                filename: 'dispositions.yaml'
+            });
+            const data = value || {};
 
             const rangeSource = typeof data.range === 'object' && data.range !== null ? data.range : {};
             const range = {
@@ -1437,10 +1541,11 @@ class Player {
      */
     #loadDefinitions() {
         try {
-            const defsPath = path.join(__dirname, 'defs', 'attributes.yaml');
-            const fileContents = fs.readFileSync(defsPath, 'utf8');
-            const data = yaml.load(fileContents);
-            return data;
+            const { value } = loadMergedDefinitionFile({
+                baseDir: Globals.baseDir || __dirname,
+                filename: 'attributes.yaml'
+            });
+            return value || {};
         } catch (error) {
             console.error('Error loading attribute definitions:', error.message);
             // Fallback to basic definitions
@@ -3186,7 +3291,12 @@ class Player {
     }
 
     setInPlayerParty(value) {
-        this.#isInPlayerParty = Boolean(value);
+        const nextValue = Boolean(value);
+        if (this.#isInPlayerParty === nextValue) {
+            return;
+        }
+        this.#isInPlayerParty = nextValue;
+        this.#lastUpdated = new Date().toISOString();
     }
 
     get isInPlayerParty() {
@@ -3904,14 +4014,25 @@ class Player {
     }
 
     getNeedBars(options = {}) {
-        const { includePlayerOnly = true } = options;
+        let scope = typeof options.scope === 'string' ? options.scope.trim().toLowerCase() : '';
+        if (!scope) {
+            if (options.includePlayerOnly !== undefined) {
+                scope = options.includePlayerOnly ? 'stored' : 'active';
+            } else {
+                scope = 'active';
+            }
+        }
+
+        if (!['active', 'stored'].includes(scope)) {
+            throw new Error(`Unsupported need bar scope "${scope}".`);
+        }
         if (!this.#needBars || !(this.#needBars instanceof Map)) {
             return [];
         }
 
         const results = [];
         for (const bar of this.#needBars.values()) {
-            if (!includePlayerOnly && bar.playerOnly) {
+            if (scope === 'active' && !Player.#needBarIsActiveForActor(bar, this)) {
                 continue;
             }
             results.push(Player.#cloneNeedBarDefinition({
@@ -3932,7 +4053,7 @@ class Player {
 
     setNeedBars(needBars = []) {
         this.#initializeNeedBars(needBars);
-        return this.getNeedBars();
+        return this.getNeedBars({ scope: 'active' });
     }
 
     setNeedBarValue(identifier, value, options = {}) {
@@ -3940,13 +4061,20 @@ class Player {
             throw new Error('Need bar identifier is required');
         }
 
-        const { allowPlayerOnly = true } = options;
+        const allowInactive = Boolean(options.allowInactive);
+        const allowPlayerOnly = options.allowPlayerOnly !== undefined
+            ? Boolean(options.allowPlayerOnly)
+            : true;
         const bar = this.#resolveNeedBarByIdentifier(String(identifier));
         if (!bar) {
             throw new Error(`Need bar '${identifier}' not found`);
         }
 
-        if (!allowPlayerOnly && bar.playerOnly && this.#isNPC) {
+        if (!allowInactive && !Player.#needBarIsActiveForActor(bar, this)) {
+            throw new Error(`Need bar '${identifier}' is not active for ${this.#name || this.#id || 'this actor'}.`);
+        }
+
+        if (!allowPlayerOnly && this.#isNPC && Player.#isNeedBarPlayerOnlyAudience(bar)) {
             throw new Error(`Need bar '${identifier}' is restricted to the player`);
         }
 
@@ -3975,6 +4103,9 @@ class Player {
             if (!bar) {
                 continue;
             }
+            if (!Player.#needBarIsActiveForActor(bar, this)) {
+                continue;
+            }
             const rate = Number.isFinite(bar.changePerTurn) ? bar.changePerTurn : 0;
             if (rate === 0) {
                 continue;
@@ -3994,7 +4125,9 @@ class Player {
                     min: Number.isFinite(bar.min) ? bar.min : null,
                     max: Number.isFinite(bar.max) ? bar.max : null,
                     changePerTurn: rate,
-                    playerOnly: Boolean(bar.playerOnly),
+                    player: Boolean(bar.player),
+                    party: Boolean(bar.party),
+                    nonParty: Boolean(bar.nonParty),
                     currentThreshold: bar.currentThreshold ? { ...bar.currentThreshold } : null
                 });
             }
@@ -4008,17 +4141,11 @@ class Player {
     }
 
     getNeedBarsForContext(options = {}) {
-        const includePlayerOnly = options.includePlayerOnly !== undefined
-            ? Boolean(options.includePlayerOnly)
-            : !this.#isNPC;
-        return this.getNeedBars({ includePlayerOnly });
+        return this.getNeedBars({ scope: 'active' });
     }
 
     getNeedBarPromptContext(options = {}) {
-        const includePlayerOnly = options.includePlayerOnly !== undefined
-            ? Boolean(options.includePlayerOnly)
-            : !this.#isNPC;
-        const bars = this.getNeedBars({ includePlayerOnly }) || [];
+        const bars = this.getNeedBars({ scope: 'active' }) || [];
         const formatted = [];
         for (const bar of bars) {
             const snapshot = Player.#cloneNeedBarDefinition(bar);
@@ -4111,6 +4238,9 @@ class Player {
         if (!bar) {
             return null;
         }
+        if (!Player.#needBarIsActiveForActor(bar, this)) {
+            return null;
+        }
 
         const directionRaw = typeof options.direction === 'string' ? options.direction.trim().toLowerCase() : '';
         let direction = null;
@@ -4187,7 +4317,9 @@ class Player {
             delta,
             min: Number.isFinite(bar.min) ? bar.min : null,
             max: Number.isFinite(bar.max) ? bar.max : null,
-            playerOnly: Boolean(bar.playerOnly),
+            player: Boolean(bar.player),
+            party: Boolean(bar.party),
+            nonParty: Boolean(bar.nonParty),
             previousThreshold,
             currentThreshold: bar.currentThreshold ? { ...bar.currentThreshold } : null
         };
@@ -4228,8 +4360,7 @@ class Player {
                 continue;
             }
 
-            const isPlayerOnly = Boolean(definition.playerOnly);
-            if (isPlayerOnly && this.#isNPC) {
+            if (!Player.#needBarCanBeStoredForActor(definition, this)) {
                 continue;
             }
 
@@ -4695,7 +4826,7 @@ class Player {
             currency: this.#currency,
             createdAt: this.#createdAt,
             lastUpdated: this.#lastUpdated,
-            needBars: this.getNeedBars(),
+            needBars: this.getNeedBars({ scope: 'active' }),
             corpseCountdown: this.#corpseCountdown,
             importantMemories: this.importantMemories,
             factionId: this.#factionId,
@@ -4771,7 +4902,7 @@ class Player {
             lastUpdated: this.#lastUpdated,
             experience: this.#experience,
             currency: this.#currency,
-            needBars: this.getNeedBars(),
+            needBars: this.getNeedBars({ scope: 'stored' }),
             factionStandings: this.getFactionStandings(),
             importantMemories: this.importantMemories,
             previousLocationId: this.#previousLocationId,

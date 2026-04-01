@@ -157,7 +157,7 @@ Response:
 Get need bars for the current player.
 
 Response:
-- 200: `{ success: true, needs: NeedBar[], includePlayerOnly, player }`
+- 200: `{ success: true, needs: NeedBar[], audience: { player, party, nonParty }, player }`
 - 404/500 with `{ success: false, error }`
 
 ## PUT /api/player/needs
@@ -167,7 +167,7 @@ Request:
 - Body: `{ needs: Array<{ id: string, value: number }> }`
 
 Response:
-- 200: `{ success: true, message, needs: NeedBar[], includePlayerOnly, player, applied: NeedBar[] }`
+- 200: `{ success: true, message, needs: NeedBar[], audience: { player, party, nonParty }, player, applied: NeedBar[] }`
 - 400/404 with `{ success: false, error }`
 
 ## POST /api/player/generate-attributes

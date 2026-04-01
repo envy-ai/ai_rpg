@@ -228,7 +228,7 @@ Fields:
 Fields:
 - `id`, `name`, `description`, `icon`, `color`
 - `min`, `max`, `value`, `changePerTurn`, `initialValue`
-- `playerOnly`
+- `player`, `party`, `nonParty`
 - `currentThreshold` (`{ threshold, name, effect }` | null)
 - `effectThresholds` (array)
 - `increases`: `{ small, large, fill }`

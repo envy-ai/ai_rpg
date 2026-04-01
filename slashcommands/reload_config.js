@@ -39,9 +39,19 @@ class ReloadConfigCommand extends SlashCommandBase {
     if (result?.timestamp) {
       details.push(`at ${result.timestamp}`);
     }
+    if (result?.modEnableDiff?.changed) {
+      const segments = [];
+      if (result.modEnableDiff.added.length > 0) {
+        segments.push(`newly enabled on disk: ${result.modEnableDiff.added.join(', ')}`);
+      }
+      if (result.modEnableDiff.removed.length > 0) {
+        segments.push(`disabled on disk: ${result.modEnableDiff.removed.join(', ')}`);
+      }
+      details.push(`Mod enable/disable changes require a server restart to apply (${segments.join('; ')}).`);
+    }
 
     await interaction.reply({
-      content: `Configuration and defs reloaded ${details.join(' ')}.`.trim(),
+      content: `Configuration and defs reloaded ${details.join(' ')}`.trim(),
       ephemeral: false
     });
   }

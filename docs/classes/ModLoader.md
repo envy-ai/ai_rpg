@@ -1,7 +1,7 @@
 # ModLoader
 
 ## Purpose
-Loads and initializes mods from the `mods/` directory. Provides per-mod scope helpers, exposes mod configs, and supports client asset discovery.
+Loads and initializes enabled mods from the `mods/` directory. Provides per-mod scope helpers, exposes mod configs, supports client asset discovery, recognizes defs-only mods that contain `defs/` overlays without requiring `mod.js`, and honors optional `config.json.enabled` flags.
 
 ## Key State
 - `baseDir`, `modsDir`.
@@ -12,9 +12,9 @@ Loads and initializes mods from the `mods/` directory. Provides per-mod scope he
 - `new ModLoader(baseDir)`: sets base paths and initializes internal maps.
 
 ## Instance API
-- `getModDirectories()`: returns valid mod directory names (must contain `mod.js`).
+- `getModDirectories()`: returns enabled mod directory names (must contain `mod.js` or `defs/`, and default to enabled unless `config.json.enabled === false`).
 - `loadMods(scope)`: loads all mods, calls `register`, returns `{ loaded, failed, total }`.
-- `loadMod(modName, scope)`: loads a single mod, validates `register` exists, stores metadata.
+- `loadMod(modName, scope)`: loads a single enabled mod, validates `register` when `mod.js` is present, stores metadata, and accepts defs-only mods.
 - `createModScope(modName, modDir, scope)`: builds a per-mod scope with helpers:
   - `getModPublicUrl(filePath)`
   - `renderModPrompt(templateName, context)`
@@ -29,4 +29,7 @@ Loads and initializes mods from the `mods/` directory. Provides per-mod scope he
 
 ## Notes
 - `loadMod` clears the require cache to allow hot reload during development.
+- Defs-only mods are loaded as data-only entries with no `register(scope)` call.
+- Disabled mods are skipped before JS loading, defs overlay application, and static asset serving.
+- The active mod set is frozen at startup; toggling `config.json.enabled` on disk requires a restart to change the running set.
 - `registerModRoute` namespaces routes under `/api/mods/<modName>/...`.

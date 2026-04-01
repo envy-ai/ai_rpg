@@ -16028,7 +16028,6 @@ module.exports = function registerApiRoutes(scope) {
 
             try {
                 const payload = buildNeedBarSnapshot(currentPlayer, {
-                    includePlayerOnly: true,
                     type: 'player'
                 });
 
@@ -16085,7 +16084,6 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 const payload = buildNeedBarSnapshot(currentPlayer, {
-                    includePlayerOnly: true,
                     type: 'player'
                 });
                 payload.applied = applied;
@@ -16241,7 +16239,9 @@ module.exports = function registerApiRoutes(scope) {
                 max,
                 value,
                 changePerTurn,
-                playerOnly: Boolean(bar.playerOnly),
+                player: Boolean(bar.player),
+                party: Boolean(bar.party),
+                nonParty: Boolean(bar.nonParty),
                 initialValue: toNumber(bar.initialValue),
                 currentThreshold,
                 effectThresholds,
@@ -16259,25 +16259,37 @@ module.exports = function registerApiRoutes(scope) {
             };
         }
 
-        function buildNeedBarSnapshot(actor, { includePlayerOnly, type } = {}) {
+        function buildNeedBarSnapshot(actor, { type } = {}) {
             if (!actor) {
                 return {
                     needs: [],
-                    includePlayerOnly: Boolean(includePlayerOnly),
+                    audience: {
+                        player: false,
+                        party: false,
+                        nonParty: false
+                    },
                     npc: null,
                     player: null
                 };
             }
 
             const isNPC = Boolean(actor.isNPC);
-            const resolvedIncludePlayerOnly = includePlayerOnly !== undefined
-                ? Boolean(includePlayerOnly)
-                : !isNPC;
+            const audience = isNPC
+                ? {
+                    player: false,
+                    party: Boolean(actor.isInPlayerParty),
+                    nonParty: !Boolean(actor.isInPlayerParty)
+                }
+                : {
+                    player: true,
+                    party: false,
+                    nonParty: false
+                };
 
             let bars = [];
             try {
                 if (typeof actor.getNeedBars === 'function') {
-                    bars = actor.getNeedBars({ includePlayerOnly: resolvedIncludePlayerOnly }) || [];
+                    bars = actor.getNeedBars({ scope: 'active' }) || [];
                 }
             } catch (error) {
                 console.warn('Failed to collect need bars:', error?.message || error);
@@ -16303,7 +16315,7 @@ module.exports = function registerApiRoutes(scope) {
 
             const payload = {
                 needs: normalizedNeeds,
-                includePlayerOnly: resolvedIncludePlayerOnly
+                audience
             };
 
             if (type === 'player') {
@@ -17920,9 +17932,7 @@ module.exports = function registerApiRoutes(scope) {
                     });
                 }
 
-                const includePlayerOnly = !npc.isNPC;
                 const payload = buildNeedBarSnapshot(npc, {
-                    includePlayerOnly,
                     type: npc.isNPC ? 'npc' : 'player'
                 });
 
@@ -17965,7 +17975,6 @@ module.exports = function registerApiRoutes(scope) {
                     });
                 }
 
-                const includePlayerOnly = !npc.isNPC;
                 const applied = [];
                 for (const entry of needUpdates) {
                     if (!entry || typeof entry !== 'object') {
@@ -17984,12 +17993,11 @@ module.exports = function registerApiRoutes(scope) {
                         });
                     }
 
-                    const updatedBar = npc.setNeedBarValue(rawId, numericValue, { allowPlayerOnly: includePlayerOnly });
+                    const updatedBar = npc.setNeedBarValue(rawId, numericValue);
                     applied.push(normalizeNeedBarResponse(updatedBar));
                 }
 
                 const payload = buildNeedBarSnapshot(npc, {
-                    includePlayerOnly,
                     type: npc.isNPC ? 'npc' : 'player'
                 });
                 payload.applied = applied;

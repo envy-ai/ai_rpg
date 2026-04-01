@@ -1,14 +1,20 @@
 /**
  * ModLoader - Loads and initializes mods from the mods/ directory
  * 
- * Each mod is a subdirectory of mods/ containing:
+ * Each mod is a subdirectory of mods/ containing one or both of:
  * - mod.js: Main entry point that exports a register(scope) function
+ * - defs/: Optional YAML overlays merged onto root defs/*.yaml
  * - prompts/ (optional): Custom prompt templates
  * - public/ (optional): Client-side assets (JS, CSS, images)
  */
 
 const fs = require('fs');
 const path = require('path');
+const {
+    freezeEnabledModManifests,
+    getEnabledModDirectoryNames,
+    getEnabledModManifests
+} = require('./ModDiscovery.js');
 
 class ModLoader {
     constructor(baseDir) {
@@ -23,30 +29,7 @@ class ModLoader {
      * @returns {string[]} Array of mod directory names
      */
     getModDirectories() {
-        if (!fs.existsSync(this.modsDir)) {
-            return [];
-        }
-
-        const entries = fs.readdirSync(this.modsDir, { withFileTypes: true });
-        const modDirs = [];
-
-        for (const entry of entries) {
-            if (!entry.isDirectory()) {
-                continue;
-            }
-
-            // Skip hidden directories and common non-mod directories
-            if (entry.name.startsWith('.') || entry.name === 'node_modules') {
-                continue;
-            }
-
-            const modJsPath = path.join(this.modsDir, entry.name, 'mod.js');
-            if (fs.existsSync(modJsPath)) {
-                modDirs.push(entry.name);
-            }
-        }
-
-        return modDirs;
+        return getEnabledModDirectoryNames(this.baseDir);
     }
 
     /**
@@ -55,7 +38,8 @@ class ModLoader {
      * @returns {Object} Summary of loaded mods
      */
     loadMods(scope) {
-        const modDirs = this.getModDirectories();
+        const modManifests = freezeEnabledModManifests(this.baseDir);
+        const modDirs = modManifests.map(manifest => manifest.name);
         const results = {
             loaded: [],
             failed: [],
@@ -93,11 +77,26 @@ class ModLoader {
      * @param {Object} scope - The apiScope object
      */
     loadMod(modName, scope) {
-        const modDir = path.join(this.modsDir, modName);
+        const manifest = getEnabledModManifests(this.baseDir).find(entry => entry.name === modName);
+        if (!manifest) {
+            throw new Error(`Mod "${modName}" is disabled or missing mod.js/defs.`);
+        }
+        const modDir = manifest.dir;
         const modJsPath = path.join(modDir, 'mod.js');
+        const hasModJs = Boolean(manifest.hasModJs);
+        const hasDefsDir = Boolean(manifest.hasDefsDir);
 
-        if (!fs.existsSync(modJsPath)) {
-            throw new Error(`mod.js not found in ${modDir}`);
+        if (!hasModJs) {
+            this.loadedMods.set(modName, {
+                name: modName,
+                dir: modDir,
+                mod: {},
+                meta: {
+                    name: modName,
+                    dataOnly: true
+                }
+            });
+            return;
         }
 
         // Clear require cache to allow hot reloading in development
@@ -280,12 +279,12 @@ class ModLoader {
      * @param {Object} express - Express module
      */
     setupStaticServing(app, express) {
-        const modDirs = this.getModDirectories();
+        const modManifests = freezeEnabledModManifests(this.baseDir);
 
-        for (const modName of modDirs) {
-            const publicDir = path.join(this.modsDir, modName, 'public');
+        for (const manifest of modManifests) {
+            const publicDir = path.join(manifest.dir, 'public');
             if (fs.existsSync(publicDir)) {
-                const urlPath = `/mods/${modName}`;
+                const urlPath = `/mods/${manifest.name}`;
                 app.use(urlPath, express.static(publicDir));
                 console.log(`   📁 Serving static files: ${urlPath} -> ${publicDir}`);
             }
