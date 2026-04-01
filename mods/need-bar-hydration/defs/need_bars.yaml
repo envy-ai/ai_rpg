@@ -1,0 +1,50 @@
+need_bars:
+  hydration:
+    name: Hydration
+    description: Represents the character's fluid levels. If this reaches 0, the character suffers severe health penalties. Dehydration happens faster than starvation.
+    related_attribute: constitution
+    player: true
+    party: true
+    non_party: false
+    icon: 💧
+    color: "#1E90FF"
+    min: 0
+    max: 100
+    initial: 100
+    change_per_turn: -2
+    relative_to_level: false
+    small_increase:
+      - small sip of water
+      - eating a fruit
+    medium_increase:
+      - drinking a glass of water
+      - drinking a potion
+    large_increase:
+      - drinking from a waterskin
+      - eating a succulent plant
+    fill_completely:
+      - drinking until quenched
+      - visiting an oasis or well
+    small_decrease:
+      - hot weather
+      - mild exertion
+    large_decrease:
+      - desert travel
+      - vomiting
+      - sweating profusely
+    effect_thresholds:
+      0:
+        name: Dehydrated
+        effect: -15% to health and attributes, risk of unconsciousness
+      1:
+        name: Parched
+        effect: -5% to health and attributes, headaches
+      25:
+        name: Thirsty
+        effect: Dry mouth, slight fatigue
+      40:
+        name: Slaked
+        effect: No effect
+      100:
+        name: Hydrated
+        effect: Good mood, stamina regeneration bonus

@@ -1,0 +1,9 @@
+need_bars:
+  food:
+    player: true
+    party: true
+    non_party: false
+  rest:
+    player: true
+    party: true
+    non_party: false

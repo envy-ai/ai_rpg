@@ -1,0 +1,56 @@
+need_bars:
+  sanity:
+    name: Sanity
+    description: Represents the character's mental stability and grip on reality. If this reaches 0, the character may suffer a mental break or acquire a trauma.
+    related_attribute: wisdom
+    player: true
+    party: true
+    non_party: false
+    icon: 🧠
+    color: "#20B2AA"
+    min: 0
+    max: 100
+    initial: 100
+    change_per_turn: -0.5
+    relative_to_level: false
+    small_increase:
+      - reading a book
+      - playing a game
+      - light conversation
+    medium_increase:
+      - visiting a safe sanctuary
+      - therapy session
+      - meditating
+    large_increase:
+      - completing a personal goal
+      - divine blessing
+    fill_completely:
+      - overcoming a great fear
+      - spending time in a paradise
+      - powerful healing magic
+    small_decrease:
+      - witnessing violence
+      - staying in the dark
+    large_decrease:
+      - witnessing a horrific event
+      - failing a crucial task
+      - mind-affecting magic
+    effect_thresholds:
+      0:
+        name: Insane
+        effect: Loss of control, permanent trauma possible
+      1:
+        name: Breaking
+        effect: Hallucinations, severe penalty to social interaction
+      25:
+        name: Stressed
+        effect: Anxiety, minor penalty to focus
+      40:
+        name: Uneasy
+        effect: No effect
+      70:
+        name: Stable
+        effect: No effect
+      100:
+        name: Lucid
+        effect: Clear mind, resistance to fear
