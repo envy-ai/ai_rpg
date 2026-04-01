@@ -10,6 +10,7 @@ const fs = require('fs');
 const path = require('path');
 const { randomUUID } = require('crypto');
 const Utils = require('./Utils.js');
+const { loadMergedConfig } = require('./ConfigLoader.js');
 const { resolvePointPoolFormulas } = require('./utils/point-pool-formulas.js');
 const FormulaEvaluator = require('./public/js/formula-evaluator.js');
 const Globals = require('./Globals.js');
@@ -114,21 +115,6 @@ function loadDefaultSkillsForSettings() {
         return { skills: [], error: error.message || 'Failed to load default skills.' };
     }
 }
-
-const mergeDeep = (target, source) => {
-    if (!source || typeof source !== 'object') {
-        return target;
-    }
-    const output = { ...target };
-    for (const [key, value] of Object.entries(source)) {
-        if (value && typeof value === 'object' && !Array.isArray(value)) {
-            output[key] = mergeDeep(target[key] && typeof target[key] === 'object' ? target[key] : {}, value);
-        } else {
-            output[key] = value;
-        }
-    }
-    return output;
-};
 
 function resolveCliConfigOverridePath(argv = process.argv) {
     if (!Array.isArray(argv)) {
@@ -318,35 +304,6 @@ function resolveCliVehicleDebugFlag(argv = process.argv) {
     }
 
     return resolvedValue;
-}
-
-function loadMergedConfig(configOverridePath = null) {
-    const defaultConfigPath = path.join(__dirname, 'config.default.yaml');
-    const defaultConfigRaw = fs.readFileSync(defaultConfigPath, 'utf8');
-    const defaultConfig = yaml.load(defaultConfigRaw) || {};
-
-    const configPath = path.join(__dirname, 'config.yaml');
-    const configRaw = fs.readFileSync(configPath, 'utf8');
-    const overrideConfig = yaml.load(configRaw) || {};
-
-    let mergedConfig = mergeDeep(defaultConfig, overrideConfig);
-
-    if (configOverridePath) {
-        if (!fs.existsSync(configOverridePath)) {
-            throw new Error(`Config override file not found: ${configOverridePath}`);
-        }
-
-        const overrideRaw = fs.readFileSync(configOverridePath, 'utf8');
-        const parsedOverride = yaml.load(overrideRaw);
-
-        if (!parsedOverride || typeof parsedOverride !== 'object' || Array.isArray(parsedOverride)) {
-            throw new Error(`Config override file must contain a YAML object: ${configOverridePath}`);
-        }
-
-        mergedConfig = mergeDeep(mergedConfig, parsedOverride);
-    }
-
-    return mergedConfig;
 }
 
 function resolveClientMessageHistoryConfig(sourceConfig) {
@@ -596,7 +553,7 @@ try {
         cliVehicleDebug = true;
     }
 
-    config = loadMergedConfig(cliConfigOverridePath);
+    config = loadMergedConfig(__dirname, cliConfigOverridePath);
     Globals.config = config;
     Globals.cliTestModes = new Set(cliTestModes);
     Globals.debugVehicles = cliVehicleDebug;
@@ -618,8 +575,8 @@ try {
 }
 
 function reloadConfigAndDefs() {
-    const merged = loadMergedConfig(cliConfigOverridePath);
-    const modEnableDiff = diffFrozenEnabledModDirectoryNames(Globals.baseDir || __dirname);
+    const merged = loadMergedConfig(__dirname, cliConfigOverridePath);
+    const modEnableDiff = diffFrozenEnabledModDirectoryNames(Globals.baseDir || __dirname, { config: merged });
     validateDefinitionOverlays({ baseDir: Globals.baseDir || __dirname });
 
     if (config && typeof config === 'object') {
@@ -709,7 +666,7 @@ const server = http.createServer(app);
 const realtimeHub = new RealtimeHub({ logger: console });
 
 // Initialize ModLoader early to setup static serving
-const modLoader = new ModLoader(__dirname);
+const modLoader = new ModLoader(__dirname, { config });
 modLoader.setupStaticServing(app, express);
 
 const questConfirmationTimeoutRaw = Number(config?.quests?.confirmationTimeoutMs);

@@ -17,9 +17,10 @@ const {
 } = require('./ModDiscovery.js');
 
 class ModLoader {
-    constructor(baseDir) {
+    constructor(baseDir, { config = undefined } = {}) {
         this.baseDir = baseDir;
         this.modsDir = path.join(baseDir, 'mods');
+        this.config = config;
         this.loadedMods = new Map();
         this.modPromptEnvs = new Map();
     }
@@ -29,7 +30,7 @@ class ModLoader {
      * @returns {string[]} Array of mod directory names
      */
     getModDirectories() {
-        return getEnabledModDirectoryNames(this.baseDir);
+        return getEnabledModDirectoryNames(this.baseDir, { config: this.config });
     }
 
     /**
@@ -38,7 +39,7 @@ class ModLoader {
      * @returns {Object} Summary of loaded mods
      */
     loadMods(scope) {
-        const modManifests = freezeEnabledModManifests(this.baseDir);
+        const modManifests = freezeEnabledModManifests(this.baseDir, { config: this.config });
         const modDirs = modManifests.map(manifest => manifest.name);
         const results = {
             loaded: [],
@@ -77,7 +78,7 @@ class ModLoader {
      * @param {Object} scope - The apiScope object
      */
     loadMod(modName, scope) {
-        const manifest = getEnabledModManifests(this.baseDir).find(entry => entry.name === modName);
+        const manifest = getEnabledModManifests(this.baseDir, { config: this.config }).find(entry => entry.name === modName);
         if (!manifest) {
             throw new Error(`Mod "${modName}" is disabled or missing mod.js/defs.`);
         }
@@ -279,7 +280,7 @@ class ModLoader {
      * @param {Object} express - Express module
      */
     setupStaticServing(app, express) {
-        const modManifests = freezeEnabledModManifests(this.baseDir);
+        const modManifests = freezeEnabledModManifests(this.baseDir, { config: this.config });
 
         for (const manifest of modManifests) {
             const publicDir = path.join(manifest.dir, 'public');

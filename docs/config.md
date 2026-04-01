@@ -25,6 +25,27 @@ Merge precedence is:
 The override file must exist and contain a YAML object. Invalid or missing files fail startup with a clear error.
 If the server is started with `--config-override`, `reload_config` keeps using the same override file.
 
+## Mod enablement
+
+You can enable or disable discovered mods from the merged YAML config:
+
+```yaml
+mods:
+  need-bar-hydration:
+    enabled: false
+  sceneIllustration:
+    additional_instructions: "..."
+```
+
+Rules:
+- `mods` must be an object when present.
+- Each `mods.<name>` entry must be an object when present.
+- `mods.<name>.enabled` must be a boolean when present.
+- Missing `enabled` defaults to `true`.
+- This merged-config value takes precedence over `mods/<name>/config.json` `enabled`.
+- Disabled mods are skipped for `mod.js` loading, defs overlays, and `public/` asset serving.
+- The active mod set is frozen at startup, so changing mod enablement on disk still requires a server restart to apply. `/reload_config` reports drift but does not hot-toggle mods.
+
 ## AI custom args
 
 `config.ai.custom_args` lets you inject structured top-level request arguments into every LLM chat-completion payload.

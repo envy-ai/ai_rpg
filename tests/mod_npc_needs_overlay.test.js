@@ -6,8 +6,12 @@ const path = require('path');
 
 const Globals = require('../Globals.js');
 const Player = require('../Player.js');
+const {
+    clearFrozenEnabledModManifests,
+    freezeEnabledModManifests
+} = require('../ModDiscovery.js');
 
-test('defs-only npc-needs demo mod enables food and rest need bars for the player and party members only', () => {
+test('defs-only party-needs mod enables food and rest need bars for the player and party members only when explicitly enabled', () => {
     const previousBaseDir = Globals.baseDir;
     const previousConfig = Globals.config;
     const repoBaseDir = path.resolve(__dirname, '..');
@@ -16,10 +20,20 @@ test('defs-only npc-needs demo mod enables food and rest need bars for the playe
     Globals.baseDir = repoBaseDir;
     Globals.config = {
         ...(previousConfig && typeof previousConfig === 'object' ? previousConfig : {}),
+        mods: {
+            ...((previousConfig && typeof previousConfig === 'object' && previousConfig.mods && typeof previousConfig.mods === 'object' && !Array.isArray(previousConfig.mods))
+                ? previousConfig.mods
+                : {}),
+            'party-needs': {
+                enabled: true
+            }
+        },
         baseHealthPerLevel: Number.isFinite(previousConfig?.baseHealthPerLevel)
             ? previousConfig.baseHealthPerLevel
             : 10
     };
+    clearFrozenEnabledModManifests(repoBaseDir);
+    freezeEnabledModManifests(repoBaseDir, { config: Globals.config });
     Player.reloadDefinitionCaches({ refreshInstances: false });
 
     try {
@@ -47,6 +61,7 @@ test('defs-only npc-needs demo mod enables food and rest need bars for the playe
         assert.ok(partyNeedBarIds.includes('rest'));
     } finally {
         Player.clearRuntimeRegistries();
+        clearFrozenEnabledModManifests(repoBaseDir);
         Globals.baseDir = previousBaseDir;
         Globals.config = previousConfig;
         Player.reloadDefinitionCaches({ refreshInstances: false });
@@ -102,6 +117,7 @@ need_bars:
             ? previousConfig.baseHealthPerLevel
             : 10
     };
+    clearFrozenEnabledModManifests(tempBaseDir);
     Player.reloadDefinitionCaches({ refreshInstances: false });
 
     try {
@@ -139,6 +155,7 @@ need_bars:
         assert.ok(partyAfterIds.includes('rest'));
     } finally {
         Player.clearRuntimeRegistries();
+        clearFrozenEnabledModManifests(tempBaseDir);
         Globals.baseDir = previousBaseDir;
         Globals.config = previousConfig;
         Player.reloadDefinitionCaches({ refreshInstances: false });

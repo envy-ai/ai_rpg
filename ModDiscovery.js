@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { loadMergedConfig } = require('./ConfigLoader.js');
 
 const IGNORED_MOD_DIRECTORY_NAMES = new Set(['node_modules']);
 const frozenEnabledModManifestsByBaseDir = new Map();
@@ -69,7 +70,40 @@ function readModConfigFile(modDir, modName) {
     };
 }
 
-function discoverModManifests(baseDir) {
+function resolveConfigEnabledFlag(baseDir, modName, runtimeConfig) {
+    const sourceConfig = runtimeConfig ?? loadMergedConfig(baseDir, null, { allowMissing: true });
+    if (sourceConfig === undefined || sourceConfig === null) {
+        return undefined;
+    }
+    if (typeof sourceConfig !== 'object' || Array.isArray(sourceConfig)) {
+        throw new Error('Merged config must be an object when resolving mod enablement.');
+    }
+
+    const modsConfig = sourceConfig.mods;
+    if (modsConfig === undefined) {
+        return undefined;
+    }
+    if (!modsConfig || typeof modsConfig !== 'object' || Array.isArray(modsConfig)) {
+        throw new Error('Config field "mods" must be an object when provided.');
+    }
+
+    const modConfig = modsConfig[modName];
+    if (modConfig === undefined) {
+        return undefined;
+    }
+    if (!modConfig || typeof modConfig !== 'object' || Array.isArray(modConfig)) {
+        throw new Error(`Config field "mods.${modName}" must be an object when provided.`);
+    }
+    if (!Object.prototype.hasOwnProperty.call(modConfig, 'enabled')) {
+        return undefined;
+    }
+    if (typeof modConfig.enabled !== 'boolean') {
+        throw new Error(`Config field "mods.${modName}.enabled" must be a boolean when provided.`);
+    }
+    return modConfig.enabled;
+}
+
+function discoverModManifests(baseDir, { config = undefined } = {}) {
     assertBaseDir(baseDir, 'discoverModManifests');
 
     const modsDir = path.join(baseDir, 'mods');
@@ -88,14 +122,15 @@ function discoverModManifests(baseDir) {
         const modJsPath = path.join(modDir, 'mod.js');
         const defsDir = path.join(modDir, 'defs');
         const hasDefsDir = fs.existsSync(defsDir) && fs.statSync(defsDir).isDirectory();
-        const { configPath, config } = readModConfigFile(modDir, entry.name);
+        const { configPath, config: fileConfig } = readModConfigFile(modDir, entry.name);
+        const enabledFromGlobalConfig = resolveConfigEnabledFlag(baseDir, entry.name, config);
 
         manifests.push({
             name: entry.name,
             dir: modDir,
             configPath,
-            config,
-            enabled: config.enabled !== false,
+            config: fileConfig,
+            enabled: enabledFromGlobalConfig ?? (fileConfig.enabled !== false),
             hasModJs: fs.existsSync(modJsPath),
             hasDefsDir
         });
@@ -105,23 +140,23 @@ function discoverModManifests(baseDir) {
     return manifests;
 }
 
-function getEnabledModManifests(baseDir, { useFrozen = true } = {}) {
+function getEnabledModManifests(baseDir, { useFrozen = true, config = undefined } = {}) {
     assertBaseDir(baseDir, 'getEnabledModManifests');
 
     if (useFrozen && frozenEnabledModManifestsByBaseDir.has(baseDir)) {
         return cloneValue(frozenEnabledModManifestsByBaseDir.get(baseDir));
     }
 
-    return discoverModManifests(baseDir)
+    return discoverModManifests(baseDir, { config })
         .filter(manifest => manifest.enabled)
         .map(cloneValue);
 }
 
-function freezeEnabledModManifests(baseDir) {
+function freezeEnabledModManifests(baseDir, { config = undefined } = {}) {
     assertBaseDir(baseDir, 'freezeEnabledModManifests');
 
     if (!frozenEnabledModManifestsByBaseDir.has(baseDir)) {
-        frozenEnabledModManifestsByBaseDir.set(baseDir, getEnabledModManifests(baseDir, { useFrozen: false }));
+        frozenEnabledModManifestsByBaseDir.set(baseDir, getEnabledModManifests(baseDir, { useFrozen: false, config }));
     }
 
     return cloneValue(frozenEnabledModManifestsByBaseDir.get(baseDir));
@@ -137,12 +172,12 @@ function clearFrozenEnabledModManifests(baseDir = null) {
     frozenEnabledModManifestsByBaseDir.delete(baseDir);
 }
 
-function diffFrozenEnabledModDirectoryNames(baseDir) {
+function diffFrozenEnabledModDirectoryNames(baseDir, { config = undefined } = {}) {
     assertBaseDir(baseDir, 'diffFrozenEnabledModDirectoryNames');
 
     if (!frozenEnabledModManifestsByBaseDir.has(baseDir)) {
         return {
-            current: getEnabledModDirectoryNames(baseDir, { useFrozen: false }),
+            current: getEnabledModDirectoryNames(baseDir, { useFrozen: false, config }),
             frozen: [],
             added: [],
             removed: [],
@@ -151,7 +186,7 @@ function diffFrozenEnabledModDirectoryNames(baseDir) {
     }
 
     const frozen = freezeEnabledModManifests(baseDir).map(manifest => manifest.name);
-    const current = getEnabledModDirectoryNames(baseDir, { useFrozen: false });
+    const current = getEnabledModDirectoryNames(baseDir, { useFrozen: false, config });
     const frozenSet = new Set(frozen);
     const currentSet = new Set(current);
 

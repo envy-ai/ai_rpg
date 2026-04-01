@@ -161,3 +161,39 @@ test('frozen enabled mod set does not hot-toggle until the process restarts', ()
         fs.rmSync(rootDir, { recursive: true, force: true });
     }
 });
+
+test('merged YAML mod enabled flags override per-mod config.json enabled flags', () => {
+    const rootDir = makeTempGameDir();
+
+    try {
+        writeFile(rootDir, 'config.yaml', `
+mods:
+  yaml_disables:
+    enabled: false
+  yaml_enables:
+    enabled: true
+`);
+        writeFile(rootDir, 'defs/example.yaml', 'value: [base]\n');
+        writeFile(rootDir, 'mods/yaml_disables/defs/example.yaml', 'value: [yaml_disables]\n');
+        writeFile(rootDir, 'mods/yaml_disables/config.json', JSON.stringify({ enabled: true }, null, 2));
+        writeFile(rootDir, 'mods/yaml_enables/defs/example.yaml', 'value: [yaml_enables]\n');
+        writeFile(rootDir, 'mods/yaml_enables/config.json', JSON.stringify({ enabled: false }, null, 2));
+
+        assert.deepEqual(getOverlayModDirectories(rootDir), ['yaml_enables']);
+
+        const { value } = loadMergedDefinitionFile({
+            baseDir: rootDir,
+            filename: 'example.yaml'
+        });
+
+        assert.deepEqual(JSON.parse(JSON.stringify(value)), {
+            value: ['base', 'yaml_enables']
+        });
+
+        const loader = new ModLoader(rootDir);
+        assert.deepEqual(loader.getModDirectories(), ['yaml_enables']);
+    } finally {
+        clearFrozenEnabledModManifests(rootDir);
+        fs.rmSync(rootDir, { recursive: true, force: true });
+    }
+});

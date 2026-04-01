@@ -335,9 +335,17 @@ omit_npc_generation: false
 omit_item_generation: false
 deduplicate_item_names: true
 strictXMLParsing: false
-# mods:
-#   sceneIllustration:
-#     additional_instructions:
+mods:
+  need-bar-hydration:
+    enabled: false
+  need-bar-sanity:
+    enabled: false
+  need-bar-social:
+    enabled: false
+  party-needs:
+    enabled: false
+  # sceneIllustration:
+  #   additional_instructions:
 
 extra_plot_prompts:
   plot_summary: true

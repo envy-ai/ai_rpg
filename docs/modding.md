@@ -8,8 +8,9 @@ Mods can now provide `defs/*.yaml` overlays that merge into the root `defs/*.yam
   - `mod.js`
   - `defs/`
 - Defs-only mods are valid even without `mod.js`.
-- Mods may optionally define `mods/<name>/config.json` with `enabled: false` to disable the mod.
-- If `enabled` is omitted, the mod is treated as enabled.
+- Mods may be disabled from the merged YAML config with `mods.<name>.enabled: false`.
+- Mods may also define `mods/<name>/config.json` with `enabled: false`.
+- If `enabled` is omitted in both places, the mod is treated as enabled.
 - Overlay filenames must match an existing root `defs/*.yaml` filename exactly.
 - Unknown overlay filenames fail loudly.
 
@@ -17,6 +18,10 @@ Mods can now provide `defs/*.yaml` overlays that merge into the root `defs/*.yam
 
 - `config.json` must be a JSON object when present.
 - `config.json.enabled` must be a boolean when present.
+- `config.mods` must be an object when present.
+- `config.mods.<name>` must be an object when present.
+- `config.mods.<name>.enabled` must be a boolean when present.
+- Merged YAML config takes precedence over `mods/<name>/config.json` for enable/disable.
 - Disabled mods are skipped consistently:
   - `mod.js` is not loaded
   - `defs/*.yaml` overlays are ignored
