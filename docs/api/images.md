@@ -16,7 +16,8 @@ Response:
 
 Notes:
 - If an existing job is found, the endpoint returns 200 with `success: false` and `existingJob: true`.
-- The final image-generation prompt is automatically prepended with the active setting's `baseContextPreamble` before job execution.
+- When the active image backend is OpenAI or NanoGPT, the final image-generation prompt is automatically prepended with the active setting's `baseContextPreamble` before job execution. ComfyUI skips that preamble.
+- Item and scenery jobs use `imagegen.default_settings.image` by default, with optional per-type width/height overrides from `imagegen.item_settings.image` and `imagegen.scenery_settings.image`.
 - Thing/item image generation remains visibility-gated: non-forced requests run only when the item is in the player inventory, at the player's current location, or at the outside location of the player's current vehicle.
 
 ## POST /api/generate-image
@@ -32,7 +33,7 @@ Response:
 
 Notes:
 - The sync mode is explicitly marked as legacy in code.
-- The submitted prompt is automatically prepended with the active setting's `baseContextPreamble` before job execution.
+- When the active image backend is OpenAI or NanoGPT, the submitted prompt is automatically prepended with the active setting's `baseContextPreamble` before job execution. ComfyUI skips that preamble.
 
 ## GET /api/jobs/:jobId
 Fetch job status.

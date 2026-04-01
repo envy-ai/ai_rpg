@@ -13,6 +13,10 @@ class SlashCommandBase {
     throw new Error('Description not implemented');
   }
 
+  static get showExecutionOverlay() {
+    return true;
+  }
+
   static get args() {
     throw new Error('Args not implemented');
 

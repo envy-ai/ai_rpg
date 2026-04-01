@@ -155,6 +155,16 @@ imagegen:
       seed: 42
     sampling:
       steps: 20
+  item_settings:
+    image:
+      # Falls back to default_settings.image when null.
+      width: null
+      height: null
+  scenery_settings:
+    image:
+      # Falls back to default_settings.image when null.
+      width: null
+      height: null
   location_settings:
     image:
       width: 1280
@@ -328,3 +338,10 @@ strictXMLParsing: false
 # mods:
 #   sceneIllustration:
 #     additional_instructions:
+
+extra_plot_prompts:
+  plot_summary: true
+  plot_expander: true
+  supplemental_story_info: true
+  offscreen-npc-activity-daily: true
+  offscreen-npc-activity-weekly: true

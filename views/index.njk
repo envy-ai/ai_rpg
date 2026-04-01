@@ -698,6 +698,32 @@
         </div>
     </div>
 
+    <div id="slashUploadModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="slashUploadTitle" aria-hidden="true" hidden>
+        <div class="modal__dialog">
+            <header class="modal__header">
+                <h2 id="slashUploadTitle">Upload File</h2>
+                <button type="button" class="modal__close" id="slashUploadCloseBtn" aria-label="Close upload dialog">
+                    <span aria-hidden="true">X</span>
+                </button>
+            </header>
+            <div class="modal__body">
+                <p id="slashUploadDescription" class="modal__instruction">Choose a file to continue.</p>
+                <div class="form-group">
+                    <label for="slashUploadFile">Select File</label>
+                    <input type="file" id="slashUploadFile">
+                    <span class="help-text">The selected file contents will be sent to the matching slash command upload handler.</span>
+                </div>
+                <p id="slashUploadStatus" class="modal__instruction" hidden></p>
+            </div>
+            <footer class="modal__footer">
+                <div class="button-group">
+                    <button type="button" class="btn btn-secondary" id="slashUploadCancelBtn">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="slashUploadSubmitBtn">Upload</button>
+                </div>
+            </footer>
+        </div>
+    </div>
+
     <div id="factionCreateModal" class="modal faction-create-modal" role="dialog" aria-modal="true" aria-hidden="true" hidden>
         <div class="modal__dialog">
             <header class="modal__header">

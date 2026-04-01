@@ -41,6 +41,8 @@ The main UI is rendered by `views/index.njk` and powered by `public/js/chat.js` 
 - **Chat panel** (`.chat-container`):
   - Message list (`#chatLog`) with user/AI messages and event-summary batches.
   - Input area (`#messageInput`, `#sendButton`) with slash command support.
+  - Slash commands can now return typed UI actions; `request_file_upload` opens the shared `#slashUploadModal`, reads one or more selected text files, and forwards them to `/api/slash-command/upload`.
+  - `/api/slash-command` also returns `executionOptions.showExecutionOverlay`; when a command disables it, the client cancels the pending `Executing command...` overlay before running reply actions. `/import_item` uses this so the upload modal and browser file picker are not blocked by the execution overlay.
   - `?` prefix-help modal includes an explicit roll-override note: include `<N>` anywhere in action/crafting text to force the die roll to integer `N`.
   - Prefix actions preserve raw input markers in the API payload (`?`, `\`, `@`, `@@`, `@@@`) even though optimistic local entries render marker-stripped content.
   - The prefix-help modal documents `\` as a no-context prompt that is logged, excluded from future base-context history, and run without chat tools.
@@ -116,6 +118,7 @@ Not exhaustive, but the core UI calls include:
 - `/api/chat/history` (reload server history; Story Tools uses `?includeAllEntries=true` to fetch unpruned/unfiltered entries, including hidden server-only entries).
 - `/api/chat/message` (edit/delete chat entries).
 - `/api/slash-command` (slash command execution).
+- `/api/slash-command/upload` (shared slash-command file upload follow-up).
 - `/api/quests/confirm` (quest confirmation).
 - `/api/quest/edit` and `/api/player/quests/:id` (quest edit / abandon).
 - `/api/factions` + `/api/player/factions/:id/standing` (faction panel edits).

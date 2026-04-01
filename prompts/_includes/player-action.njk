@@ -127,7 +127,7 @@ Follow these steps:
 
 1a. List each of the 1-3 NPCs you picked to respond or act by name and 1-2 sentences about their current emotional or plot position, desires, and what they're grappling with, if anything.
 
-1b. Information gathering and tool calling: If necessary, call any tools that might provide necessary information for writing the prose that's missing from the context. Just write N/A for this item if you have all the information you need (which will be the typical case).
+1b. Information gathering and tool calling: If necessary, call any tools that might provide necessary information for writing the prose that's missing from the context. Just write N/A for this item if you have all the information you need (which will be the typical case). Note that the context contains the entire story history, although earlier parts may be abbreviated. Tool calls are slow, so avoid them if you have enough information to write the prose without them. Use a maximum of 2 tool calls, preferably 0 or 1.
 
 2. Draft Response: Generate a preliminary but full draft that continues the story based on the current context, stractly adhering to this degree of success/failure: "{{ success_or_failure }}" regardless of how hard the action is. This is just a first attempt. Use no more than {{ config.prose_length }}.
 

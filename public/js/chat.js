@@ -6,6 +6,14 @@ class AIRPGChat {
         this.prefixHelpLink = document.getElementById('prefixHelpLink');
         this.prefixHelpModal = document.getElementById('prefixHelpModal');
         this.prefixHelpCloseButton = document.getElementById('prefixHelpCloseBtn');
+        this.slashUploadModal = document.getElementById('slashUploadModal');
+        this.slashUploadTitle = document.getElementById('slashUploadTitle');
+        this.slashUploadCloseButton = document.getElementById('slashUploadCloseBtn');
+        this.slashUploadDescription = document.getElementById('slashUploadDescription');
+        this.slashUploadFileInput = document.getElementById('slashUploadFile');
+        this.slashUploadStatus = document.getElementById('slashUploadStatus');
+        this.slashUploadCancelButton = document.getElementById('slashUploadCancelBtn');
+        this.slashUploadSubmitButton = document.getElementById('slashUploadSubmitBtn');
         this.sendButtonDefaultHtml = this.sendButton ? this.sendButton.innerHTML : 'Send';
         this.skillPointsDisplay = document.getElementById('unspentSkillPointsDisplay');
         this.skillRankElements = this.collectSkillRankElements();
@@ -62,6 +70,8 @@ class AIRPGChat {
         this.pendingRedoInProgress = false;
         this.emergencyResetInProgress = false;
         this.shortDescriptionPrompted = false;
+        this.pendingSlashUploadRequest = null;
+        this.slashUploadSubmitting = false;
 
         this.ensureTemplateEnvironment();
         this.init();
@@ -76,6 +86,7 @@ class AIRPGChat {
         this.setupEditModal();
         this.setupQuestConfirmationModal();
         this.setupPrefixHelpModal();
+        this.setupSlashUploadModal();
         this.loadExistingHistory();
 
         window.AIRPG_CHAT = this;
@@ -185,8 +196,53 @@ class AIRPGChat {
         });
     }
 
+    setupSlashUploadModal() {
+        if (!this.slashUploadModal) {
+            return;
+        }
+
+        if (this.slashUploadCloseButton) {
+            this.slashUploadCloseButton.addEventListener('click', () => this.cancelSlashUploadModal());
+        }
+        if (this.slashUploadCancelButton) {
+            this.slashUploadCancelButton.addEventListener('click', () => this.cancelSlashUploadModal());
+        }
+        if (this.slashUploadSubmitButton) {
+            this.slashUploadSubmitButton.addEventListener('click', () => this.submitSlashUploadModal());
+        }
+        if (this.slashUploadFileInput) {
+            this.slashUploadFileInput.addEventListener('change', () => {
+                if (!this.slashUploadStatus) {
+                    return;
+                }
+                if (this.slashUploadFileInput.files && this.slashUploadFileInput.files.length > 0) {
+                    const count = this.slashUploadFileInput.files.length;
+                    this.setSlashUploadStatus(`${count} file${count === 1 ? '' : 's'} selected.`, 'info');
+                } else {
+                    this.setSlashUploadStatus('', 'info');
+                }
+            });
+        }
+
+        this.slashUploadModal.addEventListener('click', (event) => {
+            if (event.target === this.slashUploadModal && !this.slashUploadSubmitting) {
+                this.cancelSlashUploadModal();
+            }
+        });
+
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape' && this.isSlashUploadModalOpen() && !this.slashUploadSubmitting) {
+                this.cancelSlashUploadModal();
+            }
+        });
+    }
+
     isPrefixHelpModalOpen() {
         return Boolean(this.prefixHelpModal && !this.prefixHelpModal.hasAttribute('hidden'));
+    }
+
+    isSlashUploadModalOpen() {
+        return Boolean(this.slashUploadModal && !this.slashUploadModal.hasAttribute('hidden'));
     }
 
     syncBodyModalOpenClass() {
@@ -225,6 +281,160 @@ class AIRPGChat {
         this.syncBodyModalOpenClass();
         if (this.prefixHelpLink) {
             this.prefixHelpLink.focus();
+        }
+    }
+
+    setSlashUploadStatus(message = '', variant = 'info') {
+        if (!this.slashUploadStatus) {
+            return;
+        }
+        const text = typeof message === 'string' ? message.trim() : '';
+        if (!text) {
+            this.slashUploadStatus.textContent = '';
+            this.slashUploadStatus.hidden = true;
+            this.slashUploadStatus.removeAttribute('data-variant');
+            return;
+        }
+        this.slashUploadStatus.textContent = text;
+        this.slashUploadStatus.hidden = false;
+        this.slashUploadStatus.setAttribute('data-variant', variant || 'info');
+    }
+
+    updateSlashUploadModalButtons() {
+        if (this.slashUploadSubmitButton) {
+            this.slashUploadSubmitButton.disabled = this.slashUploadSubmitting;
+        }
+        if (this.slashUploadCancelButton) {
+            this.slashUploadCancelButton.disabled = this.slashUploadSubmitting;
+        }
+        if (this.slashUploadCloseButton) {
+            this.slashUploadCloseButton.disabled = this.slashUploadSubmitting;
+        }
+        if (this.slashUploadFileInput) {
+            this.slashUploadFileInput.disabled = this.slashUploadSubmitting;
+        }
+    }
+
+    openSlashUploadModal(action = {}) {
+        if (!this.slashUploadModal || !this.slashUploadFileInput) {
+            throw new Error('Slash upload modal is not available.');
+        }
+        if (this.pendingSlashUploadRequest) {
+            throw new Error('Another slash upload is already pending.');
+        }
+
+        const title = typeof action.title === 'string' && action.title.trim()
+            ? action.title.trim()
+            : 'Upload File';
+        const description = typeof action.description === 'string' && action.description.trim()
+            ? action.description.trim()
+            : 'Choose a file to continue.';
+        const accept = typeof action.accept === 'string' ? action.accept.trim() : '';
+        const submitLabel = typeof action.submitLabel === 'string' && action.submitLabel.trim()
+            ? action.submitLabel.trim()
+            : 'Upload';
+        const cancelLabel = typeof action.cancelLabel === 'string' && action.cancelLabel.trim()
+            ? action.cancelLabel.trim()
+            : 'Cancel';
+
+        this.slashUploadSubmitting = false;
+        this.updateSlashUploadModalButtons();
+        this.setSlashUploadStatus('', 'info');
+        this.slashUploadFileInput.value = '';
+        this.slashUploadFileInput.accept = accept;
+        if (action.multiple === true) {
+            this.slashUploadFileInput.setAttribute('multiple', '');
+        } else {
+            this.slashUploadFileInput.removeAttribute('multiple');
+        }
+
+        if (this.slashUploadTitle) {
+            this.slashUploadTitle.textContent = title;
+        }
+        if (this.slashUploadDescription) {
+            this.slashUploadDescription.textContent = description;
+        }
+        if (this.slashUploadSubmitButton) {
+            this.slashUploadSubmitButton.textContent = submitLabel;
+        }
+        if (this.slashUploadCancelButton) {
+            this.slashUploadCancelButton.textContent = cancelLabel;
+        }
+
+        this.slashUploadModal.removeAttribute('hidden');
+        this.slashUploadModal.setAttribute('aria-hidden', 'false');
+        document.body.classList.add('modal-open');
+
+        window.setTimeout(() => {
+            this.slashUploadFileInput?.focus();
+        }, 0);
+
+        return new Promise(resolve => {
+            this.pendingSlashUploadRequest = {
+                resolve,
+                action
+            };
+        });
+    }
+
+    hideSlashUploadModal() {
+        if (!this.slashUploadModal) {
+            return;
+        }
+        this.slashUploadModal.setAttribute('hidden', '');
+        this.slashUploadModal.setAttribute('aria-hidden', 'true');
+        this.syncBodyModalOpenClass();
+    }
+
+    settleSlashUploadRequest(result) {
+        const pending = this.pendingSlashUploadRequest;
+        this.pendingSlashUploadRequest = null;
+        this.slashUploadSubmitting = false;
+        this.updateSlashUploadModalButtons();
+        this.setSlashUploadStatus('', 'info');
+        if (this.slashUploadFileInput) {
+            this.slashUploadFileInput.value = '';
+        }
+        this.hideSlashUploadModal();
+        if (pending && typeof pending.resolve === 'function') {
+            pending.resolve(result);
+        }
+    }
+
+    cancelSlashUploadModal() {
+        if (!this.pendingSlashUploadRequest || this.slashUploadSubmitting) {
+            return;
+        }
+        this.settleSlashUploadRequest({ canceled: true, uploads: [] });
+    }
+
+    async submitSlashUploadModal() {
+        if (!this.pendingSlashUploadRequest || !this.slashUploadFileInput || this.slashUploadSubmitting) {
+            return;
+        }
+
+        const files = Array.from(this.slashUploadFileInput.files || []);
+        if (!files.length) {
+            this.setSlashUploadStatus('Choose at least one file to upload.', 'error');
+            return;
+        }
+
+        this.slashUploadSubmitting = true;
+        this.updateSlashUploadModalButtons();
+        this.setSlashUploadStatus('Reading selected files...', 'info');
+
+        try {
+            const uploads = await Promise.all(files.map(async (file) => ({
+                filename: file.name,
+                content: await file.text(),
+                mimeType: file.type || null,
+                size: Number.isFinite(file.size) ? file.size : null
+            })));
+            this.settleSlashUploadRequest({ canceled: false, uploads });
+        } catch (error) {
+            this.slashUploadSubmitting = false;
+            this.updateSlashUploadModalButtons();
+            this.setSlashUploadStatus(`Failed to read file: ${error?.message || error}`, 'error');
         }
     }
 
@@ -6642,6 +6852,109 @@ class AIRPGChat {
         return result;
     }
 
+    async processSlashCommandReplies(replies, { requestBody = null, commandName = '', defaultSuccessMessage = null } = {}) {
+        const replyList = Array.isArray(replies) ? replies : [];
+        if (!replyList.length) {
+            if (typeof defaultSuccessMessage === 'string' && defaultSuccessMessage.trim()) {
+                this.addMessage('system', defaultSuccessMessage.trim(), false);
+            }
+            return;
+        }
+
+        for (const reply of replyList) {
+            if (!reply || typeof reply !== 'object') {
+                continue;
+            }
+
+            const message = typeof reply.content === 'string' ? reply.content.trim() : '';
+            if (message) {
+                const isError = Boolean(reply.ephemeral);
+                this.addMessage('system', message, isError, null, { allowMarkdown: true });
+            }
+
+            if (reply.action) {
+                await this.handleSlashCommandReplyAction(reply.action, {
+                    requestBody,
+                    commandName
+                });
+            }
+        }
+    }
+
+    async handleSlashCommandReplyAction(action, { requestBody = null, commandName = '' } = {}) {
+        if (!action || typeof action !== 'object') {
+            return;
+        }
+
+        switch (action.type) {
+            case 'request_file_upload':
+                await this.requestSlashCommandUpload(action, { requestBody, commandName });
+                return;
+            default:
+                throw new Error(`Unsupported slash command action type: ${action.type}`);
+        }
+    }
+
+    async requestSlashCommandUpload(action, { requestBody = null, commandName = '' } = {}) {
+        try {
+            window.hideLocationOverlay?.();
+        } catch (_) {
+            // ignore overlay errors
+        }
+
+        const uploadSelection = await this.openSlashUploadModal(action);
+        if (!uploadSelection || uploadSelection.canceled === true) {
+            return;
+        }
+
+        const uploadRequestBody = {
+            ...(requestBody && typeof requestBody === 'object' ? requestBody : {}),
+            uploads: Array.isArray(uploadSelection.uploads) ? uploadSelection.uploads : []
+        };
+        const uploadMessage = typeof action.uploadMessage === 'string' && action.uploadMessage.trim()
+            ? action.uploadMessage.trim()
+            : 'Uploading file...';
+
+        try {
+            window.showLocationOverlay?.(uploadMessage);
+        } catch (_) {
+            // ignore overlay errors
+        }
+
+        try {
+            const response = await fetch('/api/slash-command/upload', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(uploadRequestBody)
+            });
+
+            let data = {};
+            try {
+                data = await response.json();
+            } catch (_) {
+                data = {};
+            }
+
+            if (!response.ok || !data?.success) {
+                const errorText = (data && (data.error || (Array.isArray(data.errors) ? data.errors.join(', ') : null)))
+                    || `HTTP ${response.status}`;
+                throw new Error(errorText);
+            }
+
+            await this.processSlashCommandReplies(Array.isArray(data.replies) ? data.replies : [], {
+                requestBody: uploadRequestBody,
+                commandName,
+                defaultSuccessMessage: `Upload for '${commandName}' completed.`
+            });
+        } finally {
+            try {
+                window.hideLocationOverlay?.();
+            } catch (_) {
+                // ignore overlay errors
+            }
+        }
+    }
+
     async executeSlashCommand(rawCommand) {
         const trimmed = rawCommand.startsWith('/') ? rawCommand.slice(1).trim() : rawCommand.trim();
         if (!trimmed) {
@@ -6700,22 +7013,24 @@ class AIRPGChat {
                 throw new Error(errorText);
             }
 
-            const replies = Array.isArray(data.replies) ? data.replies : [];
-            if (!replies.length) {
-                this.addMessage('system', `Command '${commandName}' executed.`, false);
-            } else {
-                replies.forEach(reply => {
-                    if (!reply || typeof reply.content !== 'string') {
-                        return;
-                    }
-                    const message = reply.content.trim();
-                    if (!message) {
-                        return;
-                    }
-                    const isError = Boolean(reply.ephemeral);
-                    this.addMessage('system', message, isError, null, { allowMarkdown: true });
-                });
+            const showExecutionOverlay = data?.executionOptions?.showExecutionOverlay !== false;
+            if (!showExecutionOverlay) {
+                if (overlayTimer) {
+                    window.clearTimeout(overlayTimer);
+                    overlayTimer = null;
+                }
+                try {
+                    window.hideLocationOverlay?.();
+                } catch (_) {
+                    // ignore
+                }
             }
+
+            await this.processSlashCommandReplies(Array.isArray(data.replies) ? data.replies : [], {
+                requestBody,
+                commandName,
+                defaultSuccessMessage: `Command '${commandName}' executed.`
+            });
 
             try {
                 await this.checkLocationUpdate();

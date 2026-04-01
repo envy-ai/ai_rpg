@@ -57,5 +57,18 @@ Request:
 - Body: `{ command: string, args?: object, argsText?: string, userId?: string }`
 
 Response:
+- 200: `{ success: true, replies: array, executionOptions: { showExecutionOverlay: boolean } }`
+  - Each reply may include `content`, `ephemeral`, and an optional typed `action`.
+  - Current action type: `request_file_upload`, which the chat client routes into the shared slash-command upload modal.
+  - `executionOptions.showExecutionOverlay` defaults to `true`; commands like `/import_item` can disable the pre-reply `Executing command...` overlay so immediate UI actions are not blocked.
+- 400/404/500 with `{ success: false, error | errors }`
+
+## POST /api/slash-command/upload
+Send one or more uploaded text files to a slash command that implements `handleUpload(...)`.
+
+Request:
+- Body: `{ command: string, args?: object, argsText?: string, userId?: string, uploads: Array<{ filename: string, content: string, mimeType?: string, size?: number }> }`
+
+Response:
 - 200: `{ success: true, replies: array }`
 - 400/404/500 with `{ success: false, error | errors }`

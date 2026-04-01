@@ -909,6 +909,35 @@ function resolveMegapixels(value) {
     return getDefaultMegapixels();
 }
 
+function resolveThingImageDimensions(thing) {
+    if (!thing || typeof thing !== 'object') {
+        throw new Error('Thing object is required to resolve image dimensions.');
+    }
+
+    const defaultImageSettings = config?.imagegen?.default_settings?.image || {};
+    const normalizedThingType = thing.thingType === 'item' ? 'item' : 'scenery';
+    const overrideImageSettings = normalizedThingType === 'item'
+        ? (config?.imagegen?.item_settings?.image || {})
+        : (config?.imagegen?.scenery_settings?.image || {});
+
+    const resolveDimension = (primaryValue, fallbackValue, label) => {
+        const primaryNumeric = Number(primaryValue);
+        if (Number.isFinite(primaryNumeric) && primaryNumeric > 0) {
+            return primaryNumeric;
+        }
+        const fallbackNumeric = Number(fallbackValue);
+        if (Number.isFinite(fallbackNumeric) && fallbackNumeric > 0) {
+            return fallbackNumeric;
+        }
+        throw new Error(`Image generation: missing configured ${label} for ${normalizedThingType} images.`);
+    };
+
+    return {
+        width: resolveDimension(overrideImageSettings.width, defaultImageSettings.width, 'width'),
+        height: resolveDimension(overrideImageSettings.height, defaultImageSettings.height, 'height')
+    };
+}
+
 function getJobSnapshot(jobId) {
     if (!jobId) {
         return null;
@@ -1792,6 +1821,27 @@ async function validateConfiguration() {
                 validationErrors.push('Image generation: invalid default seed (must be 0-1000000)');
             }
         }
+
+        const validateOptionalImageSizeOverrides = (label, imageSettings) => {
+            if (!imageSettings || typeof imageSettings !== 'object') {
+                return;
+            }
+            if (imageSettings.width !== undefined && imageSettings.width !== null) {
+                const width = Number(imageSettings.width);
+                if (!Number.isFinite(width) || width < 64 || width > 4096) {
+                    validationErrors.push(`Image generation: invalid ${label} width override (must be 64-4096)`);
+                }
+            }
+            if (imageSettings.height !== undefined && imageSettings.height !== null) {
+                const height = Number(imageSettings.height);
+                if (!Number.isFinite(height) || height < 64 || height > 4096) {
+                    validationErrors.push(`Image generation: invalid ${label} height override (must be 64-4096)`);
+                }
+            }
+        };
+
+        validateOptionalImageSizeOverrides('item', config.imagegen.item_settings?.image);
+        validateOptionalImageSizeOverrides('scenery', config.imagegen.scenery_settings?.image);
 
         // Check if generated images directory exists, create if not
         const imagesDir = path.join(__dirname, 'public', 'generated-images');
@@ -21522,6 +21572,11 @@ function resolveBaseContextPreambleForImagePrompts() {
     return settingPreamble;
 }
 
+function shouldPrependBaseContextPreambleForImagePrompts() {
+    const engine = String(config?.imagegen?.engine || 'comfyui').trim().toLowerCase();
+    return engine !== 'comfyui';
+}
+
 function prependBaseContextPreamble(promptText) {
     if (typeof promptText !== 'string') {
         throw new TypeError('Image prompt text must be a string.');
@@ -21530,6 +21585,10 @@ function prependBaseContextPreamble(promptText) {
     const trimmedPrompt = promptText.trim();
     if (!trimmedPrompt) {
         return '';
+    }
+
+    if (!shouldPrependBaseContextPreambleForImagePrompts()) {
+        return trimmedPrompt;
     }
 
     const basePreamble = resolveBaseContextPreambleForImagePrompts();
@@ -21956,27 +22015,15 @@ async function generateThingImage(thing, options = {}) {
         // Create image generation job with thing-specific settings
         const jobId = generateImageId();
 
-        // Determine appropriate dimensions based on thing type
-        let width = config.imagegen.default_settings.image.width || 1024;
-        let height = config.imagegen.default_settings.image.height || 1024;
-
-        // Items might work better with square or portrait orientation
-        if (thing.thingType === 'item') {
-            width = 1024;
-            height = 1024; // Square for items
-        } else {
-            // Scenery might work better with landscape
-            width = 1024;
-            height = 768;
-        }
+        const { width, height } = resolveThingImageDimensions(thing);
 
         const thingNegative = thing.thingType === 'item'
             ? buildNegativePrompt('blurry, low quality, people, characters, hands, multiple objects, cluttered background, modern elements')
             : buildNegativePrompt('blurry, low quality, people, characters, modern elements, cars, technology, indoor scenes, portraits');
         const payload = {
             prompt: finalImagePrompt,
-            width: width,
-            height: height,
+            width,
+            height,
             seed: Math.floor(Math.random() * 1000000),
             negative_prompt: thingNegative,
             megapixels: getDefaultMegapixels(),

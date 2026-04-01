@@ -41,6 +41,7 @@ Represents items and scenery in the game world. Supports rarity metadata, attrib
 - Flag helpers: `hasFlag(flag)`, `setFlag(flag, enabled)`.
 - Bonuses: `getAttributeBonus(attributeName)`.
 - Cause effects: `setCauseStatusEffects({ target, equipper, legacy })`.
+- Distinct target/equipper cause effects remain separate through constructor ingestion and metadata sync; dual-effect items are not collapsed into one shared payload.
 - Serialization: `toJSON()`, `delete()`.
 - Status effects: `getStatusEffects()`, `setStatusEffects(effects)`, `addStatusEffect(effect, defaultDuration)`, `removeStatusEffect(description)`, `tickStatusEffects(elapsedMinutes)`, `clearExpiredStatusEffects()`.
 - Inventory/world placement: `whoseInventory()`, `removeFromWorld()`, `drop(locationIdOverride)`, `putInLocation(locationId)`, `putInInventory(playerId)`.

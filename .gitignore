@@ -1,4 +1,4 @@
-config.yaml
+config.yaml*
 node_modules/
 package-lock.json
 .DS_Store

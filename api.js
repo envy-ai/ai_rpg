@@ -1676,6 +1676,44 @@ module.exports = function registerApiRoutes(scope) {
             return value.trim().toLowerCase();
         }
 
+        function resolveExtraPlotPromptSettings() {
+            const defaults = {
+                plot_summary: true,
+                plot_expander: true,
+                supplemental_story_info: true,
+                'offscreen-npc-activity-daily': true,
+                'offscreen-npc-activity-weekly': true
+            };
+            const rawSettings = config?.extra_plot_prompts;
+            if (rawSettings === null || rawSettings === undefined || rawSettings === '') {
+                return defaults;
+            }
+            if (!rawSettings || typeof rawSettings !== 'object' || Array.isArray(rawSettings)) {
+                throw new Error('extra_plot_prompts must be an object map.');
+            }
+
+            const resolved = { ...defaults };
+            for (const promptKey of Object.keys(defaults)) {
+                const rawValue = rawSettings[promptKey];
+                if (rawValue === null || rawValue === undefined || rawValue === '') {
+                    continue;
+                }
+                if (typeof rawValue !== 'boolean') {
+                    throw new Error(`extra_plot_prompts.${promptKey} must be a boolean.`);
+                }
+                resolved[promptKey] = rawValue;
+            }
+            return resolved;
+        }
+
+        function isExtraPlotPromptEnabled(promptKey) {
+            const resolved = resolveExtraPlotPromptSettings();
+            if (!Object.prototype.hasOwnProperty.call(resolved, promptKey)) {
+                throw new Error(`Unsupported extra plot prompt key "${promptKey}".`);
+            }
+            return resolved[promptKey] !== false;
+        }
+
         function normalizeOffscreenNpcActivityState(value) {
             if (value === null || value === undefined) {
                 return {
@@ -1774,8 +1812,12 @@ module.exports = function registerApiRoutes(scope) {
         function incrementOffscreenNpcActivityTurnCounters() {
             const normalizedState = normalizeOffscreenNpcActivityState(offscreenNpcActivityState);
             offscreenNpcActivityState = normalizedState;
-            normalizedState.turnsSinceDailyPrompt += 1;
-            normalizedState.turnsSinceWeeklyPrompt += 1;
+            if (isExtraPlotPromptEnabled('offscreen-npc-activity-daily')) {
+                normalizedState.turnsSinceDailyPrompt += 1;
+            }
+            if (isExtraPlotPromptEnabled('offscreen-npc-activity-weekly')) {
+                normalizedState.turnsSinceWeeklyPrompt += 1;
+            }
         }
 
         function resetOffscreenNpcActivityTurnCounter(mode) {
@@ -1994,21 +2036,25 @@ module.exports = function registerApiRoutes(scope) {
         }
 
         function resolveOffscreenNpcActivityRunPlan({ startWorldTime, endWorldTime } = {}) {
+            const dailyPromptEnabled = isExtraPlotPromptEnabled('offscreen-npc-activity-daily');
+            const weeklyPromptEnabled = isExtraPlotPromptEnabled('offscreen-npc-activity-weekly');
             const dailyCount = resolveOffscreenNpcActivityDailyCount();
-            const dailyPoints = (startWorldTime && endWorldTime && dailyCount > 0)
+            const dailyPoints = (dailyPromptEnabled && startWorldTime && endWorldTime && dailyCount > 0)
                 ? collectCrossedDailyPromptPoints({ startWorldTime, endWorldTime })
                 : [];
-            const weeklyPoints = (startWorldTime && endWorldTime)
+            const weeklyPoints = (weeklyPromptEnabled && startWorldTime && endWorldTime)
                 ? collectCrossedWeeklyPromptPoints({ startWorldTime, endWorldTime })
                 : [];
 
             const normalizedState = normalizeOffscreenNpcActivityState(offscreenNpcActivityState);
             offscreenNpcActivityState = normalizedState;
 
-            const dailyMaxTurnsBetweenPrompts = dailyCount > 0
+            const dailyMaxTurnsBetweenPrompts = (dailyPromptEnabled && dailyCount > 0)
                 ? resolveOffscreenNpcActivityDailyMaxTurnsBetweenPrompts()
                 : 0;
-            const weeklyMaxTurnsBetweenPrompts = resolveOffscreenNpcActivityWeeklyMaxTurnsBetweenPrompts();
+            const weeklyMaxTurnsBetweenPrompts = weeklyPromptEnabled
+                ? resolveOffscreenNpcActivityWeeklyMaxTurnsBetweenPrompts()
+                : 0;
 
             const forcedDailyPoint = dailyCount > 0
                 && dailyMaxTurnsBetweenPrompts > 0
@@ -2168,6 +2214,9 @@ module.exports = function registerApiRoutes(scope) {
         }
 
         function shouldRunSupplementalStoryInfoThisTurn({ generatedNpcOrThing = false } = {}) {
+            if (!isExtraPlotPromptEnabled('supplemental_story_info')) {
+                return false;
+            }
             const frequency = resolveSupplementalStoryInfoPromptFrequency();
             if (frequency === 0) {
                 return false;
@@ -2180,6 +2229,9 @@ module.exports = function registerApiRoutes(scope) {
         }
 
         function shouldRunPlotSummaryThisTurn() {
+            if (!isExtraPlotPromptEnabled('plot_summary')) {
+                return false;
+            }
             if (plotSummaryRunOnNextEligibleTurn) {
                 plotSummaryRunOnNextEligibleTurn = false;
                 return true;
@@ -2201,6 +2253,9 @@ module.exports = function registerApiRoutes(scope) {
         }
 
         function shouldRunPlotExpanderThisTurn() {
+            if (!isExtraPlotPromptEnabled('plot_expander')) {
+                return false;
+            }
             const frequency = resolvePlotExpanderPromptFrequency();
             if (frequency === 0) {
                 return false;
@@ -24192,15 +24247,17 @@ module.exports = function registerApiRoutes(scope) {
                         || (itemBlueprint.causeStatusEffect?.applyToEquipper ? itemBlueprint.causeStatusEffect : null)
                         || null;
                     const combinedCauseEffect = (() => {
-                        if (targetEffect || equipperEffect) {
-                            const payload = targetEffect || equipperEffect || {};
-                            return {
-                                ...payload,
-                                applyToTarget: Boolean(targetEffect),
-                                applyToEquipper: Boolean(equipperEffect)
-                            };
+                        const entries = [];
+                        if (targetEffect) {
+                            entries.push({ ...targetEffect, applyToTarget: true });
                         }
-                        return itemBlueprint.causeStatusEffect || null;
+                        if (equipperEffect) {
+                            entries.push({ ...equipperEffect, applyToEquipper: true });
+                        }
+                        if (!entries.length && itemBlueprint.causeStatusEffect) {
+                            entries.push(itemBlueprint.causeStatusEffect);
+                        }
+                        return entries.length ? entries : null;
                     })();
 
                     const metadata = sanitizeMetadataObject({
@@ -25239,12 +25296,14 @@ module.exports = function registerApiRoutes(scope) {
                     attributeBonuses,
                     causeStatusEffect: (function buildCauseEffect() {
                         if (causeStatusEffectOnTarget || causeStatusEffectOnEquipper) {
-                            const payload = causeStatusEffectOnTarget || causeStatusEffectOnEquipper || causeStatusEffect || {};
-                            return {
-                                ...payload,
-                                applyToTarget: Boolean(causeStatusEffectOnTarget),
-                                applyToEquipper: Boolean(causeStatusEffectOnEquipper)
-                            };
+                            const entries = [];
+                            if (causeStatusEffectOnTarget) {
+                                entries.push({ ...causeStatusEffectOnTarget, applyToTarget: true });
+                            }
+                            if (causeStatusEffectOnEquipper) {
+                                entries.push({ ...causeStatusEffectOnEquipper, applyToEquipper: true });
+                            }
+                            return entries;
                         }
                         return causeStatusEffect;
                     }()),
@@ -29938,161 +29997,401 @@ module.exports = function registerApiRoutes(scope) {
             }
         });
 
-        app.post('/api/slash-command', async (req, res) => {
-            try {
-                const { command, args, argsText, userId } = req.body || {};
-                if (typeof command !== 'string' || !command.trim()) {
-                    return res.status(400).json({ success: false, error: 'Command name is required.' });
-                }
+        function createSlashCommandHttpError(message, statusCode = 400) {
+            const error = new Error(message);
+            error.statusCode = statusCode;
+            return error;
+        }
 
-                const trimmedCommand = command.trim();
-                const CommandModule = SlashCommandRegistry.getSlashCommandModule(trimmedCommand);
-                if (!CommandModule) {
-                    return res.status(404).json({ success: false, error: `Slash command '${trimmedCommand}' not found.` });
-                }
+        function normalizeSlashCommandRequest(rawRequest = {}) {
+            if (!rawRequest || typeof rawRequest !== 'object') {
+                throw createSlashCommandHttpError('Slash command request body must be an object.');
+            }
 
-                const providedArgs = (args && typeof args === 'object') ? { ...args } : {};
+            const command = typeof rawRequest.command === 'string'
+                ? rawRequest.command.trim()
+                : '';
+            if (!command) {
+                throw createSlashCommandHttpError('Command name is required.');
+            }
 
-                const argDefinitions = Array.isArray(CommandModule.args) ? CommandModule.args : [];
-                if (argsText && argDefinitions.length) {
-                    const tokens = [];
-                    const regex = /"([^"]*)"|(\S+)/g;
-                    let match;
-                    while ((match = regex.exec(argsText)) !== null) {
-                        const value = match[1] !== undefined ? match[1] : match[2];
-                        if (value !== undefined) {
-                            tokens.push(value);
-                        }
+            const args = (rawRequest.args && typeof rawRequest.args === 'object' && !Array.isArray(rawRequest.args))
+                ? { ...rawRequest.args }
+                : {};
+            const argsText = typeof rawRequest.argsText === 'string' ? rawRequest.argsText : '';
+            const userId = typeof rawRequest.userId === 'string' && rawRequest.userId.trim()
+                ? rawRequest.userId.trim()
+                : null;
+
+            return {
+                command,
+                args,
+                argsText,
+                userId
+            };
+        }
+
+        function resolveSlashCommandInvocation({ command, args = {}, argsText = '', requireUploadHandler = false } = {}) {
+            const trimmedCommand = typeof command === 'string' ? command.trim() : '';
+            if (!trimmedCommand) {
+                throw createSlashCommandHttpError('Command name is required.');
+            }
+
+            const CommandModule = SlashCommandRegistry.getSlashCommandModule(trimmedCommand);
+            if (!CommandModule) {
+                throw createSlashCommandHttpError(`Slash command '${trimmedCommand}' not found.`, 404);
+            }
+            if (requireUploadHandler && typeof CommandModule.handleUpload !== 'function') {
+                throw createSlashCommandHttpError(`Slash command '${trimmedCommand}' does not accept file uploads.`);
+            }
+
+            const providedArgs = (args && typeof args === 'object' && !Array.isArray(args))
+                ? { ...args }
+                : {};
+
+            const argDefinitions = Array.isArray(CommandModule.args) ? CommandModule.args : [];
+            if (argsText && argDefinitions.length) {
+                const tokens = [];
+                const regex = /"([^"]*)"|(\S+)/g;
+                let match;
+                while ((match = regex.exec(argsText)) !== null) {
+                    const value = match[1] !== undefined ? match[1] : match[2];
+                    if (value !== undefined) {
+                        tokens.push(value);
                     }
+                }
 
-                    for (const definition of argDefinitions) {
-                        const argName = definition?.name;
-                        if (!argName) {
-                            continue;
-                        }
-                        if (Object.prototype.hasOwnProperty.call(providedArgs, argName)) {
-                            continue;
-                        }
-                        if (!tokens.length) {
+                for (const definition of argDefinitions) {
+                    const argName = definition?.name;
+                    if (!argName) {
+                        continue;
+                    }
+                    if (Object.prototype.hasOwnProperty.call(providedArgs, argName)) {
+                        continue;
+                    }
+                    if (!tokens.length) {
+                        break;
+                    }
+                    const rawToken = tokens.shift();
+                    let parsedValue = rawToken;
+                    switch ((definition.type || '').toLowerCase()) {
+                        case 'integer': {
+                            const numeric = Number.parseInt(rawToken, 10);
+                            if (!Number.isInteger(numeric)) {
+                                throw createSlashCommandHttpError(`Argument "${argName}" must be an integer.`);
+                            }
+                            parsedValue = numeric;
                             break;
                         }
-                        const rawToken = tokens.shift();
-                        let parsedValue = rawToken;
-                        switch ((definition.type || '').toLowerCase()) {
-                            case 'integer': {
-                                const numeric = Number.parseInt(rawToken, 10);
-                                if (!Number.isInteger(numeric)) {
-                                    throw new Error(`Argument "${argName}" must be an integer.`);
-                                }
-                                parsedValue = numeric;
-                                break;
+                        case 'boolean': {
+                            const lower = rawToken.trim().toLowerCase();
+                            if (lower === 'true') {
+                                parsedValue = true;
+                            } else if (lower === 'false') {
+                                parsedValue = false;
+                            } else {
+                                throw createSlashCommandHttpError(`Argument "${argName}" must be a boolean.`);
                             }
-                            case 'boolean': {
-                                const lower = rawToken.trim().toLowerCase();
-                                if (lower === 'true') {
-                                    parsedValue = true;
-                                } else if (lower === 'false') {
-                                    parsedValue = false;
-                                } else {
-                                    throw new Error(`Argument "${argName}" must be a boolean.`);
-                                }
-                                break;
-                            }
-                            case 'string':
-                            default:
-                                parsedValue = rawToken;
-                                break;
+                            break;
                         }
-                        providedArgs[argName] = parsedValue;
+                        case 'string':
+                        default:
+                            parsedValue = rawToken;
+                            break;
                     }
+                    providedArgs[argName] = parsedValue;
+                }
+            }
+
+            const validationErrors = typeof CommandModule.validateArgs === 'function'
+                ? CommandModule.validateArgs(providedArgs)
+                : [];
+            if (validationErrors.length) {
+                const error = createSlashCommandHttpError('Slash command arguments failed validation.');
+                error.validationErrors = validationErrors;
+                throw error;
+            }
+
+            return {
+                commandName: trimmedCommand,
+                CommandModule,
+                providedArgs
+            };
+        }
+
+        function normalizeSlashCommandReplyAction(rawAction = {}) {
+            if (!rawAction || typeof rawAction !== 'object' || Array.isArray(rawAction)) {
+                throw new Error('Slash command reply action must be an object.');
+            }
+
+            const type = typeof rawAction.type === 'string'
+                ? rawAction.type.trim()
+                : '';
+            if (!type) {
+                throw new Error('Slash command reply action type is required.');
+            }
+
+            if (type !== 'request_file_upload') {
+                throw new Error(`Unsupported slash command reply action type "${type}".`);
+            }
+
+            const normalized = { type };
+            const optionalStringFields = ['title', 'description', 'accept', 'uploadMessage', 'submitLabel', 'cancelLabel'];
+            for (const field of optionalStringFields) {
+                if (!Object.prototype.hasOwnProperty.call(rawAction, field)) {
+                    continue;
+                }
+                if (typeof rawAction[field] !== 'string') {
+                    throw new Error(`Slash command reply action field "${field}" must be a string.`);
+                }
+                const trimmed = rawAction[field].trim();
+                if (trimmed) {
+                    normalized[field] = trimmed;
+                }
+            }
+
+            if (Object.prototype.hasOwnProperty.call(rawAction, 'multiple')) {
+                if (typeof rawAction.multiple !== 'boolean') {
+                    throw new Error('Slash command reply action field "multiple" must be a boolean.');
+                }
+                normalized.multiple = rawAction.multiple;
+            }
+
+            return normalized;
+        }
+
+        function normalizeSlashCommandReplyPayload(payload) {
+            if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+                throw new Error('Slash command reply payload must be an object.');
+            }
+
+            const normalized = {};
+            if (Object.prototype.hasOwnProperty.call(payload, 'content')) {
+                if (typeof payload.content !== 'string') {
+                    throw new Error('Slash command reply content must be a string.');
+                }
+                normalized.content = payload.content;
+            }
+            if (Object.prototype.hasOwnProperty.call(payload, 'ephemeral')) {
+                if (typeof payload.ephemeral !== 'boolean') {
+                    throw new Error('Slash command reply ephemeral flag must be a boolean.');
+                }
+                normalized.ephemeral = payload.ephemeral;
+            }
+            if (Object.prototype.hasOwnProperty.call(payload, 'action')) {
+                normalized.action = normalizeSlashCommandReplyAction(payload.action);
+            }
+
+            if (!Object.prototype.hasOwnProperty.call(normalized, 'content')
+                && !Object.prototype.hasOwnProperty.call(normalized, 'action')) {
+                throw new Error('Slash command reply must include content or an action.');
+            }
+
+            if (!Object.prototype.hasOwnProperty.call(normalized, 'content')) {
+                normalized.content = '';
+            }
+            if (!Object.prototype.hasOwnProperty.call(normalized, 'ephemeral')) {
+                normalized.ephemeral = false;
+            }
+
+            return normalized;
+        }
+
+        function resolveSlashCommandExecutionOptions(CommandModule) {
+            if (!CommandModule || (typeof CommandModule !== 'function' && typeof CommandModule !== 'object')) {
+                return { showExecutionOverlay: true };
+            }
+
+            const rawShowExecutionOverlay = CommandModule.showExecutionOverlay;
+            if (rawShowExecutionOverlay === undefined) {
+                return { showExecutionOverlay: true };
+            }
+            if (typeof rawShowExecutionOverlay !== 'boolean') {
+                throw new Error('Slash command showExecutionOverlay metadata must be a boolean.');
+            }
+
+            return {
+                showExecutionOverlay: rawShowExecutionOverlay
+            };
+        }
+
+        function normalizeSlashCommandUploads(rawUploads) {
+            const uploadEntries = Array.isArray(rawUploads)
+                ? rawUploads
+                : (rawUploads && typeof rawUploads === 'object' ? [rawUploads] : []);
+
+            return uploadEntries.map((entry, index) => {
+                if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+                    throw createSlashCommandHttpError(`Upload entry #${index + 1} must be an object.`);
                 }
 
-                const validationErrors = typeof CommandModule.validateArgs === 'function'
-                    ? CommandModule.validateArgs(providedArgs)
-                    : [];
-                if (validationErrors.length) {
-                    return res.status(400).json({ success: false, errors: validationErrors });
+                const filename = typeof entry.filename === 'string' ? entry.filename.trim() : '';
+                if (!filename) {
+                    throw createSlashCommandHttpError(`Upload entry #${index + 1} is missing a filename.`);
+                }
+                if (typeof entry.content !== 'string') {
+                    throw createSlashCommandHttpError(`Upload entry "${filename}" is missing string content.`);
                 }
 
+                const mimeType = typeof entry.mimeType === 'string' && entry.mimeType.trim()
+                    ? entry.mimeType.trim()
+                    : null;
+                const size = Number.isFinite(entry.size) && entry.size >= 0
+                    ? entry.size
+                    : null;
+
+                return {
+                    filename,
+                    content: entry.content,
+                    mimeType,
+                    size
+                };
+            });
+        }
+
+        function buildSlashCommandInteractionContext({ userId = null, argsText = '', replies = [] } = {}) {
+            const getChatHistory = () => chatHistory;
+            const getHistory = (query, startIndexOrOptions = null, countArg = null) => {
+                let startIndex = null;
+                let count = null;
+
+                if (startIndexOrOptions && typeof startIndexOrOptions === 'object' && !Array.isArray(startIndexOrOptions)) {
+                    if (Object.prototype.hasOwnProperty.call(startIndexOrOptions, 'startIndex')) {
+                        startIndex = startIndexOrOptions.startIndex;
+                    }
+                    if (Object.prototype.hasOwnProperty.call(startIndexOrOptions, 'count')) {
+                        count = startIndexOrOptions.count;
+                    }
+                } else {
+                    startIndex = startIndexOrOptions;
+                    count = countArg;
+                }
+
+                return collectHistoryMatches({
+                    query,
+                    startIndex,
+                    count,
+                    includeFullContent: true
+                }).entries;
+            };
+
+            return {
+                user: { id: userId },
+                argsText,
+                chatHistory,
+                getChatHistory,
+                getHistory,
+                performGameSave,
+                currentPlayer,
+                parseThingsXml: typeof parseThingsXml === 'function' ? parseThingsXml : null,
+                findRegionByLocationId: typeof findRegionByLocationId === 'function' ? findRegionByLocationId : null,
+                runPlotSummaryPrompt: async ({ parentEntryId = null, locationId = null } = {}) => {
+                    const resolvedLocationId = requireLocationId(
+                        locationId || currentPlayer?.currentLocation,
+                        'runplotsummary slash command'
+                    );
+                    return runPlotSummaryPrompt({
+                        parentEntryId,
+                        locationId: resolvedLocationId
+                    });
+                },
+                runPlotExpanderPrompt: async ({
+                    parentEntryId = null,
+                    locationId = null,
+                    specificPlot = null
+                } = {}) => {
+                    const resolvedLocationId = requireLocationId(
+                        locationId || currentPlayer?.currentLocation,
+                        'runplotexpander slash command'
+                    );
+                    return runPlotExpanderPrompt({
+                        parentEntryId,
+                        locationId: resolvedLocationId,
+                        specificPlot
+                    });
+                },
+                generateSkillsByNames: typeof generateSkillsByNames === 'function'
+                    ? generateSkillsByNames
+                    : null,
+                getActiveSettingSnapshot: typeof getActiveSettingSnapshot === 'function'
+                    ? getActiveSettingSnapshot
+                    : null,
+                describeSettingForPrompt: typeof describeSettingForPrompt === 'function'
+                    ? describeSettingForPrompt
+                    : null,
+                skillRegistry: skills instanceof Map ? skills : null,
+                thingRegistry: things instanceof Map ? things : null,
+                reply(payload) {
+                    replies.push(normalizeSlashCommandReplyPayload(payload));
+                    return Promise.resolve();
+                }
+            };
+        }
+
+        app.post('/api/slash-command', async (req, res) => {
+            try {
+                const request = normalizeSlashCommandRequest(req.body || {});
+                const { CommandModule, providedArgs } = resolveSlashCommandInvocation(request);
                 const replies = [];
-                const getChatHistory = () => chatHistory;
-                const getHistory = (query, startIndexOrOptions = null, countArg = null) => {
-                    let startIndex = null;
-                    let count = null;
-
-                    if (startIndexOrOptions && typeof startIndexOrOptions === 'object' && !Array.isArray(startIndexOrOptions)) {
-                        if (Object.prototype.hasOwnProperty.call(startIndexOrOptions, 'startIndex')) {
-                            startIndex = startIndexOrOptions.startIndex;
-                        }
-                        if (Object.prototype.hasOwnProperty.call(startIndexOrOptions, 'count')) {
-                            count = startIndexOrOptions.count;
-                        }
-                    } else {
-                        startIndex = startIndexOrOptions;
-                        count = countArg;
-                    }
-
-                    return collectHistoryMatches({
-                        query,
-                        startIndex,
-                        count,
-                        includeFullContent: true
-                    }).entries;
-                };
-                const interaction = {
-                    user: { id: typeof userId === 'string' ? userId : null },
-                    argsText: typeof argsText === 'string' ? argsText : '',
-                    chatHistory,
-                    getChatHistory,
-                    getHistory,
-                    performGameSave,
-                    runPlotSummaryPrompt: async ({ parentEntryId = null, locationId = null } = {}) => {
-                        const resolvedLocationId = requireLocationId(
-                            locationId || currentPlayer?.currentLocation,
-                            'runplotsummary slash command'
-                        );
-                        return runPlotSummaryPrompt({
-                            parentEntryId,
-                            locationId: resolvedLocationId
-                        });
-                    },
-                    runPlotExpanderPrompt: async ({
-                        parentEntryId = null,
-                        locationId = null,
-                        specificPlot = null
-                    } = {}) => {
-                        const resolvedLocationId = requireLocationId(
-                            locationId || currentPlayer?.currentLocation,
-                            'runplotexpander slash command'
-                        );
-                        return runPlotExpanderPrompt({
-                            parentEntryId,
-                            locationId: resolvedLocationId,
-                            specificPlot
-                        });
-                    },
-                    generateSkillsByNames: typeof generateSkillsByNames === 'function'
-                        ? generateSkillsByNames
-                        : null,
-                    getActiveSettingSnapshot: typeof getActiveSettingSnapshot === 'function'
-                        ? getActiveSettingSnapshot
-                        : null,
-                    describeSettingForPrompt: typeof describeSettingForPrompt === 'function'
-                        ? describeSettingForPrompt
-                        : null,
-                    skillRegistry: skills instanceof Map ? skills : null,
-                    reply(payload) {
-                        replies.push(payload);
-                        return Promise.resolve();
-                    }
-                };
+                const executionOptions = resolveSlashCommandExecutionOptions(CommandModule);
+                const interaction = buildSlashCommandInteractionContext({
+                    userId: request.userId,
+                    argsText: request.argsText,
+                    replies
+                });
 
                 await CommandModule.execute(interaction, providedArgs);
 
-                return res.json({ success: true, replies });
+                return res.json({ success: true, replies, executionOptions });
             } catch (error) {
                 console.error('Slash command execution failed:', error);
-                return res.status(500).json({ success: false, error: error.message });
+                if (Array.isArray(error?.validationErrors) && error.validationErrors.length) {
+                    return res.status(error.statusCode || 400).json({
+                        success: false,
+                        errors: error.validationErrors
+                    });
+                }
+                return res.status(error.statusCode || 500).json({
+                    success: false,
+                    error: error.message
+                });
+            }
+        });
+
+        app.post('/api/slash-command/upload', async (req, res) => {
+            try {
+                const request = normalizeSlashCommandRequest(req.body || {});
+                const uploads = normalizeSlashCommandUploads(req.body?.uploads);
+                if (!uploads.length) {
+                    throw createSlashCommandHttpError('At least one uploaded file is required.');
+                }
+
+                const { CommandModule, providedArgs } = resolveSlashCommandInvocation({
+                    ...request,
+                    requireUploadHandler: true
+                });
+                const replies = [];
+                const interaction = buildSlashCommandInteractionContext({
+                    userId: request.userId,
+                    argsText: request.argsText,
+                    replies
+                });
+
+                await CommandModule.handleUpload(interaction, providedArgs, uploads);
+
+                return res.json({ success: true, replies });
+            } catch (error) {
+                console.error('Slash command upload failed:', error);
+                if (Array.isArray(error?.validationErrors) && error.validationErrors.length) {
+                    return res.status(error.statusCode || 400).json({
+                        success: false,
+                        errors: error.validationErrors
+                    });
+                }
+                return res.status(error.statusCode || 500).json({
+                    success: false,
+                    error: error.message
+                });
             }
         });
 

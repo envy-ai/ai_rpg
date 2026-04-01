@@ -3,11 +3,12 @@ Slash Commands Quick Guide
 - Lifecycle
   - `server.js` initializes `SlashCommandRegistry` (loads `slashcommands/*.js`), then `/api/slash-command` in `api.js` invokes the matching module by name/alias.
   - `public/js/chat.js` sends `/command arg=value` or `/command arg1 arg2` to `/api/slash-command`; replies are rendered as system messages.
+  - Commands may also reply with a typed action. `request_file_upload` opens the shared chat upload modal and then posts the selected file text(s) to `/api/slash-command/upload`, which dispatches back into the same command module.
 
 - Command shape
   - Extend `SlashCommandBase` and export the class.
   - Required statics: `name` (string), `description` (string), `args` (array), `execute(interaction, args)`.
-  - Optional: `aliases` array; `validateArgs` inherited default checks types against `args`.
+  - Optional: `aliases` array; `showExecutionOverlay` boolean getter (defaults to `true`) to suppress the temporary `Executing command...` location overlay for commands that immediately open UI like file uploads; `handleUpload(interaction, args, uploads)` for commands that accept file uploads; `validateArgs` inherited default checks types against `args`.
   - `args` entries: `{ name, type: 'string'|'integer'|'boolean', required: bool }`.
   - `usage` is auto-built from `args` (shown by `/help` via `SlashCommandBase.listCommands()`).
   - Per-command docs live in `docs/slashcommands/` (base class: `docs/slashcommands/SlashCommandBase.md`).
@@ -23,7 +24,10 @@ Slash Commands Quick Guide
   - `interaction.getChatHistory()` returns the live server `chatHistory` array.
   - `interaction.getHistory(query, options?)` returns assistant prose-like history entries whose content matches all case-insensitive query terms; `query` may be a string or an array of strings (AND semantics for arrays). `options.startIndex` is 1-based, and `options.count` caps returned matches. Positional numeric args (`query, startIndex, count`) are also accepted.
   - `interaction.performGameSave(saveName?)` is available when the save helper is in scope.
-  - `interaction.reply(payload)` collects responses; payload shape: `{ content: string, ephemeral?: boolean }`.
+  - `interaction.parseThingsXml(xml, options?)` is available in slash-command context for XML item/scenery parsing.
+  - `interaction.thingRegistry` exposes the live server `things` map for commands that create/import `Thing` instances.
+  - `interaction.reply(payload)` collects responses; payload shape: `{ content?: string, ephemeral?: boolean, action?: { type: 'request_file_upload', title?, description?, accept?, multiple?, uploadMessage?, submitLabel?, cancelLabel? } }`.
+  - `/api/slash-command` responses also include `executionOptions.showExecutionOverlay`; the chat client clears the pending execution overlay timer before processing reply actions when this is `false`.
   - Return value is ignored; send one or multiple replies; empty replies produce a generic success message client-side.
 
 - Best practices

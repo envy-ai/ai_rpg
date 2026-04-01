@@ -21,6 +21,12 @@ Most modals live in `views/index.njk` and are wired up by the inline script or `
 - Used when the server sends `quest_confirmation_request` via websocket.
 - Accept/Decline triggers `/api/quests/confirm`.
 
+## Slash command uploads
+
+- `#slashUploadModal`: reusable file-upload modal opened by slash-command reply actions of type `request_file_upload`.
+- Implemented in `public/js/chat.js`; the modal reads selected file text client-side and posts it to `/api/slash-command/upload`.
+- Intended for slash commands that need user-supplied files without hardcoding per-command upload UI.
+
 ## Quest editing
 
 - `#questEditModal` + `#questEditBackdrop`
@@ -106,4 +112,5 @@ Most modals live in `views/index.njk` and are wired up by the inline script or `
 
 - Most modals are toggled via `hidden` + `aria-hidden`.
 - The inline script in `views/index.njk` contains the open/close logic and field wiring.
+- `public/js/chat.js` owns the runtime-only quest confirmation modal and the shared slash upload modal flow.
 - LLM prompt modals (`#addNpcModal`, `#newExitModal`, `#craftingModal`, `#salvageIntentModal`) close immediately on submit; no visible waiting state is shown, and errors surface via `alert()` after closing.

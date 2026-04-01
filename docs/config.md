@@ -189,6 +189,24 @@ player_abilities_per_level: 3
 - `player_abilities_per_level` cannot exceed `player_ability_options_per_level`.
 - NPC level-up ability assignment remains automatic; this config applies only to the player draft modal flow.
 
+## Extra plot prompt toggles
+
+`extra_plot_prompts` gates the automatic hidden story-note schedulers for plot summary, plot expander, supplemental story info, and offscreen NPC activity.
+
+```yaml
+extra_plot_prompts:
+  plot_summary: true
+  plot_expander: true
+  supplemental_story_info: true
+  offscreen-npc-activity-daily: true
+  offscreen-npc-activity-weekly: true
+```
+
+- Missing keys default to `true`.
+- Each populated key must be a boolean; invalid values raise a runtime error when scheduling.
+- Disabled categories do not auto-schedule and do not advance that category's cadence counters while disabled.
+- These toggles only affect automatic scheduling. Manual slash-command plot note runs (`/runplotsummary`, `/runplotexpander`) still work.
+
 ## Supplemental story info prompt frequency
 
 `supplemental_story_info_prompt_frequency` controls when hidden supplemental story-info prompts run after a player turn.
@@ -199,6 +217,7 @@ supplemental_story_info_prompt_frequency: 5
 
 - `0`: never run supplemental story info prompts.
 - `>0`: run every `X` turns (`X` = configured value), and also run on any turn where one or more new NPCs or things (items/scenery) were generated.
+- Automatic scheduling is also gated by `extra_plot_prompts.supplemental_story_info`.
 - Value must be an integer `>= 0`; invalid values raise a runtime error when scheduling the prompt.
 
 ## Offscreen NPC activity prompt count
@@ -212,6 +231,7 @@ offscreen_npc_activity_prompt_count: 5
 - Runs when world time crosses `07:00` and `19:00`.
 - The configured value controls how many non-present NPCs the twice-daily prompt requests.
 - `0` disables the twice-daily prompt.
+- Automatic scheduling is also gated by `extra_plot_prompts.offscreen-npc-activity-daily`.
 - Weekly offscreen NPC activity still runs independently (fixed at 15 NPCs).
 - If elapsed time crosses multiple scheduled offscreen prompt checkpoints in one turn, only one offscreen prompt is run for that turn.
 
@@ -229,6 +249,7 @@ offscreen_npc_activity_weekly_max_turns_between_prompts: 100
   - When the daily prompt is enabled (`offscreen_npc_activity_prompt_count > 0`), reaching this many turns since the last daily run forces one daily run.
 - `offscreen_npc_activity_weekly_max_turns_between_prompts`:
   - Applies to the weekly cadence.
+  - Automatic scheduling is also gated by `extra_plot_prompts.offscreen-npc-activity-weekly`.
   - Reaching this many turns since the last weekly run forces one weekly run.
 - `0` disables turn-cap forcing for that cadence.
 - Values must be integers `>= 0`; invalid values raise runtime errors when scheduling.
@@ -253,6 +274,31 @@ time:
 - `tickMinutes`: baseline tick value for systems that need default advancement.
 - `segmentBoundaries`: map of `segmentName -> startMinute` within the cycle.
 - Segment boundaries must be within `[0, cycleLengthMinutes)`.
+
+## Image generation thing size overrides
+
+`imagegen.default_settings.image` remains the baseline size for generated item and scenery images. You can optionally override those dimensions per thing type with `imagegen.item_settings.image` and `imagegen.scenery_settings.image`.
+
+```yaml
+imagegen:
+  default_settings:
+    image:
+      width: 1024
+      height: 1024
+  item_settings:
+    image:
+      width: null
+      height: null
+  scenery_settings:
+    image:
+      width: null
+      height: null
+```
+
+- `item_settings.image.width` / `height` are optional. `null` or omission falls back to `default_settings.image`.
+- `scenery_settings.image.width` / `height` are optional. `null` or omission falls back to `default_settings.image`.
+- When provided, override values must be between `64` and `4096`.
+- If neither the per-type override nor `default_settings.image` provides a usable width/height, startup validation fails instead of silently hardcoding a fallback size.
 
 ## Slop remover base attempts
 
@@ -350,6 +396,7 @@ plot_expander_prompt_frequency: 10
 
 - Default is `10` when omitted.
 - `0` disables automatic runs.
+- Automatic scheduling is also gated by `extra_plot_prompts.plot_expander`.
 - Value must be an integer `>= 0`; invalid values raise runtime errors when scheduling.
 - Runs use the base-context `plot-expander` include and store hidden `plot-expander` entries.
 - The latest `plot-expander` output is injected into base-context as `<plotExpander>` immediately after `<plotSummary>`.

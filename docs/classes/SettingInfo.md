@@ -45,4 +45,4 @@ Represents a game setting/world configuration, including theme, genre, prompts, 
 - Many setters normalize line endings to `\n` for prompt fields.
 - List normalization accepts string (newline-delimited) or array input.
 - Faction draft normalization validates ids/names, relation targets/statuses/notes, assets, and reputation tiers; invalid payloads throw explicit errors.
-- `baseContextPreamble` is prepended to image-generation prompts at execution time.
+- `baseContextPreamble` is prepended to image-generation prompts at execution time for the OpenAI and NanoGPT backends; ComfyUI skips it.
