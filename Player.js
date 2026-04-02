@@ -3601,11 +3601,14 @@ class Player {
             return this.#experience;
         }
 
-        let award = Number(amount);
+        const baseAward = Number(amount);
         const sourceLevel = this.#level;
+        const appliedAward = raw
+            ? baseAward
+            : this.#scaleExperienceAwardForLevel(baseAward);
 
-        console.log(`⭐ Awarding ${award.toFixed(2)} experience to player ${this.#name || this.#id || 'unknown'} (raw: ${raw ? 'yes' : 'no'})`);
-        this.#experience = Math.max(0, this.#experience + award);
+        console.log(`⭐ Awarding ${appliedAward.toFixed(2)} experience to player ${this.#name || this.#id || 'unknown'} (base: ${baseAward.toFixed(2)}, raw: ${raw ? 'yes' : 'no'})`);
+        this.#experience = Math.max(0, this.#experience + appliedAward);
 
         this.#processExperienceOverflow(raw);
         this.#lastUpdated = new Date().toISOString();
@@ -3623,8 +3626,8 @@ class Player {
                         throw new Error(`Cannot distribute party experience to ${member?.name || member?.id || memberId}: member level is invalid (${memberLevel}).`);
                     }
                     const scaledAward = raw
-                        ? award
-                        : (award * sourceLevel) / memberLevel;
+                        ? baseAward
+                        : (baseAward * sourceLevel) / memberLevel;
                     member.addExperience(scaledAward, raw);
                 }
             }
@@ -5760,6 +5763,19 @@ class Player {
             this.levelUp(levels);
         }
         return levels;
+    }
+
+    #scaleExperienceAwardForLevel(amount) {
+        if (!Number.isFinite(amount) || amount <= 0) {
+            return amount;
+        }
+
+        const currentLevel = Number(this.#level);
+        if (!Number.isFinite(currentLevel) || currentLevel <= 1) {
+            return amount;
+        }
+
+        return amount / (currentLevel / 2);
     }
 
     /**

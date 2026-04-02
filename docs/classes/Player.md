@@ -83,7 +83,7 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
   - `levelUp(count)` (updates level/health only; point pools are formula-derived dynamically).
   - `getUnspentSkillPoints()`, `setUnspentSkillPoints(value)`, `adjustUnspentSkillPoints(delta)`.
   - `getUnspentAttributePoints()`, `setUnspentAttributePoints(value)`, `adjustUnspentAttributePoints(delta)`.
-  - `addExperience(amount, raw)` (for non-NPC actors with party members, shared XP is scaled per recipient by `sourceLevel / recipientLevel`; `raw=true` bypasses this scaling), `addRawExperience(amount)`, `setExperience(value)`.
+  - `addExperience(amount, raw)` (normal gameplay XP is divided by `(currentLevel / 2)` for levels above `1`; for non-NPC actors with party members, shared XP is still derived from the original pre-division award and then scaled per recipient by `sourceLevel / recipientLevel`; `raw=true` bypasses both the level-based divisor and the party-recipient scaling), `addRawExperience(amount)`, `setExperience(value)`.
 - Health/combat:
   - `modifyHealth(amount, reason)`, `setHealthAttribute(attributeName)`.
   - `isAlive()`, `updateCorpseCountdown()`.
@@ -135,7 +135,8 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
 - `currentVehicle` returns `null` unless the actor is currently in a vehicle location or vehicle region; when present it includes vehicle name/description, `location` (`<regionName>:<locationName>`), the full `vehicleInfo` object, explicit trip-state booleans (`isUnderway`, `hasArrived`, `isArriving`) mirrored onto `vehicleInfo` for prompt compatibility, `destination`, `destinationResolved`, optional `pendingDestination`, numeric `minutesToDestination`, plus a formatted `timeToDestination` string (`X days, Y hours, Z minutes`, omitting all zero-value units except exact `0 minutes`, and appending `ago` when negative). During timed travel, `destination` can come from `pendingDestination` even when `vehicleInfo.currentDestination` is still `null`, so prompts can see the intended target without forcing early destination generation. These booleans now come from `VehicleInfo` directly, so pre-departure states no longer appear as arrived.
 - Unspent skill/attribute points are formula-derived at read time from current level + assigned stats/skills.
 - Party members are treated as off-location actors: joining party removes them from all location `npcIds` and clears `currentLocation`.
-- Party XP sharing now scales by each recipient's level instead of copying the source actor's already-scaled award.
+- Gameplay XP awards above level `1` are reduced by dividing the incoming award by `(level / 2)`.
+- Party XP sharing now scales by each recipient's level instead of copying the source actor's already-scaled award, and it derives party shares from the original pre-division gameplay award so the source actor's own level reduction does not cascade onto other recipients.
 - `getById(id)` is index-backed (`#indexById`) so party XP and other lookups resolve the canonical current instance, not stale insertion-order instances.
 - `unregister(target)` now rebuilds indexes after removals to prevent stale id/name registry entries.
 - Direct unspent-point mutators (`setUnspent*`/`adjustUnspent*`) now throw by design.

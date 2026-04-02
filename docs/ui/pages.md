@@ -48,10 +48,12 @@ This page maps routes to templates and the client scripts/styles they load.
 ## Server configuration
 - Route: `/config`
 - Template: `views/config.njk`
-- Styles: `public/css/main.css`.
+- Styles: `public/css/main.css`, `public/css/config.css`.
 - Script: `public/js/config.js` + inline helper script.
 - Data injected by `server.js`:
-  - `config`, `modConfigs`, `modelOptions`, `savedMessage`, `errorMessage`.
+  - `config`, `modConfigs`, `modelOptions`, `savedMessage`, `errorMessage`, `gameConfigOverrideYaml`, `gameLoaded`.
+- Notes: the page is split into `Server Configuration` and `Game Configuration` tabs.
+- Notes: the `Game Configuration` tab exposes a fixed-width YAML textarea for the currently loaded game's runtime config override. It saves through `PUT /api/game-config-override`, reloads config immediately on change, persists to the save as `gameConfigOverride.yaml`, and stays disabled when no game is loaded.
 
 ## Game settings manager
 - Route: `/settings`

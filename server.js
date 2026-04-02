@@ -553,7 +553,9 @@ try {
         cliVehicleDebug = true;
     }
 
-    config = loadMergedConfig(__dirname, cliConfigOverridePath);
+    config = loadMergedConfig(__dirname, cliConfigOverridePath, {
+        runtimeOverrideYaml: Globals.getGameConfigOverrideYaml()
+    });
     Globals.config = config;
     Globals.cliTestModes = new Set(cliTestModes);
     Globals.debugVehicles = cliVehicleDebug;
@@ -574,8 +576,13 @@ try {
     process.exit(1);
 }
 
-function reloadConfigAndDefs() {
-    const merged = loadMergedConfig(__dirname, cliConfigOverridePath);
+function reloadConfigAndDefs({ gameConfigOverrideYaml = undefined } = {}) {
+    const nextGameConfigOverrideYaml = gameConfigOverrideYaml === undefined
+        ? Globals.getGameConfigOverrideYaml()
+        : gameConfigOverrideYaml;
+    const merged = loadMergedConfig(__dirname, cliConfigOverridePath, {
+        runtimeOverrideYaml: nextGameConfigOverrideYaml
+    });
     const modEnableDiff = diffFrozenEnabledModDirectoryNames(Globals.baseDir || __dirname, { config: merged });
     validateDefinitionOverlays({ baseDir: Globals.baseDir || __dirname });
 
@@ -589,6 +596,7 @@ function reloadConfigAndDefs() {
     }
 
     Globals.config = config;
+    Globals.setGameConfigOverrideYaml(nextGameConfigOverrideYaml);
 
     cachedBannedNpcWords = null;
     cachedBannedNpcRegexes = null;
@@ -614,7 +622,8 @@ function reloadConfigAndDefs() {
         success: true,
         message: 'Configuration and definitions reloaded.',
         timestamp: new Date().toISOString(),
-        modEnableDiff
+        modEnableDiff,
+        gameConfigOverrideYaml: Globals.getGameConfigOverrideYaml()
     };
 }
 
@@ -8319,12 +8328,15 @@ function buildLocationEventStubMetadata({
     effectiveRegionId = null,
     effectiveRegionName = null,
     normalizedRelativeLevel = null,
+    relativeLevelBase = null,
+    regionAverageLevel = null,
+    computedBaseLevel = null,
     resolvedVehicleType = null,
     resolvedIsVehicle = false,
     normalizedImageDataUrl = '',
     createOriginExit = true
 } = {}) {
-    return {
+    const metadata = {
         originLocationId: originLocation?.id || null,
         originDirection: resolvedDirection,
         createOriginExit: createOriginExit !== false,
@@ -8338,6 +8350,69 @@ function buildLocationEventStubMetadata({
         vehicleType: resolvedVehicleType,
         isVehicle: resolvedIsVehicle,
         imageDataUrl: normalizedImageDataUrl || null
+    };
+
+    if (Number.isFinite(relativeLevelBase)) {
+        metadata.relativeLevelBase = relativeLevelBase;
+    }
+    if (Number.isFinite(regionAverageLevel)) {
+        metadata.regionAverageLevel = regionAverageLevel;
+    }
+    if (Number.isFinite(computedBaseLevel)) {
+        metadata.computedBaseLevel = computedBaseLevel;
+    }
+
+    return metadata;
+}
+
+function resolveEventLocationStubLevelData({
+    originLocation = null,
+    originRegion = null,
+    targetRegion = null,
+    pendingTargetRegion = null,
+    playerLevel = null,
+    normalizedRelativeLevel = null
+} = {}) {
+    const regionAverageLevel = Number.isFinite(targetRegion?.averageLevel)
+        ? targetRegion.averageLevel
+        : (Number.isFinite(pendingTargetRegion?.regionAverageLevel)
+            ? pendingTargetRegion.regionAverageLevel
+            : (Number.isFinite(originRegion?.averageLevel) ? originRegion.averageLevel : null));
+    const relativeLevelBase = Number.isFinite(originLocation?.baseLevel)
+        ? originLocation.baseLevel
+        : (Number.isFinite(regionAverageLevel)
+            ? regionAverageLevel
+            : (Number.isFinite(playerLevel) ? playerLevel : 1));
+    const computedBaseLevel = Number.isFinite(relativeLevelBase)
+        ? (Number.isFinite(normalizedRelativeLevel)
+            ? clampLevel(relativeLevelBase + normalizedRelativeLevel, relativeLevelBase)
+            : clampLevel(relativeLevelBase, relativeLevelBase))
+        : null;
+
+    return {
+        relativeLevelBase,
+        regionAverageLevel,
+        computedBaseLevel
+    };
+}
+
+function resolveEventRegionStubLevelData({
+    currentRegion = null,
+    playerLevel = null,
+    normalizedRelativeLevel = null
+} = {}) {
+    const regionAverageLevel = Number.isFinite(currentRegion?.averageLevel)
+        ? currentRegion.averageLevel
+        : (Number.isFinite(playerLevel) ? playerLevel : 1);
+    const computedBaseLevel = Number.isFinite(regionAverageLevel)
+        ? (Number.isFinite(normalizedRelativeLevel)
+            ? clampLevel(regionAverageLevel + normalizedRelativeLevel, regionAverageLevel)
+            : clampLevel(regionAverageLevel, regionAverageLevel))
+        : null;
+
+    return {
+        regionAverageLevel,
+        computedBaseLevel
     };
 }
 
@@ -8397,6 +8472,14 @@ async function createLocationFromEvent({ name, originLocation = null, descriptio
     const originRegion = originLocation ? findRegionByLocationId(originLocation.id) : null;
     const targetRegion = targetRegionId ? regions.get(targetRegionId) || null : null;
     const pendingTargetRegion = (!targetRegion && targetRegionId) ? pendingRegionStubs.get(targetRegionId) || null : null;
+    const levelData = resolveEventLocationStubLevelData({
+        originLocation,
+        originRegion,
+        targetRegion,
+        pendingTargetRegion,
+        playerLevel: currentPlayer?.level || null,
+        normalizedRelativeLevel
+    });
     const effectiveRegion = targetRegion || originRegion;
     const effectiveRegionId = targetRegion?.id
         || pendingTargetRegion?.id
@@ -8420,10 +8503,26 @@ async function createLocationFromEvent({ name, originLocation = null, descriptio
             if (normalizedRelativeLevel !== null && metadata.relativeLevel !== normalizedRelativeLevel) {
                 metadata.relativeLevel = normalizedRelativeLevel;
             }
+            if (Number.isFinite(levelData.relativeLevelBase) && metadata.relativeLevelBase !== levelData.relativeLevelBase) {
+                metadata.relativeLevelBase = levelData.relativeLevelBase;
+            }
+            if (Number.isFinite(levelData.regionAverageLevel) && metadata.regionAverageLevel !== levelData.regionAverageLevel) {
+                metadata.regionAverageLevel = levelData.regionAverageLevel;
+            }
+            if (Number.isFinite(levelData.computedBaseLevel) && metadata.computedBaseLevel !== levelData.computedBaseLevel) {
+                metadata.computedBaseLevel = levelData.computedBaseLevel;
+            }
             if (createOriginExit === false) {
                 metadata.createOriginExit = false;
             }
             existing.stubMetadata = metadata;
+            if (!metadata.isRegionEntryStub && Number.isFinite(levelData.computedBaseLevel)) {
+                try {
+                    existing.baseLevel = levelData.computedBaseLevel;
+                } catch (error) {
+                    console.warn(`Failed to update base level for event-created stub ${existing.id}:`, error.message);
+                }
+            }
         }
         if (originLocation && directionHint && createOriginExit) {
             if (existing.isStub) {
@@ -8458,6 +8557,7 @@ async function createLocationFromEvent({ name, originLocation = null, descriptio
         description: null,
         shortDescription: stubShortDescription,
         imageId: locationImageId,
+        baseLevel: Number.isFinite(levelData.computedBaseLevel) ? levelData.computedBaseLevel : null,
         regionId: effectiveRegionId,
         isStub: true,
         stubMetadata: buildLocationEventStubMetadata({
@@ -8468,6 +8568,9 @@ async function createLocationFromEvent({ name, originLocation = null, descriptio
             effectiveRegionId,
             effectiveRegionName,
             normalizedRelativeLevel,
+            relativeLevelBase: levelData.relativeLevelBase,
+            regionAverageLevel: levelData.regionAverageLevel,
+            computedBaseLevel: levelData.computedBaseLevel,
             resolvedVehicleType,
             resolvedIsVehicle,
             normalizedImageDataUrl,
@@ -8738,6 +8841,11 @@ async function createRegionStubFromEvent({ name, originLocation = null, descript
     const newRegionId = generateRegionStubId();
     const descriptionText = description || `An unexplored region known as ${trimmedName}.`;
     const currentRegion = findRegionByLocationId(originLocation.id) || null;
+    const levelData = resolveEventRegionStubLevelData({
+        currentRegion,
+        playerLevel: currentPlayer?.level || null,
+        normalizedRelativeLevel
+    });
     const settingSnapshot = getActiveSettingSnapshot();
     const settingDescription = describeSettingForPrompt(settingSnapshot);
 
@@ -8779,8 +8887,11 @@ async function createRegionStubFromEvent({ name, originLocation = null, descript
         imageDataUrl: normalizedImageDataUrl || null
     };
 
-    if (currentRegion && Number.isFinite(currentRegion.averageLevel)) {
-        stubMetadata.regionAverageLevel = currentRegion.averageLevel;
+    if (Number.isFinite(levelData.regionAverageLevel)) {
+        stubMetadata.regionAverageLevel = levelData.regionAverageLevel;
+    }
+    if (Number.isFinite(levelData.computedBaseLevel)) {
+        stubMetadata.computedBaseLevel = levelData.computedBaseLevel;
     }
 
     const regionEntryStub = new Location({
@@ -8788,6 +8899,7 @@ async function createRegionStubFromEvent({ name, originLocation = null, descript
         description: null,
         shortDescription: descriptionText,
         imageId: entryImageId,
+        baseLevel: Number.isFinite(levelData.computedBaseLevel) ? levelData.computedBaseLevel : null,
         regionId: newRegionId,
         checkRegionId: false,
         isStub: true,
@@ -22107,6 +22219,9 @@ async function generateLocationFromPrompt(options = {}) {
                 return null;
             })();
             const stubRelativeLevel = Number.isFinite(stubMetadata.relativeLevel) ? stubMetadata.relativeLevel : null;
+            const stubRelativeLevelBase = Number.isFinite(stubMetadata.relativeLevelBase)
+                ? stubMetadata.relativeLevelBase
+                : null;
             const stubBaseLevel = Number.isFinite(stubLocation?.baseLevel)
                 ? stubLocation.baseLevel
                 : (Number.isFinite(stubMetadata.computedBaseLevel) ? stubMetadata.computedBaseLevel : null);
@@ -22139,6 +22254,9 @@ async function generateLocationFromPrompt(options = {}) {
             }
             if (stubMetadata.relativeLevel !== undefined && templateOverrides.relativeLevel === undefined) {
                 templateOverrides.relativeLevel = stubMetadata.relativeLevel;
+            }
+            if (stubRelativeLevelBase !== null && templateOverrides.relativeLevelBase === undefined) {
+                templateOverrides.relativeLevelBase = stubRelativeLevelBase;
             }
             if (stubMetadata.regionAverageLevel !== undefined && templateOverrides.regionAverageLevel === undefined) {
                 templateOverrides.regionAverageLevel = stubMetadata.regionAverageLevel;
@@ -22404,7 +22522,11 @@ async function generateLocationFromPrompt(options = {}) {
         // Parse the XML response using Location.fromXMLSnippet()
         const regionAverageLevel = templateOverrides.regionAverageLevel ?? stubMetadata.regionAverageLevel ?? null;
         const fallbackPlayerLevel = currentPlayer?.level || null;
-        const relativeLevelBase = Number.isFinite(regionAverageLevel)
+        const relativeLevelBase = Number.isFinite(templateOverrides.relativeLevelBase)
+            ? templateOverrides.relativeLevelBase
+            : Number.isFinite(stubMetadata.relativeLevelBase)
+                ? stubMetadata.relativeLevelBase
+                : Number.isFinite(regionAverageLevel)
             ? regionAverageLevel
             : (Number.isFinite(templateOverrides.playerLevel) ? templateOverrides.playerLevel : fallbackPlayerLevel);
 
@@ -24609,7 +24731,11 @@ app.get('/config', (req, res) => {
         modelOptions,
         currentPage: 'config',
         savedMessage,
-        errorMessage
+        errorMessage,
+        gameConfigOverrideYaml: typeof Globals.getGameConfigOverrideYaml === 'function'
+            ? Globals.getGameConfigOverrideYaml()
+            : '',
+        gameLoaded: Globals.gameLoaded === true
     });
 });
 
@@ -24898,6 +25024,43 @@ app.post('/config', (req, res) => {
 
         const encodedError = encodeURIComponent(error.message || 'Unknown error');
         return res.redirect(`/config?error=${encodedError}`);
+    }
+});
+
+app.put('/api/game-config-override', (req, res) => {
+    try {
+        if (Globals.gameLoaded !== true) {
+            return res.status(400).json({
+                success: false,
+                error: 'No game is currently loaded. Load or start a game before editing the per-game config override.'
+            });
+        }
+
+        const rawYaml = req.body?.yaml;
+        if (rawYaml !== undefined && rawYaml !== null && typeof rawYaml !== 'string') {
+            return res.status(400).json({
+                success: false,
+                error: 'yaml must be a string when provided.'
+            });
+        }
+
+        const reloadResult = reloadConfigAndDefs({
+            gameConfigOverrideYaml: typeof rawYaml === 'string' ? rawYaml : ''
+        });
+
+        return res.json({
+            success: true,
+            message: 'Per-game configuration override saved and reloaded.',
+            reloadResult,
+            gameConfigOverrideYaml: typeof Globals.getGameConfigOverrideYaml === 'function'
+                ? Globals.getGameConfigOverrideYaml()
+                : ''
+        });
+    } catch (error) {
+        return res.status(400).json({
+            success: false,
+            error: error.message
+        });
     }
 });
 

@@ -27716,6 +27716,10 @@ module.exports = function registerApiRoutes(scope) {
                         error: errorMessage
                     });
                 }
+                if (typeof Globals.reloadConfigAndDefs !== 'function') {
+                    throw new Error('Globals.reloadConfigAndDefs is not available during new game creation.');
+                }
+                Globals.reloadConfigAndDefs({ gameConfigOverrideYaml: '' });
                 const activeSetting = getActiveSettingSnapshot();
                 if (!activeSetting) {
                     report('new_game:setting_missing', 'No active setting is loaded. Cannot start new game.');
@@ -28484,7 +28488,10 @@ module.exports = function registerApiRoutes(scope) {
                 skills,
                 factions,
                 currentSetting,
-                pendingRegionStubs
+                pendingRegionStubs,
+                gameConfigOverrideYaml: typeof Globals.getGameConfigOverrideYaml === 'function'
+                    ? Globals.getGameConfigOverrideYaml()
+                    : ''
             });
 
             if (path.basename(saveRootPath) === 'autosaves') {
@@ -28763,9 +28770,19 @@ module.exports = function registerApiRoutes(scope) {
                 throw error;
             }
 
-            Globals.gameLoaded = false;
-
             const serialized = Utils.loadSerializedGameState(saveDir);
+            const savedGameConfigOverrideYaml = typeof serialized.gameConfigOverrideYaml === 'string'
+                ? serialized.gameConfigOverrideYaml
+                : '';
+
+            if (typeof Globals.reloadConfigAndDefs !== 'function') {
+                throw new Error('Globals.reloadConfigAndDefs is not available during game load.');
+            }
+            Globals.reloadConfigAndDefs({
+                gameConfigOverrideYaml: savedGameConfigOverrideYaml
+            });
+
+            Globals.gameLoaded = false;
 
             jobQueue.length = 0;
             imageJobs.clear();

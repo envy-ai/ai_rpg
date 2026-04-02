@@ -15,6 +15,7 @@ class Globals {
   static sceneSummaries = null;
   static saveMetadata = null;
   static currentSaveInfo = null;
+  static gameConfigOverrideYaml = '';
   static worldTime = null;
   static calendarDefinition = null;
 
@@ -868,6 +869,22 @@ class Globals {
 
   static getCurrentSaveInfo() {
     return Globals.currentSaveInfo;
+  }
+
+  static setGameConfigOverrideYaml(value) {
+    if (value === null || value === undefined) {
+      Globals.gameConfigOverrideYaml = '';
+      return;
+    }
+    if (typeof value !== 'string') {
+      throw new Error('Globals.setGameConfigOverrideYaml requires a string or null.');
+    }
+    const normalized = value.replace(/\r\n/g, '\n');
+    Globals.gameConfigOverrideYaml = normalized.trim() ? normalized : '';
+  }
+
+  static getGameConfigOverrideYaml() {
+    return Globals.gameConfigOverrideYaml || '';
   }
 
   static getBasePromptContext = function () {

@@ -769,7 +769,8 @@ class Utils {
       skills = new Map(),
       factions = new Map(),
       currentSetting = null,
-      pendingRegionStubs = null
+      pendingRegionStubs = null,
+      gameConfigOverrideYaml = ''
     } = context;
 
     const serialized = {};
@@ -883,6 +884,9 @@ class Utils {
 
     serialized.worldTime = Globals.getSerializedWorldTime();
     serialized.calendarDefinition = Globals.getSerializedCalendarDefinition();
+    serialized.gameConfigOverrideYaml = typeof gameConfigOverrideYaml === 'string'
+      ? gameConfigOverrideYaml
+      : '';
 
     serialized.chatSummaries = this.serializeChatSummaries();
 
@@ -924,6 +928,7 @@ class Utils {
     ensureFile('pendingRegionStubs.json', serialized.pendingRegionStubs || {});
     ensureFile('worldTime.json', serialized.worldTime || {});
     ensureFile('calendarDefinition.json', serialized.calendarDefinition || {});
+    fs.writeFileSync(path.join(saveDir, 'gameConfigOverride.yaml'), serialized.gameConfigOverrideYaml || '', 'utf8');
 
     if (serialized.setting) {
       ensureFile('setting.json', serialized.setting);
@@ -952,6 +957,19 @@ class Utils {
       }
     };
 
+    const readText = (filename, fallback = '') => {
+      const filePath = path.join(saveDir, filename);
+      if (!fs.existsSync(filePath)) {
+        return fallback;
+      }
+      try {
+        return fs.readFileSync(filePath, 'utf8');
+      } catch (error) {
+        console.warn(`Failed to read ${filename}:`, error.message);
+        return fallback;
+      }
+    };
+
     const serialized = {
       gameWorld: readJson('gameWorld.json', {}),
       chatHistory: readJson('chatHistory.json', []),
@@ -966,7 +984,8 @@ class Utils {
       sceneSummaries: readJson('sceneSummaries.json', {}),
       pendingRegionStubs: readJson('pendingRegionStubs.json', {}),
       worldTime: readJson('worldTime.json', null),
-      calendarDefinition: readJson('calendarDefinition.json', null)
+      calendarDefinition: readJson('calendarDefinition.json', null),
+      gameConfigOverrideYaml: readText('gameConfigOverride.yaml', '')
     };
 
     return serialized;

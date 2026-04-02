@@ -23,6 +23,7 @@ Response:
 - 500: `{ success: false, error, details }`
 
 Notes:
+- New-game creation clears any loaded-save `gameConfigOverride.yaml` layer before reading config-driven defaults or generating the new world.
 - When `clientId` is provided, realtime status events are emitted during generation.
 - Skills are sourced from the active setting (`defaultExistingSkills`) and are not accepted in the request body.
 - Faction setup now prefers active-setting defaults when present:
@@ -79,6 +80,7 @@ Response:
 Notes:
 - Successful saves now emit a server-console line in the shared save path (`performGameSave`), so this applies to both manual saves and autosaves.
 - Save metadata now includes `npcAliasesGenerated` (boolean). It is set to `true` after alias-generation prompts run.
+- Saves now also persist the current per-game YAML override as `gameConfigOverride.yaml`.
 
 ## POST /api/load
 Load a saved game.
@@ -92,10 +94,28 @@ Response:
 - 400/404/500 with `{ success: false, error }`
 
 Notes:
+- `/api/load` reapplies the save's `gameConfigOverride.yaml` through the same merged-config reload path used by `/reload_config` before the world is hydrated.
 - If a save has no persisted `calendarDefinition`, the server generates one from the active setting via LLM (`calendar_generation`) using the same Earth-like => Gregorian prompt rule, then falls back to Gregorian if generation fails.
 - `/api/load` now runs faction-reference reconciliation before restoring the current player: invalid faction ids are cleared from player `factionId`, player faction standings, location/region/pending-stub controlling faction ids, and faction relation edges that target missing/self factions.
 - `/api/load` now also resolves pending player level-up ability draft state for the loaded player (`player_ability_options_per_level` / `player_abilities_per_level`) without generating options yet; option generation runs when the client requests `/api/player/ability-selection` with generation enabled.
 - `metadata.npcAliasesGenerated` is normalized to a boolean on load (`true` only when explicitly set `true` in the save metadata).
+
+## PUT /api/game-config-override
+Update the per-game YAML config override for the currently loaded game and reload merged runtime config immediately.
+
+Request:
+- Body: `{ yaml?: string }`
+  - Blank or omitted `yaml` clears the override.
+  - Non-blank `yaml` must parse to a YAML object.
+
+Response:
+- 200: `{ success: true, message, reloadResult, gameConfigOverrideYaml }`
+- 400: `{ success: false, error }`
+
+Notes:
+- Fails if no game is currently loaded.
+- Uses the same config/defs reload path as `/reload_config`.
+- Mod enable/disable drift is still restart-required even though the override itself reloads immediately.
 
 ## GET /api/saves
 List available saves.

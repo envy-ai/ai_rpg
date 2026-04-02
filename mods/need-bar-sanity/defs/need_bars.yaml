@@ -38,19 +38,25 @@ need_bars:
     effect_thresholds:
       0:
         name: Insane
+        sentence: "%CHARACTER% has lost their grip on reality."
         effect: Loss of control, permanent trauma possible
       1:
         name: Breaking
+        sentence: "%CHARACTER% is on the verge of a mental break."
         effect: Hallucinations, severe penalty to social interaction
       25:
         name: Stressed
+        sentence: "%CHARACTER% is feeling stressed."
         effect: Anxiety, minor penalty to focus
       40:
         name: Uneasy
+        sentence: "%CHARACTER% is feeling uneasy."
         effect: No effect
       70:
         name: Stable
+        sentence: "%CHARACTER% is feeling mentally stable."
         effect: No effect
       100:
         name: Lucid
+        sentence: "%CHARACTER% is feeling lucid and clear-headed."
         effect: Clear mind, resistance to fear

@@ -59,53 +59,6 @@ The below context is an account of the current game state, including the setting
   <itemRarityLevels>{% for rarity in rarityDefinitions %}
     {{ rarity.label }}: {{ rarity.description }}
 {% endfor %}  </itemRarityLevels>
-  <needBarDefinitions>
-    {% for bar in needBarDefinitions %}
-    <needBar>
-      <id>{{ bar.id | default('unknown', true) }}</id>
-      <name>{{ bar.name }}</name>
-      <description>{{ bar.description }}</description>
-      <playerOnly>{{ bar.playerOnly | default(false) }}</playerOnly>
-      <relatedAttribute>{{ bar.relatedAttribute | default('', true) }}</relatedAttribute>
-      <min>{{ bar.min | default('', true) }}</min>
-      <max>{{ bar.max | default('', true) }}</max>
-      <initialValue>{{ bar.initialValue | default('', true) }}</initialValue>
-      <changePerTurn>{{ bar.changePerTurn | default(0) }}</changePerTurn>
-      <relativeToLevel>{{ bar.relativeToLevel | default(false) }}</relativeToLevel>
-      <effectThresholds>
-        {% for threshold in bar.effectThresholds %}
-        <threshold>
-          <value>{{ threshold.threshold | default('', true) }}</value>
-          <name>{{ threshold.name | default('', true) }}</name>
-          <effect>{{ threshold.effect | default('', true) }}</effect>
-        </threshold>
-        {% endfor %}
-      </effectThresholds>
-      <increases>
-        <small>
-          {% for item in bar.increases.small %}<trigger>{{ item }}</trigger>{% endfor %}
-        </small>
-        <medium>
-          {% for item in bar.increases.medium %}<trigger>{{ item }}</trigger>{% endfor %}
-        </medium>
-        <large>
-          {% for item in bar.increases.large %}<trigger>{{ item }}</trigger>{% endfor %}
-        </large>
-        <fill>
-          {% for item in bar.increases.fill %}<trigger>{{ item }}</trigger>{% endfor %}
-        </fill>
-      </increases>
-      <decreases>
-        <small>
-          {% for item in bar.decreases.small %}<trigger>{{ item }}</trigger>{% endfor %}
-        </small>
-        <large>
-          {% for item in bar.decreases.large %}<trigger>{{ item }}</trigger>{% endfor %}
-        </large>
-      </decreases>
-    </needBar>
-    {% endfor %}
-  </needBarDefinitions>
   {% if gameHistory and gameHistory | trim and not omitGameHistory %}
   <olderStoryHistory>{{ gameHistory }}</olderStoryHistory>
   {% endif %}

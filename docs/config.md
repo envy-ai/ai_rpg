@@ -25,6 +25,25 @@ Merge precedence is:
 The override file must exist and contain a YAML object. Invalid or missing files fail startup with a clear error.
 If the server is started with `--config-override`, `reload_config` keeps using the same override file.
 
+## Per-game YAML override
+
+The `/config` page also exposes a per-game YAML override textarea for the currently loaded save.
+
+Merge precedence becomes:
+
+1. `config.default.yaml`
+2. `config.yaml`
+3. `--config-override` file
+4. current game's YAML override
+
+Rules:
+- The per-game override must contain a YAML object when non-blank.
+- Blank input clears the per-game override for the loaded game.
+- Editing the field triggers the same runtime reload path used by `/reload_config`.
+- The raw YAML is saved as `gameConfigOverride.yaml` inside the save and is reapplied before save hydration on `/api/load`.
+- Starting a brand-new game clears any previous loaded-save override before world generation begins.
+- Like `/reload_config`, mod enable/disable changes are validated immediately but still require a restart to fully change the active mod set.
+
 ## Mod enablement
 
 You can enable or disable discovered mods from the merged YAML config:

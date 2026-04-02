@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ title | default("AI RPG Configuration") }}</title>
     <link rel="stylesheet" href="/css/main.css">
+    <link rel="stylesheet" href="/css/config.css">
 </head>
 <body>
     <div class="container">
@@ -15,6 +16,52 @@
         </div>
         
         <div class="config-content">
+            {% if savedMessage %}
+                {% set statusClass = 'status-message success' %}
+            {% elif errorMessage %}
+                {% set statusClass = 'status-message error' %}
+            {% else %}
+                {% set statusClass = 'status-message' %}
+            {% endif %}
+            {% if savedMessage or errorMessage %}
+                {% set statusDisplay = 'block' %}
+            {% else %}
+                {% set statusDisplay = 'none' %}
+            {% endif %}
+            <div id="status-message"
+                 class="{{ statusClass }}"
+                 style="display: {{ statusDisplay }};">
+                {% if savedMessage %}
+                    {{ savedMessage }}
+                {% elif errorMessage %}
+                    {{ errorMessage }}
+                {% endif %}
+            </div>
+
+            <div class="config-page-tabs tab-bar" role="tablist" aria-label="Configuration tabs">
+                <button type="button"
+                        class="tab-button active"
+                        data-config-tab-target="server"
+                        role="tab"
+                        aria-selected="true"
+                        aria-controls="config-tab-server">
+                    Server Configuration
+                </button>
+                <button type="button"
+                        class="tab-button"
+                        data-config-tab-target="game"
+                        role="tab"
+                        aria-selected="false"
+                        aria-controls="config-tab-game">
+                    Game Configuration
+                </button>
+            </div>
+
+            <div class="config-tab-panels">
+            <section id="config-tab-server"
+                     class="config-tab-panel"
+                     data-config-tab-panel="server"
+                     role="tabpanel">
             <form id="configForm" method="POST">
                 <div class="config-sections">
                 <!-- Server Configuration -->
@@ -780,29 +827,34 @@
                     <button type="button" class="btn btn-secondary" onclick="testConnection()">🔗 Test Connection</button>
                 </div>
                 
-                <!-- Status Messages -->
-                {% if savedMessage %}
-                    {% set statusClass = 'status-message success' %}
-                {% elif errorMessage %}
-                    {% set statusClass = 'status-message error' %}
-                {% else %}
-                    {% set statusClass = 'status-message' %}
-                {% endif %}
-                {% if savedMessage or errorMessage %}
-                    {% set statusDisplay = 'block' %}
-                {% else %}
-                    {% set statusDisplay = 'none' %}
-                {% endif %}
-                <div id="status-message"
-                     class="{{ statusClass }}"
-                     style="display: {{ statusDisplay }};">
-                    {% if savedMessage %}
-                        {{ savedMessage }}
-                    {% elif errorMessage %}
-                        {{ errorMessage }}
-                    {% endif %}
-                </div>
             </form>
+            </section>
+
+            <section id="config-tab-game"
+                     class="config-tab-panel"
+                     data-config-tab-panel="game"
+                     role="tabpanel"
+                     hidden>
+                <div class="config-section">
+                    <h2>🎮 Game Configuration Override</h2>
+                    <div class="form-grid">
+                        <div class="form-group full-width">
+                            <label for="game-config-override-yaml">Per-Game YAML Override:</label>
+                            <textarea id="game-config-override-yaml"
+                                      class="game-config-override-textarea"
+                                      spellcheck="false"
+                                      {% if not gameLoaded %}disabled{% endif %}>{{ gameConfigOverrideYaml }}</textarea>
+                            {% if gameLoaded %}
+                                <span class="help-text">This YAML is merged on top of `config.default.yaml`, `config.yaml`, and any CLI config override for the currently loaded game. Changing it reloads the merged runtime config immediately and the raw YAML is saved with the game.</span>
+                            {% else %}
+                                <span class="help-text">Load or start a game to edit the per-game YAML override. It stays disabled while no game is loaded.</span>
+                            {% endif %}
+                            <span class="help-text">This uses the same reload path as `/reload_config`. Mod enable/disable changes are validated immediately, but still require a restart to fully apply.</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+            </div>
         </div>
     </div>
 

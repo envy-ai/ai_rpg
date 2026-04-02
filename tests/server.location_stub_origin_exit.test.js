@@ -15,18 +15,23 @@ function loadLocationStubOriginExitHelpers() {
 
     const functionSource = source.slice(buildStart, createLocationFromEventStart);
     const context = {
-        describeSettingForPrompt: () => 'Debug setting context'
+        describeSettingForPrompt: () => 'Debug setting context',
+        clampLevel: (value) => Math.max(1, Math.round(value))
     };
     vm.createContext(context);
     vm.runInContext(
         `${functionSource}
 this.buildLocationEventStubMetadata = buildLocationEventStubMetadata;
+this.resolveEventLocationStubLevelData = resolveEventLocationStubLevelData;
+this.resolveEventRegionStubLevelData = resolveEventRegionStubLevelData;
 this.shouldCreateOriginExitFromStubMetadata = shouldCreateOriginExitFromStubMetadata;
 this.applyStubExpansionOverrides = applyStubExpansionOverrides;`,
         context
     );
     return {
         buildLocationEventStubMetadata: context.buildLocationEventStubMetadata,
+        resolveEventLocationStubLevelData: context.resolveEventLocationStubLevelData,
+        resolveEventRegionStubLevelData: context.resolveEventRegionStubLevelData,
         shouldCreateOriginExitFromStubMetadata: context.shouldCreateOriginExitFromStubMetadata,
         applyStubExpansionOverrides: context.applyStubExpansionOverrides
     };
@@ -53,6 +58,61 @@ test('buildLocationEventStubMetadata persists suppressed origin-exit intent', ()
     assert.equal(metadata.originDirection, 'approach_vector_alpha');
     assert.equal(metadata.createOriginExit, false);
     assert.equal(metadata.regionId, 'derelict-sector-region');
+});
+
+test('buildLocationEventStubMetadata persists relative-level base metadata for event location stubs', () => {
+    const { buildLocationEventStubMetadata } = loadLocationStubOriginExitHelpers();
+
+    const metadata = buildLocationEventStubMetadata({
+        originLocation: { id: 'origin-location-id' },
+        resolvedDirection: 'toward_the_archive',
+        stubShortDescription: 'A narrow passage.',
+        settingSnapshot: {},
+        effectiveRegionId: 'archive-region',
+        effectiveRegionName: 'Archive',
+        normalizedRelativeLevel: 2,
+        relativeLevelBase: 5,
+        regionAverageLevel: 4,
+        computedBaseLevel: 7,
+        resolvedVehicleType: null,
+        resolvedIsVehicle: false,
+        normalizedImageDataUrl: '',
+        createOriginExit: true
+    });
+
+    assert.equal(metadata.relativeLevelBase, 5);
+    assert.equal(metadata.regionAverageLevel, 4);
+    assert.equal(metadata.computedBaseLevel, 7);
+});
+
+test('resolveEventLocationStubLevelData uses origin location level as the relative base', () => {
+    const { resolveEventLocationStubLevelData } = loadLocationStubOriginExitHelpers();
+
+    const result = resolveEventLocationStubLevelData({
+        originLocation: { baseLevel: 6 },
+        originRegion: { averageLevel: 3 },
+        targetRegion: { averageLevel: 8 },
+        pendingTargetRegion: null,
+        playerLevel: 10,
+        normalizedRelativeLevel: 2
+    });
+
+    assert.equal(result.relativeLevelBase, 6);
+    assert.equal(result.regionAverageLevel, 8);
+    assert.equal(result.computedBaseLevel, 8);
+});
+
+test('resolveEventRegionStubLevelData uses current region average level as the relative base', () => {
+    const { resolveEventRegionStubLevelData } = loadLocationStubOriginExitHelpers();
+
+    const result = resolveEventRegionStubLevelData({
+        currentRegion: { averageLevel: 4 },
+        playerLevel: 10,
+        normalizedRelativeLevel: 3
+    });
+
+    assert.equal(result.regionAverageLevel, 4);
+    assert.equal(result.computedBaseLevel, 7);
 });
 
 test('shouldCreateOriginExitFromStubMetadata honors explicit suppression', () => {

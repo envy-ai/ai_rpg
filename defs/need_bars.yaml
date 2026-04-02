@@ -37,24 +37,31 @@ need_bars:
     effect_thresholds:
       0:
         name: Starving
+        sentence: "%CHARACTER% is starving and in danger of fainting."
         effect: -10% to health and attributes, chance of fainting
       1:
         name: Hungry
+        sentence: "%CHARACTER% is feeling hungry."
         effect: -5% to health and attributes
       25:
         name: Peckish
+        sentence: "%CHARACTER% is feeling peckish."
         effect: No effect
       40:
         name: Not Hungry
+        sentence: "%CHARACTER% is not feeling hungry."
         effect: No effect
       60:
         name: Satisfied
+        sentence: "%CHARACTER% is feeling satisfied in terms of hunger."
         effect: Good mood
       80:
         name: Full
+        sentence: "%CHARACTER% is feeling full in terms of hunger."
         effect: Good mood, slight bonuses
       100:
         name: Stuffed
+        sentence: "%CHARACTER% is feeling stuffed in terms of hunger."
         effect: Good mood, slight bonuses
   stamina:
     name: Stamina
@@ -86,21 +93,27 @@ need_bars:
     effect_thresholds:
       0:
         name: Breathless
+        sentence: "%CHARACTER% is breathless and struggling to perform physical actions."
         effect: Slow, -4 circumstance penalty to physical actions
       1:
         name: Winded
+        sentence: "%CHARACTER% is winded and finding it difficult to perform physical actions."
         effect: -2 circumstance penalty to physical actions
       15:
         name: Slightly winded
+        sentence: "%CHARACTER% is slightly winded."
         effect: No effect
       25:
         name: Fine
+        sentence: "%CHARACTER% is feeling fine in terms of stamina."
         effect: No effect
       70:
         name: Energized
+        sentence: "%CHARACTER% is feeling energized."
         effect: Good mood, slight bonuses
       100:
         name: Fully Energized
+        sentence: "%CHARACTER% is feeling fully energized."
         effect: Good mood, slight bonuses
   rest:
     name: Rest
@@ -138,24 +151,31 @@ need_bars:
     effect_thresholds:
       0:
         name: Exhausted
+        sentence: "%CHARACTER% is exhausted and in danger of passing out."
         effect: -10% to health and attributes, chance of passing out
       1:
         name: Very Tired
+        sentence: "%CHARACTER% is very tired and wants to go to sleep."
         effect: -5% to health and attributes
       15:
         name: Tired
+        sentence: "%CHARACTER% is feeling tired."
         effect: Reduced focus and minor penalties
       25:
         name: Weary
+        sentence: "%CHARACTER% is feeling weary."
         effect: No effect
       40:
         name: Rested
+        sentence: "%CHARACTER% is feeling rested."
         effect: No effect
       70:
         name: Well Rested
+        sentence: "%CHARACTER% is feeling well rested."
         effect: Good mood, slight bonuses
       100:
         name: Fully Rested
+        sentence: "%CHARACTER% is feeling fully rested."
         effect: Good mood, slight bonuses
   mana:
     name: Mana
@@ -197,22 +217,29 @@ need_bars:
     effect_thresholds:
       0:
         name: Depleted
+        sentence: "%CHARACTER% is completely out of mana and is unable to use any magical abilities and causing them to be lethargic and weak."
         effect: Cannot cast spells or use magical abilities, -10% to health and attributes
       1:
         name: Weak
+        sentence: "%CHARACTER%'s mana is so low that it is weakening their magic and slowing them, down a bit."
         effect: Limited spellcasting, -5% to health and attributes
       25:
         name: Low
+        sentence: "%CHARACTER% is low on mana. Their magic is slightly less effective than normal."
         effect: Reduced effectiveness of spells and abilities
       40:
         name: Moderate
+        sentence: "%CHARACTER% has a moderate amount of mana."
         effect: No effect
       60:
         name: High
+        sentence: "%CHARACTER% has a high amount of mana."
         effect: No effect
       80:
         name: Very High
+        sentence: "%CHARACTER% has a very high amount of mana. Their magic is slightly stronger."
         effect: Slight bonuses to spell effectiveness
       100:
         name: Full Power
+        sentence: "%CHARACTER% is at full mana. Their magic is at its stronger than normal."
         effect: Slight bonuses to spell effectiveness and health

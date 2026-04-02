@@ -36,7 +36,30 @@ function readYamlObject(filePath, label, { allowMissing = false } = {}) {
     return parsed;
 }
 
-function loadMergedConfig(baseDir, configOverridePath = null, { allowMissing = false } = {}) {
+function parseYamlOverrideObject(rawYaml, label, { allowBlank = true } = {}) {
+    if (rawYaml === null || rawYaml === undefined) {
+        return allowBlank ? null : {};
+    }
+    if (typeof rawYaml !== 'string') {
+        throw new Error(`${label} must be a YAML string.`);
+    }
+
+    const normalized = rawYaml.replace(/\r\n/g, '\n');
+    if (!normalized.trim()) {
+        return allowBlank ? null : {};
+    }
+
+    const parsed = yaml.load(normalized);
+    if (parsed === undefined || parsed === null) {
+        return allowBlank ? null : {};
+    }
+    if (typeof parsed !== 'object' || Array.isArray(parsed)) {
+        throw new Error(`${label} must contain a YAML object.`);
+    }
+    return parsed;
+}
+
+function loadMergedConfig(baseDir, configOverridePath = null, { allowMissing = false, runtimeOverrideYaml = null } = {}) {
     if (typeof baseDir !== 'string' || !baseDir.trim()) {
         throw new Error('loadMergedConfig requires a non-empty baseDir.');
     }
@@ -58,10 +81,16 @@ function loadMergedConfig(baseDir, configOverridePath = null, { allowMissing = f
         mergedConfig = mergeDeep(mergedConfig, parsedOverride);
     }
 
+    const runtimeOverride = parseYamlOverrideObject(runtimeOverrideYaml, 'Game configuration override YAML');
+    if (runtimeOverride) {
+        mergedConfig = mergeDeep(mergedConfig, runtimeOverride);
+    }
+
     return mergedConfig;
 }
 
 module.exports = {
     loadMergedConfig,
-    mergeDeep
+    mergeDeep,
+    parseYamlOverrideObject
 };

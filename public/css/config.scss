@@ -1,0 +1,38 @@
+.config-content {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.config-page-tabs {
+  margin-top: 0;
+}
+
+.config-tab-panels {
+  display: flex;
+  flex-direction: column;
+}
+
+.config-tab-panel {
+  width: 100%;
+}
+
+.config-tab-panel[hidden] {
+  display: none !important;
+}
+
+.game-config-override-textarea {
+  min-height: 420px;
+  resize: vertical;
+  font-family: "Cascadia Code", "Fira Code", "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 14px;
+  line-height: 1.45;
+  white-space: pre;
+  tab-size: 2;
+}
+
+@media (max-width: 768px) {
+  .game-config-override-textarea {
+    min-height: 320px;
+  }
+}

@@ -39,19 +39,25 @@ need_bars:
     effect_thresholds:
       0:
         name: Isolated
+        sentence: "%CHARACTER% is feeling isolated."
         effect: -10% to morale, chance of depression
       1:
         name: Lonely
+        sentence: "%CHARACTER% is feeling lonely."
         effect: -5% to charisma, sad mood
       25:
         name: Withdrawn
+        sentence: "%CHARACTER% is feeling withdrawn."
         effect: Desire for company, minor penalty to morale
       40:
         name: Content
+        sentence: "%CHARACTER% is feeling socially content."
         effect: No effect
       70:
         name: Sociable
+        sentence: "%CHARACTER% is feeling sociable."
         effect: Good mood, slight bonus to charisma
       100:
         name: Beloved
+        sentence: "%CHARACTER% is feeling beloved and socially fulfilled."
         effect: High morale, bonus to leadership

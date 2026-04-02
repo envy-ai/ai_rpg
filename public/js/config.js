@@ -2,6 +2,8 @@ class ConfigManager {
     constructor() {
         this.form = document.getElementById('configForm');
         this.statusMessage = document.getElementById('status-message');
+        this.tabButtons = [];
+        this.tabPanels = [];
         this.modelSelect = null;
         this.modelOptionsInput = null;
         this.modelOptions = [];
@@ -11,16 +13,24 @@ class ConfigManager {
         this.addModelError = null;
         this.addModelConfirm = null;
         this.addModelCancel = null;
+        this.gameConfigOverrideTextarea = null;
+        this.lastSavedGameConfigOverrideYaml = '';
         this.init();
     }
     
     init() {
         this.bindEvents();
         this.validateForm();
+        this.initializeTabs();
         this.initializeModelSelector();
+        this.initializeGameConfigOverride();
     }
     
     bindEvents() {
+        if (!this.form) {
+            return;
+        }
+
         this.form.addEventListener('submit', (e) => this.handleSubmit(e));
 
         // Real-time validation
@@ -70,6 +80,10 @@ class ConfigManager {
     }
     
     validateForm() {
+        if (!this.form) {
+            return true;
+        }
+
         const inputs = this.form.querySelectorAll('input[required]:not([type="hidden"]), select[required], textarea[required]');
         let allValid = true;
 
@@ -130,6 +144,9 @@ class ConfigManager {
     }
     
     showMessage(message, type) {
+        if (!this.statusMessage) {
+            return;
+        }
         this.statusMessage.textContent = message;
         this.statusMessage.className = `status-message ${type}`;
         this.statusMessage.style.display = 'block';
@@ -140,6 +157,43 @@ class ConfigManager {
                 this.statusMessage.style.display = 'none';
             }, 5000);
         }
+    }
+
+    initializeTabs() {
+        this.tabButtons = Array.from(document.querySelectorAll('[data-config-tab-target]'));
+        this.tabPanels = Array.from(document.querySelectorAll('[data-config-tab-panel]'));
+
+        if (!this.tabButtons.length || !this.tabPanels.length) {
+            return;
+        }
+
+        this.tabButtons.forEach((button) => {
+            button.addEventListener('click', () => {
+                const target = button.dataset.configTabTarget;
+                this.activateTab(target);
+            });
+        });
+
+        const activeButton = this.tabButtons.find(button => button.classList.contains('active'));
+        this.activateTab(activeButton?.dataset.configTabTarget || this.tabButtons[0].dataset.configTabTarget);
+    }
+
+    activateTab(targetName) {
+        if (!targetName) {
+            return;
+        }
+
+        this.tabButtons.forEach((button) => {
+            const isActive = button.dataset.configTabTarget === targetName;
+            button.classList.toggle('active', isActive);
+            button.setAttribute('aria-selected', isActive ? 'true' : 'false');
+        });
+
+        this.tabPanels.forEach((panel) => {
+            const isActive = panel.dataset.configTabPanel === targetName;
+            panel.hidden = !isActive;
+            panel.classList.toggle('active', isActive);
+        });
     }
 
     initializeModelSelector() {
@@ -311,6 +365,66 @@ class ConfigManager {
             return;
         }
         this.modelOptionsInput.value = JSON.stringify(this.modelOptions);
+    }
+
+    initializeGameConfigOverride() {
+        this.gameConfigOverrideTextarea = document.getElementById('game-config-override-yaml');
+        if (!this.gameConfigOverrideTextarea) {
+            return;
+        }
+
+        this.lastSavedGameConfigOverrideYaml = this.normalizeYaml(this.gameConfigOverrideTextarea.value);
+        this.gameConfigOverrideTextarea.addEventListener('change', () => {
+            this.handleGameConfigOverrideChange();
+        });
+    }
+
+    normalizeYaml(value) {
+        if (typeof value !== 'string') {
+            return '';
+        }
+        return value.replace(/\r\n/g, '\n');
+    }
+
+    async handleGameConfigOverrideChange() {
+        if (!this.gameConfigOverrideTextarea || this.gameConfigOverrideTextarea.disabled) {
+            return;
+        }
+
+        const nextYaml = this.normalizeYaml(this.gameConfigOverrideTextarea.value);
+        if (nextYaml === this.lastSavedGameConfigOverrideYaml) {
+            return;
+        }
+
+        const originalDisabled = this.gameConfigOverrideTextarea.disabled;
+
+        try {
+            this.gameConfigOverrideTextarea.disabled = true;
+            this.showMessage('Reloading per-game configuration...', 'info');
+
+            const response = await fetch('/api/game-config-override', {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                },
+                body: JSON.stringify({ yaml: nextYaml })
+            });
+
+            const result = await response.json();
+            if (!response.ok || !result.success) {
+                throw new Error(result.error || result.message || 'Failed to reload per-game configuration.');
+            }
+
+            const savedYaml = this.normalizeYaml(result.gameConfigOverrideYaml || '');
+            this.lastSavedGameConfigOverrideYaml = savedYaml;
+            this.gameConfigOverrideTextarea.value = savedYaml;
+            this.showMessage(result.message || 'Per-game configuration override saved.', 'success');
+        } catch (error) {
+            this.showMessage(`Error updating per-game configuration: ${error.message}`, 'error');
+        } finally {
+            this.gameConfigOverrideTextarea.disabled = originalDisabled;
+        }
     }
 }
 
