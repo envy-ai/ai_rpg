@@ -1,3 +1,5 @@
+{% include "_includes/need-bar-definitions.njk" %}
+
 <task>You will be provided with an XML structure representing a an NPC, which may have some fields filled in and others left empty. Your task is to intelligently fill in the empty fields based on the context provided by the filled fields, ensuring that the completed XML is coherent and consistent.</task>
 
 If the <name> field is already filled in, repeat it exactly and do not change it. Do not add titles, epithets, or descriptors to a prefilled name.
@@ -46,8 +48,18 @@ Respond in the below format, making sure that <npcInfo> is the root tag and encl
         {% for attrName, attrDef in attributeDefinitions %}      <attribute name="{{ attrName }}"><!--Rating using: poor, below average, average, above average, excellent, or legendary.--></attribute>
         {% endfor %}
             </attributes>
+            <startingHealthPercentage>{% if npc.startingHealthPercentage is defined %}{{ npc.startingHealthPercentage }}{% else %}<!--Integer from 0 to 100 representing the NPC's starting health as a percentage of their maximum health. Usually 100, but may be lower if the NPC is injured or otherwise not at full health. 0 if for some reason the NPC is incapacitated. 'deceased' if the NPC is dead.-->{% endif %}</startingHealthPercentage>
+            <startingNeeds>
+                {% for need in needBarDefinitions -%}
+                <needBar>
+                    <id>{{ need.id }}</id>                    
+                    <isApplicable><!-- True if this need makes sense for this character, even if not quite literally (e.g., a non-human NPC might have a "hunger" need that represents a different kind of sustenance, like blood for a vampire). False otherwise, or if it's inappropriate (Sexual needs for a child NPC or non-sentient entity, for example) --></isApplicable>
+                    <startingLevel><!-- Initial level of the need bar, from 0% (empty) to 100% (fully satisfied). Should usually be 100% unless there's a reason for it not to be. Omit this entirely if not applicable. --></startingLevel>
+                </needBar>
+                {% endfor -%}
+            </startingNeeds>
             <personality>
-                <type><!-- -dere archetype, Enneagram type, Expanded 5x5 DnD alignment, or similar short description. Optionally, 2 types separated by commas, so long as they make sense together. Then a short 2 sentence description of how they aren't just the stereotype of that personality. --></type>
+                <type><!-- -dere archetype, Enneagram type, Expanded 5x5 alignment (Lawful-Social-Neutral-Rebel-Chaotic and Good-Moral-Neutral-Impure-Evil), or similar short description. Optionally, 2 types separated by commas, so long as they make sense together. Then a short 2 sentence description of how they aren't just the stereotype of that personality. --></type>
                 <traits><!-- optionally, any neurodivergences or mental health conditions (e.g. ADHD, autism, anxiety, depression, bipolar, PTSD, sociopathy, psychopathy, mania, any phobias, etc). Comma separated, usually none, no more than 3 --></traits>
                 <characterArc>
                     <shortTerm><!-- A brief description of the NPC's short-term active personal growth arc --></shortTerm>  

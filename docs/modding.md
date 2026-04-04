@@ -69,6 +69,30 @@ Examples:
 - Shared bar: `player: true`, `party: true`, `non_party: true`
 - Party-only NPC bar: `player: false`, `party: true`, `non_party: false`
 
+Need bars can also override the global `need_values` magnitudes per bar:
+
+```yaml
+need_bars:
+  sanity:
+    need_values:
+      small: 4
+      large: 50
+```
+
+Only the keys you provide are overridden; missing `small` / `medium` / `large` values still fall back to the root-level `need_values` defaults in `defs/need_bars.yaml`.
+
+Need-bar `need_values` magnitudes may be fractional. Decimal overrides are preserved exactly rather than being rounded or forced up to `1`.
+
+Need bars use `change_per_minute` for baseline passive drift:
+
+```yaml
+need_bars:
+  hydration:
+    change_per_minute: -20
+```
+
+Legacy `change_per_turn` is still accepted during definition loading, but new defs and mods should use `change_per_minute`.
+
 Legacy `player_only` is still accepted for backward compatibility:
 
 - `player_only: true` maps to `player: true`, `party: false`, `non_party: false`

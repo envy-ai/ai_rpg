@@ -1,8 +1,8 @@
 need_values:
-  small: 10
-  medium: 25
-  large: 70
-  all: 100
+  small: 100
+  medium: 250
+  large: 700
+  all: 1000
 need_bars:
   food:
     name: Food
@@ -14,10 +14,14 @@ need_bars:
     color: "#FFA500"
     related_attribute: constitution
     min: 0
-    max: 100
-    initial: 100
-    change_per_turn: -1
+    max: 1000
+    initial: 1000
+    change_per_minute: -0.7
     relative_to_level: false
+    need_values:
+      small: 100
+      medium: 250
+      large: 700
     small_increase:
       - light snack
     medium_increase:
@@ -39,27 +43,27 @@ need_bars:
         name: Starving
         sentence: "%CHARACTER% is starving and in danger of fainting."
         effect: -10% to health and attributes, chance of fainting
-      1:
+      10:
         name: Hungry
         sentence: "%CHARACTER% is feeling hungry."
         effect: -5% to health and attributes
-      25:
+      250:
         name: Peckish
         sentence: "%CHARACTER% is feeling peckish."
         effect: No effect
-      40:
+      400:
         name: Not Hungry
         sentence: "%CHARACTER% is not feeling hungry."
         effect: No effect
-      60:
+      600:
         name: Satisfied
         sentence: "%CHARACTER% is feeling satisfied in terms of hunger."
         effect: Good mood
-      80:
+      800:
         name: Full
         sentence: "%CHARACTER% is feeling full in terms of hunger."
         effect: Good mood, slight bonuses
-      100:
+      1000:
         name: Stuffed
         sentence: "%CHARACTER% is feeling stuffed in terms of hunger."
         effect: Good mood, slight bonuses
@@ -73,10 +77,14 @@ need_bars:
     color: "#33CC66"
     icon: ⚡
     min: 0
-    max: 100
-    initial: 100
-    change_per_turn: 5
+    max: 1000
+    initial: 1000
+    change_per_minute: 50
     relative_to_level: false
+    need_values:
+      small: 100
+      medium: 250
+      large: 700
     large_increase:
       - non-strenuous activity (such as walking)
       - light exercise
@@ -95,23 +103,23 @@ need_bars:
         name: Breathless
         sentence: "%CHARACTER% is breathless and struggling to perform physical actions."
         effect: Slow, -4 circumstance penalty to physical actions
-      1:
+      10:
         name: Winded
         sentence: "%CHARACTER% is winded and finding it difficult to perform physical actions."
         effect: -2 circumstance penalty to physical actions
-      15:
+      150:
         name: Slightly winded
         sentence: "%CHARACTER% is slightly winded."
         effect: No effect
-      25:
+      250:
         name: Fine
         sentence: "%CHARACTER% is feeling fine in terms of stamina."
         effect: No effect
-      70:
+      700:
         name: Energized
         sentence: "%CHARACTER% is feeling energized."
         effect: Good mood, slight bonuses
-      100:
+      1000:
         name: Fully Energized
         sentence: "%CHARACTER% is feeling fully energized."
         effect: Good mood, slight bonuses
@@ -125,10 +133,14 @@ need_bars:
     color: "#00BFFF"
     icon: 🛌
     min: 0
-    max: 100
-    initial: 100
-    change_per_turn: -1
+    max: 1000
+    initial: 1000
+    change_per_minute: -1
     relative_to_level: false
+    need_values:
+      small: 100
+      medium: 250
+      large: 700
     small_increase:
       - short rest
       - 2 or fewer hours of sleep
@@ -153,27 +165,27 @@ need_bars:
         name: Exhausted
         sentence: "%CHARACTER% is exhausted and in danger of passing out."
         effect: -10% to health and attributes, chance of passing out
-      1:
+      10:
         name: Very Tired
         sentence: "%CHARACTER% is very tired and wants to go to sleep."
         effect: -5% to health and attributes
-      15:
+      150:
         name: Tired
         sentence: "%CHARACTER% is feeling tired."
         effect: Reduced focus and minor penalties
-      25:
+      250:
         name: Weary
         sentence: "%CHARACTER% is feeling weary."
         effect: No effect
-      40:
+      400:
         name: Rested
         sentence: "%CHARACTER% is feeling rested."
         effect: No effect
-      70:
+      700:
         name: Well Rested
         sentence: "%CHARACTER% is feeling well rested."
         effect: Good mood, slight bonuses
-      100:
+      1000:
         name: Fully Rested
         sentence: "%CHARACTER% is feeling fully rested."
         effect: Good mood, slight bonuses
@@ -187,10 +199,14 @@ need_bars:
     color: "#8A2BE2"
     icon: ✨
     min: 0
-    max: 100
-    initial: 100
-    change_per_turn: +1
+    max: 1000
+    initial: 1000
+    change_per_minute: 10
     relative_to_level: false
+    need_values:
+      small: 100
+      medium: 250
+      large: 700
     small_increase:
       - minor magical recharge
       - used a small mana potion
@@ -219,27 +235,27 @@ need_bars:
         name: Depleted
         sentence: "%CHARACTER% is completely out of mana and is unable to use any magical abilities and causing them to be lethargic and weak."
         effect: Cannot cast spells or use magical abilities, -10% to health and attributes
-      1:
+      10:
         name: Weak
         sentence: "%CHARACTER%'s mana is so low that it is weakening their magic and slowing them, down a bit."
         effect: Limited spellcasting, -5% to health and attributes
-      25:
+      250:
         name: Low
         sentence: "%CHARACTER% is low on mana. Their magic is slightly less effective than normal."
         effect: Reduced effectiveness of spells and abilities
-      40:
+      400:
         name: Moderate
         sentence: "%CHARACTER% has a moderate amount of mana."
         effect: No effect
-      60:
+      600:
         name: High
         sentence: "%CHARACTER% has a high amount of mana."
         effect: No effect
-      80:
+      800:
         name: Very High
         sentence: "%CHARACTER% has a very high amount of mana. Their magic is slightly stronger."
         effect: Slight bonuses to spell effectiveness
-      100:
+      1000:
         name: Full Power
         sentence: "%CHARACTER% is at full mana. Their magic is at its stronger than normal."
         effect: Slight bonuses to spell effectiveness and health

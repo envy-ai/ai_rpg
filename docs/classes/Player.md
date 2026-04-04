@@ -9,16 +9,16 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
 - Inventory/gear: `#inventory`, `#gearSlots`, `#gearSlotsByType`, `#gearSlotNameIndex`.
 - Skills/abilities: `#skills`, `#abilities`, `#unspentSkillPoints`, `#unspentAttributePoints`.
 - Pending level-up ability draft state: `#pendingAbilityOptionsByLevel` (per-level generated options for player-only ability selection flow).
-- Status/needs: `#statusEffects`, `#needBars`.
+- Status/needs: `#statusEffects`, `#needBars`, `#needBarApplicability`.
 - Social: `#dispositions`, `#personalityType`, `#personalityTraits`, `#personalityNotes`, `#resistances`, `#vulnerabilities`.
 - Factions: `#factionId`, `#factionStandings` (map of `factionId -> number`).
 - Party/quests: `#partyMembers`, `#quests`, `#goals`, `#characterArc`.
 - Movement/turns: `#currentLocation`, `#previousLocationId`, `#elapsedTime` (minutes), `#lastVisitedTime` (minutes), `#inCombat`, `#lastActionWasTravel`, `#consecutiveTravelActions`.
-- Lifecycle: `#isDead`, `#corpseCountdown`.
+- Lifecycle: `#isDead`, `#persistWhenDead`, `#corpseCountdown`.
 - Static indexes: `#indexById`, `#indexByName`.
 
 ## Construction
-- `new Player(options)` loads definitions, validates input, initializes attributes, inventory, gear, skills, dispositions, need bars, and registers in indexes.
+- `new Player(options)` loads definitions, validates input, initializes attributes, inventory, gear, skills, dispositions, need bars, per-actor need-bar applicability, and registers in indexes.
 
 ## Static API
 - Lookup and registry:
@@ -30,11 +30,12 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
   - `setCurrentPlayerResolver(resolver)`, `getCurrentPlayer()`, `getCurrentPlayerId()`.
 - Definitions:
   - `getDispositionDefinitions()`, `getDispositionDefinition(name)`, `resolveDispositionIntensity(type, value)`.
-  - `getNeedBarDefinitionsForContext()`.
+  - `getNeedBarDefinitionsForContext()` (prompt/UI-safe need-bar definitions including icon/color metadata plus `small`/`medium`/`large`/`fill` and `small`/`medium`/`large`/`empty` trigger lists).
+  - `validateNeedBarPromptSentences({ onError })` preflights `effect_thresholds.*.sentence` coverage for prompt-facing need summaries.
   - `reloadDefinitionCaches({ refreshInstances })` clears shared defs caches and can reapply merged need-bar definitions to already loaded actors.
   - `setAvailableSkills(skillsInput)`, `getAvailableSkills()`.
 - Global behaviors:
-  - `applyStatusEffectNeedBarsToAll()` (uses canonical world minutes, initializes missing `appliedAt` stamps, applies need-bar deltas once per elapsed minute, and decrements finite status-effect durations by elapsed minutes capped to remaining time).
+  - `applyStatusEffectNeedBarsToAll()` (uses canonical world minutes, initializes missing actor/effect minute stamps without backfilling, applies baseline `change_per_minute` need-bar drift plus status-effect need-bar deltas once per elapsed minute, and decrements finite status-effect durations by elapsed minutes capped to remaining time).
   - `updatePreviousLocationsForAll()`.
   - `setExperienceRolloverMultiplier(value)`.
 - Handlers:
@@ -43,7 +44,7 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
 ## Accessors (Grouped)
 - Identity and descriptors: `id`, `name`, `aliases`, `description`, `shortDescription`, `imageId`, `class`, `race`, `gender`, `personalityType`, `personalityTraits`, `personalityNotes`, `resistances`, `vulnerabilities`.
 - Factions: `factionId`.
-- State: `level`, `experience`, `health`, `maxHealth`, `healthAttribute`, `isDead`, `isDisabled`, `inCombat`, `isHostile`, `corpseCountdown`, `elapsedTime`, `createdAt`, `lastUpdated`.
+- State: `level`, `experience`, `health`, `maxHealth`, `healthAttribute`, `isDead`, `persistWhenDead`, `isDisabled`, `inCombat`, `isHostile`, `corpseCountdown`, `elapsedTime`, `createdAt`, `lastUpdated`.
 - Locations: `currentLocation`, `location`, `currentVehicle`, `previousLocationId`, `previousLocation`, `currentLocationObject`, `lastVisitedTime`.
 - Social/party: `partyMembers`, `isInPlayerParty`, `partyMembershipChangedThisTurn`, `partyMembersAddedThisTurn`, `partyMembersRemovedThisTurn`.
 - Quests/goals: `goals`, `characterArc`, `currentQuests`, `completedQuests`.
@@ -93,9 +94,11 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
   - `tickStatusEffects(elapsedMinutes)`, `clearExpiredStatusEffects()`.
 - Need bars:
   - `getNeedBars(options)`, `getNeedBarValue(identifier)`.
+  - `getNeedBarApplicability()`, `setNeedBarApplicability(map)`.
   - `setNeedBars(list)`, `setNeedBarValue(identifier, value)`.
-  - `applyNeedBarChange(identifier, options)`, `applyNeedBarTurnChange(multiplier)`.
+  - `applyNeedBarChange(identifier, options)`.
   - `getNeedBarsForContext(options)`, `getNeedBarPromptContext(options)`.
+  - `getNeedSentencePromptContext({ actorName, onMissingSentence })` resolves active need-bar threshold sentences with `%CHARACTER%` substitution for base-context prompt rendering.
 - Inventory/gear:
   - Inventory: `addInventoryItem(...)`, `removeInventoryItem(...)`, `hasInventoryItem(...)`, `getInventoryItems()`, `clearInventory()`, `setInventory(items)`.
   - Gear: `getGear()`, `getGearSlotsByType()`, `getEquippedSlotForThing(...)`, `hasEquippedThing(...)`, `getEquippedItemIdForType(slotType)`.
@@ -117,7 +120,7 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
 ## Private Helpers (Selected)
 - Initialization: `#loadDefinitions`, `#initializeAttributes`, `#initializeInventory`, `#initializeGear`, `#initializeSkills`, `#initializeDispositions`, `#initializeNeedBars`.
 - Gear helpers: `#resolveItemIdFromGearValue`, `#normalizeSlotType`, `#resolveSlotName`, `#syncGearWithInventory`, `#preserveHealthRatioAfterGearChange`.
-- Need bar helpers: `#normalizeNeedBarChangeList`, `#normalizeNeedMagnitudeKey`, `#normalizeNeedValueMap`, `#buildNeedBarDefinition`, `#cloneNeedBarDefinition`, `#formatNeedBarForContext`, `#resolveNeedBarByIdentifier`, `#resolveNeedBarMagnitudeDelta`, `#resolveNeedBarThreshold`, `#applyNeedBarValue`.
+- Need bar helpers: `#normalizeNeedBarChangeList`, `#normalizeNeedMagnitudeKey`, `#normalizeNeedValueMap`, `#buildNeedBarDefinition`, `#cloneNeedBarDefinition`, `#loadNeedBarDefinitionState`, `#formatNeedBarForContext`, `#resolveNeedBarByIdentifier`, `#resolveNeedBarMagnitudeDelta`, `#resolveNeedBarThreshold`, `#applyNeedBarValue`.
 - Attributes/health: `#defaultHealthAttribute`, `#resolveHealthAttribute`, `#calculateBaseHealth`, `#validateAttributeValue`, `#calculateAttributeModifier`.
 - Status/abilities: `#normalizeStatusEffects`, `#normalizeAbilities`, `#getIntrinsicStatusEffects`.
 - Pending draft options: `#normalizePendingAbilityOptionsByLevel`.
@@ -129,8 +132,15 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
 ## Notes
 - The class supports NPCs and players; many behaviors are shared with `isNPC` gating certain flows.
 - Gear and inventory are tightly coupled; equip/unequip flows update health and modifiers.
-- Need bar logic includes per-turn decay and magnitude-based adjustments.
-- Need bars now use explicit audience flags (`player`, `party`, `nonParty`). NPCs retain both party-only and non-party-only bar state internally so values survive party swaps, but active reads, prompt context, endpoint payloads, and per-turn decay only operate on the actor's current audience.
+- Need bar logic includes per-minute baseline drift (`change_per_minute`) and magnitude-based adjustments.
+- Global `defs/need_bars.yaml -> need_values` still defines default `small` / `medium` / `large` deltas, but an individual bar can now override those via its own `need_values` block; missing per-bar keys still fall back to the global values. These magnitudes now preserve decimal values exactly instead of being rounded or forced up to a minimum of `1`.
+- `applyNeedBarChange(...)` now returns `needBarIcon` / `needBarColor` metadata alongside the usual delta/threshold payload so event summaries and notifications can use the configured need-bar icon directly.
+- Need bars now use explicit audience flags (`player`, `party`, `nonParty`). NPCs retain both party-only and non-party-only bar state internally so values survive party swaps, but active reads, prompt context, endpoint payloads, and per-minute drift only operate on the actor's current audience.
+- Per-actor need-bar minute drift now persists a `needBarRatesAppliedAt` timestamp in saves so reloads do not replay already-processed elapsed world minutes.
+- Need-bar applicability is now also persisted separately per actor in `needBarApplicability`. This is distinct from current audience activation: a bar can be defined for NPC audiences globally but still be explicitly disabled for a specific NPC. Save/load now persists the full resolved applicability map, and legacy saves missing need-bar state default storable bars to `value: 100` and `applicable: true` during hydration.
+- `setNeedBarApplicability(...)` preserves stored values for bars that stay enabled, drops bars explicitly disabled for that actor, and restores newly re-enabled bars at `100`.
+- `persistWhenDead` is persisted per actor. When true, dead actors never receive a corpse countdown and are skipped by corpse cleanup; missing save data defaults it to `false`.
+- Joining the player party, leaving the player party, or dying while currently in the player party permanently flips `persistWhenDead` to `true` for that actor.
 - `elapsedTime` is minute-canonical; setter validation requires non-negative integer minutes, and load paths normalize to integer minutes.
 - `currentVehicle` returns `null` unless the actor is currently in a vehicle location or vehicle region; when present it includes vehicle name/description, `location` (`<regionName>:<locationName>`), the full `vehicleInfo` object, explicit trip-state booleans (`isUnderway`, `hasArrived`, `isArriving`) mirrored onto `vehicleInfo` for prompt compatibility, `destination`, `destinationResolved`, optional `pendingDestination`, numeric `minutesToDestination`, plus a formatted `timeToDestination` string (`X days, Y hours, Z minutes`, omitting all zero-value units except exact `0 minutes`, and appending `ago` when negative). During timed travel, `destination` can come from `pendingDestination` even when `vehicleInfo.currentDestination` is still `null`, so prompts can see the intended target without forcing early destination generation. These booleans now come from `VehicleInfo` directly, so pre-departure states no longer appear as arrived.
 - Unspent skill/attribute points are formula-derived at read time from current level + assigned stats/skills.

@@ -58,6 +58,7 @@ Most modals live in `views/index.njk` and are wired up by the inline script or `
 - `#npcGoalsModal`: edit goals.
 - `#npcEditModal`: full NPC edit form (attributes, skills, abilities, status effects, faction membership, resistances, vulnerabilities).
   - Abilities in the edit form include a required short description field.
+  - NPCs also expose per-character need-bar applicability checkboxes here; unchecked bars are removed for that NPC, and re-enabling them restores the bar at `100`. This section is omitted for the player.
 - `#addNpcModal`: generate and add a new NPC (optional reference image).
 
 ## Item / scenery editing

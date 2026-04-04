@@ -4566,6 +4566,17 @@ module.exports = function registerApiRoutes(scope) {
                     ? npc.corpseCountdown
                     : null;
 
+                if (npc.isDead && npc.persistWhenDead) {
+                    if (previousCountdown !== null) {
+                        npc.corpseCountdown = null;
+                        countdownUpdates.push({
+                            npcId: npc.id,
+                            corpseCountdown: null
+                        });
+                    }
+                    continue;
+                }
+
                 const currentCountdown = Number.isFinite(npc?.corpseCountdown)
                     ? npc.corpseCountdown
                     : null;
@@ -5636,7 +5647,8 @@ module.exports = function registerApiRoutes(scope) {
             environmentalDamageEvents = [],
             needBarChanges = [],
             dispositionChanges = [],
-            factionReputationChanges = []
+            factionReputationChanges = [],
+            timeProgress = null
         } = {}) {
             const bundle = [];
             let shouldRefresh = false;
@@ -6074,7 +6086,10 @@ module.exports = function registerApiRoutes(scope) {
                         const effect = threshold.effect ? ` – ${threshold.effect}` : '';
                         segments.push(`→ ${threshold.name}${effect}`);
                     }
-                    add('🧪', segments.join(' '));
+                    const icon = typeof entry.needBarIcon === 'string' && entry.needBarIcon.trim()
+                        ? entry.needBarIcon.trim()
+                        : '🧪';
+                    add(icon, segments.join(' '));
                 });
                 shouldRefresh = true;
             }
@@ -6144,6 +6159,14 @@ module.exports = function registerApiRoutes(scope) {
                     add('🏳️', text);
                 });
                 shouldRefresh = true;
+            }
+
+            const advancedMinutes = Number(timeProgress?.advancedMinutes);
+            if (Number.isFinite(advancedMinutes) && advancedMinutes > 0) {
+                const durationText = Utils.formatMinutesAsNaturalDuration(Math.round(advancedMinutes));
+                if (durationText) {
+                    add('⏳', `${durationText} passed.`);
+                }
             }
 
             return {
@@ -6240,6 +6263,7 @@ module.exports = function registerApiRoutes(scope) {
             needBarChanges = null,
             dispositionChanges = null,
             factionReputationChanges = null,
+            timeProgress = null,
             timestamp = null,
             parentId = null,
             locationId = null
@@ -6255,7 +6279,8 @@ module.exports = function registerApiRoutes(scope) {
                 environmentalDamageEvents,
                 needBarChanges,
                 dispositionChanges,
-                factionReputationChanges
+                factionReputationChanges,
+                timeProgress
             });
 
             if (!bundle.items.length) {
@@ -6450,6 +6475,7 @@ module.exports = function registerApiRoutes(scope) {
             needBarChanges = null,
             dispositionChanges = null,
             factionReputationChanges = null,
+            timeProgress = null,
             plausibility = null,
             timestamp = null,
             parentId = null,
@@ -6464,6 +6490,7 @@ module.exports = function registerApiRoutes(scope) {
                 needBarChanges,
                 dispositionChanges,
                 factionReputationChanges,
+                timeProgress,
                 timestamp,
                 parentId,
                 locationId
@@ -8348,38 +8375,40 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 if (originEventResult || destinationEventResult) {
-                    if (originEventResult) {
-                        appendEventSummariesToChat({
-                            summaryLabel: `📋 Events – ${originEventLocationName}`,
-                            statusLabel: `🌀 Status Changes – ${originEventLocationName}`,
-                            events: originEventResult.structured || null,
-                            experienceAwards: originEventResult.experienceAwards || [],
-                            currencyChanges: originEventResult.currencyChanges || [],
-                            environmentalDamageEvents: originEventResult.environmentalDamageEvents || [],
-                            needBarChanges: originEventResult.needBarChanges || [],
-                            dispositionChanges: originEventResult.dispositionChanges || [],
-                            factionReputationChanges: originEventResult.factionReputationChanges || [],
-                            timestamp: summary.timestamp,
-                            parentId: randomEventEntry?.id || null,
-                            locationId: randomEventLocationId
-                        }, entryCollector);
-                    }
+                        if (originEventResult) {
+                            appendEventSummariesToChat({
+                                summaryLabel: `📋 Events – ${originEventLocationName}`,
+                                statusLabel: `🌀 Status Changes – ${originEventLocationName}`,
+                                events: originEventResult.structured || null,
+                                experienceAwards: originEventResult.experienceAwards || [],
+                                currencyChanges: originEventResult.currencyChanges || [],
+                                environmentalDamageEvents: originEventResult.environmentalDamageEvents || [],
+                                needBarChanges: originEventResult.needBarChanges || [],
+                                dispositionChanges: originEventResult.dispositionChanges || [],
+                                factionReputationChanges: originEventResult.factionReputationChanges || [],
+                                timeProgress: originEventResult.timeProgress || null,
+                                timestamp: summary.timestamp,
+                                parentId: randomEventEntry?.id || null,
+                                locationId: randomEventLocationId
+                            }, entryCollector);
+                        }
                     if (destinationEventResult) {
                         appendEventSummariesToChat({
                             summaryLabel: `📋 Events – ${destinationEventLocationName}`,
                             statusLabel: `🌀 Status Changes – ${destinationEventLocationName}`,
-                            events: destinationEventResult.structured || null,
-                            experienceAwards: destinationEventResult.experienceAwards || [],
-                            currencyChanges: destinationEventResult.currencyChanges || [],
-                            environmentalDamageEvents: destinationEventResult.environmentalDamageEvents || [],
-                            needBarChanges: destinationEventResult.needBarChanges || [],
-                            dispositionChanges: destinationEventResult.dispositionChanges || [],
-                            factionReputationChanges: destinationEventResult.factionReputationChanges || [],
-                            timestamp: summary.timestamp,
-                            parentId: randomEventEntry?.id || null,
-                            locationId: randomEventLocationId
-                        }, entryCollector);
-                    }
+                                events: destinationEventResult.structured || null,
+                                experienceAwards: destinationEventResult.experienceAwards || [],
+                                currencyChanges: destinationEventResult.currencyChanges || [],
+                                environmentalDamageEvents: destinationEventResult.environmentalDamageEvents || [],
+                                needBarChanges: destinationEventResult.needBarChanges || [],
+                                dispositionChanges: destinationEventResult.dispositionChanges || [],
+                                factionReputationChanges: destinationEventResult.factionReputationChanges || [],
+                                timeProgress: destinationEventResult.timeProgress || null,
+                                timestamp: summary.timestamp,
+                                parentId: randomEventEntry?.id || null,
+                                locationId: randomEventLocationId
+                            }, entryCollector);
+                        }
                 } else {
                     recordEventSummaryEntry({
                         label: '📋 Events – Random Event',
@@ -8390,6 +8419,7 @@ module.exports = function registerApiRoutes(scope) {
                         needBarChanges: summary.needBarChanges,
                         dispositionChanges: summary.dispositionChanges,
                         factionReputationChanges: summary.factionReputationChanges,
+                        timeProgress: eventChecks?.timeProgress || null,
                         timestamp: summary.timestamp,
                         parentId: randomEventEntry?.id || null,
                         locationId: randomEventLocationId
@@ -9066,24 +9096,6 @@ module.exports = function registerApiRoutes(scope) {
                 return 3;
             }
             return 1;
-        };
-
-        const applyNeedBarTurnTick = () => {
-            const summaries = [];
-            for (const actor of players.values()) {
-                if (!actor || typeof actor.applyNeedBarTurnChange !== 'function') {
-                    continue;
-                }
-                const adjustments = actor.applyNeedBarTurnChange();
-                if (adjustments && adjustments.length) {
-                    summaries.push({
-                        actorId: actor.id,
-                        actorName: actor.name || null,
-                        adjustments
-                    });
-                }
-            }
-            return summaries;
         };
 
         const sanitizeNamedValue = (value) => {
@@ -12373,7 +12385,7 @@ module.exports = function registerApiRoutes(scope) {
             try {
                 statusNeedAdjustments = Player.applyStatusEffectNeedBarsToAll() || [];
             } catch (error) {
-                console.warn('Failed to apply status effect need bar deltas at turn start:', error?.message || error);
+                console.warn('Failed to apply time-based need bar deltas at turn start:', error?.message || error);
             }
 
             triggerRegionSecretsForCurrentRegion();
@@ -12439,7 +12451,7 @@ module.exports = function registerApiRoutes(scope) {
                 if (lines.length) {
                     newChatEntries.push({
                         role: 'system',
-                        content: `Status effects adjusted needs:\n${lines.join('\n')}`,
+                        content: `Time-based effects adjusted needs:\n${lines.join('\n')}`,
                         ephemeral: true
                     });
                 }
@@ -13713,6 +13725,7 @@ module.exports = function registerApiRoutes(scope) {
                         needBarChanges: responseData.needBarChanges,
                         dispositionChanges: responseData.dispositionChanges,
                         factionReputationChanges: responseData.factionReputationChanges,
+                        timeProgress: forcedEventResult?.timeProgress || null,
                         timestamp: forcedEventEntry?.timestamp || new Date().toISOString(),
                         parentId: forcedEventEntry?.id || null,
                         locationId: forcedEventLocationId
@@ -14553,11 +14566,6 @@ module.exports = function registerApiRoutes(scope) {
                         }
                     }
 
-                    const needBarAdjustments = applyNeedBarTurnTick();
-                    if (needBarAdjustments.length && debugInfo) {
-                        debugInfo.needBarAdjustments = needBarAdjustments;
-                    }
-
                     if (plausibilityInfo?.structured || plausibilityInfo?.raw) {
                         responseData.plausibility = {
                             raw: plausibilityInfo.raw || null,
@@ -14577,6 +14585,7 @@ module.exports = function registerApiRoutes(scope) {
                                 needBarChanges: originEventResult.needBarChanges || [],
                                 dispositionChanges: originEventResult.dispositionChanges || [],
                                 factionReputationChanges: originEventResult.factionReputationChanges || [],
+                                timeProgress: originEventResult.timeProgress || null,
                                 plausibility: responseData.plausibility,
                                 timestamp: aiResponseEntry?.timestamp || new Date().toISOString(),
                                 parentId: aiResponseEntry?.id || null,
@@ -14594,6 +14603,7 @@ module.exports = function registerApiRoutes(scope) {
                                 needBarChanges: destinationEventResult.needBarChanges || [],
                                 dispositionChanges: destinationEventResult.dispositionChanges || [],
                                 factionReputationChanges: destinationEventResult.factionReputationChanges || [],
+                                timeProgress: destinationEventResult.timeProgress || null,
                                 plausibility: null,
                                 timestamp: aiResponseEntry?.timestamp || new Date().toISOString(),
                                 parentId: aiResponseEntry?.id || null,
@@ -14611,6 +14621,7 @@ module.exports = function registerApiRoutes(scope) {
                             needBarChanges: responseData.needBarChanges,
                             dispositionChanges: responseData.dispositionChanges,
                             factionReputationChanges: responseData.factionReputationChanges,
+                            timeProgress: eventResult?.timeProgress || null,
                             plausibility: responseData.plausibility,
                             timestamp: aiResponseEntry?.timestamp || new Date().toISOString(),
                             parentId: aiResponseEntry?.id || null,
@@ -16227,7 +16238,7 @@ module.exports = function registerApiRoutes(scope) {
             const min = toNumber(bar.min);
             const max = toNumber(bar.max);
             const value = toNumber(bar.value);
-            const changePerTurn = toNumber(bar.changePerTurn);
+            const changePerMinute = toNumber(bar.changePerMinute);
 
             return {
                 id: typeof bar.id === 'string' ? bar.id : null,
@@ -16238,7 +16249,7 @@ module.exports = function registerApiRoutes(scope) {
                 min,
                 max,
                 value,
-                changePerTurn,
+                changePerMinute,
                 player: Boolean(bar.player),
                 party: Boolean(bar.party),
                 nonParty: Boolean(bar.nonParty),
@@ -17488,6 +17499,7 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 const body = req.body || {};
+                const hasNeedBarApplicability = Object.prototype.hasOwnProperty.call(body, 'needBarApplicability');
                 const {
                     name,
                     description,
@@ -17507,7 +17519,8 @@ module.exports = function registerApiRoutes(scope) {
                     personalityTraits,
                     personalityNotes,
                     statusEffects,
-                    aliases
+                    aliases,
+                    needBarApplicability
                 } = body;
                 const hasResistances = Object.prototype.hasOwnProperty.call(body, 'resistances')
                     || Object.prototype.hasOwnProperty.call(body, 'resistance');
@@ -17756,6 +17769,29 @@ module.exports = function registerApiRoutes(scope) {
                         npc.setStatusEffects(statusEffects);
                     } catch (statusError) {
                         console.warn(`Failed to update status effects for NPC ${npcId}:`, statusError.message);
+                    }
+                }
+
+                if (hasNeedBarApplicability) {
+                    if (!npc.isNPC) {
+                        return res.status(400).json({
+                            success: false,
+                            error: 'Need bar applicability can only be edited for NPCs.'
+                        });
+                    }
+                    if (!needBarApplicability || typeof needBarApplicability !== 'object' || Array.isArray(needBarApplicability)) {
+                        return res.status(400).json({
+                            success: false,
+                            error: 'needBarApplicability must be an object.'
+                        });
+                    }
+                    try {
+                        npc.setNeedBarApplicability(needBarApplicability);
+                    } catch (needBarError) {
+                        return res.status(400).json({
+                            success: false,
+                            error: needBarError?.message || 'Failed to update need bar applicability.'
+                        });
                     }
                 }
 
@@ -27719,7 +27755,10 @@ module.exports = function registerApiRoutes(scope) {
                 if (typeof Globals.reloadConfigAndDefs !== 'function') {
                     throw new Error('Globals.reloadConfigAndDefs is not available during new game creation.');
                 }
-                Globals.reloadConfigAndDefs({ gameConfigOverrideYaml: '' });
+                Globals.reloadConfigAndDefs({
+                    gameConfigOverrideYaml: '',
+                    needBarSentenceValidationMode: 'throw'
+                });
                 const activeSetting = getActiveSettingSnapshot();
                 if (!activeSetting) {
                     report('new_game:setting_missing', 'No active setting is loaded. Cannot start new game.');
@@ -28779,7 +28818,8 @@ module.exports = function registerApiRoutes(scope) {
                 throw new Error('Globals.reloadConfigAndDefs is not available during game load.');
             }
             Globals.reloadConfigAndDefs({
-                gameConfigOverrideYaml: savedGameConfigOverrideYaml
+                gameConfigOverrideYaml: savedGameConfigOverrideYaml,
+                needBarSentenceValidationMode: 'throw'
             });
 
             Globals.gameLoaded = false;
@@ -30274,6 +30314,57 @@ module.exports = function registerApiRoutes(scope) {
             });
         }
 
+        async function adjustSlashCommandWorldTimeByMinutes(minutes, { source = 'slash_command_time' } = {}) {
+            const deltaMinutes = Number(minutes);
+            if (!Number.isFinite(deltaMinutes) || !Number.isInteger(deltaMinutes)) {
+                throw new Error('Slash-command world-time adjustments require an integer minute amount.');
+            }
+
+            const previous = Globals.getWorldTimeContext();
+            let timeProgress;
+            let vehicleArrivals = [];
+
+            if (deltaMinutes >= 0) {
+                timeProgress = Globals.advanceTime(deltaMinutes, { source });
+                vehicleArrivals = await processDueVehicleArrivals();
+            } else {
+                const currentTotalMinutes = Globals.getTotalWorldMinutes();
+                const targetTotalMinutes = currentTotalMinutes + deltaMinutes;
+                if (targetTotalMinutes < 0) {
+                    throw new Error('Cannot rewind time before day 0, 12:00 AM.');
+                }
+
+                Globals.elapsedTime = targetTotalMinutes;
+                const current = Globals.getWorldTimeContext();
+                timeProgress = {
+                    source,
+                    advancedMinutes: deltaMinutes,
+                    transitions: [],
+                    previous,
+                    current
+                };
+            }
+
+            const worldTime = buildWorldTimePayload({
+                transitions: Array.isArray(timeProgress?.transitions) ? timeProgress.transitions : []
+            });
+
+            try {
+                Globals.emitToClient(null, 'chat_history_updated', {
+                    worldTime
+                });
+            } catch (emitError) {
+                console.warn('Failed to emit world-time refresh after slash command:', emitError?.message || emitError);
+            }
+
+            return {
+                deltaMinutes,
+                timeProgress,
+                vehicleArrivals,
+                worldTime
+            };
+        }
+
         function buildSlashCommandInteractionContext({ userId = null, argsText = '', replies = [] } = {}) {
             const getChatHistory = () => chatHistory;
             const getHistory = (query, startIndexOrOptions = null, countArg = null) => {
@@ -30308,6 +30399,7 @@ module.exports = function registerApiRoutes(scope) {
                 getHistory,
                 performGameSave,
                 currentPlayer,
+                adjustWorldTimeByMinutes: adjustSlashCommandWorldTimeByMinutes,
                 parseThingsXml: typeof parseThingsXml === 'function' ? parseThingsXml : null,
                 findRegionByLocationId: typeof findRegionByLocationId === 'function' ? findRegionByLocationId : null,
                 runPlotSummaryPrompt: async ({ parentEntryId = null, locationId = null } = {}) => {

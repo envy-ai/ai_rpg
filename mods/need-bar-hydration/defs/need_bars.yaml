@@ -9,10 +9,14 @@ need_bars:
     icon: 💧
     color: "#1E90FF"
     min: 0
-    max: 100
-    initial: 100
-    change_per_turn: -2
+    max: 1000
+    initial: 1000
+    change_per_minute: -20
     relative_to_level: false
+    need_values:
+      small: 100
+      medium: 250
+      large: 700
     small_increase:
       - small sip of water
       - eating a fruit
@@ -37,19 +41,19 @@ need_bars:
         name: Dehydrated
         sentence: "%CHARACTER% is dehydrated and at risk of collapsing."
         effect: -15% to health and attributes, risk of unconsciousness
-      1:
+      10:
         name: Parched
         sentence: "%CHARACTER% is feeling parched."
         effect: -5% to health and attributes, headaches
-      25:
+      250:
         name: Thirsty
         sentence: "%CHARACTER% is feeling thirsty."
         effect: Dry mouth, slight fatigue
-      40:
+      400:
         name: Slaked
         sentence: "%CHARACTER% is feeling slaked."
         effect: No effect
-      100:
+      1000:
         name: Hydrated
         sentence: "%CHARACTER% is feeling hydrated."
         effect: Good mood, stamina regeneration bonus

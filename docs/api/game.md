@@ -24,6 +24,7 @@ Response:
 
 Notes:
 - New-game creation clears any loaded-save `gameConfigOverride.yaml` layer before reading config-driven defaults or generating the new world.
+- New-game creation now also runs strict need-bar prompt-sentence validation; if any active need-bar threshold definitions are missing `sentence`, the request fails before the previous game state is cleared.
 - When `clientId` is provided, realtime status events are emitted during generation.
 - Skills are sourced from the active setting (`defaultExistingSkills`) and are not accepted in the request body.
 - Faction setup now prefers active-setting defaults when present:
@@ -95,6 +96,8 @@ Response:
 
 Notes:
 - `/api/load` reapplies the save's `gameConfigOverride.yaml` through the same merged-config reload path used by `/reload_config` before the world is hydrated.
+- `/api/load` also runs strict need-bar prompt-sentence validation before hydration, so saves do not load into a runtime where base-context need summaries would be missing prose.
+- `/api/load` migrates pre-`1.1` saves by multiplying persisted player/NPC need-bar values by `10` during hydration, then bumps the in-memory save metadata version to `1.1` so later saves persist the upgraded scale.
 - If a save has no persisted `calendarDefinition`, the server generates one from the active setting via LLM (`calendar_generation`) using the same Earth-like => Gregorian prompt rule, then falls back to Gregorian if generation fails.
 - `/api/load` now runs faction-reference reconciliation before restoring the current player: invalid faction ids are cleared from player `factionId`, player faction standings, location/region/pending-stub controlling faction ids, and faction relation edges that target missing/self factions.
 - `/api/load` now also resolves pending player level-up ability draft state for the loaded player (`player_ability_options_per_level` / `player_abilities_per_level`) without generating options yet; option generation runs when the client requests `/api/player/ability-selection` with generation enabled.
@@ -115,6 +118,7 @@ Response:
 Notes:
 - Fails if no game is currently loaded.
 - Uses the same config/defs reload path as `/reload_config`.
+- Need-bar prompt-sentence validation is warning-only on this live reload path, so bad definitions are reported without crashing the running game.
 - Mod enable/disable drift is still restart-required even though the override itself reloads immediately.
 
 ## GET /api/saves

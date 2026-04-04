@@ -29,6 +29,9 @@
     "event_checks_group_4": [
       "1. Yes\n2. N/A\n3. N/A\n4. N/A\n5. N/A\n6. N/A\n7. Spoke a few sentences and initiated combat (1 minute)\n8. 1 minute\n9. Hollow Sentinel Valdrus → Eternal Vigil | Hollow Sentinel Valdrus → Passphrase Demand\n\nDid I miss anything? The player initiated combat but missed their attack - no defeat occurred. The sentinel's abilities (Eternal Vigil for detection, Passphrase Demand for the pause before combat) were both demonstrated in the text. No experience was earned as the attack missed and no enemy was defeated.\n\nDid I list anything I shouldn't have? No false positives identified.\n\nDid I misformat any answers? All answers follow the specified formatting.\n\nDid I refer to everything by its full, exact name? Yes - \"Hollow Sentinel Valdrus\" is the full character name as it appears in the game state.\n\n<final>\n1. Yes\n2. N/A\n3. N/A\n4. N/A\n5. N/A\n6. N/A\n7. Spoke a few sentences and initiated combat (1 minute)\n8. 1 minute\n9. Hollow Sentinel Valdrus → Eternal Vigil | Hollow Sentinel Valdrus → Passphrase Demand\n</final>"
     ],
+    "need_bar_event_checks": [
+      "Planning:\n- Wanderer: stamina decreases slightly from swinging a weapon.\n\n<characters>\n  <character>\n    <name>Wanderer</name>\n    <affectedNeedBars>\n      <needBar>\n        <id>stamina</id>\n        <changeDirection>decrease</changeDirection>\n        <change>small</change>\n        <reason>swung a weapon</reason>\n      </needBar>\n    </affectedNeedBars>\n  </character>\n</characters>"
+    ],
     "prompt_quest_check": [
       "<quests>\n</quests>"
     ]

@@ -10,7 +10,7 @@ class Globals {
   static travelHistory = [];
   static slopWords = [];
   static slopTrigrams = [];
-  static currentSaveVersion = '1';
+  static currentSaveVersion = '1.1';
   static saveFileSaveVersion = '0';
   static sceneSummaries = null;
   static saveMetadata = null;

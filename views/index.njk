@@ -1435,6 +1435,12 @@
                     </div>
                 </div>
 
+                <div id="npcEditNeedBarApplicabilitySection" class="npc-edit-section" hidden>
+                    <h3>Applicable Need Bars</h3>
+                    <div id="npcEditNeedBarApplicabilityList" class="npc-need-applicability-list"></div>
+                    <p class="npc-edit-hint">Unchecked bars do not apply to this NPC. Re-enabling a bar restores it at 100.</p>
+                </div>
+
                 <div class="npc-edit-section">
                     <h3>Attributes</h3>
                     <div id="npcEditAttributes" class="npc-attribute-grid"></div>
@@ -2701,6 +2707,9 @@
             }
             if (Array.isArray(actor.importantMemories)) {
                 clone.importantMemories = actor.importantMemories.slice(0);
+            }
+            if (actor.needBarApplicability && typeof actor.needBarApplicability === 'object' && !Array.isArray(actor.needBarApplicability)) {
+                clone.needBarApplicability = { ...actor.needBarApplicability };
             }
             if (actor.attributeInfo && typeof actor.attributeInfo === 'object') {
                 const copied = {};
@@ -6360,6 +6369,8 @@
         const npcEditPersonalityTypeInput = document.getElementById('npcEditPersonalityType');
         const npcEditPersonalityTraitsInput = document.getElementById('npcEditPersonalityTraits');
         const npcEditPersonalityNotesInput = document.getElementById('npcEditPersonalityNotes');
+        const npcEditNeedBarApplicabilitySection = document.getElementById('npcEditNeedBarApplicabilitySection');
+        const npcEditNeedBarApplicabilityList = document.getElementById('npcEditNeedBarApplicabilityList');
         const npcEditAttributesContainer = document.getElementById('npcEditAttributes');
         const npcEditSkillsContainer = document.getElementById('npcEditSkills');
         const npcEditAbilitiesContainer = document.getElementById('npcEditAbilities');
@@ -8522,9 +8533,9 @@
                 const rangeLabel = document.createElement('span');
                 rangeLabel.textContent = `Range ${min} – ${max}`;
                 metaEl.appendChild(rangeLabel);
-                if (Number.isFinite(entry.changePerTurn) && entry.changePerTurn !== 0) {
+                if (Number.isFinite(entry.changePerMinute) && entry.changePerMinute !== 0) {
                     const rateLabel = document.createElement('span');
-                    rateLabel.textContent = `Δ/turn ${entry.changePerTurn > 0 ? `+${entry.changePerTurn}` : entry.changePerTurn}`;
+                    rateLabel.textContent = `Δ/min ${entry.changePerMinute > 0 ? `+${entry.changePerMinute}` : entry.changePerMinute}`;
                     metaEl.appendChild(rateLabel);
                 }
                 const audienceLabel = formatNeedBarAudienceLabel(entry);
@@ -9082,6 +9093,83 @@
             return effects;
         }
 
+        function getNpcEditNeedBarDefinitions() {
+            const definitions = Array.isArray(window.needBarDefinitions) ? window.needBarDefinitions : [];
+            return definitions.filter(entry => {
+                if (!entry || typeof entry !== 'object') {
+                    return false;
+                }
+                const id = typeof entry.id === 'string' ? entry.id.trim() : '';
+                if (!id) {
+                    return false;
+                }
+                return Boolean(entry.party) || Boolean(entry.nonParty);
+            });
+        }
+
+        function renderNpcEditNeedBarApplicability(npc) {
+            if (!npcEditNeedBarApplicabilitySection || !npcEditNeedBarApplicabilityList) {
+                return;
+            }
+
+            npcEditNeedBarApplicabilityList.innerHTML = '';
+
+            if (!npc?.isNPC) {
+                npcEditNeedBarApplicabilitySection.hidden = true;
+                return;
+            }
+
+            const definitions = getNpcEditNeedBarDefinitions();
+            if (!definitions.length) {
+                npcEditNeedBarApplicabilitySection.hidden = true;
+                return;
+            }
+
+            const applicability = npc.needBarApplicability && typeof npc.needBarApplicability === 'object' && !Array.isArray(npc.needBarApplicability)
+                ? npc.needBarApplicability
+                : {};
+
+            definitions.forEach(definition => {
+                const id = typeof definition.id === 'string' ? definition.id.trim() : '';
+                if (!id) {
+                    return;
+                }
+
+                const checkboxLabel = document.createElement('label');
+                checkboxLabel.className = 'modal-checkbox npc-need-applicability-item';
+
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.className = 'npc-need-applicability-checkbox';
+                checkbox.dataset.needBarId = id;
+                checkbox.checked = applicability[id] !== false;
+
+                const copy = document.createElement('span');
+                copy.className = 'npc-need-applicability-copy';
+
+                const title = document.createElement('span');
+                title.className = 'npc-need-applicability-title';
+                title.textContent = `${definition.icon ? `${definition.icon} ` : ''}${definition.name || id}`;
+
+                const audience = formatNeedBarAudienceLabel(definition);
+                if (audience) {
+                    const meta = document.createElement('span');
+                    meta.className = 'npc-need-applicability-meta';
+                    meta.textContent = audience;
+                    copy.appendChild(title);
+                    copy.appendChild(meta);
+                } else {
+                    copy.appendChild(title);
+                }
+
+                checkboxLabel.appendChild(checkbox);
+                checkboxLabel.appendChild(copy);
+                npcEditNeedBarApplicabilityList.appendChild(checkboxLabel);
+            });
+
+            npcEditNeedBarApplicabilitySection.hidden = false;
+        }
+
         function showNpcEditModal(npc) {
             if (!isNpcEditorAvailable() || !npc) {
                 return;
@@ -9169,6 +9257,7 @@
                 ? npc.intrinsicStatusEffects
                 : (Array.isArray(npc.statusEffects) ? npc.statusEffects : []);
             renderNpcStatusEffects(intrinsicStatusEffects);
+            renderNpcEditNeedBarApplicability(npc);
             populateHealthAttributeOptions(npc.attributes || {}, npc.healthAttribute || '');
             updateNpcMaxHealth();
 
@@ -12515,6 +12604,18 @@
 
                 const statusEffectsPayload = collectNpcStatusEffects();
                 payload.statusEffects = statusEffectsPayload;
+
+                if (npcEditNeedBarApplicabilitySection && !npcEditNeedBarApplicabilitySection.hidden && npcEditNeedBarApplicabilityList) {
+                    const needBarApplicability = {};
+                    npcEditNeedBarApplicabilityList.querySelectorAll('.npc-need-applicability-checkbox').forEach(input => {
+                        const id = input?.dataset?.needBarId?.trim();
+                        if (!id) {
+                            return;
+                        }
+                        needBarApplicability[id] = Boolean(input.checked);
+                    });
+                    payload.needBarApplicability = needBarApplicability;
+                }
 
                 const knownSkillSet = typeof window.getKnownSkillNameSet === 'function'
                     ? window.getKnownSkillNameSet()

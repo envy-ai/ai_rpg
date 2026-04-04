@@ -12,7 +12,7 @@ Runs LLM-based event checks on narrative text, parses structured outcomes, and a
 ## Public API (Static)
 - `initialize(deps)`: registers dependencies and builds parsers/aggregators/handlers.
 - `runEventChecks({ textToCheck, actionText, stream, allowEnvironmentalEffects, isNpcTurn, suppressMoveEvents, allowMoveTurnAppearances, _depth, followupQueue })`:
-    - Renders event-check prompts, calls `LLMClient.chatCompletion`, parses `<final>` block responses, applies results.
+    - Renders grouped event-check prompts plus a dedicated parallel need-bar prompt, calls `LLMClient.chatCompletion`, parses `<final>` and `<characters>` responses, and applies results through the shared handler pipeline.
 - `runQuestChecks({ allowWithoutEventChecks })`: LLM check for quest objective completion.
 - `applyEventOutcomes(parsedEvents, context)`: applies structured changes to world state.
 - `processQuestObjectiveCompletionEntries(entries, context)`: applies quest objective completion and rewards (items/xp/currency plus per-faction reputation deltas when configured on the quest).
@@ -30,8 +30,8 @@ Runs LLM-based event checks on narrative text, parses structured outcomes, and a
 
 ## Private Helpers (Grouped)
 - Tracking helpers: `_resetTrackingSets`, `_isItemAlreadyTracked`, `_trackItemsFromParsing`, `_pruneExcludedItemEntries`.
-- Prompt helpers: `_enqueueFollowupEventCheck`, `_runEventChecksForRewardProse`.
-- Parser helpers: `_buildParsers`, `_parseEventPromptResponse`, `_extractNumberedResponses`.
+- Prompt helpers: `_enqueueFollowupEventCheck`, `_runEventChecksForRewardProse`, `_runNeedBarEventChecks`.
+- Parser helpers: `_buildParsers`, `_parseEventPromptResponse`, `_extractNumberedResponses`, `_parseNeedBarPromptResponse`, `_serializeNeedBarPromptEntries`.
 - NPC ensuring: `_ensureNpcMentions`.
 - Aggregation/handler builders: `_buildAggregators`, `_buildHandlers`.
 - Location alteration: `_parseLocationAlterXml`, `_applyLocationAlteration`, `_logAlterLocation`, `_clearLocationImage`.
@@ -43,9 +43,10 @@ Runs LLM-based event checks on narrative text, parses structured outcomes, and a
 - Scene helpers: `_buildSceneItemNameSet`.
 
 ## Notes
-- Event prompts are grouped (locations, items, NPCs, misc) and run sequentially with structured parsing.
+- Event prompts are grouped (locations, items, NPCs, misc), and `runEventChecks` now also runs `prompts/_includes/need-bars.njk` in parallel so need-bar effects are decided independently of the numbered event groups; the dedicated need-bar prompt is submitted first, then the grouped event prompts are queued.
 - Event check responses must include a `<final>` block; `runEventChecks` enforces this via `requiredRegex` so the LLM client retries when it is missing.
 - Combined answers across groups are stitched into a single numbered list and parsed as the final block text (no extra `<final>` wrapper).
+- Dedicated need-bar checks require a `<characters>` block, are logged under the `need_bar_event_checks` prompt label, and are converted into ordinary `needbar_change` entries before `applyEventOutcomes(...)` runs.
 - Before applying outcomes, event checks ensure referenced NPCs exist (excluding death/incapacitation and defeated-enemy mentions), so downstream handlers can resolve actors; new NPC names are normalized via `Utils.capitalizeProperNoun` with leading-article stripping, while existing NPCs are left untouched. During ensure, if no exact name exists but the requested name is a leading token of an NPC currently in the same location (for example `Bob` vs `Bob Ross`), the first matching location NPC is reused instead of generating a new one.
 - `LLMClient.logPrompt` is always used for event-check logging; failures should surface loudly.
 - Many helpers are defensive and throw on missing dependencies to avoid silent corruption.

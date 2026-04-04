@@ -50,7 +50,7 @@ class Utils {
     return value > 0 ? Math.ceil(value) : Math.floor(value);
   }
 
-  static parseDurationToMinutes(value, { fieldName = 'duration' } = {}) {
+  static parseDurationToMinutes(value, { fieldName = 'duration', allowSigned = false } = {}) {
     const label = typeof fieldName === 'string' && fieldName.trim()
       ? fieldName.trim()
       : 'duration';
@@ -58,13 +58,98 @@ class Utils {
       console.trace(message);
       throw new Error(message);
     };
+    const sanitizeDurationText = (text, { preserveLeadingSign = false } = {}) => {
+      if (typeof text !== 'string') {
+        return '';
+      }
+
+      let sanitized = '';
+      for (let index = 0; index < text.length; index += 1) {
+        const char = text[index];
+        if ((char === '+' || char === '-') && preserveLeadingSign && index === 0) {
+          sanitized += char;
+          continue;
+        }
+        if (/[0-9A-Za-z\s.,:]/.test(char)) {
+          sanitized += char;
+        }
+      }
+
+      return sanitized.trim();
+    };
+    const parseUnsignedDurationText = (text) => {
+      if (/^\d+$/.test(text)) {
+        return Number(text);
+      }
+
+      const hhmmMatch = text.match(/^(\d+):([0-5]\d)$/);
+      if (hhmmMatch) {
+        const hours = Number(hhmmMatch[1]);
+        const minutes = Number(hhmmMatch[2]);
+        return (hours * 60) + minutes;
+      }
+
+      const normalized = text
+        .toLowerCase()
+        .replace(/,/g, ' ')
+        .replace(/\band\b/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      const unitPattern = /(\d+(?:\.\d+)?)\s*(days?|d|hours?|hrs?|hr|h|minutes?|mins?|min|m|rounds?|rnds?|rnd)(?=$|\s|\d)/g;
+      let cursor = 0;
+      let matched = false;
+      let totalMinutes = 0;
+
+      for (const match of normalized.matchAll(unitPattern)) {
+        matched = true;
+        const [segment, numericText, unitRaw] = match;
+        const segmentIndex = Number(match.index);
+        const between = normalized.slice(cursor, segmentIndex);
+        if (between.trim()) {
+          throwWithTrace(`${label} contains malformed separators or unknown units: "${value}".`);
+        }
+        const amount = Number(numericText);
+        if (!Number.isFinite(amount)) {
+          throwWithTrace(`${label} contains an invalid numeric value: "${value}".`);
+        }
+
+        const unit = unitRaw.toLowerCase();
+        if (unit === 'day' || unit === 'days' || unit === 'd') {
+          totalMinutes += amount * 1440;
+        } else if (unit === 'hour' || unit === 'hours' || unit === 'hr' || unit === 'hrs' || unit === 'h') {
+          totalMinutes += amount * 60;
+        } else if (unit === 'minute' || unit === 'minutes' || unit === 'min' || unit === 'mins' || unit === 'm') {
+          totalMinutes += amount;
+        } else if (unit === 'round' || unit === 'rounds' || unit === 'rnd' || unit === 'rnds') {
+          totalMinutes += amount;
+        } else {
+          throwWithTrace(`${label} contains an unsupported unit "${unitRaw}".`);
+        }
+
+        cursor = segmentIndex + segment.length;
+      }
+
+      if (!matched) {
+        throwWithTrace(`${label} is invalid ('${value}'). Expected HH:MM, integer minutes, or day/hour/minute/round units (including compact forms like 3d4h2m).`);
+      }
+
+      if (normalized.slice(cursor).trim()) {
+        throwWithTrace(`${label} contains malformed separators or unknown units: "${value}".`);
+      }
+
+      return Math.round(totalMinutes);
+    };
 
     if (value === null || value === undefined) {
       throwWithTrace(`${label} is required.`);
     }
 
     if (typeof value === 'number') {
-      if (!Number.isFinite(value) || value < 0) {
+      if (!Number.isFinite(value)) {
+        throwWithTrace(`${label} must be ${allowSigned ? 'a minute value.' : 'a non-negative minute value.'}`);
+      }
+      if (!allowSigned && value < 0) {
         throwWithTrace(`${label} must be a non-negative minute value.`);
       }
       return Math.round(value);
@@ -79,67 +164,25 @@ class Utils {
       throwWithTrace(`${label} must not be empty.`);
     }
 
-    if (/^\d+$/.test(trimmed)) {
-      return Number(trimmed);
+    const sanitized = sanitizeDurationText(trimmed, { preserveLeadingSign: true });
+    if (!sanitized) {
+      throwWithTrace(`${label} must not be empty.`);
     }
 
-    const hhmmMatch = trimmed.match(/^(\d+):([0-5]\d)$/);
-    if (hhmmMatch) {
-      const hours = Number(hhmmMatch[1]);
-      const minutes = Number(hhmmMatch[2]);
-      return (hours * 60) + minutes;
-    }
-
-    const normalized = trimmed
-      .toLowerCase()
-      .replace(/,/g, ' ')
-      .replace(/\band\b/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-
-    const unitPattern = /(\d+(?:\.\d+)?)\s*(days?|d|hours?|hrs?|hr|h|minutes?|mins?|min|m|rounds?|rnds?|rnd)(?=$|\s|\d)/g;
-    let cursor = 0;
-    let matched = false;
-    let totalMinutes = 0;
-
-    for (const match of normalized.matchAll(unitPattern)) {
-      matched = true;
-      const [segment, numericText, unitRaw] = match;
-      const segmentIndex = Number(match.index);
-      const between = normalized.slice(cursor, segmentIndex);
-      if (between.trim()) {
-        throwWithTrace(`${label} contains malformed separators or unknown units: "${value}".`);
+    let sign = 1;
+    let unsignedText = sanitized;
+    if (allowSigned) {
+      const signedMatch = sanitized.match(/^([+-])\s*(.+)$/);
+      if (signedMatch) {
+        sign = signedMatch[1] === '-' ? -1 : 1;
+        unsignedText = signedMatch[2].trim();
+        if (!unsignedText) {
+          throwWithTrace(`${label} must include a duration after the sign.`);
+        }
       }
-      const amount = Number(numericText);
-      if (!Number.isFinite(amount)) {
-        throwWithTrace(`${label} contains an invalid numeric value: "${value}".`);
-      }
-
-      const unit = unitRaw.toLowerCase();
-      if (unit === 'day' || unit === 'days' || unit === 'd') {
-        totalMinutes += amount * 1440;
-      } else if (unit === 'hour' || unit === 'hours' || unit === 'hr' || unit === 'hrs' || unit === 'h') {
-        totalMinutes += amount * 60;
-      } else if (unit === 'minute' || unit === 'minutes' || unit === 'min' || unit === 'mins' || unit === 'm') {
-        totalMinutes += amount;
-      } else if (unit === 'round' || unit === 'rounds' || unit === 'rnd' || unit === 'rnds') {
-        totalMinutes += amount;
-      } else {
-        throwWithTrace(`${label} contains an unsupported unit "${unitRaw}".`);
-      }
-
-      cursor = segmentIndex + segment.length;
     }
 
-    if (!matched) {
-      throwWithTrace(`${label} is invalid ('${value}'). Expected HH:MM, integer minutes, or day/hour/minute/round units (including compact forms like 3d4h2m).`);
-    }
-
-    if (normalized.slice(cursor).trim()) {
-      throwWithTrace(`${label} contains malformed separators or unknown units: "${value}".`);
-    }
-
-    return Math.round(totalMinutes);
+    return sign * parseUnsignedDurationText(unsignedText);
   }
 
   static formatMinutesAsDuration(value, { includeAgo = false } = {}) {
@@ -171,6 +214,44 @@ class Utils {
     }
 
     const formatted = parts.join(', ');
+    return includeAgo && isPast ? `${formatted} ago` : formatted;
+  }
+
+  static formatMinutesAsNaturalDuration(value, { includeAgo = false } = {}) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric) || !Number.isInteger(numeric)) {
+      return null;
+    }
+
+    const isPast = numeric < 0;
+    let remaining = Math.abs(numeric);
+    const days = Math.floor(remaining / 1440);
+    remaining -= days * 1440;
+    const hours = Math.floor(remaining / 60);
+    remaining -= hours * 60;
+    const minutes = remaining;
+
+    const parts = [];
+    if (days > 0) {
+      parts.push(`${days} ${days === 1 ? 'day' : 'days'}`);
+    }
+    if (hours > 0) {
+      parts.push(`${hours} ${hours === 1 ? 'hour' : 'hours'}`);
+    }
+    if (minutes > 0) {
+      parts.push(`${minutes} ${minutes === 1 ? 'minute' : 'minutes'}`);
+    }
+    if (!parts.length) {
+      parts.push('0 minutes');
+    }
+
+    let formatted = parts[0];
+    if (parts.length === 2) {
+      formatted = `${parts[0]} and ${parts[1]}`;
+    } else if (parts.length === 3) {
+      formatted = `${parts[0]}, ${parts[1]}, and ${parts[2]}`;
+    }
+
     return includeAgo && isPast ? `${formatted} ago` : formatted;
   }
 
@@ -1220,6 +1301,85 @@ class Utils {
     return true;
   }
 
+  static #scaleSerializedNeedBarEntry(entry, multiplier) {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+      return 0;
+    }
+
+    let scaledFields = 0;
+    for (const field of ['value', 'current', 'amount']) {
+      if (!Object.prototype.hasOwnProperty.call(entry, field)) {
+        continue;
+      }
+      const numeric = Number(entry[field]);
+      if (!Number.isFinite(numeric)) {
+        continue;
+      }
+      entry[field] = numeric * multiplier;
+      scaledFields += 1;
+    }
+
+    return scaledFields;
+  }
+
+  static #scaleSerializedNeedBars(needBars, multiplier) {
+    if (Array.isArray(needBars)) {
+      let scaledFields = 0;
+      for (const entry of needBars) {
+        scaledFields += Utils.#scaleSerializedNeedBarEntry(entry, multiplier);
+      }
+      return scaledFields;
+    }
+
+    if (!needBars || typeof needBars !== 'object') {
+      return 0;
+    }
+
+    let scaledFields = 0;
+    for (const [id, value] of Object.entries(needBars)) {
+      const numeric = Number(value);
+      if (Number.isFinite(numeric)) {
+        needBars[id] = numeric * multiplier;
+        scaledFields += 1;
+        continue;
+      }
+      scaledFields += Utils.#scaleSerializedNeedBarEntry(value, multiplier);
+    }
+    return scaledFields;
+  }
+
+  static #migrateLegacyNeedBarValuesToCurrentScale(serialized) {
+    if (!serialized || typeof serialized !== 'object' || Array.isArray(serialized)) {
+      return null;
+    }
+
+    const targetSaveVersion = 1.1;
+    const currentSaveVersion = Number(serialized.metadata?.saveFileSaveVersion);
+    if (Number.isFinite(currentSaveVersion) && currentSaveVersion >= targetSaveVersion) {
+      return null;
+    }
+
+    const playersData = serialized.players && typeof serialized.players === 'object'
+      ? serialized.players
+      : {};
+
+    let scaledFields = 0;
+    for (const payload of Object.values(playersData)) {
+      if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+        continue;
+      }
+      scaledFields += Utils.#scaleSerializedNeedBars(payload.needBars, 10);
+    }
+
+    const metadata = serialized.metadata && typeof serialized.metadata === 'object' && !Array.isArray(serialized.metadata)
+      ? serialized.metadata
+      : {};
+    metadata.saveFileSaveVersion = targetSaveVersion;
+    serialized.metadata = metadata;
+
+    return scaledFields;
+  }
+
   static hydrateGameState(serialized, context = {}) {
     if (!serialized || typeof serialized !== 'object') {
       throw new Error('hydrateGameState requires serialized data');
@@ -1228,6 +1388,11 @@ class Utils {
     const migratedLegacyTimeData = Utils.#migrateLegacyHourBasedSaveToMinutes(serialized);
     if (migratedLegacyTimeData) {
       console.log('⏱️ Migrated legacy hour-based save fields to minute-based canonical values.');
+    }
+
+    const migratedLegacyNeedBarFields = Utils.#migrateLegacyNeedBarValuesToCurrentScale(serialized);
+    if (migratedLegacyNeedBarFields !== null) {
+      console.log(`🍖 Migrated legacy pre-1.1 need bar save values to current scale (${migratedLegacyNeedBarFields} field(s) updated).`);
     }
 
     const {

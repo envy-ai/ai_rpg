@@ -1159,6 +1159,187 @@ class Events {
         return followup;
     }
 
+    static _parseNeedBarPromptResponse(responseText) {
+        if (typeof responseText !== "string" || !responseText.trim()) {
+            return [];
+        }
+
+        const charactersBlockMatch = responseText.match(
+            /<characters\b[\s\S]*<\/characters>/i,
+        );
+        if (!charactersBlockMatch) {
+            throw new Error(
+                "Need-bar event check response is missing a <characters> block.",
+            );
+        }
+
+        const doc = Utils.parseXmlDocument(charactersBlockMatch[0], "text/xml");
+        const root = doc?.documentElement;
+        if (!root || root.tagName !== "characters") {
+            throw new Error(
+                "Need-bar event check response did not parse into a <characters> document.",
+            );
+        }
+
+        const getText = (node, tagName) => {
+            if (!node || typeof node.getElementsByTagName !== "function") {
+                return "";
+            }
+            const child = node.getElementsByTagName(tagName)?.[0] || null;
+            const text = child?.textContent;
+            return typeof text === "string" ? text.trim() : "";
+        };
+
+        const sanitizeReason = (value) => {
+            if (typeof value !== "string") {
+                return null;
+            }
+            const trimmed = value.trim();
+            if (!trimmed || trimmed.toLowerCase() === "n/a") {
+                return null;
+            }
+            return trimmed;
+        };
+
+        const entries = [];
+        const characterNodes = Array.from(root.getElementsByTagName("character"));
+        for (const characterNode of characterNodes) {
+            const characterName = getText(characterNode, "name");
+            const affectedNeedBarsNode =
+                characterNode.getElementsByTagName("affectedNeedBars")?.[0] || null;
+            if (!affectedNeedBarsNode) {
+                continue;
+            }
+
+            const needBarNodes = Array.from(
+                affectedNeedBarsNode.getElementsByTagName("needBar"),
+            );
+            if (!needBarNodes.length) {
+                continue;
+            }
+
+            if (!characterName) {
+                throw new Error(
+                    "Need-bar event check response has a <character> with affected need bars but no <name>.",
+                );
+            }
+
+            for (const needBarNode of needBarNodes) {
+                const barId = getText(needBarNode, "id");
+                const direction = getText(needBarNode, "changeDirection").toLowerCase();
+                const magnitude = getText(needBarNode, "change").toLowerCase();
+                const reason = sanitizeReason(getText(needBarNode, "reason"));
+
+                if (!barId || !direction || !magnitude) {
+                    throw new Error(
+                        `Need-bar event check response entry for "${characterName}" is missing required fields.`,
+                    );
+                }
+                if (magnitude === "none") {
+                    continue;
+                }
+
+                entries.push({
+                    character: characterName,
+                    bar: barId,
+                    direction,
+                    magnitude,
+                    reason,
+                });
+            }
+        }
+
+        return entries;
+    }
+
+    static _serializeNeedBarPromptEntries(entries = []) {
+        if (!Array.isArray(entries) || !entries.length) {
+            return "";
+        }
+
+        return entries
+            .map((entry) => {
+                if (!entry) {
+                    return "";
+                }
+                const parts = [
+                    entry.character,
+                    entry.bar,
+                    entry.direction,
+                    entry.magnitude,
+                ];
+                if (entry.reason) {
+                    parts.push(entry.reason);
+                }
+                return parts
+                    .map((part) => (typeof part === "string" ? part.trim() : ""))
+                    .filter(Boolean)
+                    .join(" -> ");
+            })
+            .filter(Boolean)
+            .join(" | ");
+    }
+
+    static async _runNeedBarEventChecks({
+        baseContext,
+        textToCheck,
+        actionText = "",
+        includePlayerActionBlock = false,
+        promptEnv,
+        parseXMLTemplate,
+    } = {}) {
+        if (!Array.isArray(baseContext?.needBarDefinitions) || !baseContext.needBarDefinitions.length) {
+            return { responseText: "", entries: [] };
+        }
+
+        const rendered = promptEnv.render("base-context.xml.njk", {
+            ...baseContext,
+            promptType: "need-bars",
+            textToCheck,
+            actionText,
+            includePlayerActionBlock,
+            omitGameHistory: true,
+        });
+
+        const parsedTemplate = parseXMLTemplate(rendered);
+        if (!parsedTemplate?.systemPrompt || !parsedTemplate?.generationPrompt) {
+            throw new Error("Need-bar event check template did not produce prompts.");
+        }
+
+        let requestPayloadForLog = null;
+        let responsePayloadForLog = null;
+        const responseText = await LLMClient.chatCompletion({
+            messages: [
+                { role: "system", content: parsedTemplate.systemPrompt },
+                { role: "user", content: parsedTemplate.generationPrompt },
+            ],
+            metadataLabel: "need_bar_event_checks",
+            timeoutMs: this._baseTimeout,
+            temperature: 0,
+            validateXML: false,
+            requiredRegex: /<characters>[\s\S]*<\/characters>/i,
+            dumpReasoningToConsole: true,
+            stream: true,
+            // captureRequestPayload: (payload) => { requestPayloadForLog = payload; },
+            // captureResponsePayload: (payload) => { responsePayloadForLog = payload; }
+        });
+
+        this.logEventCheck({
+            systemPrompt: parsedTemplate.systemPrompt,
+            generationPrompt: parsedTemplate.generationPrompt,
+            responseText,
+            metadataLabel: "need_bar_event_checks",
+            prefix: "need_bar_event_checks",
+            requestPayload: requestPayloadForLog,
+            responsePayload: responsePayloadForLog,
+        });
+
+        return {
+            responseText,
+            entries: this._parseNeedBarPromptResponse(responseText),
+        };
+    }
+
     static _trackItemsFromParsing(parsedEntries = {}) {
         const animated = parsedEntries.item_to_npc;
         if (Array.isArray(animated)) {
@@ -1505,7 +1686,15 @@ class Events {
 
         const promptGroups = EVENT_PROMPT_ORDER;
 
-        const groupResponses = await Promise.all(
+        const needBarEventCheckPromise = this._runNeedBarEventChecks({
+            baseContext,
+            textToCheck,
+            actionText: normalizedActionText,
+            includePlayerActionBlock,
+            promptEnv,
+            parseXMLTemplate,
+        });
+        const groupResponsesPromise = Promise.all(
             promptGroups.map(async (group, groupIndex) => {
                 const questions = group.map((definition) => {
                     if (location?.name && typeof definition.prompt === "string") {
@@ -1578,6 +1767,10 @@ class Events {
                 };
             }),
         );
+        const [groupResponses, needBarEventCheck] = await Promise.all([
+            groupResponsesPromise,
+            needBarEventCheckPromise,
+        ]);
 
         const totalQuestions = EVENT_PROMPT_ORDER_FLAT.length;
         const combinedLines = [];
@@ -1612,6 +1805,36 @@ class Events {
         const structured = this._parseEventPromptResponse(cleaned, {
             isFinalBlock: true,
         });
+        const needBarPromptEntries = Array.isArray(needBarEventCheck?.entries)
+            ? needBarEventCheck.entries
+            : [];
+        if (needBarPromptEntries.length) {
+            if (!structured.parsed || typeof structured.parsed !== "object") {
+                structured.parsed = {};
+            }
+            const existingNeedBarEntries = Array.isArray(structured.parsed.needbar_change)
+                ? structured.parsed.needbar_change
+                : [];
+            structured.parsed.needbar_change = [
+                ...existingNeedBarEntries,
+                ...needBarPromptEntries,
+            ];
+
+            if (!structured.rawEntries || typeof structured.rawEntries !== "object") {
+                structured.rawEntries = {};
+            }
+            const serializedNeedBarEntries =
+                this._serializeNeedBarPromptEntries(needBarPromptEntries);
+            if (serializedNeedBarEntries) {
+                const existingRawNeedBarEntries =
+                    typeof structured.rawEntries.needbar_change === "string"
+                        ? structured.rawEntries.needbar_change.trim()
+                        : "";
+                structured.rawEntries.needbar_change = existingRawNeedBarEntries
+                    ? `${existingRawNeedBarEntries} | ${serializedNeedBarEntries}`
+                    : serializedNeedBarEntries;
+            }
+        }
         if (!allowEnvironmentalEffects) {
             if (Array.isArray(structured.parsed.environmental_status_damage)) {
                 structured.parsed.environmental_status_damage = [];
@@ -8454,14 +8677,24 @@ class Events {
         generationPrompt,
         responseText,
         label = null,
+        metadataLabel = "event_checks",
+        prefix = null,
         requestPayload = null,
         responsePayload = null,
     }) {
-        const metadataLabel = "event_checks";
-        const prefix = label ? `event_checks_${label}` : "event_checks";
+        const resolvedMetadataLabel =
+            typeof metadataLabel === "string" && metadataLabel.trim()
+                ? metadataLabel.trim()
+                : "event_checks";
+        const resolvedPrefix =
+            typeof prefix === "string" && prefix.trim()
+                ? prefix.trim()
+                : label
+                    ? `${resolvedMetadataLabel}_${label}`
+                    : resolvedMetadataLabel;
         LLMClient.logPrompt({
-            prefix,
-            metadataLabel,
+            prefix: resolvedPrefix,
+            metadataLabel: resolvedMetadataLabel,
             systemPrompt: systemPrompt || "",
             generationPrompt: generationPrompt || "",
             response: responseText || "",

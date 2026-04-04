@@ -2446,7 +2446,16 @@ class AIRPGChat {
         }
     }
 
-    handleChatHistoryUpdated() {
+    handleChatHistoryUpdated(payload = {}) {
+        if (payload && typeof payload === 'object' && payload.worldTime && typeof payload.worldTime === 'object') {
+            this.updateWorldTimeIndicator(payload.worldTime, { emitTransitions: false });
+            const transitions = Array.isArray(payload.worldTime.transitions)
+                ? payload.worldTime.transitions
+                : [];
+            if (transitions.length) {
+                this.renderWorldTimeTransitions(transitions, null);
+            }
+        }
         this.refreshChatHistory();
         window.refreshStoryTools?.({ preserveSelection: true });
         try {
@@ -4020,6 +4029,31 @@ class AIRPGChat {
             return;
         }
 
+        const resolveNeedBarIcon = (change) => {
+            const directIcon = typeof change?.needBarIcon === 'string' ? change.needBarIcon.trim() : '';
+            if (directIcon) {
+                return directIcon;
+            }
+
+            const definitions = Array.isArray(window.needBarDefinitions) ? window.needBarDefinitions : [];
+            const barId = typeof change?.needBarId === 'string' ? change.needBarId.trim() : '';
+            const barName = typeof change?.needBarName === 'string' ? change.needBarName.trim().toLowerCase() : '';
+            const match = definitions.find((definition) => {
+                if (!definition || typeof definition !== 'object') {
+                    return false;
+                }
+                const definitionId = typeof definition.id === 'string' ? definition.id.trim() : '';
+                if (definitionId && barId && definitionId === barId) {
+                    return true;
+                }
+                const definitionName = typeof definition.name === 'string' ? definition.name.trim().toLowerCase() : '';
+                return Boolean(barName && definitionName && definitionName === barName);
+            });
+
+            const fallbackIcon = typeof match?.icon === 'string' ? match.icon.trim() : '';
+            return fallbackIcon || '🧪';
+        };
+
         if (this.activeEventBundle) {
             items.forEach(change => {
                 if (!change) {
@@ -4057,7 +4091,7 @@ class AIRPGChat {
                     segments.push(`→ ${threshold.name}${effect}`);
                 }
 
-                this.addEventSummary('🧪', segments.join(' '));
+                this.addEventSummary(resolveNeedBarIcon(change), segments.join(' '));
             });
 
             this.markEventBundleRefresh();
@@ -4075,17 +4109,11 @@ class AIRPGChat {
             return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
         };
 
-        const messageDiv = document.createElement('div');
-        messageDiv.className = 'message event-summary needbar-change';
-
-        const senderDiv = document.createElement('div');
-        senderDiv.className = 'message-sender';
-        senderDiv.textContent = '🧪 Need Bar Update';
-
-        const contentDiv = document.createElement('div');
-        const list = document.createElement('ul');
-
+        let appendedCount = 0;
         items.forEach(change => {
+            if (!change) {
+                return;
+            }
             const actorName = change.actorName || change.actorId || 'Unknown';
             const barName = change.needBarName || change.needBarId || 'Need Bar';
             const delta = Number(change.delta);
@@ -4135,27 +4163,32 @@ class AIRPGChat {
                 segments.push(`→ ${thresholdParts.join(' – ')}`);
             }
 
-            const item = document.createElement('li');
-            item.innerHTML = segments.join(' ');
-            list.appendChild(item);
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message event-summary needbar-change';
+
+            const senderDiv = document.createElement('div');
+            senderDiv.className = 'message-sender';
+            senderDiv.textContent = `${resolveNeedBarIcon(change)} Need Bar Update`;
+
+            const contentDiv = document.createElement('div');
+            contentDiv.innerHTML = segments.join(' ');
+
+            const timestampDiv = document.createElement('div');
+            timestampDiv.className = 'message-timestamp';
+            const timestamp = new Date().toISOString().replace('T', ' ').replace('Z', '');
+            timestampDiv.textContent = timestamp;
+
+            messageDiv.appendChild(senderDiv);
+            messageDiv.appendChild(contentDiv);
+            messageDiv.appendChild(timestampDiv);
+
+            this.chatLog.appendChild(messageDiv);
+            appendedCount += 1;
         });
 
-        if (!list.childElementCount) {
+        if (!appendedCount) {
             return;
         }
-
-        contentDiv.appendChild(list);
-
-        const timestampDiv = document.createElement('div');
-        timestampDiv.className = 'message-timestamp';
-        const timestamp = new Date().toISOString().replace('T', ' ').replace('Z', '');
-        timestampDiv.textContent = timestamp;
-
-        messageDiv.appendChild(senderDiv);
-        messageDiv.appendChild(contentDiv);
-        messageDiv.appendChild(timestampDiv);
-
-        this.chatLog.appendChild(messageDiv);
         this.scrollToBottom();
 
         this.scheduleLocationRefresh();

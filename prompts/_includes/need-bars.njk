@@ -1,0 +1,78 @@
+<task>You are an AI with expert reading comprehension whose job it is to analyze the text in the textToCheck block below and determine if any events have occurred that would affect any need bars for any characters (NPCs, party members, or player). Need bars are desrcibed in the needBarDefinitions block.</task>
+
+<needBarDefinitions>
+  {% for bar in needBarDefinitions %}
+  <needBar>
+    <id>{{ bar.id | default('unknown', true) }}</id>
+    <name>{{ bar.name }}</name>
+    <description>{{ bar.description }}</description>
+    <increases>
+      <!-- These things increase the need bar. The amount of increase is determined by the tag (small, medium, large, fill) -->
+      <small>
+        {% for item in bar.increases.small %}<trigger>{{ item }}</trigger>{% endfor %}
+      </small>
+      <medium>
+        {% for item in bar.increases.medium %}<trigger>{{ item }}</trigger>{% endfor %}
+      </medium>
+      <large>
+        {% for item in bar.increases.large %}<trigger>{{ item }}</trigger>{% endfor %}
+      </large>
+      <fill>
+        {% for item in bar.increases.fill %}<trigger>{{ item }}</trigger>{% endfor %}
+      </fill>
+    </increases>
+    <decreases>
+      <!-- These things decrease the need bar. The amount of decrease is determined by the tag (small, medium, large, empty) -->
+      <small>
+        {% for item in bar.decreases.small %}<trigger>{{ item }}</trigger>{% endfor %}
+      </small>
+      <medium>
+        {% for item in bar.decreases.medium %}<trigger>{{ item }}</trigger>{% endfor %}
+      </medium>
+      <large>
+        {% for item in bar.decreases.large %}<trigger>{{ item }}</trigger>{% endfor %}
+      </large>
+      <empty>
+        {% for item in bar.decreases.empty %}<trigger>{{ item }}</trigger>{% endfor %}
+      </empty>
+    </decreases>
+  </needBar>
+  {% endfor %}
+</needBarDefinitions>
+
+Text to check for events:
+<textToCheck>
+{% if includePlayerActionBlock and actionText and actionText | trim %}<playerAction>
+{{ actionText }}
+</playerAction>{% endif %}
+{{ textToCheck }}
+</textToCheck>
+
+Characters at location: 
+{% for npc in npcs %}- {{ npc.name }}
+{% endfor %}Characters in party:
+{% for member in party %}- {{ member.name }}
+{% endfor %}
+
+Respond in this format:
+Planning: 
+<!-- briefly list each character (without HTML/XML tags) and how each of their need bars are affected (if at all) and why. -->
+
+<characters>
+  <!-- for each character that has an event affecting their need bars, include a block like this -->
+  <character>
+    <name><!-- exact name of the character --></name>
+    <affectedNeedBars>
+      <!-- for each need bar affected, include a block like this -->
+      <!-- omit unaffected need bars -->
+      <needBar>
+        <id><!-- exact id of the need bar --></id>
+        <changeDirection><!-- "increase" or "decrease" --></changeDirection>
+        <change><!-- amount of change: "small", "medium", "large", "all" (you may also say "full" or "empty" here, depending on the context) --></change>
+        <reason><!-- 10 words or less describing the reason for the change, based on the events that occurred in the textToCheck block --></reason>
+      </needBar>
+      <!-- repeat for each affected need bar -->
+    </affectedNeedBars>
+  </character>
+  <!-- repeat for each character with affected need bars -->
+</characters>

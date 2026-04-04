@@ -9,10 +9,14 @@ need_bars:
     icon: 🗣️
     color: "#FFD700"
     min: 0
-    max: 100
-    initial: 100
-    change_per_turn: -0.5
+    max: 1000
+    initial: 1000
+    change_per_minute: -5
     relative_to_level: false
+    need_values:
+      small: 100
+      medium: 250
+      large: 700
     small_increase:
       - brief conversation
       - receiving a compliment
@@ -41,23 +45,23 @@ need_bars:
         name: Isolated
         sentence: "%CHARACTER% is feeling isolated."
         effect: -10% to morale, chance of depression
-      1:
+      10:
         name: Lonely
         sentence: "%CHARACTER% is feeling lonely."
         effect: -5% to charisma, sad mood
-      25:
+      250:
         name: Withdrawn
         sentence: "%CHARACTER% is feeling withdrawn."
         effect: Desire for company, minor penalty to morale
-      40:
+      400:
         name: Content
         sentence: "%CHARACTER% is feeling socially content."
         effect: No effect
-      70:
+      700:
         name: Sociable
         sentence: "%CHARACTER% is feeling sociable."
         effect: Good mood, slight bonus to charisma
-      100:
+      1000:
         name: Beloved
         sentence: "%CHARACTER% is feeling beloved and socially fulfilled."
         effect: High morale, bonus to leadership

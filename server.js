@@ -576,7 +576,14 @@ try {
     process.exit(1);
 }
 
-function reloadConfigAndDefs({ gameConfigOverrideYaml = undefined } = {}) {
+function reloadConfigAndDefs({
+    gameConfigOverrideYaml = undefined,
+    needBarSentenceValidationMode = 'warn'
+} = {}) {
+    if (!['warn', 'throw'].includes(needBarSentenceValidationMode)) {
+        throw new Error(`Unsupported need-bar sentence validation mode "${needBarSentenceValidationMode}".`);
+    }
+
     const nextGameConfigOverrideYaml = gameConfigOverrideYaml === undefined
         ? Globals.getGameConfigOverrideYaml()
         : gameConfigOverrideYaml;
@@ -585,6 +592,9 @@ function reloadConfigAndDefs({ gameConfigOverrideYaml = undefined } = {}) {
     });
     const modEnableDiff = diffFrozenEnabledModDirectoryNames(Globals.baseDir || __dirname, { config: merged });
     validateDefinitionOverlays({ baseDir: Globals.baseDir || __dirname });
+    const needBarSentenceWarnings = Player.validateNeedBarPromptSentences({
+        onError: needBarSentenceValidationMode
+    });
 
     if (config && typeof config === 'object') {
         for (const key of Object.keys(config)) {
@@ -623,6 +633,7 @@ function reloadConfigAndDefs({ gameConfigOverrideYaml = undefined } = {}) {
         message: 'Configuration and definitions reloaded.',
         timestamp: new Date().toISOString(),
         modEnableDiff,
+        warnings: Array.isArray(needBarSentenceWarnings) ? needBarSentenceWarnings : [],
         gameConfigOverrideYaml: Globals.getGameConfigOverrideYaml()
     };
 }
@@ -3120,6 +3131,7 @@ function serializeNpcForClient(npc, options = {}) {
         isHostileToPlayer: hostileToPlayer,
         locationId: npc.currentLocation,
         corpseCountdown: Number.isFinite(npc.corpseCountdown) ? npc.corpseCountdown : (npc.corpseCountdown ?? null),
+        persistWhenDead: Boolean(npc.persistWhenDead),
         attributes,
         resistances,
         vulnerabilities,
@@ -3135,6 +3147,7 @@ function serializeNpcForClient(npc, options = {}) {
         currency,
         experience,
         needBars: typeof npc.getNeedBars === 'function' ? npc.getNeedBars({ scope: 'active' }) : [],
+        needBarApplicability: typeof npc.getNeedBarApplicability === 'function' ? npc.getNeedBarApplicability() : {},
         personality,
         personalityType: personality?.type ?? null,
         personalityTraits: personality?.traits ?? null,
@@ -4715,7 +4728,41 @@ function buildBasePromptContext({
         return [];
     };
 
+    const collectNeedSentencesForPrompt = (actor, status, actorName) => {
+        if (actor && typeof actor.getNeedSentencePromptContext === 'function') {
+            return actor.getNeedSentencePromptContext({
+                actorName,
+                onMissingSentence: 'warn'
+            });
+        }
+
+        const fallbackBars = Array.isArray(status?.needBars) ? status.needBars : [];
+        const resolvedActorName = typeof actorName === 'string' && actorName.trim()
+            ? actorName.trim()
+            : 'This character';
+        const sentences = [];
+
+        for (const bar of fallbackBars) {
+            const sentenceTemplate = typeof bar?.currentThreshold?.sentence === 'string'
+                ? bar.currentThreshold.sentence.trim()
+                : '';
+            if (!sentenceTemplate) {
+                const barLabel = typeof bar?.name === 'string' && bar.name.trim() ? bar.name.trim() : 'unknown';
+                console.warn(`Need bar "${barLabel}" is missing a current-threshold prompt sentence for "${resolvedActorName}".`);
+                continue;
+            }
+            sentences.push(sentenceTemplate.split('%CHARACTER%').join(resolvedActorName));
+        }
+
+        return sentences;
+    };
+
     const currentPlayerNeedBars = collectNeedBarsForPrompt(currentPlayer, playerStatus);
+    const currentPlayerNeeds = collectNeedSentencesForPrompt(
+        currentPlayer,
+        playerStatus,
+        playerStatus?.name || currentPlayer?.name || 'Unknown Adventurer'
+    );
 
     const gearSnapshot = playerStatus?.gear && typeof playerStatus.gear === 'object'
         ? Object.entries(playerStatus.gear).map(([slotName, slotData]) => ({
@@ -4742,6 +4789,7 @@ function buildBasePromptContext({
         personality: extractPersonality(playerStatus, currentPlayer),
         currency: playerStatus?.currency ?? currentPlayer?.currency ?? 0,
         needBars: currentPlayerNeedBars,
+        needs: currentPlayerNeeds,
         currentQuests: currentPlayer.currentQuests,
     };
 
@@ -4819,6 +4867,11 @@ function buildBasePromptContext({
             const skills = collectActorSkills(npcStatus, npc);
             const personality = extractPersonality(npcStatus, npc);
             const needBars = collectNeedBarsForPrompt(npc, npcStatus);
+            const needs = collectNeedSentencesForPrompt(
+                npc,
+                npcStatus,
+                npcStatus?.name || npc.name || 'Unknown NPC'
+            );
             const importantMemories = sanitizeImportantMemories(
                 npcStatus?.importantMemories
                 || npc?.importantMemories
@@ -4841,6 +4894,7 @@ function buildBasePromptContext({
                 skills,
                 personality,
                 needBars,
+                needs,
                 importantMemories,
                 selectedImportantMemories: []
             });
@@ -4862,6 +4916,11 @@ function buildBasePromptContext({
             const dispositionsTowardsPlayer = computeDispositionsTowardsPlayer(member);
             const skills = collectActorSkills(memberStatus, member);
             const needBars = collectNeedBarsForPrompt(member, memberStatus);
+            const needs = collectNeedSentencesForPrompt(
+                member,
+                memberStatus,
+                memberStatus?.name || member.name || 'Unknown Ally'
+            );
             const importantMemories = sanitizeImportantMemories(
                 memberStatus?.importantMemories
                 || member?.importantMemories
@@ -4884,6 +4943,7 @@ function buildBasePromptContext({
                 skills,
                 dispositionsTowardsPlayer,
                 needBars,
+                needs,
                 importantMemories,
                 selectedImportantMemories: []
             });
@@ -12783,6 +12843,29 @@ function normalizeNpcPromptSeed(seed = {}) {
     copyTrimmed('role');
     copyTrimmed('class');
     copyTrimmed('race');
+    if (Object.prototype.hasOwnProperty.call(seed, 'startingHealthPercentage')
+        || Object.prototype.hasOwnProperty.call(seed, 'satartingHealthPercentage')) {
+        const rawStartingHealth = Object.prototype.hasOwnProperty.call(seed, 'startingHealthPercentage')
+            ? seed.startingHealthPercentage
+            : seed.satartingHealthPercentage;
+        const trimmedStartingHealth = rawStartingHealth === null || rawStartingHealth === undefined
+            ? ''
+            : String(rawStartingHealth).trim();
+        if (trimmedStartingHealth) {
+            normalized.startingHealthPercentage = trimmedStartingHealth;
+            if (trimmedStartingHealth.toLowerCase() === 'deceased') {
+                normalized.startingHealth = { deceased: true };
+            } else {
+                const numericStartingHealth = Number(trimmedStartingHealth.replace(/%/g, '').trim());
+                if (Number.isFinite(numericStartingHealth)) {
+                    normalized.startingHealth = {
+                        percentage: numericStartingHealth,
+                        deceased: false
+                    };
+                }
+            }
+        }
+    }
     copyRawString('resistances', { allowEmpty: true });
     copyRawString('vulnerabilities', { allowEmpty: true });
 
@@ -13214,7 +13297,11 @@ async function generateNpcFromEvent({
             personalityType: npcData?.personalityType || null,
             personalityTraits: npcData?.personalityTraits || null,
             personalityNotes: npcData?.personalityNotes || null,
-            goals: Array.isArray(npcData?.goals) ? npcData.goals : null
+            goals: Array.isArray(npcData?.goals) ? npcData.goals : null,
+            needBars: resolveGeneratedNpcStartingNeedBars(npcData?.needBars),
+            needBarApplicability: npcData?.needBarApplicability && typeof npcData.needBarApplicability === 'object'
+                ? npcData.needBarApplicability
+                : null
         });
 
         const locationBaseLevel = Number.isFinite(resolvedLocation?.baseLevel)
@@ -13227,6 +13314,8 @@ async function generateNpcFromEvent({
         } catch (_) {
             // ignore failures to adjust level
         }
+
+        const startingHealthState = applyGeneratedNpcStartingHealth(npc, npcData?.startingHealth || null);
 
         players.set(npc.id, npc);
 
@@ -13300,6 +13389,10 @@ async function generateNpcFromEvent({
                     console.warn(`Failed to assign generated memories to NPC ${npc.name}:`, memoryError.message);
                 }
             }
+        }
+
+        if (startingHealthState?.isDead) {
+            finalizeGeneratedNpcStartingDeathState(npc, npcData?.startingHealth || null);
         }
 
         if (shouldGenerateNpcImage(npc) && (!npc.imageId || !hasExistingImage(npc.imageId))) {
@@ -13873,6 +13966,247 @@ function extractXmlTagValue(xmlContent, { rootTag = null, tagName } = {}) {
     return value || '';
 }
 
+function parseNpcStartingNeeds(node) {
+    const parsed = {
+        needBars: null,
+        needBarApplicability: null
+    };
+    if (!node || typeof node.getElementsByTagName !== 'function') {
+        return parsed;
+    }
+
+    const startingNeedsNode = node.getElementsByTagName('startingNeeds')[0] || null;
+    if (!startingNeedsNode) {
+        return parsed;
+    }
+
+    const needBars = [];
+    const needBarApplicability = {};
+    const parseStartingLevelPercent = (rawValue) => {
+        if (typeof rawValue !== 'string') {
+            return null;
+        }
+        const normalized = rawValue.replace(/%/g, '').trim();
+        if (!normalized) {
+            return null;
+        }
+        const numeric = Number(normalized);
+        return Number.isFinite(numeric) ? numeric : null;
+    };
+    const parseApplicabilityValue = (rawValue) => {
+        if (typeof rawValue !== 'string') {
+            return null;
+        }
+        const normalized = rawValue.trim().toLowerCase();
+        if (!normalized) {
+            return null;
+        }
+        if (['true', '1', 'yes', 'y', 'on'].includes(normalized)) {
+            return true;
+        }
+        if (['false', '0', 'no', 'n', 'off'].includes(normalized)) {
+            return false;
+        }
+        return null;
+    };
+
+    const needBarNodes = Array.from(startingNeedsNode.getElementsByTagName('needBar'));
+    for (const needBarNode of needBarNodes) {
+        if (!needBarNode || typeof needBarNode.getElementsByTagName !== 'function') {
+            continue;
+        }
+
+        const idNode = needBarNode.getElementsByTagName('id')[0] || null;
+        const needBarId = idNode && typeof idNode.textContent === 'string' ? idNode.textContent.trim() : '';
+        if (!needBarId) {
+            continue;
+        }
+
+        const applicabilityNode = needBarNode.getElementsByTagName('isApplicable')[0] || null;
+        const startingLevelNode = needBarNode.getElementsByTagName('startingLevel')[0] || null;
+        const applicability = parseApplicabilityValue(applicabilityNode?.textContent ?? '');
+        const startingLevelRaw = startingLevelNode && typeof startingLevelNode.textContent === 'string'
+            ? startingLevelNode.textContent.trim()
+            : '';
+        const startingLevelPercent = parseStartingLevelPercent(startingLevelRaw);
+
+        if (applicability !== null) {
+            needBarApplicability[needBarId] = applicability;
+        }
+
+        if (applicability === false) {
+            continue;
+        }
+
+        if (Number.isFinite(startingLevelPercent)) {
+            if (applicability === null) {
+                needBarApplicability[needBarId] = true;
+            }
+            needBars.push({
+                id: needBarId,
+                percentage: startingLevelPercent
+            });
+        }
+    }
+
+    if (needBars.length) {
+        parsed.needBars = needBars;
+    }
+    if (Object.keys(needBarApplicability).length) {
+        parsed.needBarApplicability = needBarApplicability;
+    }
+
+    return parsed;
+}
+
+function parseNpcStartingHealth(node) {
+    if (!node || typeof node.getElementsByTagName !== 'function') {
+        return null;
+    }
+
+    const startingHealthNode = node.getElementsByTagName('startingHealthPercentage')[0]
+        || node.getElementsByTagName('satartingHealthPercentage')[0]
+        || null;
+    if (!startingHealthNode || typeof startingHealthNode.textContent !== 'string') {
+        return null;
+    }
+
+    const rawValue = startingHealthNode.textContent.trim();
+    if (!rawValue) {
+        return null;
+    }
+
+    if (rawValue.toLowerCase() === 'deceased') {
+        return {
+            deceased: true
+        };
+    }
+
+    const normalized = rawValue.replace(/%/g, '').trim();
+    if (!normalized) {
+        return null;
+    }
+
+    const percentage = Number(normalized);
+    if (!Number.isFinite(percentage)) {
+        return null;
+    }
+
+    return {
+        percentage,
+        deceased: false
+    };
+}
+
+function resolveGeneratedNpcStartingNeedBars(needBars) {
+    if (!Array.isArray(needBars) || needBars.length === 0) {
+        return null;
+    }
+
+    const definitions = Player.needBarDefinitions || {};
+    const resolvedNeedBars = [];
+    for (const entry of needBars) {
+        if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+            continue;
+        }
+
+        const id = typeof entry.id === 'string' ? entry.id.trim() : '';
+        if (!id) {
+            continue;
+        }
+
+        const definition = definitions[id];
+        if (!definition || typeof definition !== 'object') {
+            console.warn(`Skipping generated NPC starting need for unknown bar "${id}".`);
+            continue;
+        }
+
+        const max = Number(definition.max);
+        if (!Number.isFinite(max)) {
+            console.warn(`Skipping generated NPC starting need for "${id}" because the need bar max is invalid.`);
+            continue;
+        }
+
+        const percentageRaw = entry.percentage ?? entry.value ?? entry.current ?? entry.amount;
+        const percentage = Number(percentageRaw);
+        if (!Number.isFinite(percentage)) {
+            continue;
+        }
+
+        resolvedNeedBars.push({
+            id,
+            value: (percentage / 100) * max
+        });
+    }
+
+    return resolvedNeedBars.length ? resolvedNeedBars : null;
+}
+
+function resolveGeneratedNpcStartingHealth(startingHealth, maxHealth) {
+    if (!startingHealth || typeof startingHealth !== 'object' || Array.isArray(startingHealth)) {
+        return null;
+    }
+
+    if (startingHealth.deceased === true) {
+        return {
+            health: 0,
+            isDead: true,
+            persistWhenDead: true
+        };
+    }
+
+    const numericMaxHealth = Number(maxHealth);
+    if (!Number.isFinite(numericMaxHealth)) {
+        return null;
+    }
+
+    const percentage = Number(startingHealth.percentage);
+    if (!Number.isFinite(percentage)) {
+        return null;
+    }
+
+    return {
+        health: (percentage / 100) * numericMaxHealth,
+        isDead: false,
+        persistWhenDead: false
+    };
+}
+
+function applyGeneratedNpcStartingHealth(npc, startingHealth) {
+    if (!npc || typeof npc !== 'object') {
+        return null;
+    }
+
+    const resolved = resolveGeneratedNpcStartingHealth(startingHealth, npc.maxHealth);
+    if (!resolved) {
+        return null;
+    }
+
+    if (!resolved.isDead) {
+        if (typeof npc.setHealth !== 'function') {
+            throw new Error('Generated NPC starting health requires setHealth().');
+        }
+        npc.setHealth(Math.round(resolved.health));
+    }
+
+    return resolved;
+}
+
+function finalizeGeneratedNpcStartingDeathState(npc, startingHealth) {
+    if (!npc || typeof npc !== 'object') {
+        return null;
+    }
+
+    const resolved = resolveGeneratedNpcStartingHealth(startingHealth, npc.maxHealth);
+    if (!resolved || !resolved.isDead) {
+        return resolved;
+    }
+
+    npc.persistWhenDead = true;
+    npc.isDead = true;
+    return resolved;
+}
+
 function parseLocationNpcs(xmlContent) {
     const result = { npcs: [], memories: new Map() };
     if (!xmlContent || typeof xmlContent !== 'string') {
@@ -13956,6 +14290,8 @@ function parseLocationNpcs(xmlContent) {
             let personalityTraits = null;
             let personalityNotes = null;
             let goals = [];
+            const startingNeeds = parseNpcStartingNeeds(node);
+            const startingHealth = parseNpcStartingHealth(node);
             if (personalityNode) {
                 const typeNode = personalityNode.getElementsByTagName('type')[0];
                 const traitsNode = personalityNode.getElementsByTagName('traits')[0];
@@ -14020,6 +14356,9 @@ function parseLocationNpcs(xmlContent) {
                     personalityTraits,
                     personalityNotes,
                     goals,
+                    needBars: startingNeeds.needBars,
+                    needBarApplicability: startingNeeds.needBarApplicability,
+                    startingHealth,
                     isHostile
                 });
             }
@@ -14129,6 +14468,8 @@ function parseRegionNpcs(xmlContent) {
             let personalityTraits = null;
             let personalityNotes = null;
             let goals = [];
+            const startingNeeds = parseNpcStartingNeeds(node);
+            const startingHealth = parseNpcStartingHealth(node);
             if (personalityNode) {
                 const typeNode = personalityNode.getElementsByTagName('type')[0];
                 const traitsNode = personalityNode.getElementsByTagName('traits')[0];
@@ -14183,6 +14524,9 @@ function parseRegionNpcs(xmlContent) {
                 personalityTraits,
                 personalityNotes,
                 goals,
+                needBars: startingNeeds.needBars,
+                needBarApplicability: startingNeeds.needBarApplicability,
+                startingHealth,
                 isHostile
             });
         }
@@ -20368,7 +20712,11 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
                 personalityType: npcData.personalityType || null,
                 personalityTraits: npcData.personalityTraits || null,
                 personalityNotes: npcData.personalityNotes || null,
-                goals: Array.isArray(npcData.goals) ? npcData.goals : null
+                goals: Array.isArray(npcData.goals) ? npcData.goals : null,
+                needBars: resolveGeneratedNpcStartingNeedBars(npcData.needBars),
+                needBarApplicability: npcData.needBarApplicability && typeof npcData.needBarApplicability === 'object'
+                    ? npcData.needBarApplicability
+                    : null
             });
 
             if (Number.isFinite(npcData.currency) && npcData.currency >= 0 && typeof npc.setCurrency === 'function') {
@@ -20390,6 +20738,8 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
                 // ignore level adjustment failures
             }
 
+            const startingHealthState = applyGeneratedNpcStartingHealth(npc, npcData?.startingHealth || null);
+
             players.set(npc.id, npc);
             location.addNpcId(npc.id);
             created.push(npc);
@@ -20401,7 +20751,13 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
             }
 
             const descriptor = { role: npcData.role, class: npcData.class, race: npcData.race };
-            npcContexts.push({ npc, descriptor, name: npcData.name || npc.id });
+            npcContexts.push({
+                npc,
+                descriptor,
+                name: npcData.name || npc.id,
+                startingHealth: npcData?.startingHealth || null,
+                startingHealthState
+            });
 
             if (npcMemoryMap instanceof Map) {
                 const memoryEntry = npcMemoryMap.get((npcData.name || '').trim().toLowerCase());
@@ -20473,7 +20829,10 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
 
         await Promise.all(equipTasks);
 
-        for (const { npc } of npcContexts) {
+        for (const { npc, startingHealth, startingHealthState } of npcContexts) {
+            if (startingHealthState?.isDead) {
+                finalizeGeneratedNpcStartingDeathState(npc, startingHealth);
+            }
             if (shouldGenerateNpcImage(npc) && (!npc.imageId || !hasExistingImage(npc.imageId))) {
                 npc.imageId = null;
             }
@@ -20755,7 +21114,11 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
                 personalityType: npcData.personalityType || null,
                 personalityTraits: npcData.personalityTraits || null,
                 personalityNotes: npcData.personalityNotes || null,
-                goals: Array.isArray(npcData.goals) ? npcData.goals : null
+                goals: Array.isArray(npcData.goals) ? npcData.goals : null,
+                needBars: resolveGeneratedNpcStartingNeedBars(npcData.needBars),
+                needBarApplicability: npcData.needBarApplicability && typeof npcData.needBarApplicability === 'object'
+                    ? npcData.needBarApplicability
+                    : null
             });
 
             if (Number.isFinite(npcData.currency) && npcData.currency >= 0 && typeof npc.setCurrency === 'function') {
@@ -20776,6 +21139,8 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
             } catch (_) {
                 // ignore level adjustment failures
             }
+
+            const startingHealthState = applyGeneratedNpcStartingHealth(npc, npcData?.startingHealth || null);
 
             npc.originRegionId = region.id;
             npc.isRegionImportant = true;
@@ -20800,7 +21165,9 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
                 npc,
                 descriptor,
                 targetLocation,
-                name: npcData.name || npc.id
+                name: npcData.name || npc.id,
+                startingHealth: npcData?.startingHealth || null,
+                startingHealthState
             });
 
             if (regionNpcMemories instanceof Map) {
@@ -20873,7 +21240,10 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
 
         await Promise.all(equipTasks);
 
-        for (const { npc, name } of npcContexts) {
+        for (const { npc, name, startingHealth, startingHealthState } of npcContexts) {
+            if (startingHealthState?.isDead) {
+                finalizeGeneratedNpcStartingDeathState(npc, startingHealth);
+            }
             if (shouldGenerateNpcImage(npc) && (!npc.imageId || !hasExistingImage(npc.imageId))) {
                 npc.imageId = null;
             } else {
@@ -25045,7 +25415,8 @@ app.put('/api/game-config-override', (req, res) => {
         }
 
         const reloadResult = reloadConfigAndDefs({
-            gameConfigOverrideYaml: typeof rawYaml === 'string' ? rawYaml : ''
+            gameConfigOverrideYaml: typeof rawYaml === 'string' ? rawYaml : '',
+            needBarSentenceValidationMode: 'warn'
         });
 
         return res.json({

@@ -55,6 +55,8 @@ class Player {
     #abilities;
     #pendingAbilityOptionsByLevel = new Map();
     #needBars;
+    #needBarApplicability = new Map();
+    #needBarRatesAppliedAt = null;
     #experience;
     #currency;
     #personalityType;
@@ -65,6 +67,7 @@ class Player {
     #goals = [];
     #isHostile;
     #isDead;
+    #persistWhenDead;
     #corpseCountdown;
     #importantMemories = [];
     #previousLocationId = null; // For tracking location changes. This is the location at the beginning of the turn.
@@ -229,7 +232,7 @@ class Player {
         if (['large', 'major', 'big', 'heavy', 'huge'].includes(normalized)) {
             return 'large';
         }
-        if (['all', 'fill', 'full', 'max', 'maximum', 'complete'].includes(normalized)) {
+        if (['all', 'fill', 'full', 'max', 'maximum', 'complete', 'empty'].includes(normalized)) {
             return 'all';
         }
         return normalized;
@@ -253,7 +256,7 @@ class Player {
             if (!Number.isFinite(numeric) || numeric <= 0) {
                 continue;
             }
-            entries[key] = Math.round(numeric);
+            entries[key] = numeric;
         }
 
         return Object.keys(entries).length ? Object.freeze(entries) : null;
@@ -287,6 +290,98 @@ class Player {
             party: true,
             nonParty: true
         };
+    }
+
+    static #parseNeedBarApplicabilityValue(rawValue) {
+        let candidate = rawValue;
+        if (candidate && typeof candidate === 'object' && !Array.isArray(candidate)) {
+            if (Object.prototype.hasOwnProperty.call(candidate, 'applicable')) {
+                candidate = candidate.applicable;
+            } else if (Object.prototype.hasOwnProperty.call(candidate, 'isApplicable')) {
+                candidate = candidate.isApplicable;
+            } else if (Object.prototype.hasOwnProperty.call(candidate, 'value')) {
+                candidate = candidate.value;
+            }
+        }
+
+        if (typeof candidate === 'boolean') {
+            return candidate;
+        }
+        if (typeof candidate === 'number') {
+            if (candidate === 1) {
+                return true;
+            }
+            if (candidate === 0) {
+                return false;
+            }
+            return null;
+        }
+        if (typeof candidate !== 'string') {
+            return null;
+        }
+
+        const normalized = candidate.trim().toLowerCase();
+        if (!normalized) {
+            return null;
+        }
+        if (['true', '1', 'yes', 'y', 'on'].includes(normalized)) {
+            return true;
+        }
+        if (['false', '0', 'no', 'n', 'off'].includes(normalized)) {
+            return false;
+        }
+
+        return null;
+    }
+
+    static #normalizeNeedBarApplicability(source) {
+        const applicability = new Map();
+        const assign = (rawId, rawValue) => {
+            if (typeof rawId !== 'string') {
+                return;
+            }
+            const normalizedId = rawId.trim();
+            if (!normalizedId) {
+                return;
+            }
+            const parsedValue = this.#parseNeedBarApplicabilityValue(rawValue);
+            if (parsedValue === null) {
+                return;
+            }
+            applicability.set(normalizedId, parsedValue);
+        };
+
+        if (!source) {
+            return applicability;
+        }
+
+        if (source instanceof Map) {
+            for (const [id, value] of source.entries()) {
+                assign(id, value);
+            }
+            return applicability;
+        }
+
+        if (Array.isArray(source)) {
+            for (const entry of source) {
+                if (!entry || typeof entry !== 'object') {
+                    continue;
+                }
+                assign(
+                    entry.id ?? entry.identifier ?? entry.name,
+                    entry.applicable ?? entry.isApplicable ?? entry.value
+                );
+            }
+            return applicability;
+        }
+
+        if (typeof source === 'object') {
+            for (const [id, value] of Object.entries(source)) {
+                assign(id, value);
+            }
+        }
+
+        return applicability;
     }
 
     static #isNeedBarPlayerOnlyAudience(source = {}) {
@@ -332,6 +427,83 @@ class Player {
         }
 
         return Boolean(bar.player);
+    }
+
+    static #buildLegacyNeedBarLoadState({ needBars = null, needBarApplicability = null, isNPC = false } = {}) {
+        const actor = { isNPC: Boolean(isNPC) };
+        const resolvedApplicability = this.#normalizeNeedBarApplicability(needBarApplicability);
+        const initialLookup = new Map();
+
+        const setInitialLookup = (rawId, rawValue) => {
+            if (typeof rawId !== 'string') {
+                return;
+            }
+            const normalizedId = rawId.trim();
+            if (!normalizedId) {
+                return;
+            }
+            initialLookup.set(normalizedId, rawValue);
+        };
+
+        if (Array.isArray(needBars)) {
+            for (const entry of needBars) {
+                if (!entry || typeof entry !== 'object') {
+                    continue;
+                }
+                setInitialLookup(entry.id, entry);
+            }
+        } else if (needBars && typeof needBars === 'object') {
+            for (const [id, value] of Object.entries(needBars)) {
+                setInitialLookup(id, value);
+            }
+        }
+
+        const resolvedNeedBars = [];
+        const definitions = this.needBarDefinitions || {};
+        for (const [id, definition] of Object.entries(definitions)) {
+            const normalizedId = typeof id === 'string' ? id.trim() : '';
+            if (!normalizedId) {
+                continue;
+            }
+            if (!this.#needBarCanBeStoredForActor(definition, actor)) {
+                continue;
+            }
+
+            if (!resolvedApplicability.has(normalizedId)) {
+                resolvedApplicability.set(normalizedId, true);
+            }
+            if (resolvedApplicability.get(normalizedId) === false) {
+                continue;
+            }
+
+            const existing = initialLookup.get(normalizedId);
+            if (existing && typeof existing === 'object' && !Array.isArray(existing)) {
+                const existingValue = existing.value ?? existing.current ?? existing.amount;
+                if (Number.isFinite(Number(existingValue))) {
+                    resolvedNeedBars.push({
+                        ...existing,
+                        id: normalizedId
+                    });
+                    continue;
+                }
+            } else if (Number.isFinite(Number(existing))) {
+                resolvedNeedBars.push({
+                    id: normalizedId,
+                    value: Number(existing)
+                });
+                continue;
+            }
+
+            resolvedNeedBars.push({
+                id: normalizedId,
+                value: 100
+            });
+        }
+
+        return {
+            needBars: resolvedNeedBars,
+            needBarApplicability: Object.fromEntries(resolvedApplicability)
+        };
     }
 
     static #normalizeAliasSet(source, fullName = '') {
@@ -433,11 +605,13 @@ class Player {
         const color = typeof config.color === 'string' ? config.color : '';
         const min = Number.isFinite(Number(config.min)) ? Number(config.min) : 0;
         const max = Number.isFinite(Number(config.max)) ? Number(config.max) : 100;
-        const changePerTurn = Number.isFinite(Number(config.change_per_turn)) ? Number(config.change_per_turn) : 0;
+        const rawChangePerMinute = config.change_per_minute ?? config.change_per_turn;
+        const changePerMinute = Number.isFinite(Number(rawChangePerMinute)) ? Number(rawChangePerMinute) : 0;
         const relativeToLevel = Boolean(config.relative_to_level);
         const audience = this.#normalizeNeedBarAudienceConfig(config);
         const relatedAttribute = typeof config.related_attribute === 'string' ? config.related_attribute : null;
         const initialValue = Number.isFinite(Number(config.initial)) ? Number(config.initial) : null;
+        const magnitudeValues = this.#normalizeNeedValueMap(config.need_values);
 
         const effectThresholds = [];
         if (config.effect_thresholds && typeof config.effect_thresholds === 'object') {
@@ -448,10 +622,12 @@ class Player {
                 }
                 const thresholdName = typeof thresholdConfig?.name === 'string' ? thresholdConfig.name : '';
                 const thresholdEffect = typeof thresholdConfig?.effect === 'string' ? thresholdConfig.effect : '';
+                const thresholdSentence = typeof thresholdConfig?.sentence === 'string' ? thresholdConfig.sentence : '';
                 effectThresholds.push({
                     threshold,
                     name: thresholdName,
-                    effect: thresholdEffect
+                    effect: thresholdEffect,
+                    sentence: thresholdSentence
                 });
             }
         }
@@ -465,22 +641,28 @@ class Player {
             color,
             min,
             max,
-            changePerTurn,
+            changePerMinute,
             relativeToLevel,
             player: audience.player,
             party: audience.party,
             nonParty: audience.nonParty,
             relatedAttribute,
             initialValue,
+            magnitudeValues,
             effectThresholds,
             increases: {
                 small: this.#normalizeNeedBarChangeList(config.small_increase),
+                medium: this.#normalizeNeedBarChangeList(config.medium_increase),
                 large: this.#normalizeNeedBarChangeList(config.large_increase),
                 fill: this.#normalizeNeedBarChangeList(config.fill_completely)
             },
             decreases: {
                 small: this.#normalizeNeedBarChangeList(config.small_decrease),
-                large: this.#normalizeNeedBarChangeList(config.large_decrease)
+                medium: this.#normalizeNeedBarChangeList(config.medium_decrease),
+                large: this.#normalizeNeedBarChangeList(config.large_decrease),
+                empty: this.#normalizeNeedBarChangeList(
+                    config.empty_completely ?? config.drain_completely
+                )
             }
         };
     }
@@ -492,22 +674,133 @@ class Player {
 
         return {
             ...definition,
+            magnitudeValues: definition.magnitudeValues && typeof definition.magnitudeValues === 'object'
+                ? { ...definition.magnitudeValues }
+                : null,
             effectThresholds: Array.isArray(definition.effectThresholds)
                 ? definition.effectThresholds.map(entry => ({ ...entry }))
                 : [],
             increases: {
                 small: Array.isArray(definition.increases?.small) ? [...definition.increases.small] : [],
+                medium: Array.isArray(definition.increases?.medium) ? [...definition.increases.medium] : [],
                 large: Array.isArray(definition.increases?.large) ? [...definition.increases.large] : [],
                 fill: Array.isArray(definition.increases?.fill) ? [...definition.increases.fill] : []
             },
             decreases: {
                 small: Array.isArray(definition.decreases?.small) ? [...definition.decreases.small] : [],
-                large: Array.isArray(definition.decreases?.large) ? [...definition.decreases.large] : []
+                medium: Array.isArray(definition.decreases?.medium) ? [...definition.decreases.medium] : [],
+                large: Array.isArray(definition.decreases?.large) ? [...definition.decreases.large] : [],
+                empty: Array.isArray(definition.decreases?.empty) ? [...definition.decreases.empty] : []
             },
             currentThreshold: definition.currentThreshold
                 ? { ...definition.currentThreshold }
                 : null
         };
+    }
+
+    static #loadNeedBarDefinitionState({ cacheResult = false, onError = 'warn' } = {}) {
+        if (!['warn', 'throw'].includes(onError)) {
+            throw new Error(`Unsupported need-bar definition error mode "${onError}".`);
+        }
+
+        try {
+            const { value } = loadMergedDefinitionFile({
+                baseDir: Globals.baseDir || __dirname,
+                filename: 'need_bars.yaml'
+            });
+            const data = value || {};
+            const source = typeof data.need_bars === 'object' && data.need_bars !== null ? data.need_bars : {};
+            const magnitudeValues = this.#normalizeNeedValueMap(data.need_values);
+            const normalized = {};
+            for (const [id, config] of Object.entries(source)) {
+                if (!id) {
+                    continue;
+                }
+                const trimmedId = id.trim();
+                if (!trimmedId || typeof config !== 'object' || config === null) {
+                    continue;
+                }
+                const definition = this.#buildNeedBarDefinition(trimmedId, config);
+                if (!definition) {
+                    continue;
+                }
+                normalized[trimmedId] = Object.freeze(this.#cloneNeedBarDefinition(definition));
+            }
+
+            if (cacheResult) {
+                this.#needBarDefinitions = normalized;
+                this.#needBarMagnitudeValues = magnitudeValues;
+            }
+
+            return {
+                definitions: normalized,
+                magnitudeValues
+            };
+        } catch (error) {
+            if (cacheResult) {
+                this.#needBarDefinitions = {};
+                this.#needBarMagnitudeValues = null;
+            }
+            if (onError === 'warn') {
+                console.warn('Failed to load need bar definitions:', error?.message || error);
+                return {
+                    definitions: {},
+                    magnitudeValues: null
+                };
+            }
+            throw error;
+        }
+    }
+
+    static validateNeedBarPromptSentences({ onError = 'throw' } = {}) {
+        if (!['warn', 'throw'].includes(onError)) {
+            throw new Error(`Unsupported need-bar prompt sentence validation mode "${onError}".`);
+        }
+
+        try {
+            const { definitions } = this.#loadNeedBarDefinitionState({
+                cacheResult: false,
+                onError: 'throw'
+            });
+            const issues = [];
+
+            for (const definition of Object.values(definitions || {})) {
+                if (!definition || !Array.isArray(definition.effectThresholds)) {
+                    continue;
+                }
+                for (const threshold of definition.effectThresholds) {
+                    if (!threshold || !Number.isFinite(threshold.threshold)) {
+                        continue;
+                    }
+                    const sentence = typeof threshold.sentence === 'string' ? threshold.sentence.trim() : '';
+                    if (sentence) {
+                        continue;
+                    }
+                    const needBarLabel = typeof definition.name === 'string' && definition.name.trim()
+                        ? definition.name.trim()
+                        : (definition.id || 'unknown');
+                    issues.push(`Need bar "${needBarLabel}" is missing a prompt sentence for threshold ${threshold.threshold}.`);
+                }
+            }
+
+            if (issues.length > 0) {
+                const message = `Need-bar prompt sentence validation failed:\n- ${issues.join('\n- ')}`;
+                if (onError === 'warn') {
+                    console.warn(message);
+                } else {
+                    throw new Error(message);
+                }
+            }
+
+            return issues;
+        } catch (error) {
+            if (onError === 'warn') {
+                const message = error?.message || String(error);
+                console.warn(`Need-bar prompt sentence validation warning: ${message}`);
+                return [message];
+            }
+            throw error;
+        }
     }
 
     static #formatNeedBarForContext(definition, { includeValue = true } = {}) {
@@ -548,8 +841,9 @@ class Player {
             ? definition.effectThresholds.map(entry => ({
                 threshold: Number.isFinite(entry?.threshold) ? Number(entry.threshold) : null,
                 name: typeof entry?.name === 'string' ? entry.name : '',
-                effect: typeof entry?.effect === 'string' ? entry.effect : ''
-            })).filter(entry => entry.threshold !== null || entry.name || entry.effect)
+                effect: typeof entry?.effect === 'string' ? entry.effect : '',
+                sentence: typeof entry?.sentence === 'string' ? entry.sentence : ''
+            })).filter(entry => entry.threshold !== null || entry.name || entry.effect || entry.sentence)
             : [];
 
         const currentThreshold = includeValue && definition.currentThreshold
@@ -562,6 +856,9 @@ class Player {
                     : '',
                 effect: typeof definition.currentThreshold.effect === 'string'
                     ? definition.currentThreshold.effect
+                    : '',
+                sentence: typeof definition.currentThreshold.sentence === 'string'
+                    ? definition.currentThreshold.sentence
                     : ''
             }
             : null;
@@ -582,14 +879,16 @@ class Player {
             id: typeof definition.id === 'string' ? definition.id : null,
             name: typeof definition.name === 'string' ? definition.name : (definition.id || 'Unknown'),
             description: typeof definition.description === 'string' ? definition.description : '',
+            icon: typeof definition.icon === 'string' ? definition.icon : '',
+            color: typeof definition.color === 'string' ? definition.color : '',
             player: Boolean(definition.player),
             party: Boolean(definition.party),
             nonParty: Boolean(definition.nonParty),
             relatedAttribute: typeof definition.relatedAttribute === 'string'
                 ? definition.relatedAttribute
                 : null,
-            changePerTurn: Number.isFinite(definition.changePerTurn)
-                ? Number(definition.changePerTurn)
+            changePerMinute: Number.isFinite(definition.changePerMinute)
+                ? Number(definition.changePerMinute)
                 : 0,
             relativeToLevel: Boolean(definition.relativeToLevel),
             min: normalizeNumber(definition.min),
@@ -600,12 +899,15 @@ class Player {
             effectThresholds,
             increases: {
                 small: ensureList(definition.increases?.small),
+                medium: ensureList(definition.increases?.medium),
                 large: ensureList(definition.increases?.large),
                 fill: ensureList(definition.increases?.fill)
             },
             decreases: {
                 small: ensureList(definition.decreases?.small),
-                large: ensureList(definition.decreases?.large)
+                medium: ensureList(definition.decreases?.medium),
+                large: ensureList(definition.decreases?.large),
+                empty: ensureList(definition.decreases?.empty)
             }
         };
     }
@@ -756,35 +1058,7 @@ class Player {
 
     static get needBarDefinitions() {
         if (!this.#needBarDefinitions) {
-            try {
-                const { value } = loadMergedDefinitionFile({
-                    baseDir: Globals.baseDir || __dirname,
-                    filename: 'need_bars.yaml'
-                });
-                const data = value || {};
-                const source = typeof data.need_bars === 'object' && data.need_bars !== null ? data.need_bars : {};
-                this.#needBarMagnitudeValues = this.#normalizeNeedValueMap(data.need_values);
-                const normalized = {};
-                for (const [id, config] of Object.entries(source)) {
-                    if (!id) {
-                        continue;
-                    }
-                    const trimmedId = id.trim();
-                    if (!trimmedId || typeof config !== 'object' || config === null) {
-                        continue;
-                    }
-                    const definition = this.#buildNeedBarDefinition(trimmedId, config);
-                    if (!definition) {
-                        continue;
-                    }
-                    normalized[trimmedId] = Object.freeze(this.#cloneNeedBarDefinition(definition));
-                }
-                this.#needBarDefinitions = normalized;
-            } catch (error) {
-                console.warn('Failed to load need bar definitions:', error?.message || error);
-                this.#needBarDefinitions = {};
-                this.#needBarMagnitudeValues = null;
-            }
+            this.#loadNeedBarDefinitionState({ cacheResult: true, onError: 'warn' });
         }
         return this.#needBarDefinitions;
     }
@@ -919,7 +1193,8 @@ class Player {
             }
             instance.#definitions = instance.#loadDefinitions();
             const existingNeedBars = instance.getNeedBars({ scope: 'stored' });
-            instance.#initializeNeedBars(existingNeedBars);
+            const existingNeedBarApplicability = instance.getNeedBarApplicability();
+            instance.#initializeNeedBars(existingNeedBars, existingNeedBarApplicability);
         }
     }
 
@@ -980,8 +1255,9 @@ class Player {
     }
 
     /**
-     * Apply need bar deltas from active status effects for all players.
-     * Returns an array of adjustment records applied.
+     * Apply time-based need bar deltas for all players.
+     * This includes both baseline per-minute need-bar drift and per-minute
+     * status-effect need-bar deltas. Returns an array of adjustment records applied.
      */
     static applyStatusEffectNeedBarsToAll() {
         const adjustments = [];
@@ -998,29 +1274,80 @@ class Player {
         }
 
         for (const player of this.#instances) {
-            if (!player || !Array.isArray(player.#statusEffects) || !player.#statusEffects.length) {
+            if (!player) {
+                continue;
+            }
+
+            const baselineMinutes = Number.isFinite(currentWorldMinutes) && currentWorldMinutes >= 0
+                ? currentWorldMinutes
+                : (() => {
+                    try {
+                        if (!player.isNPC) {
+                            return player.elapsedTime;
+                        }
+                    } catch (_) {
+                        // fall through
+                    }
+                    return null;
+                })();
+            if (!Number.isFinite(baselineMinutes) || baselineMinutes < 0) {
                 continue;
             }
 
             let playerChanged = false;
-            for (const effect of player.#statusEffects) {
-                if (!(effect instanceof StatusEffect)) {
-                    continue;
-                }
-
-                const baselineMinutes = Number.isFinite(currentWorldMinutes) && currentWorldMinutes >= 0
-                    ? currentWorldMinutes
-                    : (() => {
-                        try {
-                            if (!player.isNPC) {
-                                return player.elapsedTime;
+            if (player.#needBars instanceof Map) {
+                const hasRateAppliedAt = Number.isFinite(player.#needBarRatesAppliedAt)
+                    && player.#needBarRatesAppliedAt >= 0;
+                if (!hasRateAppliedAt) {
+                    player.#needBarRatesAppliedAt = baselineMinutes;
+                    playerChanged = true;
+                } else {
+                    const elapsedNeedBarMinutes = Math.floor(baselineMinutes - player.#needBarRatesAppliedAt);
+                    if (Number.isFinite(elapsedNeedBarMinutes) && elapsedNeedBarMinutes > 0) {
+                        for (const [id, bar] of player.#needBars.entries()) {
+                            if (!bar || !Player.#needBarIsActiveForActor(bar, player)) {
+                                continue;
                             }
-                        } catch (_) {
-                            // fall through
+
+                            const changePerMinute = Number.isFinite(bar.changePerMinute)
+                                ? bar.changePerMinute
+                                : 0;
+                            if (changePerMinute === 0) {
+                                continue;
+                            }
+
+                            const totalDelta = changePerMinute * elapsedNeedBarMinutes;
+                            if (totalDelta === 0) {
+                                continue;
+                            }
+
+                            const previousValue = Number.isFinite(bar.value) ? bar.value : null;
+                            Player.#applyNeedBarValue(bar, (previousValue ?? 0) + totalDelta);
+                            if (bar.value !== previousValue) {
+                                adjustments.push({
+                                    playerId: player.id || null,
+                                    playerName: player.name || null,
+                                    bar: typeof bar.name === 'string' ? bar.name : id,
+                                    needBarId: id,
+                                    previousValue,
+                                    newValue: bar.value,
+                                    delta: totalDelta,
+                                    ticksApplied: elapsedNeedBarMinutes,
+                                    changePerMinute
+                                });
+                            }
                         }
-                        return null;
-                    })();
-                if (!Number.isFinite(baselineMinutes) || baselineMinutes < 0) {
+                        player.#needBarRatesAppliedAt = baselineMinutes;
+                        playerChanged = true;
+                    } else if (Number.isFinite(elapsedNeedBarMinutes) && elapsedNeedBarMinutes < 0) {
+                        player.#needBarRatesAppliedAt = baselineMinutes;
+                        playerChanged = true;
+                    }
+                }
+            }
+
+            for (const effect of (Array.isArray(player.#statusEffects) ? player.#statusEffects : [])) {
+                if (!(effect instanceof StatusEffect)) {
                     continue;
                 }
 
@@ -1403,9 +1730,17 @@ class Player {
         this.#race = options.race ?? "human";
         this.#gender = options.gender ?? "unspecified";
         this.#isDead = options.isDead ?? false;
+        this.#persistWhenDead = Boolean(options.persistWhenDead);
         this.#inCombat = options.inCombat ?? false;
         this.#characterArc = Player.#normalizeCharacterArc(options.characterArc);
         this.#corpseCountdown = Number.isFinite(options.corpseCountdown) ? options.corpseCountdown : null;
+        if (this.#isDead) {
+            if (this.#persistWhenDead) {
+                this.#corpseCountdown = null;
+            } else if (!Number.isFinite(this.#corpseCountdown) || this.#corpseCountdown < 0) {
+                this.#corpseCountdown = 5;
+            }
+        }
 
         const seedMemories = Array.isArray(options.importantMemories)
             ? options.importantMemories
@@ -1426,6 +1761,9 @@ class Player {
         this.#elapsedTime = Number.isFinite(options.elapsedTime) && options.elapsedTime > 0
             ? Math.round(options.elapsedTime)
             : 0;
+        this.#needBarRatesAppliedAt = Number.isFinite(options.needBarRatesAppliedAt) && options.needBarRatesAppliedAt >= 0
+            ? Math.floor(options.needBarRatesAppliedAt)
+            : null;
 
         const personalityOption = options.personality && typeof options.personality === 'object'
             ? options.personality
@@ -1524,7 +1862,8 @@ class Player {
         this.#currency = initialCurrency;
         this.#processExperienceOverflow();
 
-        this.#initializeNeedBars(options.needBars);
+        this.#needBarApplicability = Player.#normalizeNeedBarApplicability(options.needBarApplicability);
+        this.#initializeNeedBars(options.needBars, this.#needBarApplicability);
 
         // Creation timestamp
         this.#createdAt = options.createdAt || new Date().toISOString();
@@ -2702,8 +3041,13 @@ class Player {
         }
         this.#isDead = next;
         if (next) {
+            if (this.#isInPlayerParty) {
+                this.#persistWhenDead = true;
+            }
             this.#health = 0;
-            if (!Number.isFinite(this.#corpseCountdown) || this.#corpseCountdown <= 0) {
+            if (this.#persistWhenDead) {
+                this.#corpseCountdown = null;
+            } else if (!Number.isFinite(this.#corpseCountdown) || this.#corpseCountdown <= 0) {
                 this.corpseCountdown = 5; // Set default countdown to 5 turns
             }
             try {
@@ -2942,6 +3286,24 @@ class Player {
         }
     }
 
+    get persistWhenDead() {
+        return Boolean(this.#persistWhenDead);
+    }
+
+    set persistWhenDead(value) {
+        const next = Boolean(value);
+        if (this.#persistWhenDead === next) {
+            return;
+        }
+        this.#persistWhenDead = next;
+        if (next) {
+            this.#corpseCountdown = null;
+        } else if (this.#isDead && (!Number.isFinite(this.#corpseCountdown) || this.#corpseCountdown < 0)) {
+            this.#corpseCountdown = 5;
+        }
+        this.#lastUpdated = new Date().toISOString();
+    }
+
     get personalityType() {
         return this.#personalityType;
     }
@@ -3114,6 +3476,7 @@ class Player {
             this.#partyMembersRemovedThisTurn.delete(trimmed);
             const member = Player.getById(trimmed);
             if (member) {
+                member.persistWhenDead = true;
                 if (typeof member.setInPlayerParty === 'function') {
                     member.setInPlayerParty(true);
                 }
@@ -3151,6 +3514,7 @@ class Player {
             this.#partyMembersAddedThisTurn.delete(trimmed);
             const member = Player.getById(trimmed);
             if (member) {
+                member.persistWhenDead = true;
                 if (typeof member.setInPlayerParty === 'function') {
                     member.setInPlayerParty(false);
                 }
@@ -3197,6 +3561,7 @@ class Player {
             this.#partyMembersAddedThisTurn.delete(memberId);
             const member = Player.getById(memberId);
             if (member) {
+                member.persistWhenDead = true;
                 if (typeof member.setInPlayerParty === 'function') {
                     member.setInPlayerParty(false);
                 }
@@ -4046,6 +4411,99 @@ class Player {
         return results;
     }
 
+    getNeedBarApplicability() {
+        const result = {};
+        if (!(this.#needBarApplicability instanceof Map)) {
+            return result;
+        }
+
+        for (const [id, applicable] of this.#needBarApplicability.entries()) {
+            if (typeof id !== 'string' || !id.trim()) {
+                continue;
+            }
+            result[id] = Boolean(applicable);
+        }
+
+        return result;
+    }
+
+    setNeedBarApplicability(applicability = {}) {
+        const existingNeedBars = this.getNeedBars({ scope: 'stored' });
+        const existingNeedBarLookup = new Map();
+        for (const entry of existingNeedBars) {
+            if (!entry || typeof entry !== 'object') {
+                continue;
+            }
+            const normalizedId = typeof entry.id === 'string' ? entry.id.trim() : '';
+            if (!normalizedId) {
+                continue;
+            }
+            existingNeedBarLookup.set(normalizedId, Player.#cloneNeedBarDefinition(entry));
+        }
+
+        const normalizedUpdates = Player.#normalizeNeedBarApplicability(applicability);
+        const previousApplicability = this.getNeedBarApplicability();
+        const nextApplicability = new Map();
+        const nextNeedBars = [];
+        const definitions = Player.needBarDefinitions || {};
+
+        for (const [id, definition] of Object.entries(definitions)) {
+            const normalizedId = typeof id === 'string' ? id.trim() : '';
+            if (!normalizedId) {
+                continue;
+            }
+            if (!Player.#needBarCanBeStoredForActor(definition, this)) {
+                continue;
+            }
+
+            const nextApplicable = normalizedUpdates.has(normalizedId)
+                ? normalizedUpdates.get(normalizedId)
+                : (this.#needBarApplicability.has(normalizedId) ? this.#needBarApplicability.get(normalizedId) : true);
+            nextApplicability.set(normalizedId, nextApplicable !== false);
+            if (nextApplicable === false) {
+                continue;
+            }
+
+            const existingBar = existingNeedBarLookup.get(normalizedId);
+            if (existingBar) {
+                nextNeedBars.push(existingBar);
+                continue;
+            }
+
+            nextNeedBars.push({
+                id: normalizedId,
+                value: 100
+            });
+        }
+
+        const previousSerialized = JSON.stringify({
+            needBars: existingNeedBars
+                .map(entry => ({
+                    id: entry?.id || null,
+                    value: Number.isFinite(Number(entry?.value)) ? Number(entry.value) : null
+                }))
+                .sort((a, b) => String(a.id || '').localeCompare(String(b.id || ''))),
+            applicability: previousApplicability
+        });
+        const nextApplicabilityObject = Object.fromEntries(nextApplicability);
+        const nextSerialized = JSON.stringify({
+            needBars: nextNeedBars
+                .map(entry => ({
+                    id: entry?.id || null,
+                    value: Number.isFinite(Number(entry?.value)) ? Number(entry.value) : null
+                }))
+                .sort((a, b) => String(a.id || '').localeCompare(String(b.id || ''))),
+            applicability: nextApplicabilityObject
+        });
+
+        this.#initializeNeedBars(nextNeedBars, nextApplicability);
+        if (previousSerialized !== nextSerialized) {
+            this.#lastUpdated = new Date().toISOString();
+        }
+
+        return this.getNeedBarApplicability();
+    }
+
     getNeedBarValue(identifier) {
         const bar = this.#resolveNeedBarByIdentifier(identifier);
         if (!bar) {
@@ -4055,7 +4513,7 @@ class Player {
     }
 
     setNeedBars(needBars = []) {
-        this.#initializeNeedBars(needBars);
+        this.#initializeNeedBars(needBars, this.#needBarApplicability);
         return this.getNeedBars({ scope: 'active' });
     }
 
@@ -4096,53 +4554,6 @@ class Player {
         return Player.#cloneNeedBarDefinition(bar);
     }
 
-    applyNeedBarTurnChange(multiplier = 1) {
-        if (!this.#needBars || !(this.#needBars instanceof Map) || !Number.isFinite(multiplier)) {
-            return [];
-        }
-
-        const adjustments = [];
-        for (const [id, bar] of this.#needBars.entries()) {
-            if (!bar) {
-                continue;
-            }
-            if (!Player.#needBarIsActiveForActor(bar, this)) {
-                continue;
-            }
-            const rate = Number.isFinite(bar.changePerTurn) ? bar.changePerTurn : 0;
-            if (rate === 0) {
-                continue;
-            }
-
-            const delta = rate * multiplier;
-            const previousValue = bar.value;
-            Player.#applyNeedBarValue(bar, previousValue + delta);
-
-            if (bar.value !== previousValue) {
-                adjustments.push({
-                    id,
-                    name: typeof bar.name === 'string' ? bar.name : id,
-                    previousValue,
-                    newValue: bar.value,
-                    delta,
-                    min: Number.isFinite(bar.min) ? bar.min : null,
-                    max: Number.isFinite(bar.max) ? bar.max : null,
-                    changePerTurn: rate,
-                    player: Boolean(bar.player),
-                    party: Boolean(bar.party),
-                    nonParty: Boolean(bar.nonParty),
-                    currentThreshold: bar.currentThreshold ? { ...bar.currentThreshold } : null
-                });
-            }
-        }
-
-        if (adjustments.length) {
-            this.#lastUpdated = new Date().toISOString();
-        }
-
-        return adjustments;
-    }
-
     getNeedBarsForContext(options = {}) {
         return this.getNeedBars({ scope: 'active' });
     }
@@ -4159,6 +4570,43 @@ class Player {
         }
         formatted.sort((a, b) => a.name.localeCompare(b.name));
         return formatted;
+    }
+
+    getNeedSentencePromptContext({ actorName = null, onMissingSentence = 'warn' } = {}) {
+        if (!['warn', 'throw', 'omit'].includes(onMissingSentence)) {
+            throw new Error(`Unsupported need sentence handling mode "${onMissingSentence}".`);
+        }
+
+        const resolvedActorName = typeof actorName === 'string' && actorName.trim()
+            ? actorName.trim()
+            : (typeof this.#name === 'string' && this.#name.trim()
+                ? this.#name.trim()
+                : (typeof this.#id === 'string' && this.#id.trim() ? this.#id.trim() : 'This character'));
+        const bars = this.getNeedBars({ scope: 'active' }) || [];
+        const sentences = [];
+
+        for (const bar of bars) {
+            const sentenceTemplate = typeof bar?.currentThreshold?.sentence === 'string'
+                ? bar.currentThreshold.sentence.trim()
+                : '';
+            if (!sentenceTemplate) {
+                const barLabel = typeof bar?.name === 'string' && bar.name.trim()
+                    ? bar.name.trim()
+                    : (typeof bar?.id === 'string' && bar.id.trim() ? bar.id.trim() : 'unknown');
+                const message = `Need bar "${barLabel}" is missing a current-threshold prompt sentence for "${resolvedActorName}".`;
+                if (onMissingSentence === 'throw') {
+                    throw new Error(message);
+                }
+                if (onMissingSentence === 'warn') {
+                    console.warn(message);
+                }
+                continue;
+            }
+
+            sentences.push(sentenceTemplate.split('%CHARACTER%').join(resolvedActorName));
+        }
+
+        return sentences;
     }
 
     #resolveNeedBarByIdentifier(identifier) {
@@ -4201,11 +4649,25 @@ class Player {
             return 0;
         }
 
-        const configuredMap = this.needBarMagnitudeValues;
+        const configuredMap = (bar.magnitudeValues && typeof bar.magnitudeValues === 'object')
+            ? bar.magnitudeValues
+            : this.needBarMagnitudeValues;
         if (configuredMap && Object.prototype.hasOwnProperty.call(configuredMap, magnitudeKey)) {
             const configuredValue = configuredMap[magnitudeKey];
             if (Number.isFinite(configuredValue) && configuredValue > 0) {
-                return Math.max(1, Math.round(configuredValue));
+                return configuredValue;
+            }
+        }
+
+        const globalConfiguredMap = this.needBarMagnitudeValues;
+        if (
+            configuredMap !== globalConfiguredMap
+            && globalConfiguredMap
+            && Object.prototype.hasOwnProperty.call(globalConfiguredMap, magnitudeKey)
+        ) {
+            const globalConfiguredValue = globalConfiguredMap[magnitudeKey];
+            if (Number.isFinite(globalConfiguredValue) && globalConfiguredValue > 0) {
+                return globalConfiguredValue;
             }
         }
 
@@ -4217,7 +4679,7 @@ class Player {
             if (!Number.isFinite(fraction) || fraction <= 0) {
                 return 0;
             }
-            return Math.max(1, Math.round(range * fraction));
+            return range * fraction;
         };
 
         switch (magnitudeKey) {
@@ -4310,6 +4772,8 @@ class Player {
             actorName: this.#name || null,
             needBarId: bar.id,
             needBarName: bar.name,
+            needBarIcon: typeof bar.icon === 'string' && bar.icon.trim() ? bar.icon.trim() : null,
+            needBarColor: typeof bar.color === 'string' && bar.color.trim() ? bar.color.trim() : null,
             id: bar.id,
             name: bar.name,
             direction,
@@ -4328,9 +4792,10 @@ class Player {
         };
     }
 
-    #initializeNeedBars(initialData = null) {
+    #initializeNeedBars(initialData = null, applicabilityData = null) {
         const definitions = Player.needBarDefinitions || {};
         this.#needBars = new Map();
+        this.#needBarApplicability = Player.#normalizeNeedBarApplicability(applicabilityData);
 
         const initialLookup = new Map();
         if (Array.isArray(initialData)) {
@@ -4363,7 +4828,16 @@ class Player {
                 continue;
             }
 
-            if (!Player.#needBarCanBeStoredForActor(definition, this)) {
+            const canBeStored = Player.#needBarCanBeStoredForActor(definition, this);
+            if (canBeStored && !this.#needBarApplicability.has(normalizedId)) {
+                this.#needBarApplicability.set(normalizedId, true);
+            }
+
+            if (this.#needBarApplicability.get(normalizedId) === false) {
+                continue;
+            }
+
+            if (!canBeStored) {
                 continue;
             }
 
@@ -4411,7 +4885,7 @@ class Player {
     }
 
     updateCorpseCountdown() {
-        if (this.isDead && this.#corpseCountdown > 0) {
+        if (this.isDead && !this.#persistWhenDead && this.#corpseCountdown > 0) {
             this.#corpseCountdown -= 1;
             this.#lastUpdated = new Date().toISOString();
         }
@@ -4797,6 +5271,7 @@ class Player {
             healthAttribute: this.#healthAttribute,
             alive: this.isAlive(),
             isDead: this.#isDead,
+            persistWhenDead: this.#persistWhenDead,
             currentLocation: this.#currentLocation,
             imageId: this.#imageId,
             isNPC: this.#isNPC,
@@ -4874,6 +5349,7 @@ class Player {
             isNPC: this.#isNPC,
             isHostile: this.#isHostile,
             isDead: this.#isDead,
+            persistWhenDead: this.#persistWhenDead,
             factionId: this.#factionId,
             corpseCountdown: this.#corpseCountdown,
             inventory: Array.from(this.#inventory).map(thing => thing.id),
@@ -4906,6 +5382,8 @@ class Player {
             experience: this.#experience,
             currency: this.#currency,
             needBars: this.getNeedBars({ scope: 'stored' }),
+            needBarApplicability: this.getNeedBarApplicability(),
+            needBarRatesAppliedAt: this.#needBarRatesAppliedAt,
             factionStandings: this.getFactionStandings(),
             importantMemories: this.importantMemories,
             previousLocationId: this.#previousLocationId,
@@ -4927,6 +5405,13 @@ class Player {
      * Create player from saved data
      */
     static fromJSON(data) {
+        const legacyNeedBarLoadState = Player.#buildLegacyNeedBarLoadState({
+            needBars: Array.isArray(data.needBars) || (data.needBars && typeof data.needBars === 'object') ? data.needBars : null,
+            needBarApplicability: data.needBarApplicability && typeof data.needBarApplicability === 'object'
+                ? data.needBarApplicability
+                : null,
+            isNPC: data.isNPC
+        });
         const player = new Player({
             name: data.name,
             level: data.level,
@@ -4971,8 +5456,11 @@ class Player {
             currency: data.currency,
             createdAt: data.createdAt,
             lastUpdated: data.lastUpdated,
-            needBars: Array.isArray(data.needBars) || (data.needBars && typeof data.needBars === 'object') ? data.needBars : null,
+            needBars: legacyNeedBarLoadState.needBars,
+            needBarApplicability: legacyNeedBarLoadState.needBarApplicability,
+            needBarRatesAppliedAt: data.needBarRatesAppliedAt,
             isDead: data.isDead,
+            persistWhenDead: data.persistWhenDead === true,
             corpseCountdown: data.corpseCountdown,
             importantMemories: Array.isArray(data.importantMemories) ? data.importantMemories : [],
             pendingAbilityOptionsByLevel: data.pendingAbilityOptionsByLevel,
@@ -5788,7 +6276,7 @@ class Player {
     finalizeTurn() {
         //console.log(`Finalizing turn for player ${this.#name} (${this.#id})`);
         // Handle corpse countdown if dead
-        if (this.#isDead && this.#corpseCountdown > 0) {
+        if (this.#isDead && !this.#persistWhenDead && this.#corpseCountdown > 0) {
             this.#corpseCountdown -= 1;
         }
 

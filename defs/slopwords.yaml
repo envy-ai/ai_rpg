@@ -13,6 +13,7 @@ slopwords:
   transaction: default
   transactional: default
   transactions: default
+  anchoring: default
   ozone: 0
   Elara: 0
   Aris: 0

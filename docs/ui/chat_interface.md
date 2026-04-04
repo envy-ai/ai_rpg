@@ -34,6 +34,8 @@ The main UI is rendered by `views/index.njk` and powered by `public/js/chat.js` 
   - When move plausibility is configured for `unexplored_locations`, exit-button travel uses the chat/event-move path for unresolved region-entry exits and for expanded destination locations whose exit payload reports `destinationVisited === false`; merely being expanded no longer makes a location count as explored.
   - `exit.isVehicle`/`exit.vehicleType` are treated as edge metadata only and must not be used to infer that the destination location/region is itself a vehicle.
   - NPC list + "Add NPC" button.
+  - NPC and party-member card health bars sit just below the portrait image so they do not overlap the in-portrait need bars.
+  - Dead NPC/party cards only show a corpse countdown inside the skull indicator when `corpseCountdown` is numeric; persistent corpses (`persistWhenDead`) omit the countdown entirely.
   - Items/Scenery grids + "Craft" and "New Item/Scenery" buttons.
   - Drag/drop behavior:
     - Any location thing card can be dragged to an inventory drop target only when its type is `item`.
@@ -64,6 +66,7 @@ The main UI is rendered by `views/index.njk` and powered by `public/js/chat.js` 
   - Any visible `.modal` is forced above the elevated load backdrop layer to prevent blur-overlay occlusion.
   - On confirm, closes immediately and calls `/api/prompts/cancel-all` (`waitForDrain: false`) before issuing `/api/load`.
 - Player/NPC "Edit" opens `#npcEditModal`, which includes an `Aliases` textarea (one alias per line) plus `Resistances`/`Vulnerabilities` textareas and saves through `PUT /api/npcs/:id`.
+  - NPC edit mode also shows per-character need-bar applicability checkboxes; the player view omits that section.
   - Player/NPC Inventory modal keeps active inventory filters (including slot filter selection) when equip/unequip triggers an inventory re-render.
   - Party summary list.
 - **World-time chip** (`#worldTimeIndicator`):
@@ -71,6 +74,7 @@ The main UI is rendered by `views/index.njk` and powered by `public/js/chat.js` 
   - Shows canonical world time (`h:MM AM/PM`), date label, and current segment/season.
   - Shows the current light-level description as an unlabeled line when available.
   - Shows a bottom weather line (`Weather: <name>`) when a concrete local weather type is available.
+  - Also updates immediately from realtime `chat_history_updated` payloads that carry `worldTime`, including slash-command-driven clock changes such as `/time`.
   - Emits event-summary updates when weather changes and when light-level descriptions cross into a new threshold/segment; light-level updates are suppressed for locations marked as no local weather.
   - Hidden until the first `worldTime` payload is received from `/api/chat/history` or `/api/chat`.
 
@@ -108,7 +112,7 @@ The chat client listens on `/ws?clientId=...` and handles:
 - `quest_confirmation_request` (modal prompt).
 
 `processChatPayload()` also consumes `payload.worldTime` from streamed/final chat responses, updates the world-time chip, and emits transition summaries (`segment`/`season`) into the event-summary flow.
-It also renders `needBarChanges`, `dispositionChanges`, and `factionReputationChanges` into the same event-summary bundle box so they appear together.
+It also renders `needBarChanges`, `dispositionChanges`, and `factionReputationChanges` into the same event-summary bundle box so they appear together. When `time_passed` advances world time for the turn, the same bundle appends an `⏳ <natural duration> passed.` line using `A`, `A and B`, or `A, B, and C` formatting. Need-bar summaries now use the configured bar icon, include the model-provided reason text when present, and emit one standalone notification per change outside active bundles.
 
 ## Key API calls from the chat UI
 

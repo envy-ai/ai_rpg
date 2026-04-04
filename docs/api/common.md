@@ -105,6 +105,7 @@ Fields:
 - `health`, `maxHealth`, `healthAttribute`
 - `imageId`
 - `isNPC`, `isPlayer`, `isHostile`, `isDead`
+- `persistWhenDead`
 - `isInPlayerParty`, `isHostileToPlayer`
 - `locationId`
 - `corpseCountdown`
@@ -121,6 +122,7 @@ Fields:
 - `currency` (number | null)
 - `experience` (number | null)
 - `needBars` (array of NeedBar)
+- `needBarApplicability` (object map of `needBarId -> boolean`)
 - `factionId` (string | null)
 - `factionStandings` (object map of `factionId -> number`)
 - `personality` (object | null)
@@ -143,7 +145,7 @@ Highlights beyond `Player.toJSON()`:
 - `skills`, `abilities`, `unspentSkillPoints`, `unspentAttributePoints`
 - `statusEffects` (active effects), `intrinsicStatusEffects` may be added by the route
 - `gear`, `gearSlotsByType`, `gearSlotDefinitions`
-- `needBars`, `corpseCountdown`, `importantMemories`
+- `needBars`, `needBarApplicability`, `corpseCountdown`, `persistWhenDead`, `importantMemories`
 - `resistances`, `vulnerabilities`
 - `quests`, `personality`, `goals`, `characterArc`
 
@@ -227,7 +229,7 @@ Fields:
 ## NeedBar (normalizeNeedBarResponse)
 Fields:
 - `id`, `name`, `description`, `icon`, `color`
-- `min`, `max`, `value`, `changePerTurn`, `initialValue`
+- `min`, `max`, `value`, `changePerMinute`, `initialValue`
 - `player`, `party`, `nonParty`
 - `currentThreshold` (`{ threshold, name, effect }` | null)
 - `effectThresholds` (array)

@@ -31,6 +31,38 @@ test('parseDurationToMinutes still rejects bare decimal strings without units', 
     );
 });
 
+test('parseDurationToMinutes can accept an optional unary sign when allowSigned is enabled', () => {
+    assert.equal(
+        Utils.parseDurationToMinutes('+10m', { allowSigned: true }),
+        10
+    );
+    assert.equal(
+        Utils.parseDurationToMinutes('-3 hours, 2 minutes', { allowSigned: true }),
+        -182
+    );
+    assert.equal(
+        Utils.parseDurationToMinutes('- 1d5h', { allowSigned: true }),
+        -1740
+    );
+});
+
+test('parseDurationToMinutes scrubs non-time punctuation without inserting spaces', () => {
+    assert.equal(Utils.parseDurationToMinutes('8+ hours'), 480);
+    assert.equal(Utils.parseDurationToMinutes('5 minute(s)'), 5);
+    assert.equal(Utils.parseDurationToMinutes('1 day (and) 2 hours'), 1560);
+    assert.equal(
+        Utils.parseDurationToMinutes('-(3 hours, 2 minutes)', { allowSigned: true }),
+        -182
+    );
+});
+
+test('parseDurationToMinutes still rejects signed values unless allowSigned is enabled', () => {
+    assert.throws(
+        () => Utils.parseDurationToMinutes('-10m'),
+        /malformed separators or unknown units/
+    );
+});
+
 test('formatMinutesAsDuration renders day/hour/minute labels from minute values', () => {
     assert.equal(Utils.formatMinutesAsDuration(240), '4 hours');
     assert.equal(Utils.formatMinutesAsDuration(1501), '1 day, 1 hour, 1 minute');
@@ -42,4 +74,18 @@ test('formatMinutesAsDuration renders day/hour/minute labels from minute values'
 test('formatMinutesAsDuration can append ago for negative values', () => {
     assert.equal(Utils.formatMinutesAsDuration(-65, { includeAgo: true }), '1 hour, 5 minutes ago');
     assert.equal(Utils.formatMinutesAsDuration(-1440, { includeAgo: true }), '1 day ago');
+});
+
+test('formatMinutesAsNaturalDuration renders natural-language joins for day/hour/minute values', () => {
+    assert.equal(Utils.formatMinutesAsNaturalDuration(1), '1 minute');
+    assert.equal(Utils.formatMinutesAsNaturalDuration(243), '4 hours and 3 minutes');
+    assert.equal(Utils.formatMinutesAsNaturalDuration(2880), '2 days');
+    assert.equal(Utils.formatMinutesAsNaturalDuration(1624), '1 day, 3 hours, and 4 minutes');
+    assert.equal(Utils.formatMinutesAsNaturalDuration(1800), '1 day and 6 hours');
+    assert.equal(Utils.formatMinutesAsNaturalDuration(0), '0 minutes');
+});
+
+test('formatMinutesAsNaturalDuration can append ago for negative values', () => {
+    assert.equal(Utils.formatMinutesAsNaturalDuration(-65, { includeAgo: true }), '1 hour and 5 minutes ago');
+    assert.equal(Utils.formatMinutesAsNaturalDuration(-1440, { includeAgo: true }), '1 day ago');
 });

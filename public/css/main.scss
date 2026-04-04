@@ -2400,7 +2400,7 @@ p:not(:last-child) {
   display: flex;
   align-items: center;
   justify-content: center;
-  overflow: hidden;
+  overflow: visible;
   position: relative;
   border: 1px solid rgba(148, 163, 184, 0.32);
   box-shadow: inset 0 4px 12px rgba(15, 23, 42, 0.45);
@@ -2455,6 +2455,8 @@ p:not(:last-child) {
   display: flex;
   align-items: center;
   justify-content: center;
+  border-radius: inherit;
+  overflow: hidden;
 }
 
 .entity-card--npc .entity-icon {
@@ -3174,7 +3176,7 @@ body.dark .thing-toggle-hint {
   width: 100%;
   aspect-ratio: 1 / 1;
   border-radius: 12px;
-  overflow: hidden;
+  overflow: visible;
   position: relative;
   background: rgba(15, 23, 42, 0.9);
   display: flex;
@@ -3188,6 +3190,8 @@ body.dark .thing-toggle-hint {
   display: flex;
   align-items: center;
   justify-content: center;
+  border-radius: inherit;
+  overflow: hidden;
 }
 
 .party-portrait-image img {
@@ -3515,7 +3519,7 @@ body.dark .thing-toggle-hint {
 .npc-health-bar {
   left: 6px;
   right: 6px;
-  bottom: 18px;
+  top: calc(100% + 2px);
   height: 0.45rem;
 }
 
@@ -7673,6 +7677,37 @@ body.modal-open {
   border-radius: 12px;
   border: 1px solid rgba(148, 163, 184, 0.25);
   background: rgba(15, 23, 42, 0.6);
+}
+
+.npc-need-applicability-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.npc-need-applicability-item {
+  width: 100%;
+  align-items: flex-start;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  background: rgba(15, 23, 42, 0.6);
+}
+
+.npc-need-applicability-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.npc-need-applicability-title {
+  font-weight: 600;
+  color: #f8fafc;
+}
+
+.npc-need-applicability-meta {
+  font-size: 0.78rem;
+  color: rgba(226, 232, 240, 0.72);
 }
 
 .npc-ability-row-main {

@@ -9,10 +9,14 @@ need_bars:
     icon: 🧠
     color: "#20B2AA"
     min: 0
-    max: 100
-    initial: 100
-    change_per_turn: -0.5
+    max: 1000
+    initial: 1000
+    change_per_minute: -5
     relative_to_level: false
+    need_values:
+      small: 100
+      medium: 250
+      large: 700
     small_increase:
       - reading a book
       - playing a game
@@ -40,23 +44,23 @@ need_bars:
         name: Insane
         sentence: "%CHARACTER% has lost their grip on reality."
         effect: Loss of control, permanent trauma possible
-      1:
+      10:
         name: Breaking
         sentence: "%CHARACTER% is on the verge of a mental break."
         effect: Hallucinations, severe penalty to social interaction
-      25:
+      250:
         name: Stressed
         sentence: "%CHARACTER% is feeling stressed."
         effect: Anxiety, minor penalty to focus
-      40:
+      400:
         name: Uneasy
         sentence: "%CHARACTER% is feeling uneasy."
         effect: No effect
-      70:
+      700:
         name: Stable
         sentence: "%CHARACTER% is feeling mentally stable."
         effect: No effect
-      100:
+      1000:
         name: Lucid
         sentence: "%CHARACTER% is feeling lucid and clear-headed."
         effect: Clear mind, resistance to fear

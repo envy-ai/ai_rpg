@@ -29,7 +29,7 @@ Update an NPC's core data.
 
 Request:
 - Path: `id`
-- Body supports: `name`, `description`, `shortDescription`, `race`, `class`, `factionId`, `level`, `health`, `healthAttribute`, `attributes`, `skills`, `abilities`, `currency`, `experience`, `isDead`, `personalityType`, `personalityTraits`, `personalityNotes`, `statusEffects`, `aliases`, `resistances`, `vulnerabilities` (also accepts singular aliases `resistance` and `vulnerability`)
+- Body supports: `name`, `description`, `shortDescription`, `race`, `class`, `factionId`, `level`, `health`, `healthAttribute`, `attributes`, `skills`, `abilities`, `currency`, `experience`, `isDead`, `personalityType`, `personalityTraits`, `personalityNotes`, `statusEffects`, `aliases`, `resistances`, `vulnerabilities`, `needBarApplicability` (also accepts singular aliases `resistance` and `vulnerability`)
 - Rejects `unspentSkillPoints` (400) because pools are formula-derived at read time.
 
 Response:
@@ -40,6 +40,7 @@ Notes:
 - Unknown skills may trigger skill generation; canonical names are normalized before assignment.
 - `factionId` must reference an existing faction id or be `null` to clear membership.
 - If provided, `aliases` must be an array of strings.
+- If provided, `needBarApplicability` must be an object and is only accepted for NPCs; unchecked bars are removed from that actor and re-enabled bars come back at `100`.
 
 ## POST /api/npcs/:id/equipment
 Equip or unequip an item in an NPC's inventory.

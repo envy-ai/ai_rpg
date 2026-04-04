@@ -97,13 +97,13 @@ Respond with one of the following (reason about your decision in the reason tag 
     <skill><!--One of the following skills: {{ setting.skills | join(', ') }} (Or, if none are relevant, respond with N/A.)--></skill>
     <attribute><!--Relevant attribute--></attribute>
     <difficulty>
-      <!--Is this an opposed check versus another character? If so, use the following: -->
+      <!--Is this an opposed check versus another character who is explicitly listed above as present on the scene? If so, use the following: -->
       <opposedCheck>
         <opponent><!--Exact name of the opponent as seen in the location context ("player" if it was the player)--></opponent>
         <opponentSkill><!--One of the following skills: {{ setting.skills | join(', ') }} (Or, if none are relevant, respond with N/A.)--></opponentSkill>
         <opponentAttribute><!--Relevant attribute--></opponentAttribute>
       </opposedCheck>
-      <!--If it's not an opposed check, just specify the difficulty level: Trivial, Easy, Medium, Hard, Very Hard, or Legendary. Do not account for the player's current state, because that's accounted for in the circumstance modifiers.-->
+      <!--If it's not an opposed check (or if it's an 'opposed' check against a character who isn't specifically listed as present on the scene), just specify the difficulty level: Trivial, Easy, Medium, Hard, Very Hard, or Legendary. Do not account for the player's current state, because that's accounted for in the circumstance modifiers.-->
       <unopposedCheck>
         <difficultyLevel><!--Trivial, Easy, Medium, Hard, Very Hard, or Legendary--></difficultyLevel>
       </unopposedCheck>

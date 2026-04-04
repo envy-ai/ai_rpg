@@ -233,18 +233,9 @@ The below context is an account of the current game state, including the setting
           </effect>
           {% endfor %}
         </statusEffects>
-        <needBars>
-          {% for bar in npc.needBars %}
-          <needBar>
-            <name>{{ bar.name }}</name>
-            <currentThreshold>
-              <name>{% if bar.currentThreshold %}{{ bar.currentThreshold.name | default('Neutral') }}{% else %}Neutral{% endif %}</name>
-              <effect>{% if bar.currentThreshold %}{{ bar.currentThreshold.effect | default('No active effect') }}{% else %}No active effect{% endif %}</effect>
-              <value>{% if bar.currentThreshold %}{{ bar.currentThreshold.threshold | default('', true) }}{% else %}{% endif %}</value>
-            </currentThreshold>
-          </needBar>
-          {% endfor %}
-        </needBars>
+        <needs>
+{% for sentence in npc.needs %}        - {{ sentence }}
+{% endfor %}        </needs>
       </npc>
       {% endfor %}
     </npcs>
@@ -363,18 +354,9 @@ The below context is an account of the current game state, including the setting
       {% endfor %}
     {% endif %}</inventory>
     {% endif %}
-    <needBars>
-      {% for bar in currentPlayer.needBars %}
-      <needBar>
-        <name>{{ bar.name }}</name>
-        <currentThreshold>
-          <name>{% if bar.currentThreshold %}{{ bar.currentThreshold.name | default('Neutral') }}{% else %}Neutral{% endif %}</name>
-          <effect>{% if bar.currentThreshold %}{{ bar.currentThreshold.effect | default('No active effect') }}{% else %}No active effect{% endif %}</effect>
-          <value>{% if bar.currentThreshold %}{{ bar.currentThreshold.threshold | default('', true) }}{% else %}{% endif %}</value>
-        </currentThreshold>
-      </needBar>
-      {% endfor %}
-    </needBars>
+    <needs>
+{% for sentence in currentPlayer.needs %}      - {{ sentence }}
+{% endfor %}    </needs>
     {% if not suppressQuestList %}
     <quests>
       {% for quest in currentPlayer.currentQuests %}
@@ -464,18 +446,9 @@ The below context is an account of the current game state, including the setting
         </effect>
         {% endfor %}
       </statusEffects>
-      <needBars>
-        {% for bar in member.needBars %}
-        <needBar>
-          <name>{{ bar.name }}</name>
-          <currentThreshold>
-            <name>{% if bar.currentThreshold %}{{ bar.currentThreshold.name | default('Neutral') }}{% else %}Neutral{% endif %}</name>
-            <effect>{% if bar.currentThreshold %}{{ bar.currentThreshold.effect | default('No active effect') }}{% else %}No active effect{% endif %}</effect>
-            <value>{% if bar.currentThreshold %}{{ bar.currentThreshold.threshold | default('', true) }}{% else %}{% endif %}</value>
-          </currentThreshold>
-        </needBar>
-        {% endfor %}
-      </needBars>
+      <needs>
+{% for sentence in member.needs %}        - {{ sentence }}
+{% endfor %}      </needs>
     </member>
     {% endfor %}
   </playerParty>

@@ -1,3 +1,6 @@
+Here is a list of character needs that are tracked in game:
+{% include "_includes/need-bar-definitions.njk" %}
+
 Here is a list of all character attributes:
 {% for attrName, attrDef in attributeDefinitions %}- {{ attrName }}: {{ attrDef.description }} 
 {% endfor %}
@@ -89,8 +92,8 @@ Format your response as follows:
 <race>their race (human, elf, android, etc)</race>
 
 <!-- Only list things for resistances and vulnerabilities if they would differ significantly from a typical human. For example, if the NPC is a fire elemental, you might list "fire" under resistances and "cold" under vulnerabilities. If the NPC is a normal human with no particular resistances or vulnerabilities, leave these blank. For instance, humans aren't considered vulnerable to fire, as they take standard damage from it.-->
-<resistances>Any specific resistances, immunities, or things that are ineffective against them. "None" if none. Example: "slashing (resistant), cold (immune), charm effects (resistant)"</resistances>
-<vulnerabilities>Any specific vulnerabilities, weaknesses, or things that can be used against them. "None" if none. Example: "fire (extremely vulnerable), light (vulnerable), any magic (vulnerable)"</vulnerabilities>
+<resistances><!--Any specific resistances, immunities, or things that are ineffective against them, and how resistant they are in parentheses ("resistant" or "immune"). "None" if none. Example: "slashing (resistant), cold (immune), charm effects (resistant)" --></resistances>
+<vulnerabilities><!--Any specific vulnerabilities, weaknesses, or things that can be used against them, and how vulnerable they are in parentheses ("vulnerable" or "extremely vulnerable"). "None" if none. Example: "fire (extremely vulnerable), light (vulnerable), any magic (vulnerable)" --></vulnerabilities>
 
 <gender>male, female, none, or other</gender>
 <isHostile>true or false</isHostile>
@@ -101,8 +104,18 @@ Format your response as follows:
 {% for attrName, attrDef in attributeDefinitions %}  <attribute name="{{ attrName }}">rating (see above)</attribute>
 {% endfor %}
 </attributes>
+<startingHealthPercentage>{% if npc.startingHealthPercentage is defined %}{{ npc.startingHealthPercentage }}{% else %}<!--Integer from 0 to 100 representing the NPC's starting health as a percentage of their maximum health. Usually 100, but may be lower if the NPC is injured or otherwise not at full health. 0 if for some reason the NPC is incapacitated. 'deceased' if the NPC is dead.-->{% endif %}</startingHealthPercentage>
+<startingNeeds>
+    {% for need in needBarDefinitions -%}
+    <needBar>
+        <id>{{ need.id }}</id>                    
+        <isApplicable><!-- True if this need makes sense for this character, even if not quite literally (e.g., a non-human NPC might have a "hunger" need that represents a different kind of sustenance, like blood for a vampire). False otherwise, or if it's inappropriate (Sexual needs for a child NPC or non-sentient entity, for example) --></isApplicable>
+        <startingLevel><!-- Initial level of the need bar, from 0% (empty) to 100% (fully satisfied). Should usually be 100% unless there's a reason for it not to be. Omit this entirely if not applicable. --></startingLevel>
+    </needBar>
+    {% endfor -%}
+</startingNeeds>
 <personality>
-    <type>-dere archetype, Enneagram type, Expanded 5x5 DnD alignment, or similar short description. Optionally, 2 types separated by commas, so long as they make sense together. Then a short 2 sentence description of how they aren't just the stereotype of that personality.</type>
+    <type>-dere archetype, Enneagram type, Expanded 5x5 alignment (Lawful-Social-Neutral-Rebel-Chaotic and Good-Moral-Neutral-Impure-Evil), or similar short description. Optionally, 2 types separated by commas, so long as they make sense together. Then a short 2 sentence description of how they aren't just the stereotype of that personality.</type>
     <traits>optionally, any neurodivergences or mental health conditions (e.g. ADHD, autism, anxiety, depression, bipolar, PTSD, sociopathy, psychopathy, etc). Comma separated, usually none, no more than 3</traits>
     <characterArc>
         <shortTerm>A brief description of the NPC's short-term active personal growth arc</shortTerm>
