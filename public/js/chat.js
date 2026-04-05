@@ -2456,6 +2456,11 @@ class AIRPGChat {
                 this.renderWorldTimeTransitions(transitions, null);
             }
         }
+        if (payload && payload.locationRefreshRequested && typeof window.loadCurrentLocation === 'function') {
+            Promise.resolve(window.loadCurrentLocation()).catch((error) => {
+                console.warn('Failed to refresh location after chat_history_updated:', error);
+            });
+        }
         this.refreshChatHistory();
         window.refreshStoryTools?.({ preserveSelection: true });
         try {

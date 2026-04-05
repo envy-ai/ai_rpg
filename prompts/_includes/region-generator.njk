@@ -117,7 +117,10 @@ Very important: follow the instructions in &lt;writingStyleNotes&gt; and any ton
       <numNPCs>Integer number of NPCs likely to be present at once (0-4)</numNPCs>
       <numHostiles>Integer number of enemies likely to be present at once (0-4)</numHostiles>
       <exits>
-        <exit>Name of other location in region</exit>
+        <exit>
+          <destination>Exact name of other location in region</destination>
+          <travelTime>Travel time with units (minutes and/or hours only), e.g. "1 hour", "30 minutes", "1 hour 30 minutes", "1.5 hours". Travel time should be realistic based on the distance and terrain, so 0 minutes for small buildings, at least 5 minutes for locations in small towns, at least 15 minutes in large cities, and 30 minutes or even multiple hours in wild terrain</travelTime>
+        </exit>
         <!-- Repeat <exit> elements as needed; 0-4 per location is typical. -->
       </exits>
       <vehicles>

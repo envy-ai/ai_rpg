@@ -12,9 +12,9 @@ Slash command `/time` to advance or rewind the world clock by a signed duration.
 
 ## Behavior
 - Parses the supplied duration through `Utils.parseDurationToMinutes(..., { allowSigned: true })`.
-- Positive durations use the normal forward world-time path and then process due vehicle arrivals.
+- Positive durations use the normal forward world-time path, apply elapsed per-minute need/status-effect processing, and then process due vehicle arrivals.
 - Negative durations rewind the raw world clock without trying to undo arrivals, expired effects, offscreen actions, or other already-processed time-driven mutations.
-- Broadcasts an updated world-time payload so the chat UI clock refreshes immediately.
+- Broadcasts an updated world-time payload so the chat UI clock refreshes immediately, and asks the client to reload the current player/location panels after positive adjustments so need bars redraw.
 - Replies with the applied duration, the new current time/date, and any processed due-arrival count.
 
 ## Notes

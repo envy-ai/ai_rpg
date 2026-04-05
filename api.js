@@ -30323,9 +30323,11 @@ module.exports = function registerApiRoutes(scope) {
             const previous = Globals.getWorldTimeContext();
             let timeProgress;
             let vehicleArrivals = [];
+            let statusNeedAdjustments = [];
 
             if (deltaMinutes >= 0) {
                 timeProgress = Globals.advanceTime(deltaMinutes, { source });
+                statusNeedAdjustments = Player.applyStatusEffectNeedBarsToAll() || [];
                 vehicleArrivals = await processDueVehicleArrivals();
             } else {
                 const currentTotalMinutes = Globals.getTotalWorldMinutes();
@@ -30351,7 +30353,8 @@ module.exports = function registerApiRoutes(scope) {
 
             try {
                 Globals.emitToClient(null, 'chat_history_updated', {
-                    worldTime
+                    worldTime,
+                    locationRefreshRequested: deltaMinutes > 0
                 });
             } catch (emitError) {
                 console.warn('Failed to emit world-time refresh after slash command:', emitError?.message || emitError);
@@ -30360,6 +30363,7 @@ module.exports = function registerApiRoutes(scope) {
             return {
                 deltaMinutes,
                 timeProgress,
+                statusNeedAdjustments,
                 vehicleArrivals,
                 worldTime
             };

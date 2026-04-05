@@ -75,6 +75,7 @@ The main UI is rendered by `views/index.njk` and powered by `public/js/chat.js` 
   - Shows the current light-level description as an unlabeled line when available.
   - Shows a bottom weather line (`Weather: <name>`) when a concrete local weather type is available.
   - Also updates immediately from realtime `chat_history_updated` payloads that carry `worldTime`, including slash-command-driven clock changes such as `/time`.
+  - Positive slash-command time jumps can also request a current player/location reload through that same realtime event so need bars and other time-sensitive sidebar/card data redraw immediately.
   - Emits event-summary updates when weather changes and when light-level descriptions cross into a new threshold/segment; light-level updates are suppressed for locations marked as no local weather.
   - Hidden until the first `worldTime` payload is received from `/api/chat/history` or `/api/chat`.
 
