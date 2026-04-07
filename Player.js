@@ -400,9 +400,10 @@ class Player {
         }
 
         const isInPlayerParty = Boolean(actor?.isInPlayerParty);
+        const wasEverInPlayerParty = Boolean(actor?.wasEverInPlayerParty);
         return {
             player: false,
-            party: isInPlayerParty,
+            party: isInPlayerParty || wasEverInPlayerParty,
             nonParty: !isInPlayerParty
         };
     }

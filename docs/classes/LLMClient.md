@@ -48,7 +48,7 @@ Centralized client for LLM chat completions with concurrency limits, streaming p
 - Image handling: `#getSharp`, `#parseImageDataUrl`, `#convertImageDataUrlToWebp`, `#convertMessagesToWebp`.
 
 ## Notes
-- Streaming progress is broadcast through `Globals.realtimeHub` when available, including per-prompt `promptText` content for the request payload and `previewText` content for the currently streamed textual response.
+- Streaming progress is broadcast through `Globals.realtimeHub` when available, including per-prompt `promptText` content for the request payload and `previewText` content for the currently streamed textual response. Stream assembly now de-duplicates cumulative streamed text whether it arrives via `message.content` or `delta.content`, so providers that resend the accumulated message text do not duplicate already-rendered prefixes in prose or prompt-progress previews.
 - Streamed tool calls are allowed: empty textual content is accepted when valid tool calls are present, and regex/XML output validation is skipped for those tool-call turns.
 - Retries are built in; stream timeouts are incrementally increased on retry.
 - Manual retries from prompt-progress UI do not consume configured automatic retry attempts for the prompt call.

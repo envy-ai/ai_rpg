@@ -59,6 +59,11 @@ test('defs-only party-needs mod enables food and rest need bars for the player a
         const partyNeedBarIds = npc.getNeedBars({ scope: 'active' }).map(bar => bar.id);
         assert.ok(partyNeedBarIds.includes('food'));
         assert.ok(partyNeedBarIds.includes('rest'));
+
+        npc.setInPlayerParty(false);
+        const historicalNeedBarIds = npc.getNeedBars({ scope: 'active' }).map(bar => bar.id);
+        assert.ok(historicalNeedBarIds.includes('food'));
+        assert.ok(historicalNeedBarIds.includes('rest'));
     } finally {
         Player.clearRuntimeRegistries();
         clearFrozenEnabledModManifests(repoBaseDir);

@@ -69,6 +69,61 @@ class LLMClient {
     static #abortControllers = new Map();
     static #controllerAbortIntents = new WeakMap();
 
+    static #mergeStreamText(assembled, incoming, { isSnapshot = false } = {}) {
+        const current = typeof assembled === 'string' ? assembled : '';
+        const next = typeof incoming === 'string' ? incoming : '';
+
+        if (!next) {
+            return {
+                assembled: current,
+                previewDelta: ''
+            };
+        }
+
+        if (!current) {
+            return {
+                assembled: next,
+                previewDelta: next
+            };
+        }
+
+        // Some providers stream the full accumulated text in each chunk, even when
+        // the payload is delivered through delta.content. Treat those as snapshots
+        // regardless of the declared payload shape so prefixes are not duplicated.
+        if (next === current) {
+            return {
+                assembled: current,
+                previewDelta: ''
+            };
+        }
+
+        if (next.startsWith(current)) {
+            return {
+                assembled: next,
+                previewDelta: next.slice(current.length)
+            };
+        }
+
+        if (current.startsWith(next)) {
+            return {
+                assembled: current,
+                previewDelta: ''
+            };
+        }
+
+        if (!isSnapshot) {
+            return {
+                assembled: current + next,
+                previewDelta: next
+            };
+        }
+
+        return {
+            assembled: current + next,
+            previewDelta: next
+        };
+    }
+
     static #isInteractive() {
         return process.stdout && process.stdout.isTTY;
     }
@@ -2306,7 +2361,11 @@ class LLMClient {
                                 try {
                                     const parsed = JSON.parse(payloadStr);
                                     const firstChoice = parsed?.choices?.[0] || null;
-                                    const deltaPayload = firstChoice?.delta || firstChoice?.message || null;
+                                    const hasDeltaPayload = Boolean(firstChoice?.delta && typeof firstChoice.delta === 'object');
+                                    const hasMessagePayload = !hasDeltaPayload && Boolean(firstChoice?.message && typeof firstChoice.message === 'object');
+                                    const deltaPayload = hasDeltaPayload
+                                        ? firstChoice.delta
+                                        : (hasMessagePayload ? firstChoice.message : null);
                                     const delta = LLMClient.#extractTextContent(deltaPayload?.content);
                                     if (parsed?.usage && typeof parsed.usage === 'object') {
                                         streamUsage = { ...parsed.usage };
@@ -2319,10 +2378,18 @@ class LLMClient {
                                     }
                                     if (delta) {
                                         resetTimer(streamContinueTimeoutMs);
-                                        assembled += delta;
+                                        const mergedText = LLMClient.#mergeStreamText(assembled, delta, {
+                                            isSnapshot: hasMessagePayload
+                                        });
+                                        assembled = mergedText.assembled;
                                         responseContent = assembled;
                                         const deltaBytes = Buffer.byteLength(delta, 'utf8');
-                                        LLMClient.#trackStreamBytes(streamId, deltaBytes, streamContinueTimeoutMs, delta);
+                                        LLMClient.#trackStreamBytes(
+                                            streamId,
+                                            deltaBytes,
+                                            streamContinueTimeoutMs,
+                                            mergedText.previewDelta
+                                        );
                                     }
                                 } catch (parseError) {
                                     // ignore malformed chunks, but log for visibility

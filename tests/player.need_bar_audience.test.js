@@ -98,7 +98,7 @@ function applyNeedBarsAtMinute(minute) {
     return Player.applyStatusEffectNeedBarsToAll();
 }
 
-test('NPC need bars track active audience by party membership while preserving stored hidden bars', () => {
+test('NPC need bars keep party-audience bars active after leaving the party when the actor has party history', () => {
     const previousBaseDir = Globals.baseDir;
     const previousConfig = Globals.config;
     const previousWorldTime = Globals.worldTime;
@@ -151,12 +151,17 @@ test('NPC need bars track active audience by party membership while preserving s
         npc.setInPlayerParty(false);
         assert.deepEqual(
             npc.getNeedBars({ scope: 'active' }).map(bar => bar.id).sort(),
-            ['stamina', 'suspicion']
+            ['morale', 'stamina', 'suspicion']
         );
         assert.equal(
             npc.getNeedBars({ scope: 'stored' }).find(bar => bar.id === 'morale')?.value,
             53
         );
+
+        applyNeedBarsAtMinute(103);
+        assert.equal(npc.getNeedBarValue('morale'), 51);
+        assert.equal(npc.getNeedBarValue('suspicion'), 46);
+        assert.equal(npc.getNeedBarValue('stamina'), 97);
     } finally {
         Player.clearRuntimeRegistries();
         Globals.baseDir = previousBaseDir;

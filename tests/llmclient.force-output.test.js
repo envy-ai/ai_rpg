@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { PassThrough } = require('stream');
 
 const axios = require('axios');
 const Globals = require('../Globals.js');
@@ -397,6 +398,163 @@ test('LLMClient.chatCompletion supports forceOutput tool calls and skips regex v
         assert.equal(onResponsePayload.data.choices[0].finish_reason, 'tool_calls');
         assert.equal(onResponsePayload.data.choices[0].message.tool_calls.length, 1);
         assert.equal(onResponsePayload.data.choices[0].message.tool_calls[0].function.name, 'locateNpcs');
+    } finally {
+        axios.post = originalAxiosPost;
+        Globals.config = originalConfig;
+    }
+});
+
+test('LLMClient.chatCompletion treats streamed message.content chunks as snapshots instead of duplicating prefixes', async () => {
+    const originalAxiosPost = axios.post;
+    const originalConfig = Globals.config;
+    let capturedRequest = null;
+    let capturedResponse = null;
+
+    axios.post = async (_endpoint, payload) => {
+        const stream = new PassThrough();
+        process.nextTick(() => {
+            stream.write(`data: ${JSON.stringify({
+                choices: [
+                    {
+                        message: {
+                            content: 'The quick brown fox'
+                        }
+                    }
+                ]
+            })}\n\n`);
+            stream.write(`data: ${JSON.stringify({
+                choices: [
+                    {
+                        message: {
+                            content: 'The quick brown fox jumped over the lazy dog.'
+                        },
+                        finish_reason: 'stop'
+                    }
+                ],
+                usage: {
+                    total_tokens: 17
+                }
+            })}\n\n`);
+            stream.write('data: [DONE]\n\n');
+            stream.end();
+        });
+
+        return {
+            status: 200,
+            statusText: 'OK',
+            headers: {},
+            config: {},
+            data: stream
+        };
+    };
+
+    Globals.config = {
+        ai: {
+            endpoint: 'https://example.invalid/v1/chat/completions',
+            apiKey: 'test-key',
+            model: 'mock-model',
+            stream: true,
+            retryAttempts: 0,
+            supress_seed: true
+        }
+    };
+
+    try {
+        const result = await LLMClient.chatCompletion({
+            messages: [{ role: 'user', content: 'Stream a response.' }],
+            validateXML: false,
+            output: 'silent',
+            retryAttempts: 0,
+            captureRequestPayload: (payload) => {
+                capturedRequest = payload;
+            },
+            captureResponsePayload: (payload) => {
+                capturedResponse = payload;
+            }
+        });
+
+        assert.equal(result, 'The quick brown fox jumped over the lazy dog.');
+        assert.equal(capturedRequest?.stream, true);
+        assert.equal(
+            capturedResponse?.choices?.[0]?.message?.content,
+            'The quick brown fox jumped over the lazy dog.'
+        );
+    } finally {
+        axios.post = originalAxiosPost;
+        Globals.config = originalConfig;
+    }
+});
+
+test('LLMClient.chatCompletion treats cumulative streamed delta.content chunks as snapshots instead of duplicating prefixes', async () => {
+    const originalAxiosPost = axios.post;
+    const originalConfig = Globals.config;
+    let capturedResponse = null;
+
+    axios.post = async () => {
+        const stream = new PassThrough();
+        process.nextTick(() => {
+            stream.write(`data: ${JSON.stringify({
+                choices: [
+                    {
+                        delta: {
+                            content: 'The quick brown fox'
+                        }
+                    }
+                ]
+            })}\n\n`);
+            stream.write(`data: ${JSON.stringify({
+                choices: [
+                    {
+                        delta: {
+                            content: 'The quick brown fox jumped over the lazy dog.'
+                        },
+                        finish_reason: 'stop'
+                    }
+                ],
+                usage: {
+                    total_tokens: 17
+                }
+            })}\n\n`);
+            stream.write('data: [DONE]\n\n');
+            stream.end();
+        });
+
+        return {
+            status: 200,
+            statusText: 'OK',
+            headers: {},
+            config: {},
+            data: stream
+        };
+    };
+
+    Globals.config = {
+        ai: {
+            endpoint: 'https://example.invalid/v1/chat/completions',
+            apiKey: 'test-key',
+            model: 'mock-model',
+            stream: true,
+            retryAttempts: 0,
+            supress_seed: true
+        }
+    };
+
+    try {
+        const result = await LLMClient.chatCompletion({
+            messages: [{ role: 'user', content: 'Stream a response.' }],
+            validateXML: false,
+            output: 'silent',
+            retryAttempts: 0,
+            captureResponsePayload: (payload) => {
+                capturedResponse = payload;
+            }
+        });
+
+        assert.equal(result, 'The quick brown fox jumped over the lazy dog.');
+        assert.equal(
+            capturedResponse?.choices?.[0]?.message?.content,
+            'The quick brown fox jumped over the lazy dog.'
+        );
     } finally {
         axios.post = originalAxiosPost;
         Globals.config = originalConfig;

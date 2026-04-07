@@ -4123,7 +4123,8 @@ function buildBasePromptContext({
     locationOverride = null,
     omitInventoryItems = null,
     omitAbilities = null,
-    omitCraftHistory = null
+    omitCraftHistory = null,
+    omitEventSummaryHistory = null
 } = {}) {
     const baseContextConfig = config?.base_context ?? null;
     if (baseContextConfig !== null && baseContextConfig !== undefined && typeof baseContextConfig !== 'object') {
@@ -4159,6 +4160,11 @@ function buildBasePromptContext({
         omitCraftHistory,
         baseContextConfig?.omit_craft_history,
         'base_context.omit_craft_history'
+    );
+    const shouldOmitEventSummaryHistory = resolveBooleanOption(
+        omitEventSummaryHistory,
+        null,
+        'buildBasePromptContext.omitEventSummaryHistory'
     );
     const activeSetting = getActiveSettingSnapshot();
     const settingDescription = describeSettingForPrompt(activeSetting);
@@ -5184,6 +5190,9 @@ function buildBasePromptContext({
         }
         const entryType = typeof entry.type === 'string' ? entry.type.trim().toLowerCase() : '';
         if (entryType === 'level-up') {
+            return false;
+        }
+        if (shouldOmitEventSummaryHistory && entryType === 'event-summary') {
             return false;
         }
         const metadata = entry.metadata && typeof entry.metadata === 'object'
@@ -21504,7 +21513,9 @@ function renderThingImagePrompt(thing) {
 async function renderLocationGeneratorPrompt(options = {}) {
     try {
         const isStubExpansion = Boolean(options.isStubExpansion);
-        const baseContext = await prepareBasePromptContext();
+        const baseContext = await prepareBasePromptContext({
+            omitEventSummaryHistory: isStubExpansion
+        });
         const activeSetting = getActiveSettingSnapshot();
         const settingDescription = describeSettingForPrompt(activeSetting);
         const defaultSettingContext = buildSettingPromptContext(activeSetting, { descriptionFallback: settingDescription });
@@ -21746,7 +21757,9 @@ async function renderLocationGeneratorPrompt(options = {}) {
 
 async function renderRegionGeneratorPrompt(options = {}) {
     try {
-        const baseContext = await prepareBasePromptContext();
+        const baseContext = await prepareBasePromptContext({
+            omitEventSummaryHistory: true
+        });
         const activeSetting = getActiveSettingSnapshot();
         const settingDescription = describeSettingForPrompt(activeSetting);
         const defaultSettingContext = buildSettingPromptContext(activeSetting, { descriptionFallback: settingDescription });
