@@ -12,6 +12,7 @@ class LocationExit {
   #description;
   #destination;
   #destinationRegion;
+  #travelTimeMinutes;
   #bidirectional;
   #isVehicle;
   #vehicleType;
@@ -37,17 +38,29 @@ class LocationExit {
       : 'LocationExit creation backtrace unavailable';
   }
 
+  static #normalizeTravelTimeMinutes(value, { fieldName = 'Exit travelTimeMinutes' } = {}) {
+    if (value === null || value === undefined || value === '') {
+      return 0;
+    }
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric) || !Number.isInteger(numeric) || numeric < 0) {
+      throw new Error(`${fieldName} must be a non-negative integer minute value.`);
+    }
+    return numeric;
+  }
+
   /**
    * Creates a new LocationExit instance
    * @param {Object} options - Exit configuration
    * @param {string} options.description - Description of the exit
    * @param {string} options.destination - ID or reference to the destination location
    * @param {string|null} [options.destinationRegion=null] - Region ID the exit leads to if it crosses regions
+   * @param {number} [options.travelTimeMinutes=0] - Travel time in whole minutes for traversing the exit
    * @param {boolean} [options.bidirectional=true] - Whether the exit works both ways (defaults to true)
    * @param {string} [options.id] - Custom ID (if not provided, one will be generated)
    * @param {string} [options.imageId] - Image ID for generated exit passage scene (defaults to null)
    */
-  constructor({ description = '', destination, destinationRegion = null, bidirectional = true, id = null, imageId = null, isVehicle = false, vehicleType = null } = {}) {
+  constructor({ description = '', destination, destinationRegion = null, travelTimeMinutes = 0, bidirectional = true, id = null, imageId = null, isVehicle = false, vehicleType = null } = {}) {
     // Validate required parameters
     if (description !== undefined && typeof description !== 'string') {
       throw new Error('Exit description must be a string when provided');
@@ -71,11 +84,14 @@ class LocationExit {
       throw new Error('vehicleType must be a string or null');
     }
 
+    const normalizedTravelTimeMinutes = LocationExit.#normalizeTravelTimeMinutes(travelTimeMinutes);
+
     // Initialize private fields
     this.#id = id || LocationExit.#generateId();
     this.#description = typeof description === 'string' ? description.trim() : '';
     this.#destination = destination.trim();
     this.#destinationRegion = destinationRegion && typeof destinationRegion === 'string' ? destinationRegion.trim() : null;
+    this.#travelTimeMinutes = normalizedTravelTimeMinutes;
     this.#bidirectional = bidirectional;
     this.#imageId = imageId;
     this.#isVehicle = isVehicle;
@@ -174,6 +190,10 @@ class LocationExit {
       console.warn(`Warning: Failed to remove invalid exits for destination ${this.#destination}: ${error.message}`);
     }
     return null;
+  }
+
+  get travelTimeMinutes() {
+    return this.#travelTimeMinutes;
   }
 
   /**
@@ -505,6 +525,11 @@ class LocationExit {
     console.trace();
   }
 
+  set travelTimeMinutes(minutes) {
+    this.#travelTimeMinutes = LocationExit.#normalizeTravelTimeMinutes(minutes);
+    this.#lastUpdated = new Date();
+  }
+
   set bidirectional(isBidirectional) {
     if (typeof isBidirectional !== 'boolean') {
       throw new Error('Bidirectional flag must be a boolean');
@@ -557,7 +582,7 @@ class LocationExit {
    * @param {string} reverseDescription - Description for the reverse exit
    * @returns {LocationExit|null} - Reverse exit if bidirectional, null otherwise
    */
-  createReverse(reverseDescription) {
+  createReverse(reverseDescription, { destination = 'source_location_id' } = {}) {
     if (!this.#bidirectional) {
       return null;
     }
@@ -571,7 +596,8 @@ class LocationExit {
     // with proper context or the source location ID should be stored
     return new LocationExit({
       description: reverseDescription.trim(),
-      destination: 'source_location_id', // This would need to be provided by the caller
+      destination,
+      travelTimeMinutes: this.#travelTimeMinutes,
       bidirectional: true
     });
   }
@@ -582,14 +608,18 @@ class LocationExit {
    * @param {string} [updates.description] - New description
    * @param {string} [updates.destination] - New destination
    * @param {string|null} [updates.destinationRegion] - Region ID the exit leads to (for inter-region exits)
+   * @param {number} [updates.travelTimeMinutes] - New travel time in minutes
    * @param {boolean} [updates.bidirectional] - New bidirectional flag
    */
-  update({ description, destination, destinationRegion, bidirectional, isVehicle, vehicleType } = {}) {
+  update({ description, destination, destinationRegion, travelTimeMinutes, bidirectional, isVehicle, vehicleType } = {}) {
     if (description !== undefined) {
       this.description = description;
     }
     if (destination !== undefined) {
       this.destination = destination;
+    }
+    if (travelTimeMinutes !== undefined) {
+      this.travelTimeMinutes = travelTimeMinutes;
     }
     if (bidirectional !== undefined) {
       this.bidirectional = bidirectional;
@@ -620,6 +650,7 @@ class LocationExit {
       description: this.#description,
       destination: this.#destination,
       destinationRegion: this.#destinationRegion,
+      travelTimeMinutes: this.#travelTimeMinutes,
       name: this.name,
       bidirectional: this.#bidirectional,
       imageId: this.#imageId,
@@ -646,7 +677,8 @@ class LocationExit {
   toString() {
     const direction = this.#bidirectional ? '↔' : '→';
     const vehicleInfo = this.#isVehicle ? ` via ${this.#vehicleType || 'vehicle'}` : '';
-    return `LocationExit(${this.#id}): "${this.#description}"${vehicleInfo} ${direction} ${this.#destination}`;
+    const travelInfo = ` (${this.#travelTimeMinutes} min)`;
+    return `LocationExit(${this.#id}): "${this.#description}"${vehicleInfo}${travelInfo} ${direction} ${this.#destination}`;
   }
 
   /**
@@ -658,7 +690,7 @@ class LocationExit {
    * @param {string} options.description2to1 - Description from location 2 to 1
    * @returns {Object} - Object with exit1to2 and exit2to1 properties
    */
-  static createBidirectionalPair({ location1Id, location2Id, description1to2, description2to1 }) {
+  static createBidirectionalPair({ location1Id, location2Id, description1to2, description2to1, travelTimeMinutes = 0 }) {
     if (!location1Id || !location2Id || !description1to2 || !description2to1) {
       throw new Error('All parameters are required for creating bidirectional exit pair');
     }
@@ -666,12 +698,14 @@ class LocationExit {
     const exit1to2 = new LocationExit({
       description: description1to2,
       destination: location2Id,
+      travelTimeMinutes,
       bidirectional: true
     });
 
     const exit2to1 = new LocationExit({
       description: description2to1,
       destination: location1Id,
+      travelTimeMinutes,
       bidirectional: true
     });
 
@@ -688,10 +722,11 @@ class LocationExit {
    * @param {string} options.destination - Destination location ID
    * @returns {LocationExit} - One-way exit instance
    */
-  static createOneWay({ description, destination }) {
+  static createOneWay({ description, destination, travelTimeMinutes = 0 }) {
     return new LocationExit({
       description,
       destination,
+      travelTimeMinutes,
       bidirectional: false
     });
   }

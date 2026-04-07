@@ -127,7 +127,8 @@ The below context is an account of the current game state, including the setting
     <exits>
       {% for exit in currentLocation.exits %}
       <exit>
-        <name>{{ exit.name }}</name>
+        <destination>{{ exit.name }}</destination>
+        <travelTime>{{ exit.travelTimeMinutes | default(0, true) }} minutes</travelTime>
         <isVehicle>{{ exit.isVehicle | default(false) }}</isVehicle>
         {% if exit.isVehicle %}<vehicleType>{{ exit.vehicleType | default('', true) }}</vehicleType>{% endif %}
       </exit>

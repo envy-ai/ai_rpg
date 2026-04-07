@@ -21,7 +21,7 @@ const EVENT_PROMPT_ORDER = [
         },
         {
             key: "new_exit_discovered",
-            prompt: `Did the text reveal, unlock, unblock, or otherwise discover a new exit or vehicle to another region or location (Note: roads, trails, paths, doors, portals, etc are exits and not scenery)? Or, did the player or any other entity create a new exit, clear a path, make a door, etc? If so, reply in the form [destination location or region name] -> [the word "location" or "region"] -> [type of vehicle or "none"] -> [description of the location or region in 1-2 sentences]. In case of more than one, separate them with vertical bars. Otherwise answer N/A. An exit to a region may take the form of a vehicle to that region. If the new location or region is already known to the player or if it isn't, list it here. The exit may be to an existing location, but an exit to that new location may not already exist in this current location.`,
+            prompt: `Did the text reveal, unlock, unblock, or otherwise discover a new exit or vehicle to another region or location (Note: roads, trails, paths, doors, portals, etc are exits and not scenery)? Or, did the player or any other entity create a new exit, clear a path, make a door, etc? If so, reply in the form [destination location or region name] -> [the word "location" or "region"] -> [type of vehicle or "none"] -> [description of the location or region in 1-2 sentences] -> [Exact travel time to the destination in minutes and/or hours "3 hours, 5 minutes" or "30 minutes" or "1 hour"]. In case of more than one, separate them with vertical bars. Otherwise answer N/A. An exit to a region may take the form of a vehicle to that region. If the new location or region is already known to the player or if it isn't, list it here. The exit may be to an existing location, but an exit to that new location may not already exist in this current location.`,
         },
         // This dummy event gets the LLM to choose between mutually exclusive types of movement.
         {
@@ -177,7 +177,7 @@ const EVENT_PROMPT_ORDER = [
         },
         {
             key: "received_quest",
-            prompt: `Did the player become aware of one or more quests or tasks this turn (by reading them, hearing about them, having them directly requested, etc), even if they didn't actively acknowledge or accept it? Also include quests that the player thought of themselves ("I need to go collect some iron so I can craft a new dagger", etc). If so, answer in the following format: "[exact name of quest giver] -> [1 sentence description of quest] | ..."`,
+            prompt: `Did the player become aware of one or more quests or tasks this turn (by reading them, hearing about them, having them directly requested, etc), even if they didn't actively acknowledge or accept it? Also include quests that the player thought of themselves ("I need to go collect some iron so I can craft a new dagger", etc), or that the player tells someone that they will do. If so, answer in the following format: "[exact name of quest giver] -> [1 sentence description of quest] | ..."`,
         },
         //        { key: 'completed_quest_objective', prompt: `Based on the entire provided context (including gameHistory), has the player already completed one or more quest objectives listed in the xml &lt;quests&gt; block? If so, answer in the following format: "[exact name of quest] -> [index completed objective] | ..."` },
         {
@@ -343,6 +343,10 @@ function splitArrowParts(raw, expectedParts) {
 
     if (expectedParts === 4) {
         return [parts[0], parts[1], parts[2], parts.slice(3).join(" -> ")];
+    }
+
+    if (expectedParts === 5) {
+        return [parts[0], parts[1], parts[2], parts[3], parts.slice(4).join(" -> ")];
     }
 
     return parts;
@@ -560,6 +564,9 @@ async function applyExitDiscovery(
                         name: exitName,
                         originLocation,
                         description: entry?.description || `Entrance to ${exitName}.`,
+                        travelTimeMinutes: Number.isFinite(entry?.travelTimeMinutes)
+                            ? entry.travelTimeMinutes
+                            : undefined,
                         vehicleType: entry?.vehicleType || null,
                         isVehicle: Boolean(entry?.vehicleType),
                     })) || null;
@@ -578,6 +585,9 @@ async function applyExitDiscovery(
                     originLocation,
                     descriptionHint:
                         entry?.description || `A path leading to ${exitName}.`,
+                    travelTimeMinutes: Number.isFinite(entry?.travelTimeMinutes)
+                        ? entry.travelTimeMinutes
+                        : undefined,
                     vehicleType: entry?.vehicleType || null,
                     isVehicle: Boolean(entry?.vehicleType),
                     expandStub: false,
@@ -646,6 +656,9 @@ async function applyExitDiscovery(
                     description: exitDescription,
                     bidirectional: !isRegion,
                     destinationRegion: destinationRegionId,
+                    travelTimeMinutes: Number.isFinite(entry?.travelTimeMinutes)
+                        ? entry.travelTimeMinutes
+                        : undefined,
                     isVehicle: isVehicleExit,
                     vehicleType,
                 });
@@ -675,6 +688,9 @@ async function applyExitDiscovery(
                         `Path back to ${originLocation.name || originLocation.id || "origin"}`,
                     bidirectional: true,
                     destinationRegion: originRegionId,
+                    travelTimeMinutes: Number.isFinite(entry?.travelTimeMinutes)
+                        ? entry.travelTimeMinutes
+                        : undefined,
                     isVehicle: isVehicleExit,
                     vehicleType,
                 });
@@ -3251,10 +3267,16 @@ class Events {
             new_exit_discovered: (raw) =>
                 splitPipeList(raw)
                     .map((entry) => {
-                        const [name, kind, vehicle, description] = splitArrowParts(
-                            entry,
-                            4,
-                        );
+                        const parts = splitArrowParts(entry);
+                        if (parts.length < 4) {
+                            return null;
+                        }
+                        const [name, kind, vehicle] = parts;
+                        const hasTravelTime = parts.length >= 5;
+                        const description = hasTravelTime
+                            ? parts.slice(3, -1).join(" -> ")
+                            : parts.slice(3).join(" -> ");
+                        const travelTimeText = hasTravelTime ? parts[parts.length - 1] : "";
                         const normalizedKind = (kind || "").toLowerCase();
                         if (
                             !name ||
@@ -3264,6 +3286,12 @@ class Events {
                             return null;
                         }
                         const vehicleType = normalizeString(vehicle);
+                        let travelTimeMinutes = null;
+                        if (travelTimeText) {
+                            travelTimeMinutes = Utils.parseDurationToMinutes(travelTimeText, {
+                                fieldName: "new_exit_discovered travel time",
+                            });
+                        }
                         return {
                             name: name.trim(),
                             kind: normalizedKind,
@@ -3272,6 +3300,7 @@ class Events {
                                     ? vehicleType
                                     : null,
                             description: description.trim(),
+                            travelTimeMinutes,
                         };
                     })
                     .filter(Boolean),

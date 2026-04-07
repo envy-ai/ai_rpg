@@ -106,7 +106,7 @@ Fields:
 - `imageId`
 - `isNPC`, `isPlayer`, `isHostile`, `isDead`
 - `persistWhenDead`
-- `isInPlayerParty`, `isHostileToPlayer`
+- `isInPlayerParty`, `wasEverInPlayerParty`, `isHostileToPlayer`
 - `locationId`
 - `corpseCountdown`
 - `attributes` (object)
@@ -145,7 +145,7 @@ Highlights beyond `Player.toJSON()`:
 - `skills`, `abilities`, `unspentSkillPoints`, `unspentAttributePoints`
 - `statusEffects` (active effects), `intrinsicStatusEffects` may be added by the route
 - `gear`, `gearSlotsByType`, `gearSlotDefinitions`
-- `needBars`, `needBarApplicability`, `corpseCountdown`, `persistWhenDead`, `importantMemories`
+- `needBars`, `needBarApplicability`, `corpseCountdown`, `persistWhenDead`, `wasEverInPlayerParty`, `importantMemories`
 - `resistances`, `vulnerabilities`
 - `quests`, `personality`, `goals`, `characterArc`
 
@@ -177,7 +177,7 @@ Fields:
 
 ## LocationExit (LocationExit.toJSON)
 Fields:
-- `id`, `description`, `destination`, `destinationRegion`
+- `id`, `description`, `destination`, `destinationRegion`, `travelTimeMinutes`
 - `name`, `bidirectional`, `imageId`
 - `isVehicle`, `vehicleType`, `type` (`two-way`/`one-way`)
 - `createdAt`, `lastUpdated`
@@ -187,7 +187,7 @@ Fields:
 - `id`, `name`, `description`, `shortDescription`
 - `baseLevel`, `imageId`, `visited`
 - `exits`: object keyed by direction; each entry includes
-  - `id`, `description`, `destination`, `destinationRegion`
+  - `id`, `description`, `destination`, `destinationRegion`, `travelTimeMinutes`
   - `bidirectional`, `isVehicle`, `name`, `relativeName`, `vehicleType`
   - `exitObject` (LocationExit JSON)
 - `regionId`
@@ -204,6 +204,7 @@ Extends `LocationDetails` with:
 - `region` (object: `id`, `name`, `description`, `parentRegionId`, `averageLevel`, `isVehicle`, `vehicleInfo`)
 - `regionPath` (array of `{ id, name }`)
 - `exits` entries gain:
+  - `travelTimeMinutes` (integer minutes for non-vehicle traversal time; `0` may indicate an unpopulated legacy exit time awaiting backfill)
   - `destinationName`, `destinationRegionName`, `destinationRegionExpanded`
   - `destinationIsStub`, `destinationIsRegionEntryStub`, `destinationVisited`
   - `destinationIsVehicle` (boolean; derived only from destination location/region/pending-stub vehicle state, never from `exit.isVehicle`/`exit.vehicleType`)

@@ -49,6 +49,88 @@ class Location {
     return `location_${timestamp}_${random}`;
   }
 
+  static #resolveLocationReference(locationOrId, { fieldName = 'location' } = {}) {
+    if (typeof locationOrId === 'string') {
+      const trimmedId = locationOrId.trim();
+      if (!trimmedId) {
+        throw new Error(`${fieldName} must be a non-empty location id or Location instance.`);
+      }
+      const resolved = Location.get(trimmedId);
+      if (!resolved) {
+        throw new Error(`${fieldName} "${trimmedId}" was not found.`);
+      }
+      return resolved;
+    }
+
+    if (locationOrId instanceof Location) {
+      const resolved = Location.get(locationOrId.id);
+      if (!resolved) {
+        throw new Error(`${fieldName} "${locationOrId.id}" was not found.`);
+      }
+      return resolved;
+    }
+
+    throw new Error(`${fieldName} must be a non-empty location id or Location instance.`);
+  }
+
+  static #resolveExitTravelTimeMinutesForRouting(exit, { sourceLocationId = 'unknown', direction = 'unknown' } = {}) {
+    if (!exit || typeof exit !== 'object') {
+      throw new Error(`Exit "${direction}" from location "${sourceLocationId}" is invalid.`);
+    }
+
+    const numericValue = Number(exit.travelTimeMinutes);
+    if (!Number.isFinite(numericValue) || !Number.isInteger(numericValue) || numericValue < 0) {
+      throw new Error(
+        `Exit "${direction}" from location "${sourceLocationId}" has invalid travelTimeMinutes; expected a non-negative integer.`
+      );
+    }
+
+    return numericValue;
+  }
+
+  static #resolveLocationByExactRegionAndName(regionName, locationName, { fieldName = 'location' } = {}) {
+    if (typeof regionName !== 'string' || !regionName.trim()) {
+      throw new Error(`${fieldName} regionName must be a non-empty string.`);
+    }
+    if (typeof locationName !== 'string' || !locationName.trim()) {
+      throw new Error(`${fieldName} locationName must be a non-empty string.`);
+    }
+
+    const trimmedRegionName = regionName.trim();
+    const trimmedLocationName = locationName.trim();
+    const resolvedRegion = Region.getByName(trimmedRegionName);
+    if (!resolvedRegion) {
+      throw new Error(`${fieldName} region "${trimmedRegionName}" was not found.`);
+    }
+
+    const matchingLocations = [];
+    const locationIds = Array.isArray(resolvedRegion.locationIds) ? resolvedRegion.locationIds : [];
+    for (const locationId of locationIds) {
+      if (typeof locationId !== 'string' || !locationId.trim()) {
+        continue;
+      }
+      const location = Location.get(locationId.trim());
+      if (!location) {
+        throw new Error(`${fieldName} region "${trimmedRegionName}" references missing location "${locationId}".`);
+      }
+      if (typeof location.name !== 'string' || !location.name.trim()) {
+        continue;
+      }
+      if (location.name.trim().toLowerCase() === trimmedLocationName.toLowerCase()) {
+        matchingLocations.push(location);
+      }
+    }
+
+    if (matchingLocations.length === 0) {
+      throw new Error(`${fieldName} location "${trimmedLocationName}" was not found in region "${trimmedRegionName}".`);
+    }
+    if (matchingLocations.length > 1) {
+      throw new Error(`${fieldName} location "${trimmedLocationName}" is ambiguous in region "${trimmedRegionName}".`);
+    }
+
+    return matchingLocations[0];
+  }
+
   /**
    * Creates a new Location instance
    * @param {Object} options - Location configuration
@@ -605,6 +687,97 @@ class Location {
     return Array.from(Location.#indexById.values());
   }
 
+  static findShortestTravelTimeMinutes(startLocationOrId, endLocationOrId) {
+    const startLocation = Location.#resolveLocationReference(startLocationOrId, { fieldName: 'startLocation' });
+    const endLocation = Location.#resolveLocationReference(endLocationOrId, { fieldName: 'endLocation' });
+
+    if (startLocation.id === endLocation.id) {
+      return 0;
+    }
+
+    const distances = new Map([[startLocation.id, 0]]);
+    const visited = new Set();
+
+    while (true) {
+      let currentLocationId = null;
+      let currentDistance = Infinity;
+
+      for (const [locationId, distance] of distances.entries()) {
+        if (visited.has(locationId)) {
+          continue;
+        }
+        if (distance < currentDistance) {
+          currentDistance = distance;
+          currentLocationId = locationId;
+        }
+      }
+
+      if (currentLocationId === null) {
+        return null;
+      }
+
+      if (currentLocationId === endLocation.id) {
+        return currentDistance;
+      }
+
+      visited.add(currentLocationId);
+      const currentLocation = Location.get(currentLocationId);
+      if (!currentLocation) {
+        throw new Error(`Location "${currentLocationId}" disappeared during route resolution.`);
+      }
+
+      for (const direction of currentLocation.getAvailableDirections()) {
+        const exit = currentLocation.getExit(direction);
+        if (!exit) {
+          throw new Error(`Location "${currentLocation.id}" reported an exit direction "${direction}" with no exit object.`);
+        }
+
+        const destinationId = typeof exit.destination === 'string' ? exit.destination.trim() : '';
+        if (!destinationId) {
+          throw new Error(`Exit "${direction}" from location "${currentLocation.id}" is missing a destination id.`);
+        }
+
+        const destinationLocation = Location.get(destinationId);
+        if (!destinationLocation) {
+          throw new Error(
+            `Exit "${direction}" from location "${currentLocation.id}" points to missing destination "${destinationId}".`
+          );
+        }
+
+        const edgeWeight = Location.#resolveExitTravelTimeMinutesForRouting(exit, {
+          sourceLocationId: currentLocation.id,
+          direction
+        });
+        const candidateDistance = currentDistance + edgeWeight;
+        const knownDistance = distances.get(destinationId);
+
+        if (knownDistance === undefined || candidateDistance < knownDistance) {
+          distances.set(destinationId, candidateDistance);
+        }
+      }
+    }
+  }
+
+  static findShortestTravelTimeMinutesByRegionAndLocationNames(
+    startRegionName,
+    startLocationName,
+    endRegionName,
+    endLocationName
+  ) {
+    const startLocation = Location.#resolveLocationByExactRegionAndName(
+      startRegionName,
+      startLocationName,
+      { fieldName: 'startLocation' }
+    );
+    const endLocation = Location.#resolveLocationByExactRegionAndName(
+      endRegionName,
+      endLocationName,
+      { fieldName: 'endLocation' }
+    );
+
+    return Location.findShortestTravelTimeMinutes(startLocation, endLocation);
+  }
+
   /**
    * Remove a location from internal id/name indices.
    * Useful when deleting stubs so stale lookups do not linger.
@@ -988,6 +1161,7 @@ class Location {
         description: exit.description || 'No description',
         destination: exit.destination,
         destinationRegion: Globals.locationById(exit.destination)?.region?.id,
+        travelTimeMinutes: Number.isFinite(exit.travelTimeMinutes) ? exit.travelTimeMinutes : 0,
         bidirectional: exit.bidirectional !== false,
         isVehicle: Boolean(exit.isVehicle),
         name: exit.name,

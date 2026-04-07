@@ -1300,6 +1300,10 @@
                     <label for="newExitDescription">Description</label>
                     <textarea id="newExitDescription" name="description" rows="3" placeholder="Optional: Describe what lies beyond this exit..."></textarea>
                 </div>
+                <div class="new-exit-field" id="newExitTravelTimeGroup">
+                    <label for="newExitTravelTime">Travel Time</label>
+                    <input type="text" id="newExitTravelTime" name="travelTime" maxlength="80" placeholder="e.g. 1m, 1h10m, 2 hours" value="1m">
+                </div>
                 <div class="new-exit-field" id="newExitImageGroup">
                     <label for="newExitImage">Reference Image (optional)</label>
                     <input type="file" id="newExitImage" name="image" accept="image/*">
@@ -4858,7 +4862,7 @@
             return result;
         }
 
-        async function teleportNpcToLocation(npc, destinationLocationId, { card = null, originLocationId = null } = {}) {
+        async function teleportNpcToLocation(npc, destinationLocationId, { card = null, originLocationId = null, accountTravelTime = false } = {}) {
             if (!npc || !npc.id) {
                 throw new Error('Missing character information.');
             }
@@ -4870,7 +4874,10 @@
             const response = await fetch(`/api/npcs/${encodeURIComponent(npcId)}/teleport`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ locationId: destinationLocationId })
+                body: JSON.stringify({
+                    locationId: destinationLocationId,
+                    accountTravelTime: accountTravelTime === true
+                })
             });
 
             const result = await response.json().catch(() => ({}));
@@ -4885,6 +4892,9 @@
 
             if (updatedNpc && !updatedNpc.isNPC && typeof updateChatPlayerPanel === 'function') {
                 updateChatPlayerPanel(updatedNpc);
+            }
+            if (result.worldTime && typeof window.AIRPG_CHAT?.updateWorldTimeIndicator === 'function') {
+                window.AIRPG_CHAT.updateWorldTimeIndicator(result.worldTime, { emitTransitions: true });
             }
 
             const destinationId = result.destination?.id || null;
@@ -5950,6 +5960,51 @@
             return includeAgo && isPast ? `${formatted} ago` : formatted;
         };
 
+        const formatMinutesCompactDurationLabel = (minutesValue) => {
+            if (!Number.isFinite(minutesValue) || !Number.isInteger(minutesValue)) {
+                return '';
+            }
+
+            const sign = minutesValue < 0 ? '-' : '';
+            let remaining = Math.abs(minutesValue);
+            const days = Math.floor(remaining / 1440);
+            remaining -= days * 1440;
+            const hours = Math.floor(remaining / 60);
+            remaining -= hours * 60;
+            const minutes = remaining;
+
+            const parts = [];
+            if (days > 0) {
+                parts.push(`${days}d`);
+            }
+            if (hours > 0) {
+                parts.push(`${hours}h`);
+            }
+            if (minutes > 0 || !parts.length) {
+                parts.push(`${minutes}m`);
+            }
+
+            return `${sign}${parts.join('')}`;
+        };
+
+        const resolveExitTravelTimeMinutesForUi = (exit, fallbackMinutes = 1) => {
+            if (!exit || typeof exit !== 'object') {
+                return fallbackMinutes;
+            }
+
+            const rawValue = exit.travelTimeMinutes;
+            if (rawValue === undefined || rawValue === null || rawValue === '') {
+                return fallbackMinutes;
+            }
+
+            const travelTimeMinutes = Number(rawValue);
+            if (!Number.isFinite(travelTimeMinutes) || !Number.isInteger(travelTimeMinutes) || travelTimeMinutes < 0) {
+                return fallbackMinutes;
+            }
+
+            return travelTimeMinutes;
+        };
+
         const formatStatusEffectDuration = (durationValue) => {
             if (durationValue === null || durationValue === undefined || durationValue === '') {
                 return '';
@@ -6281,9 +6336,11 @@
         const newExitLocationGroup = document.getElementById('newExitLocationGroup');
         const newExitNameGroup = document.getElementById('newExitNameGroup');
         const newExitDescriptionGroup = document.getElementById('newExitDescriptionGroup');
+        const newExitTravelTimeGroup = document.getElementById('newExitTravelTimeGroup');
         const newExitImageGroup = document.getElementById('newExitImageGroup');
         const newExitNameInput = document.getElementById('newExitName');
         const newExitDescriptionInput = document.getElementById('newExitDescription');
+        const newExitTravelTimeInput = document.getElementById('newExitTravelTime');
         const newExitImageInput = document.getElementById('newExitImage');
         const newExitVehicleGroup = document.getElementById('newExitVehicleGroup');
         const newExitVehicleInput = document.getElementById('newExitVehicle');
@@ -9899,16 +9956,22 @@
             const isMember = Boolean(inPlayerParty);
             if (fallbackNpc && typeof fallbackNpc === 'object') {
                 fallbackNpc.isInPlayerParty = isMember;
+                if (isMember) {
+                    fallbackNpc.wasEverInPlayerParty = true;
+                }
             }
             if (window.currentNpcData instanceof Map) {
                 const snapshot = window.currentNpcData.get(npcId) || fallbackNpc || { id: npcId };
                 const updated = cloneActorRecord(snapshot) || { ...snapshot };
                 updated.isInPlayerParty = isMember;
+                if (isMember) {
+                    updated.wasEverInPlayerParty = true;
+                }
                 window.currentNpcData.set(npcId, updated);
             }
             if (window.currentPlayerData) {
                 const existingMembers = Array.isArray(window.currentPlayerData.partyMembers)
-                    ? new Set(window.currentPlayerData.partyMembers)
+                    ? new Set(getPartyMemberIds(window.currentPlayerData.partyMembers))
                     : new Set();
                 if (isMember) {
                     existingMembers.add(npcId);
@@ -9920,6 +9983,23 @@
                     partyMembers: Array.from(existingMembers)
                 };
             }
+        }
+
+        function getPartyMemberIds(members) {
+            if (!Array.isArray(members)) {
+                return [];
+            }
+            return members
+                .map(member => {
+                    if (typeof member === 'string' || typeof member === 'number') {
+                        return String(member).trim();
+                    }
+                    if (member && typeof member === 'object' && member.id) {
+                        return String(member.id).trim();
+                    }
+                    return '';
+                })
+                .filter(Boolean);
         }
 
         let draggedPartyNpc = null;
@@ -9935,22 +10015,8 @@
             if (!npcId) {
                 return false;
             }
-            const memberList = Array.isArray(window.currentPlayerData?.partyMembers)
-                ? window.currentPlayerData.partyMembers
-                : [];
             const targetId = String(npcId);
-            return memberList.some(member => {
-                if (!member) {
-                    return false;
-                }
-                if (typeof member === 'string' || typeof member === 'number') {
-                    return String(member) === targetId;
-                }
-                if (typeof member === 'object' && member.id) {
-                    return String(member.id) === targetId;
-                }
-                return false;
-            });
+            return getPartyMemberIds(window.currentPlayerData?.partyMembers).some(memberId => memberId === targetId);
         }
 
         function resolveDraggedNpcRecord(dragState) {
@@ -10149,6 +10215,84 @@
             }
         }
 
+        function getRecruitableHistoricalPartyMembersAtCurrentLocation() {
+            const currentPartyIds = new Set(getPartyMemberIds(window.currentPlayerData?.partyMembers));
+            const activeLocation = lastRenderedLocation || window.lastRenderedLocation || null;
+            const locationNpcs = Array.isArray(activeLocation?.npcs)
+                ? activeLocation.npcs
+                : [];
+            const npcDataCache = window.currentNpcData instanceof Map ? window.currentNpcData : null;
+
+            return locationNpcs
+                .map(entry => {
+                    if (!entry || !entry.id) {
+                        return null;
+                    }
+                    return npcDataCache?.get(entry.id) || entry;
+                })
+                .filter(npc => (
+                    npc
+                    && npc.isNPC
+                    && npc.wasEverInPlayerParty === true
+                    && !currentPartyIds.has(String(npc.id).trim())
+                ));
+        }
+
+        async function recruitAllHistoricalPartyMembersAtCurrentLocation() {
+            const ownerId = await resolveCurrentPlayerId();
+            const candidates = getRecruitableHistoricalPartyMembersAtCurrentLocation();
+
+            if (!candidates.length) {
+                return { success: true, recruitedMemberIds: [] };
+            }
+
+            showLocationOverlay('Recruiting previous party members...');
+
+            const recruitedMemberIds = [];
+            let lastResponseData = null;
+
+            try {
+                for (const npc of candidates) {
+                    const response = await fetch('/api/player/party', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ ownerId, memberId: npc.id })
+                    });
+                    const data = await response.json().catch(() => ({}));
+                    if (!response.ok || !data?.success) {
+                        throw new Error(data?.error || `HTTP ${response.status}`);
+                    }
+
+                    recruitedMemberIds.push(npc.id);
+                    updateNpcPartyMembershipCache(npc.id, true, npc);
+                    lastResponseData = data;
+                }
+
+                return {
+                    ...(lastResponseData && typeof lastResponseData === 'object' ? lastResponseData : { success: true }),
+                    recruitedMemberIds
+                };
+            } finally {
+                try {
+                    if (typeof window.refreshParty === 'function') {
+                        await window.refreshParty();
+                    }
+                } catch (refreshError) {
+                    console.warn('Failed to refresh party after recruiting previous party members:', refreshError);
+                }
+
+                try {
+                    if (typeof window.loadCurrentLocation === 'function') {
+                        await window.loadCurrentLocation();
+                    }
+                } catch (locationError) {
+                    console.warn('Failed to refresh location after recruiting previous party members:', locationError);
+                }
+
+                hideLocationOverlay();
+            }
+        }
+
         async function dismissNpcFromParty(npc, { card = null } = {}) {
             if (!npc || !npc.id) {
                 throw new Error('Missing character information.');
@@ -10191,6 +10335,75 @@
 
                 return data;
             } finally {
+                hideLocationOverlay();
+            }
+        }
+
+        async function dismissAllOtherPartyMembers(keptNpc, { card = null } = {}) {
+            if (!keptNpc || !keptNpc.id) {
+                throw new Error('Missing character information.');
+            }
+
+            const npcDataCache = window.currentNpcData instanceof Map ? window.currentNpcData : null;
+            const ownerId = await resolveCurrentPlayerId();
+            const keptNpcId = String(keptNpc.id).trim();
+            if (!keptNpcId) {
+                throw new Error('Missing character identifier.');
+            }
+
+            const memberIds = getPartyMemberIds(window.currentPlayerData?.partyMembers);
+            const otherMemberIds = memberIds.filter(id => id !== keptNpcId);
+
+            if (!otherMemberIds.length) {
+                return { success: true, removedMemberIds: [] };
+            }
+
+            const keptLabel = keptNpc.name || 'this character';
+            showLocationOverlay(`Dismissing everyone else except ${keptLabel}...`);
+
+            const removedMemberIds = [];
+            let lastResponseData = null;
+
+            try {
+                for (const memberId of otherMemberIds) {
+                    const response = await fetch('/api/player/party', {
+                        method: 'DELETE',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ ownerId, memberId })
+                    });
+                    const data = await response.json().catch(() => ({}));
+                    if (!response.ok || !data?.success) {
+                        throw new Error(data?.error || `HTTP ${response.status}`);
+                    }
+
+                    removedMemberIds.push(memberId);
+
+                    const cachedNpc = npcDataCache?.get(memberId) || null;
+                    updateNpcPartyMembershipCache(memberId, false, cachedNpc || { id: memberId });
+                    lastResponseData = data;
+                }
+
+                return {
+                    ...(lastResponseData && typeof lastResponseData === 'object' ? lastResponseData : { success: true }),
+                    removedMemberIds
+                };
+            } finally {
+                try {
+                    if (typeof window.refreshParty === 'function') {
+                        await window.refreshParty();
+                    }
+                } catch (refreshError) {
+                    console.warn('Failed to refresh party after dismissing other NPCs:', refreshError);
+                }
+
+                try {
+                    if (typeof window.loadCurrentLocation === 'function') {
+                        await window.loadCurrentLocation();
+                    }
+                } catch (locationError) {
+                    console.warn('Failed to refresh location after dismissing other NPCs:', locationError);
+                }
+
                 hideLocationOverlay();
             }
         }
@@ -11208,6 +11421,9 @@
             if (newExitDescriptionGroup) {
                 newExitDescriptionGroup.removeAttribute('hidden');
             }
+            if (newExitTravelTimeGroup) {
+                newExitTravelTimeGroup.removeAttribute('hidden');
+            }
             if (newExitVehicleGroup) {
                 newExitVehicleGroup.removeAttribute('hidden');
             }
@@ -11216,6 +11432,9 @@
             }
             if (newExitVehicleInput) {
                 newExitVehicleInput.value = '';
+            }
+            if (newExitTravelTimeInput) {
+                newExitTravelTimeInput.value = newExitTravelTimeInput.defaultValue || '1m';
             }
             if (newExitRelativeLevelGroup) {
                 newExitRelativeLevelGroup.setAttribute('hidden', '');
@@ -11295,6 +11514,9 @@
                     }
                     if (newExitDescriptionInput) {
                         newExitDescriptionInput.value = exit.description || '';
+                    }
+                    if (newExitTravelTimeInput) {
+                        newExitTravelTimeInput.value = formatMinutesCompactDurationLabel(resolveExitTravelTimeMinutesForUi(exit));
                     }
                     if (newExitVehicleInput) {
                         newExitVehicleInput.value = exit.vehicleType || '';
@@ -11384,6 +11606,7 @@
             const nameFieldsVisible = shouldShowNewExitTextFields();
             const name = newExitNameInput?.value?.trim() || '';
             const description = newExitDescriptionInput?.value?.trim() || '';
+            const travelTime = newExitTravelTimeInput?.value?.trim() || '1 minute';
             const vehicleTypeInput = newExitVehicleInput?.value?.trim() || '';
             const relativeLevelRaw = newExitRelativeLevelInput?.value;
             let relativeLevelValue = null;
@@ -11434,6 +11657,7 @@
             if (nameFieldsVisible || description) {
                 payload.description = description;
             }
+            payload.travelTime = travelTime;
             if (selectedRegionId) {
                 payload.regionId = selectedRegionId;
             }
@@ -15887,7 +16111,9 @@
                 let memoriesButton = null;
                 let goalsButton = null;
                 let recruitButton = null;
+                let recruitAllPreviousPartyMembersButton = null;
                 let dismissButton = null;
+                let dismissOthersButton = null;
                 let dispositionButton = null;
                 let killButton = null;
                 let deleteButton = null;
@@ -15918,17 +16144,32 @@
 
                     const isInParty = Boolean(npc.isInPlayerParty);
                     if (isInParty) {
+                        const npcIdString = String(npc.id).trim();
                         dismissButton = document.createElement('button');
                         dismissButton.type = 'button';
                         dismissButton.className = 'entity-context-menu-item npc-card-menu-item';
                         dismissButton.textContent = 'Dismiss';
                         menu.appendChild(dismissButton);
+
+                        const partyMemberIds = getPartyMemberIds(window.currentPlayerData?.partyMembers);
+                        if (partyMemberIds.some(id => id !== npcIdString)) {
+                            dismissOthersButton = document.createElement('button');
+                            dismissOthersButton.type = 'button';
+                            dismissOthersButton.className = 'entity-context-menu-item npc-card-menu-item';
+                            dismissOthersButton.textContent = 'Dismiss everyone else';
+                            menu.appendChild(dismissOthersButton);
+                        }
                     } else {
                         recruitButton = document.createElement('button');
                         recruitButton.type = 'button';
                         recruitButton.className = 'entity-context-menu-item npc-card-menu-item';
                         recruitButton.textContent = 'Force Recruit';
                         menu.appendChild(recruitButton);
+                        recruitAllPreviousPartyMembersButton = document.createElement('button');
+                        recruitAllPreviousPartyMembersButton.type = 'button';
+                        recruitAllPreviousPartyMembersButton.className = 'entity-context-menu-item npc-card-menu-item';
+                        recruitAllPreviousPartyMembersButton.textContent = 'Recruit all party members';
+                        menu.appendChild(recruitAllPreviousPartyMembersButton);
                     }
 
                     dispositionButton = document.createElement('button');
@@ -16142,6 +16383,19 @@
                     });
                 }
 
+                if (recruitAllPreviousPartyMembersButton) {
+                    recruitAllPreviousPartyMembersButton.addEventListener('click', async (event) => {
+                        event.stopPropagation();
+                        closeNpcContextMenu();
+                        try {
+                            await recruitAllHistoricalPartyMembersAtCurrentLocation();
+                        } catch (error) {
+                            console.warn('Failed to recruit previous party members:', error);
+                            alert(`Failed to recruit previous party members: ${error?.message || 'Unknown error'}`);
+                        }
+                    });
+                }
+
                 if (dismissButton) {
                     dismissButton.addEventListener('click', async (event) => {
                         event.stopPropagation();
@@ -16153,6 +16407,21 @@
                         } catch (error) {
                             console.warn('Failed to dismiss NPC from party:', error);
                             alert(`Failed to dismiss NPC: ${error?.message || 'Unknown error'}`);
+                        }
+                    });
+                }
+
+                if (dismissOthersButton) {
+                    dismissOthersButton.addEventListener('click', async (event) => {
+                        event.stopPropagation();
+                        closeNpcContextMenu();
+                        const npcDataCache = window.currentNpcData instanceof Map ? window.currentNpcData : null;
+                        const latestNpc = npcDataCache?.get(npc.id) || npc;
+                        try {
+                            await dismissAllOtherPartyMembers(latestNpc, { card });
+                        } catch (error) {
+                            console.warn('Failed to dismiss other NPCs from party:', error);
+                            alert(`Failed to dismiss other party members: ${error?.message || 'Unknown error'}`);
                         }
                     });
                 }
@@ -20583,6 +20852,10 @@
                                     if (isOutboundVehicleExit) {
                                         travelButtonLabel = `Exit Vehicle: ${travelButtonLabel}`;
                                     }
+                                    const compactTravelTime = formatMinutesCompactDurationLabel(resolveExitTravelTimeMinutesForUi(exit));
+                                    if (compactTravelTime) {
+                                        travelButtonLabel = `${travelButtonLabel} (${compactTravelTime})`;
+                                    }
 
                                     logVehicleDebugClient('exit label decision', {
                                         sourceLocationId: location?.id || null,
@@ -20782,11 +21055,9 @@
                                 locationNPCs.appendChild(card);
 
                                 if (npc && npc.id) {
-                                    const partyIds = Array.isArray(window.currentPlayerData?.partyMembers)
-                                        ? window.currentPlayerData.partyMembers
-                                        : null;
+                                    const partyIds = getPartyMemberIds(window.currentPlayerData?.partyMembers);
                                     if (partyIds) {
-                                        npc.isInPlayerParty = partyIds.includes(npc.id);
+                                        npc.isInPlayerParty = partyIds.includes(String(npc.id).trim());
                                     }
                                     if (typeof registerNpcContextMenu === 'function') {
                                         registerNpcContextMenu(card, npc);
@@ -21106,6 +21377,18 @@
 
                     const result = await response.json();
                     if (result.success && result.location) {
+                        if (result.player) {
+                            updateChatPlayerPanel(result.player);
+                            if (Array.isArray(result.player.partyMembers)) {
+                                renderChatPartyPanel(result.player.partyMembers);
+                            }
+                            if (typeof window.renderQuestPanel === 'function') {
+                                window.renderQuestPanel(result.player.quests || [], result.player.completedQuests || []);
+                            }
+                        }
+                        if (result.worldTime && typeof window.AIRPG_CHAT?.updateWorldTimeIndicator === 'function') {
+                            window.AIRPG_CHAT.updateWorldTimeIndicator(result.worldTime, { emitTransitions: true });
+                        }
                         if (typeof result.location.name === 'string' && result.location.name.trim()) {
                             locationCache[result.location.id] = result.location.name.trim();
                         }
@@ -21252,7 +21535,8 @@
                     }
 
                     await teleportNpcToLocation(playerRecord, destinationId, {
-                        originLocationId: lastRenderedLocation?.id || null
+                        originLocationId: lastRenderedLocation?.id || null,
+                        accountTravelTime: true
                     });
 
                     if (focusAdventureTab && typeof window.activateTab === 'function') {

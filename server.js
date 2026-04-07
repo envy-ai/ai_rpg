@@ -25,6 +25,10 @@ const {
 const { getCurrencyLabel } = require('./public/js/currency-utils.js');
 const SanitizedStringSet = require('./SanitizedStringSet.js');
 const StatusEffect = require('./StatusEffect.js');
+const {
+    findSameLocationNpcByName,
+    filterGeneratedNpcsAgainstSameLocationDuplicates
+} = require('./NpcGenerationNameUtils.js');
 
 const HIDDEN_CHAT_ENTRY_TYPES = new Set([
     'supplemental-story-info',
@@ -3128,6 +3132,7 @@ function serializeNpcForClient(npc, options = {}) {
             }
             return false;
         })(),
+        wasEverInPlayerParty: Boolean(npc.wasEverInPlayerParty),
         isHostileToPlayer: hostileToPlayer,
         locationId: npc.currentLocation,
         corpseCountdown: Number.isFinite(npc.corpseCountdown) ? npc.corpseCountdown : (npc.corpseCountdown ?? null),
@@ -8201,7 +8206,7 @@ function normalizeRegionLocationName(name) {
     return typeof name === 'string' ? name.trim().toLowerCase() : '';
 }
 
-function ensureExitConnection(fromLocation, toLocation, { description, bidirectional = false, destinationRegion, isVehicle = undefined, vehicleType = undefined } = {}) {
+function ensureExitConnection(fromLocation, toLocation, { description, bidirectional = false, destinationRegion, travelTimeMinutes = undefined, isVehicle = undefined, vehicleType = undefined } = {}) {
     if (!fromLocation || !toLocation) {
         console.log('🧭 ensureExitConnection aborted: missing from/to location');
         console.trace();
@@ -8236,6 +8241,7 @@ function ensureExitConnection(fromLocation, toLocation, { description, bidirecti
             `[ensureExitConnection] ${fromLabel} -> ${toLabel} `
             + `bidirectional=${Boolean(bidirectional)} `
             + `destinationRegion=${normalizedDestinationRegion || 'null'} `
+            + `travelTimeMinutes=${travelTimeMinutes === undefined ? 'keep' : travelTimeMinutes} `
             + `isVehicle=${isVehicle === undefined ? 'keep' : Boolean(isVehicle)} `
             + `vehicleType=${vehicleType === undefined ? 'keep' : (vehicleType || 'null')}`,
         );
@@ -8284,6 +8290,7 @@ function ensureExitConnection(fromLocation, toLocation, { description, bidirecti
             description: exitDescription,
             destination: toLocation.id,
             destinationRegion: normalizedDestinationRegion !== undefined ? normalizedDestinationRegion : null,
+            travelTimeMinutes: travelTimeMinutes !== undefined ? travelTimeMinutes : 0,
             bidirectional: Boolean(bidirectional),
             isVehicle: typeof isVehicle === 'boolean' ? isVehicle : false,
             vehicleType: vehicleType !== undefined ? vehicleType : null
@@ -8318,6 +8325,13 @@ function ensureExitConnection(fromLocation, toLocation, { description, bidirecti
         } catch (_) {
             exit.update({ bidirectional: Boolean(bidirectional) });
         }
+        if (travelTimeMinutes !== undefined) {
+            try {
+                exit.travelTimeMinutes = travelTimeMinutes;
+            } catch (_) {
+                exit.update({ travelTimeMinutes });
+            }
+        }
         if (cliRegionExitDebug) {
             console.log(
                 `  ↳ reusing existing exit ${exit.id} `
@@ -8348,7 +8362,8 @@ function ensureExitConnection(fromLocation, toLocation, { description, bidirecti
             + `vehicleType=${exit.vehicleType || 'null'} `
             + `bidirectional=${exit.bidirectional} `
             + `direction="${directionKey}" `
-            + `destinationRegion=${exit.destinationRegion || 'null'}`,
+            + `destinationRegion=${exit.destinationRegion || 'null'} `
+            + `travelTimeMinutes=${Number.isInteger(exit.travelTimeMinutes) ? exit.travelTimeMinutes : 'null'}`,
         );
     }
 
@@ -8371,6 +8386,7 @@ function ensureExitConnection(fromLocation, toLocation, { description, bidirecti
                 description: `Path back to ${fromLocation.name || fromLocation.id}`,
                 bidirectional: false,
                 destinationRegion: reverseDestinationRegion,
+                travelTimeMinutes: travelTimeMinutes !== undefined ? travelTimeMinutes : exit?.travelTimeMinutes,
                 isVehicle: resolvedIsVehicle,
                 vehicleType: resolvedVehicleType
             }
@@ -8383,7 +8399,7 @@ function ensureExitConnection(fromLocation, toLocation, { description, bidirecti
 function buildLocationEventStubMetadata({
     originLocation = null,
     resolvedDirection = null,
-    stubShortDescription = '',
+    stubShortDescription = null,
     settingSnapshot = null,
     effectiveRegionId = null,
     effectiveRegionName = null,
@@ -8396,11 +8412,14 @@ function buildLocationEventStubMetadata({
     normalizedImageDataUrl = '',
     createOriginExit = true
 } = {}) {
+    const normalizedStubShortDescription = typeof stubShortDescription === 'string'
+        ? stubShortDescription.trim()
+        : '';
+
     const metadata = {
         originLocationId: originLocation?.id || null,
         originDirection: resolvedDirection,
         createOriginExit: createOriginExit !== false,
-        shortDescription: stubShortDescription,
         locationPurpose: 'Area referenced during event-driven travel.',
         settingDescription: describeSettingForPrompt(settingSnapshot),
         regionId: effectiveRegionId,
@@ -8411,6 +8430,10 @@ function buildLocationEventStubMetadata({
         isVehicle: resolvedIsVehicle,
         imageDataUrl: normalizedImageDataUrl || null
     };
+
+    if (normalizedStubShortDescription) {
+        metadata.shortDescription = normalizedStubShortDescription;
+    }
 
     if (Number.isFinite(relativeLevelBase)) {
         metadata.relativeLevelBase = relativeLevelBase;
@@ -8494,7 +8517,7 @@ function applyStubExpansionOverrides(location, { createOriginExit } = {}) {
     location.stubMetadata = metadata;
 }
 
-async function createLocationFromEvent({ name, originLocation = null, descriptionHint = null, directionHint = null, expandStub = true, targetRegionId = null, vehicleType = null, isVehicle = false, relativeLevel = null, imageDataUrl = '', imageDataUrlOriginal = '', createOriginExit = true } = {}) {
+async function createLocationFromEvent({ name, originLocation = null, descriptionHint = null, directionHint = null, expandStub = true, targetRegionId = null, travelTimeMinutes = undefined, vehicleType = null, isVehicle = false, relativeLevel = null, imageDataUrl = '', imageDataUrlOriginal = '', createOriginExit = true } = {}) {
     const trimmedName = typeof name === 'string' ? name.trim() : '';
     if (!trimmedName) {
         return null;
@@ -8588,7 +8611,8 @@ async function createLocationFromEvent({ name, originLocation = null, descriptio
             if (existing.isStub) {
                 ensureExitConnection(originLocation, existing, {
                     description: descriptionHint || `${existing.name || trimmedName}`,
-                    bidirectional: false
+                    bidirectional: false,
+                    travelTimeMinutes
                 });
             } else {
                 console.log(`🧭 Skipping exit creation to existing location ${existing.name || existing.id} (already unstubbed).`);
@@ -8610,12 +8634,10 @@ async function createLocationFromEvent({ name, originLocation = null, descriptio
     const settingSnapshot = getActiveSettingSnapshot();
     const normalizedDirectionHint = normalizeDirection(directionHint);
     const resolvedDirection = normalizedDirectionHint || directionKeyFromName(trimmedName);
-    const stubShortDescription = descriptionHint || `An unexplored area referred to as ${trimmedName}.`;
-
     const stub = new Location({
         name: trimmedName,
         description: null,
-        shortDescription: stubShortDescription,
+        shortDescription: null,
         imageId: locationImageId,
         baseLevel: Number.isFinite(levelData.computedBaseLevel) ? levelData.computedBaseLevel : null,
         regionId: effectiveRegionId,
@@ -8623,7 +8645,7 @@ async function createLocationFromEvent({ name, originLocation = null, descriptio
         stubMetadata: buildLocationEventStubMetadata({
             originLocation,
             resolvedDirection,
-            stubShortDescription,
+            stubShortDescription: null,
             settingSnapshot,
             effectiveRegionId,
             effectiveRegionName,
@@ -8654,7 +8676,8 @@ async function createLocationFromEvent({ name, originLocation = null, descriptio
         const exitOptions = {
             description: descriptionHint || `${stub.name || trimmedName}`,
             bidirectional: false,
-            destinationRegion: destinationRegionForExit
+            destinationRegion: destinationRegionForExit,
+            travelTimeMinutes
         };
 
         if (resolvedIsVehicle) {
@@ -8695,7 +8718,7 @@ async function createLocationFromEvent({ name, originLocation = null, descriptio
     return stub;
 }
 
-async function createRegionStubFromEvent({ name, originLocation = null, description = null, parentRegionId = null, vehicleType = null, isVehicle = false, relativeLevel = null, imageDataUrl = '', imageDataUrlOriginal = '', createOriginExit = true } = {}) {
+async function createRegionStubFromEvent({ name, originLocation = null, description = null, parentRegionId = null, travelTimeMinutes = undefined, vehicleType = null, isVehicle = false, relativeLevel = null, imageDataUrl = '', imageDataUrlOriginal = '', createOriginExit = true } = {}) {
     const trimmedName = typeof name === 'string' ? name.trim() : '';
     if (!trimmedName || !originLocation) {
         return null;
@@ -8743,7 +8766,8 @@ async function createRegionStubFromEvent({ name, originLocation = null, descript
         const exitOptions = {
             description: description || `${targetLocation.name || trimmedName}`,
             bidirectional: true,
-            destinationRegion: destinationRegionId || null
+            destinationRegion: destinationRegionId || null,
+            travelTimeMinutes
         };
 
         if (resolvedIsVehicle) {
@@ -8977,7 +9001,8 @@ async function createRegionStubFromEvent({ name, originLocation = null, descript
     const exitOptions = {
         description: description || `${regionEntryStub.name || trimmedName}`,
         bidirectional: false,
-        destinationRegion: newRegionId
+        destinationRegion: newRegionId,
+        travelTimeMinutes
     };
 
     if (resolvedIsVehicle) {
@@ -12463,6 +12488,7 @@ function buildLocationShortDescriptionItem(location) {
             if (!entry) continue;
             exits.push({
                 name: entry.name || entry.destination || entry.description || '',
+                travelTimeMinutes: Number.isInteger(entry.travelTimeMinutes) ? entry.travelTimeMinutes : 0,
                 isVehicle: Boolean(entry.isVehicle),
                 vehicleType: entry.vehicleType || ''
             });
@@ -12472,6 +12498,7 @@ function buildLocationShortDescriptionItem(location) {
             if (!exit) return;
             exits.push({
                 name: exit.name || exit.destination || exit.description || '',
+                travelTimeMinutes: Number.isInteger(exit.travelTimeMinutes) ? exit.travelTimeMinutes : 0,
                 isVehicle: Boolean(exit.isVehicle),
                 vehicleType: exit.vehicleType || ''
             });
@@ -13081,6 +13108,24 @@ async function generateNpcFromEvent({
     }
 
     const generationPromise = (async () => {
+        let resolvedLocation = location || null;
+        if (!resolvedLocation && currentPlayer?.currentLocation) {
+            try {
+                resolvedLocation = Location.get(currentPlayer.currentLocation);
+            } catch (_) {
+                resolvedLocation = null;
+            }
+        }
+
+        const sameLocationExactExisting = findSameLocationNpcByName({
+            name: trimmedName,
+            location: resolvedLocation,
+            playersById: players
+        });
+        if (sameLocationExactExisting) {
+            return sameLocationExactExisting;
+        }
+
         const existing = findActorByName(trimmedName);
         if (existing) {
             return existing;
@@ -13089,15 +13134,6 @@ async function generateNpcFromEvent({
         const looseExisting = findActorByLooseName(trimmedName);
         if (looseExisting) {
             return looseExisting;
-        }
-
-        let resolvedLocation = location || null;
-        if (!resolvedLocation && currentPlayer?.currentLocation) {
-            try {
-                resolvedLocation = Location.get(currentPlayer.currentLocation);
-            } catch (_) {
-                resolvedLocation = null;
-            }
         }
 
         const resolvedRegion = region || (resolvedLocation ? findRegionByLocationId(resolvedLocation.id) : null);
@@ -13250,6 +13286,16 @@ async function generateNpcFromEvent({
 
         npcData.description = applyNpcNameTemplate(npcData.description, npcData.name);
         npcData.shortDescription = applyNpcNameTemplate(npcData.shortDescription, npcData.name);
+
+        const sameLocationGeneratedExisting = findSameLocationNpcByName({
+            name: npcData?.name,
+            location: resolvedLocation,
+            playersById: players
+        });
+        if (sameLocationGeneratedExisting) {
+            console.log(`🧑‍🤝‍🧑 Skipping single NPC generation for duplicate name "${npcData.name}" at location ${resolvedLocation?.id || 'unknown'}`);
+            return sameLocationGeneratedExisting;
+        }
 
         const reservedNamesBeforeCreate = buildReservedActorNameSet();
         if (hasNameCollisionWithReservedSet(npcData?.name, reservedNamesBeforeCreate)) {
@@ -20565,23 +20611,19 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
         });
 
         const parsedResult = parseLocationNpcs(npcResponse);
-        let npcsAtLocation = SanitizedStringSet.fromArray(location.getNPCNames());
         let npcs = Array.isArray(parsedResult?.npcs) ? parsedResult.npcs : [];
         let npcMemoryMap = parsedResult?.memories instanceof Map ? parsedResult.memories : new Map();
-
-        // Remove NPCs from npcs and mpcMemoryMap that have a name property that's contained in npcsAtLocation
-        npcs = npcs.filter(npcData => {
-            const npcName = npcData && typeof npcData.name === 'string' ? npcData.name : '';
-            if (npcName && npcsAtLocation.has(npcName)) {
-                console.log(`🧑‍🤝‍🧑 Skipping NPC generation for duplicate name "${npcName}" at location ${location.id}`);
-                // Remove from npcMemoryMap as well
-                if (npcMemoryMap instanceof Map && npcMemoryMap.has(npcName)) {
-                    npcMemoryMap.delete(npcName);
-                }
-                return false; // Exclude this NPC from the list
+        const locationDuplicateFilter = filterGeneratedNpcsAgainstSameLocationDuplicates({
+            npcDataList: npcs,
+            memoryMap: npcMemoryMap,
+            resolveTargetLocation: () => location,
+            playersById: players,
+            log: ({ npcData, targetLocation }) => {
+                console.log(`🧑‍🤝‍🧑 Skipping NPC generation for duplicate name "${npcData.name}" at location ${targetLocation.id}`);
             }
-            return true; // Keep this NPC
         });
+        npcs = locationDuplicateFilter.npcDataList;
+        npcMemoryMap = locationDuplicateFilter.memoryMap;
 
         const npctimeoutScale = Math.max(1, npcs.length || npcCountHint);
         const locationRegionForNpcFollowup = findRegionByLocationId(location.id) || null;
@@ -20964,6 +21006,31 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
         const parsedRegionResult = parseRegionNpcs(npcResponse);
         let parsedNpcs = Array.isArray(parsedRegionResult?.npcs) ? parsedRegionResult.npcs : [];
         let regionNpcMemories = parsedRegionResult?.memories instanceof Map ? parsedRegionResult.memories : new Map();
+        const resolveRegionNpcTargetLocation = (npcData) => {
+            if (npcData?.location) {
+                const normalized = normalizeRegionLocationName(npcData.location);
+                if (normalized && locationLookup.has(normalized)) {
+                    return locationLookup.get(normalized);
+                }
+            }
+            return regionLocations[0] || null;
+        };
+        const sameLocationDuplicateFilter = filterGeneratedNpcsAgainstSameLocationDuplicates({
+            npcDataList: parsedNpcs,
+            memoryMap: regionNpcMemories,
+            resolveTargetLocation: resolveRegionNpcTargetLocation,
+            playersById: players,
+            log: ({ npcData, targetLocation }) => {
+                console.log(`🧑‍🤝‍🧑 Skipping region NPC generation for duplicate name "${npcData.name}" at location ${targetLocation.id}`);
+            }
+        });
+        parsedNpcs = sameLocationDuplicateFilter.npcDataList;
+        regionNpcMemories = sameLocationDuplicateFilter.memoryMap;
+        const preservedSameLocationRegionNpcIds = new Set(
+            sameLocationDuplicateFilter.skipped
+                .map(entry => entry?.existingNpc?.id)
+                .filter(id => typeof id === 'string' && id.trim())
+        );
         const npctimeoutScale = Math.max(1, parsedNpcs.length || regionLocations.length || 1);
         const regionLocationForNpcFollowup = regionLocations[0] || null;
         const currentRegionForNpcFollowup = buildRegionShortDescriptionItem(region);
@@ -21055,6 +21122,9 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
 
         const previousRegionNpcIds = Array.isArray(region.npcIds) ? [...region.npcIds] : [];
         for (const npcId of previousRegionNpcIds) {
+            if (preservedSameLocationRegionNpcIds.has(npcId)) {
+                continue;
+            }
             const existingNpc = players.get(npcId);
             if (existingNpc) {
                 const npcLocationId = existingNpc.currentLocation;
@@ -21068,6 +21138,17 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
             }
         }
         region.npcIds = [];
+        for (const preservedNpcId of preservedSameLocationRegionNpcIds) {
+            const preservedNpc = players.get(preservedNpcId);
+            if (!preservedNpc) {
+                continue;
+            }
+            preservedNpc.originRegionId = region.id;
+            preservedNpc.isRegionImportant = true;
+            if (!region.npcIds.includes(preservedNpcId)) {
+                region.npcIds.push(preservedNpcId);
+            }
+        }
 
         const created = [];
         const npcContexts = [];
@@ -21085,16 +21166,7 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
                 attributes[attrName] = mapNpcRatingToValue(rating);
             }
 
-            let targetLocation = null;
-            if (npcData.location) {
-                const normalized = normalizeRegionLocationName(npcData.location);
-                if (normalized && locationLookup.has(normalized)) {
-                    targetLocation = locationLookup.get(normalized);
-                }
-            }
-            if (!targetLocation && regionLocations.length > 0) {
-                targetLocation = regionLocations[0];
-            }
+            const targetLocation = resolveRegionNpcTargetLocation(npcData);
 
             const npc = new Player({
                 name: npcData.name || 'Unnamed NPC',
@@ -23220,6 +23292,374 @@ async function chooseExistingRegionExit({
     }
 }
 
+function renderRegionExitTravelTimesPrompt({
+    region,
+    allLocationsInRegion = [],
+    knownExits = [],
+    pendingExits = []
+} = {}) {
+    try {
+        if (!region || typeof region !== 'object') {
+            throw new Error('Region exit travel-time prompt requires a region object.');
+        }
+        if (!Array.isArray(pendingExits) || pendingExits.length === 0) {
+            throw new Error('Region exit travel-time prompt requires at least one pending exit.');
+        }
+
+        const templateName = 'region-exit-travel-times.xml.njk';
+        const renderedTemplate = promptEnv.render(templateName, {
+            setting: buildSettingPromptContext(getActiveSettingSnapshot()),
+            region: {
+                id: region.id || null,
+                name: region.name || region.id || 'Unknown Region',
+                description: region.description || 'No description provided.'
+            },
+            allLocationsInRegion,
+            knownExits,
+            pendingExits
+        });
+        const parsed = parseXMLTemplate(renderedTemplate);
+        const systemPrompt = parsed.systemPrompt ? parsed.systemPrompt.trim() : null;
+        const generationPrompt = parsed.generationPrompt ? parsed.generationPrompt.trim() : null;
+
+        if (!systemPrompt || !generationPrompt) {
+            throw new Error('Region exit travel-time template missing systemPrompt or generationPrompt.');
+        }
+
+        return { systemPrompt, generationPrompt };
+    } catch (error) {
+        console.error('Error rendering region exit travel-time template:', error);
+        return null;
+    }
+}
+
+function parseRegionExitTravelTimesResponse(xmlSnippet, { expectedExits = [] } = {}) {
+    if (!xmlSnippet || typeof xmlSnippet !== 'string') {
+        throw new Error('Region exit travel-time response must be a non-empty XML string.');
+    }
+
+    const doc = Utils.parseXmlDocument(xmlSnippet.trim(), 'text/xml');
+    if (!doc || doc.getElementsByTagName('parsererror')?.length) {
+        throw new Error('Region exit travel-time response contained parser errors.');
+    }
+
+    const responseNode = doc.getElementsByTagName('response')[0] || doc.documentElement;
+    if (!responseNode) {
+        throw new Error('Region exit travel-time response is missing a <response> root.');
+    }
+
+    const getDirectChild = (node, tagName) => Array.from(node.childNodes || []).find(child => (
+        child
+        && child.nodeType === 1
+        && child.tagName
+        && child.tagName.toLowerCase() === tagName.toLowerCase()
+    )) || null;
+
+    const getDirectChildText = (node, tagName) => {
+        const child = getDirectChild(node, tagName);
+        if (!child || typeof child.textContent !== 'string') {
+            return '';
+        }
+        return child.textContent.trim();
+    };
+
+    const exitNodes = Array.from(responseNode.childNodes || []).filter(child => (
+        child
+        && child.nodeType === 1
+        && child.tagName
+        && child.tagName.toLowerCase() === 'exit'
+    ));
+    if (!exitNodes.length) {
+        throw new Error('Region exit travel-time response returned no <exit> entries.');
+    }
+
+    const results = [];
+    const seenKeys = new Set();
+
+    for (const exitNode of exitNodes) {
+        const sourceLocationId = getDirectChildText(exitNode, 'sourceLocationId');
+        const destinationLocationId = getDirectChildText(exitNode, 'destinationLocationId');
+        const travelTimeText = getDirectChildText(exitNode, 'travelTime');
+
+        if (!sourceLocationId) {
+            throw new Error('Region exit travel-time response contains an <exit> without <sourceLocationId>.');
+        }
+        if (!destinationLocationId) {
+            throw new Error(`Region exit travel-time response for "${sourceLocationId}" is missing <destinationLocationId>.`);
+        }
+        if (!travelTimeText) {
+            throw new Error(`Region exit travel-time response for "${sourceLocationId}" -> "${destinationLocationId}" is missing <travelTime>.`);
+        }
+
+        const key = `${sourceLocationId}::${destinationLocationId}`;
+        if (seenKeys.has(key)) {
+            throw new Error(`Region exit travel-time response contains duplicate exit entry "${key}".`);
+        }
+
+        results.push({
+            sourceLocationId,
+            destinationLocationId,
+            travelTimeMinutes: Utils.normalizeGeneratedExitTravelTimeMinutes(
+                Utils.parseDurationToMinutes(travelTimeText, {
+                    fieldName: `region exit "${sourceLocationId}" -> "${destinationLocationId}" travelTime`
+                }),
+                {
+                    fieldName: `region exit "${sourceLocationId}" -> "${destinationLocationId}" travelTime`
+                }
+            )
+        });
+        seenKeys.add(key);
+    }
+
+    if (Array.isArray(expectedExits) && expectedExits.length > 0) {
+        const expectedKeys = new Set(expectedExits.map(entry => `${entry.sourceLocationId}::${entry.destinationLocationId}`));
+        for (const key of expectedKeys) {
+            if (!seenKeys.has(key)) {
+                throw new Error(`Region exit travel-time response is missing requested exit entry "${key}".`);
+            }
+        }
+        for (const key of seenKeys) {
+            if (!expectedKeys.has(key)) {
+                throw new Error(`Region exit travel-time response returned unexpected exit entry "${key}".`);
+            }
+        }
+    }
+
+    return results;
+}
+
+async function backfillRegionExitTravelTimes({ region = null, regionId = null, force = false } = {}) {
+    const resolvedRegion = region
+        || (typeof regionId === 'string' && regionId.trim() ? Region.get(regionId.trim()) : null);
+    if (!resolvedRegion || typeof resolvedRegion !== 'object') {
+        throw new Error('Exit travel-time backfill requires a valid region.');
+    }
+
+    const setExitTravelTimeMinutes = (exit, travelTimeMinutes, { context = 'exit travel time update' } = {}) => {
+        if (!exit || typeof exit !== 'object') {
+            throw new Error(`${context} requires a valid exit object.`);
+        }
+        if (!Number.isFinite(travelTimeMinutes) || !Number.isInteger(travelTimeMinutes) || travelTimeMinutes < 0) {
+            throw new Error(`${context} requires a non-negative integer minute value.`);
+        }
+        try {
+            exit.travelTimeMinutes = travelTimeMinutes;
+        } catch (_) {
+            if (typeof exit.update === 'function') {
+                exit.update({ travelTimeMinutes });
+            } else {
+                throw new Error(`${context} could not update exit travelTimeMinutes.`);
+            }
+        }
+    };
+
+    const locationIds = Array.isArray(resolvedRegion.locationIds)
+        ? resolvedRegion.locationIds.map(id => (typeof id === 'string' ? id.trim() : '')).filter(Boolean)
+        : [];
+    const regionLocations = locationIds.map(locationId => {
+        const location = gameLocations.get(locationId) || Location.get(locationId);
+        if (!location) {
+            throw new Error(`Region "${resolvedRegion.name || resolvedRegion.id}" references missing location "${locationId}".`);
+        }
+        return location;
+    });
+
+    const summarizeLocation = (location) => ({
+        id: location.id,
+        name: location.name || location.id,
+        description: location.description
+            || location.stubMetadata?.stubDescription
+            || location.stubMetadata?.blueprintDescription
+            || location.stubMetadata?.shortDescription
+            || 'No description provided.'
+    });
+
+    const summarizeExitForPrompt = ({ sourceLocation, destinationLocation, exit, direction }) => {
+        const destinationRegion = findRegionByLocationId(destinationLocation.id)
+            || (destinationLocation.regionId ? regions.get(destinationLocation.regionId) : null)
+            || null;
+        return {
+            sourceLocationId: sourceLocation.id,
+            sourceLocationName: sourceLocation.name || sourceLocation.id,
+            sourceLocationDescription: summarizeLocation(sourceLocation).description,
+            destinationLocationId: destinationLocation.id,
+            destinationLocationName: destinationLocation.name || destinationLocation.id,
+            destinationLocationDescription: summarizeLocation(destinationLocation).description,
+            destinationRegionId: destinationRegion?.id || destinationLocation.regionId || null,
+            destinationRegionName: destinationRegion?.name || null,
+            direction,
+            isVehicle: Boolean(exit?.isVehicle || exit?.vehicleType),
+            vehicleType: exit?.vehicleType || null
+        };
+    };
+
+    const findReverseExit = (destinationLocation, sourceLocationId) => {
+        if (!destinationLocation || typeof destinationLocation.getAvailableDirections !== 'function' || typeof destinationLocation.getExit !== 'function') {
+            throw new Error(`Destination location "${destinationLocation?.id || 'unknown'}" cannot resolve reverse exits.`);
+        }
+
+        for (const direction of destinationLocation.getAvailableDirections()) {
+            const candidate = destinationLocation.getExit(direction);
+            if (!candidate) {
+                continue;
+            }
+            const candidateDestinationId = typeof candidate.destination === 'string' ? candidate.destination.trim() : '';
+            if (candidateDestinationId === sourceLocationId) {
+                return { direction, exit: candidate };
+            }
+        }
+
+        return null;
+    };
+
+    const knownExits = [];
+    const pendingExits = [];
+    const pendingExitState = new Map();
+    const seenUndirectedPairs = new Set();
+    let copiedFromReverseCount = 0;
+
+    for (const sourceLocation of regionLocations) {
+        if (typeof sourceLocation.getAvailableDirections !== 'function' || typeof sourceLocation.getExit !== 'function') {
+            throw new Error(`Region location "${sourceLocation.id}" does not expose exit accessors.`);
+        }
+
+        for (const direction of sourceLocation.getAvailableDirections()) {
+            const exit = sourceLocation.getExit(direction);
+            if (!exit) {
+                throw new Error(`Location "${sourceLocation.id}" reported direction "${direction}" without an exit object.`);
+            }
+
+            const destinationId = typeof exit.destination === 'string' ? exit.destination.trim() : '';
+            if (!destinationId) {
+                throw new Error(`Exit "${direction}" on location "${sourceLocation.id}" is missing a destination id.`);
+            }
+
+            const destinationLocation = gameLocations.get(destinationId) || Location.get(destinationId);
+            if (!destinationLocation) {
+                throw new Error(`Exit "${direction}" on location "${sourceLocation.id}" points to missing location "${destinationId}".`);
+            }
+
+            const currentTravelTimeMinutes = Number(exit.travelTimeMinutes);
+            if (!Number.isFinite(currentTravelTimeMinutes) || !Number.isInteger(currentTravelTimeMinutes) || currentTravelTimeMinutes < 0) {
+                throw new Error(`Exit "${direction}" on location "${sourceLocation.id}" has invalid travelTimeMinutes.`);
+            }
+
+            if (!force && currentTravelTimeMinutes > 0) {
+                knownExits.push({
+                    ...summarizeExitForPrompt({ sourceLocation, destinationLocation, exit, direction }),
+                    travelTimeMinutes: currentTravelTimeMinutes
+                });
+                continue;
+            }
+
+            const reverseExit = findReverseExit(destinationLocation, sourceLocation.id);
+            const reverseTravelTimeMinutes = Number(reverseExit?.exit?.travelTimeMinutes);
+            if (!force && reverseExit && Number.isFinite(reverseTravelTimeMinutes) && Number.isInteger(reverseTravelTimeMinutes) && reverseTravelTimeMinutes > 0) {
+                setExitTravelTimeMinutes(exit, reverseTravelTimeMinutes, {
+                    context: `reverse travel-time copy for "${sourceLocation.id}" -> "${destinationLocation.id}"`
+                });
+                copiedFromReverseCount += 1;
+                knownExits.push({
+                    ...summarizeExitForPrompt({ sourceLocation, destinationLocation, exit, direction }),
+                    travelTimeMinutes: reverseTravelTimeMinutes
+                });
+                continue;
+            }
+
+            const undirectedPairKey = reverseExit
+                ? [sourceLocation.id, destinationLocation.id].sort().join('::')
+                : `${sourceLocation.id}->${destinationLocation.id}`;
+            if (seenUndirectedPairs.has(undirectedPairKey)) {
+                continue;
+            }
+            seenUndirectedPairs.add(undirectedPairKey);
+
+            const promptEntry = summarizeExitForPrompt({ sourceLocation, destinationLocation, exit, direction });
+            pendingExits.push(promptEntry);
+            pendingExitState.set(`${sourceLocation.id}::${destinationLocation.id}`, {
+                sourceExit: exit,
+                reverseExit: reverseExit?.exit || null
+            });
+        }
+    }
+
+    if (!pendingExits.length) {
+        return {
+            regionId: resolvedRegion.id,
+            regionName: resolvedRegion.name || resolvedRegion.id,
+            promptUsed: false,
+            promptedExitCount: 0,
+            generatedExitCount: 0,
+            mirroredReverseCount: 0,
+            copiedFromReverseCount
+        };
+    }
+
+    const prompt = renderRegionExitTravelTimesPrompt({
+        region: resolvedRegion,
+        allLocationsInRegion: regionLocations.map(summarizeLocation),
+        knownExits,
+        pendingExits
+    });
+    if (!prompt?.systemPrompt || !prompt?.generationPrompt) {
+        throw new Error(`Failed to render exit travel-time prompt for region "${resolvedRegion.name || resolvedRegion.id}".`);
+    }
+
+    const aiResponse = await LLMClient.chatCompletion({
+        messages: [
+            { role: 'system', content: prompt.systemPrompt },
+            { role: 'user', content: prompt.generationPrompt }
+        ],
+        metadataLabel: 'region_exit_travel_times'
+    });
+    const normalizedResponse = typeof aiResponse === 'string' ? aiResponse.trim() : '';
+    if (!normalizedResponse) {
+        throw new Error(`Exit travel-time prompt returned an empty response for region "${resolvedRegion.name || resolvedRegion.id}".`);
+    }
+
+    LLMClient.logPrompt({
+        prefix: 'region_exit_travel_times',
+        metadataLabel: 'region_exit_travel_times',
+        systemPrompt: prompt.systemPrompt || '',
+        generationPrompt: prompt.generationPrompt || '',
+        response: normalizedResponse
+    });
+
+    const parsedExits = parseRegionExitTravelTimesResponse(normalizedResponse, {
+        expectedExits: pendingExits
+    });
+
+    let mirroredReverseCount = 0;
+    for (const parsedExit of parsedExits) {
+        const key = `${parsedExit.sourceLocationId}::${parsedExit.destinationLocationId}`;
+        const pendingState = pendingExitState.get(key);
+        if (!pendingState) {
+            throw new Error(`Parsed exit travel-time response referenced unknown exit "${key}".`);
+        }
+
+        setExitTravelTimeMinutes(pendingState.sourceExit, parsedExit.travelTimeMinutes, {
+            context: `generated exit travel-time update for "${key}"`
+        });
+        if (pendingState.reverseExit && (force || Number(pendingState.reverseExit.travelTimeMinutes) === 0)) {
+            setExitTravelTimeMinutes(pendingState.reverseExit, parsedExit.travelTimeMinutes, {
+                context: `mirrored reverse exit travel-time update for "${key}"`
+            });
+            mirroredReverseCount += 1;
+        }
+    }
+
+    return {
+        regionId: resolvedRegion.id,
+        regionName: resolvedRegion.name || resolvedRegion.id,
+        force,
+        promptUsed: true,
+        promptedExitCount: pendingExits.length,
+        generatedExitCount: parsedExits.length,
+        mirroredReverseCount,
+        copiedFromReverseCount
+    };
+}
+
 
 function parseRegionExitsResponse(xmlSnippet) {
     if (!xmlSnippet || typeof xmlSnippet !== 'string') {
@@ -23504,6 +23944,21 @@ function parseRegionStubLocations(xmlSnippet) {
         return value || null;
     };
 
+    const parseExitTravelTimeMinutes = (rawValue, { locationName, targetLabel } = {}) => {
+        const text = typeof rawValue === 'string' ? rawValue.trim() : '';
+        if (!text) {
+            throw new Error(`Region stub location "${locationName || 'Unnamed Location'}" exit "${targetLabel || 'unknown'}" is missing <travelTime>.`);
+        }
+        return Utils.normalizeGeneratedExitTravelTimeMinutes(
+            Utils.parseDurationToMinutes(text, {
+                fieldName: `region stub location "${locationName || 'Unnamed Location'}" exit "${targetLabel || 'unknown'}" travelTime`
+            }),
+            {
+                fieldName: `region stub location "${locationName || 'Unnamed Location'}" exit "${targetLabel || 'unknown'}" travelTime`
+            }
+        );
+    };
+
     const parseBooleanTagValue = (value, fieldName) => {
         if (value === null || value === undefined || value === '') {
             return null;
@@ -23533,7 +23988,24 @@ function parseRegionStubLocations(xmlSnippet) {
         const exitsParent = getDirectChildByTag(node, 'exits');
         const exits = exitsParent
             ? getDirectChildrenByTag(exitsParent, 'exit')
-                .map(exitNode => exitNode.textContent?.trim())
+                .map(exitNode => {
+                    const destinationNode = getDirectChildByTag(exitNode, 'destination');
+                    const travelTimeNode = getDirectChildByTag(exitNode, 'travelTime');
+                    const target = destinationNode?.textContent?.trim()
+                        || exitNode.getAttribute?.('destination')?.trim()
+                        || exitNode.getAttribute?.('name')?.trim()
+                        || '';
+                    if (!target) {
+                        throw new Error(`Region stub location "${name || 'Unnamed Location'}" has an <exit> without a <destination>.`);
+                    }
+                    return {
+                        target,
+                        travelTimeMinutes: parseExitTravelTimeMinutes(travelTimeNode?.textContent, {
+                            locationName: name || 'Unnamed Location',
+                            targetLabel: target
+                        })
+                    };
+                })
                 .filter(Boolean)
             : [];
 
@@ -24657,7 +25129,7 @@ async function instantiateRegionLocations({
         });
     }
 
-    const addStubExit = (fromStub, toStub, label) => {
+    const addStubExit = (fromStub, toStub, label, travelTimeMinutes = 0) => {
         if (!fromStub || !toStub || fromStub.id === toStub.id) {
             return;
         }
@@ -24677,6 +25149,13 @@ async function instantiateRegionLocations({
                     existingExit.update({ description: `${toStub.name}` });
                 }
             }
+            if (existingExit && (!Number.isFinite(existingExit.travelTimeMinutes) || existingExit.travelTimeMinutes < 0)) {
+                try {
+                    existingExit.travelTimeMinutes = travelTimeMinutes;
+                } catch (_) {
+                    existingExit.update({ travelTimeMinutes });
+                }
+            }
             return;
         }
 
@@ -24694,6 +25173,7 @@ async function instantiateRegionLocations({
         const exit = new LocationExit({
             description: `${toStub.name}`,
             destination: toStub.id,
+            travelTimeMinutes,
             bidirectional: true
         });
         fromStub.addExit(directionKey, exit);
@@ -24715,6 +25195,9 @@ async function instantiateRegionLocations({
                 ? exitInfo
                 : (exitInfo && typeof exitInfo.target === 'string' ? exitInfo.target : null);
             if (!targetLabel) return;
+            const travelTimeMinutes = typeof exitInfo === 'object' && Number.isInteger(exitInfo.travelTimeMinutes)
+                ? exitInfo.travelTimeMinutes
+                : 0;
 
             const candidateAliases = [normalizeRegionLocationName(targetLabel)];
             const directStub = candidateAliases
@@ -24726,7 +25209,8 @@ async function instantiateRegionLocations({
             }
 
             const forwardDirection = targetLabel;
-            addStubExit(sourceStub, targetStub, forwardDirection);
+            addStubExit(sourceStub, targetStub, forwardDirection, travelTimeMinutes);
+            addStubExit(targetStub, sourceStub, sourceStub.name || sourceStub.id, travelTimeMinutes);
         });
     }
 
@@ -24763,6 +25247,7 @@ async function instantiateRegionLocations({
             const reverseExit = new LocationExit({
                 description,
                 destination: fromId,
+                travelTimeMinutes: Number.isInteger(exit.travelTimeMinutes) ? exit.travelTimeMinutes : 0,
                 bidirectional: false
             });
             toLocation.addExit(reverseDirection, reverseExit);
@@ -25544,6 +26029,7 @@ const apiScope = {
     generateLocationImage,
     generatePlayerImage,
     generateRegionFromPrompt,
+    backfillRegionExitTravelTimes,
     createLocationFromEvent,
     createRegionStubFromEvent,
     generateSkillsList,
@@ -25653,6 +26139,7 @@ if (typeof module !== 'undefined' && module.exports) {
     module.exports.performGameLoad = (...args) => apiScope.performGameLoad(...args);
     module.exports.pendingRegionStubs = pendingRegionStubs;
     module.exports.ensureExitConnection = ensureExitConnection;
+    module.exports.backfillRegionExitTravelTimes = (...args) => apiScope.backfillRegionExitTravelTimes(...args);
 }
 
 function generateImageId() {

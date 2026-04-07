@@ -6674,6 +6674,32 @@ module.exports = function registerApiRoutes(scope) {
             return merged;
         };
 
+        const applyTimeProgressOverrideToEventResults = ({
+            timeProgress = null,
+            eventResult = null,
+            originEventResult = null,
+            destinationEventResult = null
+        } = {}) => {
+            if (!timeProgress || typeof timeProgress !== 'object') {
+                return;
+            }
+
+            const cloneTimeProgress = () => ({ ...timeProgress });
+
+            if (eventResult && typeof eventResult === 'object') {
+                eventResult.timeProgress = cloneTimeProgress();
+            }
+
+            if (destinationEventResult && typeof destinationEventResult === 'object') {
+                destinationEventResult.timeProgress = cloneTimeProgress();
+                return;
+            }
+
+            if (originEventResult && typeof originEventResult === 'object') {
+                originEventResult.timeProgress = cloneTimeProgress();
+            }
+        };
+
         const findLocationExitById = (exitId) => {
             const normalizedExitId = typeof exitId === 'string' ? exitId.trim() : '';
             if (!normalizedExitId) {
@@ -12648,6 +12674,8 @@ module.exports = function registerApiRoutes(scope) {
             ]);
             let resolvedTravelContext = null;
             let vehicleArrivalsThisTurn = [];
+            let eventDrivenExitTravelTimeMinutes = 0;
+            let suppressEventDrivenExitTimeAdvance = false;
 
             const resolveTravelContext = () => {
                 if (!travelMetadata || !travelMetadata.exit) {
@@ -12868,7 +12896,12 @@ module.exports = function registerApiRoutes(scope) {
 
                     if (travelMetadataIsEventDriven && currentActionIsTravel) {
                         try {
-                            resolveTravelContext();
+                            const resolvedTravel = resolveTravelContext();
+                            eventDrivenExitTravelTimeMinutes = resolveExitTravelTimeForTraversal({
+                                exit: resolvedTravel?.exit || null,
+                                sourceLocation: resolvedTravel?.originLocation || null
+                            });
+                            suppressEventDrivenExitTimeAdvance = eventDrivenExitTravelTimeMinutes > 0;
                         } catch (error) {
                             const message = error.message || 'Failed to resolve travel metadata.';
                             stream.error({ message });
@@ -14149,6 +14182,21 @@ module.exports = function registerApiRoutes(scope) {
                     let destinationEventLocationName = null;
                     let vehicleMovement = null;
                     let userInput = null;
+                    const eventDrivenTravelWillSucceed = (() => {
+                        if (!(travelMetadataIsEventDriven && currentActionIsTravel)) {
+                            return false;
+                        }
+                        if (plausibilityType === 'trivial') {
+                            return true;
+                        }
+                        if (plausibilityType !== 'plausible') {
+                            return false;
+                        }
+                        if (!actionResolution || !actionResolution.degree) {
+                            return true;
+                        }
+                        return !travelFailureDegrees.has(String(actionResolution.degree).toLowerCase());
+                    })();
                     if (isForcedEventAction) {
                         eventResult = forcedEventResult;
                     } else {
@@ -14197,7 +14245,8 @@ module.exports = function registerApiRoutes(scope) {
                                             : null,
                                         stream,
                                         // For non-travelProse turns, let event checks apply any narrated movement.
-                                        suppressMoveEvents: false
+                                        suppressMoveEvents: false,
+                                        suppressTimeAdvance: suppressEventDrivenExitTimeAdvance && eventDrivenTravelWillSucceed
                                     }),
                                     Events.runQuestChecks()
                                 ]);
@@ -14449,21 +14498,12 @@ module.exports = function registerApiRoutes(scope) {
 
                     if (travelMetadataIsEventDriven && currentActionIsTravel) {
                         traveledToLocationId = requireLocationId(travelMetadata?.exit?.destinationId, 'travel destination');
-                        let travelAttemptSucceeded = false;
-                        if (plausibilityType === 'trivial') {
-                            travelAttemptSucceeded = true;
-                        } else if (plausibilityType === 'plausible') {
-                            if (!actionResolution || !actionResolution.degree) {
-                                travelAttemptSucceeded = true;
-                            } else {
-                                const normalizedDegree = actionResolution.degree.toLowerCase();
-                                travelAttemptSucceeded = !travelFailureDegrees.has(normalizedDegree);
-                            }
-                        }
+                        const travelAttemptSucceeded = eventDrivenTravelWillSucceed;
 
                         if (travelAttemptSucceeded) {
                             try {
                                 const travelContext = resolveTravelContext();
+                                let exitTravelTimeAdjustment = null;
                                 if (travelContext) {
                                     let destinationLocation = travelContext.destinationLocation;
 
@@ -14509,6 +14549,29 @@ module.exports = function registerApiRoutes(scope) {
 
                                     if (finalLocation) {
                                         location = finalLocation;
+                                    }
+                                    if (eventDrivenExitTravelTimeMinutes > 0) {
+                                        exitTravelTimeAdjustment = await adjustWorldTimeByMinutes(eventDrivenExitTravelTimeMinutes, {
+                                            source: 'location_exit_travel',
+                                            emitClientRefresh: false
+                                        });
+                                        if (Array.isArray(exitTravelTimeAdjustment?.statusNeedAdjustments) && exitTravelTimeAdjustment.statusNeedAdjustments.length) {
+                                            statusNeedAdjustments.push(...exitTravelTimeAdjustment.statusNeedAdjustments);
+                                        }
+                                        if (Array.isArray(exitTravelTimeAdjustment?.vehicleArrivals) && exitTravelTimeAdjustment.vehicleArrivals.length) {
+                                            vehicleArrivalsThisTurn.push(...exitTravelTimeAdjustment.vehicleArrivals);
+                                        }
+                                        if (exitTravelTimeAdjustment.timeProgress && typeof exitTravelTimeAdjustment.timeProgress === 'object') {
+                                            if (!eventResult || typeof eventResult !== 'object') {
+                                                eventResult = {};
+                                            }
+                                            applyTimeProgressOverrideToEventResults({
+                                                timeProgress: exitTravelTimeAdjustment.timeProgress,
+                                                eventResult,
+                                                originEventResult,
+                                                destinationEventResult
+                                            });
+                                        }
                                     }
                                     Globals.processedMove = true;
                                     assertMovementGraphIntegrity({
@@ -18364,7 +18427,7 @@ module.exports = function registerApiRoutes(scope) {
             }
         });
 
-        app.post('/api/npcs/:id/teleport', (req, res) => {
+        app.post('/api/npcs/:id/teleport', async (req, res) => {
             try {
                 const rawNpcId = req.params.id;
                 const npcId = typeof rawNpcId === 'string' ? rawNpcId.trim() : '';
@@ -18387,6 +18450,7 @@ module.exports = function registerApiRoutes(scope) {
 
                 const body = req.body && typeof req.body === 'object' ? req.body : {};
                 const rawLocationId = typeof body.locationId === 'string' ? body.locationId.trim() : '';
+                const accountTravelTime = body.accountTravelTime === true;
                 if (!rawLocationId) {
                     return res.status(400).json({
                         success: false,
@@ -18432,6 +18496,13 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 const originLocation = resolveLocationById(originLocationId);
+                let fastTravelTimeAdjustment = null;
+                const fastTravelTimeMinutes = accountTravelTime
+                    ? resolveFastTravelTimeForTraversal({
+                        sourceLocation: originLocation,
+                        destinationLocation
+                    })
+                    : 0;
 
                 if (originLocation && isNpc) {
                     if (typeof originLocation.removeNpcId === 'function') {
@@ -18456,6 +18527,13 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 npc.setLocation(destinationLocation.id);
+
+                if (fastTravelTimeMinutes > 0) {
+                    fastTravelTimeAdjustment = await adjustWorldTimeByMinutes(fastTravelTimeMinutes, {
+                        source: 'fast_travel',
+                        emitClientRefresh: false
+                    });
+                }
 
                 if (players instanceof Map) {
                     players.set(npc.id, npc);
@@ -18492,6 +18570,8 @@ module.exports = function registerApiRoutes(scope) {
                         destinationLocation.id,
                         originLocation?.id || null
                     ].filter(Boolean))),
+                    worldTime: fastTravelTimeAdjustment?.worldTime || null,
+                    timeProgress: fastTravelTimeAdjustment?.timeProgress || null,
                     message: `${npc.name || (isNpc ? 'NPC' : 'Player')} teleported successfully.`
                 };
 
@@ -21821,6 +21901,8 @@ module.exports = function registerApiRoutes(scope) {
                     type,
                     name,
                     description,
+                    travelTime: travelTimeRaw,
+                    travelTimeMinutes: travelTimeMinutesRaw,
                     regionId: targetRegionIdRaw,
                     locationId: targetLocationIdRaw,
                     parentRegionId: parentRegionIdRaw,
@@ -21859,6 +21941,37 @@ module.exports = function registerApiRoutes(scope) {
                         });
                     }
                     relativeLevel = Math.max(-10, Math.min(10, Math.round(parsedRelativeLevel)));
+                }
+                let travelTimeMinutes = 1;
+                const travelTimeInput = travelTimeMinutesRaw !== undefined
+                    ? travelTimeMinutesRaw
+                    : travelTimeRaw;
+                if (travelTimeInput !== undefined && travelTimeInput !== null && !(typeof travelTimeInput === 'string' && !travelTimeInput.trim())) {
+                    if (typeof travelTimeInput === 'number') {
+                        if (!Number.isFinite(travelTimeInput) || !Number.isInteger(travelTimeInput) || travelTimeInput < 0) {
+                            return res.status(400).json({
+                                success: false,
+                                error: 'travelTime must be a non-negative integer minute value or a valid duration string.'
+                            });
+                        }
+                        travelTimeMinutes = travelTimeInput;
+                    } else if (typeof travelTimeInput === 'string') {
+                        try {
+                            travelTimeMinutes = Utils.parseDurationToMinutes(travelTimeInput.trim(), {
+                                fieldName: 'exit travelTime'
+                            });
+                        } catch (error) {
+                            return res.status(400).json({
+                                success: false,
+                                error: error?.message || 'travelTime must be a valid duration string.'
+                            });
+                        }
+                    } else {
+                        return res.status(400).json({
+                            success: false,
+                            error: 'travelTime must be a non-negative integer minute value or a valid duration string.'
+                        });
+                    }
                 }
                 let requestedBidirectional = false;
                 if (bidirectionalRaw !== undefined && bidirectionalRaw !== null && bidirectionalRaw !== '') {
@@ -21969,6 +22082,7 @@ module.exports = function registerApiRoutes(scope) {
                         description: resolvedDescription,
                         originLocation,
                         parentRegionId,
+                        travelTimeMinutes,
                         vehicleType: normalizedVehicleType,
                         isVehicle: isVehicleExit,
                         relativeLevel,
@@ -22043,7 +22157,8 @@ module.exports = function registerApiRoutes(scope) {
                     const exitOptions = {
                         description: exitDescription,
                         bidirectional: true,
-                        destinationRegion: destinationRegionForExit
+                        destinationRegion: destinationRegionForExit,
+                        travelTimeMinutes
                     };
 
                     if (isVehicleExit) {
@@ -22083,6 +22198,7 @@ module.exports = function registerApiRoutes(scope) {
                         directionHint: null,
                         expandStub: false,
                         targetRegionId,
+                        travelTimeMinutes,
                         vehicleType: normalizedVehicleType,
                         isVehicle: isVehicleExit,
                         relativeLevel,
@@ -22120,7 +22236,8 @@ module.exports = function registerApiRoutes(scope) {
                         const exitOptions = {
                             description: exitDescription,
                             bidirectional: true,
-                            destinationRegion: destinationRegionForExit
+                            destinationRegion: destinationRegionForExit,
+                            travelTimeMinutes
                         };
 
                         if (isVehicleExit) {
@@ -23151,6 +23268,11 @@ module.exports = function registerApiRoutes(scope) {
                     });
                 }
 
+                const exitTravelTimeMinutes = resolveExitTravelTimeForTraversal({
+                    exit: matchedExit,
+                    sourceLocation: currentLocation
+                });
+
                 let destinationLocation = gameLocations.get(matchedExit.destination);
                 if (!destinationLocation) {
                     return res.status(404).json({
@@ -23252,6 +23374,7 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 const previousLocationIdForMemories = currentPlayer.currentLocation || null;
+                let exitTravelTimeAdjustment = null;
 
                 currentPlayer.setLocation(destinationLocation.id);
 
@@ -23296,6 +23419,13 @@ module.exports = function registerApiRoutes(scope) {
                             }
                         }
                     }
+                }
+
+                if (exitTravelTimeMinutes > 0) {
+                    exitTravelTimeAdjustment = await adjustWorldTimeByMinutes(exitTravelTimeMinutes, {
+                        source: 'location_exit_travel',
+                        emitClientRefresh: false
+                    });
                 }
 
                 assertMovementGraphIntegrity({
@@ -23355,6 +23485,9 @@ module.exports = function registerApiRoutes(scope) {
                 res.json({
                     success: true,
                     location: locationData,
+                    player: serializeNpcForClient(currentPlayer),
+                    worldTime: exitTravelTimeAdjustment?.worldTime || buildWorldTimePayload(),
+                    timeProgress: exitTravelTimeAdjustment?.timeProgress || null,
                     message: `Moved to ${locationData.name || locationData.id}`,
                     direction: matchedDirection
                 });
@@ -23582,6 +23715,7 @@ module.exports = function registerApiRoutes(scope) {
                     id: exit?.id || `${location.id}_${direction}`,
                     destination: exit?.destination || null,
                     destinationRegion: destinationRegionId,
+                    travelTimeMinutes: Number.isInteger(exit?.travelTimeMinutes) ? exit.travelTimeMinutes : 0,
                     destinationRegionName,
                     destinationRegionExpanded,
                     destinationName,
@@ -28638,6 +28772,7 @@ module.exports = function registerApiRoutes(scope) {
                 if (typeof member.setInPlayerParty === 'function') {
                     member.setInPlayerParty(true);
                 }
+                member.wasEverInPlayerParty = true;
 
                 const removedCount = Player.removeNpcFromAllLocations(member.id);
                 if (removedCount > 0) {
@@ -30314,10 +30449,70 @@ module.exports = function registerApiRoutes(scope) {
             });
         }
 
-        async function adjustSlashCommandWorldTimeByMinutes(minutes, { source = 'slash_command_time' } = {}) {
+        function locationContextRepresentsVehicle(location) {
+            if (!location || typeof location !== 'object') {
+                return false;
+            }
+
+            const locationRepresentsVehicle = Boolean(
+                location.isVehicle === true
+                || (location.vehicleInfo && typeof location.vehicleInfo === 'object' && !Array.isArray(location.vehicleInfo))
+            );
+            if (locationRepresentsVehicle) {
+                return true;
+            }
+
+            const sourceRegion = typeof findRegionByLocationId === 'function' && location.id
+                ? findRegionByLocationId(location.id)
+                : null;
+            return Boolean(
+                sourceRegion
+                && (
+                    sourceRegion.isVehicle === true
+                    || (sourceRegion.vehicleInfo && typeof sourceRegion.vehicleInfo === 'object' && !Array.isArray(sourceRegion.vehicleInfo))
+                )
+            );
+        }
+
+        function resolveExitTravelTimeForTraversal({ exit, sourceLocation } = {}) {
+            if (!exit || typeof exit !== 'object') {
+                return 0;
+            }
+            const travelTimeMinutes = Number(exit.travelTimeMinutes);
+            if (!Number.isFinite(travelTimeMinutes) || !Number.isInteger(travelTimeMinutes) || travelTimeMinutes <= 0) {
+                return 0;
+            }
+            if (locationContextRepresentsVehicle(sourceLocation)) {
+                return 0;
+            }
+            return travelTimeMinutes;
+        }
+
+        function resolveFastTravelTimeForTraversal({ sourceLocation, destinationLocation } = {}) {
+            if (!sourceLocation || !destinationLocation) {
+                return 0;
+            }
+
+            const shortestTravelTimeMinutes = Location.findShortestTravelTimeMinutes(sourceLocation, destinationLocation);
+            if (shortestTravelTimeMinutes === null) {
+                return 0;
+            }
+            if (!Number.isFinite(shortestTravelTimeMinutes) || !Number.isInteger(shortestTravelTimeMinutes) || shortestTravelTimeMinutes < 0) {
+                throw new Error('Fast-travel route resolution produced an invalid minute value.');
+            }
+
+            return shortestTravelTimeMinutes;
+        }
+
+        async function adjustWorldTimeByMinutes(minutes, {
+            source = 'world_time_adjustment',
+            emitClientRefresh = false,
+            locationRefreshRequested = false,
+            clientId = null
+        } = {}) {
             const deltaMinutes = Number(minutes);
             if (!Number.isFinite(deltaMinutes) || !Number.isInteger(deltaMinutes)) {
-                throw new Error('Slash-command world-time adjustments require an integer minute amount.');
+                throw new Error('World-time adjustments require an integer minute amount.');
             }
 
             const previous = Globals.getWorldTimeContext();
@@ -30351,13 +30546,15 @@ module.exports = function registerApiRoutes(scope) {
                 transitions: Array.isArray(timeProgress?.transitions) ? timeProgress.transitions : []
             });
 
-            try {
-                Globals.emitToClient(null, 'chat_history_updated', {
-                    worldTime,
-                    locationRefreshRequested: deltaMinutes > 0
-                });
-            } catch (emitError) {
-                console.warn('Failed to emit world-time refresh after slash command:', emitError?.message || emitError);
+            if (emitClientRefresh) {
+                try {
+                    Globals.emitToClient(clientId, 'chat_history_updated', {
+                        worldTime,
+                        locationRefreshRequested
+                    });
+                } catch (emitError) {
+                    console.warn('Failed to emit world-time refresh after adjustment:', emitError?.message || emitError);
+                }
             }
 
             return {
@@ -30367,6 +30564,15 @@ module.exports = function registerApiRoutes(scope) {
                 vehicleArrivals,
                 worldTime
             };
+        }
+
+        async function adjustSlashCommandWorldTimeByMinutes(minutes, { source = 'slash_command_time' } = {}) {
+            return adjustWorldTimeByMinutes(minutes, {
+                source,
+                emitClientRefresh: true,
+                locationRefreshRequested: Number(minutes) > 0,
+                clientId: null
+            });
         }
 
         function buildSlashCommandInteractionContext({ userId = null, argsText = '', replies = [] } = {}) {
@@ -30439,6 +30645,9 @@ module.exports = function registerApiRoutes(scope) {
                     : null,
                 describeSettingForPrompt: typeof describeSettingForPrompt === 'function'
                     ? describeSettingForPrompt
+                    : null,
+                backfillRegionExitTravelTimes: typeof backfillRegionExitTravelTimes === 'function'
+                    ? backfillRegionExitTravelTimes
                     : null,
                 skillRegistry: skills instanceof Map ? skills : null,
                 thingRegistry: things instanceof Map ? things : null,

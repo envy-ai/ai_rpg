@@ -28,8 +28,10 @@ The main UI is rendered by `views/index.njk` and powered by `public/js/chat.js` 
   - Equippable item tooltips include stacked comparison cards for currently equipped compatible-slot items (using the active actor context).
   - On touch/coarse-pointer devices, tapping any entity `•••` context-menu button temporarily suppresses floating tooltips so the menu remains reachable.
   - Exits list + "New Exit" button.
+  - Exit button labels append the stored travel time in compact form, for example `North Hall (1h10m)`.
   - Exits whose destination is a vehicle render a left-side vehicle icon on the travel button, using the destination vehicle's `vehicleInfo.icon` and falling back to `🚗` when icon metadata is missing.
   - Vehicle exits that leave a vehicle context render with a left-side `⬅️` icon and an `Exit Vehicle: <destination>` label.
+  - Non-vehicle exit traversal applies the exit's stored `travelTimeMinutes` to world time on success; event-driven traversal uses that mechanical exit time instead of a duplicate LLM-authored `time_passed`.
   - Unexplored region exit labels are destination-driven: vehicle destinations render as `Unexplored huge vehicle: <region>`, while non-vehicle destinations render as `Unexplored Region: <region>`; if the exit itself is marked vehicle to a non-vehicle destination, the label renders as `<vehicleType> to unexplored region: <region>`.
   - When move plausibility is configured for `unexplored_locations`, exit-button travel uses the chat/event-move path for unresolved region-entry exits and for expanded destination locations whose exit payload reports `destinationVisited === false`; merely being expanded no longer makes a location count as explored.
   - `exit.isVehicle`/`exit.vehicleType` are treated as edge metadata only and must not be used to infer that the destination location/region is itself a vehicle.
@@ -113,7 +115,7 @@ The chat client listens on `/ws?clientId=...` and handles:
 - `quest_confirmation_request` (modal prompt).
 
 `processChatPayload()` also consumes `payload.worldTime` from streamed/final chat responses, updates the world-time chip, and emits transition summaries (`segment`/`season`) into the event-summary flow.
-It also renders `needBarChanges`, `dispositionChanges`, and `factionReputationChanges` into the same event-summary bundle box so they appear together. When `time_passed` advances world time for the turn, the same bundle appends an `⏳ <natural duration> passed.` line using `A`, `A and B`, or `A, B, and C` formatting. Need-bar summaries now use the configured bar icon, include the model-provided reason text when present, and emit one standalone notification per change outside active bundles.
+It also renders `needBarChanges`, `dispositionChanges`, and `factionReputationChanges` into the same event-summary bundle box so they appear together. When `time_passed` advances world time for the turn, the same bundle appends an `⏳ <natural duration> passed.` line using `A`, `A and B`, or `A, B, and C` formatting. If exit travel time overrides the prompt-authored turn duration, the displayed line uses the effective travel minutes. Need-bar summaries now use the configured bar icon, include the model-provided reason text when present, and emit one standalone notification per change outside active bundles.
 
 ## Key API calls from the chat UI
 
@@ -144,7 +146,7 @@ LLM-backed modal submits close immediately (no visible waiting state); errors su
 
 - `#addNpcModal` (adds an NPC via `/api/locations/:id/npcs`; supports concurrent submissions when the modal is reopened during an in-flight request).
 - `#thingEditModal` create mode (adds item/scenery via `/api/locations/:id/things`; name is optional and can be generated).
-- `#newExitModal` (creates/edits exits via `/api/locations/:id/exits`).
+- `#newExitModal` (creates/edits exits via `/api/locations/:id/exits`, including a travel-time field that accepts the shared duration syntax such as `1m`, `1h10m`, or `2 hours`).
 - `#craftingModal` (crafting/processing via `/api/craft`, including a no-prose submit path for craft/process, with notes placeholders that mention `<N>` roll override support).
 - `#salvageIntentModal` (salvage/harvest via `/api/craft`, including `Harvest (no prose)` / `Salvage (no prose)` submits, with intent placeholders that mention `<N>` roll override support).
 
@@ -178,6 +180,8 @@ Inline script functions in `views/index.njk` render these tabs:
 - The new-faction modal includes an optional "Generation Notes (AI Guidance)" field that is sent only to `/api/factions/fill-missing` to steer autofill.
 - On create submit, if any relevant faction fields are blank, the UI calls `/api/factions/fill-missing` before posting to `/api/factions`.
 - `initPartyDisplay()` renders party cards and ties into the chat sidebar.
+- Party-member context menus now include both `Dismiss` and `Dismiss everyone else`; the latter keeps the selected member and removes every other current party member using the same party-removal path.
+- Non-party NPC context menus now also include `Recruit all party members`; it recruits every current-location NPC with `wasEverInPlayerParty === true` that is not already in the party.
 
 ## Story Tools tab
 

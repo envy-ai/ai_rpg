@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 
 const Globals = require('../Globals.js');
 const Location = require('../Location.js');
+const LocationExit = require('../LocationExit.js');
 const Player = require('../Player.js');
 const Region = require('../Region.js');
 const Utils = require('../Utils.js');
@@ -188,6 +189,115 @@ test('Utils.hydrateGameState infers visited state for legacy saves without a vis
         assert.equal(gameLocations.get(legacyExpanded.id).visited, true);
         assert.equal(gameLocations.get(explicitUnvisited.id).visited, false);
         assert.equal(gameLocations.get(legacyStub.id).visited, false);
+    } finally {
+        Globals.config = previousConfig;
+        Globals.sceneSummaries = previousSceneSummaries;
+        removeLocationsFromIndex(sourceLocations);
+        removeLocationsFromIndex(hydratedLocations);
+        resetWorldState();
+    }
+});
+
+test('Utils.hydrateGameState defaults missing saved exit travel times to 0 minutes', () => {
+    const previousConfig = Globals.config;
+    const previousSceneSummaries = Globals.sceneSummaries;
+    const sourceLocations = [];
+    const hydratedLocations = [];
+
+    resetWorldState();
+    Globals.config = {
+        ...(previousConfig && typeof previousConfig === 'object' ? previousConfig : {}),
+        baseHealthPerLevel: Number.isFinite(previousConfig?.baseHealthPerLevel)
+            ? previousConfig.baseHealthPerLevel
+            : 10
+    };
+    Globals.sceneSummaries = {
+        serialize() {
+            return {};
+        },
+        load() {}
+    };
+
+    try {
+        const region = new Region({
+            id: 'test-hydrate-exit-travel-time-region',
+            name: 'Transit Annex',
+            description: 'A region used to test exit travel time hydration.'
+        });
+
+        const origin = new Location({
+            id: 'test-origin-location',
+            name: 'North Hall',
+            description: 'An origin location.',
+            regionId: region.id
+        });
+        sourceLocations.push(origin);
+
+        const destination = new Location({
+            id: 'test-destination-location',
+            name: 'South Hall',
+            description: 'A destination location.',
+            regionId: region.id
+        });
+        sourceLocations.push(destination);
+
+        const exit = new LocationExit({
+            id: 'test-hydrate-exit-travel-time-exit',
+            description: 'A hallway between the two rooms.',
+            destination: destination.id,
+            travelTimeMinutes: 7,
+            bidirectional: false
+        });
+        origin.addExit('south', exit);
+
+        const serialized = Utils.serializeGameState({
+            gameLocations: new Map(sourceLocations.map(location => [location.id, location])),
+            gameLocationExits: new Map([[exit.id, exit]]),
+            regions: new Map([[region.id, region]]),
+            chatHistory: [],
+            generatedImages: new Map(),
+            things: new Map(),
+            players: new Map(),
+            skills: new Map(),
+            factions: new Map(),
+            pendingRegionStubs: new Map()
+        });
+
+        delete serialized.gameWorld.locations[origin.id].exits.south.travelTimeMinutes;
+        delete serialized.gameWorld.locationExits[exit.id].travelTimeMinutes;
+
+        removeLocationsFromIndex(sourceLocations);
+        resetWorldState();
+
+        const gameLocations = new Map();
+        const gameLocationExits = new Map();
+        const regions = new Map();
+
+        Utils.hydrateGameState(serialized, {
+            gameLocations,
+            gameLocationExits,
+            regions,
+            chatHistoryRef: [],
+            generatedImages: new Map(),
+            things: new Map(),
+            players: new Map(),
+            skills: new Map(),
+            factions: new Map(),
+            jobQueue: [],
+            imageJobs: new Map(),
+            pendingLocationImages: new Map(),
+            npcGenerationPromises: new Map(),
+            pendingRegionStubs: new Map()
+        });
+
+        hydratedLocations.push(...gameLocations.values());
+
+        const hydratedOrigin = gameLocations.get(origin.id);
+        const hydratedExit = hydratedOrigin?.getExit('south');
+
+        assert.ok(hydratedExit);
+        assert.equal(hydratedExit.travelTimeMinutes, 0);
+        assert.equal(gameLocationExits.get(exit.id)?.travelTimeMinutes, 0);
     } finally {
         Globals.config = previousConfig;
         Globals.sceneSummaries = previousSceneSummaries;

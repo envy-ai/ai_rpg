@@ -112,7 +112,7 @@ Request:
   - `expectedOriginLocationId` is required and must match the current server-side player location.
 
 Response:
-- 200: `{ success: true, location: LocationResponse, message, direction }`
+- 200: `{ success: true, location: LocationResponse, player: NpcProfile, worldTime, timeProgress, message, direction }`
 - 400: `{ success: false, error }` (missing args/origin)
 - 404: `{ success: false, error }` (destination not found)
 - 409: `{ success: false, error }` (origin mismatch, pending ability selection, or another move already in progress)
@@ -120,6 +120,7 @@ Response:
 
 Notes:
 - Move requests are guarded by a per-player non-blocking server lock to prevent concurrent double-move races.
+- When the traversed exit has `travelTimeMinutes > 0` and the source context is not a vehicle, `/api/player/move` advances world time by that amount and includes the resulting `worldTime` / `timeProgress`.
 - After successful move resolution, the server runs strict location/region/exit integrity checks and fails loudly on corruption.
 
 ## PUT /api/player/attributes

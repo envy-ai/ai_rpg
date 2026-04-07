@@ -1,0 +1,82 @@
+<template>
+    <role>Region Travel Time Planner</role>
+
+    <systemPrompt>
+You are an AI role-playing gamemaster. Estimate plausible traversal times for existing exits in a region. Use the region theme, the source and destination location descriptions, and any already-known exit travel times to keep the new values internally consistent. These are ordinary traversal times between connected places, not abstract plot pacing. Always return at least 1 minute for every exit. Never return 0 minutes.
+    </systemPrompt>
+
+    <generationPrompt>
+<context>
+  <setting>
+    <name>{{ setting.name }}</name>
+    <genre>{{ setting.genre }}</genre>
+    <tone>{{ setting.tone }}</tone>
+    <theme>{{ setting.theme }}</theme>
+  </setting>
+  <region>
+    <id>{{ region.id }}</id>
+    <name>{{ region.name }}</name>
+    <description>{{ region.description }}</description>
+  </region>
+  <locations>
+{% for location in allLocationsInRegion %}
+    <location>
+      <id>{{ location.id }}</id>
+      <name>{{ location.name }}</name>
+      <description>{{ location.description }}</description>
+    </location>
+{% endfor %}
+  </locations>
+  <knownExits>
+{% for exit in knownExits %}
+    <exit>
+      <sourceLocationId>{{ exit.sourceLocationId }}</sourceLocationId>
+      <sourceLocationName>{{ exit.sourceLocationName }}</sourceLocationName>
+      <destinationLocationId>{{ exit.destinationLocationId }}</destinationLocationId>
+      <destinationLocationName>{{ exit.destinationLocationName }}</destinationLocationName>
+      {% if exit.destinationRegionName %}<destinationRegionName>{{ exit.destinationRegionName }}</destinationRegionName>{% endif %}
+      <travelTime>{{ exit.travelTimeMinutes }} minutes</travelTime>
+      <isVehicle>{{ exit.isVehicle | default(false) }}</isVehicle>
+      {% if exit.vehicleType %}<vehicleType>{{ exit.vehicleType }}</vehicleType>{% endif %}
+    </exit>
+{% endfor %}
+  </knownExits>
+  <pendingExits>
+{% for exit in pendingExits %}
+    <exit>
+      <sourceLocationId>{{ exit.sourceLocationId }}</sourceLocationId>
+      <sourceLocationName>{{ exit.sourceLocationName }}</sourceLocationName>
+      <sourceLocationDescription>{{ exit.sourceLocationDescription }}</sourceLocationDescription>
+      <destinationLocationId>{{ exit.destinationLocationId }}</destinationLocationId>
+      <destinationLocationName>{{ exit.destinationLocationName }}</destinationLocationName>
+      <destinationLocationDescription>{{ exit.destinationLocationDescription }}</destinationLocationDescription>
+      {% if exit.destinationRegionName %}<destinationRegionName>{{ exit.destinationRegionName }}</destinationRegionName>{% endif %}
+      <isVehicle>{{ exit.isVehicle | default(false) }}</isVehicle>
+      {% if exit.vehicleType %}<vehicleType>{{ exit.vehicleType }}</vehicleType>{% endif %}
+    </exit>
+{% endfor %}
+  </pendingExits>
+</context>
+
+Guidelines:
+- Output exactly one <exit> for every entry under <pendingExits>, using the exact source and destination ids provided there.
+- Preserve consistency with <knownExits> when a pending route seems comparable in scale or terrain.
+- Tiny adjacent spaces in the same structure are usually around 1-5 minutes.
+- Nearby places in a compact settlement are usually around 5-15 minutes.
+- Large facilities, districts, or sprawling settlements are often around 15-60 minutes.
+- Difficult wilderness, long roads, and cross-region overland routes can take much longer.
+- If an exit uses a vehicle, estimate the actual time for that short transit route, not the time to prepare a whole journey.
+- Never return 0 minutes.
+
+Output ONLY in this format:
+
+<response>
+  <exit>
+    <sourceLocationId>Exact source id from &lt;pendingExits&gt;</sourceLocationId>
+    <destinationLocationId>Exact destination id from &lt;pendingExits&gt;</destinationLocationId>
+    <travelTime>Duration such as "4 minutes", "15 minutes", "1 hour", or "1 hour 30 minutes"</travelTime>
+  </exit>
+  <!-- Repeat once per pending exit and do not omit any. -->
+</response>
+    </generationPrompt>
+</template>

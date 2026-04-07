@@ -113,11 +113,15 @@ Response:
 Teleport an NPC to another location.
 
 Request:
-- Body: `{ locationId: string }`
+- Body: `{ locationId: string, accountTravelTime?: boolean }`
 
 Response:
-- 200: `{ success: true, npc: NpcProfile, destination: LocationResponse, previousLocation: LocationResponse, locationIds: string[], message }`
+- 200: `{ success: true, npc: NpcProfile, destination: LocationResponse, previousLocation: LocationResponse, locationIds: string[], worldTime, timeProgress, message }`
 - 400/404/500 with `{ success: false, error }`
+
+Notes:
+- When `accountTravelTime` is `true`, the route resolves the shortest directed path between the origin and destination using the location graph's stored `travelTimeMinutes`, advances world time by that total, and returns the resulting `worldTime` / `timeProgress`.
+- If no route exists, fast-travel time falls back to `0` minutes.
 
 ## DELETE /api/npcs/:id
 Delete an NPC.

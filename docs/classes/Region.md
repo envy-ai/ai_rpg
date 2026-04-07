@@ -5,7 +5,7 @@ Represents a region containing multiple locations, with metadata like average le
 
 ## Key State
 - `#id`, `#name`, `#description`, `#shortDescription`.
-- `#locationBlueprints`: blueprint definitions for generated locations (now include per-location `shortDescription`).
+- `#locationBlueprints`: blueprint definitions for generated locations (now include per-location `shortDescription` plus exit `travelTimeMinutes`).
 - `#locationIds`: ids for instantiated locations in the region.
 - `#entranceLocationId`, `#parentRegionId`, `#controllingFactionId`.
 - `#vehicleInfo` (`VehicleInfo` or `null`) for mobile/vehicle regions.
@@ -59,6 +59,9 @@ Represents a region containing multiple locations, with metadata like average le
 - Region entry stubs with an assigned controlling faction pass that faction into stub-generation prompts as authoritative context; the region-level `<controllingFaction>` field is omitted from stub-mode output expectations so expansion preserves the stub faction.
 - `fromXMLSnippet` accepts both `<region>` and mixed tag variants (name/description/shortDescription).
 - `fromXMLSnippet` now reads location blueprints only from direct `<locations><location>` children, so nested vehicle-destination tags like `<destination><location>...` do not get misparsed as region locations.
+- Region XML location exits now use `<exit><destination>...</destination><travelTime>...</travelTime></exit>` and normalize to blueprint entries shaped like `{ target, travelTimeMinutes }`.
+- Explicit prompt-generated `0`-minute exit travel times are normalized up to `1` minute during region and region-stub parsing so persisted `0` can continue to mean “not populated yet”.
+- Region stub-location parsing in `server.js` uses the same exit shape and preserves the first parsed travel time for both directions when reverse exits are synthesized.
 - `parentHierarchy` throws on circular references to surface data errors early.
 - Location blueprints now include both a two-paragraph `<description>` and one-sentence `<shortDescription>`; these are carried into stub metadata as `stubDescription`/`stubShortDescription`, including region stub expansions.
 - Region XML weather definitions (`<weather>`, `<seasonWeather>`, `<weatherType>`) are persisted and can drive dynamic per-season weather selection over elapsed world time.

@@ -60,6 +60,26 @@ test('buildLocationEventStubMetadata persists suppressed origin-exit intent', ()
     assert.equal(metadata.regionId, 'derelict-sector-region');
 });
 
+test('buildLocationEventStubMetadata leaves short description unset when event stubs omit it', () => {
+    const { buildLocationEventStubMetadata } = loadLocationStubOriginExitHelpers();
+
+    const metadata = buildLocationEventStubMetadata({
+        originLocation: { id: 'origin-location-id' },
+        resolvedDirection: 'approach_vector_alpha',
+        stubShortDescription: null,
+        settingSnapshot: {},
+        effectiveRegionId: 'derelict-sector-region',
+        effectiveRegionName: 'Derelict Sector',
+        normalizedRelativeLevel: 2,
+        resolvedVehicleType: null,
+        resolvedIsVehicle: false,
+        normalizedImageDataUrl: '',
+        createOriginExit: true
+    });
+
+    assert.equal(Object.prototype.hasOwnProperty.call(metadata, 'shortDescription'), false);
+});
+
 test('buildLocationEventStubMetadata persists relative-level base metadata for event location stubs', () => {
     const { buildLocationEventStubMetadata } = loadLocationStubOriginExitHelpers();
 

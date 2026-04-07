@@ -102,6 +102,8 @@ Request:
 - Body supports:
   - `type` (`location` or `region`)
   - `name`, `description`
+  - `travelTime` (shared duration string such as `1m`, `1h10m`, or `2 hours`)
+  - `travelTimeMinutes` (optional non-negative integer minute override for programmatic callers)
   - `regionId` (target region id), `locationId` (target location id)
   - `parentRegionId` (for region stubs)
   - `vehicleType` (string)
@@ -117,6 +119,9 @@ Responses:
     - Existing location: `{ type: 'location', destinationId, name, isStub, existing: true, isVehicle, vehicleType }`
     - New location stub: `{ type: 'location', destinationId, name, isStub, isVehicle, vehicleType }`
 - 400/404/500: `{ success: false, error }`
+
+Notes:
+- When neither `travelTime` nor `travelTimeMinutes` is supplied, the exit defaults to `1` minute.
 
 ## DELETE /api/locations/:id/exits/:exitId
 

@@ -23,6 +23,8 @@ Represents a game location, including description, exits, NPCs, items/scenery, a
 ## Static API
 - `get(id)` / `getById(id)` / `getByName(name)` / `findByName(name)`.
 - `getAll()`.
+- `findShortestTravelTimeMinutes(startLocationOrId, endLocationOrId)`: runs Dijkstra over the directed location-exit graph and returns the minimum summed `travelTimeMinutes`, `0` for the same location, or `null` when no route exists.
+- `findShortestTravelTimeMinutesByRegionAndLocationNames(startRegionName, startLocationName, endRegionName, endLocationName)`: resolves each endpoint by exact region-scoped location name, then runs the same Dijkstra route search and returns the minimum summed `travelTimeMinutes`, `0` for the same location, or `null` when no route exists.
 - `get indexById()` / `get indexByName()`.
 - `removeFromIndex(locationOrId)` to prevent stale lookups.
 
@@ -57,11 +59,13 @@ Represents a game location, including description, exits, NPCs, items/scenery, a
 - `#normalizeVehicleInfo(vehicleInfo)`.
 
 ## Notes
-- Stub locations now carry both a long `stubDescription` and a one-sentence `stubShortDescription` in `stubMetadata`; those are treated as authoritative during stub expansion and reused without regeneration. Stub short descriptions are also copied into `location.shortDescription` on creation/load so stubs render properly in base-context world outlines.
+- Stub locations now carry both a long `stubDescription` and a one-sentence `stubShortDescription` in `stubMetadata`; those are treated as authoritative during stub expansion and reused without regeneration. Stub short descriptions are also copied into `location.shortDescription` on creation/load so stubs render properly in base-context world outlines. Event-created location stubs are the exception: they intentionally leave short-description fields blank so the short-description hydrator still treats them as missing and generates a real one later.
 - Event/travel-created stubs also persist `stubMetadata.createOriginExit`; when that flag is `false`, later stub expansion skips creating the generic origin/reverse links so vehicle-specific exit wiring can remain authoritative. Travel-driven unstub/expansion can also stamp that flag onto already-existing stubs before expansion, which prevents older saves from recreating the plain link.
 - Legacy stubs without `stubDescription` continue to expand, but only their long description is fixed; the LLM still generates a short description.
 - Player-driven `Player.setLocation(...)` calls mark the destination as visited and stamp `lastVisitedTime` from `Globals.elapsedTime`; NPC and vehicle-only movement do not.
 - Legacy saves that predate persisted `visited` flags now load non-stub locations as visited and stub locations as unvisited by default.
+- `findShortestTravelTimeMinutes(...)` treats exits as directed weighted edges and throws on malformed graph data such as dangling destinations or invalid travel-time values, instead of silently skipping them.
+- `findShortestTravelTimeMinutesByRegionAndLocationNames(...)` fails loudly when a named region is missing, a location name does not exist within the named region, or the same location name appears more than once inside that region.
 - Adding/removing thing ids updates Thing metadata (location ownership) and removes from other locations via `Thing.removeFromWorldById`.
 - Status effects are stored as `StatusEffect` instances; getters return JSON snapshots.
 - Movement/integrity repair paths can safely reapply the same `regionId` to restore missing region membership, and can also recover a location from a stale missing previous region during explicit reconciliation.

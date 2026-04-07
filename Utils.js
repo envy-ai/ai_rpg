@@ -185,6 +185,17 @@ class Utils {
     return sign * parseUnsignedDurationText(unsignedText);
   }
 
+  static normalizeGeneratedExitTravelTimeMinutes(value, { fieldName = 'generated exit travelTime' } = {}) {
+    const label = typeof fieldName === 'string' && fieldName.trim()
+      ? fieldName.trim()
+      : 'generated exit travelTime';
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric) || !Number.isInteger(numeric) || numeric < 0) {
+      throw new Error(`${label} must resolve to a non-negative integer minute value.`);
+    }
+    return numeric === 0 ? 1 : numeric;
+  }
+
   static formatMinutesAsDuration(value, { includeAgo = false } = {}) {
     const numeric = Number(value);
     if (!Number.isFinite(numeric) || !Number.isInteger(numeric)) {
@@ -1551,6 +1562,21 @@ class Utils {
     const locationEntries = worldData.locations || {};
     const exitEntries = worldData.locationExits || {};
     const regionEntries = worldData.regions || {};
+    const resolveSavedExitTravelTimeMinutes = (exitData = {}, { context = 'saved exit' } = {}) => {
+      if (!Object.prototype.hasOwnProperty.call(exitData, 'travelTimeMinutes')
+        || exitData.travelTimeMinutes === undefined
+        || exitData.travelTimeMinutes === null
+        || exitData.travelTimeMinutes === '') {
+        return 0;
+      }
+
+      const numericValue = Number(exitData.travelTimeMinutes);
+      if (!Number.isFinite(numericValue) || !Number.isInteger(numericValue) || numericValue < 0) {
+        throw new Error(`${context} has invalid travelTimeMinutes; expected a non-negative integer minute value.`);
+      }
+
+      return numericValue;
+    };
 
     for (const [id, locationData] of Object.entries(locationEntries)) {
       if (!locationData) {
@@ -1599,6 +1625,9 @@ class Utils {
             description: exitInfo.description || `${exitInfo.destination}`,
             destination: exitInfo.destination,
             destinationRegion: exitInfo.destinationRegion || null,
+            travelTimeMinutes: resolveSavedExitTravelTimeMinutes(exitInfo, {
+              context: `saved exit "${exitId || direction}" on location "${location.id || id || 'unknown'}"`
+            }),
             bidirectional: exitInfo.bidirectional !== false,
             id: exitId,
             isVehicle: Boolean(exitInfo.isVehicle || exitInfo.vehicleType),
@@ -1629,6 +1658,17 @@ class Utils {
             exit.update({ destinationRegion: exitInfo.destinationRegion || null });
           }
           try {
+            exit.travelTimeMinutes = resolveSavedExitTravelTimeMinutes(exitInfo, {
+              context: `saved exit "${exitId || direction}" on location "${location.id || id || 'unknown'}"`
+            });
+          } catch (_) {
+            exit.update({
+              travelTimeMinutes: resolveSavedExitTravelTimeMinutes(exitInfo, {
+                context: `saved exit "${exitId || direction}" on location "${location.id || id || 'unknown'}"`
+              })
+            });
+          }
+          try {
             exit.isVehicle = Boolean(exitInfo.isVehicle || exitInfo.vehicleType);
           } catch (_) {
             exit.update({ isVehicle: Boolean(exitInfo.isVehicle || exitInfo.vehicleType) });
@@ -1654,6 +1694,9 @@ class Utils {
         description: exitData.description,
         destination: exitData.destination,
         destinationRegion: exitData.destinationRegion || null,
+        travelTimeMinutes: resolveSavedExitTravelTimeMinutes(exitData, {
+          context: `saved locationExits entry "${id || exitData.id || 'unknown'}"`
+        }),
         bidirectional: exitData.bidirectional,
         id: exitData.id,
         isVehicle: Boolean(exitData.isVehicle || exitData.vehicleType),

@@ -339,13 +339,42 @@ class Region {
           }
           if (typeof exit === 'string') {
             const trimmed = exit.trim();
-            return trimmed || null;
+            if (!trimmed) {
+              return null;
+            }
+            return {
+              target: trimmed,
+              travelTimeMinutes: 0
+            };
           }
           if (typeof exit === 'object') {
             const target = typeof exit.target === 'string'
               ? exit.target.trim()
               : (typeof exit.name === 'string' ? exit.name.trim() : (typeof exit.destination === 'string' ? exit.destination.trim() : ''));
-            return target || null;
+            if (!target) {
+              return null;
+            }
+            let travelTimeMinutes = 0;
+            if (Object.prototype.hasOwnProperty.call(exit, 'travelTimeMinutes')) {
+              const numericTravelTimeMinutes = Number(exit.travelTimeMinutes);
+              if (!Number.isFinite(numericTravelTimeMinutes) || !Number.isInteger(numericTravelTimeMinutes) || numericTravelTimeMinutes < 0) {
+                throw new Error(`Location blueprint exit "${target}" has an invalid travelTimeMinutes value.`);
+              }
+              travelTimeMinutes = Utils.normalizeGeneratedExitTravelTimeMinutes(numericTravelTimeMinutes, {
+                fieldName: `location blueprint exit "${target}" travelTime`
+              });
+            } else if (typeof exit.travelTime === 'string' && exit.travelTime.trim()) {
+              travelTimeMinutes = Utils.normalizeGeneratedExitTravelTimeMinutes(
+                Utils.parseDurationToMinutes(exit.travelTime.trim(), {
+                  fieldName: `location blueprint exit "${target}" travelTime`
+                }),
+                { fieldName: `location blueprint exit "${target}" travelTime` }
+              );
+            }
+            return {
+              target,
+              travelTimeMinutes
+            };
           }
           return null;
         })
@@ -809,14 +838,40 @@ class Region {
       }
 
       const exitEntries = exitsNode
-        ? Array.from(exitsNode.getElementsByTagName('exit')).map(exitNode => {
-          const destinationAttr = exitNode.getAttribute('destination');
-          const textDest = exitNode.textContent?.trim();
-          const namedAttr = exitNode.getAttribute('name')?.trim();
-          const targetCandidate = destinationAttr?.trim() || textDest || namedAttr || '';
-          const normalized = targetCandidate.trim();
-          return normalized || null;
-        }).filter(Boolean)
+        ? Array.from(exitsNode.childNodes || [])
+          .filter(child => child && child.nodeType === 1 && child.tagName && child.tagName.toLowerCase() === 'exit')
+          .map(exitNode => {
+            const exitChildren = Array.from(exitNode.childNodes || []).filter(child => child && child.nodeType === 1);
+            const findExitChild = (tagName) => exitChildren.find(child => child.tagName && child.tagName.toLowerCase() === tagName) || null;
+
+            const destinationNode = findExitChild('destination');
+            const travelTimeNode = findExitChild('traveltime');
+            const destinationAttr = exitNode.getAttribute('destination');
+            const namedAttr = exitNode.getAttribute('name')?.trim();
+            const targetCandidate = destinationNode?.textContent?.trim()
+              || destinationAttr?.trim()
+              || namedAttr
+              || '';
+            const target = targetCandidate.trim();
+            if (!target) {
+              throw new Error(`Region XML exit for location "${locName}" is missing <destination>.`);
+            }
+
+            const travelTimeText = travelTimeNode?.textContent?.trim() || '';
+            if (!travelTimeText) {
+              throw new Error(`Region XML exit "${target}" for location "${locName}" is missing <travelTime>.`);
+            }
+
+            return {
+              target,
+              travelTimeMinutes: Utils.normalizeGeneratedExitTravelTimeMinutes(
+                Utils.parseDurationToMinutes(travelTimeText, {
+                  fieldName: `region location "${locName}" exit "${target}" travelTime`
+                }),
+                { fieldName: `region location "${locName}" exit "${target}" travelTime` }
+              )
+            };
+          })
         : [];
 
       const aliases = [];
