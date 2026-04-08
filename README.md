@@ -110,6 +110,38 @@ By default the app binds to `http://0.0.0.0:7777`. Pass `--port <number>` to `no
 
 The front end talks to the JSON API defined in `server.js`. Key routes cover chat (`/api/chat`), player management (`/api/player`), world generation (`/api/locations`, `/api/regions`), saving/loading (`/api/save`, `/api/load`), and optional image jobs (`/api/generate-image`). Real-time events such as job updates are brokered through `RealtimeHub` using WebSockets.
 
+### Containerized deployment
+
+The `Dockerfile` and `docker-compose.yaml` describe a Node 18 container that bundles the server, copies `config.default.yaml` into `/app/config/config.template.yaml`, and runs an entrypoint script that materializes `config.yaml` inside the mounted `./config` directory. Any of the AI or imagegen values can be overridden at runtime via environment variables; matching keys include `AI_ENDPOINT`, `AI_API_KEY`, `AI_MODEL`, `IMAGEGEN_ENDPOINT`, `IMAGEGEN_API_KEY`, and `IMAGEGEN_MODEL`. The entrypoint runs `scripts/docker-config-env.js` so these overrides merge with the template rather than replacing your entire config.
+
+#### Build
+
+```bash
+docker build -t ai-rpg:latest .
+```
+
+#### Run
+
+```bash
+docker run -d \
+  -p 7777:7777 \
+  -v "${PWD}/config:/app/config" \
+  -v ai-rpg-logs:/app/logs \
+  -v ai-rpg-saves:/app/saves \
+  -v ai-rpg-imagegen:/app/imagegen \
+  --env AI_ENDPOINT=https://api.example.com/v1 \
+  --env AI_API_KEY=your-key \
+  ai-rpg:latest
+```
+
+The Compose setup ships the same environment variables and mounts in [`docker-compose.yaml`](docker-compose.yaml:1-21). It uses named volumes for logs, saves, and imagegen, and a bind mount for `config` so you can edit it without rebuilding.
+
+```bash
+docker compose up --build
+```
+
+When the container starts, `scripts/docker-entrypoint.sh` copies the template config, applies any env var overrides, and runs `npm start -- --config /app/config/config.yaml`. Keep `config.yaml` out of version control and use `config.default.yaml` as your base reference; the template is refreshed when you rebuild the image but never overwritten inside your volume so your custom config is preserved.
+
 ## Project Layout
 
 ```
