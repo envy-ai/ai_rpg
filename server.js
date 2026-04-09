@@ -23715,10 +23715,25 @@ function parseRegionExitsResponse(xmlSnippet) {
         return trimmed || null;
     };
 
+    const parseStubRegionExitTravelTimeMinutes = (rawValue, { regionName } = {}) => {
+        const text = typeof rawValue === 'string' ? rawValue.trim() : '';
+        if (!text) {
+            throw new Error(`Region exit stub "${regionName || 'Unnamed Region'}" is missing <travelTime>.`);
+        }
+        return Utils.normalizeGeneratedExitTravelTimeMinutes(
+            Utils.parseDurationToMinutes(text, {
+                fieldName: `region exit stub "${regionName || 'Unnamed Region'}" travelTime`
+            }),
+            {
+                fieldName: `region exit stub "${regionName || 'Unnamed Region'}" travelTime`
+            }
+        );
+    };
+
     const stubRegions = Array.from(doc.getElementsByTagName('stubRegion'));
     const results = [];
 
-    const tryAppend = ({ name, description, relativeLevel, relationship, exitLocation, exitVehicle, controllingFaction }) => {
+    const tryAppend = ({ name, description, relativeLevel, relationship, exitLocation, exitVehicle, controllingFaction, travelTime }) => {
         if (!name) {
             return;
         }
@@ -23730,7 +23745,8 @@ function parseRegionExitsResponse(xmlSnippet) {
             relationship: relationship || 'Adjacent',
             exitLocation,
             exitVehicle: exitVehicle || null,
-            controllingFaction: controllingFaction || null
+            controllingFaction: controllingFaction || null,
+            travelTimeMinutes: parseStubRegionExitTravelTimeMinutes(travelTime, { regionName: name })
         });
     };
 
@@ -23756,8 +23772,9 @@ function parseRegionExitsResponse(xmlSnippet) {
             const exitLocation = locationName || getChildValue(stubNode, 'exitLocation') || null;
             const exitVehicle = getChildValue(stubNode, 'exitVehicle');
             const controllingFaction = getChildValue(stubNode, 'controllingFaction');
+            const travelTime = getChildValue(stubNode, 'travelTime');
 
-            tryAppend({ name, description, relativeLevel, relationship, exitLocation, exitVehicle, controllingFaction });
+            tryAppend({ name, description, relativeLevel, relationship, exitLocation, exitVehicle, controllingFaction, travelTime });
         }
     }
 
@@ -23774,8 +23791,9 @@ function parseRegionExitsResponse(xmlSnippet) {
             const exitLocation = getChildValue(node, 'exitLocation');
             const exitVehicle = getChildValue(node, 'exitVehicle');
             const controllingFaction = getChildValue(node, 'controllingFaction');
+            const travelTime = getChildValue(node, 'travelTime');
 
-            tryAppend({ name, description, relativeLevel, relationship, exitLocation, exitVehicle, controllingFaction });
+            tryAppend({ name, description, relativeLevel, relationship, exitLocation, exitVehicle, controllingFaction, travelTime });
         }
     }
 
@@ -24348,6 +24366,9 @@ async function generateRegionExitStubs({
         }
 
         const vehicleLabel = definition.exitVehicle || null;
+        const travelTimeMinutes = Number.isInteger(definition.travelTimeMinutes)
+            ? definition.travelTimeMinutes
+            : undefined;
         const controllingFactionResolution = resolveFactionNameToId(definition.controllingFaction, {
             fieldLabel: `Region controlling faction for "${definition.name || 'Unnamed Region'}"`
         });
@@ -24400,6 +24421,7 @@ async function generateRegionExitStubs({
                     description: existingLocation.name || definition.name,
                     bidirectional: true,
                     destinationRegion: destinationRegionId,
+                    travelTimeMinutes,
                     isVehicle: Boolean(vehicleLabel),
                     vehicleType: vehicleLabel
                 });
@@ -24512,6 +24534,7 @@ async function generateRegionExitStubs({
             description: exitDescription,
             bidirectional: false,
             destinationRegion: newRegionId,
+            travelTimeMinutes,
             isVehicle: Boolean(vehicleLabel),
             vehicleType: vehicleLabel
         });
@@ -24966,6 +24989,9 @@ async function connectExistingRegion({
     }
 
     const vehicleLabel = definition.exitVehicle || null;
+    const travelTimeMinutes = Number.isInteger(definition.travelTimeMinutes)
+        ? definition.travelTimeMinutes
+        : undefined;
 
     const relativeLevelOffset = Number.isFinite(definition.relativeLevel)
         ? Math.max(-10, Math.min(10, Math.round(definition.relativeLevel)))
@@ -24987,6 +25013,7 @@ async function connectExistingRegion({
     ensureExitConnection(sourceLocation, remoteLocation, {
         description: existingRegion.name,
         destinationRegion: existingRegion.id,
+        travelTimeMinutes,
         isVehicle: Boolean(vehicleLabel),
         vehicleType: vehicleLabel || null
     });
@@ -24994,6 +25021,7 @@ async function connectExistingRegion({
     ensureExitConnection(remoteLocation, sourceLocation, {
         description: region.name,
         destinationRegion: region.id,
+        travelTimeMinutes,
         isVehicle: Boolean(vehicleLabel),
         vehicleType: vehicleLabel || null
     });
@@ -26059,6 +26087,7 @@ const apiScope = {
     generateLevelUpAbilitiesForCharacter,
     resolvePlayerAbilitySelectionState,
     applyPlayerAbilitySelection,
+    buildSettingPromptContext,
     getActiveSettingSnapshot,
     buildNewGameDefaults,
     getSuggestedPlayerLevel,
@@ -26114,6 +26143,7 @@ const apiScope = {
     realtimeHub,
     addJobSubscriber,
     vehicleDebugEnabled: cliVehicleDebug,
+    resolveSystemPromptPrefix,
 
 };
 

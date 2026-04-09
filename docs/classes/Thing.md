@@ -7,6 +7,7 @@ Represents items and scenery in the game world. Supports rarity metadata, attrib
 - Core fields: `#id`, `#name`, `#description`, `#shortDescription`, `#thingType`, `#imageId`.
 - Metadata: `#metadata` (mirrors slot, bonuses, cause effects, flags, levels).
 - Rarity and level: `#rarity`, `#itemTypeDetail`, `#level`, `#relativeLevel`.
+- Harvest history: `#previouslyHarvestedItems` (deduped list of item names harvested from this node) and `#lastHarvested` (absolute world minutes at the last successful harvest).
 - Status: `#statusEffects`, `#causeStatusEffect` (applied to target/equipper).
 - Flags: `#flags` (SanitizedStringSet) with boolean flag helpers (`isVehicle`, `isCraftingStation`, etc).
 - Static indexes: `#indexByID`, `#indexByName`.
@@ -36,11 +37,13 @@ Represents items and scenery in the game world. Supports rarity metadata, attrib
 - Rarity/level: `rarity`, `itemTypeDetail`, `level`, `relativeLevel` (get/set).
 - Metadata: `metadata` (get/set), `slot` (get/set), `attributeBonuses` (get/set).
 - Cause effects: `causeStatusEffect` (get/set), `causeStatusEffectOnTarget`, `causeStatusEffectOnEquipper`.
+- Harvest helpers: `previouslyHarvestedItems` (get/set), `lastHarvested` (get/set), `getLastHarvestedAgoText(...)`.
 
 ## Instance API
 - Flag helpers: `hasFlag(flag)`, `setFlag(flag, enabled)`.
 - Bonuses: `getAttributeBonus(attributeName)`.
 - Cause effects: `setCauseStatusEffects({ target, equipper, legacy })`.
+- Harvest tracking: `recordSuccessfulHarvest(itemNames, { harvestedAtMinutes })` appends newly seen harvested item names and stamps `lastHarvested` at the successful completion time.
 - Distinct target/equipper cause effects remain separate through constructor ingestion and metadata sync; dual-effect items are not collapsed into one shared payload.
 - Serialization: `toJSON()`, `delete()`.
 - Status effects: `getStatusEffects()`, `setStatusEffects(effects)`, `addStatusEffect(effect, defaultDuration)`, `removeStatusEffect(description)`, `tickStatusEffects(elapsedMinutes)`, `clearExpiredStatusEffects()`.
@@ -59,10 +62,11 @@ Represents items and scenery in the game world. Supports rarity metadata, attrib
 ## Private Helpers
 - Index helpers: `#getNameBucket`, `#addThingToNameIndex`, `#removeThingFromNameIndex`, `#normalizeNameIndexEntry`.
 - Metadata helpers: `#applyMetadataFieldsFromMetadata`, `#syncFieldsToMetadata`.
-- Normalizers: `#normalizeBooleanFlag`, `#normalizeAttributeBonuses`, `#normalizeStatusEffects`, `#sanitizeSlot`, `#normalizeCauseStatusEffectEntry`.
+- Normalizers: `#normalizeBooleanFlag`, `#normalizeAttributeBonuses`, `#normalizeStatusEffects`, `#sanitizeSlot`, `#normalizeCauseStatusEffectEntry`, `#normalizePreviouslyHarvestedItems`, `#normalizeLastHarvested`.
 - Cause effect helpers: `#upsertCauseStatusEffectEntry`, `#getCauseStatusEffectEntry`, `#ingestCauseStatusEffects`.
 - Status enrichment: `#triggerStatusEffectEnrichment`, `#enrichStatusEffectsUsingGlobals`.
 
 ## Notes
 - Status effect enrichment calls `StatusEffect.generateFromDescriptions` using `Globals` prompt hooks.
 - Name lookups are location-aware: `getByName` prefers current location/region contexts.
+- Harvest history is persisted in both top-level `Thing` JSON and mirrored metadata so save/load and metadata-based paths stay in sync.

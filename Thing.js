@@ -31,6 +31,8 @@ class Thing {
   #enableStatusEffectEnrichment = true;
   #level;
   #relativeLevel;
+  #previouslyHarvestedItems;
+  #lastHarvested;
   #flags = new SanitizedStringSet();
   #isEnrichingStatusEffects = false;
   #shortDescription;
@@ -539,6 +541,8 @@ class Thing {
     causeStatusEffect = null,
     level = null,
     relativeLevel = null,
+    previouslyHarvestedItems = null,
+    lastHarvested = null,
     isVehicle = null,
     isCraftingStation = null,
     isProcessingStation = null,
@@ -591,6 +595,8 @@ class Thing {
     this.#enableStatusEffectEnrichment = enrichStatusEffects !== false;
     this.#level = Number.isFinite(level) ? Math.max(1, Math.round(level)) : null;
     this.#relativeLevel = Number.isFinite(relativeLevel) ? Math.max(-20, Math.min(20, Math.round(relativeLevel))) : null;
+    this.#previouslyHarvestedItems = [];
+    this.#lastHarvested = null;
     this.#flags = flags instanceof SanitizedStringSet ? flags : new SanitizedStringSet(flags);
     this.isVehicle = isVehicle;
     this.isCraftingStation = isCraftingStation;
@@ -614,6 +620,12 @@ class Thing {
     }
     if (Number.isFinite(relativeLevel)) {
       this.relativeLevel = relativeLevel;
+    }
+    if (previouslyHarvestedItems !== null && previouslyHarvestedItems !== undefined) {
+      this.previouslyHarvestedItems = previouslyHarvestedItems;
+    }
+    if (lastHarvested !== null && lastHarvested !== undefined) {
+      this.lastHarvested = lastHarvested;
     }
     this.#syncFieldsToMetadata();
     this.#triggerStatusEffectEnrichment();
@@ -922,6 +934,56 @@ class Thing {
   get causeStatusEffectOnEquipper() {
     const entry = this.#getCauseStatusEffectEntry('equipper');
     return entry ? entry.effect.toJSON() : null;
+  }
+
+  get previouslyHarvestedItems() {
+    return Array.isArray(this.#previouslyHarvestedItems) ? [...this.#previouslyHarvestedItems] : [];
+  }
+
+  set previouslyHarvestedItems(value) {
+    this.#previouslyHarvestedItems = this.#normalizePreviouslyHarvestedItems(value);
+    this.#syncFieldsToMetadata();
+    this.#lastUpdated = new Date().toISOString();
+  }
+
+  get lastHarvested() {
+    return this.#lastHarvested;
+  }
+
+  set lastHarvested(value) {
+    this.#lastHarvested = this.#normalizeLastHarvested(value);
+    this.#syncFieldsToMetadata();
+    this.#lastUpdated = new Date().toISOString();
+  }
+
+  recordSuccessfulHarvest(itemNames, { harvestedAtMinutes = Globals.getTotalWorldMinutes() } = {}) {
+    const normalizedNames = this.#normalizePreviouslyHarvestedItems(itemNames);
+    if (!normalizedNames.length) {
+      throw new Error('Thing.recordSuccessfulHarvest requires at least one harvested item name.');
+    }
+
+    const combined = [...this.#previouslyHarvestedItems];
+    const seen = new Set(combined.map(name => name.toLowerCase()));
+    for (const name of normalizedNames) {
+      const key = name.toLowerCase();
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      combined.push(name);
+    }
+
+    this.#previouslyHarvestedItems = combined;
+    this.#lastHarvested = this.#normalizeLastHarvested(harvestedAtMinutes);
+    this.#syncFieldsToMetadata();
+    this.#lastUpdated = new Date().toISOString();
+  }
+
+  getLastHarvestedAgoText({ currentTotalMinutes = Globals.getTotalWorldMinutes() } = {}) {
+    if (this.#lastHarvested === null) {
+      return null;
+    }
+    return Utils.formatAbsoluteWorldMinutesAgo(this.#lastHarvested, { currentTotalMinutes });
   }
 
   setCauseStatusEffects({ target = null, equipper = null, legacy = null } = {}) {
@@ -1356,6 +1418,8 @@ class Thing {
       causeStatusEffect: this.causeStatusEffect,
       level: this.#level || undefined,
       relativeLevel: this.#relativeLevel || undefined,
+      previouslyHarvestedItems: this.#previouslyHarvestedItems.length ? [...this.#previouslyHarvestedItems] : undefined,
+      lastHarvested: this.#lastHarvested ?? undefined,
       isVehicle: normalizeBoolean(this.isVehicle),
       isCraftingStation: normalizeBoolean(this.isCraftingStation),
       isProcessingStation: normalizeBoolean(this.isProcessingStation),
@@ -1413,6 +1477,8 @@ class Thing {
       }()),
       level: data.level ?? data.metadata?.level ?? null,
       relativeLevel: data.relativeLevel ?? data.metadata?.relativeLevel ?? null,
+      previouslyHarvestedItems: data.previouslyHarvestedItems ?? data.metadata?.previouslyHarvestedItems ?? [],
+      lastHarvested: data.lastHarvested ?? data.metadata?.lastHarvested ?? null,
       flags: Array.isArray(data.flags) ? data.flags : (Array.isArray(data.metadata?.flags) ? data.metadata.flags : []),
       ...booleanFlagOptions,
       enrichStatusEffects: false
@@ -1477,6 +1543,45 @@ class Thing {
       });
     }
     return bonuses;
+  }
+
+  #normalizePreviouslyHarvestedItems(rawItems) {
+    if (rawItems === null || rawItems === undefined) {
+      return [];
+    }
+    const entries = Array.isArray(rawItems) ? rawItems : [rawItems];
+    const normalized = [];
+    const seen = new Set();
+    for (const entry of entries) {
+      if (typeof entry !== 'string') {
+        continue;
+      }
+      const trimmed = entry.trim();
+      if (!trimmed) {
+        continue;
+      }
+      const key = trimmed.toLowerCase();
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      normalized.push(trimmed);
+    }
+    return normalized;
+  }
+
+  #normalizeLastHarvested(value) {
+    if (value === null || value === undefined) {
+      return null;
+    }
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) {
+      throw new Error('Thing lastHarvested must be a finite minute value or null.');
+    }
+    if (numeric < 0) {
+      throw new Error('Thing lastHarvested must be a non-negative minute value.');
+    }
+    return Math.round(numeric);
   }
 
   #normalizeCauseStatusEffectEntry(effect, { applyToTarget = false, applyToEquipper = false } = {}) {
@@ -1621,6 +1726,9 @@ class Thing {
       this.#relativeLevel = null;
     }
 
+    this.#previouslyHarvestedItems = this.#normalizePreviouslyHarvestedItems(meta.previouslyHarvestedItems);
+    this.#lastHarvested = this.#normalizeLastHarvested(meta.lastHarvested);
+
     if (meta.isVehicle !== undefined) {
       this.isVehicle = Thing.#normalizeBooleanFlag(meta.isVehicle);
     }
@@ -1677,6 +1785,18 @@ class Thing {
       this.#metadata.relativeLevel = this.#relativeLevel;
     } else {
       delete this.#metadata.relativeLevel;
+    }
+
+    if (this.#previouslyHarvestedItems.length) {
+      this.#metadata.previouslyHarvestedItems = [...this.#previouslyHarvestedItems];
+    } else {
+      delete this.#metadata.previouslyHarvestedItems;
+    }
+
+    if (this.#lastHarvested !== null) {
+      this.#metadata.lastHarvested = this.#lastHarvested;
+    } else {
+      delete this.#metadata.lastHarvested;
     }
 
     // Boolean flags: persist when true, default to false when absent.

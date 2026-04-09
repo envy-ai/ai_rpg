@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const vm = require('vm');
 
-function loadExitTravelTimeHelpers({ findRegionByLocationId = () => null, Location = null } = {}) {
+function loadExitTravelTimeHelpers({ findRegionByLocationId = () => null, Location = null, Utils = null } = {}) {
     const source = fs.readFileSync(require.resolve('../api.js'), 'utf8');
     const start = source.indexOf('function locationContextRepresentsVehicle(location) {');
     const end = source.indexOf('\n        async function adjustWorldTimeByMinutes(minutes, {', start);
@@ -14,20 +14,23 @@ function loadExitTravelTimeHelpers({ findRegionByLocationId = () => null, Locati
     const functionSource = source.slice(start, end);
     const context = {
         findRegionByLocationId,
-        Location
+        Location,
+        Utils
     };
     vm.createContext(context);
     vm.runInContext(
         `${functionSource}
 this.locationContextRepresentsVehicle = locationContextRepresentsVehicle;
 this.resolveExitTravelTimeForTraversal = resolveExitTravelTimeForTraversal;
-this.resolveFastTravelTimeForTraversal = resolveFastTravelTimeForTraversal;`,
+this.resolveFastTravelTimeForTraversal = resolveFastTravelTimeForTraversal;
+this.buildFastTravelSummaryItem = buildFastTravelSummaryItem;`,
         context
     );
     return {
         locationContextRepresentsVehicle: context.locationContextRepresentsVehicle,
         resolveExitTravelTimeForTraversal: context.resolveExitTravelTimeForTraversal,
-        resolveFastTravelTimeForTraversal: context.resolveFastTravelTimeForTraversal
+        resolveFastTravelTimeForTraversal: context.resolveFastTravelTimeForTraversal,
+        buildFastTravelSummaryItem: context.buildFastTravelSummaryItem
     };
 }
 
@@ -96,4 +99,19 @@ test('resolveFastTravelTimeForTraversal returns 0 when no route exists', () => {
         destinationLocation: { id: 'end' }
     });
     assert.equal(minutes, 0);
+});
+
+test('buildFastTravelSummaryItem formats the origin, destination, and natural duration', () => {
+    const { buildFastTravelSummaryItem } = loadExitTravelTimeHelpers({
+        Utils: {
+            formatMinutesAsNaturalDuration: (minutes) => `${minutes} minutes`
+        }
+    });
+    const summary = buildFastTravelSummaryItem({
+        originLocation: { name: 'Dockside Market' },
+        destinationLocation: { name: 'Clocktower Plaza' },
+        travelTimeMinutes: 12
+    });
+    assert.equal(summary.icon, '🚶');
+    assert.equal(summary.description, 'Traveled from Dockside Market to Clocktower Plaza. 12 minutes passed.');
 });

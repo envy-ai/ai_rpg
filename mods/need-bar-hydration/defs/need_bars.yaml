@@ -39,15 +39,15 @@ need_bars:
     effect_thresholds:
       0:
         name: Dehydrated
-        sentence: "%CHARACTER% is dehydrated and at risk of collapsing."
+        sentence: "%CHARACTER% is dehydrated and at risk of collapsing. They are extremely thirsty and will be almost completely focused on finding something to drink."
         effect: -15% to health and attributes, risk of unconsciousness
       10:
         name: Parched
-        sentence: "%CHARACTER% is feeling parched."
+        sentence: "%CHARACTER% is feeling parched. They are very thirsty and will actively seek out something to drink."
         effect: -5% to health and attributes, headaches
       250:
         name: Thirsty
-        sentence: "%CHARACTER% is feeling thirsty."
+        sentence: "%CHARACTER% is feeling thirsty. They'll take a drink if it's available or if they have it in their inventory."
         effect: Dry mouth, slight fatigue
       400:
         name: Slaked

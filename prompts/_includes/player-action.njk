@@ -129,6 +129,8 @@ Follow these steps:
 
 1b. Information gathering and tool calling: If necessary, call any tools that might provide necessary information for writing the prose that's missing from the context. Just write N/A for this item if you have all the information you need (which will be the typical case). Note that the context contains the entire story history, although earlier parts may be abbreviated. Tool calls are slow, so avoid them if you have enough information to write the prose without them. Use a maximum of 2 tool calls, preferably 0 or 1.
 
+1c. Do any of the NPCs you picked have any extremely pressing needs? If so, who are they and what are those needs? They should act on these.
+
 2. Draft Response: Generate a preliminary but full draft that continues the story based on the current context, stractly adhering to this degree of success/failure: "{{ success_or_failure }}" regardless of how hard the action is. This is just a first attempt. Use no more than {{ config.prose_length }}.
 
 {% if config.repetition_buster_mode == "glm" %}
@@ -148,6 +150,12 @@ Follow these steps:
   3g. Characters are NOT OMNIECNENT. If any character is aware of something they shouldn't be, cut or rephrase it. For example, if a character is hearing whispered dialogue not intended for them, cut or rephrase it so that they don't hear it. If a character is remembering something that they were absent for, cut or rephrase it so that they don't remember it. If a character is acting on knowledge they couldn't possibly have, cut or rephrase it so that they don't have that knowledge.
 
   3h. Did you use any tropes you're not supposed to use? Cut or rewrite them.
+
+  3i. Do any characters have any pressing or urgent needs? Who has pressing needs and what are they?
+
+  3j. Did you remember to have NPCs take initiative (start conversations, act on their needs and desires (see 3i), etc) instead of just reacting to the player? If not, add that in, but keep it limited to one NPC per turn unless the situation calls for more.
+
+  3k. Are any characters indicating knowledge of recent events that they weren't present for? If so, cut or rephrase it.
 {% else %}
 3. Analysis and planning. Don't view these points of analysis as conflicting; understand that they're a balancing act, and sometimes you need to use the context of the story and the scene to decide which ones win out to maximize writing quality and depth. Do the following analysis on your draft response, in whatever format feels the most comfortable: 
 - **Railroading:** This is a collaborative storytelling effort. If you've got more than a total of about 2-4 paragraphs (use your judgement here based on paragraph size), there's a good chance you're pushing the plot too far without player input. If you're doing this, pare off some of the end and get it to a reasonable length.

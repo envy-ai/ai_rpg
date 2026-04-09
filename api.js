@@ -1013,6 +1013,30 @@ module.exports = function registerApiRoutes(scope) {
             }
 
             const slopContext = buildSlopContextText();
+            const parseSlopRemoverEditedTextResponse = (responseText) => {
+                if (typeof responseText !== 'string') {
+                    throw new Error('non-text response');
+                }
+
+                const trimmedResponse = responseText.trim();
+                if (!trimmedResponse) {
+                    throw new Error('empty response');
+                }
+
+                const parsedDocument = Utils.parseXmlDocumentStrict(trimmedResponse, 'text/xml');
+
+                const editedTextNode = parsedDocument.getElementsByTagName('editedText')[0];
+                if (!editedTextNode) {
+                    throw new Error('missing <editedText> response');
+                }
+
+                const editedText = editedTextNode.textContent.trim();
+                if (!editedText) {
+                    throw new Error('empty <editedText> response');
+                }
+
+                return editedText;
+            };
 
             const originalProse = currentProse;
             let maxAttempts = resolveSlopRemoverBaseAttempts();
@@ -1028,10 +1052,30 @@ module.exports = function registerApiRoutes(scope) {
                     });
                 let promptData = null;
                 let slopResponse = '';
+                let parsedSlopResponse = '';
                 let parseFailure = null;
 
                 try {
+                    const settingSnapshot = typeof getActiveSettingSnapshot === 'function'
+                        ? getActiveSettingSnapshot()
+                        : null;
+                    const settingDescription = typeof describeSettingForPrompt === 'function'
+                        ? describeSettingForPrompt(settingSnapshot)
+                        : '';
+                    const settingContext = typeof buildSettingPromptContext === 'function'
+                        ? buildSettingPromptContext(settingSnapshot, { descriptionFallback: settingDescription })
+                        : {
+                            description: settingDescription,
+                            genre: settingSnapshot?.genre || '',
+                            tone: settingSnapshot?.tone || ''
+                        };
+                    const systemPromptPrefix = typeof resolveSystemPromptPrefix === 'function'
+                        ? resolveSystemPromptPrefix('slop_remover')
+                        : '';
                     const rendered = promptEnv.render('slop-remover.xml.njk', {
+                        systemPromptPrefix,
+                        setting: settingContext,
+                        config,
                         storyText: slopContext,
                         textToEdit: currentProse,
                         slopWords,
@@ -1050,16 +1094,10 @@ module.exports = function registerApiRoutes(scope) {
                     slopResponse = await LLMClient.chatCompletion({
                         messages,
                         metadataLabel: 'slop_remover',
-                        validateXML: false
+                        validateXML: true,
+                        validateXMLStrict: true
                     });
-
-                    if (typeof slopResponse !== 'string') {
-                        parseFailure = 'non-text response';
-                    } else if (/<\/?[a-z][^>]*>/i.test(slopResponse)) {
-                        parseFailure = 'XML detected in response';
-                    } else if (!slopResponse.trim()) {
-                        parseFailure = 'empty response';
-                    }
+                    parsedSlopResponse = parseSlopRemoverEditedTextResponse(slopResponse);
                 } catch (error) {
                     parseFailure = error?.message || 'unknown error';
                 }
@@ -1094,7 +1132,7 @@ module.exports = function registerApiRoutes(scope) {
                     continue;
                 }
 
-                const candidateProse = scrubber(slopResponse.trim());
+                const candidateProse = scrubber(parsedSlopResponse.trim());
                 currentProse = candidateProse;
 
                 const remainingWords = await getFilteredSlopWords(currentProse);
@@ -18451,6 +18489,9 @@ module.exports = function registerApiRoutes(scope) {
                 const body = req.body && typeof req.body === 'object' ? req.body : {};
                 const rawLocationId = typeof body.locationId === 'string' ? body.locationId.trim() : '';
                 const accountTravelTime = body.accountTravelTime === true;
+                const clientId = typeof body.clientId === 'string' && body.clientId.trim()
+                    ? body.clientId.trim()
+                    : null;
                 if (!rawLocationId) {
                     return res.status(400).json({
                         success: false,
@@ -18528,11 +18569,28 @@ module.exports = function registerApiRoutes(scope) {
 
                 npc.setLocation(destinationLocation.id);
 
+                let fastTravelSummaryEntry = null;
                 if (fastTravelTimeMinutes > 0) {
                     fastTravelTimeAdjustment = await adjustWorldTimeByMinutes(fastTravelTimeMinutes, {
                         source: 'fast_travel',
                         emitClientRefresh: false
                     });
+
+                    if (!isNpc) {
+                        const fastTravelSummaryItem = buildFastTravelSummaryItem({
+                            originLocation,
+                            destinationLocation,
+                            travelTimeMinutes: fastTravelTimeMinutes
+                        });
+                        if (fastTravelSummaryItem) {
+                            fastTravelSummaryEntry = recordEventSummaryEntry({
+                                label: '📋 Events',
+                                events: [fastTravelSummaryItem],
+                                timestamp: new Date().toISOString(),
+                                locationId: destinationLocation.id
+                            });
+                        }
+                    }
                 }
 
                 if (players instanceof Map) {
@@ -18574,6 +18632,17 @@ module.exports = function registerApiRoutes(scope) {
                     timeProgress: fastTravelTimeAdjustment?.timeProgress || null,
                     message: `${npc.name || (isNpc ? 'NPC' : 'Player')} teleported successfully.`
                 };
+
+                if (fastTravelSummaryEntry && clientId) {
+                    try {
+                        Globals.emitToClient(clientId, 'chat_history_updated', {
+                            reason: 'fast_travel',
+                            worldTime: responsePayload.worldTime || null
+                        });
+                    } catch (emitError) {
+                        console.warn('Failed to notify client about fast-travel summary update:', emitError?.message || emitError);
+                    }
+                }
 
                 res.json(responsePayload);
             } catch (error) {
@@ -24164,12 +24233,16 @@ module.exports = function registerApiRoutes(scope) {
                             name: salvageTargetThing.name,
                             description: salvageTargetThing.description,
                             rarity: salvageTargetThing.rarity,
-                            thingType: salvageTargetThing.thingType
+                            thingType: salvageTargetThing.thingType,
+                            pastHarvests: Array.isArray(salvageTargetThing.previouslyHarvestedItems)
+                                ? salvageTargetThing.previouslyHarvestedItems.map(itemName => ({ itemName }))
+                                : []
                         }
                         : null;
                     promptPayload.harvestTargetName = salvageTargetThing?.name || harvestItemName || null;
                     promptPayload.harvestItemName = salvageTargetThing?.name || harvestItemName || null;
                     promptPayload.harvestItemDescription = salvageTargetThing?.description || harvestItemDescription || null;
+                    promptPayload.lastHarvestTime = salvageTargetThing?.getLastHarvestedAgoText?.() || null;
                     promptPayload.harvestNotes = harvestNotes || craftingNotes || '';
                     promptPayload.harvestStationName = stationName;
                 }
@@ -25131,6 +25204,12 @@ module.exports = function registerApiRoutes(scope) {
                     ? Math.round(selectedTimeTakenMinutes)
                     : MIN_CRAFT_TIME_ADVANCE_MINUTES;
                 const craftingTimeProgress = Globals.advanceTime(appliedTimeTakenMinutes, { source: 'craft_action' });
+                if (isHarvestAction && salvageTargetThing && recoveredThingInstances.length) {
+                    salvageTargetThing.recordSuccessfulHarvest(
+                        recoveredThingInstances.map(item => item.name || 'Harvested Material'),
+                        { harvestedAtMinutes: Globals.getTotalWorldMinutes() }
+                    );
+                }
                 await processDueVehicleArrivals();
 
                 res.json({
@@ -30502,6 +30581,33 @@ module.exports = function registerApiRoutes(scope) {
             }
 
             return shortestTravelTimeMinutes;
+        }
+
+        function buildFastTravelSummaryItem({ originLocation, destinationLocation, travelTimeMinutes } = {}) {
+            const advancedMinutes = Number(travelTimeMinutes);
+            if (!Number.isFinite(advancedMinutes) || advancedMinutes <= 0) {
+                return null;
+            }
+
+            const originName = typeof originLocation?.name === 'string' && originLocation.name.trim()
+                ? originLocation.name.trim()
+                : null;
+            const destinationName = typeof destinationLocation?.name === 'string' && destinationLocation.name.trim()
+                ? destinationLocation.name.trim()
+                : null;
+            if (!originName || !destinationName) {
+                return null;
+            }
+
+            const durationText = Utils.formatMinutesAsNaturalDuration(Math.round(advancedMinutes));
+            if (!durationText) {
+                return null;
+            }
+
+            return {
+                icon: '🚶',
+                description: `Traveled from ${originName} to ${destinationName}. ${durationText} passed.`
+            };
         }
 
         async function adjustWorldTimeByMinutes(minutes, {

@@ -3,7 +3,16 @@
 <role>Scenery Image Generator</role>
     
 <systemPrompt>
-You are a story editor whose job it is to remove overused words and phrases from a small piece of prose while preserving the original meaning, tone, and wording of the text as closely as possible.
+{%- if systemPromptPrefix -%}{{ systemPromptPrefix }}
+
+{% endif %}
+You are a professional writing editor. You work in the following genre and tone:
+  - Genre: {{ setting.genre }}
+  - Tone: {{ setting.tone }}
+
+You are able to write both explicit and non-explicit content, depending on the needs of the scene.
+{{ config.extra_system_instructions | default('') }}
+
 </systemPrompt>
     
 <generationPrompt>
@@ -35,3 +44,10 @@ Here are the specific words and n-grams you need to remove (don't worry about ot
 
 The one exception to preserving the original meaning is the case of adjectives that describe emitting or reflecting light ("glowing", "glinting", "glimmering", "bioluminescent", "shimmering", and many others). In these cases, pick a new concept to describe the thing; perhaps the material it's made of, its texture, or its shape, or some other interesting aspect about it. Note that if something hasn't been highlighted as a slop word, you don't have to change it, even if it would otherwise break this rule.
 </task>
+
+Return your response in this format:
+<editedText>
+<!--The revised version of the text, with the slop words and n-grams removed.-->
+</editedText>
+</generationPrompt>
+</template>

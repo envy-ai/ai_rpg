@@ -41,15 +41,15 @@ need_bars:
     effect_thresholds:
       0:
         name: Starving
-        sentence: "%CHARACTER% is starving and in danger of fainting."
+        sentence: "%CHARACTER% is starving and in danger of fainting. They are completely focused on finding food and will struggle to do anything else until they eat something."
         effect: -10% to health and attributes, chance of fainting
       10:
         name: Hungry
-        sentence: "%CHARACTER% is feeling hungry."
+        sentence: "%CHARACTER% is feeling hungry. They are distracted by their hunger and will be more likely to seek out food if it is available."
         effect: -5% to health and attributes
       250:
         name: Peckish
-        sentence: "%CHARACTER% is feeling peckish."
+        sentence: "%CHARACTER% is feeling peckish. If there are snacks available, they may have some."
         effect: No effect
       400:
         name: Not Hungry
@@ -163,11 +163,11 @@ need_bars:
     effect_thresholds:
       0:
         name: Exhausted
-        sentence: "%CHARACTER% is exhausted and in danger of passing out."
+        sentence: "%CHARACTER% is exhausted and in danger of passing out. They will struggle to stay awake and be intent on seeking rest if at all possible."
         effect: -10% to health and attributes, chance of passing out
       10:
         name: Very Tired
-        sentence: "%CHARACTER% is very tired and wants to go to sleep."
+        sentence: "%CHARACTER% is very tired and wants to go to sleep. If reasonable, they'll seek out a place to sleep or nap."
         effect: -5% to health and attributes
       150:
         name: Tired

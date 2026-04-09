@@ -12,6 +12,7 @@ Collection of static utility helpers used across the server: set math, text simi
 - `normalizeGeneratedExitTravelTimeMinutes(value, { fieldName })`: validates prompt-generated exit minute values and promotes explicit `0`-minute AI output to `1`, preserving `0` as the “unpopulated travel time” sentinel for save/load and backfill flows.
 - `formatMinutesAsDuration(value, { includeAgo })`: shared minute-based display formatter returning `X days, Y hours, Z minutes` with zero-value units omitted (except `0 minutes` for an exact zero); negative values can append `ago`.
 - `formatMinutesAsNaturalDuration(value, { includeAgo })`: shared minute-based formatter for prose/notification text using natural joins: `A`, `A and B`, or `A, B, and C`.
+- `formatAbsoluteWorldMinutesAgo(value, { currentTotalMinutes })`: converts an absolute “minutes since game start” timestamp into `X days, Y hours, Z minutes ago` text using the shared natural-duration formatter and current total world minutes.
 - K-gram utilities:
   - `pruneContainedKgrams(ngrams)`.
   - `hasKgramOverlap(a, b, { k, minMatches })`.

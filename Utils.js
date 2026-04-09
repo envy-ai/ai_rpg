@@ -266,6 +266,37 @@ class Utils {
     return includeAgo && isPast ? `${formatted} ago` : formatted;
   }
 
+  static formatAbsoluteWorldMinutesAgo(value, { currentTotalMinutes = Globals.getTotalWorldMinutes() } = {}) {
+    if (value === null || value === undefined) {
+      return null;
+    }
+
+    const absoluteMinutes = Number(value);
+    if (!Number.isFinite(absoluteMinutes)) {
+      throw new Error('Absolute world-minute timestamp must be a finite number.');
+    }
+    if (absoluteMinutes < 0) {
+      throw new Error('Absolute world-minute timestamp must be non-negative.');
+    }
+
+    const currentMinutes = Number(currentTotalMinutes);
+    if (!Number.isFinite(currentMinutes)) {
+      throw new Error('Current total world minutes must be a finite number.');
+    }
+    if (currentMinutes < 0) {
+      throw new Error('Current total world minutes must be non-negative.');
+    }
+    if (currentMinutes < absoluteMinutes) {
+      throw new Error('Current total world minutes cannot be earlier than the absolute world-minute timestamp.');
+    }
+
+    const elapsedMinutes = Math.round(currentMinutes) - Math.round(absoluteMinutes);
+    if (elapsedMinutes === 0) {
+      return '0 minutes ago';
+    }
+    return Utils.formatMinutesAsNaturalDuration(-elapsedMinutes, { includeAgo: true });
+  }
+
   static getMinimumUnmitigatedWeaponDamage(rarity, level) {
     const normalizedRarity = typeof rarity === 'string' ? rarity.trim() : '';
     if (!normalizedRarity) {

@@ -89,3 +89,18 @@ test('formatMinutesAsNaturalDuration can append ago for negative values', () => 
     assert.equal(Utils.formatMinutesAsNaturalDuration(-65, { includeAgo: true }), '1 hour and 5 minutes ago');
     assert.equal(Utils.formatMinutesAsNaturalDuration(-1440, { includeAgo: true }), '1 day ago');
 });
+
+test('formatAbsoluteWorldMinutesAgo formats absolute minute timestamps against the current world minute count', () => {
+    assert.equal(
+        Utils.formatAbsoluteWorldMinutesAgo(1500, { currentTotalMinutes: 3124 }),
+        '1 day, 3 hours, and 4 minutes ago'
+    );
+    assert.equal(
+        Utils.formatAbsoluteWorldMinutesAgo(60, { currentTotalMinutes: 120 }),
+        '1 hour ago'
+    );
+    assert.equal(
+        Utils.formatAbsoluteWorldMinutesAgo(120, { currentTotalMinutes: 120 }),
+        '0 minutes ago'
+    );
+});

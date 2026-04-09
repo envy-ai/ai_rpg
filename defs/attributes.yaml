@@ -3,29 +3,34 @@ attributes:
     label: Strength
     abbreviation: STR
     description: A measure of your physical power.
-    default: 5
+    default: 10
   dexterity:
     label: Dexterity
     abbreviation: DEX
     description: A measure of your agility and reflexes.
-    default: 5
+    default: 10
   constitution:
     label: Constitution
     abbreviation: CON
     description: A measure of your toughness, health, and stamina.
-    default: 5
+    default: 10
   intelligence:
     label: Intelligence
     abbreviation: INT
-    description: A measure of your mental acuity and problem-solving ability.
-    default: 5
+    description: A measure of your mental acuity, reasoning, and problem-solving ability.
+    default: 10
   wisdom:
     label: Wisdom
     abbreviation: WIS
     description: A measure of your insight, perception, and willpower.
-    default: 5
+    default: 10
   charisma:
     label: Charisma
     abbreviation: CHA
     description: A measure of your charm and influence over others.
-    default: 5
+    default: 10
+  luck:
+    label: Luck
+    abbreviation: LCK
+    description: A measure of how fortunate you are in life.
+    default: 10

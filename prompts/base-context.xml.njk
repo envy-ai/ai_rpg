@@ -527,6 +527,28 @@ The below context is an account of the current game state, including the setting
     {% endif %}
   </vehicle>
   {% endif %}
+  <currentCharacterNeeds>
+    {% for npc in npcs %}
+    {% if npc.needs and npc.needs | length %}
+    <character>
+      <name>{{ npc.name }}</name>
+      <needs>
+{% for sentence in npc.needs %}        - {{ sentence }}
+{% endfor %}      </needs>
+    </character>
+    {% endif %}
+    {% endfor %}
+    {% for member in party %}
+    {% if member.needs and member.needs | length %}
+    <character>
+      <name>{{ member.name }}</name>
+      <needs>
+{% for sentence in member.needs %}        - {{ sentence }}
+{% endfor %}      </needs>
+    </character>
+    {% endif %}
+    {% endfor %}
+  </currentCharacterNeeds>
 </currentConditions>
 
 {% include "_includes/" + promptType + ".njk" %}

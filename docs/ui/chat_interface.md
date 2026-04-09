@@ -115,7 +115,7 @@ The chat client listens on `/ws?clientId=...` and handles:
 - `quest_confirmation_request` (modal prompt).
 
 `processChatPayload()` also consumes `payload.worldTime` from streamed/final chat responses, updates the world-time chip, and emits transition summaries (`segment`/`season`) into the event-summary flow.
-It also renders `needBarChanges`, `dispositionChanges`, and `factionReputationChanges` into the same event-summary bundle box so they appear together. When `time_passed` advances world time for the turn, the same bundle appends an `⏳ <natural duration> passed.` line using `A`, `A and B`, or `A, B, and C` formatting. If exit travel time overrides the prompt-authored turn duration, the displayed line uses the effective travel minutes. Need-bar summaries now use the configured bar icon, include the model-provided reason text when present, and emit one standalone notification per change outside active bundles.
+It also renders `needBarChanges`, `dispositionChanges`, and `factionReputationChanges` into the same event-summary bundle box so they appear together. When `time_passed` advances world time for the turn, the same bundle appends an `⏳ <natural duration> passed.` line using `A`, `A and B`, or `A, B, and C` formatting. If exit travel time overrides the prompt-authored turn duration, the displayed line uses the effective travel minutes. Map fast travel that advances time now adds a standalone event-summary entry reading `Traveled from X to Y. Z passed.`. Need-bar summaries now use the configured bar icon, include the model-provided reason text when present, and emit one standalone notification per change outside active bundles.
 
 ## Key API calls from the chat UI
 

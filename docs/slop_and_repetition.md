@@ -82,11 +82,14 @@ Quick refresher on where these systems live and how they're wired.
 - Entry point: `api.js` → `applySlopRemoval(prose, { returnDiagnostics })`.
 - Prompt: `prompts/slop-remover.xml.njk`.
 - Prompt inputs:
+  - `systemPromptPrefix` (resolved for `slop_remover`)
+  - `setting` (same normalized setting context shape used by base-context)
+  - `config`
   - `storyText` (last 5 prose entries + last 5 player entries, merged chronologically)
   - `textToEdit` (current response)
   - `slopWords`
   - `slopNgrams`
-- Output must be plain text (no XML). The server retries up to `config.slop_remover_base_attempts` (default `2`) and can extend to 5 when parse failures occur.
+- Output must be XML containing `<editedText>...</editedText>`. The `LLMClient` request now has strict XML validation enabled for this prompt, and the server also parses the response with `Utils.parseXmlDocumentStrict(...)`, treating malformed XML or missing/empty `<editedText>` as parse failures. It retries up to `config.slop_remover_base_attempts` (default `2`) with extension up to 5 attempts on parse failures.
 - After each attempt, the server re-checks for remaining slop words and n-grams; if it hits max attempts, it logs and allows remaining slop.
 - Diagnostics (`slopWords` + `slopNgrams`) are attached to the response and recorded in chat history.
 

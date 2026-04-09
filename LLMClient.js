@@ -69,61 +69,6 @@ class LLMClient {
     static #abortControllers = new Map();
     static #controllerAbortIntents = new WeakMap();
 
-    static #mergeStreamText(assembled, incoming, { isSnapshot = false } = {}) {
-        const current = typeof assembled === 'string' ? assembled : '';
-        const next = typeof incoming === 'string' ? incoming : '';
-
-        if (!next) {
-            return {
-                assembled: current,
-                previewDelta: ''
-            };
-        }
-
-        if (!current) {
-            return {
-                assembled: next,
-                previewDelta: next
-            };
-        }
-
-        // Some providers stream the full accumulated text in each chunk, even when
-        // the payload is delivered through delta.content. Treat those as snapshots
-        // regardless of the declared payload shape so prefixes are not duplicated.
-        if (next === current) {
-            return {
-                assembled: current,
-                previewDelta: ''
-            };
-        }
-
-        if (next.startsWith(current)) {
-            return {
-                assembled: next,
-                previewDelta: next.slice(current.length)
-            };
-        }
-
-        if (current.startsWith(next)) {
-            return {
-                assembled: current,
-                previewDelta: ''
-            };
-        }
-
-        if (!isSnapshot) {
-            return {
-                assembled: current + next,
-                previewDelta: next
-            };
-        }
-
-        return {
-            assembled: current + next,
-            previewDelta: next
-        };
-    }
-
     static #isInteractive() {
         return process.stdout && process.stdout.isTTY;
     }
@@ -1830,6 +1775,7 @@ class LLMClient {
         additionalPayload = {},
         onResponse = null,
         validateXML = true,
+        validateXMLStrict = false,
         requiredTags = [],
         requiredRegex = null,
         waitAfterError = null,
@@ -1848,6 +1794,7 @@ class LLMClient {
         maxConcurrent = null,
         multimodal = false,
         forceOutput = null,
+        logStreamChunksToConsole = false,
     } = {}) {
         const resolvedOutput = LLMClient.resolveOutput(output);
         const isSilent = resolvedOutput === 'silent';
@@ -1895,6 +1842,7 @@ class LLMClient {
                 headers,
                 additionalPayload,
                 validateXML,
+                validateXMLStrict,
                 requiredTags,
                 requiredRegex,
                 waitAfterError,
@@ -2159,6 +2107,7 @@ class LLMClient {
             let streamTrackerId = null;
             let startTimer = null;
             let lastTotalTokens = null;
+            const shouldLogStreamChunks = logStreamChunksToConsole === true;
             const hasForcedOutput = resolvedForcedOutput !== null && resolvedForcedOutput !== undefined;
             const resolvedRequiredRegex = (() => {
                 if (!requiredRegex) {
@@ -2345,6 +2294,16 @@ class LLMClient {
                             }
                         };
 
+                        const logStreamChunk = (payloadStr) => {
+                            if (!shouldLogStreamChunks) {
+                                return;
+                            }
+                            const label = metadataLabel || 'unknown';
+                            console.log(`========== LLM STREAM CHUNK [${label}] ==========`);
+                            console.log(payloadStr);
+                            console.log('===============================================');
+                        };
+
                         resetTimer(streamStartTimeoutMs);
 
                         response.data.on('data', chunk => {
@@ -2355,17 +2314,14 @@ class LLMClient {
                                 const trimmed = line.trim();
                                 if (!trimmed || !trimmed.startsWith('data:')) continue;
                                 const payloadStr = trimmed.slice(5).trim();
+                                logStreamChunk(payloadStr);
                                 if (payloadStr === '[DONE]') {
                                     continue;
                                 }
                                 try {
                                     const parsed = JSON.parse(payloadStr);
                                     const firstChoice = parsed?.choices?.[0] || null;
-                                    const hasDeltaPayload = Boolean(firstChoice?.delta && typeof firstChoice.delta === 'object');
-                                    const hasMessagePayload = !hasDeltaPayload && Boolean(firstChoice?.message && typeof firstChoice.message === 'object');
-                                    const deltaPayload = hasDeltaPayload
-                                        ? firstChoice.delta
-                                        : (hasMessagePayload ? firstChoice.message : null);
+                                    const deltaPayload = firstChoice?.delta || firstChoice?.message || null;
                                     const delta = LLMClient.#extractTextContent(deltaPayload?.content);
                                     if (parsed?.usage && typeof parsed.usage === 'object') {
                                         streamUsage = { ...parsed.usage };
@@ -2378,18 +2334,10 @@ class LLMClient {
                                     }
                                     if (delta) {
                                         resetTimer(streamContinueTimeoutMs);
-                                        const mergedText = LLMClient.#mergeStreamText(assembled, delta, {
-                                            isSnapshot: hasMessagePayload
-                                        });
-                                        assembled = mergedText.assembled;
+                                        assembled += delta;
                                         responseContent = assembled;
                                         const deltaBytes = Buffer.byteLength(delta, 'utf8');
-                                        LLMClient.#trackStreamBytes(
-                                            streamId,
-                                            deltaBytes,
-                                            streamContinueTimeoutMs,
-                                            mergedText.previewDelta
-                                        );
+                                        LLMClient.#trackStreamBytes(streamId, deltaBytes, streamContinueTimeoutMs, delta);
                                     }
                                 } catch (parseError) {
                                     // ignore malformed chunks, but log for visibility
@@ -2549,6 +2497,7 @@ class LLMClient {
                                     waitAfterError: waitAfterErrorSeconds,
                                     waitAfterRateLimitError: waitAfterRateLimitErrorSeconds,
                                     validateXML,
+                                    validateXMLStrict,
                                     requiredTags,
                                     requiredRegex: resolvedRequiredRegex ? resolvedRequiredRegex.toString() : requiredRegex,
                                     dumpReasoningToConsole
@@ -2568,7 +2517,11 @@ class LLMClient {
 
                     if (validateXML && !hasToolCalls) {
                         try {
-                            Utils.parseXmlDocument(responseContent);
+                            if (validateXMLStrict) {
+                                Utils.parseXmlDocumentStrict(responseContent);
+                            } else {
+                                Utils.parseXmlDocument(responseContent);
+                            }
                         } catch (xmlError) {
                             errorLog(`XML validation failed (attempt ${attempt + 1}):`, xmlError);
                             const filePath = LLMClient.writeLogFile({

@@ -42,17 +42,17 @@ need_bars:
       - exile
     effect_thresholds:
       0:
-        name: Isolated
-        sentence: "%CHARACTER% is feeling isolated."
+        name: Extremely lonely
+        sentence: "%CHARACTER% is feeling utterly alone. Depending on how outgoing they are, they may be desperate for any social interaction or they may have given up on trying to connect with others. They are at risk of depression and will have a hard time functioning until they can get some social interaction."
         effect: -10% to morale, chance of depression
       10:
         name: Lonely
-        sentence: "%CHARACTER% is feeling lonely."
+        sentence: "%CHARACTER% is feeling lonely. Depending on how outgoing they are, they may be eager for social interaction or they may be resigned to being alone. They will have a harder time focusing on tasks and may be more irritable or withdrawn."
         effect: -5% to charisma, sad mood
       250:
-        name: Withdrawn
-        sentence: "%CHARACTER% is feeling withdrawn."
-        effect: Desire for company, minor penalty to morale
+        name: Isolated
+        sentence: "%CHARACTER% has gone a bit too long without social interaction. They may be feeling a bit lonely and will appreciate any social interaction that comes their way."
+        effect: No effect
       400:
         name: Content
         sentence: "%CHARACTER% is feeling socially content."

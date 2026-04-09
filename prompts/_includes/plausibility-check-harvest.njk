@@ -19,6 +19,8 @@ Item details: {{ harvestTarget.description }}
 Item details: {{ harvestItemDescription }}
 {% endif %}
 
+{% if lastHarvestTime %}The last harvest from this node occurred {{ lastHarvestTime }}.{% endif %}
+
 {% if harvestNotes %}
 The player provided additional notes or intentions: "{{ harvestNotes }}"
 {% endif %}
@@ -59,7 +61,14 @@ Step 2: If the action is plausible, make a list of any player abilities that are
   ... additional ability tags as needed ...
 </abilities>
 
-Step 3: If the action is plausible, determine harvested materials for a normal (non-critical) success. Use the following XML structure for each item, filling in all fields appropriately (including <shortDescription>):
+Step 3: If the action is plausible, determine harvested materials for a normal (non-critical) success. Items gathered from a harvest node shouldn't be exactly the same as the ones gathered previously. 
+
+{% if harvestTarget and harvestTarget.pastHarvests and harvestTarget.pastHarvests.length > 0 %}{% set recentPastHarvests = harvestTarget.pastHarvests.slice(-30) %}The following items have been gathered from this harvest node in the past: 
+{% for pastHarvest in recentPastHarvests %}- {{ pastHarvest.itemName }}
+{% endfor %}
+{% endif %}
+
+This is particularly true if the harvest node would tend to produce a variety of things. Use the following XML structure for each item, filling in all fields appropriately (including <shortDescription>):
 
 <harvestResults>
   <result>

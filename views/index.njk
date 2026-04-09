@@ -4871,12 +4871,14 @@
             }
 
             const npcId = npc.id;
+            const clientId = window.AIRPG_CLIENT_ID || null;
             const response = await fetch(`/api/npcs/${encodeURIComponent(npcId)}/teleport`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     locationId: destinationLocationId,
-                    accountTravelTime: accountTravelTime === true
+                    accountTravelTime: accountTravelTime === true,
+                    clientId
                 })
             });
 
@@ -9323,7 +9325,7 @@
             npcEditForm.dataset.npcId = currentNpcEditId || '';
             npcEditModal.removeAttribute('hidden');
             npcEditModal.setAttribute('aria-hidden', 'false');
-            npcEditBackdrop.removeAttribute('hidden');
+            npcModalBackdrop.removeAttribute('hidden');
             document.body.classList.add('modal-open');
             scrollModalToTop(npcEditModal);
 

@@ -61,6 +61,7 @@ Represents a region containing multiple locations, with metadata like average le
 - `fromXMLSnippet` now reads location blueprints only from direct `<locations><location>` children, so nested vehicle-destination tags like `<destination><location>...` do not get misparsed as region locations.
 - Region XML location exits now use `<exit><destination>...</destination><travelTime>...</travelTime></exit>` and normalize to blueprint entries shaped like `{ target, travelTimeMinutes }`.
 - Explicit prompt-generated `0`-minute exit travel times are normalized up to `1` minute during region and region-stub parsing so persisted `0` can continue to mean “not populated yet”.
+- Generated `<regionExits><stubRegion>` entries now also require `<travelTime>`; those minutes are applied to the created cross-region exit the same way normal `<exit>` travel times are, without storing the time on the pending region-stub record itself.
 - Region stub-location parsing in `server.js` uses the same exit shape and preserves the first parsed travel time for both directions when reverse exits are synthesized.
 - `parentHierarchy` throws on circular references to surface data errors early.
 - Location blueprints now include both a two-paragraph `<description>` and one-sentence `<shortDescription>`; these are carried into stub metadata as `stubDescription`/`stubShortDescription`, including region stub expansions.
