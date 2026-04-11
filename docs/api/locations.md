@@ -148,6 +148,7 @@ Responses:
 
 Notes:
 - Concurrent requests are supported. In-flight dedupe only applies when an explicit non-empty `name` is provided.
+- Single-NPC creation now waits for its generated progression pass before returning, so the created NPC should already have any LLM-assigned skill spec applied in the response payload.
 
 ## POST /api/locations/:id/things
 

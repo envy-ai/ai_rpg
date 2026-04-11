@@ -239,28 +239,72 @@ class Player {
         return normalized;
     }
 
-    static #normalizeNeedValueMap(source) {
-        if (!source || typeof source !== 'object') {
+    static #normalizeNeedValueMap(source, { context = 'need_values' } = {}) {
+        if (!source || typeof source !== 'object' || Array.isArray(source)) {
             return null;
         }
 
-        const entries = {};
-        for (const [rawKey, rawValue] of Object.entries(source)) {
+        const normalizeDirectionEntries = (directionSource, directionContext) => {
+            if (!directionSource || typeof directionSource !== 'object' || Array.isArray(directionSource)) {
+                if (directionSource === null || directionSource === undefined) {
+                    return null;
+                }
+                throw new Error(`${directionContext} must be an object of need magnitude values.`);
+            }
+
+            const entries = {};
+            for (const [rawKey, rawValue] of Object.entries(directionSource)) {
+                if (!rawKey) {
+                    continue;
+                }
+                const key = this.#normalizeNeedMagnitudeKey(rawKey);
+                if (!key || key === 'all') {
+                    continue;
+                }
+                const numeric = Number(rawValue);
+                if (!Number.isFinite(numeric) || numeric <= 0) {
+                    continue;
+                }
+                entries[key] = numeric;
+            }
+
+            return Object.keys(entries).length ? Object.freeze(entries) : null;
+        };
+
+        let sawDirectionalKey = false;
+        for (const rawKey of Object.keys(source)) {
             if (!rawKey) {
                 continue;
             }
-            const key = this.#normalizeNeedMagnitudeKey(rawKey);
-            if (!key || key === 'all') {
+            const normalizedKey = String(rawKey).trim().toLowerCase();
+            if (normalizedKey === 'increase' || normalizedKey === 'decrease') {
+                sawDirectionalKey = true;
                 continue;
             }
-            const numeric = Number(rawValue);
-            if (!Number.isFinite(numeric) || numeric <= 0) {
-                continue;
+
+            const magnitudeKey = this.#normalizeNeedMagnitudeKey(rawKey);
+            if (magnitudeKey && magnitudeKey !== 'all') {
+                throw new Error(
+                    `${context} must use nested increase/decrease maps; flat magnitude key "${rawKey}" is no longer supported.`
+                );
             }
-            entries[key] = numeric;
         }
 
-        return Object.keys(entries).length ? Object.freeze(entries) : null;
+        if (!sawDirectionalKey) {
+            return null;
+        }
+
+        const increase = normalizeDirectionEntries(source.increase, `${context}.increase`);
+        const decrease = normalizeDirectionEntries(source.decrease, `${context}.decrease`);
+
+        if (!increase && !decrease) {
+            return null;
+        }
+
+        return Object.freeze({
+            increase,
+            decrease
+        });
     }
 
     static #normalizeNeedBarAudienceConfig(config = {}) {
@@ -613,7 +657,9 @@ class Player {
         const audience = this.#normalizeNeedBarAudienceConfig(config);
         const relatedAttribute = typeof config.related_attribute === 'string' ? config.related_attribute : null;
         const initialValue = Number.isFinite(Number(config.initial)) ? Number(config.initial) : null;
-        const magnitudeValues = this.#normalizeNeedValueMap(config.need_values);
+        const magnitudeValues = this.#normalizeNeedValueMap(config.need_values, {
+            context: `need_bars.${id}.need_values`
+        });
 
         const effectThresholds = [];
         if (config.effect_thresholds && typeof config.effect_thresholds === 'object') {
@@ -677,7 +723,14 @@ class Player {
         return {
             ...definition,
             magnitudeValues: definition.magnitudeValues && typeof definition.magnitudeValues === 'object'
-                ? { ...definition.magnitudeValues }
+                ? {
+                    increase: definition.magnitudeValues.increase && typeof definition.magnitudeValues.increase === 'object'
+                        ? { ...definition.magnitudeValues.increase }
+                        : null,
+                    decrease: definition.magnitudeValues.decrease && typeof definition.magnitudeValues.decrease === 'object'
+                        ? { ...definition.magnitudeValues.decrease }
+                        : null
+                }
                 : null,
             effectThresholds: Array.isArray(definition.effectThresholds)
                 ? definition.effectThresholds.map(entry => ({ ...entry }))
@@ -712,7 +765,9 @@ class Player {
             });
             const data = value || {};
             const source = typeof data.need_bars === 'object' && data.need_bars !== null ? data.need_bars : {};
-            const magnitudeValues = this.#normalizeNeedValueMap(data.need_values);
+            const magnitudeValues = this.#normalizeNeedValueMap(data.need_values, {
+                context: 'need_values'
+            });
             const normalized = {};
             for (const [id, config] of Object.entries(source)) {
                 if (!id) {
@@ -3958,6 +4013,36 @@ class Player {
         };
     }
 
+    #reconcileHealthAfterStatusEffectChange({ previousMaxHealth, suppressTimestamp = false } = {}) {
+        if (!Number.isFinite(previousMaxHealth) || previousMaxHealth <= 0) {
+            throw new Error('Cannot reconcile health after status effect change: previous max health is invalid.');
+        }
+
+        const nextMaxHealth = Number(this.maxHealth);
+        if (!Number.isFinite(nextMaxHealth) || nextMaxHealth <= 0) {
+            throw new Error('Cannot reconcile health after status effect change: new max health is invalid.');
+        }
+
+        let nextHealth = this.#health;
+        const maxHealthDelta = nextMaxHealth - previousMaxHealth;
+        if (maxHealthDelta > 0) {
+            nextHealth = Math.min(nextMaxHealth, this.#health + maxHealthDelta);
+        } else if (this.#health > nextMaxHealth) {
+            nextHealth = nextMaxHealth;
+        }
+
+        if (nextHealth === this.#health) {
+            return;
+        }
+
+        if (suppressTimestamp) {
+            this.#health = nextHealth;
+            return;
+        }
+
+        this.setHealth(nextHealth);
+    }
+
     /**
      * Level up the player
      */
@@ -4289,7 +4374,12 @@ class Player {
     }
 
     setStatusEffects(effects = []) {
+        const previousMaxHealth = this.maxHealth;
         this.#statusEffects = this.#normalizeStatusEffects(effects);
+        this.#reconcileHealthAfterStatusEffectChange({
+            previousMaxHealth,
+            suppressTimestamp: true
+        });
         this.#lastUpdated = new Date().toISOString();
         return this.getStatusEffects();
     }
@@ -4310,6 +4400,7 @@ class Player {
             return null;
         }
 
+        const previousMaxHealth = this.maxHealth;
         let updated = false;
         for (const effect of normalized) {
             const existingIndex = this.#statusEffects.findIndex(existing =>
@@ -4324,6 +4415,10 @@ class Player {
         }
 
         if (updated) {
+            this.#reconcileHealthAfterStatusEffectChange({
+                previousMaxHealth,
+                suppressTimestamp: true
+            });
             this.#lastUpdated = new Date().toISOString();
         }
 
@@ -4335,11 +4430,16 @@ class Player {
             return false;
         }
 
+        const previousMaxHealth = this.maxHealth;
         const before = this.#statusEffects.length;
         const target = description.trim().toLowerCase();
         this.#statusEffects = this.#statusEffects.filter(effect => effect.description.toLowerCase() !== target);
 
         if (this.#statusEffects.length !== before) {
+            this.#reconcileHealthAfterStatusEffectChange({
+                previousMaxHealth,
+                suppressTimestamp: true
+            });
             this.#lastUpdated = new Date().toISOString();
             return true;
         }
@@ -4400,9 +4500,14 @@ class Player {
     }
 
     clearExpiredStatusEffects() {
+        const previousMaxHealth = this.maxHealth;
         const before = this.#statusEffects.length;
         this.#statusEffects = this.#statusEffects.filter(effect => !Number.isFinite(effect.duration) || effect.duration !== 0);
         if (this.#statusEffects.length !== before) {
+            this.#reconcileHealthAfterStatusEffectChange({
+                previousMaxHealth,
+                suppressTimestamp: true
+            });
             this.#lastUpdated = new Date().toISOString();
         }
     }
@@ -4665,7 +4770,7 @@ class Player {
         return null;
     }
 
-    static #resolveNeedBarMagnitudeDelta(bar, magnitude) {
+    static #resolveNeedBarMagnitudeDelta(bar, magnitude, direction = 'increase') {
         if (!bar) {
             return 0;
         }
@@ -4675,23 +4780,30 @@ class Player {
             return 0;
         }
 
+        const directionKey = direction === 'decrease' ? 'decrease' : 'increase';
+
         const configuredMap = (bar.magnitudeValues && typeof bar.magnitudeValues === 'object')
             ? bar.magnitudeValues
             : this.needBarMagnitudeValues;
-        if (configuredMap && Object.prototype.hasOwnProperty.call(configuredMap, magnitudeKey)) {
-            const configuredValue = configuredMap[magnitudeKey];
+        const configuredDirectionMap = configuredMap?.[directionKey];
+        if (
+            configuredDirectionMap
+            && Object.prototype.hasOwnProperty.call(configuredDirectionMap, magnitudeKey)
+        ) {
+            const configuredValue = configuredDirectionMap[magnitudeKey];
             if (Number.isFinite(configuredValue) && configuredValue > 0) {
                 return configuredValue;
             }
         }
 
         const globalConfiguredMap = this.needBarMagnitudeValues;
+        const globalDirectionMap = globalConfiguredMap?.[directionKey];
         if (
             configuredMap !== globalConfiguredMap
-            && globalConfiguredMap
-            && Object.prototype.hasOwnProperty.call(globalConfiguredMap, magnitudeKey)
+            && globalDirectionMap
+            && Object.prototype.hasOwnProperty.call(globalDirectionMap, magnitudeKey)
         ) {
-            const globalConfiguredValue = globalConfiguredMap[magnitudeKey];
+            const globalConfiguredValue = globalDirectionMap[magnitudeKey];
             if (Number.isFinite(globalConfiguredValue) && globalConfiguredValue > 0) {
                 return globalConfiguredValue;
             }
@@ -4776,7 +4888,7 @@ class Player {
                 }
             }
         } else {
-            const deltaAmount = Player.#resolveNeedBarMagnitudeDelta(bar, magnitude);
+            const deltaAmount = Player.#resolveNeedBarMagnitudeDelta(bar, magnitude, direction);
             if (deltaAmount > 0) {
                 const signedDelta = direction === 'decrease' ? -deltaAmount : deltaAmount;
                 newValue = previousValue + signedDelta;

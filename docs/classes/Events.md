@@ -52,8 +52,12 @@ Runs LLM-based event checks on narrative text, parses structured outcomes, and a
 - Many helpers are defensive and throw on missing dependencies to avoid silent corruption.
 - Item alteration updates `Thing.shortDescription` when provided by the alteration prompt, otherwise preserving the existing value.
 - `item_inflict` events ignore the prompt-provided status effect text and always apply the item's configured target inflict effect (`causeStatusEffectOnTarget`) to the target when available.
-- When `item_inflict` applies a status, Events emits a synthesized `status_effect_change` entry so status summaries are delivered to the client even if no separate NPC-group status entry is present.
-- `status_effect_change` de-duplicates gained effects against same-turn `item_inflict` applications for the same entity; duplicate gain entries are skipped when names match exactly or when the status-change name starts with the item-inflict effect name.
+- `item_ingest` events now parse as `[item] → [target]` and infer the applied status effect from the ingested item's configured target effect instead of requiring the prompt to name the effect.
+- Quantity-aware item events now require explicit positive-integer quantities for `consume_item`, `transfer_item`, `pick_up_item`, `drop_item`, `harvest_gather`, and `item_appear`; legacy quantity-less forms are rejected during parsing.
+- Quantity-aware item handlers now move or remove exact stack amounts instead of implicitly acting on a whole `Thing`. Partial-stack moves/consumption preserve the original item's stats/image and keep existing `metadata.value` unchanged while only adjusting stack count.
+- If the same turn reports both `item_ingest` and `item_inflict` for the same item-target pair, the `item_inflict` entry is ignored so the effect is only applied once.
+- When `item_inflict` or `item_ingest` applies a status, Events emits a synthesized `status_effect_change` entry so status summaries are delivered to the client even if no separate NPC-group status entry is present.
+- `status_effect_change` de-duplicates gained effects against same-turn item-triggered status applications for the same entity; duplicate gain entries are skipped when names match exactly or when the status-change name starts with the already-applied item-triggered effect name.
 - `death_incapacitation` skips `dead` outcomes for NPCs already marked dead, preventing duplicate death application.
 - `alter_npc` requests now require an `<npc>...</npc>` block from the model and always log prompt/response payloads through `LLMClient.logPrompt` before parse/apply.
 - `_parseCharacterAlterXml` can parse wrapped or escaped model output by decoding basic entities and extracting the first `<npc>...</npc>` block before XML parsing.

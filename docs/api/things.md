@@ -6,7 +6,7 @@ Common payloads: see `docs/api/common.md`.
 Create a new thing.
 
 Request:
-- Body supports: `name`, `description`, `shortDescription`, `thingType`, `imageId`, `rarity`, `itemTypeDetail`, `metadata`, `slot`, `attributeBonuses`, `causeStatusEffect`, `causeStatusEffectOnTarget`, `causeStatusEffectOnEquipper`, `level`, `relativeLevel`, `statusEffects`, plus boolean flags (`isVehicle`, `isCraftingStation`, `isProcessingStation`, `isHarvestable`, `isSalvageable`).
+- Body supports: `name`, `description`, `shortDescription`, `thingType`, `imageId`, `rarity`, `itemTypeDetail`, `metadata`, `slot`, `attributeBonuses`, `causeStatusEffect`, `causeStatusEffectOnTarget`, `causeStatusEffectOnEquipper`, `count`, `level`, `relativeLevel`, `statusEffects`, plus boolean flags (`isVehicle`, `isCraftingStation`, `isProcessingStation`, `isHarvestable`, `isSalvageable`).
 
 Response:
 - 200: `{ success: true, thing: Thing, message, imageNeedsGeneration }`
@@ -36,7 +36,7 @@ Response:
 Update a thing.
 
 Request:
-- Body supports: `name`, `description`, `shortDescription`, `thingType`, `imageId`, `rarity`, `itemTypeDetail`, `metadata`, `slot`, `attributeBonuses`, `causeStatusEffect`, `causeStatusEffectOnTarget`, `causeStatusEffectOnEquipper`, `level`, `relativeLevel`, `statusEffects`, plus boolean flags.
+- Body supports: `name`, `description`, `shortDescription`, `thingType`, `imageId`, `rarity`, `itemTypeDetail`, `metadata`, `slot`, `attributeBonuses`, `causeStatusEffect`, `causeStatusEffectOnTarget`, `causeStatusEffectOnEquipper`, `count`, `level`, `relativeLevel`, `statusEffects`, plus boolean flags.
 
 Response:
 - 200: `{ success: true, thing: Thing, message, imageNeedsUpdate }`
@@ -44,6 +44,57 @@ Response:
 
 Notes:
 - `causeStatusEffect` is treated as a legacy payload and mapped internally when provided.
+
+## POST /api/things/:id/separate
+Run the `thing-separate` prompt against an item and replace it with the parsed output items.
+
+Request:
+- No body required.
+
+Response:
+- 200: `{ success: true, noChanges: false, sourceThingId, things: Thing[], location?: LocationResponse, owner?: NpcProfile, message }`
+- 200: `{ success: true, noChanges: true, things: [], message }` when the prompt returns an empty `<items>` list.
+- 400/404/500 with `{ success: false, error }`
+
+Notes:
+- Only item-type things can be separated.
+- Inventory-bound source items reject prompt output that contains scenery entries.
+- Prompt output must use a positive integer `count` for every returned item; invalid prompt output fails the request instead of silently no-oping.
+- Prompt output may be either a normal `<items>` list or a top-level `<stack>` node. `<stack>` updates only `name`, `description`, `shortDescription`, and `count`; all other stats are preserved directly from the source item without attribute-bonus rescaling.
+- When the source item already has `count > 1`, the route skips the prompt entirely and splits it into that many identical `count: 1` items, reusing the original `imageId`, copying the source item's current `statusEffects` onto every split item without re-enrichment, and leaving the source `value` unchanged on each copied stack item.
+
+## POST /api/things/:id/split-stack
+Split an item stack into a second stack with an exact requested quantity.
+
+Request:
+- Body: `{ quantity: integer }`
+
+Response:
+- 200: `{ success: true, noChanges: false, sourceThingId, splitThingId, things: Thing[], location?: LocationResponse, owner?: NpcProfile, message }`
+- 400/404/500 with `{ success: false, error }`
+
+Notes:
+- Only item-type things can be split.
+- `quantity` must be a positive integer strictly less than the source stack count.
+- Split stacks are created via `Thing.copy(...)`, so they keep the same image and hashable item data as the source stack. Only `count`/placement metadata changes.
+- Stack splitting leaves existing `value` metadata unchanged.
+
+## POST /api/things/:id/merge-stacks
+Merge same-name, same-checksum stacks from the same inventory or location into the selected item stack.
+
+Request:
+- No body required.
+
+Response:
+- 200: `{ success: true, noChanges: false, sourceThingId, mergedThingIds: string[], things: Thing[], location?: LocationResponse, owner?: NpcProfile, message }`
+- 200: `{ success: true, noChanges: true, sourceThingId, mergedThingIds: [], things: Thing[], location?: LocationResponse, owner?: NpcProfile, message }` when no mergeable stacks exist.
+- 400/404/500 with `{ success: false, error }`
+
+Notes:
+- Only item-type things can be merged.
+- Equipped items are rejected and are excluded from merge candidate discovery.
+- Merge candidates must share the same `name`, `checksum`, and container (same owner inventory or same location).
+- Merging only increases the surviving stack's `count`; existing `value` metadata is left unchanged.
 
 ## POST /api/things/:id/give
 Move an item into an inventory.

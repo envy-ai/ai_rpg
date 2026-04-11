@@ -28,10 +28,14 @@ attributes:
     writeFile('defs/dispositions.yaml', 'dispositions: {}\nrange: {}\n');
     writeFile('defs/need_bars.yaml', `
 need_values:
-  small: 10
-  medium: 25
-  large: 50
-  all: 100
+  increase:
+    small: 10
+    medium: 25
+    large: 50
+  decrease:
+    small: 10
+    medium: 25
+    large: 50
 need_bars:
   stamina:
     name: Stamina

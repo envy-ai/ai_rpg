@@ -2088,6 +2088,59 @@
             return {};
         })();
 
+        function normalizeThingDisplayCount(thing) {
+            const rawCount = thing?.count;
+            if (rawCount === undefined || rawCount === null || rawCount === '') {
+                return 1;
+            }
+            const parsedCount = Number(rawCount);
+            if (!Number.isInteger(parsedCount)) {
+                const thingLabel = typeof thing?.name === 'string' && thing.name.trim()
+                    ? thing.name.trim()
+                    : (typeof thing?.id === 'string' && thing.id.trim() ? thing.id.trim() : 'unknown thing');
+                throw new Error(`Thing "${thingLabel}" has invalid count "${rawCount}".`);
+            }
+            return parsedCount;
+        }
+
+        function getThingCountBadgeText(thing) {
+            if (!thing || typeof thing !== 'object') {
+                return '';
+            }
+            const count = normalizeThingDisplayCount(thing);
+            const normalizedThingType = typeof thing.thingType === 'string'
+                ? thing.thingType.trim().toLowerCase()
+                : 'item';
+            if (normalizedThingType === 'scenery' && count === 1) {
+                return '';
+            }
+            return String(count);
+        }
+
+        function renderThingCountOverlay(element, countBadgeText = null) {
+            if (!element) {
+                return;
+            }
+            const existing = element.querySelector('.thing-count-badge');
+            if (existing) {
+                existing.remove();
+            }
+
+            const resolvedText = typeof countBadgeText === 'string' && countBadgeText.trim()
+                ? countBadgeText.trim()
+                : (typeof element?.dataset?.imageCountBadge === 'string' ? element.dataset.imageCountBadge.trim() : '');
+
+            if (!resolvedText) {
+                return;
+            }
+
+            const badge = document.createElement('span');
+            badge.className = 'thing-count-badge';
+            badge.textContent = resolvedText;
+            badge.setAttribute('aria-hidden', 'true');
+            element.appendChild(badge);
+        }
+
         function renderImageBadgesOverlay(element, badges = null) {
             if (!element) {
                 return;
@@ -2224,7 +2277,8 @@
             placeholderMarkup = null,
             enableLightbox = true,
             force = false,
-            badges = null
+            badges = null,
+            countBadgeText = ''
         }) {
             if (!element) {
                 return Promise.resolve(null);
@@ -2258,6 +2312,10 @@
                     .filter(Boolean)
                 : [];
 
+            const normalizedCountBadgeText = typeof countBadgeText === 'string'
+                ? countBadgeText.trim()
+                : (countBadgeText === null || countBadgeText === undefined ? '' : String(countBadgeText).trim());
+
             if (normalizedBadges.length) {
                 try {
                     element.dataset.imageBadges = JSON.stringify(normalizedBadges);
@@ -2268,8 +2326,15 @@
                 delete element.dataset.imageBadges;
             }
 
+            if (normalizedCountBadgeText) {
+                element.dataset.imageCountBadge = normalizedCountBadgeText;
+            } else {
+                delete element.dataset.imageCountBadge;
+            }
+
             const applyBadgesOverlay = () => {
                 renderImageBadgesOverlay(element, normalizedBadges.length ? normalizedBadges : null);
+                renderThingCountOverlay(element, normalizedCountBadgeText);
             };
 
             const applyImageMarkup = (url) => {
@@ -2355,6 +2420,7 @@
             }).catch(error => {
                 console.warn(`Image generation failed for ${entityType} ${entityId}:`, error?.message || error);
                 element.innerHTML = `<div class="${placeholderClass} error">${placeholderIcon}</div>`;
+                applyBadgesOverlay();
                 return finalize(null);
             });
         }
@@ -2390,6 +2456,7 @@
             element.dataset.imageId = '';
             element.dataset.imageProcessing = 'true';
             renderImageBadgesOverlay(element);
+            renderThingCountOverlay(element);
         }
 
         function applyEntityImagePlaceholder(entityType, entityId) {
@@ -2413,6 +2480,7 @@
                 const force = options.force ?? false;
                 const hasImageIdOption = Object.prototype.hasOwnProperty.call(options, 'imageId');
                 const imageId = hasImageIdOption ? options.imageId : (dataset.imageId || null);
+                const countBadgeText = options.countBadgeText ?? dataset.imageCountBadge ?? '';
 
                 return renderEntityImage({
                     element,
@@ -2424,7 +2492,8 @@
                     placeholderClass,
                     placeholderMarkup,
                     enableLightbox,
-                    force
+                    force,
+                    countBadgeText
                 });
             });
         }
@@ -4663,6 +4732,123 @@
             return moveThingToInventory(thing, { ownerId: npcId, ownerType: 'npc', locationId });
         }
 
+        async function applyThingMutationResult(result, options = {}, { removeThingIds = [] } = {}) {
+            const idsToDelete = new Set(
+                (Array.isArray(removeThingIds) ? removeThingIds : [])
+                    .map(value => (typeof value === 'string' ? value.trim() : ''))
+                    .filter(Boolean)
+            );
+
+            idsToDelete.forEach(id => thingDataCache.delete(id));
+
+            if (Array.isArray(result?.things)) {
+                result.things.forEach(cacheThingData);
+            }
+
+            const ownerData = result?.owner || null;
+            const currentPlayerId = window.currentPlayerData?.id || null;
+            if (ownerData?.id) {
+                if (window.currentNpcData instanceof Map && ownerData.isNPC) {
+                    window.currentNpcData.set(ownerData.id, ownerData);
+                }
+                if (currentPlayerId && ownerData.id === currentPlayerId) {
+                    window.currentPlayerData = { ...window.currentPlayerData, ...ownerData };
+                }
+            }
+
+            if (options.context === 'npc-inventory' && ownerData?.id && ownerData.id === currentNpcInventoryNpcId) {
+                currentNpcInventory = Array.isArray(ownerData.inventory) ? ownerData.inventory : [];
+                renderNpcInventory(currentNpcInventory);
+            }
+
+            if (options.context === 'npc-equipment' && ownerData?.id && ownerData.id === currentNpcViewId && typeof showNpcViewModal === 'function') {
+                showNpcViewModal(ownerData);
+            }
+
+            if (result?.location) {
+                try {
+                    await window.updateLocationDisplay?.(result.location);
+                    window.lastRenderedLocation = JSON.parse(JSON.stringify(result.location));
+                } catch (locationError) {
+                    console.warn('Failed to update location display after thing mutation:', locationError);
+                    await window.loadCurrentLocation?.();
+                }
+            } else if (options.context === 'location') {
+                await window.loadCurrentLocation?.();
+            }
+
+            if (ownerData?.id && currentPlayerId && ownerData.id === currentPlayerId) {
+                await window.refreshInventory?.();
+            }
+
+            try {
+                await window.refreshParty?.();
+            } catch (partyError) {
+                console.warn('Failed to refresh party after thing mutation:', partyError);
+            }
+
+            return result;
+        }
+
+        async function separateThing(thing, options = {}) {
+            if (!thing || !thing.id) {
+                throw new Error('Missing item information.');
+            }
+
+            const response = await fetch(`/api/things/${encodeURIComponent(thing.id)}/separate`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+
+            const result = await response.json().catch(() => ({}));
+            if (!response.ok || !result?.success) {
+                throw new Error(result?.error || `Request failed with status ${response.status}`);
+            }
+
+            return applyThingMutationResult(result, options, {
+                removeThingIds: [thing.id]
+            });
+        }
+
+        async function splitThingStack(thing, quantity, options = {}) {
+            if (!thing || !thing.id) {
+                throw new Error('Missing item information.');
+            }
+
+            const response = await fetch(`/api/things/${encodeURIComponent(thing.id)}/split-stack`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ quantity })
+            });
+
+            const result = await response.json().catch(() => ({}));
+            if (!response.ok || !result?.success) {
+                throw new Error(result?.error || `Request failed with status ${response.status}`);
+            }
+
+            return applyThingMutationResult(result, options);
+        }
+
+        async function mergeThingStacks(thing, options = {}) {
+            if (!thing || !thing.id) {
+                throw new Error('Missing item information.');
+            }
+
+            const response = await fetch(`/api/things/${encodeURIComponent(thing.id)}/merge-stacks`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+
+            const result = await response.json().catch(() => ({}));
+            if (!response.ok || !result?.success) {
+                throw new Error(result?.error || `Request failed with status ${response.status}`);
+            }
+
+            return applyThingMutationResult(result, options, {
+                removeThingIds: Array.isArray(result?.mergedThingIds) ? result.mergedThingIds : []
+            });
+        }
+
         let teleportLocationOptionsCache = null;
         let teleportLocationOptionsPromise = null;
 
@@ -5168,6 +5354,41 @@
             editButton.textContent = 'Edit';
             menu.appendChild(editButton);
 
+            const isItemThing = (thing.thingType || '').trim().toLowerCase() === 'item';
+            const parsedThingCount = Number(thing.count);
+            const thingCount = Number.isInteger(parsedThingCount) && parsedThingCount > 0
+                ? parsedThingCount
+                : 1;
+            const canSeparate = isItemThing;
+            let separateButton = null;
+            if (canSeparate) {
+                separateButton = document.createElement('button');
+                separateButton.type = 'button';
+                separateButton.className = 'entity-context-menu-item thing-card-menu-item';
+                separateButton.textContent = 'Separate';
+                menu.appendChild(separateButton);
+            }
+
+            const canSplitStack = isItemThing && thingCount > 1 && options.context !== 'npc-equipment';
+            let splitStackButton = null;
+            if (canSplitStack) {
+                splitStackButton = document.createElement('button');
+                splitStackButton.type = 'button';
+                splitStackButton.className = 'entity-context-menu-item thing-card-menu-item';
+                splitStackButton.textContent = 'Split Stack';
+                menu.appendChild(splitStackButton);
+            }
+
+            const canMergeStacks = isItemThing && options.context !== 'npc-equipment';
+            let mergeStacksButton = null;
+            if (canMergeStacks) {
+                mergeStacksButton = document.createElement('button');
+                mergeStacksButton.type = 'button';
+                mergeStacksButton.className = 'entity-context-menu-item thing-card-menu-item';
+                mergeStacksButton.textContent = 'Merge Stacks';
+                menu.appendChild(mergeStacksButton);
+            }
+
             let regenerateImageButton = null;
             const imageGenerationEnabled = runtimeConfig?.imagegen?.enabled !== false;
             if (imageGenerationEnabled) {
@@ -5239,6 +5460,87 @@
                     console.warn('Failed to open thing editor:', error);
                 }
             });
+
+            if (separateButton) {
+                separateButton.addEventListener('click', async (event) => {
+                    event.stopPropagation();
+                    closeThingContextMenu();
+                    separateButton.disabled = true;
+                    try {
+                        const result = await separateThing(thingDataCache.get(thing.id) || thing, options);
+                        if (result?.noChanges) {
+                            alert(result?.message || 'This item could not be separated further.');
+                        }
+                    } catch (error) {
+                        console.warn('Failed to separate item:', error);
+                        alert(`Failed to separate item: ${error?.message || error}`);
+                    } finally {
+                        separateButton.disabled = false;
+                    }
+                });
+            }
+
+            if (splitStackButton) {
+                splitStackButton.addEventListener('click', async (event) => {
+                    event.stopPropagation();
+                    closeThingContextMenu();
+
+                    const currentThing = thingDataCache.get(thing.id) || thing;
+                    const currentCountValue = Number(currentThing?.count);
+                    const currentCount = Number.isInteger(currentCountValue) && currentCountValue > 0
+                        ? currentCountValue
+                        : 1;
+                    const splitInput = window.prompt(
+                        `Split how many ${currentThing?.name || 'items'} into a new stack? Enter an integer from 1 to ${currentCount - 1}.`,
+                        '1',
+                    );
+
+                    if (splitInput === null) {
+                        return;
+                    }
+
+                    const trimmedInput = String(splitInput).trim();
+                    if (!/^-?\d+$/.test(trimmedInput)) {
+                        alert('Split value must be a whole number.');
+                        return;
+                    }
+
+                    const splitValue = Number(trimmedInput);
+                    if (!Number.isInteger(splitValue) || splitValue < 1 || splitValue >= currentCount) {
+                        alert(`Split value must be an integer from 1 to ${currentCount - 1}.`);
+                        return;
+                    }
+
+                    splitStackButton.disabled = true;
+                    try {
+                        await splitThingStack(currentThing, splitValue, options);
+                    } catch (error) {
+                        console.warn('Failed to split stack:', error);
+                        alert(`Failed to split stack: ${error?.message || error}`);
+                    } finally {
+                        splitStackButton.disabled = false;
+                    }
+                });
+            }
+
+            if (mergeStacksButton) {
+                mergeStacksButton.addEventListener('click', async (event) => {
+                    event.stopPropagation();
+                    closeThingContextMenu();
+                    mergeStacksButton.disabled = true;
+                    try {
+                        const result = await mergeThingStacks(thingDataCache.get(thing.id) || thing, options);
+                        if (result?.noChanges) {
+                            alert(result?.message || 'No matching stacks were found to merge.');
+                        }
+                    } catch (error) {
+                        console.warn('Failed to merge stacks:', error);
+                        alert(`Failed to merge stacks: ${error?.message || error}`);
+                    } finally {
+                        mergeStacksButton.disabled = false;
+                    }
+                });
+            }
 
             if (regenerateImageButton) {
                 regenerateImageButton.addEventListener('click', async (event) => {
@@ -5561,8 +5863,11 @@
                             let moveResult = null;
                             try {
                                 pickupButton.disabled = true;
+                                const sourceLocationId = options.context === 'location'
+                                    ? (options.locationId || (window.lastRenderedLocation?.id || null))
+                                    : null;
                                 moveResult = await moveThingToNpcInventory(thingDataCache.get(thing.id) || thing, npcId, {
-                                    locationId: options.locationId || (window.lastRenderedLocation?.id || null)
+                                    locationId: sourceLocationId
                                 });
                             } catch (error) {
                                 console.warn('Failed to move item into inventory:', error);
@@ -13461,7 +13766,8 @@
                     altText: item.name || 'Inventory item',
                     placeholderIcon: item.thingType === 'scenery' ? '🏞️' : '🎁',
                     placeholderClass: 'entity-icon-placeholder location-entity-placeholder',
-                    badges: getThingPropertyBadges(item)
+                    badges: getThingPropertyBadges(item),
+                    countBadgeText: getThingCountBadgeText(item)
                 });
 
                 const name = document.createElement('div');
@@ -14332,7 +14638,8 @@
                     altText: clone.name || 'Inventory item',
                     placeholderIcon: clone.thingType === 'scenery' ? '🏞️' : '🎁',
                     placeholderClass: 'entity-icon-placeholder location-entity-placeholder',
-                    badges: getThingPropertyBadges(clone)
+                    badges: getThingPropertyBadges(clone),
+                    countBadgeText: getThingCountBadgeText(clone)
                 });
 
                 const name = document.createElement('div');
@@ -14894,7 +15201,8 @@
                         altText: entry.item.name || 'Equipped item',
                         placeholderIcon,
                         placeholderClass: 'npc-view-equipment-icon-placeholder',
-                        badges: getThingPropertyBadges(entry.item)
+                        badges: getThingPropertyBadges(entry.item),
+                        countBadgeText: getThingCountBadgeText(entry.item)
                     });
 
                     const textWrapper = document.createElement('div');
@@ -21104,7 +21412,8 @@
                                     altText: thing.name || 'Location item',
                                     placeholderIcon,
                                     placeholderClass: 'entity-icon-placeholder location-entity-placeholder',
-                                    badges: getThingPropertyBadges(thing)
+                                    badges: getThingPropertyBadges(thing),
+                                    countBadgeText: getThingCountBadgeText(thing)
                                 });
 
                                 const nameEl = document.createElement('div');

@@ -41,6 +41,9 @@ Loaded on the chat page:
   outer-edge horizontal padding (`0.2em`) on each row's first/last cell. Markdown-rendered
   tables are wrapped in `.message-table-scroll` so they span the content width and provide
   horizontal scrolling when content is wider than the message area.
+- Markdown code fences / preformatted blocks in chat messages (`.message .message-content pre`)
+  use `white-space: pre-wrap`, `overflow-wrap: anywhere`, and `word-break: break-word` so
+  long lines wrap inside the message column instead of forcing horizontal overflow.
 - Item tooltip styling includes stacked tooltip cards (`.tooltip-thing-stack*`) so hovering an
   equippable item can show currently equipped compatible-slot items beneath the primary card.
 - Shared theming primitives for entity cards/menus live in `public/css/main.scss`:
@@ -49,6 +52,9 @@ Loaded on the chat page:
   Legacy classes (for example `.location-entity-*`, `.inventory-*`, `.npc-card-menu*`)
   are still emitted in templates/scripts for compatibility, but unified styles bind to
   the shared `entity-*` classes.
+- Thing thumbnails on item/scenery cards also use a shared `.thing-count-badge` overlay in the
+  lower-right corner of the image area. Items always show their persisted `count`; scenery
+  hides the badge when `count === 1`.
 - NPC memories/goals editors share `npc-list-editor-*` base classes for modal layout,
   row controls, and actions; legacy `.npc-memories-*`/`.npc-goals-*` classes remain on
   markup for compatibility.

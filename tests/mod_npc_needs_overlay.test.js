@@ -94,7 +94,10 @@ attributes:
     writeFile('defs/dispositions.yaml', 'dispositions: {}\nrange: {}\n');
     writeFile('defs/need_bars.yaml', `
 need_values:
-  small: 10
+  increase:
+    small: 10
+  decrease:
+    small: 10
 need_bars:
   food:
     name: Food

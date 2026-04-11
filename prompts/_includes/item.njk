@@ -1,5 +1,7 @@
+{% if not thingSeed.name or not thingSeed.description %}<!-- For items with a count greater than 1, name and describe them as if this XML represents a single individual instance of the item. -->{% endif %}
 <item>
 <name>{% if thingSeed.name %}{{ thingSeed.name }}{% else %}<!-- Item Name -->{% endif %}</name>
+<count>{% if thingSeed.count is defined %}{{ thingSeed.count }}{% else %}<!-- Count of how many items are in the stack (can be 1 or more) -->{% endif %}</count>
 <description>{% if thingSeed.description %}{{ thingSeed.description }}{% else %}<!--1-2 sentence description of the item-->{% endif %}</description>
 <itemOrScenery>{% if thingSeed.itemOrScenery %}{{ thingSeed.itemOrScenery }}{% else %}<!--for furniture, workstations, scenery, and things that are too large (or otherwise impossible) to pick up, answer "scenery"; otherwise answer "item"-->{% endif %}</itemOrScenery>
 <type>{% if thingSeed.type %}{{ thingSeed.type }}{% else %}<!--Type of item (e.g., weapon, armor, consumable, tool, etc.)-->{% endif %}</type>

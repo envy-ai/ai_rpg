@@ -1,8 +1,12 @@
 need_values:
-  small: 100
-  medium: 250
-  large: 700
-  all: 1000
+  increase:
+    small: 100
+    medium: 500
+    large: 1000
+  decrease:
+    small: 100
+    medium: 250
+    large: 700
 need_bars:
   food:
     name: Food
@@ -18,10 +22,6 @@ need_bars:
     initial: 1000
     change_per_minute: -0.7
     relative_to_level: false
-    need_values:
-      small: 100
-      medium: 250
-      large: 700
     small_increase:
       - light snack
     medium_increase:
@@ -81,10 +81,6 @@ need_bars:
     initial: 1000
     change_per_minute: 50
     relative_to_level: false
-    need_values:
-      small: 100
-      medium: 250
-      large: 700
     large_increase:
       - non-strenuous activity (such as walking)
       - light exercise
@@ -135,12 +131,8 @@ need_bars:
     min: 0
     max: 1000
     initial: 1000
-    change_per_minute: -1
+    change_per_minute: -0.6
     relative_to_level: false
-    need_values:
-      small: 100
-      medium: 250
-      large: 700
     small_increase:
       - short rest
       - 2 or fewer hours of sleep
@@ -203,10 +195,6 @@ need_bars:
     initial: 1000
     change_per_minute: 10
     relative_to_level: false
-    need_values:
-      small: 100
-      medium: 250
-      large: 700
     small_increase:
       - minor magical recharge
       - used a small mana potion

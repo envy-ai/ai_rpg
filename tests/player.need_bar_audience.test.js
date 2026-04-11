@@ -50,7 +50,10 @@ attributes:
     writeFile('defs/dispositions.yaml', 'dispositions: {}\nrange: {}\n');
     writeFile('defs/need_bars.yaml', `
 need_values:
-  small: 10
+  increase:
+    small: 10
+  decrease:
+    small: 10
 need_bars:
   player_focus:
     name: Player Focus
@@ -223,9 +226,14 @@ attributes:
     writeFile('defs/dispositions.yaml', 'dispositions: {}\nrange: {}\n');
     writeFile('defs/need_bars.yaml', `
 need_values:
-  small: 10
-  medium: 25.5
-  large: 70
+  increase:
+    small: 10
+    medium: 40.5
+    large: 80
+  decrease:
+    small: 10
+    medium: 25.5
+    large: 70
 need_bars:
   sanity:
     name: Sanity
@@ -237,8 +245,11 @@ need_bars:
     initial: 100
     relative_to_level: false
     need_values:
-      small: 4.5
-      large: 50
+      increase:
+        small: 9
+      decrease:
+        small: 4.5
+        large: 50
   stamina:
     name: Stamina
     player: true
@@ -249,7 +260,8 @@ need_bars:
     initial: 100
     relative_to_level: false
     need_values:
-      small: 0.5
+      decrease:
+        small: 0.5
 `);
 
     Player.clearRuntimeRegistries();
@@ -272,8 +284,15 @@ need_bars:
         change = player.applyNeedBarChange('sanity', { direction: 'decrease', magnitude: 'large' });
         assert.equal(change.newValue, 20);
 
+        change = player.applyNeedBarChange('sanity', { direction: 'increase', magnitude: 'small' });
+        assert.equal(change.newValue, 29);
+
+        player.setNeedBarValue('stamina', 50);
+        change = player.applyNeedBarChange('stamina', { direction: 'increase', magnitude: 'small' });
+        assert.equal(change.newValue, 60);
+
         change = player.applyNeedBarChange('stamina', { direction: 'decrease', magnitude: 'small' });
-        assert.equal(change.newValue, 99.5);
+        assert.equal(change.newValue, 59.5);
     } finally {
         Player.clearRuntimeRegistries();
         Globals.baseDir = previousBaseDir;

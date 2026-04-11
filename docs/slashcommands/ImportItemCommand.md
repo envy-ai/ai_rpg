@@ -20,7 +20,7 @@
 - The command assigns one absolute level to every imported entry.
 - If `/import_item level=<N>` is provided, every imported entry uses that exact absolute level and XML `relativeLevel` is ignored.
 - If no explicit slash-command level is provided, each imported entry uses `current location base level + parsed XML relativeLevel`, with missing `relativeLevel` treated as `0`.
-- The command preserves parsed item/scenery data, including rarity, slot, bonuses, and the first parsed on-target/on-equipper cause-effect payloads.
+- The command preserves parsed item/scenery data, including XML `count`, rarity, slot, bonuses, and the first parsed on-target/on-equipper cause-effect payloads.
 - Uploads that contain no importable `<item>`, `<thing>`, or `<scenery>` entries fail loudly instead of partially importing.
 
 ## Notes

@@ -75,11 +75,13 @@ Need bars can also override the global `need_values` magnitudes per bar:
 need_bars:
   sanity:
     need_values:
-      small: 4
-      large: 50
+      increase:
+        small: 4
+      decrease:
+        large: 50
 ```
 
-Only the keys you provide are overridden; missing `small` / `medium` / `large` values still fall back to the root-level `need_values` defaults in `defs/need_bars.yaml`.
+`need_values` is directional now. Both the root-level defaults and any per-bar overrides use nested `increase` / `decrease` maps. Only the directional keys you provide are overridden; missing `small` / `medium` / `large` entries still fall back to the matching root-level `increase` or `decrease` defaults in `defs/need_bars.yaml`.
 
 Need-bar `need_values` magnitudes may be fractional. Decimal overrides are preserved exactly rather than being rounded or forced up to `1`.
 

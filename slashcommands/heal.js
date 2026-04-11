@@ -17,50 +17,60 @@ class HealCommand extends SlashCommandBase {
   }
 
   static get description() {
-    return 'Restore an NPC to full health and clear the dead flag.';
+    return 'Restore a character to full health and clear the dead flag.';
   }
 
   static get args() {
     return [
-      { name: 'character', type: 'string', required: true }
+      { name: 'character', type: 'string', required: false }
     ];
   }
 
   static execute(interaction, args = {}) {
     const characterName = getSingleCharacterArgValue({ interaction, args, argName: 'character' });
-    if (!characterName) {
-      throw new Error('Argument "character" must be a non-empty string.');
-    }
+    let targetCharacter = null;
 
-    const currentLocationId = getInteractionCurrentLocationId(interaction, Globals.playersById);
-    const { target: npc, ambiguousMatches, exactDisallowedMatch } = resolveCharacterTarget({
-      rawName: characterName,
-      playersByName: Globals.playersByName,
-      playersById: Globals.playersById,
-      currentLocationId,
-      allowNPCs: true,
-      allowPlayers: false
-    });
-
-    if (!npc && ambiguousMatches.length > 1) {
-      return interaction.reply({
-        content: `Warning: "${characterName}" is ambiguous. Matches: ${formatAmbiguousCharacterMatches(ambiguousMatches)}. No NPC was healed.`,
-        ephemeral: true
+    if (characterName) {
+      const currentLocationId = getInteractionCurrentLocationId(interaction, Globals.playersById);
+      const { target, ambiguousMatches } = resolveCharacterTarget({
+        rawName: characterName,
+        playersByName: Globals.playersByName,
+        playersById: Globals.playersById,
+        currentLocationId,
+        allowNPCs: true,
+        allowPlayers: true
       });
+
+      if (!target && ambiguousMatches.length > 1) {
+        return interaction.reply({
+          content: `Warning: "${characterName}" is ambiguous. Matches: ${formatAmbiguousCharacterMatches(ambiguousMatches)}. No character was healed.`,
+          ephemeral: true
+        });
+      }
+
+      if (!target) {
+        throw new Error(`Unable to heal character "${characterName}".`);
+      }
+
+      targetCharacter = target;
+    } else {
+      const invokingPlayerId = typeof interaction?.user?.id === 'string'
+        ? interaction.user.id.trim()
+        : '';
+      if (!invokingPlayerId) {
+        throw new Error('No character was provided and the invoking player could not be determined.');
+      }
+
+      targetCharacter = Globals.playersById.get(invokingPlayerId) || null;
+      if (!targetCharacter) {
+        throw new Error('No character was provided and the invoking player was not found.');
+      }
     }
 
-    if (exactDisallowedMatch) {
-      throw new Error(`"${characterName}" resolves to ${exactDisallowedMatch.name}, which is not an NPC.`);
-    }
+    targetCharacter.isDead = false;
+    targetCharacter.setHealth(targetCharacter.maxHealth);
 
-    if (!npc) {
-      throw new Error(`Unable to heal NPC "${characterName}".`);
-    }
-
-    npc.isDead = false;
-    npc.setHealth(npc.maxHealth);
-
-    return interaction.reply({ content: `${npc.name} has been fully restored.`, ephemeral: false });
+    return interaction.reply({ content: `${targetCharacter.name} has been fully restored.`, ephemeral: false });
   }
 }
 

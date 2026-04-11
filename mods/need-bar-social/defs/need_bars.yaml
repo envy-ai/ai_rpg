@@ -13,10 +13,6 @@ need_bars:
     initial: 1000
     change_per_minute: -5
     relative_to_level: false
-    need_values:
-      small: 100
-      medium: 250
-      large: 700
     small_increase:
       - brief conversation
       - receiving a compliment

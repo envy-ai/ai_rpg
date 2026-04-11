@@ -21,7 +21,7 @@ const EVENT_PROMPT_ORDER = [
         },
         {
             key: "new_exit_discovered",
-            prompt: `Did the text reveal, unlock, unblock, or otherwise discover a new exit or vehicle to another region or location (Note: roads, trails, paths, doors, portals, etc are exits and not scenery)? Or, did the player or any other entity create a new exit, clear a path, make a door, etc? If so, reply in the form [destination location or region name] -> [the word "location" or "region"] -> [type of vehicle or "none"] -> [description of the location or region in 1-2 sentences] -> [Exact travel time to the destination in minutes and/or hours "3 hours, 5 minutes" or "30 minutes" or "1 hour"]. In case of more than one, separate them with vertical bars. Otherwise answer N/A. An exit to a region may take the form of a vehicle to that region. If the new location or region is already known to the player or if it isn't, list it here. The exit may be to an existing location, but an exit to that new location may not already exist in this current location.`,
+            prompt: `Did the text reveal, unlock, unblock, or otherwise discover a new exit or vehicle to another region or location (Note: roads, trails, paths, doors, portals, etc are exits and not scenery)? Or, did the player or any other entity create a new exit, clear a path, make a door, etc? If so, reply in the form [destination location or region name] → [the word "location" or "region"] → [type of vehicle or "none"] → [description of the location or region in 1-2 sentences] → [Exact travel time to the destination in minutes and/or hours "3 hours, 5 minutes" or "30 minutes" or "1 hour"]. In case of more than one, separate them with vertical bars. Otherwise answer N/A. An exit to a region may take the form of a vehicle to that region. If the new location or region is already known to the player or if it isn't, list it here. The exit may be to an existing location, but an exit to that new location may not already exist in this current location.`,
         },
         // This dummy event gets the LLM to choose between mutually exclusive types of movement.
         {
@@ -43,11 +43,11 @@ const EVENT_PROMPT_ORDER = [
         },
         {
             key: "move_new_location",
-            prompt: `The starting location is %CURRENT_LOCATION%. If you answered 'moved to new region', 'moved to new location', 'moved into a large building or structure (region)', or 'moved to a new room (location)'  to question 3, come up with a new location name and reply in the form [describe what is different from %CURRENT_LOCATION%] -> [change the name and put it here] -> [the word "location" or "region"] -> [type of vehicle or "none"] -> [description of what makes this new destination distinct in 1-2 sentences]. The new location/region may not have the same name as the current one. Moving into a large building or structure should be listed as "region".`,
+            prompt: `The starting location is %CURRENT_LOCATION%. If you answered 'moved to new region', 'moved to new location', 'moved into a large building or structure (region)', or 'moved to a new room (location)'  to question 3, come up with a new location name and reply in the form [describe what is different from %CURRENT_LOCATION%] → [change the name and put it here] → [the word "location" or "region"] → [type of vehicle or "none"] → [description of what makes this new destination distinct in 1-2 sentences]. The new location/region may not have the same name as the current one. Moving into a large building or structure should be listed as "region".`,
         },
         {
             key: "move_new_location",
-            prompt: `The starting location is %CURRENT_LOCATION%. If you answered question 3 with 'moved within location to somewhere not fully visible (sublocation)', come up with an appropriate sub-location and reply in the form [describe what is different from %CURRENT_LOCATION%] -> [change the name and put it here] -> [the word "sublocation"] -> [type of vehicle or "none"] -> [description of what makes this new destination distinct in 1-2 sentences]. The sublocation may not have the same name as the current location. Otherwise answer N/A.`,
+            prompt: `The starting location is %CURRENT_LOCATION%. If you answered question 3 with 'moved within location to somewhere not fully visible (sublocation)', come up with an appropriate sub-location and reply in the form [describe what is different from %CURRENT_LOCATION%] → [change the name and put it here] → [the word "sublocation"] → [type of vehicle or "none"] → [description of what makes this new destination distinct in 1-2 sentences]. The sublocation may not have the same name as the current location. Otherwise answer N/A.`,
         },
         {
             key: "move_location",
@@ -55,7 +55,7 @@ const EVENT_PROMPT_ORDER = [
         },
         {
             key: "alter_location",
-            prompt: `Was the current location permanently altered in a significant way (major changes to the location itself, not npcs, items, or scenery)? If so, answer in the format "[current location name] -> [new location name] -> [1 sentence description of alteration]". If not (or if the player moved from one location to another, which isn't an alteration), answer N/A. Pay close attention to things that are listed as sceneryItems in the location context, as these are not the location itself. Note that it is not necessary to change the name of the location if it remains appropriate after the alteration; in this case, simply repeat the same name for new location name.`,
+            prompt: `Was the current location permanently altered in a significant way (major changes to the location itself, not npcs, items, or scenery)? If so, answer in the format "[current location name] → [new location name] → [1 sentence description of alteration]". If not (or if the player moved from one location to another, which isn't an alteration), answer N/A. Pay close attention to things that are listed as sceneryItems in the location context, as these are not the location itself. Note that it is not necessary to change the name of the location if it remains appropriate after the alteration; in this case, simply repeat the same name for new location name.`,
         },
     ],
     // Item stuff
@@ -66,75 +66,79 @@ const EVENT_PROMPT_ORDER = [
         },
         {
             key: "dummy_event",
-            prompt: `Track how item were interacted with, including changes in possession or state. Respond in this format: [item name] -> [action] -> [brief description]. Actions are one of:picked up, dropped, given to someone, taken from someone, put on (as in worn or donned), equipped, partially consumed, completely consumed, altered permanently, altered temporarily, aggregated. Important: For permanent physical changes to the item itself (e.g., broken, enchanted, upgraded), use altered permanently. Changes o the character wearing the item are not an alteration of the item. Note that this is for ITEMS, not CHARACTERS. Wrong: "Bob -> put on -> Jacket". Right: "Jacket -> put on -> Bob put on the Jacket"`,
+            prompt: `Track how item were interacted with, including changes in possession or state. Respond in this format: [item name] → [action] → [brief description]. Actions are one of:picked up, dropped, given to someone, taken from someone, put on (as in worn or donned), equipped, partially consumed, completely consumed, altered permanently, altered temporarily, aggregated. Important: For permanent physical changes to the item itself (e.g., broken, enchanted, upgraded), use altered permanently. Changes o the character wearing the item are not an alteration of the item. Note that this is for ITEMS, not CHARACTERS. Wrong: "Bob → put on → Jacket". Right: "Jacket → put on → Bob put on the Jacket"`,
         },
         {
             key: "item_inflict",
-            prompt: `Did anyone use an item or have an item used on them that might activate or inflict that item's status effect? For example: eating or drinking something, applying a healing bandage to someone, injecting something, reading a cursed tome, and so on. If so, list them in this format: "[exact name of item] -> [exact name of target] -> [status effect]" separated by vertical bars. Otherwise, answer N/A.`,
+            prompt: `Did anyone use (or eat/drink) an item or have an item used on them that might activate or inflict that item's status effect? For example: eating or drinking something, applying a healing bandage to someone, injecting something, reading a cursed tome, and so on. They don't need to have consumed the entire item. If so, list them in this format: "[exact name of item] → [exact name of target] → [status effect]" separated by vertical bars. Otherwise, answer N/A.`,
+        },
+        {
+            key: "item_ingest",
+            prompt: `Did anyone eat, drink, or otherwise ingest anything? If so, list them in this format: "[exact name of item] → [exact name of person]". If multiple, separate with vertical bars. Otherwise, answer N/A.`,
         },
         {
             key: "item_to_npc",
-            prompt: `Did any inanimate object (e.g., robot, drone, statue, furniture, machinery, or any other scenery) become capable of movement or act as an independent entity? If so, respond in this format: "[exact item or scenery name] -> [new npc/entity name] -> [5-10 word description of what happened]". Separate multiple entries with vertical bars. If none, respond N/A.`,
+            prompt: `Did any inanimate object (e.g., robot, drone, statue, furniture, machinery, or any other scenery) become capable of movement or act as an independent entity? If so, respond in this format: "[exact item or scenery name] → [new npc/entity name] → [5-10 word description of what happened]". Separate multiple entries with vertical bars. If none, respond N/A.`,
         },
         {
             key: "alter_item",
-            prompt: `Was an item or piece of scenery in the scene or any inventory PERMANENTLY altered in any way (e.g., upgraded, modified, enchanted, broken, filled with items, etc.)? If so, answer in the format "[exact item name] -> [new item name or same item name] -> [1 sentence description of alteration]". If multiple items were altered, separate multiple entries with vertical bars. If it doesn't make sense for the name to change, use the same name for new item name. Note that if a meaningful fraction of an an object was consumed (a slice of cake, but not a single piece of wood from a large pile), this is considered an alteration. If the *entire* thing was consumed, this is considered completely consumed and not alteration. Being given, taken, worn, equipped, removed, dropped, etc, is not considered an alteration.`,
+            prompt: `Was an item or piece of scenery in the scene or any inventory PERMANENTLY altered in any way (e.g., upgraded, modified, enchanted, broken, filled with items, etc.)? If so, answer in the format "[exact item name] → [new item name or same item name] → [1 sentence description of alteration]". If multiple items were altered, separate multiple entries with vertical bars. If it doesn't make sense for the name to change, use the same name for new item name. Note that if a meaningful fraction of an an object was consumed (a slice of cake, but not a single piece of wood from a large pile), this is considered an alteration. If the *entire* thing was consumed, this is considered completely consumed and not alteration. Being given, taken, worn, equipped, removed, dropped, etc, is not considered an alteration.`,
         },
         {
             key: "consume_item",
-            prompt: `Were any items or pieces of scenery completely used up (leaving none left) or aggregated or assembled into something else, either by becoming a part of something else (like a crafted item, a pile of items, etc), by being eaten or drunk, or by being otherwise completely destroyed? If so, list them in this format: "[exact name of item] -> [how item was consumed]" separated by vertical bars. Otherwise, answer N/A. Harvesting, gathering, or otherwise picking up an item does NOT consume it.`,
+            prompt: `Were any items or pieces of scenery completely used up (leaving none left) or aggregated or assembled into something else, either by becoming a part of something else (like a crafted item, a pile of items, etc), by being eaten or drunk, or by being otherwise completely destroyed? If so, list them in this format: "[exact name of item] → [quantity consumed as a positive integer] → [how item was consumed]" separated by vertical bars. Otherwise, answer N/A. Harvesting, gathering, or otherwise picking up an item does NOT consume it.`,
         },
         {
             key: "transfer_item",
-            prompt: `Did anyone hand, trade, or give an item to someone else? If so, list "[exact name of the giver] -> [item] -> [exact name of the receiver]". If there are multiple entries, separate them with vertical bars. Otherwise, answer N/A.`,
+            prompt: `Did anyone hand, trade, or give an item to someone else? If so, list "[exact name of the giver] → [item] → [quantity transferred as a positive integer] → [exact name of the receiver]". If there are multiple entries, separate them with vertical bars. Otherwise, answer N/A.`,
         },
         {
             key: "pick_up_item",
-            prompt: `Of any items not listed as consumed or altered, did anyone obtain one or more tangible carryable items or resources (not buildings or furniture) by any method other than harvesting or gathering? If so, list the full name of the person who obtained the item as seen in the location context ("player" if it was the player) and the exact names of those items (capitalized as Proper Nouns) separated by vertical bars. Use the format: "[name] -> [item] | [name] -> [item]". Otherwise, answer N/A. Note that even if an item was crafted with multiple ingredients, it should only be listed once here as a new item.`,
+            prompt: `Of any items not listed as consumed or altered, did anyone obtain one or more tangible carryable items or resources (not buildings or furniture) by any method other than harvesting or gathering? If so, list the full name of the person who obtained the item as seen in the location context ("player" if it was the player), the exact item name, and the quantity obtained as a positive integer. Use the format: "[name] → [item] → [quantity] | [name] → [item] → [quantity]". Otherwise, answer N/A. Note that even if an item was crafted with multiple ingredients, it should only be listed once here as a new item, with the correct quantity.`,
         },
         {
             key: "harvest_gather",
-            prompt: `Did anyone harvest or gather from any natural or man-made resources or collections (for instance, a berry bush, a pile of wood, a copper vein, a crate of spare parts, etc)? If so, answer with the full name of the person who did so as seen in the location context ("player" if it was the player), the exact name of the item(s) they would obtain, and what it was harvested from. If multiple items would be gathered this way, separate with vertical bars. Prefer this format: "[name] -> [item] -> [source]". If source is genuinely unknown, use "[name] -> [item]". Otherwise, answer N/A. For example, if harvesting from a "Raspberry Bush", the item obtained would be "Raspberries", "Ripe Raspberries", or similar.`,
+            prompt: `Did anyone harvest or gather from any natural or man-made resources or collections (for instance, a berry bush, a pile of wood, a copper vein, a crate of spare parts, etc)? If so, answer with the full name of the person who did so as seen in the location context ("player" if it was the player), the exact name of the item(s) they would obtain, the quantity obtained as a positive integer, and what it was harvested from. If multiple items would be gathered this way, separate with vertical bars. Prefer this format: "[name] → [item] → [quantity] → [source]". If source is genuinely unknown, use "[name] → [item] → [quantity]". Otherwise, answer N/A. For example, if harvesting from a "Raspberry Bush", the item obtained would be "Raspberries", "Ripe Raspberries", or similar.`,
         },
         {
             key: "item_appear",
-            prompt: `Did any new inanimate items appear in the scene for the first time, either as newly created items or items that were mentioned as already existing but had not been previously described in the scene context? If so, list them in the format format as "[exact item name] -> [description]" with multiple items separated by vertical bars. Otherwise, answer N/A. Note that even if an item was crafted with multiple ingredients, it should only be listed once here as a new item.`,
+            prompt: `Did any new inanimate items appear in the scene for the first time, either as newly created items or items that were mentioned as already existing but had not been previously described in the scene context? If so, list them in the format "[exact item name] → [quantity as a positive integer] → [description]" with multiple items separated by vertical bars. Otherwise, answer N/A. Note that even if an item was crafted with multiple ingredients, it should only be listed once here as a new item, with the correct quantity.`,
         },
         {
             key: "drop_item",
-            prompt: `Of any items not listed above, were any items dropped, placed, or set down from an entity's inventory onto the scene? If so, list the full name of the person who dropped the item as seen in the location context ("player" if it was the player) and the exact names of those items (capitalized as Proper Nouns) separated by vertical bars. Items are not considered dropped/placed/set down if they're being used to assemble something in the scene (furniture, a pile of items, or other scenery) and should not be listed here. Use the format: "[exact character name] -> [exact item name] | [exact character name] -> [exact item name]". Otherwise, answer N/A.`,
+            prompt: `Of any items not listed above, were any items dropped, placed, or set down from an entity's inventory onto the scene? If so, list the full name of the person who dropped the item as seen in the location context ("player" if it was the player), the exact item name, and the quantity dropped as a positive integer. Items are not considered dropped/placed/set down if they're being used to assemble something in the scene (furniture, a pile of items, or other scenery) and should not be listed here. Use the format: "[exact character name] → [exact item name] → [quantity] | [exact character name] → [exact item name] → [quantity]". Otherwise, answer N/A.`,
         },
         {
             key: "scenery_appear",
-            prompt: `Of anything you did not list above, did any new scenery, furniture, buildings, workstations, containers, piles/stacks of things, or other non-carryable items appear (assembled, built, dropped, manifested, etc) in the scene for the first time, either as newly created items or items that were mentioned as already existing but had not been previously described in the scene context? If so, list them in the format format as "[exact thing name] -> [description]" with multiple items separated by vertical bars. Otherwise, answer N/A.`,
+            prompt: `Of anything you did not list above, did any new scenery, furniture, buildings, workstations, containers, piles/stacks of things, or other non-carryable items appear (assembled, built, dropped, manifested, etc) in the scene for the first time, either as newly created items or items that were mentioned as already existing but had not been previously described in the scene context? If so, list them in the format format as "[exact thing name] → [description]" with multiple items separated by vertical bars. Otherwise, answer N/A.`,
         },
         {
             key: "harvestable_resource_appear",
-            prompt: `Of anything you did not list above, did any harvestable or gatherable resources (e.g., plants, minerals, fields, planters, machines that create resources or other harvestable/gatherable scenery) appear in the scene for the first time, either as newly created scenery or scenery that was mentioned as already existing but had not been previously described in the scene context? If so, list them in the format format as "[exact thing name] -> [description]" with multiple items separated by vertical bars. Otherwise, answer N/A.`,
+            prompt: `Of anything you did not list above, did any harvestable or gatherable resources (e.g., plants, minerals, fields, planters, machines that create resources or other harvestable/gatherable scenery) appear in the scene for the first time, either as newly created scenery or scenery that was mentioned as already existing but had not been previously described in the scene context? If so, list them in the format format as "[exact thing name] → [description]" with multiple items separated by vertical bars. Otherwise, answer N/A.`,
         },
     ],
     // NPC stuff
     [
         {
             key: "attack_damage",
-            prompt: `Did any entity attack any other entity?  If so, answer in the format "[attacker] -> [target]". If there are multiple attackers, separate multiple entries with vertical bars. Note that an attack only took place if the attacker did something that could cause physical damage to the target. Things like shoving, grappling, healing spells, buffs, debuffs, or other contact that's not intended to cause physical damage don't count. If no attack, answer N/A.`,
+            prompt: `Did any entity attack any other entity?  If so, answer in the format "[attacker] → [target]". If there are multiple attackers, separate multiple entries with vertical bars. Note that an attack only took place if the attacker did something that could cause physical damage to the target. Things like shoving, grappling, healing spells, buffs, debuffs, or other contact that's not intended to cause physical damage don't count. If no attack, answer N/A.`,
         },
         {
             key: "alter_npc",
-            prompt: `Were any animate entities (NPCs, animals, monsters, robots, or anything else capable of moving on its own) physically changed permanently in any way, such as being transformed, upgraded, downgraded, enhanced, damaged, repaired, healed, modified, or otherwise physically altered in a significant way, by anything other than damage from an attack? If so, answer in the format "[exact character name] -> [injury|status effect|gear|attire|mental change|temporary physical change|physical transformation] -> [1-2 sentence description of the change]". If multiple characters were altered, separate multiple entries with vertical bars. Note that things like temporary magical polymorphs and being turned to stone (where it's possible that it may be reversed) are better expressed as status effects and should not be mentioned here. If no characters were altered (which will be the case most of the time), answer N/A.`,
+            prompt: `Were any animate entities (NPCs, animals, monsters, robots, or anything else capable of moving on its own) physically changed permanently in any way, such as being transformed, upgraded, downgraded, enhanced, damaged, repaired, healed, modified, or otherwise physically altered in a significant way, by anything other than damage from an attack? If so, answer in the format "[exact character name] → [injury|status effect|gear|attire|mental change|temporary physical change|physical transformation] → [1-2 sentence description of the change]". If multiple characters were altered, separate multiple entries with vertical bars. Note that things like temporary magical polymorphs and being turned to stone (where it's possible that it may be reversed) are better expressed as status effects and should not be mentioned here. If no characters were altered (which will be the case most of the time), answer N/A.`,
         },
         {
             key: "status_effect_change",
-            prompt: `Did any animate entities (NPCs, animals, monsters, robots, or anything else capable of moving on its own) gain or lose any temporary status effects that you didn't list above as permanent changes? If so, list them in this format: "[exact entity name] -> [Exact name of status effect] -> [gained/lost] [-> integer status effect level, if gained]". If there are multiple entries, separate them with vertical bars. Otherwise answer N/A.  Don't use redundant wording in the status effect description. We already know if the status is gained or lost, so just say 'Bob -> drunk -> gained -> 5' or 'Bob -> drunk -> lost'. When losing a status effect, use the exact name listed with the character XML. The status effect level should generally be the level of the cause of the status effect, be it an item or character. If the effect isn't from an item or a result of something a character did, just use the location level. If the status effect doesn't already have a name, make one up. Note that 'lost' means that an existing status effect goes away, so it doesn't make sense to say a status effect is 'lost' if it's not already a listed status effect for the character.`,
+            prompt: `Did any animate entities (NPCs, animals, monsters, robots, or anything else capable of moving on its own) gain or lose any temporary status effects that you didn't list above as permanent changes? If so, list them in this format: "[exact entity name] → [Exact name of status effect] → [gained/lost] [→ integer status effect level, if gained]". If there are multiple entries, separate them with vertical bars. Otherwise answer N/A.  Don't use redundant wording in the status effect description. We already know if the status is gained or lost, so just say 'Bob → drunk → gained → 5' or 'Bob → drunk → lost'. When losing a status effect, use the exact name listed with the character XML. The status effect level should generally be the level of the cause of the status effect, be it an item or character. If the effect isn't from an item or a result of something a character did, just use the location level. If the status effect doesn't already have a name, make one up. Note that 'lost' means that an existing status effect goes away, so it doesn't make sense to say a status effect is 'lost' if it's not already a listed status effect for the character.`,
         },
         {
             key: "npc_arrival_departure",
-            prompt: `Did any animate entities (NPCs, animals, monsters, robots, or anything else capable of moving on its own) leave the scene? If so, list the full names of those entities as seen in the location context (capitalized as Proper Nouns) separated by vertical bars. Decide what location they went to. Use the format: "[name] -> left -> [destination region] -> [destination location]". If you don't know exactly where they went, what makes the most sense. Otherwise, answer N/A.`,
+            prompt: `Did any animate entities (NPCs, animals, monsters, robots, or anything else capable of moving on its own) leave the scene? If so, list the full names of those entities as seen in the location context (capitalized as Proper Nouns) separated by vertical bars. Decide what location they went to. Use the format: "[name] → left → [destination region] → [destination location]". If you don't know exactly where they went, what makes the most sense. Otherwise, answer N/A.`,
             postProcess: (entry) => ({ ...entry, action: entry?.action || "left" }),
         },
         {
             key: "npc_arrival_departure",
-            prompt: `Did any animate entities (NPCs, animals, monsters, robots, or anything else capable of moving on its own) arrive at this location from elsewhere? If so, list the full names of those entities as seen in the location context (capitalized as Proper Nouns) separated by vertical bars. Use the format: "[name] -> arrived". Otherwise, answer N/A.`,
+            prompt: `Did any animate entities (NPCs, animals, monsters, robots, or anything else capable of moving on its own) arrive at this location from elsewhere? If so, list the full names of those entities as seen in the location context (capitalized as Proper Nouns) separated by vertical bars. Use the format: "[name] → arrived". Otherwise, answer N/A.`,
             postProcess: (entry) => ({
                 ...entry,
                 action: entry?.action || "arrived",
@@ -150,23 +154,23 @@ const EVENT_PROMPT_ORDER = [
         },
         {
             key: "party_change",
-            prompt: `Is any physically present entity (including ones you may have listed above) that is not listed in playerParty currently leading, following, or otherwise willingly accompanying the player? If yes, list "[npc name] -> joined". For anyone who began leading or following (even temporarily), also list them as "[npc name] -> joined". If anyone left the party, list "[npc name] -> left". Separate multiple entries with vertical bars. If no party status occurred, respond with N/A.`,
+            prompt: `Is any physically present entity (including ones you may have listed above) that is not listed in playerParty currently leading, following, or otherwise willingly accompanying the player? If yes, list "[npc name] → joined". For anyone who began leading or following (even temporarily), also list them as "[npc name] → joined". If anyone left the party, list "[npc name] → left". Separate multiple entries with vertical bars. If no party status occurred, respond with N/A.`,
         },
         {
             key: "environmental_status_damage",
-            prompt: `Did any animate entities take environmental damage or damage from an ongoing status effect? Were they healed by the environment or an ongoing status effect? If so, answer in the format "[exact name] -> [damage|healing] -> [low|medium|high] -> [1 sentence describing why damage was taken]". If there are multiple instances of damage, separate multiple entries with vertical bars. Otherwise, answer N/A.`,
+            prompt: `Did any animate entities take environmental damage or damage from an ongoing status effect? Were they healed by the environment or an ongoing status effect? If so, answer in the format "[exact name] → [damage|healing] → [low|medium|high] → [1 sentence describing why damage was taken]". If there are multiple instances of damage, separate multiple entries with vertical bars. Otherwise, answer N/A.`,
         },
         {
             key: "heal_recover",
-            prompt: `Did anyone heal or recover health? If so, answer in the format "[character] -> [small|medium|large|all] -> [reason]". If there are multiple characters, separate multiple entries with vertical bars. Otherwise, answer N/A. Health recovery from natural regeneration, food, resting tends to be small or medium, whereas healing from potions, spells, bed rest, or medical treatment tends to be medium or large. Consider the context of the event, the skill of the healer (if applicable), the rarity and properties of any healing items used, etc.`,
+            prompt: `Did anyone heal or recover health? If so, answer in the format "[character] → [small|medium|large|all] → [reason]". If there are multiple characters, separate multiple entries with vertical bars. Otherwise, answer N/A. Health recovery from natural regeneration, food, resting tends to be small or medium, whereas healing from potions, spells, bed rest, or medical treatment tends to be medium or large. Consider the context of the event, the skill of the healer (if applicable), the rarity and properties of any healing items used, etc.`,
         },
         /*{
             key: "needbar_change",
-            prompt: `Does anything that happened in this turn affect any need bars for any characters (NPCs, party members, or player)? If so, for each character whose need bars are affected in any way, answer with the following four arguments: "[exact name of character] -> [exact name of need bar] -> [increase or decrease] -> [none|small|medium|large|all] | ..." for each of their need bars (including unchanged ones), separating multiple adjustments with vertical bars (multiple characters may have multiple need bar changes). Pay attention to the need bar descriptions to see how much they should change based on the situation. Also consider the descriptions of items involved, which may override those. Need bars are affected fully even if the character takes the same action multiple times in a row or continues the same action over multiple turns. Err on the side of being generous with need bar increases. If no changes to need bars, answer N/A.`,
+            prompt: `Does anything that happened in this turn affect any need bars for any characters (NPCs, party members, or player)? If so, for each character whose need bars are affected in any way, answer with the following four arguments: "[exact name of character] → [exact name of need bar] → [increase or decrease] → [none|small|medium|large|all] | ..." for each of their need bars (including unchanged ones), separating multiple adjustments with vertical bars (multiple characters may have multiple need bar changes). Pay attention to the need bar descriptions to see how much they should change based on the situation. Also consider the descriptions of items involved, which may override those. Need bars are affected fully even if the character takes the same action multiple times in a row or continues the same action over multiple turns. Err on the side of being generous with need bar increases. If no changes to need bars, answer N/A.`,
         },*/
         {
             key: "hostile_to_friendly",
-            prompt: `Did any NPCs or entities that were previously hostile or unfriendly to the player become neutral, friendly, or allied? If so, respond with "[exact name of NPC/entity] -> [previous disposition] -> [new disposition] -> [reason in one sentence]". If multiple, separate with vertical bars. Otherwise, respond N/A.`,
+            prompt: `Did any NPCs or entities that were previously hostile or unfriendly to the player become neutral, friendly, or allied? If so, respond with "[exact name of NPC/entity] → [previous disposition] → [new disposition] → [reason in one sentence]". If multiple, separate with vertical bars. Otherwise, respond N/A.`,
         }
     ],
     // Misc stuff
@@ -177,12 +181,12 @@ const EVENT_PROMPT_ORDER = [
         },
         {
             key: "received_quest",
-            prompt: `Did the player become aware of one or more quests or tasks this turn (by reading them, hearing about them, having them directly requested, etc), even if they didn't actively acknowledge or accept it? Also include quests that the player thought of themselves ("I need to go collect some iron so I can craft a new dagger", etc), or that the player tells someone that they will do. If so, answer in the following format: "[exact name of quest giver] -> [1 sentence description of quest] | ..."`,
+            prompt: `Did the player become aware of one or more quests or tasks this turn (by reading them, hearing about them, having them directly requested, etc), even if they didn't actively acknowledge or accept it? Also include quests that the player thought of themselves ("I need to go collect some iron so I can craft a new dagger", etc), or that the player tells someone that they will do. If so, answer in the following format: "[exact name of quest giver] → [1 sentence description of quest] | ..."`,
         },
-        //        { key: 'completed_quest_objective', prompt: `Based on the entire provided context (including gameHistory), has the player already completed one or more quest objectives listed in the xml &lt;quests&gt; block? If so, answer in the following format: "[exact name of quest] -> [index completed objective] | ..."` },
+        //        { key: 'completed_quest_objective', prompt: `Based on the entire provided context (including gameHistory), has the player already completed one or more quest objectives listed in the xml &lt;quests&gt; block? If so, answer in the following format: "[exact name of quest] → [index completed objective] | ..."` },
         {
             key: "death_incapacitation",
-            prompt: `Did any entity die or become incapacitated? If so, reply in this format: "[exact name of character/entity] -> ["dead" or "incapacitated"]. If multiple, separate with vertical bars. Otherwise answer N/A.`,
+            prompt: `Did any entity die or become incapacitated? If so, reply in this format: "[exact name of character/entity] → ["dead" or "incapacitated"]. If multiple, separate with vertical bars. Otherwise answer N/A.`,
         },
         {
             key: "defeated_enemy",
@@ -190,15 +194,15 @@ const EVENT_PROMPT_ORDER = [
         },
         {
             key: "experience_check",
-            prompt: `Did the player do something (other than defeating an enemy) that would cause them to gain experience points? If so, respond with "[integer from 1-100] -> [reason in one sentence]" (note that experience cannot be gained just because something happened to the player; the player must have taken a specific action that contributes to their growth or development). Otherwise, respond N/A. See the sampleExperiencePointValues section for examples of actions that might grant experience points and how much.`,
+            prompt: `Did the player do something (other than defeating an enemy) that would cause them to gain experience points? If so, respond with "[integer from 1-100] → [reason in one sentence]" (note that experience cannot be gained just because something happened to the player; the player must have taken a specific action that contributes to their growth or development). Otherwise, respond N/A. See the sampleExperiencePointValues section for examples of actions that might grant experience points and how much.`,
         },
         /*{
             key: "disposition_check",
-            prompt: `Did any NPC's disposition toward the player change in a significant way? If so, respond with "[exact name of NPC] -> [how they felt before] -> [how they feel now] -> [reason in one sentence]". If multiple NPCs' dispositions changed, separate multiple entries with vertical bars. Otherwise, respond N/A.  If they feel the same way as they did before, the change isn't significant and shouldn't be listed here.`,
+            prompt: `Did any NPC's disposition toward the player change in a significant way? If so, respond with "[exact name of NPC] → [how they felt before] → [how they feel now] → [reason in one sentence]". If multiple NPCs' dispositions changed, separate multiple entries with vertical bars. Otherwise, respond N/A.  If they feel the same way as they did before, the change isn't significant and shouldn't be listed here.`,
         },*/
         {
             key: "faction_reputation_change",
-            prompt: `Would the player's reputation with any factions increase or decrease in a significant way (whether due to their own actions or events beyond their control)? If so, respond with "[exact name of faction] -> [increased/decreased] [a little/a lot] -> [reason in one sentence]". If multiple factions' reputations changed, separate multiple entries with vertical bars. Otherwise, respond N/A. If the reputation change is very minor and doesn't have a meaningful impact on how that faction would treat the player, it may not be necessary to list it here.`,
+            prompt: `Would the player's reputation with any factions increase or decrease in a significant way (whether due to their own actions or events beyond their control)? If so, respond with "[exact name of faction] → [increased/decreased] [a little/a lot] → [reason in one sentence]". If multiple factions' reputations changed, separate multiple entries with vertical bars. Otherwise, respond N/A. If the reputation change is very minor and doesn't have a meaningful impact on how that faction would treat the player, it may not be necessary to list it here.`,
         },
         {
             key: "dummy_event",
@@ -210,7 +214,7 @@ const EVENT_PROMPT_ORDER = [
         },
         {
             key: "triggered_abilities",
-            prompt: `Were any character's triggered abilities triggered this turn? If so, list them in the format "[exact character name] -> [exact ability name]", separated by '|' if multiple. If none, answer N/A.`,
+            prompt: `Were any character's triggered abilities triggered this turn? If so, list them in the format "[exact character name] → [exact ability name]", separated by '|' if multiple. If none, answer N/A.`,
         } /*,
         {
             key: "dummy_event",
@@ -312,8 +316,8 @@ function normalizeArrowDelimiters(raw) {
 
     const unescaped = raw.replace(/&gt;/gi, ">").replace(/&lt;/gi, "<");
     return unescaped
-        .replace(/\s*(?:→|⇒|⟶|⟹|➜|➡)\s*/g, " -> ")
-        .replace(/\s*->\s*/g, " -> ")
+        .replace(/\s*(?:→|⇒|⟶|⟹|➜|➡|->)\s*/g, " → ")
+        .replace(/\s*→\s*/g, " → ")
         .trim();
 }
 
@@ -325,7 +329,7 @@ function splitArrowParts(raw, expectedParts) {
     const normalized = normalizeArrowDelimiters(raw);
 
     const parts = normalized
-        .split("->")
+        .split("→")
         .map((part) => part.trim())
         .filter(Boolean);
 
@@ -334,19 +338,19 @@ function splitArrowParts(raw, expectedParts) {
     }
 
     if (expectedParts === 2) {
-        return [parts[0], parts.slice(1).join(" -> ")];
+        return [parts[0], parts.slice(1).join(" → ")];
     }
 
     if (expectedParts === 3) {
-        return [parts[0], parts[1], parts.slice(2).join(" -> ")];
+        return [parts[0], parts[1], parts.slice(2).join(" → ")];
     }
 
     if (expectedParts === 4) {
-        return [parts[0], parts[1], parts[2], parts.slice(3).join(" -> ")];
+        return [parts[0], parts[1], parts[2], parts.slice(3).join(" → ")];
     }
 
     if (expectedParts === 5) {
-        return [parts[0], parts[1], parts[2], parts[3], parts.slice(4).join(" -> ")];
+        return [parts[0], parts[1], parts[2], parts[3], parts.slice(4).join(" → ")];
     }
 
     return parts;
@@ -354,9 +358,27 @@ function splitArrowParts(raw, expectedParts) {
 
 function stripAfterFirstArrow(raw) {
     const normalized = normalizeArrowDelimiters(raw);
-    const arrowIndex = normalized.indexOf("->");
+    const arrowIndex = normalized.indexOf("→");
     const segment = arrowIndex === -1 ? normalized : normalized.slice(0, arrowIndex);
     return segment.trim();
+}
+
+function parseRequiredEventQuantity(rawQuantity, { eventKey, entryText }) {
+    const normalizedQuantity = typeof rawQuantity === "string"
+        ? rawQuantity.trim()
+        : String(rawQuantity ?? "").trim();
+    if (!normalizedQuantity) {
+        throw new Error(`${eventKey} entry is missing required quantity: ${entryText}`);
+    }
+
+    const parsedQuantity = Number(normalizedQuantity);
+    if (!Number.isInteger(parsedQuantity) || parsedQuantity <= 0) {
+        throw new Error(
+            `${eventKey} entry has invalid quantity "${normalizedQuantity}": ${entryText}`,
+        );
+    }
+
+    return parsedQuantity;
 }
 
 function locationHasExitToDestination(location, destinationId) {
@@ -917,6 +939,250 @@ function normalizeStatusEffectDescription(value) {
     return trimmed.replace(/\s+/g, " ").toLowerCase();
 }
 
+function buildItemActorPairKey(itemName, actorName) {
+    const normalizedItem = normalizeString(itemName).toLowerCase();
+    const normalizedActor = normalizeString(actorName).toLowerCase();
+    if (!normalizedItem || !normalizedActor) {
+        return "";
+    }
+    return `${normalizedItem}|${normalizedActor}`;
+}
+
+function normalizeItemTargetEntries(entries, { includeStatus = false } = {}) {
+    if (!Array.isArray(entries) || !entries.length) {
+        return [];
+    }
+
+    const normalizedEntries = [];
+    for (const entry of entries) {
+        if (!entry) {
+            continue;
+        }
+
+        let itemName = "";
+        let targetName = "";
+        let status = null;
+
+        if (typeof entry === "string") {
+            const [item, target, rawStatus] = splitArrowParts(entry, includeStatus ? 3 : 2);
+            itemName = item ? String(item).trim() : "";
+            targetName = target ? String(target).trim() : "";
+            status = rawStatus ? String(rawStatus).trim() : null;
+        } else {
+            itemName =
+                typeof entry.item === "string"
+                    ? entry.item.trim()
+                    : (typeof entry.itemName === "string" ? entry.itemName.trim() : "");
+            targetName =
+                typeof entry.target === "string"
+                    ? entry.target.trim()
+                    : (typeof entry.targetName === "string" ? entry.targetName.trim() : "");
+            if (typeof entry.status === "string" && entry.status.trim()) {
+                status = entry.status.trim();
+            }
+        }
+
+        if (!itemName || !targetName) {
+            continue;
+        }
+
+        const normalizedEntry = { itemName, targetName };
+        if (includeStatus) {
+            normalizedEntry.status = status;
+        }
+        normalizedEntries.push(normalizedEntry);
+    }
+
+    return normalizedEntries;
+}
+
+function collectItemTargetStatusEffects(item) {
+    const effects = [];
+
+    const addEffect = (effectLike) => {
+        if (!effectLike) {
+            return;
+        }
+        if (Array.isArray(effectLike)) {
+            effectLike.forEach(addEffect);
+            return;
+        }
+        if (typeof effectLike !== "object") {
+            return;
+        }
+
+        if (Object.prototype.hasOwnProperty.call(effectLike, "applyToTarget")) {
+            if (!effectLike.applyToTarget) {
+                return;
+            }
+        }
+
+        effects.push(effectLike);
+    };
+
+    addEffect(item?.causeStatusEffectOnTarget);
+    addEffect(item?.metadata?.causeStatusEffectOnTarget);
+
+    const legacyEffect = item?.causeStatusEffect;
+    if (Array.isArray(legacyEffect)) {
+        legacyEffect.forEach((entry) => {
+            if (entry?.applyToTarget) {
+                addEffect(entry);
+            }
+        });
+    } else if (legacyEffect?.applyToTarget) {
+        addEffect(legacyEffect);
+    }
+
+    const deduped = [];
+    const seen = new Set();
+    for (const effect of effects) {
+        const key = normalizeStatusEffectDescription(
+            extractStatusEffectDescription(effect) || effect?.name || "",
+        );
+        if (key && seen.has(key)) {
+            continue;
+        }
+        if (key) {
+            seen.add(key);
+        }
+        deduped.push(effect);
+    }
+
+    return deduped;
+}
+
+async function applyItemTriggeredStatuses(eventsInstance, entries, context = {}, {
+    eventLabel,
+    skipPairKeys = null,
+    requireStatusField = false,
+} = {}) {
+    if (!Array.isArray(entries) || !entries.length) {
+        return;
+    }
+    if (!eventLabel || typeof eventLabel !== "string") {
+        throw new Error("applyItemTriggeredStatuses requires an eventLabel.");
+    }
+
+    const { findThingByName, findActorByName } = eventsInstance._deps;
+    if (typeof findThingByName !== "function") {
+        throw new Error(
+            `${eventLabel} handler requires findThingByName dependency.`,
+        );
+    }
+    if (typeof findActorByName !== "function") {
+        throw new Error(
+            `${eventLabel} handler requires findActorByName dependency.`,
+        );
+    }
+
+    const normalizedEntries = normalizeItemTargetEntries(entries, {
+        includeStatus: requireStatusField,
+    });
+    const missingItems = new Set();
+
+    for (const entry of normalizedEntries) {
+        if (!findThingByName(entry.itemName)) {
+            missingItems.add(entry.itemName);
+        }
+    }
+
+    if (missingItems.size) {
+        await eventsInstance._ensureItemsExist(
+            Array.from(missingItems),
+            context.location,
+            { recordNewItems: false },
+        );
+    }
+
+    for (const entry of normalizedEntries) {
+        const pairKey = buildItemActorPairKey(entry.itemName, entry.targetName);
+        if (pairKey && skipPairKeys instanceof Set && skipPairKeys.has(pairKey)) {
+            console.debug(
+                `[${eventLabel}] Skipping "${entry.itemName}" for "${entry.targetName}" because item_ingest already applied it this turn.`,
+            );
+            continue;
+        }
+
+        const item = findThingByName(entry.itemName);
+        if (!item) {
+            console.warn(
+                `[${eventLabel}] Unable to locate item "${entry.itemName}".`,
+            );
+            continue;
+        }
+        const target = findActorByName(entry.targetName);
+        if (!target || typeof target.addStatusEffect !== "function") {
+            console.warn(
+                `[${eventLabel}] Unable to locate target "${entry.targetName}" for "${entry.itemName}".`,
+            );
+            continue;
+        }
+
+        const effects = collectItemTargetStatusEffects(item);
+        if (!effects.length) {
+            continue;
+        }
+
+        for (const effect of effects) {
+            const effectDescription = extractStatusEffectDescription(effect);
+            if (!effectDescription) {
+                console.warn(
+                    `[${eventLabel}] "${entry.itemName}" has no target status effect description; skipping application to "${entry.targetName}".`,
+                );
+                continue;
+            }
+
+            try {
+                const appliedEffect = target.addStatusEffect(
+                    effect,
+                    effect.duration ?? 1,
+                );
+                eventsInstance.alteredCharacters.add(entry.targetName);
+
+                if (!Array.isArray(context.itemTriggeredStatusChanges)) {
+                    context.itemTriggeredStatusChanges = [];
+                }
+                if (!(context.itemTriggeredStatusChangeKeys instanceof Set)) {
+                    context.itemTriggeredStatusChangeKeys = new Set();
+                }
+
+                const resolvedTargetName =
+                    typeof target.name === "string" && target.name.trim()
+                        ? target.name.trim()
+                        : entry.targetName;
+                const resolvedDescription =
+                    extractStatusEffectDescription(appliedEffect) ||
+                    effectDescription;
+                const changeKey = `${normalizeString(
+                    resolvedTargetName,
+                ).toLowerCase()}|gained|${normalizeStatusEffectDescription(
+                    resolvedDescription,
+                )}`;
+
+                if (
+                    !context.itemTriggeredStatusChangeKeys.has(changeKey)
+                ) {
+                    context.itemTriggeredStatusChangeKeys.add(changeKey);
+                    context.itemTriggeredStatusChanges.push({
+                        entity: resolvedTargetName,
+                        action: "gained",
+                        detail: resolvedDescription,
+                        description: resolvedDescription,
+                        itemName: entry.itemName,
+                        source: eventLabel,
+                    });
+                }
+            } catch (error) {
+                console.warn(
+                    `Failed to apply ${eventLabel} status effect from "${entry.itemName}" to "${entry.targetName}":`,
+                    error?.message || error,
+                );
+            }
+        }
+    }
+}
+
 function resolveFactionByReference(rawValue) {
     const key = normalizeString(rawValue);
     if (!key) {
@@ -1290,7 +1556,7 @@ class Events {
                 return parts
                     .map((part) => (typeof part === "string" ? part.trim() : ""))
                     .filter(Boolean)
-                    .join(" -> ");
+                    .join(" → ");
             })
             .filter(Boolean)
             .join(" | ");
@@ -1444,7 +1710,7 @@ class Events {
 
         if (Array.isArray(parsedEntries.item_appear)) {
             parsedEntries.item_appear = parsedEntries.item_appear.filter(
-                (itemName) => !shouldSkip(itemName),
+                (entry) => !shouldSkip(entry?.name),
             );
         }
     }
@@ -1874,7 +2140,7 @@ class Events {
         let questsAwarded = [];
         let questRewards = [];
         let questObjectivesCompleted = [];
-        let itemInflictStatusChanges = [];
+        let itemTriggeredStatusChanges = [];
         let timeProgress = null;
 
         try {
@@ -1947,10 +2213,10 @@ class Events {
                 questRewards = outcomeContext.questCompletionRewards;
             }
             if (
-                Array.isArray(outcomeContext?.itemInflictStatusChanges) &&
-                outcomeContext.itemInflictStatusChanges.length
+                Array.isArray(outcomeContext?.itemTriggeredStatusChanges) &&
+                outcomeContext.itemTriggeredStatusChanges.length
             ) {
-                itemInflictStatusChanges = outcomeContext.itemInflictStatusChanges;
+                itemTriggeredStatusChanges = outcomeContext.itemTriggeredStatusChanges;
             }
             if (
                 Array.isArray(outcomeContext?.completedQuestObjectives) &&
@@ -1965,9 +2231,9 @@ class Events {
             console.warn("Failed to apply event outcomes:", error.message);
         }
 
-        this._mergeItemInflictStatusChangesIntoStructured(
+        this._mergeItemTriggeredStatusChangesIntoStructured(
             structured,
-            itemInflictStatusChanges,
+            itemTriggeredStatusChanges,
         );
 
         this.mergeQuestOutcomesIntoStructured(structured, {
@@ -2287,7 +2553,7 @@ class Events {
                         (entry.objectiveIndex !== null
                             ? `Objective ${entry.objectiveIndex + 1}`
                             : null);
-                    return `${questLabel} -> ${description || "Objective completed"}`;
+                    return `${questLabel} → ${description || "Objective completed"}`;
                 })
                 .filter(Boolean);
             if (rawSegments.length) {
@@ -2296,15 +2562,15 @@ class Events {
         }
     }
 
-    static _mergeItemInflictStatusChangesIntoStructured(
+    static _mergeItemTriggeredStatusChangesIntoStructured(
         structured,
-        itemInflictStatusChanges = [],
+        itemTriggeredStatusChanges = [],
     ) {
         if (
             !structured ||
             typeof structured !== "object" ||
-            !Array.isArray(itemInflictStatusChanges) ||
-            !itemInflictStatusChanges.length
+            !Array.isArray(itemTriggeredStatusChanges) ||
+            !itemTriggeredStatusChanges.length
         ) {
             return;
         }
@@ -2334,7 +2600,7 @@ class Events {
                 .filter(Boolean),
         );
 
-        for (const change of itemInflictStatusChanges) {
+        for (const change of itemTriggeredStatusChanges) {
             const entity = normalizeString(change?.entity);
             const action =
                 normalizeString(change?.action).toLowerCase() || "gained";
@@ -2355,7 +2621,10 @@ class Events {
                 detail,
                 description: detail,
                 action,
-                source: "item_inflict",
+                source:
+                    typeof change?.source === "string" && change.source.trim()
+                        ? change.source.trim()
+                        : "item_inflict",
             };
 
             if (Number.isFinite(change?.level)) {
@@ -2960,6 +3229,32 @@ class Events {
         const executionOrder = EVENT_PROMPT_ORDER_FLAT.map((def) => def.key);
 
         const parsedMap = parsedEvents.parsed;
+
+        const itemIngestPairKeys = new Set();
+        if (Array.isArray(parsedMap.item_ingest)) {
+            for (const entry of parsedMap.item_ingest) {
+                const pairKey = buildItemActorPairKey(entry?.item, entry?.target);
+                if (pairKey) {
+                    itemIngestPairKeys.add(pairKey);
+                }
+            }
+        }
+        if (itemIngestPairKeys.size) {
+            context.itemIngestPairKeys = itemIngestPairKeys;
+            if (Array.isArray(parsedMap.item_inflict)) {
+                parsedMap.item_inflict = parsedMap.item_inflict.filter((entry) => {
+                    const pairKey = buildItemActorPairKey(entry?.item, entry?.target);
+                    const shouldKeep = !pairKey || !itemIngestPairKeys.has(pairKey);
+                    if (!shouldKeep) {
+                        console.debug(
+                            `[item_inflict] Ignoring "${entry?.item}" for "${entry?.target}" because item_ingest already covers that pair this turn.`,
+                        );
+                    }
+                    return shouldKeep;
+                });
+            }
+        }
+
         const seen = new Set();
         const orderedKeys = [];
 
@@ -3113,6 +3408,7 @@ class Events {
             entry?.receiver,
         ]);
         registerFromArray(parsed.item_inflict, (entry) => entry?.target);
+        registerFromArray(parsed.item_ingest, (entry) => entry?.target);
         registerFromArray(parsed.harvest_gather, (entry) => entry?.harvester);
         registerFromArray(parsed.pick_up_item, (entry) => entry?.name);
         registerFromArray(parsed.drop_item, (entry) => entry?.name);
@@ -3245,6 +3541,11 @@ class Events {
                 entry.target = resolveName(entry.target);
             }
         });
+        updateArrayEntries(parsed.item_ingest, (entry) => {
+            if (entry.target) {
+                entry.target = resolveName(entry.target);
+            }
+        });
         updateArrayEntries(parsed.harvest_gather, (entry) => {
             entry.harvester = resolveName(entry.harvester);
             if (entry.source && typeof entry.source === "string") {
@@ -3274,8 +3575,8 @@ class Events {
                         const [name, kind, vehicle] = parts;
                         const hasTravelTime = parts.length >= 5;
                         const description = hasTravelTime
-                            ? parts.slice(3, -1).join(" -> ")
-                            : parts.slice(3).join(" -> ");
+                            ? parts.slice(3, -1).join(" → ")
+                            : parts.slice(3).join(" → ");
                         const travelTimeText = hasTravelTime ? parts[parts.length - 1] : "";
                         const normalizedKind = (kind || "").toLowerCase();
                         if (
@@ -3351,7 +3652,7 @@ class Events {
                                 vehicleType && vehicleType.toLowerCase() !== "none"
                                     ? vehicleType
                                     : null,
-                            description: descriptionParts.join(" -> ").trim(),
+                            description: descriptionParts.join(" → ").trim(),
                         };
                     })
                     .filter(Boolean);
@@ -3442,11 +3743,17 @@ class Events {
                         if (typeof entry !== "string") {
                             return null;
                         }
-                        const [item, reason] = splitArrowParts(entry.trim(), 2);
+                        const [item, rawQuantity, reason] = splitArrowParts(entry.trim(), 3);
                         if (!item) {
                             return null;
                         }
-                        const record = { item: item.trim() };
+                        const record = {
+                            item: item.trim(),
+                            quantity: parseRequiredEventQuantity(rawQuantity, {
+                                eventKey: "consume_item",
+                                entryText: entry,
+                            }),
+                        };
                         if (reason) {
                             record.reason = reason.trim();
                         }
@@ -3464,6 +3771,19 @@ class Events {
                             item: item.trim(),
                             target: target.trim(),
                             status: status ? status.trim() : null,
+                        };
+                    })
+                    .filter(Boolean),
+            item_ingest: (raw) =>
+                splitPipeList(raw)
+                    .map((entry) => {
+                        const [item, target] = splitArrowParts(entry, 2);
+                        if (!item || !target) {
+                            return null;
+                        }
+                        return {
+                            item: item.trim(),
+                            target: target.trim(),
                         };
                     })
                     .filter(Boolean),
@@ -3507,13 +3827,17 @@ class Events {
             transfer_item: (raw) =>
                 splitPipeList(raw)
                     .map((entry) => {
-                        const [giver, item, receiver] = splitArrowParts(entry, 3);
+                        const [giver, item, rawQuantity, receiver] = splitArrowParts(entry, 4);
                         if (!item) {
                             return null;
                         }
                         return {
                             giver: giver ? giver.trim() : null,
                             item: item.trim(),
+                            quantity: parseRequiredEventQuantity(rawQuantity, {
+                                eventKey: "transfer_item",
+                                entryText: entry,
+                            }),
                             receiver: receiver ? receiver.trim() : null,
                         };
                     })
@@ -3521,8 +3845,13 @@ class Events {
             harvest_gather: (raw) =>
                 splitPipeList(raw)
                     .map((entry) => {
-                        const [name, item, source] = splitArrowParts(entry, 3);
-                        if (!name || !item) {
+                        const parts = splitArrowParts(entry);
+                        if (parts.length < 3) {
+                            return null;
+                        }
+                        const [name, item, rawQuantity] = parts;
+                        const source = parts.length > 3 ? parts.slice(3).join(" → ") : null;
+                        if (!name || !item || !rawQuantity) {
                             return null;
                         }
                         const normalizedSource =
@@ -3532,6 +3861,10 @@ class Events {
                         return {
                             harvester: name.trim(),
                             item: item.trim(),
+                            quantity: parseRequiredEventQuantity(rawQuantity, {
+                                eventKey: "harvest_gather",
+                                entryText: entry,
+                            }),
                             source: normalizedSource,
                         };
                     })
@@ -3539,31 +3872,52 @@ class Events {
             pick_up_item: (raw) =>
                 splitPipeList(raw)
                     .map((entry) => {
-                        const [name, item] = splitArrowParts(entry, 2);
-                        if (!name || !item) {
+                        const [name, item, rawQuantity] = splitArrowParts(entry, 3);
+                        if (!name || !item || !rawQuantity) {
                             return null;
                         }
-                        return { name: name.trim(), item: item.trim() };
+                        return {
+                            name: name.trim(),
+                            item: item.trim(),
+                            quantity: parseRequiredEventQuantity(rawQuantity, {
+                                eventKey: "pick_up_item",
+                                entryText: entry,
+                            }),
+                        };
                     })
                     .filter(Boolean),
             drop_item: (raw) =>
                 splitPipeList(raw)
                     .map((entry) => {
-                        const [name, item] = splitArrowParts(entry, 2);
-                        if (!name || !item) {
+                        const [name, item, rawQuantity] = splitArrowParts(entry, 3);
+                        if (!name || !item || !rawQuantity) {
                             return null;
                         }
-                        return { name: name.trim(), item: item.trim() };
+                        return {
+                            name: name.trim(),
+                            item: item.trim(),
+                            quantity: parseRequiredEventQuantity(rawQuantity, {
+                                eventKey: "drop_item",
+                                entryText: entry,
+                            }),
+                        };
                     })
                     .filter(Boolean),
             item_appear: (raw) =>
                 splitPipeList(raw)
                     .map((entry) => {
-                        const [name] = splitArrowParts(entry, 2);
+                        const [name, rawQuantity, description] = splitArrowParts(entry, 3);
                         if (!name || Events.alteredItems.has(name)) {
                             return null;
                         }
-                        return name ? name.trim() : null;
+                        return {
+                            name: name.trim(),
+                            quantity: parseRequiredEventQuantity(rawQuantity, {
+                                eventKey: "item_appear",
+                                entryText: entry,
+                            }),
+                            description: description ? description.trim() : null,
+                        };
                     })
                     .filter(Boolean),
             scenery_appear: (raw) =>
@@ -3923,7 +4277,7 @@ class Events {
                         const parts = splitArrowParts(entry);
                         if (parts.length === 5) {
                             parts.shift();
-                            return parts.join(" -> ").trim();
+                            return parts.join(" → ").trim();
                         }
                         return normalizeArrowDelimiters(entry);
                     })
@@ -3960,7 +4314,7 @@ class Events {
                         }
 
                         let giver = parts[0] || "";
-                        let summary = parts.length > 1 ? parts.slice(1).join(" -> ") : "";
+                        let summary = parts.length > 1 ? parts.slice(1).join(" → ") : "";
 
                         if (!summary && giver) {
                             summary = giver;
@@ -4085,6 +4439,12 @@ class Events {
                     });
                     break;
                 case "item_appear":
+                    parsedEntries.forEach((entry) => {
+                        if (entry && typeof entry === "object") {
+                            addName(entry.name);
+                        }
+                    });
+                    break;
                 case "scenery_appear":
                 case "harvestable_resource_appear":
                     parsedEntries.forEach(addName);
@@ -5187,6 +5547,10 @@ class Events {
                     if (!itemName) {
                         continue;
                     }
+                    const quantity = parseRequiredEventQuantity(entry?.quantity, {
+                        eventKey: "consume_item",
+                        entryText: JSON.stringify(entry),
+                    });
                     const item = findThingByName(itemName);
                     if (!item) {
                         console.debug(
@@ -5194,152 +5558,51 @@ class Events {
                         );
                         continue;
                     } else {
-                        console.debug(`[consume_item] Consuming item "${itemName}".`);
+                        console.debug(`[consume_item] Consuming ${quantity} of "${itemName}".`);
                     }
-                    this._removeItemFromInventories(item);
-                    this._detachThingFromWorld(item);
+
+                    const candidates = this._findThingsByExactName(itemName, {
+                        preferredThing: item,
+                        location: context.location || null,
+                    });
+                    let remaining = quantity;
+                    for (const candidate of candidates) {
+                        if (remaining <= 0) {
+                            break;
+                        }
+                        const candidateCount = this._getThingCount(candidate);
+                        const amountToConsume = Math.min(candidateCount, remaining);
+                        const result = this._consumeThingQuantity(candidate, amountToConsume);
+                        if (result.decremented) {
+                            console.debug(
+                                `[consume_item] Decremented "${itemName}" from ${result.priorCount} to ${result.remainingCount}.`,
+                            );
+                        } else {
+                            console.debug(`[consume_item] Fully removed "${itemName}" from the world.`);
+                        }
+                        remaining -= amountToConsume;
+                    }
+
+                    if (remaining > 0) {
+                        throw new Error(
+                            `consume_item could not satisfy quantity ${quantity} for "${itemName}". ${remaining} still missing.`,
+                        );
+                    }
                     this.destroyedItems.add(itemName);
                 }
             },
             item_inflict: async function (entries = [], context = {}) {
-                if (!Array.isArray(entries) || !entries.length) {
-                    return;
-                }
-
-                const { findThingByName, findActorByName } = this._deps;
-                if (typeof findThingByName !== "function") {
-                    throw new Error(
-                        "item_inflict handler requires findThingByName dependency.",
-                    );
-                }
-                if (typeof findActorByName !== "function") {
-                    throw new Error(
-                        "item_inflict handler requires findActorByName dependency.",
-                    );
-                }
-
-                const normalizedEntries = [];
-                const missingItems = new Set();
-
-                for (const entry of entries) {
-                    if (!entry) {
-                        continue;
-                    }
-
-                    let itemName = "";
-                    let targetName = "";
-
-                    if (typeof entry === "string") {
-                        const [item, target] = splitArrowParts(entry, 3);
-                        itemName = item ? String(item).trim() : "";
-                        targetName = target ? String(target).trim() : "";
-                    } else {
-                        itemName =
-                            typeof entry.item === "string" ? entry.item.trim() : "";
-                        targetName =
-                            typeof entry.target === "string" ? entry.target.trim() : "";
-                    }
-
-                    if (!itemName || !targetName) {
-                        continue;
-                    }
-
-                    normalizedEntries.push({ itemName, targetName });
-
-                    if (!findThingByName(itemName)) {
-                        missingItems.add(itemName);
-                    }
-                }
-
-                if (missingItems.size) {
-                    await this._ensureItemsExist(
-                        Array.from(missingItems),
-                        context.location,
-                        { recordNewItems: false },
-                    );
-                }
-
-                for (const entry of normalizedEntries) {
-                    const item = findThingByName(entry.itemName);
-                    if (!item) {
-                        console.warn(
-                            `[item_inflict] Unable to locate item "${entry.itemName}".`,
-                        );
-                        continue;
-                    }
-                    const target = findActorByName(entry.targetName);
-                    if (!target || typeof target.addStatusEffect !== "function") {
-                        console.warn(
-                            `[item_inflict] Unable to locate target "${entry.targetName}" for "${entry.itemName}".`,
-                        );
-                        continue;
-                    }
-
-                    const effect =
-                        item.causeStatusEffectOnTarget
-                        || item.metadata?.causeStatusEffectOnTarget
-                        || (item.causeStatusEffect?.applyToTarget
-                            ? item.causeStatusEffect
-                            : null);
-                    if (!effect) {
-                        continue;
-                    }
-
-                    const effectDescription = extractStatusEffectDescription(effect);
-                    if (!effectDescription) {
-                        console.warn(
-                            `[item_inflict] "${entry.itemName}" has no target status effect description; skipping application to "${entry.targetName}".`,
-                        );
-                        continue;
-                    }
-
-                    try {
-                        const appliedEffect = target.addStatusEffect(
-                            effect,
-                            effect.duration ?? 1,
-                        );
-                        this.alteredCharacters.add(entry.targetName);
-
-                        if (!Array.isArray(context.itemInflictStatusChanges)) {
-                            context.itemInflictStatusChanges = [];
-                        }
-                        if (!(context.itemInflictStatusChangeKeys instanceof Set)) {
-                            context.itemInflictStatusChangeKeys = new Set();
-                        }
-
-                        const resolvedTargetName =
-                            typeof target.name === "string" && target.name.trim()
-                                ? target.name.trim()
-                                : entry.targetName;
-                        const resolvedDescription =
-                            extractStatusEffectDescription(appliedEffect) ||
-                            effectDescription;
-                        const changeKey = `${normalizeString(
-                            resolvedTargetName,
-                        ).toLowerCase()}|gained|${normalizeStatusEffectDescription(
-                            resolvedDescription,
-                        )}`;
-
-                        if (
-                            !context.itemInflictStatusChangeKeys.has(changeKey)
-                        ) {
-                            context.itemInflictStatusChangeKeys.add(changeKey);
-                            context.itemInflictStatusChanges.push({
-                                entity: resolvedTargetName,
-                                action: "gained",
-                                detail: resolvedDescription,
-                                description: resolvedDescription,
-                                itemName: entry.itemName,
-                                source: "item_inflict",
-                            });
-                        }
-                    } catch (error) {
-                        console.warn(
-                            `Failed to apply item_inflict status effect from "${entry.itemName}" to "${entry.targetName}":`,
-                            error?.message || error,
-                        );
-                    }
-                }
+                await applyItemTriggeredStatuses(this, entries, context, {
+                    eventLabel: "item_inflict",
+                    skipPairKeys: context.itemIngestPairKeys,
+                    requireStatusField: true,
+                });
+            },
+            item_ingest: async function (entries = [], context = {}) {
+                await applyItemTriggeredStatuses(this, entries, context, {
+                    eventLabel: "item_ingest",
+                    requireStatusField: false,
+                });
             },
             alter_item: async function (entries = [], context = {}) {
                 if (!Array.isArray(entries) || !entries.length) {
@@ -5506,39 +5769,47 @@ class Events {
                 if (!Array.isArray(entries) || !entries.length) {
                     return;
                 }
-                const { findThingByName, findActorByName } = this._deps;
-                if (
-                    typeof findThingByName !== "function" ||
-                    typeof findActorByName !== "function"
-                ) {
+                const { findActorByName } = this._deps;
+                if (typeof findActorByName !== "function") {
                     throw new Error(
-                        "transfer_item handler requires findThingByName and findActorByName dependencies.",
+                        "transfer_item handler requires findActorByName dependency.",
                     );
                 }
 
                 for (const entry of entries) {
-                    const thing = findThingByName(entry.item);
-                    if (!thing) {
-                        continue;
-                    }
                     const giver = entry.giver ? findActorByName(entry.giver) : null;
                     const receiver = entry.receiver
                         ? findActorByName(entry.receiver)
                         : null;
+                    const quantity = parseRequiredEventQuantity(entry?.quantity, {
+                        eventKey: "transfer_item",
+                        entryText: JSON.stringify(entry),
+                    });
 
-                    if (giver && typeof giver.removeInventoryItem === "function") {
-                        giver.removeInventoryItem(thing);
+                    if (!giver || typeof giver.removeInventoryItem !== "function") {
+                        console.warn("transfer_item: No valid giver found.", entry);
+                        continue;
                     }
-                    if (receiver && typeof receiver.addInventoryItem === "function") {
+                    if (!receiver || typeof receiver.addInventoryItem !== "function") {
+                        console.warn("transfer_item: No valid receiver found.", entry);
+                        continue;
+                    }
+
+                    const candidates = this._findThingsByExactName(entry.item, {
+                        owner: giver,
+                    });
+                    const selectedThings = this._extractThingQuantityFromCandidates(
+                        candidates,
+                        quantity,
+                        { itemName: entry.item, eventKey: "transfer_item" },
+                    );
+                    selectedThings.forEach((thing) => {
                         receiver.addInventoryItem(thing);
                         thing.metadata = {
                             ...(thing.metadata || {}),
                             ownerId: receiver.id,
                         };
-                    } else {
-                        console.warn("transfer_item: No valid receiver found.", entry);
-                        //this._detachThingFromWorld(thing);
-                    }
+                    });
                     if (entry.item) {
                         this.obtainedItems.add(entry.item);
                     }
@@ -5566,10 +5837,22 @@ class Events {
                         entry.item
                     ) {
                         generationTasks.push(
-                            generateItemsByNames({
-                                itemNames: [entry.item],
-                                owner: actor,
-                            }).catch((error) => {
+                            (async () => {
+                                const generatedItems = await generateItemsByNames({
+                                    itemNames: [entry.item],
+                                    owner: actor,
+                                });
+                                const generatedThing = Array.isArray(generatedItems)
+                                    ? generatedItems.find((candidate) => candidate?.name === entry.item) || generatedItems[0] || null
+                                    : null;
+                                if (!generatedThing) {
+                                    throw new Error(
+                                        `Failed to generate harvested item "${entry.item}".`,
+                                    );
+                                }
+                                generatedThing.count = entry.quantity;
+                                return generatedItems;
+                            })().catch((error) => {
                                 console.warn(
                                     "Failed to generate harvested item:",
                                     error.message,
@@ -5601,11 +5884,6 @@ class Events {
                     const normalized =
                         typeof itemName === "string" ? itemName.trim().toLowerCase() : "";
                     if (!normalized) {
-                        console.warn(
-                            "pick_up_item event entry has no valid item name:",
-                            entry,
-                        );
-                        console.trace();
                         return null;
                     }
 
@@ -5647,45 +5925,6 @@ class Events {
                     return null;
                 };
 
-                const createDuplicateThing = (itemName) => {
-                    const template =
-                        typeof findThingByName === "function"
-                            ? findThingByName(itemName)
-                            : null;
-
-                    const metadata = template?.metadata || {};
-                    const baseMetadata = { ...metadata };
-                    delete baseMetadata.ownerId;
-                    delete baseMetadata.locationId;
-
-                    const duplicate = new Thing({
-                        name: itemName,
-                        description: template?.description || `An item named ${itemName}.`,
-                        thingType: template?.thingType || "item",
-                        imageId: template?.imageId || null,
-                        rarity: template?.rarity || null,
-                        itemTypeDetail: template?.itemTypeDetail || null,
-                        metadata: baseMetadata,
-                        statusEffects:
-                            typeof template?.getStatusEffects === "function"
-                                ? template.getStatusEffects()
-                                : [],
-                        slot: template?.slot ?? null,
-                        attributeBonuses: Array.isArray(template?.attributeBonuses)
-                            ? template.attributeBonuses
-                            : null,
-                        causeStatusEffect: template?.causeStatusEffect ?? null,
-                        level: template?.level ?? null,
-                        relativeLevel: template?.relativeLevel ?? null,
-                    });
-
-                    if (things instanceof Map) {
-                        things.set(duplicate.id, duplicate);
-                    }
-
-                    return duplicate;
-                };
-
                 const tasks = [];
 
                 for (const entry of entries) {
@@ -5707,6 +5946,10 @@ class Events {
                                 console.trace();
                                 return;
                             }
+                            const quantity = parseRequiredEventQuantity(entry?.quantity, {
+                                eventKey: "pick_up_item",
+                                entryText: JSON.stringify(entry),
+                            });
 
                             if (this.obtainedItems.has(itemName)) {
                                 console.warn(
@@ -5730,25 +5973,47 @@ class Events {
                                 return;
                             }
 
-                            let thing = resolveAvailableThing(itemName);
+                            let availableThings = this._findThingsByExactName(itemName, {
+                                location: context.location || null,
+                                unownedOnly: true,
+                                preferredThing: resolveAvailableThing(itemName),
+                            });
 
-                            if (!thing) {
-                                await this._ensureItemsExist([itemName], context.location, {
-                                    allowObtained: false,
-                                    recordNewItems: false,
-                                });
-                                thing = resolveAvailableThing(itemName);
-                            }
-
-                            if (!thing) {
-                                throw new Error(
-                                    `Unable to resolve or create item "${itemName}" for pick_up_item.`,
+                            const availableQuantity = availableThings.reduce(
+                                (total, candidate) => total + this._getThingCount(candidate),
+                                0,
+                            );
+                            if (availableQuantity < quantity) {
+                                const generatedItems = await this._generateItemsIntoWorld(
+                                    [itemName],
+                                    context.location,
                                 );
+                                const generatedThing = Array.isArray(generatedItems)
+                                    ? generatedItems.find((candidate) => candidate?.name === itemName) || generatedItems[0] || null
+                                    : null;
+                                if (!generatedThing) {
+                                    throw new Error(
+                                        `Unable to generate item "${itemName}" for pick_up_item.`,
+                                    );
+                                }
+                                const shortfall = quantity - availableQuantity;
+                                generatedThing.count = shortfall;
+                                availableThings = this._findThingsByExactName(itemName, {
+                                    location: context.location || null,
+                                    unownedOnly: true,
+                                    preferredThing: generatedThing,
+                                });
                             }
 
-                            this._detachThingFromKnownLocation(thing);
-                            actor.addInventoryItem(thing);
-                            thing.metadata = { ...(thing.metadata || {}), ownerId: actor.id };
+                            const selectedThings = this._extractThingQuantityFromCandidates(
+                                availableThings,
+                                quantity,
+                                { itemName, eventKey: "pick_up_item" },
+                            );
+                            selectedThings.forEach((thing) => {
+                                actor.addInventoryItem(thing);
+                                thing.metadata = { ...(thing.metadata || {}), ownerId: actor.id };
+                            });
                             this.obtainedItems.add(itemName);
                         })(),
                     );
@@ -5766,18 +6031,31 @@ class Events {
                 if (!location) {
                     throw new Error("drop_item events require a valid location.");
                 }
-                const { findThingByName, findActorByName } = this._deps;
+                const { findActorByName } = this._deps;
                 for (const entry of entries) {
-                    const thing = findThingByName?.(entry.item);
-                    if (!thing) {
+                    const quantity = parseRequiredEventQuantity(entry?.quantity, {
+                        eventKey: "drop_item",
+                        entryText: JSON.stringify(entry),
+                    });
+                    const actor =
+                        typeof findActorByName === "function"
+                            ? findActorByName(entry.name)
+                            : null;
+                    if (!actor || typeof actor.hasInventoryItem !== "function") {
                         continue;
                     }
-
-                    const holders = thing.whoseInventory();
-                    thing.drop(location.id);
-                    if (holders.length) {
-                        entry.character = holders[0].name;
-                    }
+                    const candidates = this._findThingsByExactName(entry.item, {
+                        owner: actor,
+                    });
+                    const selectedThings = this._extractThingQuantityFromCandidates(
+                        candidates,
+                        quantity,
+                        { itemName: entry.item, eventKey: "drop_item" },
+                    );
+                    selectedThings.forEach((thing) => {
+                        location.addThingId(thing.id);
+                    });
+                    entry.character = actor.name;
                     this.droppedItems.add(entry.item);
                 }
             },
@@ -5794,23 +6072,45 @@ class Events {
                     context.location,
                     "item_appear",
                 );
-                const filteredItems = items
-                    .map((item) => (typeof item === "string" ? item.trim() : ""))
-                    .filter(
-                        (name) =>
-                            !!name &&
-                            !this._isItemAlreadyTracked(name) &&
-                            !sceneItemNames.has(name),
+                const filteredItems = items.filter((entry) => {
+                    const name = typeof entry?.name === "string" ? entry.name.trim() : "";
+                    return (
+                        !!name &&
+                        !this._isItemAlreadyTracked(name) &&
+                        !sceneItemNames.has(name)
                     );
+                });
 
                 if (!filteredItems.length) {
                     return;
                 }
 
-                await this._ensureItemsExist(filteredItems, context.location);
+                const { generateItemsByNames } = this._deps;
+                if (typeof generateItemsByNames !== "function") {
+                    throw new Error(
+                        "item_appear handler requires generateItemsByNames dependency.",
+                    );
+                }
 
-                for (const item of filteredItems) {
-                    this.newItems.add(item);
+                for (const entry of filteredItems) {
+                    const generatedItems = await generateItemsByNames({
+                        itemNames: [entry.name],
+                        location: context.location || null,
+                        seeds: [{
+                            name: entry.name,
+                            description: entry.description || undefined,
+                        }],
+                    });
+                    const generatedThing = Array.isArray(generatedItems)
+                        ? generatedItems.find((candidate) => candidate?.name === entry.name) || generatedItems[0] || null
+                        : null;
+                    if (!generatedThing) {
+                        throw new Error(
+                            `item_appear failed to generate "${entry.name}".`,
+                        );
+                    }
+                    generatedThing.count = entry.quantity;
+                    this.newItems.add(entry.name);
                 }
             },
             scenery_appear: async function (items = [], context = {}) {
@@ -6673,8 +6973,8 @@ class Events {
                 console.log("Processing status_effect_change entries:", entries);
 
                 const itemInflictByEntity = new Map();
-                if (Array.isArray(context.itemInflictStatusChanges)) {
-                    for (const statusChange of context.itemInflictStatusChanges) {
+                if (Array.isArray(context.itemTriggeredStatusChanges)) {
+                    for (const statusChange of context.itemTriggeredStatusChanges) {
                         const entityKey = normalizeString(
                             statusChange?.entity,
                         ).toLowerCase();
@@ -6728,7 +7028,7 @@ class Events {
 
                         if (isDuplicate) {
                             console.debug(
-                                `[status_effect_change] Skipping duplicate "${entry.detail}" for "${entry.entity}" because item_inflict already applied the effect.`,
+                                `[status_effect_change] Skipping duplicate "${entry.detail}" for "${entry.entity}" because an item-triggered event already applied the effect.`,
                             );
                             continue;
                         }
@@ -8540,6 +8840,212 @@ class Events {
         }
 
         return names;
+    }
+
+    static _getThingCount(thing) {
+        return Number.isInteger(thing?.count) && thing.count > 0 ? thing.count : 1;
+    }
+
+    static _thingLocationId(thing) {
+        const metadata = thing?.metadata && typeof thing.metadata === "object"
+            ? thing.metadata
+            : {};
+        const candidates = [metadata.locationId, metadata.locationID, metadata.location_id];
+        for (const candidate of candidates) {
+            if (typeof candidate === "string" && candidate.trim()) {
+                return candidate.trim();
+            }
+        }
+        return null;
+    }
+
+    static _thingOwnedByActor(thing, actor) {
+        if (!thing || !actor?.id) {
+            return false;
+        }
+        if (typeof thing.whoseInventory === "function") {
+            const owners = thing.whoseInventory().filter(Boolean);
+            if (owners.some((owner) => owner?.id === actor.id)) {
+                return true;
+            }
+        }
+        const metadata = thing.metadata && typeof thing.metadata === "object"
+            ? thing.metadata
+            : {};
+        const ownerCandidates = [metadata.ownerId, metadata.ownerID, metadata.owner_id, metadata.playerId];
+        return ownerCandidates.some((candidate) => typeof candidate === "string" && candidate.trim() === actor.id);
+    }
+
+    static _findThingsByExactName(itemName, {
+        owner = null,
+        location = null,
+        unownedOnly = false,
+        preferredThing = null,
+    } = {}) {
+        const normalizedName = typeof itemName === "string" ? itemName.trim().toLowerCase() : "";
+        if (!normalizedName) {
+            return [];
+        }
+
+        const sourceThings = this.things instanceof Map
+            ? Array.from(this.things.values())
+            : Thing.getAll();
+        const preferredId = preferredThing?.id || null;
+        const locationId = typeof location?.id === "string" ? location.id.trim() : null;
+
+        return sourceThings
+            .filter((thing) => {
+                if (!thing?.name || thing.name.trim().toLowerCase() !== normalizedName) {
+                    return false;
+                }
+
+                const owners = typeof thing.whoseInventory === "function"
+                    ? thing.whoseInventory().filter(Boolean)
+                    : [];
+                const hasOwners = owners.length > 0;
+                if (owner) {
+                    return owners.some((candidate) => candidate?.id === owner.id) || this._thingOwnedByActor(thing, owner);
+                }
+                if (unownedOnly && hasOwners) {
+                    return false;
+                }
+                if (unownedOnly && locationId) {
+                    return this._thingLocationId(thing) === locationId;
+                }
+                return true;
+            })
+            .sort((left, right) => {
+                const leftPreferred = preferredId && left?.id === preferredId ? 1 : 0;
+                const rightPreferred = preferredId && right?.id === preferredId ? 1 : 0;
+                if (leftPreferred !== rightPreferred) {
+                    return rightPreferred - leftPreferred;
+                }
+
+                const leftLocationMatch = locationId && this._thingLocationId(left) === locationId ? 1 : 0;
+                const rightLocationMatch = locationId && this._thingLocationId(right) === locationId ? 1 : 0;
+                if (leftLocationMatch !== rightLocationMatch) {
+                    return rightLocationMatch - leftLocationMatch;
+                }
+
+                return this._getThingCount(right) - this._getThingCount(left);
+            });
+    }
+
+    static _cloneThingWithQuantity(sourceThing, quantity, { metadataOverrides = {} } = {}) {
+        if (!sourceThing) {
+            throw new Error("_cloneThingWithQuantity requires a source thing.");
+        }
+        if (typeof sourceThing.copy !== "function") {
+            throw new Error("_cloneThingWithQuantity requires Thing.copy to be available.");
+        }
+        return sourceThing.copy({
+            count: quantity,
+            metadataOverrides: {
+                ...metadataOverrides,
+                count: quantity,
+            },
+        });
+    }
+
+    static _splitThingForQuantity(sourceThing, quantity) {
+        const sourceCount = this._getThingCount(sourceThing);
+        if (!Number.isInteger(quantity) || quantity <= 0 || quantity >= sourceCount) {
+            throw new Error(
+                `_splitThingForQuantity requires quantity to be a positive integer less than the source count (${sourceCount}); got "${quantity}".`,
+            );
+        }
+
+        const sourceMetadata = sourceThing.metadata && typeof sourceThing.metadata === "object"
+            ? sourceThing.metadata
+            : {};
+        const splitThing = this._cloneThingWithQuantity(sourceThing, quantity, {
+            metadataOverrides: {},
+        });
+
+        sourceThing.count = sourceCount - quantity;
+        sourceThing.metadata = {
+            ...sourceMetadata,
+            count: sourceThing.count,
+        };
+
+        return splitThing;
+    }
+
+    static _extractThingQuantityFromCandidates(candidates, quantity, { itemName, eventKey }) {
+        if (!Array.isArray(candidates) || !candidates.length) {
+            throw new Error(`${eventKey} could not find any thing matching "${itemName}".`);
+        }
+
+        let remaining = quantity;
+        const selected = [];
+
+        for (const candidate of candidates) {
+            if (!candidate) {
+                continue;
+            }
+            const candidateCount = this._getThingCount(candidate);
+            if (candidateCount <= 0) {
+                continue;
+            }
+
+            if (candidateCount <= remaining) {
+                selected.push(candidate);
+                remaining -= candidateCount;
+            } else {
+                const splitThing = this._splitThingForQuantity(candidate, remaining);
+                if (this.things instanceof Map) {
+                    this.things.set(splitThing.id, splitThing);
+                }
+                selected.push(splitThing);
+                remaining = 0;
+            }
+
+            if (remaining === 0) {
+                break;
+            }
+        }
+
+        if (remaining > 0) {
+            throw new Error(
+                `${eventKey} could not satisfy quantity ${quantity} for "${itemName}". ${remaining} still missing.`,
+            );
+        }
+
+        return selected;
+    }
+
+    static _consumeThingQuantity(thing, quantity) {
+        const priorCount = this._getThingCount(thing);
+        if (!Number.isInteger(quantity) || quantity <= 0 || quantity > priorCount) {
+            throw new Error(
+                `_consumeThingQuantity requires a positive integer quantity no greater than the source count (${priorCount}); got "${quantity}".`,
+            );
+        }
+
+        if (quantity === priorCount) {
+            this._detachThingFromWorld(thing);
+            return {
+                deleted: true,
+                decremented: false,
+                priorCount,
+                remainingCount: 0,
+                consumedCount: quantity,
+            };
+        }
+
+        thing.count = priorCount - quantity;
+        thing.metadata = {
+            ...(thing.metadata && typeof thing.metadata === "object" ? thing.metadata : {}),
+            count: thing.count,
+        };
+
+        return {
+            deleted: false,
+            decremented: true,
+            priorCount,
+            remainingCount: thing.count,
+            consumedCount: quantity,
+        };
     }
 
     static _removeItemFromInventories(thing) {

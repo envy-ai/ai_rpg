@@ -128,6 +128,7 @@ function createImportedThing(itemData, location, absoluteLevel) {
     slot: itemData.slot || null,
     attributeBonuses: thingType === 'item' ? attributeBonuses : [],
     causeStatusEffect: combineCauseStatusEffects(itemData),
+    count: itemData.count,
     level: absoluteLevel,
     relativeLevel: null,
     metadata,

@@ -3994,7 +3994,8 @@ module.exports = function registerApiRoutes(scope) {
                     { role: 'system', content: parsedTemplate.systemPrompt },
                     { role: 'user', content: parsedTemplate.generationPrompt }
                 ],
-                metadataLabel: `craft_success_degree_${mode || 'craft'}`
+                metadataLabel: `craft_success_degree_${mode || 'craft'}`,
+                requiredRegex: /<response>[\s\S]*<\/response>/i
             };
 
             if (typeof parsedTemplate.temperature === 'number') {
@@ -4387,6 +4388,212 @@ module.exports = function registerApiRoutes(scope) {
                 locationIds: Array.from(affectedLocationIds),
                 playerIds: Array.from(affectedPlayerIds),
                 npcIds: Array.from(affectedNpcIds)
+            };
+        }
+
+        function normalizeAttributeBonusesForItem(rawBonuses) {
+            if (!Array.isArray(rawBonuses) || !rawBonuses.length) {
+                return [];
+            }
+
+            const normalizedEntries = [];
+            for (const entry of rawBonuses) {
+                if (!entry) {
+                    continue;
+                }
+                let attribute = null;
+                let bonusValue = null;
+
+                if (typeof entry === 'string') {
+                    attribute = entry.trim();
+                } else if (typeof entry === 'object') {
+                    if (typeof entry.attribute === 'string') {
+                        attribute = entry.attribute.trim();
+                    } else if (typeof entry.name === 'string') {
+                        attribute = entry.name.trim();
+                    }
+                    const bonusRaw = entry.bonus ?? entry.value;
+                    const parsed = Number(bonusRaw);
+                    if (Number.isFinite(parsed)) {
+                        bonusValue = parsed;
+                    }
+                }
+
+                if (!attribute) {
+                    continue;
+                }
+
+                if (!Number.isFinite(bonusValue)) {
+                    const fallback = Number(entry?.bonus ?? entry?.value);
+                    bonusValue = Number.isFinite(fallback) ? fallback : 0;
+                }
+
+                normalizedEntries.push({ attribute, bonus: bonusValue });
+            }
+
+            if (!normalizedEntries.length) {
+                return [];
+            }
+
+            return normalizedEntries;
+        }
+
+        function scaleAttributeBonusesForItem(rawBonuses, { level = 1, rarity = null } = {}) {
+            const normalizedEntries = normalizeAttributeBonusesForItem(rawBonuses);
+            if (!normalizedEntries.length) {
+                return [];
+            }
+
+            const effectiveLevel = Number.isFinite(level) && level > 0 ? level : 1;
+
+            return normalizedEntries.map(({ attribute, bonus }) => {
+                const maxBonus = Thing.getMaxAttributeBonus(rarity, effectiveLevel);
+                const scaled = maxBonus * bonus / 4;
+                const rounded = Utils.roundAwayFromZero(scaled);
+                return { attribute, bonus: rounded };
+            });
+        }
+
+        function resolveThingActorById(actorId) {
+            if (!actorId || typeof actorId !== 'string') {
+                return null;
+            }
+            const trimmedId = actorId.trim();
+            if (!trimmedId) {
+                return null;
+            }
+            if (players instanceof Map && players.has(trimmedId)) {
+                return players.get(trimmedId);
+            }
+            if (currentPlayer && currentPlayer.id === trimmedId) {
+                return currentPlayer;
+            }
+            return null;
+        }
+
+        function resolveThingLocationById(locationId) {
+            if (!locationId || typeof locationId !== 'string') {
+                return null;
+            }
+            const trimmedId = locationId.trim();
+            if (!trimmedId) {
+                return null;
+            }
+
+            let location = null;
+            if (gameLocations instanceof Map) {
+                location = gameLocations.get(trimmedId) || null;
+            }
+            if (!location && typeof Location?.get === 'function') {
+                try {
+                    location = Location.get(trimmedId);
+                } catch (_) {
+                    location = null;
+                }
+            }
+            return location;
+        }
+
+        function resolveThingContainerContext(thing) {
+            if (!thing || typeof thing !== 'object') {
+                throw new Error('resolveThingContainerContext requires a valid thing.');
+            }
+
+            const metadata = thing.metadata && typeof thing.metadata === 'object'
+                ? thing.metadata
+                : {};
+            const owners = typeof thing.whoseInventory === 'function'
+                ? thing.whoseInventory().filter(Boolean)
+                : [];
+            if (owners.length > 1) {
+                throw new Error(`Thing "${thing.name}" is in multiple inventories and cannot be processed safely.`);
+            }
+
+            const owner = owners[0]
+                || resolveThingActorById(
+                    typeof metadata.ownerId === 'string'
+                        ? metadata.ownerId.trim()
+                        : (typeof metadata.ownerID === 'string' ? metadata.ownerID.trim() : ''),
+                )
+                || null;
+
+            const location = (() => {
+                if (owner?.currentLocation) {
+                    return resolveThingLocationById(owner.currentLocation);
+                }
+                if (typeof metadata.locationId === 'string' && metadata.locationId.trim()) {
+                    return resolveThingLocationById(metadata.locationId.trim());
+                }
+                if (typeof metadata.locationID === 'string' && metadata.locationID.trim()) {
+                    return resolveThingLocationById(metadata.locationID.trim());
+                }
+                return null;
+            })();
+
+            if (!owner && !location) {
+                throw new Error(`Thing "${thing.name}" is not attached to an inventory or location.`);
+            }
+
+            const region = location && typeof findRegionByLocationId === 'function'
+                ? findRegionByLocationId(location.id)
+                : null;
+
+            return {
+                metadata,
+                owner,
+                location,
+                region
+            };
+        }
+
+        function buildThingMutationResponsePayload({
+            things: responseThings = [],
+            owner = null,
+            location = null,
+            message = '',
+            extra = {}
+        } = {}) {
+            const payload = {
+                success: true,
+                things: Array.isArray(responseThings)
+                    ? responseThings.map(entry => (entry && typeof entry.toJSON === 'function' ? entry.toJSON() : entry))
+                    : [],
+                message,
+                ...(extra && typeof extra === 'object' ? extra : {})
+            };
+
+            if (location && typeof buildLocationResponse === 'function') {
+                payload.location = buildLocationResponse(location);
+            }
+
+            if (owner && typeof serializeNpcForClient === 'function') {
+                payload.owner = serializeNpcForClient(owner);
+            }
+
+            return payload;
+        }
+
+        function consumeThingById(thingId) {
+            if (!thingId || typeof thingId !== 'string') {
+                throw new Error('Thing ID is required for consumption.');
+            }
+
+            const thing = things.get(thingId) || Thing.getById(thingId);
+            if (!thing) {
+                throw new Error(`Thing with ID '${thingId}' not found for consumption.`);
+            }
+
+            const priorCount = Number.isInteger(thing.count) ? thing.count : 1;
+            const result = thing.consumeOne({ things });
+            if (!result || typeof result !== 'object') {
+                throw new Error(`Thing.consumeOne returned an invalid result for "${thing.name || thingId}".`);
+            }
+
+            return {
+                ...result,
+                priorCount,
+                consumedThingId: thing.id,
+                consumedThingName: thing.name || thing.id
             };
         }
 
@@ -5699,6 +5906,26 @@ module.exports = function registerApiRoutes(scope) {
                 bundle.push({ icon: icon || '•', text: normalizedText });
             };
 
+            const parseSummaryQuantity = (rawQuantity) => {
+                const numericQuantity = Number(rawQuantity);
+                return Number.isInteger(numericQuantity) && numericQuantity > 0
+                    ? numericQuantity
+                    : null;
+            };
+
+            const formatSummaryItemWithQuantity = (
+                itemValue,
+                rawQuantity,
+                fallback = 'something',
+            ) => {
+                const itemLabel = safeSummaryItem(itemValue, fallback);
+                const quantity = parseSummaryQuantity(rawQuantity);
+                if (!quantity || quantity <= 1) {
+                    return itemLabel;
+                }
+                return `${itemLabel} (x${quantity})`;
+            };
+
             if (Array.isArray(events)) {
                 events.forEach(entry => {
                     if (!entry) {
@@ -5741,7 +5968,10 @@ module.exports = function registerApiRoutes(scope) {
                         case 'consume_item':
                             entries.forEach(entry => {
                                 const user = safeSummaryName(entry?.user);
-                                const item = safeSummaryItem(entry?.item);
+                                const item = formatSummaryItemWithQuantity(
+                                    entry?.item,
+                                    entry?.quantity,
+                                );
                                 add('🧪', `${item} was consumed or destroyed.`);
                             });
                             break;
@@ -5759,7 +5989,10 @@ module.exports = function registerApiRoutes(scope) {
                         case 'drop_item':
                             entries.forEach(entry => {
                                 const character = safeSummaryName(entry?.character);
-                                const item = safeSummaryItem(entry?.item);
+                                const item = formatSummaryItemWithQuantity(
+                                    entry?.item,
+                                    entry?.quantity,
+                                );
                                 add('📦', `${character} dropped ${item}.`);
                             });
                             break;
@@ -5805,7 +6038,10 @@ module.exports = function registerApiRoutes(scope) {
                         case 'scenery_appear':
                         case 'item_appear':
                             (Array.isArray(entries) ? entries : [entries]).forEach(item => {
-                                const itemLabel = safeSummaryItem(item);
+                                const itemLabel = formatSummaryItemWithQuantity(
+                                    item?.name ?? item,
+                                    item?.quantity,
+                                );
 
                                 const isAlsoPickedUp = Array.isArray(bundle)
                                     && bundle.some(entry => entry && entry.icon === '🎒' && entry.text && entry.text.includes(itemLabel));
@@ -5946,7 +6182,10 @@ module.exports = function registerApiRoutes(scope) {
                         case 'harvest_gather':
                             entries.forEach(entry => {
                                 const actor = safeSummaryName(entry?.harvester);
-                                const itemName = safeSummaryItem(entry?.item);
+                                const itemName = formatSummaryItemWithQuantity(
+                                    entry?.item,
+                                    entry?.quantity,
+                                );
                                 const sourceName = safeSummaryItem(entry?.source, '');
                                 const fromClause = sourceName ? ` from ${sourceName}` : '';
                                 add('🌾', `${actor} harvested ${itemName}${fromClause}.`);
@@ -5955,7 +6194,10 @@ module.exports = function registerApiRoutes(scope) {
                         case 'pick_up_item':
                             entries.forEach(entry => {
                                 const actor = safeSummaryName(entry?.name);
-                                const itemName = safeSummaryItem(entry?.item);
+                                const itemName = formatSummaryItemWithQuantity(
+                                    entry?.item,
+                                    entry?.quantity,
+                                );
                                 add('🎒', `${actor} picked up ${itemName}.`);
                             });
                             break;
@@ -6022,7 +6264,10 @@ module.exports = function registerApiRoutes(scope) {
                             entries.forEach(entry => {
                                 const giver = safeSummaryName(entry?.giver);
                                 const receiver = safeSummaryName(entry?.receiver || 'someone');
-                                const item = safeSummaryItem(entry?.item);
+                                const item = formatSummaryItemWithQuantity(
+                                    entry?.item,
+                                    entry?.quantity,
+                                );
                                 add('🔄', `${giver} gave ${item} to ${receiver}.`);
                             });
                             break;
@@ -24419,60 +24664,6 @@ module.exports = function registerApiRoutes(scope) {
                     }
                 }
 
-                const scaleAttributeBonusesForItem = (rawBonuses, { level = 1, rarity = null } = {}) => {
-                    if (!Array.isArray(rawBonuses) || !rawBonuses.length) {
-                        return [];
-                    }
-
-                    const normalizedEntries = [];
-                    for (const entry of rawBonuses) {
-                        if (!entry) {
-                            continue;
-                        }
-                        let attribute = null;
-                        let bonusValue = null;
-
-                        if (typeof entry === 'string') {
-                            attribute = entry.trim();
-                        } else if (typeof entry === 'object') {
-                            if (typeof entry.attribute === 'string') {
-                                attribute = entry.attribute.trim();
-                            } else if (typeof entry.name === 'string') {
-                                attribute = entry.name.trim();
-                            }
-                            const bonusRaw = entry.bonus ?? entry.value;
-                            const parsed = Number(bonusRaw);
-                            if (Number.isFinite(parsed)) {
-                                bonusValue = parsed;
-                            }
-                        }
-
-                        if (!attribute) {
-                            continue;
-                        }
-
-                        if (!Number.isFinite(bonusValue)) {
-                            const fallback = Number(entry?.bonus ?? entry?.value);
-                            bonusValue = Number.isFinite(fallback) ? fallback : 0;
-                        }
-
-                        normalizedEntries.push({ attribute, bonus: bonusValue });
-                    }
-
-                    if (!normalizedEntries.length) {
-                        return [];
-                    }
-
-                    const effectiveLevel = Number.isFinite(level) && level > 0 ? level : 1;
-
-                    return normalizedEntries.map(({ attribute, bonus }) => {
-                        const maxBonus = Thing.getMaxAttributeBonus(rarity, effectiveLevel);
-                        const scaled = maxBonus * bonus / 4;
-                        const rounded = Utils.roundAwayFromZero(scaled);
-                        return { attribute, bonus: rounded };
-                    });
-                };
-
                 const instantiateThingFromBlueprint = (itemBlueprint, {
                     defaultName = 'Crafted Item',
                     defaultDescription = null
@@ -24485,9 +24676,14 @@ module.exports = function registerApiRoutes(scope) {
                     const levelForBonuses = Number.isFinite(itemBlueprint.level)
                         ? itemBlueprint.level
                         : (Number.isFinite(currentPlayer?.level) ? currentPlayer.level : 1);
+                    const rawAttributeBonuses = thingType === 'item'
+                        ? normalizeAttributeBonusesForItem(
+                            Array.isArray(itemBlueprint.attributeBonuses) ? itemBlueprint.attributeBonuses : []
+                        )
+                        : [];
                     const attributeBonuses = thingType === 'item'
                         ? scaleAttributeBonusesForItem(
-                            Array.isArray(itemBlueprint.attributeBonuses) ? itemBlueprint.attributeBonuses : [],
+                            rawAttributeBonuses,
                             { level: levelForBonuses, rarity: itemBlueprint.rarity }
                         )
                         : [];
@@ -24518,6 +24714,7 @@ module.exports = function registerApiRoutes(scope) {
                         weight: itemBlueprint.weight ?? null,
                         properties: itemBlueprint.properties || null,
                         attributeBonuses: attributeBonuses.length ? attributeBonuses : undefined,
+                        unscaledAttributeBonuses: rawAttributeBonuses.length ? rawAttributeBonuses : undefined,
                         causeStatusEffectOnTarget: targetEffect || undefined,
                         causeStatusEffectOnEquipper: equipperEffect || undefined,
                         ownerId: currentPlayer.id
@@ -24532,7 +24729,9 @@ module.exports = function registerApiRoutes(scope) {
                         itemTypeDetail: itemBlueprint.type || null,
                         slot: itemBlueprint.slot || null,
                         attributeBonuses: attributeBonuses.length ? attributeBonuses : null,
+                        unscaledAttributeBonuses: rawAttributeBonuses,
                         causeStatusEffect: combinedCauseEffect,
+                        count: itemBlueprint.count ?? 1,
                         level: Number.isFinite(itemBlueprint.level) ? itemBlueprint.level : null,
                         relativeLevel: Number.isFinite(itemBlueprint.relativeLevel) ? itemBlueprint.relativeLevel : null,
                         metadata,
@@ -24582,12 +24781,14 @@ module.exports = function registerApiRoutes(scope) {
                         return;
                     }
 
-                    console.log('🗑️ Removing consumed item from world:', thing.name || 'Unnamed Item', `(ID: ${thing.id})`);
+                    const consumption = consumeThingById(thing.id);
+                    const actionLabel = consumption.decremented
+                        ? `Decrementing consumed item stack from ${consumption.priorCount} to ${consumption.remainingCount}`
+                        : 'Removing consumed item from world';
+                    console.log(`🗑️ ${actionLabel}:`, thing.name || 'Unnamed Item', `(ID: ${thing.id})`);
 
-                    consumedThingIds.push(thing.id);
-                    consumedThingNames.push(thing.name || thing.id);
-                    Thing.removeFromWorldById(thing.id);
-                    things.delete(thing.id);
+                    consumedThingIds.push(consumption.consumedThingId);
+                    consumedThingNames.push(consumption.consumedThingName);
                 });
 
                 const craftedThingInstances = [];
@@ -24784,6 +24985,10 @@ module.exports = function registerApiRoutes(scope) {
                 };
 
                 const primaryActionSummaryText = buildPrimaryActionSummaryText();
+                const selectedTimeTakenMinutes = Number(selectedResult.timeTakenMinutes);
+                const appliedTimeTakenMinutes = Number.isFinite(selectedTimeTakenMinutes) && selectedTimeTakenMinutes > 0
+                    ? Math.round(selectedTimeTakenMinutes)
+                    : MIN_CRAFT_TIME_ADVANCE_MINUTES;
                 let playerActionDescription = '';
                 let playerOtherEffect = selectedResult.other || '';
                 let chatEntry = null;
@@ -25033,6 +25238,7 @@ module.exports = function registerApiRoutes(scope) {
                                 ? '🌾 Harvest Results'
                                 : (isSalvageAction ? '♻️ Salvage Results' : '🛠️ Crafting Results'),
                             events: eventItems,
+                            timeProgress: { advancedMinutes: appliedTimeTakenMinutes },
                             parentId: chatEntry ? chatEntry.id : null,
                             locationId: resolvedLocationId
                         });
@@ -25199,10 +25405,6 @@ module.exports = function registerApiRoutes(scope) {
                     }
                 }
 
-                const selectedTimeTakenMinutes = Number(selectedResult.timeTakenMinutes);
-                const appliedTimeTakenMinutes = Number.isFinite(selectedTimeTakenMinutes) && selectedTimeTakenMinutes > 0
-                    ? Math.round(selectedTimeTakenMinutes)
-                    : MIN_CRAFT_TIME_ADVANCE_MINUTES;
                 const craftingTimeProgress = Globals.advanceTime(appliedTimeTakenMinutes, { source: 'craft_action' });
                 if (isHarvestAction && salvageTargetThing && recoveredThingInstances.length) {
                     salvageTargetThing.recordSuccessfulHarvest(
@@ -25533,6 +25735,7 @@ module.exports = function registerApiRoutes(scope) {
                     causeStatusEffect,
                     causeStatusEffectOnTarget,
                     causeStatusEffectOnEquipper,
+                    count,
                     level,
                     relativeLevel,
                     statusEffects
@@ -25564,6 +25767,7 @@ module.exports = function registerApiRoutes(scope) {
                         }
                         return causeStatusEffect;
                     }()),
+                    count,
                     level,
                     relativeLevel,
                     statusEffects,
@@ -25732,6 +25936,7 @@ module.exports = function registerApiRoutes(scope) {
                     causeStatusEffect,
                     causeStatusEffectOnTarget,
                     causeStatusEffectOnEquipper,
+                    count,
                     level,
                     relativeLevel,
                     statusEffects
@@ -25811,6 +26016,11 @@ module.exports = function registerApiRoutes(scope) {
                             error: 'Attribute bonuses must be provided as an array.'
                         });
                     }
+
+                    if (metadata && typeof metadata === 'object' && !Array.isArray(metadata)
+                        && Object.prototype.hasOwnProperty.call(metadata, 'unscaledAttributeBonuses')) {
+                        thing.unscaledAttributeBonuses = metadata.unscaledAttributeBonuses;
+                    }
                 }
 
                 if (causeStatusEffect !== undefined
@@ -25821,6 +26031,10 @@ module.exports = function registerApiRoutes(scope) {
                         equipper: causeStatusEffectOnEquipper ?? null,
                         legacy: causeStatusEffect ?? null
                     });
+                }
+
+                if (count !== undefined) {
+                    thing.count = count;
                 }
 
                 if (level !== undefined) {
@@ -25867,6 +26081,574 @@ module.exports = function registerApiRoutes(scope) {
                 res.status(400).json({
                     success: false,
                     error: error.message
+                });
+            }
+        });
+
+        app.post('/api/things/:id/separate', async (req, res) => {
+            const stagedThings = [];
+            try {
+                const rawThingId = req.params.id;
+                const thingId = typeof rawThingId === 'string' ? rawThingId.trim() : '';
+                if (!thingId) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Thing ID is required'
+                    });
+                }
+
+                const sourceThing = things.get(thingId) || Thing.getById(thingId);
+                if (!sourceThing) {
+                    return res.status(404).json({
+                        success: false,
+                        error: 'Thing not found'
+                    });
+                }
+
+                if (sourceThing.thingType !== 'item') {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Only item-type things can be separated.'
+                    });
+                }
+
+                if (typeof separateThingByPrompt !== 'function') {
+                    throw new Error('Thing separation prompt helper is unavailable.');
+                }
+
+                const isStackSplitShortcut = Number.isInteger(sourceThing.count) && sourceThing.count > 1;
+                const separatedItems = await separateThingByPrompt({ thing: sourceThing });
+                if (!Array.isArray(separatedItems)) {
+                    throw new Error('Thing separation did not return an item list.');
+                }
+
+                if (separatedItems.length === 0) {
+                    return res.json({
+                        success: true,
+                        noChanges: true,
+                        things: [],
+                        message: `${sourceThing.name || 'Item'} could not be separated further.`
+                    });
+                }
+
+                const {
+                    metadata: sourceMetadata,
+                    owner: sourceOwner,
+                    location: sourceLocation,
+                    region: sourceRegion
+                } = resolveThingContainerContext(sourceThing);
+                const sourceStatusEffects = typeof sourceThing.getStatusEffects === 'function'
+                    ? sourceThing.getStatusEffects()
+                    : [];
+
+                const originalRelativeLevel = Number.isFinite(sourceThing.relativeLevel)
+                    ? sourceThing.relativeLevel
+                    : (Number.isFinite(sourceMetadata.relativeLevel) ? sourceMetadata.relativeLevel : 0);
+                const originalLevel = Number.isFinite(sourceThing.level)
+                    ? sourceThing.level
+                    : (Number.isFinite(sourceMetadata.level) ? sourceMetadata.level : null);
+                const baseReferenceLevel = Number.isFinite(originalLevel) && Number.isFinite(originalRelativeLevel)
+                    ? originalLevel - originalRelativeLevel
+                    : (Number.isFinite(originalLevel)
+                        ? originalLevel
+                        : (Number.isFinite(sourceOwner?.level)
+                            ? sourceOwner.level
+                            : (Number.isFinite(sourceLocation?.baseLevel)
+                                ? sourceLocation.baseLevel
+                                : (Number.isFinite(sourceRegion?.averageLevel) ? sourceRegion.averageLevel : 1))));
+
+                const buildCauseStatusEffects = (itemData) => {
+                    const entries = [];
+                    if (itemData?.causeStatusEffectOnTarget) {
+                        entries.push({ ...itemData.causeStatusEffectOnTarget, applyToTarget: true });
+                    }
+                    if (itemData?.causeStatusEffectOnEquipper) {
+                        entries.push({ ...itemData.causeStatusEffectOnEquipper, applyToEquipper: true });
+                    }
+                    if (!entries.length && itemData?.causeStatusEffect) {
+                        entries.push(itemData.causeStatusEffect);
+                    }
+                    return entries.length ? entries : null;
+                };
+
+                for (const itemData of separatedItems) {
+                    if (!itemData || typeof itemData !== 'object') {
+                        throw new Error('Thing separation returned an invalid item entry.');
+                    }
+                    if (typeof itemData.name !== 'string' || !itemData.name.trim()) {
+                        throw new Error('Thing separation returned an item without a valid name.');
+                    }
+
+                    const preserveOriginalStats = Boolean(itemData.__preserveOriginalStats);
+                    const normalizedType = (itemData.itemOrScenery || itemData.thingType || 'item').trim().toLowerCase() === 'scenery'
+                        ? 'scenery'
+                        : 'item';
+                    const effectiveThingType = preserveOriginalStats
+                        ? (sourceThing.thingType === 'scenery' ? 'scenery' : 'item')
+                        : normalizedType;
+
+                    if (sourceOwner && effectiveThingType !== 'item') {
+                        throw new Error(`Thing separation returned scenery "${itemData.name}" for an inventory-bound item.`);
+                    }
+
+                    const count = itemData.count ?? 1;
+                    if (!Number.isInteger(count) || count < 1) {
+                        throw new Error(`Thing separation returned invalid count "${count}" for "${itemData.name}".`);
+                    }
+
+                    const relativeLevel = preserveOriginalStats
+                        ? originalRelativeLevel
+                        : (Number.isFinite(itemData.relativeLevel)
+                            ? itemData.relativeLevel
+                            : originalRelativeLevel);
+                    const computedLevel = preserveOriginalStats
+                        ? (Number.isFinite(originalLevel)
+                            ? originalLevel
+                            : (Number.isFinite(baseReferenceLevel + relativeLevel)
+                                ? Math.max(1, Math.round(baseReferenceLevel + relativeLevel))
+                                : 1))
+                        : (Number.isFinite(baseReferenceLevel + relativeLevel)
+                            ? Math.max(1, Math.round(baseReferenceLevel + relativeLevel))
+                            : (Number.isFinite(originalLevel) ? originalLevel : 1));
+
+                    const effectiveRarity = preserveOriginalStats
+                        ? (sourceThing.rarity || sourceMetadata.rarity || null)
+                        : (itemData.rarity || null);
+                    const effectiveItemTypeDetail = preserveOriginalStats
+                        ? (sourceThing.itemTypeDetail || sourceMetadata.itemTypeDetail || sourceMetadata.itemType || null)
+                        : (itemData.type || null);
+                    const effectiveSlot = preserveOriginalStats
+                        ? (sourceThing.slot || sourceMetadata.slot || null)
+                        : (itemData.slot || null);
+                    const effectiveProperties = preserveOriginalStats
+                        ? (sourceMetadata.properties ?? null)
+                        : (itemData.properties ?? null);
+                    const effectiveValue = (preserveOriginalStats || isStackSplitShortcut)
+                        ? (sourceMetadata.value ?? null)
+                        : (itemData.value ?? null);
+                    const effectiveWeight = preserveOriginalStats
+                        ? (sourceMetadata.weight ?? null)
+                        : (itemData.weight ?? null);
+                    const effectiveTargetStatusEffect = preserveOriginalStats
+                        ? (sourceThing.causeStatusEffectOnTarget || sourceMetadata.causeStatusEffectOnTarget || null)
+                        : (itemData.causeStatusEffectOnTarget || null);
+                    const effectiveEquipperStatusEffect = preserveOriginalStats
+                        ? (sourceThing.causeStatusEffectOnEquipper || sourceMetadata.causeStatusEffectOnEquipper || null)
+                        : (itemData.causeStatusEffectOnEquipper || null);
+                    const preservedOrDerivedUnscaledAttributeBonuses = (() => {
+                        const storedUnscaled = Array.isArray(sourceThing.unscaledAttributeBonuses) && sourceThing.unscaledAttributeBonuses.length
+                            ? sourceThing.unscaledAttributeBonuses.map(entry => ({ ...entry }))
+                            : normalizeAttributeBonusesForItem(
+                                Array.isArray(sourceMetadata.unscaledAttributeBonuses) ? sourceMetadata.unscaledAttributeBonuses : []
+                            );
+                        if (storedUnscaled.length) {
+                            return storedUnscaled;
+                        }
+
+                        const scaledBonuses = normalizeAttributeBonusesForItem(
+                            Array.isArray(sourceThing.attributeBonuses) ? sourceThing.attributeBonuses : []
+                        );
+                        if (!scaledBonuses.length) {
+                            return [];
+                        }
+
+                        const maxBonus = Utils.roundAwayFromZero(Thing.getMaxAttributeBonus(effectiveRarity, computedLevel));
+                        if (!Number.isFinite(maxBonus) || maxBonus === 0) {
+                            return [];
+                        }
+
+                        return scaledBonuses.map(({ attribute, bonus }) => ({
+                            attribute,
+                            bonus: bonus / maxBonus * 4
+                        }));
+                    })();
+                    const effectiveUnscaledAttributeBonuses = effectiveThingType === 'item'
+                        ? (preserveOriginalStats
+                            ? preservedOrDerivedUnscaledAttributeBonuses
+                            : normalizeAttributeBonusesForItem(
+                                Array.isArray(itemData.attributeBonuses) ? itemData.attributeBonuses : []
+                            ))
+                        : [];
+                    const effectiveAttributeBonuses = effectiveThingType === 'item'
+                        ? (preserveOriginalStats
+                            ? (Array.isArray(sourceThing.attributeBonuses)
+                                ? sourceThing.attributeBonuses.map(entry => ({ ...entry }))
+                                : [])
+                            : scaleAttributeBonusesForItem(
+                                effectiveUnscaledAttributeBonuses,
+                                { level: computedLevel, rarity: effectiveRarity },
+                            ))
+                        : [];
+                    const effectiveStatusEffects = (preserveOriginalStats || isStackSplitShortcut)
+                        ? sourceStatusEffects.map(effect => ({ ...effect }))
+                        : [];
+
+                    const booleanFlags = preserveOriginalStats
+                        ? {
+                            isVehicle: Boolean(sourceThing.isVehicle),
+                            isCraftingStation: Boolean(sourceThing.isCraftingStation),
+                            isProcessingStation: Boolean(sourceThing.isProcessingStation),
+                            isHarvestable: Boolean(sourceThing.isHarvestable),
+                            isSalvageable: Boolean(sourceThing.isSalvageable)
+                        }
+                        : extractThingBooleanFlagsFromPayload(itemData);
+                    const metadata = sanitizeMetadataObject({
+                        rarity: effectiveRarity,
+                        itemType: effectiveItemTypeDetail,
+                        itemTypeDetail: effectiveItemTypeDetail,
+                        value: effectiveValue,
+                        weight: effectiveWeight,
+                        properties: effectiveProperties,
+                        slot: effectiveSlot,
+                        attributeBonuses: effectiveAttributeBonuses.length ? effectiveAttributeBonuses : undefined,
+                        unscaledAttributeBonuses: effectiveUnscaledAttributeBonuses.length ? effectiveUnscaledAttributeBonuses : undefined,
+                        causeStatusEffectOnTarget: effectiveTargetStatusEffect,
+                        causeStatusEffectOnEquipper: effectiveEquipperStatusEffect,
+                        level: computedLevel,
+                        relativeLevel,
+                        ...(sourceOwner
+                            ? { ownerId: sourceOwner.id }
+                            : {
+                                locationId: sourceLocation.id,
+                                locationName: sourceLocation.name || sourceLocation.id
+                            }),
+                        ...booleanFlags
+                    });
+
+                    const stagedThing = (preserveOriginalStats || isStackSplitShortcut)
+                        ? sourceThing.copy({
+                            name: itemData.name,
+                            description: itemData.description || `A separated item recovered from ${sourceThing.name}.`,
+                            shortDescription: itemData.shortDescription ?? sourceThing.shortDescription ?? null,
+                            count,
+                            metadataOverrides: metadata,
+                        })
+                        : new Thing({
+                            name: itemData.name,
+                            description: itemData.description || `A separated item recovered from ${sourceThing.name}.`,
+                            shortDescription: itemData.shortDescription ?? null,
+                            thingType: effectiveThingType,
+                            imageId: null,
+                            rarity: effectiveRarity,
+                            itemTypeDetail: effectiveItemTypeDetail,
+                            slot: effectiveSlot,
+                            attributeBonuses: effectiveThingType === 'item' ? effectiveAttributeBonuses : [],
+                            unscaledAttributeBonuses: effectiveUnscaledAttributeBonuses,
+                            causeStatusEffect: buildCauseStatusEffects({
+                                causeStatusEffectOnTarget: effectiveTargetStatusEffect,
+                                causeStatusEffectOnEquipper: effectiveEquipperStatusEffect
+                            }),
+                            count,
+                            level: computedLevel,
+                            relativeLevel,
+                            statusEffects: effectiveStatusEffects,
+                            metadata,
+                            ...booleanFlags,
+                            enrichStatusEffects: true
+                        });
+                    stagedThings.push(stagedThing);
+                }
+
+                if (typeof Globals.ensureThingNamesAllowed !== 'function') {
+                    throw new Error('Globals.ensureThingNamesAllowed is unavailable for item name validation.');
+                }
+                await Globals.ensureThingNamesAllowed({
+                    things: stagedThings,
+                    location: sourceLocation || null,
+                    region: sourceRegion || null
+                });
+
+                const deleteResult = deleteThingById(sourceThing.id);
+                if (!deleteResult?.success) {
+                    throw new Error(deleteResult?.error || `Failed to remove original thing "${sourceThing.name}".`);
+                }
+
+                for (const stagedThing of stagedThings) {
+                    things.set(stagedThing.id, stagedThing);
+                    if (sourceOwner) {
+                        const added = sourceOwner.addInventoryItem(stagedThing, { suppressNpcEquip: true });
+                        if (!added) {
+                            throw new Error(`Failed to add separated item "${stagedThing.name}" to ${sourceOwner.name || sourceOwner.id}.`);
+                        }
+                    } else if (sourceLocation) {
+                        sourceLocation.addThingId(stagedThing.id);
+                    } else {
+                        throw new Error(`No destination available for separated item "${stagedThing.name}".`);
+                    }
+                }
+
+                const responsePayload = {
+                    success: true,
+                    noChanges: false,
+                    sourceThingId: sourceThing.id,
+                    things: stagedThings.map(entry => entry.toJSON()),
+                    message: `${sourceThing.name || 'Item'} separated successfully.`
+                };
+
+                if (sourceLocation && typeof buildLocationResponse === 'function') {
+                    responsePayload.location = buildLocationResponse(sourceLocation);
+                }
+
+                if (sourceOwner && typeof serializeNpcForClient === 'function') {
+                    responsePayload.owner = serializeNpcForClient(sourceOwner);
+                }
+
+                res.json(responsePayload);
+            } catch (error) {
+                for (const stagedThing of stagedThings) {
+                    try {
+                        things.delete(stagedThing.id);
+                        stagedThing.delete();
+                    } catch (cleanupError) {
+                        console.warn('Failed to clean up staged separated thing:', cleanupError?.message || cleanupError);
+                    }
+                }
+
+                console.error('Failed to separate thing:', error);
+                res.status(500).json({
+                    success: false,
+                    error: error?.message || 'Failed to separate thing'
+                });
+            }
+        });
+
+        app.post('/api/things/:id/split-stack', (req, res) => {
+            let splitThing = null;
+            try {
+                const rawThingId = req.params.id;
+                const thingId = typeof rawThingId === 'string' ? rawThingId.trim() : '';
+                if (!thingId) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Thing ID is required'
+                    });
+                }
+
+                const sourceThing = things.get(thingId) || Thing.getById(thingId);
+                if (!sourceThing) {
+                    return res.status(404).json({
+                        success: false,
+                        error: 'Thing not found'
+                    });
+                }
+
+                if (sourceThing.thingType !== 'item') {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Only item-type things can be split.'
+                    });
+                }
+
+                const sourceCount = Number.isInteger(sourceThing.count) && sourceThing.count > 0
+                    ? sourceThing.count
+                    : 1;
+                if (sourceCount <= 1) {
+                    return res.status(400).json({
+                        success: false,
+                        error: `${sourceThing.name || 'Item'} is not a stack.`
+                    });
+                }
+
+                const rawQuantity = req.body?.quantity;
+                const splitQuantity = Number(rawQuantity);
+                if (!Number.isInteger(splitQuantity)) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Split quantity must be an integer.'
+                    });
+                }
+                if (splitQuantity < 1) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Split quantity must be at least 1.'
+                    });
+                }
+                if (splitQuantity >= sourceCount) {
+                    return res.status(400).json({
+                        success: false,
+                        error: `Split quantity must be less than the source stack size (${sourceCount}).`
+                    });
+                }
+
+                const {
+                    owner: sourceOwner,
+                    location: sourceLocation
+                } = resolveThingContainerContext(sourceThing);
+
+                splitThing = sourceThing.copy({
+                    count: splitQuantity,
+                    metadataOverrides: {
+                        count: splitQuantity
+                    }
+                });
+
+                sourceThing.count = sourceCount - splitQuantity;
+                sourceThing.metadata = {
+                    ...(sourceThing.metadata && typeof sourceThing.metadata === 'object'
+                        ? sourceThing.metadata
+                        : {}),
+                    count: sourceThing.count
+                };
+
+                things.set(splitThing.id, splitThing);
+                if (sourceOwner) {
+                    const added = sourceOwner.addInventoryItem(splitThing, { suppressNpcEquip: true });
+                    if (!added) {
+                        throw new Error(`Failed to add split stack "${splitThing.name}" to ${sourceOwner.name || sourceOwner.id}.`);
+                    }
+                } else if (sourceLocation) {
+                    sourceLocation.addThingId(splitThing.id);
+                } else {
+                    throw new Error(`No destination available for split stack "${splitThing.name}".`);
+                }
+
+                return res.json(buildThingMutationResponsePayload({
+                    things: [sourceThing, splitThing],
+                    owner: sourceOwner,
+                    location: sourceLocation,
+                    message: `${sourceThing.name || 'Item'} stack split successfully.`,
+                    extra: {
+                        sourceThingId: sourceThing.id,
+                        splitThingId: splitThing.id,
+                        noChanges: false
+                    }
+                }));
+            } catch (error) {
+                if (splitThing) {
+                    try {
+                        things.delete(splitThing.id);
+                        splitThing.delete();
+                    } catch (cleanupError) {
+                        console.warn('Failed to clean up split stack after error:', cleanupError?.message || cleanupError);
+                    }
+                }
+                console.error('Failed to split stack:', error);
+                return res.status(500).json({
+                    success: false,
+                    error: error?.message || 'Failed to split stack'
+                });
+            }
+        });
+
+        app.post('/api/things/:id/merge-stacks', (req, res) => {
+            try {
+                const rawThingId = req.params.id;
+                const thingId = typeof rawThingId === 'string' ? rawThingId.trim() : '';
+                if (!thingId) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Thing ID is required'
+                    });
+                }
+
+                const sourceThing = things.get(thingId) || Thing.getById(thingId);
+                if (!sourceThing) {
+                    return res.status(404).json({
+                        success: false,
+                        error: 'Thing not found'
+                    });
+                }
+
+                if (sourceThing.thingType !== 'item') {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Only item-type things can be merged.'
+                    });
+                }
+
+                if (sourceThing.isEquipped) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Equipped items cannot be merged.'
+                    });
+                }
+
+                const {
+                    owner: sourceOwner,
+                    location: sourceLocation
+                } = resolveThingContainerContext(sourceThing);
+
+                const mergeCandidates = Thing.getAllByName(sourceThing.name)
+                    .filter(candidate => {
+                        if (!candidate || candidate.id === sourceThing.id) {
+                            return false;
+                        }
+                        if (candidate.thingType !== 'item' || candidate.isEquipped) {
+                            return false;
+                        }
+                        if (candidate.checksum !== sourceThing.checksum) {
+                            return false;
+                        }
+
+                        try {
+                            const candidateContext = resolveThingContainerContext(candidate);
+                            if (sourceOwner) {
+                                return candidateContext.owner?.id === sourceOwner.id;
+                            }
+                            if (sourceLocation) {
+                                return !candidateContext.owner && candidateContext.location?.id === sourceLocation.id;
+                            }
+                        } catch (_) {
+                            return false;
+                        }
+
+                        return false;
+                    });
+
+                if (!mergeCandidates.length) {
+                    return res.json(buildThingMutationResponsePayload({
+                        things: [sourceThing],
+                        owner: sourceOwner,
+                        location: sourceLocation,
+                        message: `No matching stacks found for ${sourceThing.name || 'item'}.`,
+                        extra: {
+                            sourceThingId: sourceThing.id,
+                            mergedThingIds: [],
+                            noChanges: true
+                        }
+                    }));
+                }
+
+                const mergedThingIds = [];
+                let mergedCount = Number.isInteger(sourceThing.count) && sourceThing.count > 0
+                    ? sourceThing.count
+                    : 1;
+
+                for (const candidate of mergeCandidates) {
+                    mergedCount += Number.isInteger(candidate.count) && candidate.count > 0
+                        ? candidate.count
+                        : 1;
+                    const deleteResult = deleteThingById(candidate.id);
+                    if (!deleteResult?.success) {
+                        throw new Error(deleteResult?.error || `Failed to remove stack "${candidate.name || candidate.id}" during merge.`);
+                    }
+                    mergedThingIds.push(candidate.id);
+                }
+
+                sourceThing.count = mergedCount;
+                sourceThing.metadata = {
+                    ...(sourceThing.metadata && typeof sourceThing.metadata === 'object'
+                        ? sourceThing.metadata
+                        : {}),
+                    count: sourceThing.count
+                };
+
+                return res.json(buildThingMutationResponsePayload({
+                    things: [sourceThing],
+                    owner: sourceOwner,
+                    location: sourceLocation,
+                    message: `${sourceThing.name || 'Item'} stacks merged successfully.`,
+                    extra: {
+                        sourceThingId: sourceThing.id,
+                        mergedThingIds,
+                        noChanges: false
+                    }
+                }));
+            } catch (error) {
+                console.error('Failed to merge stacks:', error);
+                return res.status(500).json({
+                    success: false,
+                    error: error?.message || 'Failed to merge stacks'
                 });
             }
         });

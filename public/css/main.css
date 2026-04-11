@@ -2221,6 +2221,7 @@ p:not(:last-child) {
 }
 
 .entity-icon {
+  --thing-icon-size: 94px;
   width: 94px;
   height: 94px;
   min-height: 94px;
@@ -2234,6 +2235,28 @@ p:not(:last-child) {
   border: 1px solid rgba(148, 163, 184, 0.32);
   box-shadow: inset 0 4px 12px rgba(15, 23, 42, 0.45);
   font-size: 2rem;
+}
+
+.thing-count-badge {
+  position: absolute;
+  right: 6px;
+  bottom: 4px;
+  display: inline-flex;
+  align-items: flex-end;
+  justify-content: center;
+  width: max-content;
+  min-width: 0;
+  height: calc(var(--thing-icon-size, 94px) * 0.2);
+  color: #ffffff;
+  font-size: calc(var(--thing-icon-size, 94px) * 0.2);
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: 0.01em;
+  pointer-events: none;
+  z-index: 3;
+  -webkit-text-stroke: 1.5px #000000;
+  paint-order: stroke fill;
+  text-shadow: -1px -1px 0 #000000, 1px -1px 0 #000000, -1px 1px 0 #000000, 1px 1px 0 #000000, 0 2px 4px rgba(0, 0, 0, 0.75);
 }
 
 .entity-image-badges {
@@ -3625,12 +3648,18 @@ body.dark .thing-toggle-hint {
   border-radius: 10px;
   background: rgba(15, 23, 42, 0.85);
   border: 1px solid rgba(148, 163, 184, 0.3);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
   overflow-x: auto;
 }
 .message .message-content pre code {
   background: transparent;
   padding: 0;
   font-size: inherit;
+  white-space: inherit;
+  overflow-wrap: inherit;
+  word-break: inherit;
 }
 .message .message-content blockquote {
   margin: 0.75em 0;
@@ -7056,6 +7085,7 @@ body.modal-open {
 }
 
 .npc-view-equipment-icon {
+  --thing-icon-size: 58px;
   width: 58px;
   height: 58px;
   min-height: 58px;

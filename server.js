@@ -9,6 +9,7 @@ const yaml = require('js-yaml');
 const fs = require('fs');
 const path = require('path');
 const { randomUUID } = require('crypto');
+const { XMLSerializer } = require('@xmldom/xmldom');
 const Utils = require('./Utils.js');
 const { loadMergedConfig } = require('./ConfigLoader.js');
 const { resolvePointPoolFormulas } = require('./utils/point-pool-formulas.js');
@@ -3224,29 +3225,11 @@ function buildThingProfiles(location) {
         if (!thing) {
             continue;
         }
-
-        const metadata = thing.metadata || {};
-        const statusEffects = typeof thing.getStatusEffects === 'function' ? thing.getStatusEffects() : [];
-        const booleanFlags = resolveThingBooleanFlagsFromInstance(thing);
-        const causeStatusEffectOnTarget = thing.causeStatusEffectOnTarget || null;
-        const causeStatusEffectOnEquipper = thing.causeStatusEffectOnEquipper || null;
-
-        profiles.push({
-            id: thing.id,
-            name: thing.name,
-            description: thing.description,
-            thingType: thing.thingType,
-            imageId: thing.imageId,
-            rarity: thing.rarity || null,
-            itemTypeDetail: thing.itemTypeDetail || null,
-            slot: thing.slot || null,
-            attributeBonuses: thing.attributeBonuses || [],
-            causeStatusEffectOnTarget,
-            causeStatusEffectOnEquipper,
-            metadata: metadata || {},
-            statusEffects,
-            ...booleanFlags
-        });
+        profiles.push(
+            typeof thing.toJSON === 'function'
+                ? thing.toJSON()
+                : JSON.parse(JSON.stringify(thing))
+        );
     }
 
     return profiles;
@@ -10758,8 +10741,11 @@ async function generateInventoryForCharacter({ character, characterDescriptor = 
             item.level = computedLevel;
             if (item.properties) detailParts.push(`Properties: ${item.properties}`);
 
+            const rawAttributeBonuses = normalizeAttributeBonusesForItem(
+                Array.isArray(item.attributeBonuses) ? item.attributeBonuses : []
+            );
             const scaledAttributeBonuses = scaleAttributeBonusesForItem(
-                Array.isArray(item.attributeBonuses) ? item.attributeBonuses : [],
+                rawAttributeBonuses,
                 { level: computedLevel, rarity: item.rarity }
             );
 
@@ -10792,6 +10778,7 @@ async function generateInventoryForCharacter({ character, characterDescriptor = 
                     properties: item.properties || null,
                     slot: item.slot || null,
                     attributeBonuses: scaledAttributeBonuses.length ? scaledAttributeBonuses : null,
+                    unscaledAttributeBonuses: rawAttributeBonuses.length ? rawAttributeBonuses : null,
                     causeStatusEffectOnTarget: item.causeStatusEffectOnTarget || null,
                     causeStatusEffectOnEquipper: item.causeStatusEffectOnEquipper || null,
                     relativeLevel,
@@ -10809,7 +10796,9 @@ async function generateInventoryForCharacter({ character, characterDescriptor = 
                     itemTypeDetail: item.type || null,
                     slot: item.slot || null,
                     attributeBonuses: scaledAttributeBonuses,
+                    unscaledAttributeBonuses: rawAttributeBonuses,
                     causeStatusEffect: item.causeStatusEffect,
+                    count: item.count,
                     level: computedLevel,
                     relativeLevel,
                     metadata,
@@ -11244,9 +11233,14 @@ async function generateItemsByNames({
                         : (resolvedRegion?.averageLevel || currentPlayer?.level || 1));
                 const computedLevel = clampLevel(baseReference + relativeLevel, baseReference);
 
+                const rawAttributeBonuses = effectiveThingType === 'item'
+                    ? normalizeAttributeBonusesForItem(
+                        Array.isArray(itemData?.attributeBonuses) ? itemData.attributeBonuses : [],
+                    )
+                    : [];
                 const scaledAttributeBonuses = effectiveThingType === 'item'
                     ? scaleAttributeBonusesForItem(
-                        Array.isArray(itemData?.attributeBonuses) ? itemData.attributeBonuses : [],
+                        rawAttributeBonuses,
                         { level: computedLevel, rarity: itemData?.rarity }
                     )
                     : [];
@@ -11278,6 +11272,7 @@ async function generateItemsByNames({
                     properties: itemData?.properties || null,
                     slot: itemData?.slot || null,
                     attributeBonuses: scaledAttributeBonuses.length ? scaledAttributeBonuses : null,
+                    unscaledAttributeBonuses: rawAttributeBonuses.length ? rawAttributeBonuses : null,
                     causeStatusEffectOnTarget: itemData?.causeStatusEffectOnTarget || null,
                     causeStatusEffectOnEquipper: itemData?.causeStatusEffectOnEquipper || null,
                     relativeLevel,
@@ -11295,6 +11290,7 @@ async function generateItemsByNames({
                     type: itemData?.type,
                     slot: itemData?.slot,
                     attributeBonuses: scaledAttributeBonuses,
+                    unscaledAttributeBonuses: rawAttributeBonuses,
                     causeStatusEffect: (function buildCauseEffects() {
                         const target = itemData?.causeStatusEffectOnTarget
                             ? { ...itemData.causeStatusEffectOnTarget, applyToTarget: true }
@@ -11309,6 +11305,7 @@ async function generateItemsByNames({
                         if (legacy && !entries.length) entries.push(legacy);
                         return entries.length ? entries : null;
                     }()),
+                    count: itemData?.count,
                     level: computedLevel,
                     relativeLevel,
                     metadata,
@@ -11457,15 +11454,17 @@ function buildThingPromptItem(thing) {
     const itemOrScenery = thing.thingType === 'scenery' ? 'scenery' : 'item';
     const rarity = thing.rarity || metadata.rarity || getDefaultRarityLabel();
 
-    // iterate through attributeBonuses (array of {attribute, bonus}) and set them all to 4 * bonus + Thing.getMaxAttributeBonus(rarity, thing.level)
-    const attributeBonuses = normalizeBonuses(
-        Array.isArray(thing.attributeBonuses) && thing.attributeBonuses.length
-            ? thing.attributeBonuses
-            : metadata.attributeBonuses
-    ).map(({ attribute, bonus }) => {
-        const finalBonus = bonus / roundAwayFromZero(Thing.getMaxAttributeBonus(rarity, thing.level)) * 4;
-        return { attribute, bonus: finalBonus };
-    });
+    const storedUnscaledAttributeBonuses = normalizeBonuses(metadata.unscaledAttributeBonuses);
+    const attributeBonuses = storedUnscaledAttributeBonuses.length
+        ? storedUnscaledAttributeBonuses
+        : normalizeBonuses(
+            Array.isArray(thing.attributeBonuses) && thing.attributeBonuses.length
+                ? thing.attributeBonuses
+                : metadata.attributeBonuses
+        ).map(({ attribute, bonus }) => {
+            const finalBonus = bonus / roundAwayFromZero(Thing.getMaxAttributeBonus(rarity, thing.level)) * 4;
+            return { attribute, bonus: finalBonus };
+        });
 
     const causeStatusEffectOnTarget = thing.causeStatusEffectOnTarget || metadata.causeStatusEffectOnTarget || null;
     const causeStatusEffectOnEquipper = thing.causeStatusEffectOnEquipper || metadata.causeStatusEffectOnEquipper || null;
@@ -11473,6 +11472,7 @@ function buildThingPromptItem(thing) {
     return {
         name: thing.name,
         description: thing.description || '',
+        count: thing.count,
         itemOrScenery,
         type: thing.itemTypeDetail
             || metadata.itemTypeDetail
@@ -11493,6 +11493,123 @@ function buildThingPromptItem(thing) {
         causeStatusEffectOnEquipper,
         properties: metadata.properties || ''
     };
+}
+
+async function separateThingByPrompt({
+    thing
+} = {}) {
+    if (!thing || typeof thing !== 'object' || typeof thing.name !== 'string') {
+        throw new Error('separateThingByPrompt requires a valid Thing instance.');
+    }
+
+    if (Number.isInteger(thing.count) && thing.count > 1) {
+        console.log(`🧺 Separating thing "${thing.name}" (${thing.id}) via stack split shortcut...`);
+        const itemForPrompt = buildThingPromptItem(thing);
+        const shortDescription = typeof thing.shortDescription === 'string'
+            ? thing.shortDescription.trim()
+            : '';
+        return Array.from({ length: thing.count }, () => ({
+            ...itemForPrompt,
+            shortDescription,
+            count: 1
+        }));
+    }
+
+    console.log(`🧺 Separating thing "${thing.name}" (${thing.id}) via AI prompt...`);
+
+    const baseContext = await prepareBasePromptContext();
+    const itemForPrompt = buildThingPromptItem(thing);
+    const originalState = thing.toJSON();
+
+    if (!config?.ai?.endpoint || !config.ai.apiKey || !config.ai.model) {
+        throw new Error('AI configuration missing; cannot separate item.');
+    }
+
+    let renderedTemplate;
+    try {
+        renderedTemplate = promptEnv.render('base-context.xml.njk', {
+            ...baseContext,
+            promptType: 'thing-separate',
+            item: itemForPrompt
+        });
+    } catch (renderError) {
+        try {
+            const logDir = path.join(__dirname, 'logs');
+            if (!fs.existsSync(logDir)) {
+                fs.mkdirSync(logDir, { recursive: true });
+            }
+            const debugPath = path.join(logDir, `event_item_separate_render_error_${Date.now()}.log`);
+            const debugPayload = {
+                message: renderError.message,
+                stack: renderError.stack,
+                thingId: thing.id,
+                promptType: 'thing-separate',
+                item: itemForPrompt
+            };
+            fs.writeFileSync(debugPath, JSON.stringify(debugPayload, null, 2), 'utf8');
+        } catch (logError) {
+            console.warn('Failed to log item separation render error:', logError.message);
+        }
+        throw renderError;
+    }
+
+    const parsedTemplate = parseXMLTemplate(renderedTemplate);
+
+    if (!parsedTemplate?.systemPrompt || !parsedTemplate?.generationPrompt) {
+        throw new Error('Thing separation template did not produce prompts.');
+    }
+
+    const messages = [
+        { role: 'system', content: parsedTemplate.systemPrompt },
+        { role: 'user', content: parsedTemplate.generationPrompt }
+    ];
+
+    const requestStart = Date.now();
+    let requestPayloadForLog = null;
+    const aiResponse = await LLMClient.chatCompletion({
+        messages,
+        temperature: parsedTemplate.temperature,
+        metadataLabel: 'separate_thing',
+        captureRequestPayload: (payload) => { requestPayloadForLog = payload; }
+    });
+
+    const apiDurationSeconds = (Date.now() - requestStart) / 1000;
+
+    if (!aiResponse || !aiResponse.trim()) {
+        throw new Error('Empty thing separation response from AI.');
+    }
+
+    const separatedItems = await parseThingSeparateResponse(aiResponse, {
+        promptEnv,
+        parseXMLTemplate,
+        prepareBasePromptContext,
+        thing
+    });
+
+    LLMClient.logPrompt({
+        prefix: 'event_item_separate',
+        metadataLabel: 'event_item_separate',
+        systemPrompt: parsedTemplate.systemPrompt || '',
+        generationPrompt: parsedTemplate.generationPrompt || '',
+        response: aiResponse || '',
+        requestPayload: requestPayloadForLog,
+        sections: [
+            {
+                title: 'Duration',
+                content: formatDurationLine(apiDurationSeconds)
+            },
+            {
+                title: 'Original Item State',
+                content: JSON.stringify(originalState, null, 2)
+            },
+            {
+                title: 'Separated Item Definitions',
+                content: JSON.stringify(separatedItems, null, 2)
+            }
+        ]
+    });
+
+    return separatedItems;
 }
 
 async function alterThingByPrompt({
@@ -11701,8 +11818,11 @@ async function alterThingByPrompt({
         ? updatedItem.slot.trim()
         : null;
 
+    const rawAttributeBonuses = normalizedType === 'item'
+        ? normalizeAttributeBonusesForItem(updatedItem.attributeBonuses || [])
+        : [];
     const scaledAttributeBonuses = normalizedType === 'item'
-        ? scaleAttributeBonusesForItem(updatedItem.attributeBonuses || [], {
+        ? scaleAttributeBonusesForItem(rawAttributeBonuses, {
             level: computedLevel,
             rarity
         })
@@ -11718,6 +11838,7 @@ async function alterThingByPrompt({
         properties: updatedItem.properties ?? previousMetadata.properties,
         causeStatusEffect: normalizedType === 'item' ? updatedItem.causeStatusEffect || null : null,
         attributeBonuses: normalizedType === 'item' ? scaledAttributeBonuses : undefined,
+        unscaledAttributeBonuses: normalizedType === 'item' && rawAttributeBonuses.length ? rawAttributeBonuses : undefined,
         relativeLevel,
         level: computedLevel
     };
@@ -11807,6 +11928,9 @@ async function alterThingByPrompt({
     thing.slot = slotValue;
     thing.attributeBonuses = normalizedType === 'item' ? scaledAttributeBonuses : [];
     thing.causeStatusEffect = normalizedType === 'item' ? updatedItem.causeStatusEffect || null : null;
+    if (updatedItem.count !== undefined) {
+        thing.count = updatedItem.count;
+    }
     thing.level = computedLevel;
     thing.relativeLevel = Number.isFinite(relativeLevel) ? relativeLevel : null;
     thing.metadata = sanitizedMetadata;
@@ -13279,6 +13403,8 @@ async function generateNpcFromEvent({
             }
         })();
 
+        await skillPromise;
+
         let npcData = parsedNpcs && parsedNpcs.length ? parsedNpcs[0] : null;
         if (npcData) {
             npcData = { ...normalizeNpcPromptSeed(npcSeed), ...npcData };
@@ -13380,7 +13506,7 @@ async function generateNpcFromEvent({
 
         const normalizedNpcName = (npc.name || '').trim().toLowerCase();
         if (normalizedNpcName && skillAssignments instanceof Map) {
-            const progressionEntry = skillAssignments.get(normalizedNpcName);
+            const progressionEntry = resolveAssignmentEntry(skillAssignments, npc.name);
             if (progressionEntry) {
                 applyNpcCreationProgressionAllocations(npc, progressionEntry);
             }
@@ -14984,17 +15110,13 @@ async function respecNpcSkillsForCharacter(character, { timeoutScale = 1 } = {})
     }
 
     const locationId = typeof character.currentLocation === 'string' ? character.currentLocation.trim() : '';
-    if (!locationId) {
-        throw new Error(`NPC "${character.name}" is not currently in a location.`);
-    }
-
-    const location = Location.get(locationId);
-    if (!location) {
+    const location = locationId ? Location.get(locationId) : null;
+    if (locationId && !location) {
         throw new Error(`Current location "${locationId}" for NPC "${character.name}" was not found.`);
     }
 
-    const region = findRegionByLocationId(location.id);
-    if (!region) {
+    const region = location ? findRegionByLocationId(location.id) : null;
+    if (location && !region) {
         throw new Error(`Could not resolve a region for NPC "${character.name}" at location "${location.name}".`);
     }
 
@@ -15002,7 +15124,7 @@ async function respecNpcSkillsForCharacter(character, { timeoutScale = 1 } = {})
     const promptRequest = await requestNpcSkillAssignments({
         generatedNpcResults,
         locationOverride: location,
-        currentRegion: buildRegionShortDescriptionItem(region),
+        currentRegion: region ? buildRegionShortDescriptionItem(region) : null,
         timeoutScale,
         npcNames: [character.name]
     });
@@ -16939,7 +17061,7 @@ function roundAwayFromZero(value) {
     return value > 0 ? Math.ceil(value) : Math.floor(value);
 }
 
-function scaleAttributeBonusesForItem(rawBonuses, { level = 1, rarity = null } = {}) {
+function normalizeAttributeBonusesForItem(rawBonuses) {
     if (!Array.isArray(rawBonuses) || !rawBonuses.length) {
         return [];
     }
@@ -16982,6 +17104,15 @@ function scaleAttributeBonusesForItem(rawBonuses, { level = 1, rarity = null } =
         });
     }
 
+    if (!normalizedEntries.length) {
+        return [];
+    }
+
+    return normalizedEntries;
+}
+
+function scaleAttributeBonusesForItem(rawBonuses, { level = 1, rarity = null } = {}) {
+    const normalizedEntries = normalizeAttributeBonusesForItem(rawBonuses);
     if (!normalizedEntries.length) {
         return [];
     }
@@ -18279,6 +18410,20 @@ async function parseThingsXml(xmlContent, { isInventory = false, promptEnv = nul
                 ? 'item'
                 : (rawItemOrScenery || fallbackKind || 'item');
 
+            const countNode = node.getElementsByTagName('count')[0];
+            let parsedCount = 1;
+            if (countNode) {
+                const rawCount = countNode.textContent?.trim() || '';
+                if (!rawCount) {
+                    throw new Error(`Thing "${nameNode.textContent.trim()}" has a blank <count> value.`);
+                }
+                const numericCount = Number(rawCount);
+                if (!Number.isInteger(numericCount) || numericCount < 0) {
+                    throw new Error(`Thing "${nameNode.textContent.trim()}" has invalid <count> value "${rawCount}".`);
+                }
+                parsedCount = numericCount;
+            }
+
             const parseBooleanTag = tag => {
                 const text = node.getElementsByTagName(tag)[0]?.textContent?.trim().toLowerCase();
                 return text === 'true';
@@ -18307,6 +18452,7 @@ async function parseThingsXml(xmlContent, { isInventory = false, promptEnv = nul
                 weight: node.getElementsByTagName('weight')[0]?.textContent?.trim() || '',
                 properties: node.getElementsByTagName('properties')[0]?.textContent?.trim() || '',
                 relativeLevel,
+                count: parsedCount,
                 attributeBonuses,
                 //causeStatusEffect,
                 causeStatusEffectOnTarget,
@@ -18336,6 +18482,103 @@ async function parseThingsXml(xmlContent, { isInventory = false, promptEnv = nul
         console.trace();
         return [];
     }
+}
+
+async function parseThingSeparateResponse(xmlContent, options = {}) {
+    const { thing = null } = options;
+    const doc = Utils.parseXmlDocument(xmlContent, 'text/xml');
+
+    const parserError = doc.getElementsByTagName('parsererror')[0];
+    if (parserError) {
+        throw new Error(parserError.textContent);
+    }
+
+    const stackRoot = doc.getElementsByTagName('stack')[0];
+    if (stackRoot) {
+        if (!thing || typeof thing !== 'object' || typeof thing.name !== 'string') {
+            throw new Error('Thing separation <stack> response requires the original thing context.');
+        }
+
+        const stackName = stackRoot.getElementsByTagName('name')[0]?.textContent?.trim() || '';
+        if (!stackName) {
+            throw new Error('Thing separation <stack> response is missing <name>.');
+        }
+
+        const stackDescription = stackRoot.getElementsByTagName('description')[0]?.textContent?.trim() || '';
+        if (!stackDescription) {
+            throw new Error('Thing separation <stack> response is missing <description>.');
+        }
+
+        const countNode = stackRoot.getElementsByTagName('count')[0] || null;
+        if (!countNode) {
+            throw new Error('Thing separation <stack> response is missing <count>.');
+        }
+
+        const rawCount = countNode.textContent?.trim() || '';
+        if (!rawCount) {
+            throw new Error('Thing separation <stack> response has a blank <count> value.');
+        }
+
+        const parsedCount = Number(rawCount);
+        if (!Number.isInteger(parsedCount) || parsedCount < 1) {
+            throw new Error(`Thing separation <stack> response has invalid <count> value "${rawCount}".`);
+        }
+
+        const metadata = thing.metadata && typeof thing.metadata === 'object'
+            ? thing.metadata
+            : {};
+        const rawSlot = typeof thing.slot === 'string'
+            ? thing.slot
+            : (typeof metadata.slot === 'string' ? metadata.slot : '');
+        const stackShortDescription = stackRoot.getElementsByTagName('shortDescription')[0]?.textContent?.trim() || '';
+
+        return [{
+            __preserveOriginalStats: true,
+            name: stackName,
+            description: stackDescription,
+            shortDescription: stackShortDescription,
+            count: parsedCount,
+            itemOrScenery: thing.thingType === 'scenery' ? 'scenery' : 'item',
+            thingType: thing.thingType === 'scenery' ? 'scenery' : 'item',
+            type: thing.itemTypeDetail
+                || metadata.itemTypeDetail
+                || metadata.itemType
+                || (thing.thingType === 'scenery' ? 'scenery' : 'item'),
+            slot: rawSlot || '',
+            rarity: thing.rarity || metadata.rarity || getDefaultRarityLabel(),
+            value: metadata.value ?? '',
+            weight: metadata.weight ?? '',
+            properties: metadata.properties || '',
+            relativeLevel: metadata.relativeLevel ?? thing.relativeLevel ?? 0,
+            attributeBonuses: Array.isArray(thing.attributeBonuses)
+                ? thing.attributeBonuses.map(entry => ({ ...entry }))
+                : [],
+            causeStatusEffectOnTarget: thing.causeStatusEffectOnTarget || metadata.causeStatusEffectOnTarget || null,
+            causeStatusEffectOnEquipper: thing.causeStatusEffectOnEquipper || metadata.causeStatusEffectOnEquipper || null,
+            isVehicle: Boolean(thing.isVehicle),
+            isCraftingStation: Boolean(thing.isCraftingStation),
+            isProcessingStation: Boolean(thing.isProcessingStation),
+            isHarvestable: Boolean(thing.isHarvestable),
+            isSalvageable: Boolean(thing.isSalvageable)
+        }];
+    }
+
+    const itemsRoot = doc.getElementsByTagName('items')[0];
+    if (!itemsRoot) {
+        throw new Error('Thing separation response must include either an <items> root element or a <stack> root element.');
+    }
+
+    const hasThingEntries = ['item', 'thing', 'scenery'].some(tag => itemsRoot.getElementsByTagName(tag).length > 0);
+    if (!hasThingEntries) {
+        return [];
+    }
+
+    const serializedItemsRoot = new XMLSerializer().serializeToString(itemsRoot);
+    const parsedItems = await parseThingsXml(serializedItemsRoot, options);
+    if (!Array.isArray(parsedItems) || !parsedItems.length) {
+        throw new Error('Thing separation response contained entries, but none could be parsed.');
+    }
+    return parsedItems;
 }
 
 async function generateLocationThingsForLocation({ location } = {}) {
@@ -18520,14 +18763,22 @@ async function generateLocationThingsForLocation({ location } = {}) {
         metadata.level = computedLevel;
         itemData.level = computedLevel;
 
+        const rawAttributeBonuses = thingType === 'item'
+            ? normalizeAttributeBonusesForItem(
+                Array.isArray(itemData.attributeBonuses) ? itemData.attributeBonuses : []
+            )
+            : [];
         const scaledAttributeBonuses = thingType === 'item'
             ? scaleAttributeBonusesForItem(
-                Array.isArray(itemData.attributeBonuses) ? itemData.attributeBonuses : [],
+                rawAttributeBonuses,
                 { level: computedLevel, rarity: itemData.rarity }
             )
             : [];
         if (scaledAttributeBonuses.length) {
             metadata.attributeBonuses = scaledAttributeBonuses;
+        }
+        if (rawAttributeBonuses.length) {
+            metadata.unscaledAttributeBonuses = rawAttributeBonuses;
         }
 
         const cleanedMetadata = sanitizeMetadataObject(metadata);
@@ -18541,7 +18792,9 @@ async function generateLocationThingsForLocation({ location } = {}) {
             itemTypeDetail: itemData.type || null,
             slot: itemData.slot || null,
             attributeBonuses: thingType === 'item' ? scaledAttributeBonuses : [],
+            unscaledAttributeBonuses: rawAttributeBonuses,
             causeStatusEffect: itemData.causeStatusEffect,
+            count: itemData.count,
             level: computedLevel,
             relativeLevel,
             metadata: cleanedMetadata,
@@ -26027,6 +26280,7 @@ Events.initialize({
     generatedImages,
     pendingRegionStubs,
     alterThingByPrompt,
+    separateThingByPrompt,
     regenerateLocationName,
     confirmQuestWithPlayer: ({ clientId, quest, requestId }) => questConfirmationManager.requestConfirmation({ clientId, quest, requestId }),
     defaultStatusDuration: Events.DEFAULT_STATUS_DURATION,
@@ -26093,6 +26347,8 @@ const apiScope = {
     getSuggestedPlayerLevel,
     parseXMLTemplate,
     parseThingsXml,
+    parseThingSeparateResponse,
+    separateThingByPrompt,
     queueNpcAssetsForLocation,
     resolveActionOutcome,
     resolveLocationStyle,

@@ -39,6 +39,9 @@ The main UI is rendered by `views/index.njk` and powered by `public/js/chat.js` 
   - NPC and party-member card health bars sit just below the portrait image so they do not overlap the in-portrait need bars.
   - Dead NPC/party cards only show a corpse countdown inside the skull indicator when `corpseCountdown` is numeric; persistent corpses (`persistWhenDead`) omit the countdown entirely.
   - Items/Scenery grids + "Craft" and "New Item/Scenery" buttons.
+  - Thing cards render a lower-right thumbnail count badge from persisted `thing.count`; item cards always show it, while scenery cards suppress the badge when the count is `1`.
+  - Item thing-card context menus include `Separate`, which runs the `thing-separate` prompt and replaces the source item with the returned item stack(s); an explicit empty `<items>` result is treated as a no-op rather than an error.
+  - Item thing-card context menus also include `Split Stack` for stacks with `count > 1` (prompting for an exact integer split amount) and `Merge Stacks` for item cards outside equipment views; merge scans same-name/same-checksum items in the same inventory or location and folds them into the selected stack while excluding equipped items.
   - Drag/drop behavior:
     - Any location thing card can be dragged to an inventory drop target only when its type is `item`.
     - Dragging a location card between the Items and Scenery grids converts its `thingType` (`item` <-> `scenery`) via `PUT /api/things/:id`.
@@ -115,7 +118,7 @@ The chat client listens on `/ws?clientId=...` and handles:
 - `quest_confirmation_request` (modal prompt).
 
 `processChatPayload()` also consumes `payload.worldTime` from streamed/final chat responses, updates the world-time chip, and emits transition summaries (`segment`/`season`) into the event-summary flow.
-It also renders `needBarChanges`, `dispositionChanges`, and `factionReputationChanges` into the same event-summary bundle box so they appear together. When `time_passed` advances world time for the turn, the same bundle appends an `⏳ <natural duration> passed.` line using `A`, `A and B`, or `A, B, and C` formatting. If exit travel time overrides the prompt-authored turn duration, the displayed line uses the effective travel minutes. Map fast travel that advances time now adds a standalone event-summary entry reading `Traveled from X to Y. Z passed.`. Need-bar summaries now use the configured bar icon, include the model-provided reason text when present, and emit one standalone notification per change outside active bundles.
+It also renders `needBarChanges`, `dispositionChanges`, and `factionReputationChanges` into the same event-summary bundle box so they appear together. When `time_passed` advances world time for the turn, the same bundle appends an `⏳ <natural duration> passed.` line using `A`, `A and B`, or `A, B, and C` formatting. If exit travel time overrides the prompt-authored turn duration, the displayed line uses the effective travel minutes. Prose-mode craft/process/salvage/harvest result summaries now append that same `⏳ <natural duration> passed.` line from the action's applied craft time. Map fast travel that advances time now adds a standalone event-summary entry reading `Traveled from X to Y. Z passed.`. Need-bar summaries now use the configured bar icon, include the model-provided reason text when present, and emit one standalone notification per change outside active bundles. Quantity-bearing item event summaries append stack suffixes like `(x2)` or `(x10)` after the item name when the quantity is greater than `1`.
 
 ## Key API calls from the chat UI
 
@@ -135,6 +138,7 @@ Not exhaustive, but the core UI calls include:
 - `/api/player/update-stats` (player-view modal point allocation submit; unspent pools are server-derived from submitted level/attributes/skills, and the in-modal skill pool preview tracks formula deltas from provisional stat changes such as Intelligence bonus adjustments).
 - `/api/locations/:id` and `/api/locations/:id/exits` (location details + exit edits).
 - `/api/things/:id` (thing updates; location drag/drop uses this to convert item/scenery type).
+- `/api/things/:id/separate` (item separation prompt action from thing-card context menus).
 - `/api/map/region` and `/api/map/world` (map tabs).
 
 History window note:

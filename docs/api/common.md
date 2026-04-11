@@ -153,6 +153,7 @@ Highlights beyond `Player.toJSON()`:
 Fields:
 - `id`, `name`, `description`, `shortDescription`
 - `thingType` (`item` or `scenery`)
+- `count` (persisted integer quantity; defaults to `1`)
 - `imageId`, `createdAt`, `lastUpdated`
 - `rarity`, `itemTypeDetail`, `slot`
 - `attributeBonuses` (array)
@@ -168,12 +169,7 @@ Optional fields may be omitted when empty/undefined.
 ## ThingProfile (buildThingProfiles)
 Included in `LocationResponse.things`.
 
-Fields:
-- `id`, `name`, `description`, `thingType`, `imageId`
-- `rarity`, `itemTypeDetail`, `slot`, `attributeBonuses`
-- `causeStatusEffectOnTarget`, `causeStatusEffectOnEquipper`
-- `metadata`, `statusEffects`
-- Boolean flags: `isVehicle`, `isCraftingStation`, `isProcessingStation`, `isHarvestable`, `isSalvageable`
+`buildThingProfiles(...)` now returns the direct [Thing (Thing.toJSON)](#thing-thingtojson) shape for each location thing instead of maintaining a separate trimmed serializer.
 
 ## LocationExit (LocationExit.toJSON)
 Fields:
@@ -216,7 +212,7 @@ Extends `LocationDetails` with:
   - vehicle exits tied to vehicle transit are omitted from the payload: boarding exits into a destination vehicle that is in transit or still finalizing arrival after `ETA`, and the active outside/disembark exit from a source vehicle in the same state
 - `vehicleCurrentLocationName` (string | undefined; present when current location/region is a vehicle and the active vehicle exit resolves)
 - `npcs` (NpcProfile[])
-- `things` (ThingProfile[])
+- `things` (Thing[])
 
 ## Region (Region.toJSON)
 Fields:

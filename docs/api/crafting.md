@@ -42,9 +42,13 @@ Notes:
 - Deterministic/action summary lines now include source context:
   - Harvest/salvage lines use `from <source>`.
   - Craft/process lines use `using <inputs>`.
+- Prose-mode craft/process/salvage/harvest result summaries now append the same `⏳ <natural duration> passed.` line used by normal turn event-summary bundles, sourced from the action's applied `timeTakenMinutes`.
 - Crafting/harvest prompts omit prior craft/harvest/process entries from base-context history to reduce duplicate actions.
 - Harvest plausibility prompts now receive `lastHarvestTime` as human-readable `... ago` text plus `harvestTarget.pastHarvests` from the source node's persisted harvest history.
+- Craft success-degree rerolls now require the model response to include a full outer `<response>...</response>` wrapper via `requiredRegex` before the response is accepted by `LLMClient`.
 - Player-action prose generation uses `_includes/player-action-craft.njk` via `promptType=player-action-craft` and expects XML in `<result><description>...</description></result>` (with optional `<otherEffectDescription>`).
 - `timeTaken` is parsed from each crafting/salvage/harvest `<result>` using the shared duration parser (`HH:MM`, minute values, or explicit day/hour/minute/round units). Unit-bearing quantities may be decimal (`2.5 hours`), and the final value is rounded to the nearest minute. If a result has an invalid `timeTaken`, the server logs a warning, skips that result entry, and continues parsing the others. A minimum of 1 minute is always advanced (including `timeTaken = 0`).
 - Crafted item instantiation preserves `causeStatusEffectOnTarget` and `causeStatusEffectOnEquipper` as distinct effect entries when both are present, instead of collapsing the target effect onto both application paths.
 - Successful harvest actions now update the harvested source node itself: harvestable `Thing` instances keep a deduped `previouslyHarvestedItems` list plus `lastHarvested` as absolute world minutes at the successful completion time.
+- When a consumed input `Thing` has `count > 1`, crafting/salvage/harvest now decrements the stack by `1` instead of deleting the whole `Thing`; only stacks at `1` or `0` are fully removed.
+- Parsed crafted/recovered item `<count>` values are preserved when the resulting `Thing` instances are instantiated; crafted stacks no longer collapse to the default count of `1`.

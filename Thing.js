@@ -1,7 +1,6 @@
 const crypto = require('crypto');
 const Utils = require('./Utils.js');
 const Globals = require('./Globals.js');
-const { count } = require('console');
 const SanitizedStringMap = require('./SanitizedStringMap.js');
 const SanitizedStringSet = require('./SanitizedStringSet.js');
 const StatusEffect = require('./StatusEffect.js');
@@ -27,6 +26,7 @@ class Thing {
   #statusEffects;
   #slot;
   #attributeBonuses;
+  #unscaledAttributeBonuses;
   #causeStatusEffect; // array of normalized cause status effect entries
   #enableStatusEffectEnrichment = true;
   #level;
@@ -36,6 +36,7 @@ class Thing {
   #flags = new SanitizedStringSet();
   #isEnrichingStatusEffects = false;
   #shortDescription;
+  #count;
   static #booleanFlagMap = Object.freeze({
     isVehicle: 'vehicle',
     isCraftingStation: 'crafting_station',
@@ -43,6 +44,26 @@ class Thing {
     isHarvestable: 'harvestable',
     isSalvageable: 'salvageable'
   });
+  static #checksumExcludedTopLevelKeys = new Set([
+    'id',
+    'count',
+    'createdAt',
+    'lastUpdated'
+  ]);
+  static #checksumExcludedMetadataKeys = new Set([
+    'location',
+    'locationid',
+    'location_id',
+    'owner',
+    'ownerid',
+    'owner_id',
+    'playerid',
+    'player_id',
+    'count',
+    'unscaledattributebonuses',
+    'inventoryownerid',
+    'inventory_owner_id'
+  ]);
   static get booleanFlagMap() {
     return this.#booleanFlagMap;
   }
@@ -538,7 +559,9 @@ class Thing {
     statusEffects = [],
     slot = null,
     attributeBonuses = null,
+    unscaledAttributeBonuses = undefined,
     causeStatusEffect = null,
+    count = undefined,
     level = null,
     relativeLevel = null,
     previouslyHarvestedItems = null,
@@ -591,8 +614,12 @@ class Thing {
     this.#statusEffects = this.#normalizeStatusEffects(statusEffects);
     this.#slot = null;
     this.#attributeBonuses = [];
+    this.#unscaledAttributeBonuses = [];
     this.#causeStatusEffect = [];
     this.#enableStatusEffectEnrichment = enrichStatusEffects !== false;
+    this.#count = count !== null && count !== undefined
+      ? Thing.#normalizeCount(count)
+      : undefined;
     this.#level = Number.isFinite(level) ? Math.max(1, Math.round(level)) : null;
     this.#relativeLevel = Number.isFinite(relativeLevel) ? Math.max(-20, Math.min(20, Math.round(relativeLevel))) : null;
     this.#previouslyHarvestedItems = [];
@@ -605,12 +632,18 @@ class Thing {
     this.isSalvageable = isSalvageable;
 
     this.#applyMetadataFieldsFromMetadata();
+    const initialUnscaledAttributeBonuses = unscaledAttributeBonuses !== undefined
+      ? unscaledAttributeBonuses
+      : this.#metadata.unscaledAttributeBonuses;
 
     if (slot !== null && slot !== undefined) {
       this.slot = slot;
     }
     if (attributeBonuses !== null && attributeBonuses !== undefined) {
       this.attributeBonuses = attributeBonuses;
+    }
+    if (initialUnscaledAttributeBonuses !== undefined) {
+      this.unscaledAttributeBonuses = initialUnscaledAttributeBonuses;
     }
     if (causeStatusEffect !== null && causeStatusEffect !== undefined) {
       this.#ingestCauseStatusEffects(causeStatusEffect);
@@ -666,6 +699,15 @@ class Thing {
 
   get lastUpdated() {
     return this.#lastUpdated;
+  }
+
+  get checksum() {
+    const normalized = Thing.#normalizeValueForChecksum(this.toJSON());
+    return Thing.#computeQuickChecksum(JSON.stringify(normalized));
+  }
+
+  get count() {
+    return this.#count;
   }
 
   get equippedBy() {
@@ -821,6 +863,18 @@ class Thing {
   set attributeBonuses(bonuses) {
     const normalized = this.#normalizeAttributeBonuses(bonuses);
     this.#attributeBonuses = normalized;
+    this.#unscaledAttributeBonuses = [];
+    this.#syncFieldsToMetadata();
+    this.#lastUpdated = new Date().toISOString();
+  }
+
+  get unscaledAttributeBonuses() {
+    return this.#unscaledAttributeBonuses.map(bonus => ({ ...bonus }));
+  }
+
+  set unscaledAttributeBonuses(bonuses) {
+    const normalized = this.#normalizeAttributeBonuses(bonuses);
+    this.#unscaledAttributeBonuses = normalized;
     this.#syncFieldsToMetadata();
     this.#lastUpdated = new Date().toISOString();
   }
@@ -905,6 +959,15 @@ class Thing {
 
   get level() {
     return this.#level;
+  }
+
+  set count(value) {
+    const normalized = Thing.#normalizeCount(value);
+    if (normalized !== this.#count) {
+      this.#count = normalized;
+      this.#syncFieldsToMetadata();
+      this.#lastUpdated = new Date().toISOString();
+    }
   }
 
   set level(value) {
@@ -1384,6 +1447,64 @@ class Thing {
     return [...Thing.#validTypes];
   }
 
+  static #normalizeValueForChecksum(value, { inMetadata = false } = {}) {
+    if (value === undefined) {
+      return undefined;
+    }
+    if (value === null || typeof value !== 'object') {
+      return value;
+    }
+    if (Array.isArray(value)) {
+      return value
+        .map(entry => Thing.#normalizeValueForChecksum(entry, { inMetadata }))
+        .filter(entry => entry !== undefined);
+    }
+
+    const normalized = {};
+    const keys = Object.keys(value).sort((a, b) => a.localeCompare(b));
+    for (const key of keys) {
+      const normalizedKey = key.trim().toLowerCase();
+      if (!inMetadata && Thing.#checksumExcludedTopLevelKeys.has(key)) {
+        continue;
+      }
+      if (inMetadata && Thing.#checksumExcludedMetadataKeys.has(normalizedKey)) {
+        continue;
+      }
+
+      const nextInMetadata = inMetadata || normalizedKey === 'metadata';
+      const nextValue = Thing.#normalizeValueForChecksum(value[key], { inMetadata: nextInMetadata });
+      if (nextValue === undefined) {
+        continue;
+      }
+      if (nextValue && typeof nextValue === 'object' && !Array.isArray(nextValue) && Object.keys(nextValue).length === 0) {
+        continue;
+      }
+      normalized[key] = nextValue;
+    }
+
+    return normalized;
+  }
+
+  static #computeQuickChecksum(text) {
+    let hash = 0x811c9dc5;
+    for (let index = 0; index < text.length; index += 1) {
+      hash ^= text.charCodeAt(index);
+      hash = Math.imul(hash, 0x01000193) >>> 0;
+    }
+    return hash.toString(16).padStart(8, '0');
+  }
+
+  static #normalizeCount(value, fieldName = 'Thing count') {
+    const numericValue = Number(value);
+    if (!Number.isFinite(numericValue) || !Number.isInteger(numericValue)) {
+      throw new Error(`${fieldName} must be an integer.`);
+    }
+    if (numericValue < 0) {
+      throw new Error(`${fieldName} must be 0 or greater.`);
+    }
+    return numericValue;
+  }
+
   // Instance methods
   delete() {
     this.removeFromWorld();
@@ -1416,6 +1537,7 @@ class Thing {
         return entry ? entry.effect.toJSON() : undefined;
       })(),
       causeStatusEffect: this.causeStatusEffect,
+      count: this.#count,
       level: this.#level || undefined,
       relativeLevel: this.#relativeLevel || undefined,
       previouslyHarvestedItems: this.#previouslyHarvestedItems.length ? [...this.#previouslyHarvestedItems] : undefined,
@@ -1475,6 +1597,7 @@ class Thing {
         }
         return entries.length ? entries : null;
       }()),
+      count: data.count ?? data.metadata?.count ?? undefined,
       level: data.level ?? data.metadata?.level ?? null,
       relativeLevel: data.relativeLevel ?? data.metadata?.relativeLevel ?? null,
       previouslyHarvestedItems: data.previouslyHarvestedItems ?? data.metadata?.previouslyHarvestedItems ?? [],
@@ -1492,6 +1615,52 @@ class Thing {
     }
 
     return thing;
+  }
+
+  copy({
+    count = this.#count,
+    metadata = undefined,
+    metadataOverrides = {},
+    ...overrides
+  } = {}) {
+    if (metadata !== undefined && (metadata === null || typeof metadata !== 'object' || Array.isArray(metadata))) {
+      throw new Error('Thing.copy metadata must be an object when provided.');
+    }
+    if (metadataOverrides === null || typeof metadataOverrides !== 'object' || Array.isArray(metadataOverrides)) {
+      throw new Error('Thing.copy metadataOverrides must be an object.');
+    }
+
+    const clonePlain = (value) => {
+      if (value === undefined) {
+        return undefined;
+      }
+      return JSON.parse(JSON.stringify(value));
+    };
+
+    const serialized = clonePlain(this.toJSON());
+    delete serialized.id;
+    delete serialized.createdAt;
+    delete serialized.lastUpdated;
+
+    const overridePayload = clonePlain(overrides) || {};
+    const baseMetadata = serialized.metadata && typeof serialized.metadata === 'object'
+      ? serialized.metadata
+      : {};
+    const explicitMetadata = metadata === undefined ? null : clonePlain(metadata);
+    const mergedMetadata = {
+      ...(explicitMetadata || baseMetadata),
+      ...clonePlain(metadataOverrides || {})
+    };
+    mergedMetadata.count = count;
+
+    const copiedThing = Thing.fromJSON({
+      ...serialized,
+      ...overridePayload,
+      metadata: mergedMetadata,
+      count
+    });
+
+    return copiedThing;
   }
 
   #sanitizeSlot(value) {
@@ -1690,6 +1859,8 @@ class Thing {
 
     const bonuses = this.#normalizeAttributeBonuses(meta.attributeBonuses);
     this.#attributeBonuses = bonuses;
+    const unscaledBonuses = this.#normalizeAttributeBonuses(meta.unscaledAttributeBonuses);
+    this.#unscaledAttributeBonuses = unscaledBonuses;
 
     this.#causeStatusEffect = [];
     const effectTarget = this.#normalizeCauseStatusEffectEntry(meta.causeStatusEffectOnTarget, { applyToTarget: true });
@@ -1724,6 +1895,12 @@ class Thing {
       this.#relativeLevel = Math.max(-20, Math.min(20, Math.round(meta.relativeLevel)));
     } else if (this.#relativeLevel === undefined) {
       this.#relativeLevel = null;
+    }
+
+    if (meta.count !== undefined && meta.count !== null) {
+      this.#count = Thing.#normalizeCount(meta.count, 'Thing metadata count');
+    } else if (this.#count === undefined) {
+      this.#count = 1;
     }
 
     this.#previouslyHarvestedItems = this.#normalizePreviouslyHarvestedItems(meta.previouslyHarvestedItems);
@@ -1761,6 +1938,12 @@ class Thing {
       delete this.#metadata.attributeBonuses;
     }
 
+    if (this.#unscaledAttributeBonuses && this.#unscaledAttributeBonuses.length) {
+      this.#metadata.unscaledAttributeBonuses = this.#unscaledAttributeBonuses.map(bonus => ({ ...bonus }));
+    } else {
+      delete this.#metadata.unscaledAttributeBonuses;
+    }
+
     const targetEntry = this.#getCauseStatusEffectEntry('target');
     const equipperEntry = this.#getCauseStatusEffectEntry('equipper');
     if (targetEntry) {
@@ -1774,6 +1957,8 @@ class Thing {
       delete this.#metadata.causeStatusEffectOnEquipper;
     }
     delete this.#metadata.causeStatusEffect;
+
+    this.#metadata.count = this.#count;
 
     if (Number.isFinite(this.#level)) {
       this.#metadata.level = this.#level;
@@ -1992,6 +2177,45 @@ class Thing {
     }
   }
 
+  consumeOne({ things } = {}) {
+    const hasThingsContainer = things instanceof Map
+      || Array.isArray(things)
+      || (things && typeof things === 'object');
+    if (!hasThingsContainer) {
+      throw new Error('Thing.consumeOne requires a things container (Map, array, or object).');
+    }
+
+    if (this.#count > 1) {
+      this.count = this.#count - 1;
+      return {
+        deleted: false,
+        decremented: true,
+        remainingCount: this.#count,
+        thing: this
+      };
+    }
+
+    this.delete();
+
+    if (things instanceof Map) {
+      things.delete(this.#id);
+    } else if (Array.isArray(things)) {
+      const index = things.findIndex(candidate => candidate?.id === this.#id);
+      if (index >= 0) {
+        things.splice(index, 1);
+      }
+    } else {
+      delete things[this.#id];
+    }
+
+    return {
+      deleted: true,
+      decremented: false,
+      remainingCount: 0,
+      thing: this
+    };
+  }
+
   // Remove this thing from all locations and inventories
   removeFromWorld() {
     const Player = require('./Player.js');
@@ -2036,7 +2260,7 @@ class Thing {
       console.trace();
     }
 
-    if (count(owners) === 0) {
+    if (owners.length === 0) {
       if (!locationIdOverride) {
         console.warn(`Thing ${this.#name} (${this.#id}) is not in any inventory. Cannot determine location to drop into.`);
         console.trace();

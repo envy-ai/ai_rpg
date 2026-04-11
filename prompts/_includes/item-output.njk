@@ -1,6 +1,7 @@
 {% if changeDescription %}<originalItem>{% else %}<item>{% endif %}
   <name>{{ item.name }}</name>
   <description>{{ item.description }}</description>
+  <count>{{ item.count }}</count>
   <itemOrScenery>{{ item.itemOrScenery }}</itemOrScenery>
   <type>{{ item.type }}</type>
   <slot>{% if item.slot %}{{ item.slot | join(", ") }}{% else %}N/A{% endif %}</slot>
