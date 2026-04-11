@@ -71,13 +71,27 @@ Loaded on the chat page:
   `assets/material-icons/inventory-view-icons/filter.svg`,
   `assets/material-icons/inventory-view-icons/sort.svg`,
   `assets/material-icons/inventory-view-icons/view.svg`,
-  plus the per-sort glyphs and the `cards.svg` / `table.svg` / `grid.svg` view icons in
-  that same folder. The repeated toggle, sort-shell, and view-shell markup now comes from the
+  plus the per-sort glyphs and the `cards.svg` / `table.svg` / `grid.svg` /
+  `grid_small.svg` view icons in that same folder. The repeated toggle, sort-shell,
+  and view-shell markup now comes from the
   shared `views/_includes/thing-list-filter-toggle.njk` macros so all four panels stay in sync.
+  Size-related tuning for shared item/scenery imagery is centralized in the
+  `// Shared thing-view sizing tokens` block near the top of `public/css/main.scss`,
+  covering the classic-card container, base icon size, grid/tile sizing, table image cell,
+  overlay badge bar, count badge, action-icon list, and the item `•••` context-menu button.
   Shared view-mode presentation is handled by `.thing-collection-view--table`,
-  `.thing-collection-view--grid`, `.thing-table-row`, `.thing-action-icon-list`,
-  `.thing-grid-tile`, and `.thing-grid-tile__icon`; grid mode uses a `1px` tile gap and
-  a `2px` rarity-colored thumbnail border.
+  `.thing-collection-view--grid`, `.thing-collection-view--small-grid`,
+  `.thing-table-row`, `.thing-table-row__icon-cell`, `.thing-table-row__icon`,
+  `.thing-action-icon-list`, `.thing-grid-tile`, and `.thing-grid-tile__icon`; grid modes use a `1px` tile gap and a `2px`
+  rarity-colored border on the image/icon itself. `Small Grid` now overrides those shared
+  sizing tokens to `0.7x` with SCSS math so the tile, image, count badge, overlay badge bar,
+  and context-menu button all shrink together without transform scaling. Table mode uses a 48px image cell with a full-size icon
+  scaled down inside it so the in-image count badge and overlays shrink together,
+  while the surrounding text/actions remain full size; the shared default view is `Grid`;
+  row and cell borders are styled
+  as collapsed `2px` lines with zero spacing. The shared list container also gets semantic mode classes
+  for downstream styling hooks: `.view-classic-mode`, `.view-table-mode`,
+  `.view-grid-mode`, `.view-grid-mode-large`, and `.view-grid-mode-small`.
   Crafting cards also add a red equipped-state outline via `.crafting-inventory-card.is-equipped`
   so equipped items are visually blocked from slot assignment until unequipped.
   The crafting inventory grid also carries the same `8px` top separation below filters as the

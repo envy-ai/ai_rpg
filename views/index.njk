@@ -4250,7 +4250,8 @@
         const thingListViewDefinitionMap = new Map([
             ['classic', { key: 'classic', label: 'Classic' }],
             ['table', { key: 'table', label: 'Table' }],
-            ['grid', { key: 'grid', label: 'Grid' }]
+            ['grid', { key: 'grid', label: 'Grid' }],
+            ['small-grid', { key: 'small-grid', label: 'Small Grid' }]
         ]);
         const thingRaritySortRankByKey = new Map();
         rarityDefinitions.forEach((definition, index) => {
@@ -4275,10 +4276,10 @@
 
         function normalizeThingListViewMode(value) {
             if (typeof value !== 'string') {
-                return 'classic';
+                return 'grid';
             }
             const normalized = value.trim().toLowerCase();
-            return thingListViewDefinitionMap.has(normalized) ? normalized : 'classic';
+            return thingListViewDefinitionMap.has(normalized) ? normalized : 'grid';
         }
 
         function getThingListSortState(panelKey) {
@@ -4309,14 +4310,14 @@
 
         function getThingListViewState(panelKey) {
             if (!panelKey) {
-                return 'classic';
+                return 'grid';
             }
             return normalizeThingListViewMode(thingListViewStates.get(panelKey));
         }
 
         function setThingListViewState(panelKey, nextViewMode) {
             if (!panelKey) {
-                return 'classic';
+                return 'grid';
             }
             const normalized = normalizeThingListViewMode(nextViewMode);
             thingListViewStates.set(panelKey, normalized);
@@ -13382,6 +13383,7 @@
         }
 
         function bindThingListViewShell({
+            panel = null,
             panelKey,
             viewShell,
             rerender
@@ -13393,8 +13395,14 @@
             viewShell.querySelectorAll('.thing-list-view-option').forEach(option => {
                 option.addEventListener('click', () => {
                     const optionViewMode = normalizeThingListViewMode(option.dataset.viewMode || '');
+                    if (!optionViewMode) {
+                        throw new Error(`Unsupported thing-list view mode "${option.dataset.viewMode || ''}".`);
+                    }
                     setThingListViewState(panelKey, optionViewMode);
                     syncThingListViewOptions(viewShell, panelKey);
+                    if (panel) {
+                        closeThingListViewPopoverForPanel(panel);
+                    }
                     rerender();
                 });
             });
@@ -13471,6 +13479,7 @@
             rerender: () => renderNpcInventory(currentNpcInventory)
         });
         bindThingListViewShell({
+            panel: npcInventoryPanel,
             panelKey: 'npcInventory',
             viewShell: npcInventoryView,
             rerender: () => renderNpcInventory(currentNpcInventory)
@@ -13481,6 +13490,7 @@
             rerender: () => renderCraftingInventory()
         });
         bindThingListViewShell({
+            panel: craftingInventoryPanel,
             panelKey: 'craftingInventory',
             viewShell: craftingInventoryView,
             rerender: () => renderCraftingInventory()
@@ -13491,6 +13501,7 @@
             rerender: () => invokeLocationThingCollectionRerender()
         });
         bindThingListViewShell({
+            panel: locationSceneryPanel,
             panelKey: 'locationScenery',
             viewShell: locationSceneryViewEl,
             rerender: () => invokeLocationThingCollectionRerender()
@@ -13501,6 +13512,7 @@
             rerender: () => invokeLocationThingCollectionRerender()
         });
         bindThingListViewShell({
+            panel: locationItemsPanel,
             panelKey: 'locationItems',
             viewShell: locationItemsViewEl,
             rerender: () => invokeLocationThingCollectionRerender()
@@ -14590,7 +14602,11 @@
                         return;
                     }
                 }
-                if (state.panel.contains(event.target)) {
+                if (state.kind === 'sort' || state.kind === 'view') {
+                    if (state.toggleButton?.contains(event.target) || state.popoverShell?.contains(event.target)) {
+                        return;
+                    }
+                } else if (state.panel.contains(event.target)) {
                     return;
                 }
                 if (state.kind === 'sort') {
@@ -14898,6 +14914,9 @@
                     row.dataset.imageEntityId = thing.id;
                 }
 
+                const iconCell = document.createElement('div');
+                iconCell.className = 'thing-table-row__icon-cell';
+
                 const icon = document.createElement('div');
                 icon.className = 'entity-icon thing-table-row__icon';
                 renderEntityImage({
@@ -14911,6 +14930,7 @@
                     badges: [],
                     countBadgeText: getThingCountBadgeText(thing)
                 });
+                iconCell.appendChild(icon);
 
                 const content = document.createElement('div');
                 content.className = 'thing-table-row__content';
@@ -14930,7 +14950,7 @@
                     utilities.appendChild(actionIcons);
                 }
 
-                row.appendChild(icon);
+                row.appendChild(iconCell);
                 row.appendChild(content);
                 row.appendChild(utilities);
 
@@ -14957,7 +14977,7 @@
                 return { card: row, icon, name, slotInfo, controlsHost: utilities };
             }
 
-            if (resolvedViewMode === 'grid') {
+            if (resolvedViewMode === 'grid' || resolvedViewMode === 'small-grid') {
                 const tile = document.createElement('div');
                 tile.className = [
                     'thing-grid-tile',
@@ -15168,6 +15188,12 @@
             grid.classList.toggle('thing-collection-view--classic', viewMode === 'classic');
             grid.classList.toggle('thing-collection-view--table', viewMode === 'table');
             grid.classList.toggle('thing-collection-view--grid', viewMode === 'grid');
+            grid.classList.toggle('thing-collection-view--small-grid', viewMode === 'small-grid');
+            grid.classList.toggle('view-classic-mode', viewMode === 'classic');
+            grid.classList.toggle('view-table-mode', viewMode === 'table');
+            grid.classList.toggle('view-grid-mode', viewMode === 'grid' || viewMode === 'small-grid');
+            grid.classList.toggle('view-grid-mode-large', viewMode === 'grid');
+            grid.classList.toggle('view-grid-mode-small', viewMode === 'small-grid');
 
             if (!filteredItems.length) {
                 grid.hidden = !keepGridVisibleWhenEmpty;

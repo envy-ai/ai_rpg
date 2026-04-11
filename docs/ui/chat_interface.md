@@ -42,11 +42,12 @@ The main UI is rendered by `views/index.njk` and powered by `public/js/chat.js` 
   - Dead NPC/party cards only show a corpse countdown inside the skull indicator when `corpseCountdown` is numeric; persistent corpses (`persistWhenDead`) omit the countdown entirely.
   - Items/Scenery grids + "Craft" and "New Item/Scenery" buttons.
   - Thing cards render a lower-right thumbnail count badge from persisted `thing.count`; item cards always show it, while scenery cards suppress the badge when the count is `1`.
-  - Location item/scenery sections now use the same inventory-style thing-list renderer and search/slot-filter pipeline as the player/NPC inventory modal and crafting inventory. All four shared panels now expose a shared three-control header: a view popup, a sort popup, and the icon-only filter popup. View state is tracked per panel for the current page session, so changing one panel to `Table` or `Grid` does not affect the others and survives rerenders.
+  - Location item/scenery sections now use the same inventory-style thing-list renderer and search/slot-filter pipeline as the player/NPC inventory modal and crafting inventory. All four shared panels now expose a shared three-control header: a view popup, a sort popup, and the icon-only filter popup. View state is tracked per panel for the current page session, so changing one panel to `Table` or `Grid` does not affect the others and survives rerenders. The default shared panel view is now `Grid`.
   - Shared thing-list view modes:
     - `Classic` keeps the existing card layout.
-    - `Table` renders draggable 48px rows with the thumbnail, rarity-colored item name, and inline action icons (craft/process/salvage/harvest) plus the standard context menu.
-    - `Grid` renders compact image-only tiles with the same thumbnail size, a `2px` rarity-colored border, and a `1px` gap between tiles.
+    - `Table` renders draggable rows with a 48px image cell, a middle-left aligned rarity-colored item name cell, collapsed 2px cell borders, and inline action icons (craft/process/salvage/harvest) plus the standard context menu.
+    - `Grid` renders compact image-only tiles with the same thumbnail size, a `2px` rarity-colored border on the image itself, and a `1px` gap between tiles.
+    - `Small Grid` uses the same grid layout rules as `Grid`, but overrides the shared item-view size tokens to `0.7x` so the image, count badge, overlay icons, and context-menu button all shrink together.
   - Shared thing-list filters:
     - Location item/scenery panels expose `Show all`, `Equippable only`, and `Non-equippable only`.
     - Player/NPC inventory and crafting inventory also expose `Equipped only`.
@@ -54,6 +55,7 @@ The main UI is rendered by `views/index.njk` and powered by `public/js/chat.js` 
     - `Alphabetical`, `Level`, `Quality`, `Value`, and `Equipment Slot`.
     - Repeated sorts are intentionally stable so the current visible order becomes the secondary order for the next sort.
   - Narrow panels still collapse only the filter controls behind the shared icon-only filter popover toggle, while sort and view each stay in their own collapsed popups.
+  - View popups close immediately after a view selection, and both the view and sort popups close when the user clicks anywhere outside the popup/toggle pair.
   - Item thing-card context menus include `Separate`, which runs the `thing-separate` prompt and replaces the source item with the returned item stack(s); an explicit empty `<items>` result is treated as a no-op rather than an error.
   - Item thing-card context menus also include `Split Stack` for stacks with `count > 1` (prompting for an exact integer split amount) and `Merge Stacks` for item cards outside equipment views; merge scans same-name/same-checksum items in the same inventory or location and folds them into the selected stack while excluding equipped items.
   - Drag/drop behavior:

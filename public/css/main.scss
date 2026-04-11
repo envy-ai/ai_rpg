@@ -35,6 +35,87 @@ body {
   --airpg-modal-muted: rgba(255, 255, 255, 0.72);
 }
 
+// Shared thing-view sizing tokens
+$thing-icon-size: 94px;
+$thing-icon-font-size: 2rem;
+$thing-icon-border-radius: 14px;
+$thing-icon-border-width: 2px;
+$thing-card-gap: 10px;
+$thing-card-border-radius: 14px;
+$thing-card-padding: 10px;
+$thing-card-width: 120px;
+$thing-small-grid-scale: 0.7;
+
+$thing-grid-gap: 1px;
+$thing-grid-tile-size: $thing-icon-size;
+$thing-grid-context-menu-inset: 4px;
+$thing-grid-equipped-outline-width: 2px;
+
+$thing-table-row-height: 48px;
+$thing-table-icon-cell-width: 48px;
+$thing-table-right-padding: 44px;
+$thing-table-border-width: 2px;
+$thing-table-content-padding-x: 10px;
+$thing-table-utilities-gap: 8px;
+$thing-table-utilities-padding-x: 8px;
+$thing-table-context-menu-inset: 8px;
+$thing-table-context-menu-overlap: 4px;
+
+$thing-action-icon-list-gap: 4px;
+$thing-action-icon-size: 24px;
+$thing-action-icon-font-size: 0.92rem;
+$thing-action-icon-border-radius: 999px;
+
+$thing-count-badge-scale: 0.2;
+$thing-count-badge-right: 6px;
+$thing-count-badge-bottom: 4px;
+$thing-count-badge-stroke-width: 1.5px;
+$thing-count-badge-shadow-offset: 1px;
+$thing-count-badge-shadow-drop-y: 2px;
+$thing-count-badge-shadow-drop-blur: 4px;
+
+$thing-image-badge-bar-left: 6px;
+$thing-image-badge-bar-bottom: 6px;
+$thing-image-badge-bar-padding-y: 2px;
+$thing-image-badge-bar-padding-x: 6px;
+$thing-image-badge-bar-radius: 999px;
+$thing-image-badge-bar-shadow-y: 4px;
+$thing-image-badge-bar-shadow-blur: 12px;
+$thing-image-badge-font-size: 0.95rem;
+$thing-image-badge-padding: 1px;
+
+$thing-context-menu-button-top: 8px;
+$thing-context-menu-button-right: 8px;
+$thing-context-menu-button-size: 32px;
+$thing-context-menu-button-font-size: 0.85rem;
+$thing-context-menu-button-radius: 50%;
+$thing-context-menu-panel-top: $thing-context-menu-button-top +
+  $thing-context-menu-button-size + 2px;
+$thing-context-menu-panel-right: $thing-context-menu-button-right;
+
+$thing-small-grid-tile-size: $thing-grid-tile-size * $thing-small-grid-scale;
+$thing-small-grid-icon-size: $thing-icon-size * $thing-small-grid-scale;
+$thing-small-grid-icon-font-size: $thing-icon-font-size * $thing-small-grid-scale;
+$thing-small-grid-icon-border-width: $thing-icon-border-width * $thing-small-grid-scale;
+$thing-small-grid-equipped-outline-width: $thing-grid-equipped-outline-width * $thing-small-grid-scale;
+$thing-small-grid-grid-context-menu-inset: $thing-grid-context-menu-inset * $thing-small-grid-scale;
+$thing-small-grid-count-badge-right: $thing-count-badge-right * $thing-small-grid-scale;
+$thing-small-grid-count-badge-bottom: $thing-count-badge-bottom * $thing-small-grid-scale;
+$thing-small-grid-count-badge-stroke-width: $thing-count-badge-stroke-width * $thing-small-grid-scale;
+$thing-small-grid-count-badge-shadow-offset: $thing-count-badge-shadow-offset * $thing-small-grid-scale;
+$thing-small-grid-count-badge-shadow-drop-y: $thing-count-badge-shadow-drop-y * $thing-small-grid-scale;
+$thing-small-grid-count-badge-shadow-drop-blur: $thing-count-badge-shadow-drop-blur * $thing-small-grid-scale;
+$thing-small-grid-image-badge-bar-left: $thing-image-badge-bar-left * $thing-small-grid-scale;
+$thing-small-grid-image-badge-bar-bottom: $thing-image-badge-bar-bottom * $thing-small-grid-scale;
+$thing-small-grid-image-badge-bar-padding-y: $thing-image-badge-bar-padding-y * $thing-small-grid-scale;
+$thing-small-grid-image-badge-bar-padding-x: $thing-image-badge-bar-padding-x * $thing-small-grid-scale;
+$thing-small-grid-image-badge-bar-shadow-y: $thing-image-badge-bar-shadow-y * $thing-small-grid-scale;
+$thing-small-grid-image-badge-bar-shadow-blur: $thing-image-badge-bar-shadow-blur * $thing-small-grid-scale;
+$thing-small-grid-image-badge-font-size: $thing-image-badge-font-size * $thing-small-grid-scale;
+$thing-small-grid-image-badge-padding: $thing-image-badge-padding * $thing-small-grid-scale;
+$thing-small-grid-context-menu-button-size: $thing-context-menu-button-size * $thing-small-grid-scale;
+$thing-small-grid-context-menu-button-font-size: $thing-context-menu-button-font-size * $thing-small-grid-scale;
+
 @media (max-width: 900px) {
   body {
     min-height: 100vh;
@@ -1287,8 +1368,12 @@ p:not(:last-child) {
   height: 14px;
   border-radius: 999px;
   overflow: visible;
-  background:
-    linear-gradient(180deg, rgba(5, 18, 36, 0.98) 0%, rgba(8, 22, 48, 0.98) 52%, rgba(3, 10, 24, 0.98) 100%);
+  background: linear-gradient(
+    180deg,
+    rgba(5, 18, 36, 0.98) 0%,
+    rgba(8, 22, 48, 0.98) 52%,
+    rgba(3, 10, 24, 0.98) 100%
+  );
   border: 1px solid rgba(127, 29, 29, 0.8);
   box-shadow:
     inset 0 1px 2px rgba(255, 255, 255, 0.04),
@@ -1302,8 +1387,12 @@ p:not(:last-child) {
   height: 100%;
   width: 0%;
   border-radius: inherit;
-  background:
-    linear-gradient(90deg, rgba(90, 10, 10, 0.98) 0%, rgba(185, 28, 28, 0.98) 58%, rgba(239, 68, 68, 0.98) 100%);
+  background: linear-gradient(
+    90deg,
+    rgba(90, 10, 10, 0.98) 0%,
+    rgba(185, 28, 28, 0.98) 58%,
+    rgba(239, 68, 68, 0.98) 100%
+  );
   box-shadow:
     inset 0 0 10px rgba(255, 163, 163, 0.18),
     0 0 10px rgba(185, 28, 28, 0.28);
@@ -1605,7 +1694,9 @@ p:not(:last-child) {
   background: transparent;
   cursor: pointer;
   line-height: 0;
-  transition: opacity 0.2s ease, transform 0.2s ease;
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s ease;
 
   &:hover,
   &:focus {
@@ -2508,18 +2599,27 @@ p:not(:last-child) {
   display: flex;
   flex-direction: column;
   flex-wrap: nowrap;
-  gap: 6px;
+  gap: 0;
   justify-content: flex-start;
   align-content: stretch;
 }
 
 .inventory-grid.thing-collection-view--grid,
 .location-entity-grid.thing-collection-view--grid,
-.crafting-modal__inventory-grid.thing-collection-view--grid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 1px;
-  justify-content: flex-start;
+.crafting-modal__inventory-grid.thing-collection-view--grid,
+.inventory-grid.thing-collection-view--small-grid,
+.location-entity-grid.thing-collection-view--small-grid,
+.crafting-modal__inventory-grid.thing-collection-view--small-grid {
+  --thing-grid-scale: 1;
+  --thing-grid-size: calc(#{$thing-grid-tile-size} * var(--thing-grid-scale));
+  display: grid;
+  grid-template-columns: repeat(
+    auto-fit,
+    minmax(var(--thing-grid-size), var(--thing-grid-size))
+  );
+  gap: $thing-grid-gap;
+  justify-content: center;
+  justify-items: center;
   align-content: flex-start;
 }
 
@@ -2548,14 +2648,16 @@ p:not(:last-child) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 94px;
-  min-width: 94px;
-  min-height: 94px;
+  width: var(--thing-grid-size, #{$thing-grid-tile-size});
+  min-width: var(--thing-grid-size, #{$thing-grid-tile-size});
+  min-height: var(--thing-grid-size, #{$thing-grid-tile-size});
   padding: 0;
   border: 0;
   background: transparent;
-  border-radius: 14px;
-  transition: transform 0.15s ease, opacity 0.15s ease;
+  border-radius: 0;
+  transition:
+    transform 0.15s ease,
+    opacity 0.15s ease;
 
   &:hover,
   &:focus-within {
@@ -2564,44 +2666,107 @@ p:not(:last-child) {
 }
 
 .thing-grid-tile__icon {
-  border-width: 2px;
-  border-style: solid;
-  border-color: rgba(148, 163, 184, 0.35);
+  --thing-icon-size: #{$thing-icon-size};
+  width: $thing-icon-size;
+  height: $thing-icon-size;
+  min-height: $thing-icon-size;
+  border: $thing-icon-border-width solid rgba(148, 163, 184, 0.35);
 }
 
 .thing-grid-tile__icon[class*="rarity-"] {
   border-color: currentColor;
 }
 
+.thing-grid-tile__icon .entity-image,
+.thing-grid-tile__icon img {
+  border-radius: inherit;
+}
+
 .thing-grid-tile.is-equipped .thing-grid-tile__icon {
-  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.45);
+  box-shadow: 0 0 0 $thing-grid-equipped-outline-width rgba(56, 189, 248, 0.45);
 }
 
 .thing-grid-tile .entity-context-menu-button {
-  top: 4px;
-  right: 4px;
+  top: $thing-grid-context-menu-inset;
+  right: $thing-grid-context-menu-inset;
+}
+
+.inventory-grid.thing-collection-view--small-grid,
+.location-entity-grid.thing-collection-view--small-grid,
+.crafting-modal__inventory-grid.thing-collection-view--small-grid {
+  --thing-grid-size: #{$thing-small-grid-tile-size};
+}
+
+.thing-collection-view--small-grid .thing-grid-tile__icon {
+  --thing-icon-size: #{$thing-small-grid-icon-size};
+  width: $thing-small-grid-icon-size;
+  height: $thing-small-grid-icon-size;
+  min-height: $thing-small-grid-icon-size;
+  border-width: $thing-small-grid-icon-border-width;
+  font-size: $thing-small-grid-icon-font-size;
+}
+
+.thing-collection-view--small-grid .thing-grid-tile.is-equipped .thing-grid-tile__icon {
+  box-shadow: 0 0 0 $thing-small-grid-equipped-outline-width rgba(56, 189, 248, 0.45);
+}
+
+.thing-collection-view--small-grid .thing-grid-tile .entity-context-menu-button {
+  top: $thing-small-grid-grid-context-menu-inset;
+  right: $thing-small-grid-grid-context-menu-inset;
+  width: $thing-small-grid-context-menu-button-size;
+  height: $thing-small-grid-context-menu-button-size;
+  font-size: $thing-small-grid-context-menu-button-font-size;
+}
+
+.thing-collection-view--small-grid .thing-count-badge {
+  right: $thing-small-grid-count-badge-right;
+  bottom: $thing-small-grid-count-badge-bottom;
+  -webkit-text-stroke: $thing-small-grid-count-badge-stroke-width #000000;
+  text-shadow:
+    (-$thing-small-grid-count-badge-shadow-offset) (-$thing-small-grid-count-badge-shadow-offset) 0 #000000,
+    $thing-small-grid-count-badge-shadow-offset (-$thing-small-grid-count-badge-shadow-offset) 0 #000000,
+    (-$thing-small-grid-count-badge-shadow-offset) $thing-small-grid-count-badge-shadow-offset 0 #000000,
+    $thing-small-grid-count-badge-shadow-offset $thing-small-grid-count-badge-shadow-offset 0 #000000,
+    0 $thing-small-grid-count-badge-shadow-drop-y $thing-small-grid-count-badge-shadow-drop-blur rgba(0, 0, 0, 0.75);
+}
+
+.thing-collection-view--small-grid .entity-image-badges {
+  left: $thing-small-grid-image-badge-bar-left;
+  bottom: $thing-small-grid-image-badge-bar-bottom;
+  padding: $thing-small-grid-image-badge-bar-padding-y $thing-small-grid-image-badge-bar-padding-x;
+  box-shadow: 0 $thing-small-grid-image-badge-bar-shadow-y $thing-small-grid-image-badge-bar-shadow-blur rgba(15, 23, 42, 0.35);
+}
+
+.thing-collection-view--small-grid .entity-image-badge {
+  font-size: $thing-small-grid-image-badge-font-size;
+  padding: $thing-small-grid-image-badge-padding;
 }
 
 .thing-table-row {
   position: relative;
   display: grid;
-  grid-template-columns: 48px minmax(0, 1fr) auto;
-  gap: 10px;
+  grid-template-columns: $thing-table-icon-cell-width minmax(0, 1fr) auto;
+  gap: 0;
   align-items: center;
-  min-height: 48px;
-  padding: 4px 44px 4px 4px;
-  border-radius: 12px;
-  border: 1px solid rgba(148, 163, 184, 0.28);
-  background: rgba(15, 23, 42, 0.6);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  min-height: $thing-table-row-height;
+  padding: 0 $thing-table-right-padding 0 0;
+  border-radius: 0;
+  border-left: $thing-table-border-width solid rgba(148, 163, 184, 0.28);
+  border-right: $thing-table-border-width solid rgba(148, 163, 184, 0.28);
+  border-bottom: $thing-table-border-width solid rgba(148, 163, 184, 0.28);
+  background: transparent;
+  box-shadow: none;
   transition:
     background 0.2s ease,
     border-color 0.2s ease,
     transform 0.15s ease;
 
+  &:first-child {
+    border-top: $thing-table-border-width solid rgba(148, 163, 184, 0.28);
+  }
+
   &:hover,
   &:focus-within {
-    background: rgba(30, 41, 59, 0.72);
     border-color: rgba(148, 163, 184, 0.42);
   }
 }
@@ -2610,16 +2775,50 @@ p:not(:last-child) {
   box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.28);
 }
 
+.thing-table-row__icon-cell,
+.thing-table-row__content,
+.thing-table-row__utilities {
+  min-height: $thing-table-row-height;
+  background: rgba(15, 23, 42, 0.3);
+}
+
+.thing-table-row__icon-cell,
+.thing-table-row__content {
+  border-right: $thing-table-border-width solid rgba(148, 163, 184, 0.28);
+}
+
+.thing-table-row:hover .thing-table-row__icon-cell,
+.thing-table-row:hover .thing-table-row__content,
+.thing-table-row:hover .thing-table-row__utilities,
+.thing-table-row:focus-within .thing-table-row__icon-cell,
+.thing-table-row:focus-within .thing-table-row__content,
+.thing-table-row:focus-within .thing-table-row__utilities {
+  background: rgba(30, 41, 59, 0.72);
+}
+
+.thing-table-row__icon-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
 .thing-table-row__icon {
-  --thing-icon-size: 40px;
-  width: 40px;
-  height: 40px;
-  min-height: 40px;
-  border-radius: 10px;
+  --thing-icon-size: #{$thing-icon-size};
+  width: $thing-icon-size;
+  height: $thing-icon-size;
+  min-height: $thing-icon-size;
+  border-radius: 0;
+  transform: scale(calc(#{$thing-table-icon-cell-width} / #{$thing-icon-size}));
+  transform-origin: center center;
 }
 
 .thing-table-row__content {
   min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 0 $thing-table-content-padding-x;
 }
 
 .thing-table-row__name {
@@ -2635,16 +2834,15 @@ p:not(:last-child) {
   display: inline-flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 8px;
-  min-height: 40px;
-  margin-right: 4px;
+  gap: $thing-table-utilities-gap;
+  padding: 0 $thing-table-utilities-padding-x;
 }
 
 .thing-action-icon-list {
   display: inline-flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 4px;
+  gap: $thing-action-icon-list-gap;
   flex-wrap: wrap;
 }
 
@@ -2652,20 +2850,22 @@ p:not(:last-child) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
+  width: $thing-action-icon-size;
+  height: $thing-action-icon-size;
   padding: 0;
   border: 0;
-  border-radius: 999px;
+  border-radius: $thing-action-icon-border-radius;
   background: rgba(15, 23, 42, 0.45);
   color: #f8fafc;
-  font-size: 0.92rem;
+  font-size: $thing-action-icon-font-size;
   line-height: 1;
 }
 
 button.thing-action-icon {
   cursor: pointer;
-  transition: transform 0.15s ease, background 0.15s ease;
+  transition:
+    transform 0.15s ease,
+    background 0.15s ease;
 
   &:hover,
   &:focus-visible {
@@ -2677,7 +2877,7 @@ button.thing-action-icon {
 
 .thing-table-row .entity-context-menu-button {
   top: 50%;
-  right: 8px;
+  right: $thing-table-context-menu-inset;
   transform: translateY(-50%);
 }
 
@@ -2687,8 +2887,8 @@ button.thing-action-icon {
 }
 
 .thing-table-row .entity-context-menu {
-  top: calc(100% - 4px);
-  right: 8px;
+  top: calc(100% - #{$thing-table-context-menu-overlap});
+  right: $thing-table-context-menu-inset;
 }
 
 .inventory-equip-toggle {
@@ -2746,7 +2946,7 @@ button.thing-action-icon {
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: $thing-card-gap;
   align-items: center;
   justify-content: start;
   text-align: center;
@@ -2756,10 +2956,10 @@ button.thing-action-icon {
     rgba(15, 23, 42, 0.78) 100%
   );
   border: 1px solid rgba(148, 163, 184, 0.32);
-  border-radius: 14px;
-  padding: 10px;
-  min-width: 120px;
-  max-width: 120px;
+  border-radius: $thing-card-border-radius;
+  padding: $thing-card-padding;
+  min-width: $thing-card-width;
+  max-width: $thing-card-width;
   transition:
     transform 0.2s ease,
     box-shadow 0.2s ease,
@@ -2814,60 +3014,64 @@ button.thing-action-icon {
 }
 
 .entity-icon {
-  --thing-icon-size: 94px;
-  width: 94px;
-  height: 94px;
-  min-height: 94px;
-  border-radius: 14px;
+  --thing-icon-size: #{$thing-icon-size};
+  width: $thing-icon-size;
+  height: $thing-icon-size;
+  min-height: $thing-icon-size;
+  border-radius: $thing-icon-border-radius;
   background: rgba(15, 23, 42, 0.9);
   display: flex;
   align-items: center;
   justify-content: center;
   overflow: visible;
   position: relative;
-  border: 1px solid rgba(148, 163, 184, 0.32);
+  border: $thing-icon-border-width solid rgba(148, 163, 184, 0.32);
   box-shadow: inset 0 4px 12px rgba(15, 23, 42, 0.45);
-  font-size: 2rem;
+  font-size: $thing-icon-font-size;
+}
+
+.view-grid-mode .entity-icon {
+  border-radius: 0;
 }
 
 .thing-count-badge {
   position: absolute;
-  right: 6px;
-  bottom: 4px;
+  right: $thing-count-badge-right;
+  bottom: $thing-count-badge-bottom;
   display: inline-flex;
   align-items: flex-end;
   justify-content: center;
   width: max-content;
   min-width: 0;
-  height: calc(var(--thing-icon-size, 94px) * 0.2);
+  height: calc(var(--thing-icon-size, #{$thing-icon-size}) * #{$thing-count-badge-scale});
   color: #ffffff;
-  font-size: calc(var(--thing-icon-size, 94px) * 0.2);
+  font-size: calc(var(--thing-icon-size, #{$thing-icon-size}) * #{$thing-count-badge-scale});
   font-weight: 900;
   line-height: 1;
   letter-spacing: 0.01em;
   pointer-events: none;
   z-index: 3;
-  -webkit-text-stroke: 1.5px #000000;
+  -webkit-text-stroke: $thing-count-badge-stroke-width #000000;
   paint-order: stroke fill;
   text-shadow:
-    -1px -1px 0 #000000,
-    1px -1px 0 #000000,
-    -1px 1px 0 #000000,
-    1px 1px 0 #000000,
-    0 2px 4px rgba(0, 0, 0, 0.75);
+    (-$thing-count-badge-shadow-offset) (-$thing-count-badge-shadow-offset) 0 #000000,
+    $thing-count-badge-shadow-offset (-$thing-count-badge-shadow-offset) 0 #000000,
+    (-$thing-count-badge-shadow-offset) $thing-count-badge-shadow-offset 0 #000000,
+    $thing-count-badge-shadow-offset $thing-count-badge-shadow-offset 0 #000000,
+    0 $thing-count-badge-shadow-drop-y $thing-count-badge-shadow-drop-blur rgba(0, 0, 0, 0.75);
 }
 
 .entity-image-badges {
   position: absolute;
-  left: 6px;
-  bottom: 6px;
+  left: $thing-image-badge-bar-left;
+  bottom: $thing-image-badge-bar-bottom;
   display: flex;
   gap: 0;
-  padding: 2px 6px;
-  border-radius: 999px;
+  padding: $thing-image-badge-bar-padding-y $thing-image-badge-bar-padding-x;
+  border-radius: $thing-image-badge-bar-radius;
   background: rgba(15, 23, 42, 0.75);
   pointer-events: none;
-  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.35);
+  box-shadow: 0 $thing-image-badge-bar-shadow-y $thing-image-badge-bar-shadow-blur rgba(15, 23, 42, 0.35);
 }
 
 .entity-image-badges--interactive {
@@ -2879,9 +3083,9 @@ button.thing-action-icon {
   align-items: center;
   justify-content: center;
   color: #f8fafc;
-  font-size: 0.95rem;
+  font-size: $thing-image-badge-font-size;
   line-height: 1;
-  padding: 1px;
+  padding: $thing-image-badge-padding;
 }
 
 .entity-image-badge--action {
@@ -5483,7 +5687,8 @@ body.dark .thing-toggle-hint {
 }
 
 .prompt-progress-viewer.is-prompt-empty .prompt-progress-viewer__prompt-inline,
-.prompt-progress-viewer.is-response-empty .prompt-progress-viewer__response-inline {
+.prompt-progress-viewer.is-response-empty
+  .prompt-progress-viewer__response-inline {
   color: rgba(191, 219, 254, 0.82);
   font-style: italic;
 }
@@ -5887,11 +6092,11 @@ body.dark .thing-toggle-hint {
 
 .entity-context-menu-button {
   position: absolute;
-  top: 8px;
-  right: 8px;
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
+  top: $thing-context-menu-button-top;
+  right: $thing-context-menu-button-right;
+  width: $thing-context-menu-button-size;
+  height: $thing-context-menu-button-size;
+  border-radius: $thing-context-menu-button-radius;
   border: 1px solid rgba(148, 163, 184, 0);
   background: rgba(15, 23, 42, 0);
   color: #e2e8f0;
@@ -5899,7 +6104,7 @@ body.dark .thing-toggle-hint {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.85rem;
+  font-size: $thing-context-menu-button-font-size;
   transition:
     background 0.2s ease,
     border 0.2s ease,
@@ -5917,8 +6122,8 @@ body.dark .thing-toggle-hint {
 
 .entity-context-menu {
   position: absolute;
-  top: 42px;
-  right: 8px;
+  top: $thing-context-menu-panel-top;
+  right: $thing-context-menu-panel-right;
   min-width: 140px;
   background: rgba(15, 23, 42, 0.95);
   border: 1px solid rgba(148, 163, 184, 0.35);
@@ -6424,16 +6629,36 @@ body.modal-open {
     display: flex;
     flex-direction: column;
     flex-wrap: nowrap;
-    gap: 6px;
+    gap: 0;
     justify-content: flex-start;
     align-content: stretch;
   }
 
   &.thing-collection-view--grid {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 1px;
-    justify-content: flex-start;
+    --thing-grid-scale: 1;
+    --thing-grid-size: calc(#{$thing-grid-tile-size} * var(--thing-grid-scale));
+    display: grid;
+    grid-template-columns: repeat(
+      auto-fit,
+      minmax(var(--thing-grid-size), var(--thing-grid-size))
+    );
+    gap: $thing-grid-gap;
+    justify-content: center;
+    justify-items: center;
+    align-content: flex-start;
+  }
+
+  &.thing-collection-view--small-grid {
+    --thing-grid-scale: 1;
+    --thing-grid-size: calc(#{$thing-grid-tile-size} * var(--thing-grid-scale));
+    display: grid;
+    grid-template-columns: repeat(
+      auto-fit,
+      minmax(var(--thing-grid-size), var(--thing-grid-size))
+    );
+    gap: $thing-grid-gap;
+    justify-content: center;
+    justify-items: center;
     align-content: flex-start;
   }
 }
