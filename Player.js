@@ -89,6 +89,7 @@ class Player {
     #lastOutcomeSucceeded = null;
     #factionId = null;
     #factionStandings = new Map();
+    #thingListViewPreferences = {};
 
     static #indexById = new Map();
     static #indexByName = new SanitizedStringMap();
@@ -100,6 +101,18 @@ class Player {
     static #NEED_BAR_MEDIUM_FRACTION = 0.175;
     static #NEED_BAR_LARGE_FRACTION = 0.25;
     static #needBarMagnitudeValues;
+    static #thingListViewPanelKeys = new Set([
+        'npcInventory',
+        'craftingInventory',
+        'locationScenery',
+        'locationItems'
+    ]);
+    static #thingListViewModes = new Set([
+        'classic',
+        'table',
+        'grid',
+        'small-grid'
+    ]);
 
     static availableSkills = new Map();
     static #gearSlotDefinitions = null;
@@ -214,6 +227,55 @@ class Player {
         }
 
         return items;
+    }
+
+    static #normalizeThingListViewPanelKey(value) {
+        if (typeof value !== 'string') {
+            return '';
+        }
+        const trimmed = value.trim();
+        return this.#thingListViewPanelKeys.has(trimmed) ? trimmed : '';
+    }
+
+    static #normalizeThingListViewMode(value) {
+        if (typeof value !== 'string') {
+            return '';
+        }
+        const normalized = value.trim().toLowerCase();
+        return this.#thingListViewModes.has(normalized) ? normalized : '';
+    }
+
+    static #normalizeThingListViewPreferences(source, { onInvalid = 'ignore', context = 'thingListViewPreferences' } = {}) {
+        if (source === null || source === undefined) {
+            return {};
+        }
+        if (typeof source !== 'object' || Array.isArray(source)) {
+            if (onInvalid === 'throw') {
+                throw new Error(`${context} must be an object map of panel keys to view modes.`);
+            }
+            return {};
+        }
+
+        const entries = source instanceof Map ? Array.from(source.entries()) : Object.entries(source);
+        const normalized = {};
+        for (const [rawPanelKey, rawViewMode] of entries) {
+            const panelKey = this.#normalizeThingListViewPanelKey(rawPanelKey);
+            if (!panelKey) {
+                if (onInvalid === 'throw') {
+                    throw new Error(`Unsupported thing-list view panel key '${rawPanelKey}'.`);
+                }
+                continue;
+            }
+            const viewMode = this.#normalizeThingListViewMode(rawViewMode);
+            if (!viewMode) {
+                if (onInvalid === 'throw') {
+                    throw new Error(`Unsupported thing-list view mode '${rawViewMode}' for panel '${panelKey}'.`);
+                }
+                continue;
+            }
+            normalized[panelKey] = viewMode;
+        }
+        return normalized;
     }
 
     static #normalizeNeedMagnitudeKey(value) {
@@ -1928,6 +1990,7 @@ class Player {
 
         this.#needBarApplicability = Player.#normalizeNeedBarApplicability(options.needBarApplicability);
         this.#initializeNeedBars(options.needBars, this.#needBarApplicability);
+        this.#thingListViewPreferences = Player.#normalizeThingListViewPreferences(options.thingListViewPreferences);
 
         // Creation timestamp
         this.#createdAt = options.createdAt || new Date().toISOString();
@@ -3215,6 +3278,40 @@ class Player {
 
     getFactionStandings() {
         return Object.fromEntries(this.#factionStandings);
+    }
+
+    get thingListViewPreferences() {
+        return this.getThingListViewPreferences();
+    }
+
+    getThingListViewPreferences() {
+        return { ...this.#thingListViewPreferences };
+    }
+
+    setThingListViewPreferences(preferences = {}) {
+        this.#thingListViewPreferences = Player.#normalizeThingListViewPreferences(preferences, {
+            onInvalid: 'throw',
+            context: 'thingListViewPreferences'
+        });
+        this.#lastUpdated = new Date().toISOString();
+        return this.getThingListViewPreferences();
+    }
+
+    setThingListViewPreference(panelKey, viewMode) {
+        const normalizedPanelKey = Player.#normalizeThingListViewPanelKey(panelKey);
+        if (!normalizedPanelKey) {
+            throw new Error(`Unsupported thing-list view panel key '${panelKey}'.`);
+        }
+        const normalizedViewMode = Player.#normalizeThingListViewMode(viewMode);
+        if (!normalizedViewMode) {
+            throw new Error(`Unsupported thing-list view mode '${viewMode}'.`);
+        }
+        this.#thingListViewPreferences = {
+            ...this.#thingListViewPreferences,
+            [normalizedPanelKey]: normalizedViewMode
+        };
+        this.#lastUpdated = new Date().toISOString();
+        return normalizedViewMode;
     }
 
     setFactionStandings(standings) {
@@ -5522,6 +5619,7 @@ class Player {
             needBars: this.getNeedBars({ scope: 'stored' }),
             needBarApplicability: this.getNeedBarApplicability(),
             needBarRatesAppliedAt: this.#needBarRatesAppliedAt,
+            thingListViewPreferences: this.getThingListViewPreferences(),
             factionStandings: this.getFactionStandings(),
             importantMemories: this.importantMemories,
             previousLocationId: this.#previousLocationId,
@@ -5598,6 +5696,9 @@ class Player {
             needBars: legacyNeedBarLoadState.needBars,
             needBarApplicability: legacyNeedBarLoadState.needBarApplicability,
             needBarRatesAppliedAt: data.needBarRatesAppliedAt,
+            thingListViewPreferences: data.thingListViewPreferences && typeof data.thingListViewPreferences === 'object'
+                ? data.thingListViewPreferences
+                : {},
             isDead: data.isDead,
             persistWhenDead: data.persistWhenDead === true,
             corpseCountdown: data.corpseCountdown,

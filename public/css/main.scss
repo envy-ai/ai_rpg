@@ -51,8 +51,8 @@ $thing-grid-tile-size: $thing-icon-size;
 $thing-grid-context-menu-inset: 4px;
 $thing-grid-equipped-outline-width: 2px;
 
-$thing-table-row-height: 48px;
-$thing-table-icon-cell-width: 48px;
+$thing-table-row-height: $thing-icon-size;
+$thing-table-icon-cell-width: $thing-icon-size;
 $thing-table-right-padding: 44px;
 $thing-table-border-width: 2px;
 $thing-table-content-padding-x: 10px;
@@ -95,26 +95,46 @@ $thing-context-menu-panel-right: $thing-context-menu-button-right;
 
 $thing-small-grid-tile-size: $thing-grid-tile-size * $thing-small-grid-scale;
 $thing-small-grid-icon-size: $thing-icon-size * $thing-small-grid-scale;
-$thing-small-grid-icon-font-size: $thing-icon-font-size * $thing-small-grid-scale;
-$thing-small-grid-icon-border-width: $thing-icon-border-width * $thing-small-grid-scale;
-$thing-small-grid-equipped-outline-width: $thing-grid-equipped-outline-width * $thing-small-grid-scale;
-$thing-small-grid-grid-context-menu-inset: $thing-grid-context-menu-inset * $thing-small-grid-scale;
-$thing-small-grid-count-badge-right: $thing-count-badge-right * $thing-small-grid-scale;
-$thing-small-grid-count-badge-bottom: $thing-count-badge-bottom * $thing-small-grid-scale;
-$thing-small-grid-count-badge-stroke-width: $thing-count-badge-stroke-width * $thing-small-grid-scale;
-$thing-small-grid-count-badge-shadow-offset: $thing-count-badge-shadow-offset * $thing-small-grid-scale;
-$thing-small-grid-count-badge-shadow-drop-y: $thing-count-badge-shadow-drop-y * $thing-small-grid-scale;
-$thing-small-grid-count-badge-shadow-drop-blur: $thing-count-badge-shadow-drop-blur * $thing-small-grid-scale;
-$thing-small-grid-image-badge-bar-left: $thing-image-badge-bar-left * $thing-small-grid-scale;
-$thing-small-grid-image-badge-bar-bottom: $thing-image-badge-bar-bottom * $thing-small-grid-scale;
-$thing-small-grid-image-badge-bar-padding-y: $thing-image-badge-bar-padding-y * $thing-small-grid-scale;
-$thing-small-grid-image-badge-bar-padding-x: $thing-image-badge-bar-padding-x * $thing-small-grid-scale;
-$thing-small-grid-image-badge-bar-shadow-y: $thing-image-badge-bar-shadow-y * $thing-small-grid-scale;
-$thing-small-grid-image-badge-bar-shadow-blur: $thing-image-badge-bar-shadow-blur * $thing-small-grid-scale;
-$thing-small-grid-image-badge-font-size: $thing-image-badge-font-size * $thing-small-grid-scale;
-$thing-small-grid-image-badge-padding: $thing-image-badge-padding * $thing-small-grid-scale;
-$thing-small-grid-context-menu-button-size: $thing-context-menu-button-size * $thing-small-grid-scale;
-$thing-small-grid-context-menu-button-font-size: $thing-context-menu-button-font-size * $thing-small-grid-scale;
+$thing-small-grid-icon-font-size: $thing-icon-font-size *
+  $thing-small-grid-scale;
+$thing-small-grid-icon-border-width: $thing-icon-border-width *
+  $thing-small-grid-scale;
+$thing-small-grid-equipped-outline-width: $thing-grid-equipped-outline-width *
+  $thing-small-grid-scale;
+$thing-small-grid-grid-context-menu-inset: $thing-grid-context-menu-inset *
+  $thing-small-grid-scale;
+$thing-small-grid-count-badge-right: $thing-count-badge-right *
+  $thing-small-grid-scale;
+$thing-small-grid-count-badge-bottom: $thing-count-badge-bottom *
+  $thing-small-grid-scale;
+$thing-small-grid-count-badge-stroke-width: $thing-count-badge-stroke-width *
+  $thing-small-grid-scale;
+$thing-small-grid-count-badge-shadow-offset: $thing-count-badge-shadow-offset *
+  $thing-small-grid-scale;
+$thing-small-grid-count-badge-shadow-drop-y: $thing-count-badge-shadow-drop-y *
+  $thing-small-grid-scale;
+$thing-small-grid-count-badge-shadow-drop-blur: $thing-count-badge-shadow-drop-blur *
+  $thing-small-grid-scale;
+$thing-small-grid-image-badge-bar-left: $thing-image-badge-bar-left *
+  $thing-small-grid-scale;
+$thing-small-grid-image-badge-bar-bottom: $thing-image-badge-bar-bottom *
+  $thing-small-grid-scale;
+$thing-small-grid-image-badge-bar-padding-y: $thing-image-badge-bar-padding-y *
+  $thing-small-grid-scale;
+$thing-small-grid-image-badge-bar-padding-x: $thing-image-badge-bar-padding-x *
+  $thing-small-grid-scale;
+$thing-small-grid-image-badge-bar-shadow-y: $thing-image-badge-bar-shadow-y *
+  $thing-small-grid-scale;
+$thing-small-grid-image-badge-bar-shadow-blur: $thing-image-badge-bar-shadow-blur *
+  $thing-small-grid-scale;
+$thing-small-grid-image-badge-font-size: $thing-image-badge-font-size *
+  $thing-small-grid-scale;
+$thing-small-grid-image-badge-padding: $thing-image-badge-padding *
+  $thing-small-grid-scale;
+$thing-small-grid-context-menu-button-size: $thing-context-menu-button-size *
+  $thing-small-grid-scale;
+$thing-small-grid-context-menu-button-font-size: $thing-context-menu-button-font-size *
+  $thing-small-grid-scale;
 
 @media (max-width: 900px) {
   body {
@@ -2596,12 +2616,7 @@ p:not(:last-child) {
 .inventory-grid.thing-collection-view--table,
 .location-entity-grid.thing-collection-view--table,
 .crafting-modal__inventory-grid.thing-collection-view--table {
-  display: flex;
-  flex-direction: column;
-  flex-wrap: nowrap;
-  gap: 0;
-  justify-content: flex-start;
-  align-content: stretch;
+  display: block;
 }
 
 .inventory-grid.thing-collection-view--grid,
@@ -2706,11 +2721,16 @@ p:not(:last-child) {
   font-size: $thing-small-grid-icon-font-size;
 }
 
-.thing-collection-view--small-grid .thing-grid-tile.is-equipped .thing-grid-tile__icon {
-  box-shadow: 0 0 0 $thing-small-grid-equipped-outline-width rgba(56, 189, 248, 0.45);
+.thing-collection-view--small-grid
+  .thing-grid-tile.is-equipped
+  .thing-grid-tile__icon {
+  box-shadow: 0 0 0 $thing-small-grid-equipped-outline-width
+    rgba(56, 189, 248, 0.45);
 }
 
-.thing-collection-view--small-grid .thing-grid-tile .entity-context-menu-button {
+.thing-collection-view--small-grid
+  .thing-grid-tile
+  .entity-context-menu-button {
   top: $thing-small-grid-grid-context-menu-inset;
   right: $thing-small-grid-grid-context-menu-inset;
   width: $thing-small-grid-context-menu-button-size;
@@ -2723,18 +2743,25 @@ p:not(:last-child) {
   bottom: $thing-small-grid-count-badge-bottom;
   -webkit-text-stroke: $thing-small-grid-count-badge-stroke-width #000000;
   text-shadow:
-    (-$thing-small-grid-count-badge-shadow-offset) (-$thing-small-grid-count-badge-shadow-offset) 0 #000000,
-    $thing-small-grid-count-badge-shadow-offset (-$thing-small-grid-count-badge-shadow-offset) 0 #000000,
-    (-$thing-small-grid-count-badge-shadow-offset) $thing-small-grid-count-badge-shadow-offset 0 #000000,
-    $thing-small-grid-count-badge-shadow-offset $thing-small-grid-count-badge-shadow-offset 0 #000000,
-    0 $thing-small-grid-count-badge-shadow-drop-y $thing-small-grid-count-badge-shadow-drop-blur rgba(0, 0, 0, 0.75);
+    (-$thing-small-grid-count-badge-shadow-offset)
+      (-$thing-small-grid-count-badge-shadow-offset) 0 #000000,
+    $thing-small-grid-count-badge-shadow-offset
+      (-$thing-small-grid-count-badge-shadow-offset) 0 #000000,
+    (-$thing-small-grid-count-badge-shadow-offset)
+      $thing-small-grid-count-badge-shadow-offset 0 #000000,
+    $thing-small-grid-count-badge-shadow-offset
+      $thing-small-grid-count-badge-shadow-offset 0 #000000,
+    0 $thing-small-grid-count-badge-shadow-drop-y
+      $thing-small-grid-count-badge-shadow-drop-blur rgba(0, 0, 0, 0.75);
 }
 
 .thing-collection-view--small-grid .entity-image-badges {
   left: $thing-small-grid-image-badge-bar-left;
   bottom: $thing-small-grid-image-badge-bar-bottom;
-  padding: $thing-small-grid-image-badge-bar-padding-y $thing-small-grid-image-badge-bar-padding-x;
-  box-shadow: 0 $thing-small-grid-image-badge-bar-shadow-y $thing-small-grid-image-badge-bar-shadow-blur rgba(15, 23, 42, 0.35);
+  padding: $thing-small-grid-image-badge-bar-padding-y
+    $thing-small-grid-image-badge-bar-padding-x;
+  box-shadow: 0 $thing-small-grid-image-badge-bar-shadow-y
+    $thing-small-grid-image-badge-bar-shadow-blur rgba(15, 23, 42, 0.35);
 }
 
 .thing-collection-view--small-grid .entity-image-badge {
@@ -2742,64 +2769,61 @@ p:not(:last-child) {
   padding: $thing-small-grid-image-badge-padding;
 }
 
-.thing-table-row {
-  position: relative;
-  display: grid;
-  grid-template-columns: $thing-table-icon-cell-width minmax(0, 1fr) auto;
-  gap: 0;
-  align-items: center;
-  min-height: $thing-table-row-height;
-  padding: 0 $thing-table-right-padding 0 0;
-  border-radius: 0;
-  border-left: $thing-table-border-width solid rgba(148, 163, 184, 0.28);
-  border-right: $thing-table-border-width solid rgba(148, 163, 184, 0.28);
-  border-bottom: $thing-table-border-width solid rgba(148, 163, 184, 0.28);
+.thing-table {
+  width: 100%;
+  border-collapse: collapse;
+  border-spacing: 0;
+  table-layout: auto;
   background: transparent;
-  box-shadow: none;
-  transition:
-    background 0.2s ease,
-    border-color 0.2s ease,
-    transform 0.15s ease;
-
-  &:first-child {
-    border-top: $thing-table-border-width solid rgba(148, 163, 184, 0.28);
-  }
-
-  &:hover,
-  &:focus-within {
-    border-color: rgba(148, 163, 184, 0.42);
-  }
 }
 
-.thing-table-row.is-equipped {
-  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.28);
+.thing-table__col--icon {
+  width: $thing-table-icon-cell-width;
+}
+
+.thing-table__col--utilities {
+  width: 1%;
+}
+
+.thing-table-row {
+  position: relative;
+  background: transparent;
 }
 
 .thing-table-row__icon-cell,
 .thing-table-row__content,
 .thing-table-row__utilities {
+  height: $thing-table-row-height;
   min-height: $thing-table-row-height;
+  vertical-align: middle;
   background: rgba(15, 23, 42, 0.3);
+  border: $thing-table-border-width solid rgba(148, 163, 184, 0.28);
+  transition:
+    background 0.2s ease,
+    border-color 0.2s ease;
 }
 
-.thing-table-row__icon-cell,
-.thing-table-row__content {
-  border-right: $thing-table-border-width solid rgba(148, 163, 184, 0.28);
-}
-
-.thing-table-row:hover .thing-table-row__icon-cell,
-.thing-table-row:hover .thing-table-row__content,
-.thing-table-row:hover .thing-table-row__utilities,
-.thing-table-row:focus-within .thing-table-row__icon-cell,
-.thing-table-row:focus-within .thing-table-row__content,
-.thing-table-row:focus-within .thing-table-row__utilities {
+.thing-table-row:hover > .thing-table-row__icon-cell,
+.thing-table-row:hover > .thing-table-row__content,
+.thing-table-row:hover > .thing-table-row__utilities,
+.thing-table-row:focus-within > .thing-table-row__icon-cell,
+.thing-table-row:focus-within > .thing-table-row__content,
+.thing-table-row:focus-within > .thing-table-row__utilities {
   background: rgba(30, 41, 59, 0.72);
+  border-color: rgba(148, 163, 184, 0.42);
+}
+
+.thing-table-row.is-equipped > .thing-table-row__icon-cell,
+.thing-table-row.is-equipped > .thing-table-row__content,
+.thing-table-row.is-equipped > .thing-table-row__utilities {
+  box-shadow: inset 0 0 0 2px rgba(56, 189, 248, 0.28);
 }
 
 .thing-table-row__icon-cell {
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  width: $thing-table-icon-cell-width;
+  min-width: $thing-table-icon-cell-width;
+  padding: 0;
+  text-align: center;
   overflow: hidden;
 }
 
@@ -2808,16 +2832,14 @@ p:not(:last-child) {
   width: $thing-icon-size;
   height: $thing-icon-size;
   min-height: $thing-icon-size;
+  margin: 0 auto;
   border-radius: 0;
-  transform: scale(calc(#{$thing-table-icon-cell-width} / #{$thing-icon-size}));
-  transform-origin: center center;
 }
 
 .thing-table-row__content {
   min-width: 0;
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
+  vertical-align: middle;
+  text-align: left;
   padding: 0 $thing-table-content-padding-x;
 }
 
@@ -2831,11 +2853,18 @@ p:not(:last-child) {
 }
 
 .thing-table-row__utilities {
+  position: relative;
+  width: 1%;
+  white-space: nowrap;
+  padding: 0 $thing-table-right-padding 0 $thing-table-utilities-padding-x;
+}
+
+.thing-table-row__utilities-inner {
   display: inline-flex;
   align-items: center;
   justify-content: flex-end;
   gap: $thing-table-utilities-gap;
-  padding: 0 $thing-table-utilities-padding-x;
+  min-height: $thing-table-row-height;
 }
 
 .thing-action-icon-list {
@@ -2875,18 +2904,37 @@ button.thing-action-icon {
   }
 }
 
-.thing-table-row .entity-context-menu-button {
+.thing-table {
+  .entity-name,
+  .entity-name-long {
+    min-height: unset;
+    max-height: unset;
+    text-align: left;
+    font-size: 0.75em;
+    line-height: 0.85;
+  }
+
+  .entity-icon {
+    border-radius: 0;
+  }
+}
+
+.thing-table-row__utilities .entity-context-menu-button {
   top: 50%;
   right: $thing-table-context-menu-inset;
   transform: translateY(-50%);
 }
 
-.thing-table-row .entity-context-menu-button:hover,
-.thing-table-row .entity-context-menu-button:focus {
+.thing-table-row__utilities .entity-context-menu-button:hover,
+.thing-table-row__utilities .entity-context-menu-button:focus {
   transform: translateY(-50%);
 }
 
-.thing-table-row .entity-context-menu {
+.thing-table-row__utilities.context-menu-open {
+  z-index: 60;
+}
+
+.thing-table-row__utilities .entity-context-menu {
   top: calc(100% - #{$thing-table-context-menu-overlap});
   right: $thing-table-context-menu-inset;
 }
@@ -3043,9 +3091,13 @@ button.thing-action-icon {
   justify-content: center;
   width: max-content;
   min-width: 0;
-  height: calc(var(--thing-icon-size, #{$thing-icon-size}) * #{$thing-count-badge-scale});
+  height: calc(
+    var(--thing-icon-size, #{$thing-icon-size}) * #{$thing-count-badge-scale}
+  );
   color: #ffffff;
-  font-size: calc(var(--thing-icon-size, #{$thing-icon-size}) * #{$thing-count-badge-scale});
+  font-size: calc(
+    var(--thing-icon-size, #{$thing-icon-size}) * #{$thing-count-badge-scale}
+  );
   font-weight: 900;
   line-height: 1;
   letter-spacing: 0.01em;
@@ -3054,11 +3106,15 @@ button.thing-action-icon {
   -webkit-text-stroke: $thing-count-badge-stroke-width #000000;
   paint-order: stroke fill;
   text-shadow:
-    (-$thing-count-badge-shadow-offset) (-$thing-count-badge-shadow-offset) 0 #000000,
-    $thing-count-badge-shadow-offset (-$thing-count-badge-shadow-offset) 0 #000000,
-    (-$thing-count-badge-shadow-offset) $thing-count-badge-shadow-offset 0 #000000,
+    (-$thing-count-badge-shadow-offset) (-$thing-count-badge-shadow-offset) 0
+      #000000,
+    $thing-count-badge-shadow-offset (-$thing-count-badge-shadow-offset) 0
+      #000000,
+    (-$thing-count-badge-shadow-offset) $thing-count-badge-shadow-offset 0
+      #000000,
     $thing-count-badge-shadow-offset $thing-count-badge-shadow-offset 0 #000000,
-    0 $thing-count-badge-shadow-drop-y $thing-count-badge-shadow-drop-blur rgba(0, 0, 0, 0.75);
+    0 $thing-count-badge-shadow-drop-y $thing-count-badge-shadow-drop-blur
+      rgba(0, 0, 0, 0.75);
 }
 
 .entity-image-badges {
@@ -3071,7 +3127,8 @@ button.thing-action-icon {
   border-radius: $thing-image-badge-bar-radius;
   background: rgba(15, 23, 42, 0.75);
   pointer-events: none;
-  box-shadow: 0 $thing-image-badge-bar-shadow-y $thing-image-badge-bar-shadow-blur rgba(15, 23, 42, 0.35);
+  box-shadow: 0 $thing-image-badge-bar-shadow-y
+    $thing-image-badge-bar-shadow-blur rgba(15, 23, 42, 0.35);
 }
 
 .entity-image-badges--interactive {
@@ -6626,12 +6683,7 @@ body.modal-open {
   }
 
   &.thing-collection-view--table {
-    display: flex;
-    flex-direction: column;
-    flex-wrap: nowrap;
-    gap: 0;
-    justify-content: flex-start;
-    align-content: stretch;
+    display: block;
   }
 
   &.thing-collection-view--grid {

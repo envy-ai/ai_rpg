@@ -15795,6 +15795,44 @@ module.exports = function registerApiRoutes(scope) {
             });
         });
 
+        app.put('/api/player/thing-list-view-preferences', (req, res) => {
+            if (!currentPlayer) {
+                return res.status(404).json({
+                    success: false,
+                    error: 'No current player found'
+                });
+            }
+
+            try {
+                const { panelKey, viewMode } = req.body || {};
+                if (typeof panelKey !== 'string' || !panelKey.trim()) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'panelKey is required'
+                    });
+                }
+                if (typeof viewMode !== 'string' || !viewMode.trim()) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'viewMode is required'
+                    });
+                }
+
+                currentPlayer.setThingListViewPreference(panelKey, viewMode);
+
+                return res.json({
+                    success: true,
+                    thingListViewPreferences: currentPlayer.getThingListViewPreferences(),
+                    player: serializeNpcForClient(currentPlayer)
+                });
+            } catch (error) {
+                return res.status(400).json({
+                    success: false,
+                    error: error.message
+                });
+            }
+        });
+
         app.get('/api/player/ability-selection', async (req, res) => {
             if (!Globals.gameLoaded) {
                 return res.json({

@@ -12,6 +12,7 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
 - Status/needs: `#statusEffects`, `#needBars`, `#needBarApplicability`.
 - Social: `#dispositions`, `#personalityType`, `#personalityTraits`, `#personalityNotes`, `#resistances`, `#vulnerabilities`.
 - Factions: `#factionId`, `#factionStandings` (map of `factionId -> number`).
+- UI state: `#thingListViewPreferences` (per-panel shared thing-list view modes for location/inventory/crafting panels).
 - Party/quests: `#partyMembers`, `#quests`, `#goals`, `#characterArc`.
 - Movement/turns: `#currentLocation`, `#previousLocationId`, `#elapsedTime` (minutes), `#lastVisitedTime` (minutes), `#inCombat`, `#lastActionWasTravel`, `#consecutiveTravelActions`.
 - Lifecycle: `#isDead`, `#persistWhenDead`, `#corpseCountdown`.
@@ -69,6 +70,9 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
 - Factions:
   - `getFactionStandings()`, `setFactionStandings(mapOrObject)`.
   - `getFactionStanding(factionId)`, `setFactionStanding(factionId, value)`, `removeFactionStanding(factionId)`.
+- UI state:
+  - `getThingListViewPreferences()`, `setThingListViewPreferences(mapOrObject)`.
+  - `setThingListViewPreference(panelKey, viewMode)`.
 - Attributes/skills/abilities:
   - `getAttributeNames()`, `getAttributeDefinition(name)`, `getAttributeModifier(name)`, `getAttributeModifiers()`.
   - `setAttribute(name, value)` (if this increases max health, current health is increased by the same delta; decreases still clamp to max).
@@ -138,6 +142,7 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
 - Need bars now use explicit audience flags (`player`, `party`, `nonParty`). NPCs retain both party-only and non-party-only bar state internally so values survive party swaps. Active reads, prompt context, endpoint payloads, and per-minute drift treat `party` as “currently in the party or has ever been in the party,” while `nonParty` still means “not currently in the party,” so former party members can have both party-history bars and non-party bars active at once.
 - Per-actor need-bar minute drift now persists a `needBarRatesAppliedAt` timestamp in saves so reloads do not replay already-processed elapsed world minutes.
 - Need-bar applicability is now also persisted separately per actor in `needBarApplicability`. This is distinct from current audience activation: a bar can be defined for NPC audiences globally but still be explicitly disabled for a specific NPC. Save/load now persists the full resolved applicability map, and legacy saves missing need-bar state default storable bars to `value: 100` and `applicable: true` during hydration.
+- Shared thing-list UI view modes are now persisted per actor in `thingListViewPreferences`, keyed by the fixed panel ids `npcInventory`, `craftingInventory`, `locationScenery`, and `locationItems`, so page reloads and save/load restore the same panel view selections.
 - `setNeedBarApplicability(...)` preserves stored values for bars that stay enabled, drops bars explicitly disabled for that actor, and restores newly re-enabled bars at `100`.
 - Status-effect-driven max-health increases now raise current health by the same max-health delta. Status-effect-driven decreases do not subtract health back out; they only clamp current health if it now exceeds the reduced max.
 - `persistWhenDead` is persisted per actor. When true, dead actors never receive a corpse countdown and are skipped by corpse cleanup; missing save data defaults it to `false`.

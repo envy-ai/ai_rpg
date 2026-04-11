@@ -3757,6 +3757,7 @@
             }
             const data = cloned;
             window.currentPlayerData = data;
+            syncThingListViewStatesFromPlayer(data, { replace: true });
 
             const resolvedLocationId = data?.locationId || data?.currentLocation || null;
             if (resolvedLocationId) {
@@ -4253,6 +4254,12 @@
             ['grid', { key: 'grid', label: 'Grid' }],
             ['small-grid', { key: 'small-grid', label: 'Small Grid' }]
         ]);
+        const thingListViewPanelKeySet = new Set([
+            'npcInventory',
+            'craftingInventory',
+            'locationScenery',
+            'locationItems'
+        ]);
         const thingRaritySortRankByKey = new Map();
         rarityDefinitions.forEach((definition, index) => {
             const normalizedKey = normalizeRarityKey(definition?.key || definition?.label);
@@ -4282,6 +4289,91 @@
             return thingListViewDefinitionMap.has(normalized) ? normalized : 'grid';
         }
 
+        function normalizeThingListViewPanelKey(value) {
+            if (typeof value !== 'string') {
+                return '';
+            }
+            const trimmed = value.trim();
+            return thingListViewPanelKeySet.has(trimmed) ? trimmed : '';
+        }
+
+        function getThingListViewPreferencesFromPlayer(player = null) {
+            const source = player && typeof player === 'object'
+                ? player.thingListViewPreferences
+                : window.currentPlayerData?.thingListViewPreferences;
+            if (!source || typeof source !== 'object' || Array.isArray(source)) {
+                return {};
+            }
+            const normalized = {};
+            Object.entries(source).forEach(([rawPanelKey, rawViewMode]) => {
+                const panelKey = normalizeThingListViewPanelKey(rawPanelKey);
+                const viewMode = normalizeThingListViewMode(rawViewMode);
+                if (!panelKey || !viewMode) {
+                    return;
+                }
+                normalized[panelKey] = viewMode;
+            });
+            return normalized;
+        }
+
+        function syncThingListViewStatesFromPlayer(player = null, { replace = false } = {}) {
+            const normalized = getThingListViewPreferencesFromPlayer(player);
+            if (replace) {
+                thingListViewStates.clear();
+            }
+            Object.entries(normalized).forEach(([panelKey, viewMode]) => {
+                thingListViewStates.set(panelKey, viewMode);
+            });
+            return normalized;
+        }
+
+        async function persistThingListViewPreference(panelKey, viewMode) {
+            const normalizedPanelKey = normalizeThingListViewPanelKey(panelKey);
+            if (!normalizedPanelKey) {
+                throw new Error(`Unsupported thing-list view panel "${panelKey}".`);
+            }
+            const normalizedViewMode = normalizeThingListViewMode(viewMode);
+            if (!normalizedViewMode) {
+                throw new Error(`Unsupported thing-list view mode "${viewMode}".`);
+            }
+
+            const nextVersion = (thingListViewPreferencePersistVersions.get(normalizedPanelKey) || 0) + 1;
+            thingListViewPreferencePersistVersions.set(normalizedPanelKey, nextVersion);
+
+            let response = null;
+            let result = {};
+            try {
+                response = await fetch('/api/player/thing-list-view-preferences', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        panelKey: normalizedPanelKey,
+                        viewMode: normalizedViewMode
+                    })
+                });
+                result = await response.json().catch(() => ({}));
+            } catch (error) {
+                if (thingListViewPreferencePersistVersions.get(normalizedPanelKey) !== nextVersion) {
+                    return null;
+                }
+                throw error;
+            }
+            if (thingListViewPreferencePersistVersions.get(normalizedPanelKey) !== nextVersion) {
+                return null;
+            }
+            if (!response.ok || !result?.success) {
+                throw new Error(result?.error || `HTTP ${response.status}`);
+            }
+            if (result.player && typeof result.player === 'object') {
+                window.currentPlayerData = {
+                    ...(window.currentPlayerData || {}),
+                    ...result.player
+                };
+                syncThingListViewStatesFromPlayer(window.currentPlayerData, { replace: true });
+            }
+            return result;
+        }
+
         function getThingListSortState(panelKey) {
             if (!panelKey) {
                 return { key: '', direction: 'asc' };
@@ -4309,18 +4401,36 @@
         }
 
         function getThingListViewState(panelKey) {
-            if (!panelKey) {
+            const normalizedPanelKey = normalizeThingListViewPanelKey(panelKey);
+            if (!normalizedPanelKey) {
                 return 'grid';
             }
-            return normalizeThingListViewMode(thingListViewStates.get(panelKey));
+            if (!thingListViewStates.has(normalizedPanelKey)) {
+                const persisted = getThingListViewPreferencesFromPlayer();
+                if (persisted[normalizedPanelKey]) {
+                    thingListViewStates.set(normalizedPanelKey, persisted[normalizedPanelKey]);
+                }
+            }
+            return normalizeThingListViewMode(thingListViewStates.get(normalizedPanelKey));
         }
 
         function setThingListViewState(panelKey, nextViewMode) {
-            if (!panelKey) {
+            const normalizedPanelKey = normalizeThingListViewPanelKey(panelKey);
+            if (!normalizedPanelKey) {
                 return 'grid';
             }
             const normalized = normalizeThingListViewMode(nextViewMode);
-            thingListViewStates.set(panelKey, normalized);
+            thingListViewStates.set(normalizedPanelKey, normalized);
+            if (window.currentPlayerData && typeof window.currentPlayerData === 'object') {
+                const existingPreferences = getThingListViewPreferencesFromPlayer(window.currentPlayerData);
+                window.currentPlayerData = {
+                    ...window.currentPlayerData,
+                    thingListViewPreferences: {
+                        ...existingPreferences,
+                        [normalizedPanelKey]: normalized
+                    }
+                };
+            }
             return normalized;
         }
 
@@ -4880,7 +4990,7 @@
             return request;
         }
 
-        const thingMenuState = { openMenu: null, trigger: null, card: null };
+        const thingMenuState = { openMenu: null, trigger: null, card: null, host: null };
         let thingMenuListenersAttached = false;
 
         function attachThingMenuListeners() {
@@ -4918,9 +5028,13 @@
             if (thingMenuState.card) {
                 thingMenuState.card.classList.remove('context-menu-open');
             }
+            if (thingMenuState.host) {
+                thingMenuState.host.classList.remove('context-menu-open');
+            }
             thingMenuState.openMenu = null;
             thingMenuState.trigger = null;
             thingMenuState.card = null;
+            thingMenuState.host = null;
         }
 
         function updateLocationThingReference(thingId, updater) {
@@ -5415,10 +5529,10 @@
             if (card && card.parentElement && activeContext === 'location') {
                 const destinationId = result.destination?.id || null;
                 if (!destinationId || destinationId !== (window.lastRenderedLocation?.id || null)) {
+                    const container = resolveThingCollectionContainer(card);
                     card.remove();
-                    const container = card.parentElement;
-                    const hasRemainingCards = container.querySelector('.entity-card, .location-entity-card');
-                    if (!hasRemainingCards) {
+                    const hasRemainingEntries = container?.querySelector('.thing-collection-entry');
+                    if (container && !hasRemainingEntries) {
                         const emptyMessage = container.id === 'locationScenery'
                             ? 'No notable scenery present.'
                             : 'No notable items present.';
@@ -5749,6 +5863,7 @@
 
             attachThingMenuListeners();
             cacheThingData(thing);
+            const menuHost = options.menuHost instanceof HTMLElement ? options.menuHost : card;
 
             const thingIdString = String(thing.id);
             if (card.dataset.thingMenuAttached === 'true' && card.dataset.thingId === thingIdString) {
@@ -5877,7 +5992,9 @@
                     thingMenuState.openMenu = menu;
                     thingMenuState.trigger = button;
                     thingMenuState.card = card;
+                    thingMenuState.host = menuHost;
                     card.classList.add('context-menu-open');
+                    menuHost.classList.add('context-menu-open');
                 }
             });
 
@@ -6310,11 +6427,11 @@
 
                             if (moveResult?.success) {
                                 if (options.context === 'location' && card && card.parentElement) {
-                                    const container = card.parentElement;
+                                    const container = resolveThingCollectionContainer(card);
                                     card.remove();
 
-                                    const hasRemainingCards = container.querySelector('.entity-card, .location-entity-card');
-                                    if (!hasRemainingCards) {
+                                    const hasRemainingEntries = container?.querySelector('.thing-collection-entry');
+                                    if (container && !hasRemainingEntries) {
                                         const emptyMessage = container.id === 'locationScenery'
                                             ? 'No notable scenery present.'
                                             : 'No notable items present.';
@@ -6552,8 +6669,8 @@
                 }
             });
 
-            card.appendChild(button);
-            card.appendChild(menu);
+            menuHost.appendChild(button);
+            menuHost.appendChild(menu);
         }
 
         const resolveThingSlotType = (thing = {}) => {
@@ -7193,7 +7310,9 @@
         const thingListViewPopoverStates = [];
         const thingListSortStates = new Map();
         const thingListViewStates = new Map();
+        const thingListViewPreferencePersistVersions = new Map();
         const thingListRenderedOrderIds = new Map();
+        syncThingListViewStatesFromPlayer(window.currentPlayerData, { replace: true });
         const npcInventoryShowAllRadio = document.getElementById('npcInventoryShowAll');
         const npcInventoryEquippedOnlyRadio = document.getElementById('npcInventoryEquippedOnly');
         const npcInventoryEquippableOnlyRadio = document.getElementById('npcInventoryEquippableOnly');
@@ -10729,6 +10848,7 @@
                 const result = await response.json().catch(() => ({}));
                 if (response.ok && result?.success && result.player?.id) {
                     window.currentPlayerData = result.player;
+                    syncThingListViewStatesFromPlayer(result.player, { replace: true });
                     if (typeof result.player.id === 'string' && result.player.id.trim()) {
                         return result.player.id.trim();
                     }
@@ -13393,17 +13513,26 @@
             }
             syncThingListViewOptions(viewShell, panelKey);
             viewShell.querySelectorAll('.thing-list-view-option').forEach(option => {
-                option.addEventListener('click', () => {
+                option.addEventListener('click', async () => {
                     const optionViewMode = normalizeThingListViewMode(option.dataset.viewMode || '');
                     if (!optionViewMode) {
                         throw new Error(`Unsupported thing-list view mode "${option.dataset.viewMode || ''}".`);
                     }
+                    const previousViewMode = getThingListViewState(panelKey);
                     setThingListViewState(panelKey, optionViewMode);
                     syncThingListViewOptions(viewShell, panelKey);
                     if (panel) {
                         closeThingListViewPopoverForPanel(panel);
                     }
                     rerender();
+                    try {
+                        await persistThingListViewPreference(panelKey, optionViewMode);
+                    } catch (error) {
+                        setThingListViewState(panelKey, previousViewMode);
+                        syncThingListViewOptions(viewShell, panelKey);
+                        rerender();
+                        alert(error?.message || 'Failed to save thing-list view preference.');
+                    }
                 });
             });
         }
@@ -14891,7 +15020,7 @@
             const equipped = Boolean(thing?.isEquipped || thing?.equippedSlot);
 
             if (resolvedViewMode === 'table') {
-                const row = document.createElement('div');
+                const row = document.createElement('tr');
                 row.className = [
                     'thing-table-row',
                     'thing-collection-entry',
@@ -14914,7 +15043,7 @@
                     row.dataset.imageEntityId = thing.id;
                 }
 
-                const iconCell = document.createElement('div');
+                const iconCell = document.createElement('td');
                 iconCell.className = 'thing-table-row__icon-cell';
 
                 const icon = document.createElement('div');
@@ -14932,7 +15061,7 @@
                 });
                 iconCell.appendChild(icon);
 
-                const content = document.createElement('div');
+                const content = document.createElement('td');
                 content.className = 'thing-table-row__content';
 
                 const name = document.createElement('div');
@@ -14943,12 +15072,15 @@
                 applyRarityClass(name, thing?.rarity);
                 content.appendChild(name);
 
-                const utilities = document.createElement('div');
+                const utilities = document.createElement('td');
                 utilities.className = 'thing-table-row__utilities';
+                const utilitiesInner = document.createElement('div');
+                utilitiesInner.className = 'thing-table-row__utilities-inner';
                 const actionIcons = buildThingActionIconList(thing, { hostElement: row });
                 if (actionIcons) {
-                    utilities.appendChild(actionIcons);
+                    utilitiesInner.appendChild(actionIcons);
                 }
+                utilities.appendChild(utilitiesInner);
 
                 row.appendChild(iconCell);
                 row.appendChild(content);
@@ -14961,20 +15093,23 @@
                         name,
                         thing,
                         slotInfo,
-                        controlsHost: utilities,
+                        controlsHost: utilitiesInner,
                         viewMode: resolvedViewMode
                     });
                 }
 
                 if (options.contextMenuOptions) {
-                    registerThingContextMenu(row, thing, options.contextMenuOptions);
+                    registerThingContextMenu(row, thing, {
+                        ...options.contextMenuOptions,
+                        menuHost: utilities
+                    });
                 }
 
                 if (options.enableTooltip !== false) {
                     bindThingTooltip(row, thing, options.tooltipOptions || {});
                 }
 
-                return { card: row, icon, name, slotInfo, controlsHost: utilities };
+                return { card: row, icon, name, slotInfo, controlsHost: utilitiesInner };
             }
 
             if (resolvedViewMode === 'grid' || resolvedViewMode === 'small-grid') {
@@ -15213,16 +15348,49 @@
                 empty.style.display = 'none';
             }
 
+            let appendTarget = grid;
+            if (viewMode === 'table') {
+                const table = document.createElement('table');
+                table.className = 'thing-table';
+
+                const colgroup = document.createElement('colgroup');
+                const iconCol = document.createElement('col');
+                iconCol.className = 'thing-table__col thing-table__col--icon';
+                const nameCol = document.createElement('col');
+                nameCol.className = 'thing-table__col thing-table__col--name';
+                const utilitiesCol = document.createElement('col');
+                utilitiesCol.className = 'thing-table__col thing-table__col--utilities';
+                colgroup.appendChild(iconCol);
+                colgroup.appendChild(nameCol);
+                colgroup.appendChild(utilitiesCol);
+                table.appendChild(colgroup);
+
+                const tbody = document.createElement('tbody');
+                tbody.className = 'thing-table__body';
+                table.appendChild(tbody);
+                grid.appendChild(table);
+                appendTarget = tbody;
+            }
+
             filteredItems.forEach(item => {
                 const built = typeof buildCard === 'function'
                     ? buildCard(item, { viewMode })
                     : buildThingCollectionEntry(item, { viewMode });
                 if (built?.card) {
-                    grid.appendChild(built.card);
+                    appendTarget.appendChild(built.card);
                 }
             });
 
             return filteredItems;
+        }
+
+        function resolveThingCollectionContainer(card) {
+            if (!(card instanceof HTMLElement)) {
+                return null;
+            }
+            return card.closest('.location-entity-grid, .inventory-grid, .crafting-modal__inventory-grid')
+                || card.parentElement
+                || null;
         }
 
         async function setNpcItemEquipped(npcId, item, shouldEquip, { slotName = null, slotType = null } = {}) {
@@ -16120,7 +16288,7 @@
                 singularLabel: 'item',
                 pluralLabel: 'items',
                 enableEquipmentFilters: true,
-                buildCard: (item) => {
+                buildCard: (item, { viewMode } = {}) => {
                     const clone = cloneThingRecord(item) || { ...item };
                     if (clone.id) {
                         craftingInventoryLookup.set(clone.id, clone);

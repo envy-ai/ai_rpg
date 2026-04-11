@@ -19,6 +19,18 @@ Response:
 - 200: `{ success: true, player: NpcProfile }`
 - 404: `{ success: false, error: 'No current player found' }`
 
+## PUT /api/player/thing-list-view-preferences
+Persist the current player's shared thing-list panel view mode for one panel.
+
+Request:
+- Body: `{ panelKey: string, viewMode: string }`
+  - Supported `panelKey` values: `npcInventory`, `craftingInventory`, `locationScenery`, `locationItems`
+  - Supported `viewMode` values: `classic`, `table`, `grid`, `small-grid`
+
+Response:
+- 200: `{ success: true, thingListViewPreferences: object, player: NpcProfile }`
+- 400/404: `{ success: false, error }`
+
 ## GET /api/player/ability-selection
 Get the player-only pending ability draft state (and generate the next option set if needed).
 

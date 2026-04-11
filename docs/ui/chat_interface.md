@@ -42,10 +42,10 @@ The main UI is rendered by `views/index.njk` and powered by `public/js/chat.js` 
   - Dead NPC/party cards only show a corpse countdown inside the skull indicator when `corpseCountdown` is numeric; persistent corpses (`persistWhenDead`) omit the countdown entirely.
   - Items/Scenery grids + "Craft" and "New Item/Scenery" buttons.
   - Thing cards render a lower-right thumbnail count badge from persisted `thing.count`; item cards always show it, while scenery cards suppress the badge when the count is `1`.
-  - Location item/scenery sections now use the same inventory-style thing-list renderer and search/slot-filter pipeline as the player/NPC inventory modal and crafting inventory. All four shared panels now expose a shared three-control header: a view popup, a sort popup, and the icon-only filter popup. View state is tracked per panel for the current page session, so changing one panel to `Table` or `Grid` does not affect the others and survives rerenders. The default shared panel view is now `Grid`.
+  - Location item/scenery sections now use the same inventory-style thing-list renderer and search/slot-filter pipeline as the player/NPC inventory modal and crafting inventory. All four shared panels now expose a shared three-control header: a view popup, a sort popup, and the icon-only filter popup. View state is tracked per panel on the current player record, so changing one panel to `Table` or `Grid` does not affect the others, survives rerenders, persists across page reloads, and is serialized into saves. The default shared panel view is `Grid` until overridden by those saved per-panel preferences.
   - Shared thing-list view modes:
     - `Classic` keeps the existing card layout.
-    - `Table` renders draggable rows with a 48px image cell, a middle-left aligned rarity-colored item name cell, collapsed 2px cell borders, and inline action icons (craft/process/salvage/harvest) plus the standard context menu.
+    - `Table` renders as a real HTML table with draggable `<tr>` rows, a full-size shared image cell, a left-aligned vertically centered rarity-colored item name cell, collapsed 2px cell borders, and inline action icons (craft/process/salvage/harvest) plus the standard context menu in the utilities cell.
     - `Grid` renders compact image-only tiles with the same thumbnail size, a `2px` rarity-colored border on the image itself, and a `1px` gap between tiles.
     - `Small Grid` uses the same grid layout rules as `Grid`, but overrides the shared item-view size tokens to `0.7x` so the image, count badge, overlay icons, and context-menu button all shrink together.
   - Shared thing-list filters:
@@ -150,6 +150,7 @@ Not exhaustive, but the core UI calls include:
 - `/api/quest/edit` and `/api/player/quests/:id` (quest edit / abandon).
 - `/api/factions` + `/api/player/factions/:id/standing` (faction panel edits).
 - `/api/player` and `/api/player/skills/:name/increase` (sidebar + skill adjust).
+- `/api/player/thing-list-view-preferences` (persist shared location/inventory/crafting panel view selections on the current player).
 - `/api/player/ability-selection` + `/api/player/ability-selection/submit` (player level-up ability draft flow).
 - `/api/player/move` (direct travel fallback path; sends `destinationId` plus `expectedOriginLocationId` for server-side origin verification).
 - `/api/player/update-stats` (player-view modal point allocation submit; unspent pools are server-derived from submitted level/attributes/skills, and the in-modal skill pool preview tracks formula deltas from provisional stat changes such as Intelligence bonus adjustments).

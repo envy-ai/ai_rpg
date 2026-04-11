@@ -80,14 +80,17 @@ Loaded on the chat page:
   covering the classic-card container, base icon size, grid/tile sizing, table image cell,
   overlay badge bar, count badge, action-icon list, and the item `•••` context-menu button.
   Shared view-mode presentation is handled by `.thing-collection-view--table`,
+  `.thing-table`, `.thing-table-row`, `.thing-table-row__icon-cell`,
+  `.thing-table-row__content`, `.thing-table-row__utilities`,
   `.thing-collection-view--grid`, `.thing-collection-view--small-grid`,
-  `.thing-table-row`, `.thing-table-row__icon-cell`, `.thing-table-row__icon`,
+  `.thing-table-row__icon`,
   `.thing-action-icon-list`, `.thing-grid-tile`, and `.thing-grid-tile__icon`; grid modes use a `1px` tile gap and a `2px`
   rarity-colored border on the image/icon itself. `Small Grid` now overrides those shared
   sizing tokens to `0.7x` with SCSS math so the tile, image, count badge, overlay badge bar,
-  and context-menu button all shrink together without transform scaling. Table mode uses a 48px image cell with a full-size icon
-  scaled down inside it so the in-image count badge and overlays shrink together,
-  while the surrounding text/actions remain full size; the shared default view is `Grid`;
+  and context-menu button all shrink together without transform scaling. Table mode now uses a real
+  HTML table (`<table>/<tbody>/<tr>/<td>`) with collapsed borders; its image cell and row height use the
+  full shared base icon size, the title cell is explicitly left-aligned and vertically centered, and
+  the shared default view is `Grid`;
   row and cell borders are styled
   as collapsed `2px` lines with zero spacing. The shared list container also gets semantic mode classes
   for downstream styling hooks: `.view-classic-mode`, `.view-table-mode`,

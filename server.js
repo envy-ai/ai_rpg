@@ -3154,6 +3154,7 @@ function serializeNpcForClient(npc, options = {}) {
         experience,
         needBars: typeof npc.getNeedBars === 'function' ? npc.getNeedBars({ scope: 'active' }) : [],
         needBarApplicability: typeof npc.getNeedBarApplicability === 'function' ? npc.getNeedBarApplicability() : {},
+        thingListViewPreferences: typeof npc.getThingListViewPreferences === 'function' ? npc.getThingListViewPreferences() : {},
         personality,
         personalityType: personality?.type ?? null,
         personalityTraits: personality?.traits ?? null,

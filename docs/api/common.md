@@ -123,6 +123,7 @@ Fields:
 - `experience` (number | null)
 - `needBars` (array of NeedBar)
 - `needBarApplicability` (object map of `needBarId -> boolean`)
+- `thingListViewPreferences` (object map of shared thing-list panel key -> view mode)
 - `factionId` (string | null)
 - `factionStandings` (object map of `factionId -> number`)
 - `personality` (object | null)
