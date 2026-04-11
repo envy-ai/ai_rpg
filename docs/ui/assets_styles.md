@@ -6,6 +6,11 @@
   - Primary UI palette is defined here (glass background, primary blue, etc).
 - `public/css/main.scss`
   - Base layout and the bulk of component styling for the chat UI.
+  - The chat tab bar uses icon-only `.tab-button` controls with shared `.tab-button__icon` sizing, transparent button chrome, and a flush `.tab-bar` layout with no gap or bottom margin plus a subtle inset shadow.
+  - The Adventure-tab location panel keeps the shared glass `.container` styling but overrides the nested `.location-block .container` shape so only the bottom-right corner remains rounded.
+  - The main Adventure layout uses a flush `.chat-wrapper` with no inter-column gap.
+  - The Adventure-tab `.chat-sidebar` outer panel also keeps only the bottom-right corner rounded.
+  - Compact thing-list popovers now promote their owning `.thing-list-panel` with a temporary `.thing-list-panel--popover-open` stacking class so location item/scenery text cannot paint above an open filter or sort popup.
   - Compiled output: `public/css/main.css`.
 - `public/css/settings.scss`
   - Settings page layout and field styling.
@@ -55,6 +60,28 @@ Loaded on the chat page:
 - Thing thumbnails on item/scenery cards also use a shared `.thing-count-badge` overlay in the
   lower-right corner of the image area. Items always show their persisted `count`; scenery
   hides the badge when `count === 1`.
+- Inventory, location item/scenery sections, and the crafting inventory now share the same
+  inventory-style thing-card DOM builder in `views/index.njk`, with shared control/popup
+  classes in `public/css/main.scss` such as `.thing-list-panel`, `.thing-list-panel__header`,
+  `.thing-list-panel__controls`, `.thing-list-filters-shell`, `.thing-list-sort-shell`,
+  `.thing-list-view-shell`, `.thing-list-filters-row`, `.thing-list-panel__icon-toggle`,
+  `.thing-list-sort-option`, and `.thing-list-view-option`. Narrow panels switch to a
+  popover-style filter shell anchored to the shared icon-only filter toggle button, while
+  sort and view each stay in their own popup. The shared control icons now come from
+  `assets/material-icons/inventory-view-icons/filter.svg`,
+  `assets/material-icons/inventory-view-icons/sort.svg`,
+  `assets/material-icons/inventory-view-icons/view.svg`,
+  plus the per-sort glyphs and the `cards.svg` / `table.svg` / `grid.svg` view icons in
+  that same folder. The repeated toggle, sort-shell, and view-shell markup now comes from the
+  shared `views/_includes/thing-list-filter-toggle.njk` macros so all four panels stay in sync.
+  Shared view-mode presentation is handled by `.thing-collection-view--table`,
+  `.thing-collection-view--grid`, `.thing-table-row`, `.thing-action-icon-list`,
+  `.thing-grid-tile`, and `.thing-grid-tile__icon`; grid mode uses a `1px` tile gap and
+  a `2px` rarity-colored thumbnail border.
+  Crafting cards also add a red equipped-state outline via `.crafting-inventory-card.is-equipped`
+  so equipped items are visually blocked from slot assignment until unequipped.
+  The crafting inventory grid also carries the same `8px` top separation below filters as the
+  player inventory grid for consistent spacing after the radio filter row.
 - NPC memories/goals editors share `npc-list-editor-*` base classes for modal layout,
   row controls, and actions; legacy `.npc-memories-*`/`.npc-goals-*` classes remain on
   markup for compatibility.

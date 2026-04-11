@@ -7014,7 +7014,8 @@ class AIRPGChat {
             command: commandName,
             args,
             argsText,
-            userId: window.currentPlayerData?.id || null
+            userId: window.currentPlayerData?.id || null,
+            clientId: this.clientId || window.AIRPG_CLIENT_ID || null
         };
 
         this.setSendButtonLoading(true);

@@ -1,0 +1,79 @@
+{% macro thingListIconToggle(id, controlsId, ariaLabel, title, iconPath, extraClass = "", initiallyHidden = false) %}
+<button type="button"
+        class="thing-list-panel__icon-toggle {{ extraClass }}"
+        id="{{ id }}"
+        aria-expanded="false"
+        aria-controls="{{ controlsId }}"
+        aria-label="{{ ariaLabel }}"
+        title="{{ title }}"
+        {% if initiallyHidden %}hidden{% endif %}>
+    <img src="{{ iconPath }}" class="thing-list-panel__icon-toggle-icon" alt="" aria-hidden="true">
+</button>
+{% endmacro %}
+
+{% macro thingListFiltersToggle(id, controlsId, ariaLabel) %}
+{{ thingListIconToggle(
+    id,
+    controlsId,
+    ariaLabel,
+    "Search and filters",
+    "/assets/material-icons/inventory-view-icons/filter.svg",
+    "thing-list-filters-toggle",
+    true
+) }}
+{% endmacro %}
+
+{% macro thingListSortToggle(id, controlsId, ariaLabel) %}
+{{ thingListIconToggle(
+    id,
+    controlsId,
+    ariaLabel,
+    "Sort items",
+    "/assets/material-icons/inventory-view-icons/sort.svg",
+    "thing-list-sort-toggle"
+) }}
+{% endmacro %}
+
+{% macro thingListSortOption(sortKey, iconPath, label) %}
+<button type="button" class="thing-list-sort-option" data-sort-key="{{ sortKey }}">
+    <img src="/assets/material-icons/inventory-view-icons/arrow_up.svg" class="thing-list-sort-option__direction" alt="" aria-hidden="true">
+    <img src="{{ iconPath }}" class="thing-list-sort-option__icon" alt="" aria-hidden="true">
+    <span class="thing-list-sort-option__label">{{ label }}</span>
+</button>
+{% endmacro %}
+
+{% macro thingListSortShell(id, ariaLabel) %}
+<div class="thing-list-sort-shell" id="{{ id }}" hidden aria-label="{{ ariaLabel }}">
+    {{ thingListSortOption("alphabetical", "/assets/material-icons/inventory-view-icons/sort_alpha.svg", "Alphabetical") }}
+    {{ thingListSortOption("level", "/assets/material-icons/inventory-view-icons/sort_level.svg", "Level") }}
+    {{ thingListSortOption("quality", "/assets/material-icons/inventory-view-icons/sort_quality.svg", "Quality") }}
+    {{ thingListSortOption("value", "/assets/material-icons/inventory-view-icons/sort_value.svg", "Value") }}
+    {{ thingListSortOption("equipment-slot", "/assets/material-icons/inventory-view-icons/sort_equpment_slot.svg", "Equipment Slot") }}
+</div>
+{% endmacro %}
+
+{% macro thingListViewToggle(id, controlsId, ariaLabel) %}
+{{ thingListIconToggle(
+    id,
+    controlsId,
+    ariaLabel,
+    "Change item view",
+    "/assets/material-icons/inventory-view-icons/view.svg",
+    "thing-list-view-toggle"
+) }}
+{% endmacro %}
+
+{% macro thingListViewOption(viewMode, iconPath, label) %}
+<button type="button" class="thing-list-view-option" data-view-mode="{{ viewMode }}">
+    <img src="{{ iconPath }}" class="thing-list-view-option__icon" alt="" aria-hidden="true">
+    <span class="thing-list-view-option__label">{{ label }}</span>
+</button>
+{% endmacro %}
+
+{% macro thingListViewShell(id, ariaLabel) %}
+<div class="thing-list-view-shell" id="{{ id }}" hidden aria-label="{{ ariaLabel }}">
+    {{ thingListViewOption("classic", "/assets/material-icons/inventory-view-icons/cards.svg", "Classic") }}
+    {{ thingListViewOption("table", "/assets/material-icons/inventory-view-icons/table.svg", "Table") }}
+    {{ thingListViewOption("grid", "/assets/material-icons/inventory-view-icons/grid.svg", "Grid") }}
+</div>
+{% endmacro %}

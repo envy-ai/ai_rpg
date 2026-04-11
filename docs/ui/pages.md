@@ -2,6 +2,11 @@
 
 This page maps routes to templates and the client scripts/styles they load.
 
+## Shared head behavior
+- Shared head tags now live in `views/_includes/head-common.njk`.
+- All top-level page templates (`index`, `new-game`, `config`, `settings`, `lorebooks`, `debug`, `player-stats`) include that partial for shared `meta`, `title`, favicon, and `main.css` tags.
+- The shared favicon target is `/assets/fluentui-emoji/crossed_swords_color_classic.svg`.
+
 ## Main chat interface
 - Route: `/`
 - Template: `views/index.njk`

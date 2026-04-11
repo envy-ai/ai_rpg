@@ -7,7 +7,7 @@ Generate AI-powered illustrations for your game scenes with a single click.
 ## Features
 
 - **🎨 One-Click Generation** — Click the paint palette button on any AI message to generate an illustration
-- **📸 Scene Gallery** — Browse all generated images in the dedicated "Scenes Gallery" tab
+- **📸 Scene Gallery** — Browse all generated images in the dedicated icon-only Scenes Gallery tab
 - **🔍 Lightbox View** — Click any image to view it in full-screen
 - **⚙️ Configurable AI Model** — Use a different text AI model for prompt generation
 - **💾 Persistent Storage** — Images are saved and persist across server restarts

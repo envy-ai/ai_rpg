@@ -31083,12 +31083,16 @@ module.exports = function registerApiRoutes(scope) {
             const userId = typeof rawRequest.userId === 'string' && rawRequest.userId.trim()
                 ? rawRequest.userId.trim()
                 : null;
+            const clientId = typeof rawRequest.clientId === 'string' && rawRequest.clientId.trim()
+                ? rawRequest.clientId.trim()
+                : null;
 
             return {
                 command,
                 args,
                 argsText,
-                userId
+                userId,
+                clientId
             };
         }
 
@@ -31463,7 +31467,7 @@ module.exports = function registerApiRoutes(scope) {
             });
         }
 
-        function buildSlashCommandInteractionContext({ userId = null, argsText = '', replies = [] } = {}) {
+        function buildSlashCommandInteractionContext({ userId = null, clientId = null, argsText = '', replies = [] } = {}) {
             const getChatHistory = () => chatHistory;
             const getHistory = (query, startIndexOrOptions = null, countArg = null) => {
                 let startIndex = null;
@@ -31488,9 +31492,16 @@ module.exports = function registerApiRoutes(scope) {
                     includeFullContent: true
                 }).entries;
             };
+            const normalizedClientId = typeof clientId === 'string' && clientId.trim()
+                ? clientId.trim()
+                : null;
+            const requestedClientRefresh = {
+                locationRefreshRequested: false
+            };
 
             return {
                 user: { id: userId },
+                clientId: normalizedClientId,
                 argsText,
                 chatHistory,
                 getChatHistory,
@@ -31539,6 +31550,16 @@ module.exports = function registerApiRoutes(scope) {
                     : null,
                 skillRegistry: skills instanceof Map ? skills : null,
                 thingRegistry: things instanceof Map ? things : null,
+                requestClientRefresh({ locationRefreshRequested = false } = {}) {
+                    requestedClientRefresh.locationRefreshRequested = Boolean(
+                        requestedClientRefresh.locationRefreshRequested || locationRefreshRequested
+                    );
+                },
+                getRequestedClientRefresh() {
+                    return {
+                        locationRefreshRequested: Boolean(requestedClientRefresh.locationRefreshRequested)
+                    };
+                },
                 reply(payload) {
                     replies.push(normalizeSlashCommandReplyPayload(payload));
                     return Promise.resolve();
@@ -31554,11 +31575,21 @@ module.exports = function registerApiRoutes(scope) {
                 const executionOptions = resolveSlashCommandExecutionOptions(CommandModule);
                 const interaction = buildSlashCommandInteractionContext({
                     userId: request.userId,
+                    clientId: request.clientId,
                     argsText: request.argsText,
                     replies
                 });
 
                 await CommandModule.execute(interaction, providedArgs);
+
+                const requestedClientRefresh = typeof interaction.getRequestedClientRefresh === 'function'
+                    ? interaction.getRequestedClientRefresh()
+                    : null;
+                if (requestedClientRefresh?.locationRefreshRequested && request.clientId) {
+                    Globals.emitToClient(request.clientId, 'chat_history_updated', {
+                        locationRefreshRequested: true
+                    });
+                }
 
                 return res.json({ success: true, replies, executionOptions });
             } catch (error) {
@@ -31591,6 +31622,7 @@ module.exports = function registerApiRoutes(scope) {
                 const replies = [];
                 const interaction = buildSlashCommandInteractionContext({
                     userId: request.userId,
+                    clientId: request.clientId,
                     argsText: request.argsText,
                     replies
                 });

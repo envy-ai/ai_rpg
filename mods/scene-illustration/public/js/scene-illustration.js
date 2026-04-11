@@ -246,7 +246,9 @@
         tabButton.setAttribute('role', 'tab');
         tabButton.setAttribute('aria-selected', 'false');
         tabButton.setAttribute('aria-controls', 'tab-scenes-gallery');
-        tabButton.textContent = 'Scenes Gallery';
+        tabButton.setAttribute('aria-label', 'Scenes Gallery');
+        tabButton.title = 'Scenes Gallery';
+        tabButton.innerHTML = '<img src="/assets/material-icons/game-tab-icons/scenes_gallery.svg" class="tab-button__icon" alt="" aria-hidden="true">';
         
         // Insert after Party tab (or last)
         tabBar.appendChild(tabButton);

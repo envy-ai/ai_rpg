@@ -1,10 +1,9 @@
 <!DOCTYPE html>
 <html lang="en">
+{% set pageTitleValue = title | default("AI RPG Chat") %}
+{% from "_includes/thing-list-filter-toggle.njk" import thingListFiltersToggle, thingListSortToggle, thingListSortShell, thingListViewToggle, thingListViewShell %}
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ title | default("AI RPG Chat") }}</title>
-    <link rel="stylesheet" href="/css/main.css">
+    {% include "_includes/head-common.njk" %}
     <link rel="stylesheet" href="/css/map.css">
     {% if modStyles %}{% for mod in modStyles %}{% for style in mod.styles %}
     <link rel="stylesheet" href="{{ style }}">
@@ -19,14 +18,14 @@
         
         <div class="main-content">
             <div class="tab-bar" role="tablist">
-                <button class="tab-button active" id="tab-adventure-tab" data-tab="adventure" role="tab" aria-selected="true" aria-controls="tab-adventure">Adventure</button>
-                <button class="tab-button" id="tab-map-tab" data-tab="map" role="tab" aria-selected="false" aria-controls="tab-map">Map</button>
-                <button class="tab-button" id="tab-world-map-tab" data-tab="world-map" role="tab" aria-selected="false" aria-controls="tab-world-map">World Map</button>
-                <button class="tab-button" id="tab-character-tab" data-tab="character" role="tab" aria-selected="false" aria-controls="tab-character">Character</button>
-                <button class="tab-button" id="tab-quests-tab" data-tab="quests" role="tab" aria-selected="false" aria-controls="tab-quests">Quests</button>
-                <button class="tab-button" id="tab-factions-tab" data-tab="factions" role="tab" aria-selected="false" aria-controls="tab-factions">Factions</button>
-                <button class="tab-button" id="tab-party-tab" data-tab="party" role="tab" aria-selected="false" aria-controls="tab-party">Party</button>
-                <button class="tab-button" id="tab-story-tools-tab" data-tab="story-tools" role="tab" aria-selected="false" aria-controls="tab-story-tools">Story Tools</button>
+                <button class="tab-button active" id="tab-adventure-tab" data-tab="adventure" role="tab" aria-selected="true" aria-controls="tab-adventure" aria-label="Adventure" title="Adventure"><img src="/assets/material-icons/game-tab-icons/adventure.svg" class="tab-button__icon" alt="" aria-hidden="true"></button>
+                <button class="tab-button" id="tab-map-tab" data-tab="map" role="tab" aria-selected="false" aria-controls="tab-map" aria-label="Map" title="Map"><img src="/assets/material-icons/game-tab-icons/map.svg" class="tab-button__icon" alt="" aria-hidden="true"></button>
+                <button class="tab-button" id="tab-world-map-tab" data-tab="world-map" role="tab" aria-selected="false" aria-controls="tab-world-map" aria-label="World Map" title="World Map"><img src="/assets/material-icons/game-tab-icons/world_map.svg" class="tab-button__icon" alt="" aria-hidden="true"></button>
+                <button class="tab-button" id="tab-character-tab" data-tab="character" role="tab" aria-selected="false" aria-controls="tab-character" aria-label="Character" title="Character"><img src="/assets/material-icons/game-tab-icons/character.svg" class="tab-button__icon" alt="" aria-hidden="true"></button>
+                <button class="tab-button" id="tab-quests-tab" data-tab="quests" role="tab" aria-selected="false" aria-controls="tab-quests" aria-label="Quests" title="Quests"><img src="/assets/material-icons/game-tab-icons/quests.svg" class="tab-button__icon" alt="" aria-hidden="true"></button>
+                <button class="tab-button" id="tab-factions-tab" data-tab="factions" role="tab" aria-selected="false" aria-controls="tab-factions" aria-label="Factions" title="Factions"><img src="/assets/material-icons/game-tab-icons/factions.svg" class="tab-button__icon" alt="" aria-hidden="true"></button>
+                <button class="tab-button" id="tab-party-tab" data-tab="party" role="tab" aria-selected="false" aria-controls="tab-party" aria-label="Party" title="Party"><img src="/assets/material-icons/game-tab-icons/party.svg" class="tab-button__icon" alt="" aria-hidden="true"></button>
+                <button class="tab-button" id="tab-story-tools-tab" data-tab="story-tools" role="tab" aria-selected="false" aria-controls="tab-story-tools" aria-label="Story Tools" title="Story Tools"><img src="/assets/material-icons/game-tab-icons/story_tools.svg" class="tab-button__icon" alt="" aria-hidden="true"></button>
             </div>
 
             <div class="tab-panels">
@@ -101,18 +100,100 @@
                                         <details class="location-section location-things" open>
                                             <summary>Items &amp; Scenery</summary>
                                             <div class="location-thing-content">
-                                                <div class="location-thing-category">
-                                                    <h5 class="location-thing-heading">Scenery</h5>
+                                                <div class="location-thing-category thing-list-panel" id="locationSceneryPanel">
+                                                    <div class="thing-list-panel__header">
+                                                        <div class="thing-list-panel__heading-group">
+                                                            <h5 class="location-thing-heading">Scenery</h5>
+                                                            <span class="inventory-count" id="locationSceneryCount">0 objects</span>
+                                                        </div>
+                                                        <div class="thing-list-panel__controls">
+                                                            {{ thingListViewToggle("locationSceneryViewToggle", "locationSceneryView", "Change location scenery view") }}
+                                                            {{ thingListSortToggle("locationScenerySortToggle", "locationScenerySort", "Sort location scenery") }}
+                                                            {{ thingListFiltersToggle("locationSceneryFiltersToggle", "locationSceneryFilters", "Search and filter location scenery") }}
+                                                        </div>
+                                                    </div>
+                                                    {{ thingListViewShell("locationSceneryView", "Change location scenery view") }}
+                                                    {{ thingListSortShell("locationScenerySort", "Sort location scenery") }}
+                                                    <div class="thing-list-filters-shell" id="locationSceneryFilters">
+                                                        <div class="thing-list-filters-row">
+                                                            <div class="npc-selection-filter npc-inventory-filter-input-wrapper">
+                                                                <label class="sr-only" for="locationSceneryFilterInput">Filter scenery</label>
+                                                                <input type="search" id="locationSceneryFilterInput" class="npc-selection-filter-input" placeholder="Filter scenery" aria-label="Filter scenery">
+                                                            </div>
+                                                            <div class="npc-inventory-filter-slot-wrapper" id="locationScenerySlotFilterWrapper">
+                                                                <label class="sr-only" for="locationScenerySlotFilter">Filter scenery by slot</label>
+                                                                <select id="locationScenerySlotFilter" class="npc-inventory-slot-filter" aria-label="Filter scenery by slot">
+                                                                    <option value="">All slots</option>
+                                                                </select>
+                                                            </div>
+                                                        </div>
+                                                        <div class="npc-inventory-filter-radios">
+                                                            <label class="npc-inventory-filter-radio" for="locationSceneryShowAll">
+                                                                <input type="radio" id="locationSceneryShowAll" name="locationSceneryItemFilter" value="all" checked>
+                                                                <span>Show all</span>
+                                                            </label>
+                                                            <label class="npc-inventory-filter-radio" for="locationSceneryEquippableOnly">
+                                                                <input type="radio" id="locationSceneryEquippableOnly" name="locationSceneryItemFilter" value="equippable">
+                                                                <span>Equippable only</span>
+                                                            </label>
+                                                            <label class="npc-inventory-filter-radio" for="locationSceneryNonEquippableOnly">
+                                                                <input type="radio" id="locationSceneryNonEquippableOnly" name="locationSceneryItemFilter" value="non-equippable">
+                                                                <span>Non-equippable only</span>
+                                                            </label>
+                                                        </div>
+                                                    </div>
                                                     <div class="location-entity-grid" id="locationScenery">
                                                         <div class="location-thing-empty">No notable scenery present.</div>
                                                     </div>
+                                                    <div class="inventory-empty location-thing-empty" id="locationSceneryEmpty" hidden>No notable scenery present.</div>
                                                     <button type="button" class="location-npc-add-button location-thing-add-button" id="craftSceneryButton" disabled>🔨 Craft Scenery</button>
                                                 </div>
-                                                <div class="location-thing-category">
-                                                    <h5 class="location-thing-heading">Items</h5>
+                                                <div class="location-thing-category thing-list-panel" id="locationItemsPanel">
+                                                    <div class="thing-list-panel__header">
+                                                        <div class="thing-list-panel__heading-group">
+                                                            <h5 class="location-thing-heading">Items</h5>
+                                                            <span class="inventory-count" id="locationItemsCount">0 items</span>
+                                                        </div>
+                                                        <div class="thing-list-panel__controls">
+                                                            {{ thingListViewToggle("locationItemsViewToggle", "locationItemsView", "Change location items view") }}
+                                                            {{ thingListSortToggle("locationItemsSortToggle", "locationItemsSort", "Sort location items") }}
+                                                            {{ thingListFiltersToggle("locationItemsFiltersToggle", "locationItemsFilters", "Search and filter location items") }}
+                                                        </div>
+                                                    </div>
+                                                    {{ thingListViewShell("locationItemsView", "Change location items view") }}
+                                                    {{ thingListSortShell("locationItemsSort", "Sort location items") }}
+                                                    <div class="thing-list-filters-shell" id="locationItemsFilters">
+                                                        <div class="thing-list-filters-row">
+                                                            <div class="npc-selection-filter npc-inventory-filter-input-wrapper">
+                                                                <label class="sr-only" for="locationItemsFilterInput">Filter items</label>
+                                                                <input type="search" id="locationItemsFilterInput" class="npc-selection-filter-input" placeholder="Filter items" aria-label="Filter items">
+                                                            </div>
+                                                            <div class="npc-inventory-filter-slot-wrapper" id="locationItemsSlotFilterWrapper">
+                                                                <label class="sr-only" for="locationItemsSlotFilter">Filter items by slot</label>
+                                                                <select id="locationItemsSlotFilter" class="npc-inventory-slot-filter" aria-label="Filter items by slot">
+                                                                    <option value="">All slots</option>
+                                                                </select>
+                                                            </div>
+                                                        </div>
+                                                        <div class="npc-inventory-filter-radios">
+                                                            <label class="npc-inventory-filter-radio" for="locationItemsShowAll">
+                                                                <input type="radio" id="locationItemsShowAll" name="locationItemsItemFilter" value="all" checked>
+                                                                <span>Show all</span>
+                                                            </label>
+                                                            <label class="npc-inventory-filter-radio" for="locationItemsEquippableOnly">
+                                                                <input type="radio" id="locationItemsEquippableOnly" name="locationItemsItemFilter" value="equippable">
+                                                                <span>Equippable only</span>
+                                                            </label>
+                                                            <label class="npc-inventory-filter-radio" for="locationItemsNonEquippableOnly">
+                                                                <input type="radio" id="locationItemsNonEquippableOnly" name="locationItemsItemFilter" value="non-equippable">
+                                                                <span>Non-equippable only</span>
+                                                            </label>
+                                                        </div>
+                                                    </div>
                                                     <div class="location-entity-grid" id="locationItems">
                                                         <div class="location-thing-empty">No notable items present.</div>
                                                     </div>
+                                                    <div class="inventory-empty location-thing-empty" id="locationItemsEmpty" hidden>No notable items present.</div>
                                                     <button type="button" class="location-npc-add-button location-thing-add-button" id="craftItemButton" disabled>🛠️ Craft Item</button>
                                                 </div>
                                                 <button type="button" class="location-npc-add-button location-thing-add-button" id="addThingButton" disabled>✨ New Item/Scenery</button>
@@ -859,17 +940,27 @@
                 </button>
             </header>
             <div class="modal__body npc-inventory-body">
-                <div class="npc-inventory-header">
-                    <h3 id="npcInventoryName">Character</h3>
-                    <span class="inventory-count" id="npcInventoryCount">0 items</span>
+                <div class="thing-list-panel npc-inventory-panel" id="npcInventoryPanel">
+                <div class="npc-inventory-header thing-list-panel__header">
+                    <div class="thing-list-panel__heading-group">
+                        <h3 id="npcInventoryName">Character</h3>
+                        <span class="inventory-count" id="npcInventoryCount">0 items</span>
+                    </div>
+                    <div class="thing-list-panel__controls">
+                        {{ thingListViewToggle("npcInventoryViewToggle", "npcInventoryView", "Change inventory view") }}
+                        {{ thingListSortToggle("npcInventorySortToggle", "npcInventorySort", "Sort inventory items") }}
+                        {{ thingListFiltersToggle("npcInventoryFiltersToggle", "npcInventoryFilters", "Search and filter inventory items") }}
+                    </div>
                 </div>
-                <div class="npc-inventory-filters">
+                {{ thingListViewShell("npcInventoryView", "Change inventory view") }}
+                {{ thingListSortShell("npcInventorySort", "Sort inventory items") }}
+                <div class="npc-inventory-filters thing-list-filters-shell" id="npcInventoryFilters">
                     <div class="npc-inventory-filter-top-row">
                         <div class="npc-selection-filter npc-inventory-filter-input-wrapper">
                             <label class="sr-only" for="npcInventoryFilterInput">Filter items</label>
                             <input type="search" id="npcInventoryFilterInput" class="npc-selection-filter-input" placeholder="Filter items" aria-label="Filter items">
                         </div>
-                        <div class="npc-inventory-filter-slot-wrapper">
+                        <div class="npc-inventory-filter-slot-wrapper" id="npcInventorySlotFilterWrapper">
                             <label class="sr-only" for="npcInventorySlotFilter">Filter by slot</label>
                             <select id="npcInventorySlotFilter" class="npc-inventory-slot-filter" aria-label="Filter by slot">
                                 <option value="">All slots</option>
@@ -899,6 +990,7 @@
                     <div class="inventory-grid" id="npcInventoryGrid"></div>
                 </div>
                 <div class="inventory-empty" id="npcInventoryEmpty">Inventory is empty.</div>
+                </div>
             </div>
         </div>
     </div>
@@ -1061,16 +1153,58 @@
             <div class="modal__body crafting-modal__body">
                 <div class="crafting-modal__content">
                     <section class="crafting-modal__inventory">
-                        <div class="crafting-modal__section-header">
-                            <h3>Player Inventory</h3>
-                            <p class="crafting-modal__hint" id="craftingModalHint">Drag items into the slots to craft.</p>
+                        <div class="crafting-modal__section-header thing-list-panel__header">
+                            <div class="thing-list-panel__heading-group crafting-modal__heading-group">
+                                <div class="crafting-modal__heading-row">
+                                    <h3>Player Inventory</h3>
+                                    <span class="inventory-count" id="craftingInventoryCount">0 items</span>
+                                </div>
+                                <p class="crafting-modal__hint" id="craftingModalHint">Drag items into the slots to craft.</p>
+                            </div>
+                            <div class="thing-list-panel__controls">
+                                {{ thingListViewToggle("craftingInventoryViewToggle", "craftingInventoryView", "Change crafting inventory view") }}
+                                {{ thingListSortToggle("craftingInventorySortToggle", "craftingInventorySort", "Sort crafting inventory") }}
+                                {{ thingListFiltersToggle("craftingInventoryFiltersToggle", "craftingInventoryFilters", "Search and filter crafting inventory") }}
+                            </div>
                         </div>
-                        <div class="npc-selection-filter npc-inventory-filter-input-wrapper crafting-inventory-filter">
-                            <label class="sr-only" for="craftingInventoryFilterInput">Filter items</label>
-                            <input type="search" id="craftingInventoryFilterInput" class="npc-selection-filter-input" placeholder="Filter items" aria-label="Filter items for crafting or processing">
+                        <div class="thing-list-panel crafting-inventory-panel" id="craftingInventoryPanel">
+                        {{ thingListViewShell("craftingInventoryView", "Change crafting inventory view") }}
+                        {{ thingListSortShell("craftingInventorySort", "Sort crafting inventory") }}
+                        <div class="thing-list-filters-shell" id="craftingInventoryFilters">
+                            <div class="thing-list-filters-row">
+                                <div class="npc-selection-filter npc-inventory-filter-input-wrapper crafting-inventory-filter">
+                                    <label class="sr-only" for="craftingInventoryFilterInput">Filter items</label>
+                                    <input type="search" id="craftingInventoryFilterInput" class="npc-selection-filter-input" placeholder="Filter items" aria-label="Filter items for crafting or processing">
+                                </div>
+                                <div class="npc-inventory-filter-slot-wrapper" id="craftingInventorySlotFilterWrapper">
+                                    <label class="sr-only" for="craftingInventorySlotFilter">Filter crafting items by slot</label>
+                                    <select id="craftingInventorySlotFilter" class="npc-inventory-slot-filter" aria-label="Filter crafting items by slot">
+                                        <option value="">All slots</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="npc-inventory-filter-radios">
+                                <label class="npc-inventory-filter-radio" for="craftingInventoryShowAll">
+                                    <input type="radio" id="craftingInventoryShowAll" name="craftingInventoryItemFilter" value="all" checked>
+                                    <span>Show all</span>
+                                </label>
+                                <label class="npc-inventory-filter-radio" for="craftingInventoryEquippedOnly">
+                                    <input type="radio" id="craftingInventoryEquippedOnly" name="craftingInventoryItemFilter" value="equipped">
+                                    <span>Equipped only</span>
+                                </label>
+                                <label class="npc-inventory-filter-radio" for="craftingInventoryEquippableOnly">
+                                    <input type="radio" id="craftingInventoryEquippableOnly" name="craftingInventoryItemFilter" value="equippable">
+                                    <span>Equippable only</span>
+                                </label>
+                                <label class="npc-inventory-filter-radio" for="craftingInventoryNonEquippableOnly">
+                                    <input type="radio" id="craftingInventoryNonEquippableOnly" name="craftingInventoryItemFilter" value="non-equippable">
+                                    <span>Non-equippable only</span>
+                                </label>
+                            </div>
                         </div>
                         <div id="craftingInventoryGrid" class="crafting-modal__inventory-grid"></div>
                         <div id="craftingInventoryEmpty" class="crafting-modal__empty">Player inventory is not available.</div>
+                        </div>
                     </section>
                     <section class="crafting-modal__workspace">
                         <div class="crafting-modal__section-header">
@@ -4104,6 +4238,302 @@
             return titleCase(normalized);
         };
 
+        const THING_LIST_SORT_ASC_ICON = '/assets/material-icons/inventory-view-icons/arrow_up.svg';
+        const THING_LIST_SORT_DESC_ICON = '/assets/material-icons/inventory-view-icons/arrow_down.svg';
+        const thingListSortDefinitionMap = new Map([
+            ['alphabetical', { key: 'alphabetical', label: 'Alphabetical' }],
+            ['level', { key: 'level', label: 'Level' }],
+            ['quality', { key: 'quality', label: 'Quality' }],
+            ['value', { key: 'value', label: 'Value' }],
+            ['equipment-slot', { key: 'equipment-slot', label: 'Equipment Slot' }]
+        ]);
+        const thingListViewDefinitionMap = new Map([
+            ['classic', { key: 'classic', label: 'Classic' }],
+            ['table', { key: 'table', label: 'Table' }],
+            ['grid', { key: 'grid', label: 'Grid' }]
+        ]);
+        const thingRaritySortRankByKey = new Map();
+        rarityDefinitions.forEach((definition, index) => {
+            const normalizedKey = normalizeRarityKey(definition?.key || definition?.label);
+            if (!normalizedKey || thingRaritySortRankByKey.has(normalizedKey)) {
+                return;
+            }
+            thingRaritySortRankByKey.set(normalizedKey, index);
+        });
+
+        function normalizeThingListSortKey(value) {
+            if (typeof value !== 'string') {
+                return '';
+            }
+            const normalized = value.trim().toLowerCase();
+            return thingListSortDefinitionMap.has(normalized) ? normalized : '';
+        }
+
+        function normalizeThingListSortDirection(value) {
+            return String(value).trim().toLowerCase() === 'desc' ? 'desc' : 'asc';
+        }
+
+        function normalizeThingListViewMode(value) {
+            if (typeof value !== 'string') {
+                return 'classic';
+            }
+            const normalized = value.trim().toLowerCase();
+            return thingListViewDefinitionMap.has(normalized) ? normalized : 'classic';
+        }
+
+        function getThingListSortState(panelKey) {
+            if (!panelKey) {
+                return { key: '', direction: 'asc' };
+            }
+            const stored = thingListSortStates.get(panelKey);
+            if (!stored) {
+                return { key: '', direction: 'asc' };
+            }
+            return {
+                key: normalizeThingListSortKey(stored.key),
+                direction: normalizeThingListSortDirection(stored.direction)
+            };
+        }
+
+        function setThingListSortState(panelKey, nextState = {}) {
+            if (!panelKey) {
+                return { key: '', direction: 'asc' };
+            }
+            const normalizedState = {
+                key: normalizeThingListSortKey(nextState.key),
+                direction: normalizeThingListSortDirection(nextState.direction)
+            };
+            thingListSortStates.set(panelKey, normalizedState);
+            return normalizedState;
+        }
+
+        function getThingListViewState(panelKey) {
+            if (!panelKey) {
+                return 'classic';
+            }
+            return normalizeThingListViewMode(thingListViewStates.get(panelKey));
+        }
+
+        function setThingListViewState(panelKey, nextViewMode) {
+            if (!panelKey) {
+                return 'classic';
+            }
+            const normalized = normalizeThingListViewMode(nextViewMode);
+            thingListViewStates.set(panelKey, normalized);
+            return normalized;
+        }
+
+        function syncThingListSortOptions(sortShell, panelKey) {
+            if (!sortShell) {
+                return;
+            }
+            const sortState = getThingListSortState(panelKey);
+            const currentKey = sortState.key;
+            const directionIcon = sortState.direction === 'desc'
+                ? THING_LIST_SORT_DESC_ICON
+                : THING_LIST_SORT_ASC_ICON;
+            sortShell.querySelectorAll('.thing-list-sort-option').forEach(option => {
+                const optionKey = normalizeThingListSortKey(option.dataset.sortKey || '');
+                const isCurrent = Boolean(currentKey) && optionKey === currentKey;
+                option.classList.toggle('is-current', isCurrent);
+                option.classList.toggle('is-inactive', !isCurrent);
+                option.setAttribute('aria-pressed', isCurrent ? 'true' : 'false');
+                const directionImage = option.querySelector('.thing-list-sort-option__direction');
+                if (directionImage) {
+                    directionImage.src = directionIcon;
+                    directionImage.classList.toggle('is-visible', isCurrent);
+                }
+            });
+        }
+
+        function syncThingListViewOptions(viewShell, panelKey) {
+            if (!viewShell) {
+                return;
+            }
+            const currentViewMode = getThingListViewState(panelKey);
+            viewShell.querySelectorAll('.thing-list-view-option').forEach(option => {
+                const optionViewMode = normalizeThingListViewMode(option.dataset.viewMode || '');
+                const isCurrent = optionViewMode === currentViewMode;
+                option.classList.toggle('is-current', isCurrent);
+                option.classList.toggle('is-inactive', !isCurrent);
+                option.setAttribute('aria-pressed', isCurrent ? 'true' : 'false');
+            });
+        }
+
+        function updateThingListRenderedOrder(panelKey, items = []) {
+            if (!panelKey) {
+                return;
+            }
+            const orderedIds = Array.isArray(items)
+                ? items.map(item => (typeof item?.id === 'string' ? item.id : '')).filter(Boolean)
+                : [];
+            thingListRenderedOrderIds.set(panelKey, orderedIds);
+        }
+
+        function reorderThingCollectionByStoredOrder(items, panelKey) {
+            const safeItems = Array.isArray(items) ? [...items] : [];
+            if (!panelKey) {
+                return safeItems;
+            }
+            const previousOrder = thingListRenderedOrderIds.get(panelKey);
+            if (!Array.isArray(previousOrder) || previousOrder.length === 0) {
+                return safeItems;
+            }
+            const orderLookup = new Map();
+            previousOrder.forEach((id, index) => {
+                if (typeof id === 'string' && id && !orderLookup.has(id)) {
+                    orderLookup.set(id, index);
+                }
+            });
+            return safeItems.sort((left, right) => {
+                const leftIndex = orderLookup.has(left?.id) ? orderLookup.get(left.id) : Number.POSITIVE_INFINITY;
+                const rightIndex = orderLookup.has(right?.id) ? orderLookup.get(right.id) : Number.POSITIVE_INFINITY;
+                if (leftIndex === rightIndex) {
+                    return 0;
+                }
+                return leftIndex - rightIndex;
+            });
+        }
+
+        function getThingNumericLevel(thing = {}) {
+            const directLevel = Number(thing?.level);
+            if (Number.isFinite(directLevel)) {
+                return directLevel;
+            }
+            const metadataLevel = Number(thing?.metadata?.level);
+            return Number.isFinite(metadataLevel) ? metadataLevel : null;
+        }
+
+        function getThingNumericValue(thing = {}) {
+            const candidates = [thing?.value, thing?.metadata?.value];
+            for (const candidate of candidates) {
+                if (candidate === null || candidate === undefined) {
+                    continue;
+                }
+                const numericValue = Number(typeof candidate === 'string' ? candidate.trim() : candidate);
+                if (Number.isFinite(numericValue)) {
+                    return numericValue;
+                }
+            }
+            return null;
+        }
+
+        function getThingQualitySortRank(thing = {}) {
+            const rarityKey = normalizeRarityKey(thing?.rarity || thing?.metadata?.rarity);
+            return thingRaritySortRankByKey.has(rarityKey)
+                ? thingRaritySortRankByKey.get(rarityKey)
+                : null;
+        }
+
+        function compareThingListNumericValues(left, right, direction, { missingLast = true } = {}) {
+            const leftIsFinite = Number.isFinite(left);
+            const rightIsFinite = Number.isFinite(right);
+            if (!leftIsFinite && !rightIsFinite) {
+                return 0;
+            }
+            if (missingLast) {
+                if (!leftIsFinite) {
+                    return 1;
+                }
+                if (!rightIsFinite) {
+                    return -1;
+                }
+            }
+            const delta = left - right;
+            if (delta === 0) {
+                return 0;
+            }
+            return direction === 'desc' ? -delta : delta;
+        }
+
+        function compareThingListTextValues(left, right, direction, { emptyLast = false } = {}) {
+            const leftText = typeof left === 'string' ? left.trim() : '';
+            const rightText = typeof right === 'string' ? right.trim() : '';
+            if (!leftText && !rightText) {
+                return 0;
+            }
+            if (emptyLast) {
+                if (!leftText) {
+                    return 1;
+                }
+                if (!rightText) {
+                    return -1;
+                }
+            }
+            const comparison = leftText.localeCompare(rightText, undefined, {
+                sensitivity: 'base',
+                numeric: true
+            });
+            return direction === 'desc' ? -comparison : comparison;
+        }
+
+        function compareThingsForSort(leftThing, rightThing, sortState = {}) {
+            const normalizedKey = normalizeThingListSortKey(sortState.key);
+            const direction = normalizeThingListSortDirection(sortState.direction);
+            if (!normalizedKey) {
+                return 0;
+            }
+
+            switch (normalizedKey) {
+                case 'alphabetical':
+                    return compareThingListTextValues(leftThing?.name, rightThing?.name, direction, { emptyLast: true });
+                case 'level':
+                    return compareThingListNumericValues(
+                        getThingNumericLevel(leftThing),
+                        getThingNumericLevel(rightThing),
+                        direction,
+                        { missingLast: true }
+                    );
+                case 'quality':
+                    return compareThingListNumericValues(
+                        getThingQualitySortRank(leftThing),
+                        getThingQualitySortRank(rightThing),
+                        direction,
+                        { missingLast: true }
+                    );
+                case 'value':
+                    return compareThingListNumericValues(
+                        getThingNumericValue(leftThing),
+                        getThingNumericValue(rightThing),
+                        direction,
+                        { missingLast: true }
+                    );
+                case 'equipment-slot': {
+                    const leftSlotInfo = getThingSlotInfo(leftThing);
+                    const rightSlotInfo = getThingSlotInfo(rightThing);
+                    const leftHasSlot = Boolean(leftSlotInfo.canModifyEquipment && (leftSlotInfo.slotLabel || leftSlotInfo.rawSlot || leftSlotInfo.equippedSlot));
+                    const rightHasSlot = Boolean(rightSlotInfo.canModifyEquipment && (rightSlotInfo.slotLabel || rightSlotInfo.rawSlot || rightSlotInfo.equippedSlot));
+                    if (leftHasSlot !== rightHasSlot) {
+                        return leftHasSlot ? -1 : 1;
+                    }
+                    if (!leftHasSlot && !rightHasSlot) {
+                        return 0;
+                    }
+                    return compareThingListTextValues(
+                        leftSlotInfo.slotLabel || leftSlotInfo.rawSlot || leftSlotInfo.equippedSlot,
+                        rightSlotInfo.slotLabel || rightSlotInfo.rawSlot || rightSlotInfo.equippedSlot,
+                        direction,
+                        { emptyLast: true }
+                    );
+                }
+                default:
+                    return 0;
+            }
+        }
+
+        function applyThingCollectionSort(items, { panelKey = '' } = {}) {
+            const baseItems = reorderThingCollectionByStoredOrder(items, panelKey);
+            const sortState = getThingListSortState(panelKey);
+            if (!sortState.key) {
+                updateThingListRenderedOrder(panelKey, baseItems);
+                return baseItems;
+            }
+
+            const sortedItems = [...baseItems].sort((left, right) => compareThingsForSort(left, right, sortState));
+            updateThingListRenderedOrder(panelKey, sortedItems);
+            return sortedItems;
+        }
+
         const getRarityDamageMultiplier = (rarityKey) => {
             const normalized = normalizeRarityKey(rarityKey);
             if (!normalized) {
@@ -6747,8 +7177,22 @@
         const npcEditStatus = document.getElementById('npcEditStatus');
         const npcEditSaveBtn = document.getElementById('npcEditSaveBtn');
         const npcInventoryGrid = document.getElementById('npcInventoryGrid');
+        const npcInventoryPanel = document.getElementById('npcInventoryPanel');
         const npcInventoryFilterInput = document.getElementById('npcInventoryFilterInput');
+        const npcInventoryFilters = document.getElementById('npcInventoryFilters');
+        const npcInventoryFiltersToggle = document.getElementById('npcInventoryFiltersToggle');
+        const npcInventoryView = document.getElementById('npcInventoryView');
+        const npcInventoryViewToggle = document.getElementById('npcInventoryViewToggle');
+        const npcInventorySort = document.getElementById('npcInventorySort');
+        const npcInventorySortToggle = document.getElementById('npcInventorySortToggle');
+        const npcInventorySlotFilterWrapper = document.getElementById('npcInventorySlotFilterWrapper');
         const npcInventorySlotFilter = document.getElementById('npcInventorySlotFilter');
+        const thingListFilterPopoverStates = [];
+        const thingListSortPopoverStates = [];
+        const thingListViewPopoverStates = [];
+        const thingListSortStates = new Map();
+        const thingListViewStates = new Map();
+        const thingListRenderedOrderIds = new Map();
         const npcInventoryShowAllRadio = document.getElementById('npcInventoryShowAll');
         const npcInventoryEquippedOnlyRadio = document.getElementById('npcInventoryEquippedOnly');
         const npcInventoryEquippableOnlyRadio = document.getElementById('npcInventoryEquippableOnly');
@@ -6757,6 +7201,16 @@
         const npcInventoryEmptyDefaultText = npcInventoryEmpty ? npcInventoryEmpty.textContent : 'Inventory is empty.';
         const npcInventoryCount = document.getElementById('npcInventoryCount');
         const npcInventoryName = document.getElementById('npcInventoryName');
+        const locationSceneryPanelEl = document.getElementById('locationSceneryPanel');
+        const locationSceneryViewEl = document.getElementById('locationSceneryView');
+        const locationSceneryViewToggleEl = document.getElementById('locationSceneryViewToggle');
+        const locationScenerySortEl = document.getElementById('locationScenerySort');
+        const locationScenerySortToggleEl = document.getElementById('locationScenerySortToggle');
+        const locationItemsPanelEl = document.getElementById('locationItemsPanel');
+        const locationItemsViewEl = document.getElementById('locationItemsView');
+        const locationItemsViewToggleEl = document.getElementById('locationItemsViewToggle');
+        const locationItemsSortEl = document.getElementById('locationItemsSort');
+        const locationItemsSortToggleEl = document.getElementById('locationItemsSortToggle');
         const playerAbilitySelectionState = {
             active: false,
             loading: false,
@@ -6797,6 +7251,12 @@
         const mapLocationMenuSummonThingButton = document.getElementById('mapLocationMenuSummonThingButton');
         const mapLocationMenuRegenerateImageButton = document.getElementById('mapLocationMenuRegenerateImageButton');
         const mapLocationMenuDeleteButton = document.getElementById('mapLocationMenuDeleteButton');
+        const locationSceneryShowAllRadio = document.getElementById('locationSceneryShowAll');
+        const locationSceneryEquippableOnlyRadio = document.getElementById('locationSceneryEquippableOnly');
+        const locationSceneryNonEquippableOnlyRadio = document.getElementById('locationSceneryNonEquippableOnly');
+        const locationItemsShowAllRadio = document.getElementById('locationItemsShowAll');
+        const locationItemsEquippableOnlyRadio = document.getElementById('locationItemsEquippableOnly');
+        const locationItemsNonEquippableOnlyRadio = document.getElementById('locationItemsNonEquippableOnly');
         const locationEditModal = document.getElementById('locationEditModal');
         const locationEditModalTitle = document.getElementById('locationEditModalTitle');
         const locationEditForm = document.getElementById('locationEditForm');
@@ -7154,9 +7614,23 @@
         const craftingWorkspaceTitle = document.getElementById('craftingWorkspaceTitle');
         const craftingModalHint = document.getElementById('craftingModalHint');
         const craftingModalCloseBtn = document.getElementById('craftingModalCloseBtn');
+        const craftingInventoryPanel = document.getElementById('craftingInventoryPanel');
         const craftingInventoryGrid = document.getElementById('craftingInventoryGrid');
+        const craftingInventoryCount = document.getElementById('craftingInventoryCount');
         const craftingInventoryEmpty = document.getElementById('craftingInventoryEmpty');
         const craftingInventoryFilterInput = document.getElementById('craftingInventoryFilterInput');
+        const craftingInventoryFilters = document.getElementById('craftingInventoryFilters');
+        const craftingInventoryFiltersToggle = document.getElementById('craftingInventoryFiltersToggle');
+        const craftingInventoryView = document.getElementById('craftingInventoryView');
+        const craftingInventoryViewToggle = document.getElementById('craftingInventoryViewToggle');
+        const craftingInventorySort = document.getElementById('craftingInventorySort');
+        const craftingInventorySortToggle = document.getElementById('craftingInventorySortToggle');
+        const craftingInventorySlotFilterWrapper = document.getElementById('craftingInventorySlotFilterWrapper');
+        const craftingInventorySlotFilter = document.getElementById('craftingInventorySlotFilter');
+        const craftingInventoryShowAllRadio = document.getElementById('craftingInventoryShowAll');
+        const craftingInventoryEquippedOnlyRadio = document.getElementById('craftingInventoryEquippedOnly');
+        const craftingInventoryEquippableOnlyRadio = document.getElementById('craftingInventoryEquippableOnly');
+        const craftingInventoryNonEquippableOnlyRadio = document.getElementById('craftingInventoryNonEquippableOnly');
         const craftingSlotsContainer = document.getElementById('craftingSlots');
         const craftingActionButton = document.getElementById('craftingActionButton');
         const craftingNoProseButton = document.getElementById('craftingNoProseButton');
@@ -8207,6 +8681,11 @@
         let draggedNpcGoalRow = null;
         let locationImageGenerationEnabled = true;
         let lastRenderedLocation = null;
+        let currentLocationThingCollections = {
+            locationId: null,
+            items: [],
+            scenery: []
+        };
         let currentThingEditId = null;
         let currentThingEditContext = null;
         let currentThingEditMode = 'edit';
@@ -9692,6 +10171,9 @@
             if (npcInventoryEmpty) {
                 npcInventoryEmpty.textContent = npcInventoryEmptyDefaultText;
             }
+            closeThingListFilterPopoverForPanel(npcInventoryPanel);
+            closeThingListSortPopoverForPanel(npcInventoryPanel);
+            closeThingListViewPopoverForPanel(npcInventoryPanel);
             currentNpcInventory = [];
             currentNpcInventoryNpcId = null;
             try {
@@ -12497,6 +12979,21 @@
         if (craftingInventoryFilterInput) {
             craftingInventoryFilterInput.addEventListener('input', () => renderCraftingInventory());
         }
+        if (craftingInventorySlotFilter) {
+            craftingInventorySlotFilter.addEventListener('change', () => renderCraftingInventory());
+        }
+        [
+            craftingInventoryShowAllRadio,
+            craftingInventoryEquippedOnlyRadio,
+            craftingInventoryEquippableOnlyRadio,
+            craftingInventoryNonEquippableOnlyRadio
+        ].filter(Boolean).forEach(radio => {
+            radio.addEventListener('change', () => {
+                if (radio.checked) {
+                    renderCraftingInventory();
+                }
+            });
+        });
 
         if (craftingModalBackdrop) {
             craftingModalBackdrop.addEventListener('click', () => {
@@ -12848,6 +13345,167 @@
             newExitForm.addEventListener('submit', submitNewExit);
         }
 
+        function invokeLocationThingCollectionRerender() {
+            if (typeof window.rerenderCurrentLocationThingCollections !== 'function') {
+                throw new Error('Location thing collection rerender helper is unavailable.');
+            }
+            return window.rerenderCurrentLocationThingCollections();
+        }
+
+        function bindThingListSortShell({
+            panelKey,
+            sortShell,
+            rerender
+        } = {}) {
+            if (!panelKey || !sortShell || typeof rerender !== 'function') {
+                return;
+            }
+            syncThingListSortOptions(sortShell, panelKey);
+            sortShell.querySelectorAll('.thing-list-sort-option').forEach(option => {
+                option.addEventListener('click', () => {
+                    const optionKey = normalizeThingListSortKey(option.dataset.sortKey || '');
+                    if (!optionKey) {
+                        throw new Error(`Unsupported thing-list sort key "${option.dataset.sortKey || ''}".`);
+                    }
+                    const currentState = getThingListSortState(panelKey);
+                    const nextDirection = currentState.key === optionKey
+                        ? (currentState.direction === 'desc' ? 'asc' : 'desc')
+                        : 'asc';
+                    setThingListSortState(panelKey, {
+                        key: optionKey,
+                        direction: nextDirection
+                    });
+                    syncThingListSortOptions(sortShell, panelKey);
+                    rerender();
+                });
+            });
+        }
+
+        function bindThingListViewShell({
+            panelKey,
+            viewShell,
+            rerender
+        } = {}) {
+            if (!panelKey || !viewShell || typeof rerender !== 'function') {
+                return;
+            }
+            syncThingListViewOptions(viewShell, panelKey);
+            viewShell.querySelectorAll('.thing-list-view-option').forEach(option => {
+                option.addEventListener('click', () => {
+                    const optionViewMode = normalizeThingListViewMode(option.dataset.viewMode || '');
+                    setThingListViewState(panelKey, optionViewMode);
+                    syncThingListViewOptions(viewShell, panelKey);
+                    rerender();
+                });
+            });
+        }
+
+        initializeThingListViewPopover({
+            panel: npcInventoryPanel,
+            toggleButton: npcInventoryViewToggle,
+            popoverShell: npcInventoryView
+        });
+        initializeThingListFilterPopover({
+            panel: npcInventoryPanel,
+            toggleButton: npcInventoryFiltersToggle,
+            filtersShell: npcInventoryFilters,
+            compactThreshold: 560
+        });
+        initializeThingListSortPopover({
+            panel: npcInventoryPanel,
+            toggleButton: npcInventorySortToggle,
+            popoverShell: npcInventorySort
+        });
+        initializeThingListViewPopover({
+            panel: craftingInventoryPanel,
+            toggleButton: craftingInventoryViewToggle,
+            popoverShell: craftingInventoryView
+        });
+        initializeThingListFilterPopover({
+            panel: craftingInventoryPanel,
+            toggleButton: craftingInventoryFiltersToggle,
+            filtersShell: craftingInventoryFilters,
+            compactThreshold: 520
+        });
+        initializeThingListSortPopover({
+            panel: craftingInventoryPanel,
+            toggleButton: craftingInventorySortToggle,
+            popoverShell: craftingInventorySort
+        });
+        initializeThingListViewPopover({
+            panel: locationSceneryPanelEl,
+            toggleButton: locationSceneryViewToggleEl,
+            popoverShell: locationSceneryViewEl
+        });
+        initializeThingListFilterPopover({
+            panel: locationSceneryPanelEl,
+            toggleButton: locationSceneryFiltersToggle,
+            filtersShell: locationSceneryFilters,
+            compactThreshold: 480
+        });
+        initializeThingListSortPopover({
+            panel: locationSceneryPanelEl,
+            toggleButton: locationScenerySortToggleEl,
+            popoverShell: locationScenerySortEl
+        });
+        initializeThingListViewPopover({
+            panel: locationItemsPanelEl,
+            toggleButton: locationItemsViewToggleEl,
+            popoverShell: locationItemsViewEl
+        });
+        initializeThingListFilterPopover({
+            panel: locationItemsPanelEl,
+            toggleButton: locationItemsFiltersToggle,
+            filtersShell: locationItemsFilters,
+            compactThreshold: 480
+        });
+        initializeThingListSortPopover({
+            panel: locationItemsPanelEl,
+            toggleButton: locationItemsSortToggleEl,
+            popoverShell: locationItemsSortEl
+        });
+
+        bindThingListSortShell({
+            panelKey: 'npcInventory',
+            sortShell: npcInventorySort,
+            rerender: () => renderNpcInventory(currentNpcInventory)
+        });
+        bindThingListViewShell({
+            panelKey: 'npcInventory',
+            viewShell: npcInventoryView,
+            rerender: () => renderNpcInventory(currentNpcInventory)
+        });
+        bindThingListSortShell({
+            panelKey: 'craftingInventory',
+            sortShell: craftingInventorySort,
+            rerender: () => renderCraftingInventory()
+        });
+        bindThingListViewShell({
+            panelKey: 'craftingInventory',
+            viewShell: craftingInventoryView,
+            rerender: () => renderCraftingInventory()
+        });
+        bindThingListSortShell({
+            panelKey: 'locationScenery',
+            sortShell: locationScenerySortEl,
+            rerender: () => invokeLocationThingCollectionRerender()
+        });
+        bindThingListViewShell({
+            panelKey: 'locationScenery',
+            viewShell: locationSceneryViewEl,
+            rerender: () => invokeLocationThingCollectionRerender()
+        });
+        bindThingListSortShell({
+            panelKey: 'locationItems',
+            sortShell: locationItemsSortEl,
+            rerender: () => invokeLocationThingCollectionRerender()
+        });
+        bindThingListViewShell({
+            panelKey: 'locationItems',
+            viewShell: locationItemsViewEl,
+            rerender: () => invokeLocationThingCollectionRerender()
+        });
+
         if (npcInventoryFilterInput) {
             npcInventoryFilterInput.addEventListener('input', () => {
                 renderNpcInventory(currentNpcInventory);
@@ -12859,6 +13517,52 @@
                 renderNpcInventory(currentNpcInventory);
             });
         }
+
+        if (locationSceneryFilterInput) {
+            locationSceneryFilterInput.addEventListener('input', () => {
+                invokeLocationThingCollectionRerender();
+            });
+        }
+
+        if (locationScenerySlotFilter) {
+            locationScenerySlotFilter.addEventListener('change', () => {
+                invokeLocationThingCollectionRerender();
+            });
+        }
+        [
+            locationSceneryShowAllRadio,
+            locationSceneryEquippableOnlyRadio,
+            locationSceneryNonEquippableOnlyRadio
+        ].filter(Boolean).forEach(radio => {
+            radio.addEventListener('change', () => {
+                if (radio.checked) {
+                    invokeLocationThingCollectionRerender();
+                }
+            });
+        });
+
+        if (locationItemsFilterInput) {
+            locationItemsFilterInput.addEventListener('input', () => {
+                invokeLocationThingCollectionRerender();
+            });
+        }
+
+        if (locationItemsSlotFilter) {
+            locationItemsSlotFilter.addEventListener('change', () => {
+                invokeLocationThingCollectionRerender();
+            });
+        }
+        [
+            locationItemsShowAllRadio,
+            locationItemsEquippableOnlyRadio,
+            locationItemsNonEquippableOnlyRadio
+        ].filter(Boolean).forEach(radio => {
+            radio.addEventListener('change', () => {
+                if (radio.checked) {
+                    invokeLocationThingCollectionRerender();
+                }
+            });
+        });
 
         const filterRadios = [
             npcInventoryShowAllRadio,
@@ -13547,6 +14251,954 @@
             });
         }
 
+        function getAllThingListPopoverStates() {
+            return [
+                ...thingListFilterPopoverStates,
+                ...thingListSortPopoverStates,
+                ...thingListViewPopoverStates
+            ];
+        }
+
+        function updateThingListPanelPopoverClass(panel) {
+            if (!panel) {
+                return;
+            }
+            const hasOpenPopover = getAllThingListPopoverStates().some(state => {
+                if (!state || state.panel !== panel || !state.isOpen) {
+                    return false;
+                }
+                if (state.kind === 'sort') {
+                    return true;
+                }
+                return Boolean(state.isCompact);
+            });
+            panel.classList.toggle('thing-list-panel--popover-open', hasOpenPopover);
+        }
+
+        function closeAllThingListPopovers({ except = null } = {}) {
+            getAllThingListPopoverStates().forEach(state => {
+                if (state && state !== except) {
+                    if (state.kind === 'sort') {
+                        closeThingListSortPopover(state, { force: true });
+                    } else if (state.kind === 'view') {
+                        closeThingListViewPopover(state, { force: true });
+                    } else {
+                        closeThingListFilterPopover(state, { force: true });
+                    }
+                }
+            });
+        }
+
+        function closeThingListFilterPopover(state, { force = false } = {}) {
+            if (!state || !state.filtersShell || !state.toggleButton) {
+                return;
+            }
+            if (!force && !state.isCompact) {
+                return;
+            }
+            state.isOpen = false;
+            state.filtersShell.hidden = true;
+            state.filtersShell.classList.remove('is-open');
+            if (state.panel) {
+                state.panel.classList.remove('thing-list-panel--filters-open');
+            }
+            state.toggleButton.setAttribute('aria-expanded', 'false');
+            updateThingListPanelPopoverClass(state.panel);
+        }
+
+        function closeThingListFilterPopoverForPanel(panel) {
+            if (!panel) {
+                return;
+            }
+            thingListFilterPopoverStates.forEach(state => {
+                if (state?.panel === panel) {
+                    closeThingListFilterPopover(state, { force: true });
+                }
+            });
+        }
+
+        function closeThingListSortPopoverForPanel(panel) {
+            if (!panel) {
+                return;
+            }
+            thingListSortPopoverStates.forEach(state => {
+                if (state?.panel === panel) {
+                    closeThingListSortPopover(state, { force: true });
+                }
+            });
+        }
+
+        function closeThingListViewPopoverForPanel(panel) {
+            if (!panel) {
+                return;
+            }
+            thingListViewPopoverStates.forEach(state => {
+                if (state?.panel === panel) {
+                    closeThingListViewPopover(state, { force: true });
+                }
+            });
+        }
+
+        function updateThingListFilterPopoverLayout(state) {
+            if (!state || !state.panel || !state.toggleButton || !state.filtersShell) {
+                return;
+            }
+            const panelWidth = Number(state.panel.clientWidth) || 0;
+            const shouldCompact = panelWidth > 0 && panelWidth <= state.compactThreshold;
+            state.isCompact = shouldCompact;
+            state.panel.classList.toggle('thing-list-panel--compact', shouldCompact);
+            state.panel.classList.toggle('thing-list-panel--filters-open', shouldCompact && state.isOpen);
+            state.toggleButton.hidden = !shouldCompact;
+            if (shouldCompact) {
+                const toggleTop = Number(state.toggleButton.offsetTop) || 0;
+                const toggleHeight = Number(state.toggleButton.offsetHeight) || 0;
+                const toggleLeft = Number(state.toggleButton.offsetLeft) || 0;
+                const toggleWidth = Number(state.toggleButton.offsetWidth) || 0;
+                const panelWidth = Number(state.panel.clientWidth) || 0;
+                const computedRight = Math.max(0, panelWidth - (toggleLeft + toggleWidth));
+                state.filtersShell.style.top = `${toggleTop + toggleHeight + 8}px`;
+                state.filtersShell.style.right = `${computedRight}px`;
+                if (state.isOpen) {
+                    state.filtersShell.hidden = false;
+                    state.filtersShell.classList.add('is-open');
+                    state.panel.classList.add('thing-list-panel--filters-open');
+                    state.toggleButton.setAttribute('aria-expanded', 'true');
+                } else {
+                    state.filtersShell.hidden = true;
+                    state.filtersShell.classList.remove('is-open');
+                    state.panel.classList.remove('thing-list-panel--filters-open');
+                    state.toggleButton.setAttribute('aria-expanded', 'false');
+                }
+            } else {
+                state.isOpen = false;
+                state.filtersShell.style.top = '';
+                state.filtersShell.style.right = '';
+                state.filtersShell.hidden = false;
+                state.filtersShell.classList.remove('is-open');
+                state.panel.classList.remove('thing-list-panel--filters-open');
+                state.toggleButton.setAttribute('aria-expanded', 'false');
+            }
+            updateThingListPanelPopoverClass(state.panel);
+        }
+
+        function initializeThingListFilterPopover({
+            panel,
+            toggleButton,
+            filtersShell,
+            compactThreshold = 520
+        } = {}) {
+            if (!panel || !toggleButton || !filtersShell) {
+                return null;
+            }
+
+            const state = {
+                kind: 'filter',
+                panel,
+                toggleButton,
+                filtersShell,
+                compactThreshold,
+                isCompact: false,
+                isOpen: false,
+                observer: null
+            };
+
+            toggleButton.addEventListener('click', (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                if (!state.isCompact) {
+                    return;
+                }
+                closeAllThingListPopovers({ except: state });
+                state.isOpen = !state.isOpen;
+                updateThingListFilterPopoverLayout(state);
+            });
+
+            if (typeof ResizeObserver === 'function') {
+                state.observer = new ResizeObserver(() => {
+                    updateThingListFilterPopoverLayout(state);
+                });
+                state.observer.observe(panel);
+            } else {
+                window.addEventListener('resize', () => updateThingListFilterPopoverLayout(state));
+            }
+
+            thingListFilterPopoverStates.push(state);
+            updateThingListFilterPopoverLayout(state);
+            return state;
+        }
+
+        function closeThingListSortPopover(state, { force = false } = {}) {
+            if (!state || !state.popoverShell || !state.toggleButton) {
+                return;
+            }
+            if (!force && !state.isOpen) {
+                return;
+            }
+            state.isOpen = false;
+            state.popoverShell.hidden = true;
+            state.popoverShell.classList.remove('is-open');
+            state.toggleButton.setAttribute('aria-expanded', 'false');
+            updateThingListPanelPopoverClass(state.panel);
+        }
+
+        function updateThingListSortPopoverLayout(state) {
+            if (!state || !state.panel || !state.toggleButton || !state.popoverShell) {
+                return;
+            }
+            const toggleTop = Number(state.toggleButton.offsetTop) || 0;
+            const toggleHeight = Number(state.toggleButton.offsetHeight) || 0;
+            const toggleLeft = Number(state.toggleButton.offsetLeft) || 0;
+            const toggleWidth = Number(state.toggleButton.offsetWidth) || 0;
+            const panelWidth = Number(state.panel.clientWidth) || 0;
+            const computedRight = Math.max(0, panelWidth - (toggleLeft + toggleWidth));
+            state.popoverShell.style.top = `${toggleTop + toggleHeight + 8}px`;
+            state.popoverShell.style.right = `${computedRight}px`;
+            if (state.isOpen) {
+                state.popoverShell.hidden = false;
+                state.popoverShell.classList.add('is-open');
+                state.toggleButton.setAttribute('aria-expanded', 'true');
+            } else {
+                state.popoverShell.hidden = true;
+                state.popoverShell.classList.remove('is-open');
+                state.toggleButton.setAttribute('aria-expanded', 'false');
+            }
+            updateThingListPanelPopoverClass(state.panel);
+        }
+
+        function initializeThingListSortPopover({
+            panel,
+            toggleButton,
+            popoverShell
+        } = {}) {
+            if (!panel || !toggleButton || !popoverShell) {
+                return null;
+            }
+
+            const state = {
+                kind: 'sort',
+                panel,
+                toggleButton,
+                popoverShell,
+                isOpen: false,
+                observer: null
+            };
+
+            toggleButton.addEventListener('click', (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                closeAllThingListPopovers({ except: state });
+                state.isOpen = !state.isOpen;
+                updateThingListSortPopoverLayout(state);
+            });
+
+            if (typeof ResizeObserver === 'function') {
+                state.observer = new ResizeObserver(() => {
+                    updateThingListSortPopoverLayout(state);
+                });
+                state.observer.observe(panel);
+            } else {
+                window.addEventListener('resize', () => updateThingListSortPopoverLayout(state));
+            }
+
+            thingListSortPopoverStates.push(state);
+            updateThingListSortPopoverLayout(state);
+            return state;
+        }
+
+        function closeThingListViewPopover(state, { force = false } = {}) {
+            if (!state || !state.popoverShell || !state.toggleButton) {
+                return;
+            }
+            if (!force && !state.isOpen) {
+                return;
+            }
+            state.isOpen = false;
+            state.popoverShell.hidden = true;
+            state.popoverShell.classList.remove('is-open');
+            state.toggleButton.setAttribute('aria-expanded', 'false');
+            updateThingListPanelPopoverClass(state.panel);
+        }
+
+        function updateThingListViewPopoverLayout(state) {
+            if (!state || !state.panel || !state.toggleButton || !state.popoverShell) {
+                return;
+            }
+            const toggleTop = Number(state.toggleButton.offsetTop) || 0;
+            const toggleHeight = Number(state.toggleButton.offsetHeight) || 0;
+            const toggleLeft = Number(state.toggleButton.offsetLeft) || 0;
+            const toggleWidth = Number(state.toggleButton.offsetWidth) || 0;
+            const panelWidth = Number(state.panel.clientWidth) || 0;
+            const computedRight = Math.max(0, panelWidth - (toggleLeft + toggleWidth));
+            state.popoverShell.style.top = `${toggleTop + toggleHeight + 8}px`;
+            state.popoverShell.style.right = `${computedRight}px`;
+            if (state.isOpen) {
+                state.popoverShell.hidden = false;
+                state.popoverShell.classList.add('is-open');
+                state.toggleButton.setAttribute('aria-expanded', 'true');
+            } else {
+                state.popoverShell.hidden = true;
+                state.popoverShell.classList.remove('is-open');
+                state.toggleButton.setAttribute('aria-expanded', 'false');
+            }
+            updateThingListPanelPopoverClass(state.panel);
+        }
+
+        function initializeThingListViewPopover({
+            panel,
+            toggleButton,
+            popoverShell
+        } = {}) {
+            if (!panel || !toggleButton || !popoverShell) {
+                return null;
+            }
+
+            const state = {
+                kind: 'view',
+                panel,
+                toggleButton,
+                popoverShell,
+                isOpen: false,
+                observer: null
+            };
+
+            toggleButton.addEventListener('click', (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                closeAllThingListPopovers({ except: state });
+                state.isOpen = !state.isOpen;
+                updateThingListViewPopoverLayout(state);
+            });
+
+            if (typeof ResizeObserver === 'function') {
+                state.observer = new ResizeObserver(() => {
+                    updateThingListViewPopoverLayout(state);
+                });
+                state.observer.observe(panel);
+            } else {
+                window.addEventListener('resize', () => updateThingListViewPopoverLayout(state));
+            }
+
+            thingListViewPopoverStates.push(state);
+            updateThingListViewPopoverLayout(state);
+            return state;
+        }
+
+        document.addEventListener('click', (event) => {
+            getAllThingListPopoverStates().forEach(state => {
+                if (!state?.isCompact || !state?.isOpen) {
+                    if (!((state?.kind === 'sort' || state?.kind === 'view') && state?.isOpen)) {
+                        return;
+                    }
+                }
+                if (state.panel.contains(event.target)) {
+                    return;
+                }
+                if (state.kind === 'sort') {
+                    closeThingListSortPopover(state, { force: true });
+                } else if (state.kind === 'view') {
+                    closeThingListViewPopover(state, { force: true });
+                } else {
+                    closeThingListFilterPopover(state, { force: true });
+                }
+            });
+        });
+
+        document.addEventListener('keydown', (event) => {
+            if (event.key !== 'Escape') {
+                return;
+            }
+            closeAllThingListPopovers();
+        });
+
+        function normalizeThingSlotLabel(value) {
+            if (value === undefined || value === null) {
+                return null;
+            }
+            const text = typeof value === 'string' ? value.trim() : String(value).trim();
+            if (!text || text.toLowerCase() === 'n/a') {
+                return null;
+            }
+            return text;
+        }
+
+        function getThingSlotInfo(item) {
+            const slotTypeValueRaw = typeof item?.slot === 'string' && item.slot.trim()
+                ? item.slot.trim()
+                : (typeof item?.metadata?.slot === 'string' && item.metadata.slot.trim()
+                    ? item.metadata.slot.trim()
+                    : null);
+            const equippedSlot = normalizeThingSlotLabel(item?.equippedSlot);
+            const rawSlot = normalizeThingSlotLabel(slotTypeValueRaw);
+            const slotLabel = equippedSlot || rawSlot || null;
+            const canModifyEquipment = Boolean(slotTypeValueRaw || equippedSlot);
+            return {
+                slotTypeValueRaw,
+                equippedSlot,
+                rawSlot,
+                slotLabel,
+                canModifyEquipment
+            };
+        }
+
+        function syncThingSlotFilterOptions(selectEl, items, { wrapper = null, allLabel = 'All slots' } = {}) {
+            if (!selectEl) {
+                if (wrapper) {
+                    wrapper.hidden = true;
+                }
+                return [];
+            }
+
+            const safeItems = Array.isArray(items) ? items : [];
+            const slotMap = new Map();
+            safeItems.forEach(item => {
+                const slotInfo = getThingSlotInfo(item);
+                const candidates = [
+                    slotInfo.slotLabel,
+                    slotInfo.rawSlot,
+                    slotInfo.equippedSlot,
+                    normalizeThingSlotLabel(item?.slot),
+                    normalizeThingSlotLabel(item?.metadata?.slot)
+                ].filter(Boolean);
+                for (const candidate of candidates) {
+                    const normalized = candidate.toLowerCase();
+                    if (!slotMap.has(normalized)) {
+                        slotMap.set(normalized, candidate);
+                    }
+                }
+            });
+
+            const slotEntries = Array.from(slotMap.entries())
+                .sort((a, b) => a[1].localeCompare(b[1], undefined, { sensitivity: 'base' }));
+
+            if (wrapper) {
+                wrapper.hidden = slotEntries.length === 0;
+            }
+
+            const signature = JSON.stringify(slotEntries.map(([value]) => value));
+            if (selectEl.dataset.optionSignature !== signature) {
+                const previousValue = typeof selectEl.value === 'string' ? selectEl.value : '';
+                const previousLabel = previousValue
+                    ? (selectEl.options[selectEl.selectedIndex]?.textContent || previousValue)
+                    : '';
+                selectEl.innerHTML = '';
+
+                const allOption = document.createElement('option');
+                allOption.value = '';
+                allOption.textContent = allLabel;
+                selectEl.appendChild(allOption);
+
+                slotEntries.forEach(([value, label]) => {
+                    const option = document.createElement('option');
+                    option.value = value;
+                    option.textContent = label;
+                    selectEl.appendChild(option);
+                });
+
+                if (previousValue) {
+                    if (!slotMap.has(previousValue)) {
+                        const preservedOption = document.createElement('option');
+                        preservedOption.value = previousValue;
+                        preservedOption.textContent = previousLabel || previousValue;
+                        preservedOption.dataset.preserved = 'true';
+                        selectEl.appendChild(preservedOption);
+                    }
+                    selectEl.value = previousValue;
+                }
+
+                if (wrapper && slotEntries.length === 0) {
+                    selectEl.value = '';
+                }
+
+                selectEl.dataset.optionSignature = signature;
+            }
+
+            return slotEntries;
+        }
+
+        function getThingListFilterState({
+            searchInput = null,
+            slotFilter = null,
+            showAllRadio = null,
+            equippedOnlyRadio = null,
+            equippableOnlyRadio = null,
+            nonEquippableOnlyRadio = null
+        } = {}) {
+            return {
+                searchText: typeof searchInput?.value === 'string'
+                    ? searchInput.value.trim().toLowerCase()
+                    : '',
+                slotFilterValue: typeof slotFilter?.value === 'string'
+                    ? slotFilter.value.trim().toLowerCase()
+                    : '',
+                equippedOnlyActive: Boolean(equippedOnlyRadio?.checked),
+                equippableOnlyActive: Boolean(equippableOnlyRadio?.checked),
+                nonEquippableOnlyActive: Boolean(nonEquippableOnlyRadio?.checked),
+                showAllActive: showAllRadio ? Boolean(showAllRadio.checked) : true
+            };
+        }
+
+        function filterThingCollection(items, filters = {}, { enableEquipmentFilters = false } = {}) {
+            const safeItems = Array.isArray(items) ? items : [];
+            const applyEquippableFilter = enableEquipmentFilters
+                ? !(filters.equippableOnlyActive && filters.nonEquippableOnlyActive)
+                : false;
+
+            return safeItems.filter(item => {
+                const slotInfo = getThingSlotInfo(item);
+                const isEquipped = Boolean(item?.isEquipped || item?.equippedSlot);
+
+                if (filters.slotFilterValue) {
+                    const slotCandidates = [slotInfo.slotLabel, slotInfo.rawSlot, slotInfo.equippedSlot]
+                        .map(value => (typeof value === 'string' ? value.trim().toLowerCase() : null))
+                        .filter(Boolean);
+                    if (!slotCandidates.includes(filters.slotFilterValue)) {
+                        return false;
+                    }
+                }
+
+                if (enableEquipmentFilters && filters.equippedOnlyActive && !isEquipped) {
+                    return false;
+                }
+
+                if (enableEquipmentFilters && applyEquippableFilter) {
+                    if (filters.equippableOnlyActive && !slotInfo.canModifyEquipment) {
+                        return false;
+                    }
+                    if (filters.nonEquippableOnlyActive && slotInfo.canModifyEquipment) {
+                        return false;
+                    }
+                }
+
+                if (!filters.searchText) {
+                    return true;
+                }
+
+                const haystack = [
+                    item?.name,
+                    item?.description,
+                    item?.shortDescription,
+                    item?.thingType,
+                    item?.rarity,
+                    item?.slot,
+                    item?.metadata?.slot,
+                    item?.metadata?.properties,
+                    slotInfo.canModifyEquipment ? 'equippable' : 'non-equippable'
+                ];
+
+                return haystack.some(value => typeof value === 'string' && value.toLowerCase().includes(filters.searchText));
+            });
+        }
+
+        function formatThingListCountText({
+            filteredCount,
+            totalCount,
+            singularLabel = 'item',
+            pluralLabel = 'items',
+            filtersApplied = false
+        } = {}) {
+            const totalLabel = totalCount === 1 ? singularLabel : pluralLabel;
+            if (filtersApplied) {
+                return `${filteredCount} of ${totalCount} ${totalLabel}`;
+            }
+            return `${totalCount} ${totalLabel}`;
+        }
+
+        function buildThingActionIconList(thing, { hostElement = null } = {}) {
+            const badges = getThingPropertyBadges(thing);
+            if (!badges.length) {
+                return null;
+            }
+
+            const actionList = document.createElement('div');
+            actionList.className = 'thing-action-icon-list';
+            if (thing?.id) {
+                actionList.dataset.imageEntityId = thing.id;
+            }
+
+            const activationHost = hostElement || actionList;
+
+            badges.forEach(badge => {
+                const isCraftingAction = badge.key === 'isCraftingStation';
+                const isProcessingAction = badge.key === 'isProcessingStation';
+                const isSalvageAction = badge.key === 'isSalvageable';
+                const isHarvestAction = badge.key === 'isHarvestable';
+                const isInteractive = isCraftingAction || isProcessingAction || isSalvageAction || isHarvestAction;
+                const element = document.createElement(isInteractive ? 'button' : 'span');
+                element.className = 'thing-action-icon';
+                element.textContent = badge.icon;
+                if (badge.label) {
+                    element.title = badge.label;
+                    element.setAttribute('aria-label', badge.label);
+                }
+
+                if (isInteractive) {
+                    element.type = 'button';
+                    const activateBadge = (event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        if (isHarvestAction) {
+                            attemptHarvestFromBadge(activationHost);
+                        } else if (isSalvageAction) {
+                            attemptSalvageFromBadge(activationHost);
+                        } else {
+                            openCraftingModalFromBadge(
+                                isProcessingAction ? 'isProcessingStation' : 'isCraftingStation',
+                                activationHost
+                            );
+                        }
+                    };
+                    element.addEventListener('click', activateBadge);
+                    element.addEventListener('keydown', (event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                            activateBadge(event);
+                        }
+                    });
+                } else {
+                    element.setAttribute('aria-hidden', 'true');
+                }
+
+                actionList.appendChild(element);
+            });
+
+            return actionList;
+        }
+
+        function buildThingCollectionEntry(thing, options = {}) {
+            const extraClasses = Array.isArray(options.extraClasses)
+                ? options.extraClasses.filter(Boolean)
+                : [];
+            const normalizedThingType = typeof thing?.thingType === 'string' && thing.thingType.trim().toLowerCase() === 'scenery'
+                ? 'scenery'
+                : 'item';
+            const resolvedViewMode = normalizeThingListViewMode(options.viewMode);
+            const slotInfo = getThingSlotInfo(thing);
+            const equipped = Boolean(thing?.isEquipped || thing?.equippedSlot);
+
+            if (resolvedViewMode === 'table') {
+                const row = document.createElement('div');
+                row.className = [
+                    'thing-table-row',
+                    'thing-collection-entry',
+                    normalizedThingType === 'scenery'
+                        ? 'is-scenery'
+                        : 'is-item',
+                    ...extraClasses
+                ].join(' ');
+
+                if (options.focusable) {
+                    row.tabIndex = 0;
+                    row.setAttribute('aria-label', thing?.name || 'Item');
+                }
+
+                if (equipped) {
+                    row.classList.add('is-equipped');
+                }
+                if (thing?.id) {
+                    row.dataset.thingId = thing.id;
+                    row.dataset.imageEntityId = thing.id;
+                }
+
+                const icon = document.createElement('div');
+                icon.className = 'entity-icon thing-table-row__icon';
+                renderEntityImage({
+                    element: icon,
+                    entityType: 'thing',
+                    entityId: thing?.id || '',
+                    imageId: thing?.imageId || null,
+                    altText: thing?.name || 'Item',
+                    placeholderIcon: normalizedThingType === 'scenery' ? '🏞️' : '🎁',
+                    placeholderClass: 'entity-icon-placeholder location-entity-placeholder',
+                    badges: [],
+                    countBadgeText: getThingCountBadgeText(thing)
+                });
+
+                const content = document.createElement('div');
+                content.className = 'thing-table-row__content';
+
+                const name = document.createElement('div');
+                name.className = 'entity-name inventory-name thing-table-row__name';
+                setRenderedName(name, thing?.name, 'Unknown Item', {
+                    longWordCharacterLimit: LONG_NAME_WORD_CHARACTER_LIMIT
+                });
+                applyRarityClass(name, thing?.rarity);
+                content.appendChild(name);
+
+                const utilities = document.createElement('div');
+                utilities.className = 'thing-table-row__utilities';
+                const actionIcons = buildThingActionIconList(thing, { hostElement: row });
+                if (actionIcons) {
+                    utilities.appendChild(actionIcons);
+                }
+
+                row.appendChild(icon);
+                row.appendChild(content);
+                row.appendChild(utilities);
+
+                if (typeof options.decorateCard === 'function') {
+                    options.decorateCard({
+                        card: row,
+                        icon,
+                        name,
+                        thing,
+                        slotInfo,
+                        controlsHost: utilities,
+                        viewMode: resolvedViewMode
+                    });
+                }
+
+                if (options.contextMenuOptions) {
+                    registerThingContextMenu(row, thing, options.contextMenuOptions);
+                }
+
+                if (options.enableTooltip !== false) {
+                    bindThingTooltip(row, thing, options.tooltipOptions || {});
+                }
+
+                return { card: row, icon, name, slotInfo, controlsHost: utilities };
+            }
+
+            if (resolvedViewMode === 'grid') {
+                const tile = document.createElement('div');
+                tile.className = [
+                    'thing-grid-tile',
+                    'thing-collection-entry',
+                    normalizedThingType === 'scenery'
+                        ? 'is-scenery'
+                        : 'is-item',
+                    ...extraClasses
+                ].join(' ');
+
+                if (options.focusable) {
+                    tile.tabIndex = 0;
+                    tile.setAttribute('aria-label', thing?.name || 'Item');
+                }
+
+                if (equipped) {
+                    tile.classList.add('is-equipped');
+                }
+                if (thing?.id) {
+                    tile.dataset.thingId = thing.id;
+                    tile.dataset.imageEntityId = thing.id;
+                }
+
+                const icon = document.createElement('div');
+                icon.className = 'entity-icon inventory-icon thing-grid-tile__icon';
+                applyRarityClass(icon, thing?.rarity);
+                renderEntityImage({
+                    element: icon,
+                    entityType: 'thing',
+                    entityId: thing?.id || '',
+                    imageId: thing?.imageId || null,
+                    altText: thing?.name || 'Item',
+                    placeholderIcon: normalizedThingType === 'scenery' ? '🏞️' : '🎁',
+                    placeholderClass: 'entity-icon-placeholder location-entity-placeholder',
+                    badges: getThingPropertyBadges(thing),
+                    countBadgeText: getThingCountBadgeText(thing)
+                });
+
+                tile.appendChild(icon);
+
+                if (typeof options.decorateCard === 'function') {
+                    options.decorateCard({
+                        card: tile,
+                        icon,
+                        name: null,
+                        thing,
+                        slotInfo,
+                        controlsHost: tile,
+                        viewMode: resolvedViewMode
+                    });
+                }
+
+                if (options.contextMenuOptions) {
+                    registerThingContextMenu(tile, thing, options.contextMenuOptions);
+                }
+
+                if (options.enableTooltip !== false) {
+                    bindThingTooltip(tile, thing, options.tooltipOptions || {});
+                }
+
+                return { card: tile, icon, name: null, slotInfo, controlsHost: tile };
+            }
+
+            const card = document.createElement('div');
+            card.className = [
+                'entity-card',
+                'location-entity-card',
+                'inventory-card',
+                'thing-collection-card',
+                'thing-collection-entry',
+                normalizedThingType === 'scenery'
+                    ? 'entity-card--scenery is-scenery'
+                    : 'entity-card--item is-item',
+                ...extraClasses
+            ].join(' ');
+
+            if (options.focusable) {
+                card.tabIndex = 0;
+            }
+
+            if (equipped) {
+                card.classList.add('is-equipped');
+            }
+
+            if (thing?.id) {
+                card.dataset.thingId = thing.id;
+                card.dataset.imageEntityId = thing.id;
+            }
+
+            const icon = document.createElement('div');
+            icon.className = 'entity-icon inventory-icon';
+            renderEntityImage({
+                element: icon,
+                entityType: 'thing',
+                entityId: thing?.id || '',
+                imageId: thing?.imageId || null,
+                altText: thing?.name || 'Item',
+                placeholderIcon: normalizedThingType === 'scenery' ? '🏞️' : '🎁',
+                placeholderClass: 'entity-icon-placeholder location-entity-placeholder',
+                badges: getThingPropertyBadges(thing),
+                countBadgeText: getThingCountBadgeText(thing)
+            });
+
+            const name = document.createElement('div');
+            name.className = 'entity-name inventory-name';
+            setRenderedName(name, thing?.name, 'Unknown Item', {
+                longWordCharacterLimit: LONG_NAME_WORD_CHARACTER_LIMIT
+            });
+            applyRarityClass(name, thing?.rarity);
+
+            card.appendChild(icon);
+            card.appendChild(name);
+
+            if (slotInfo.slotLabel) {
+                const slotBadge = document.createElement('div');
+                slotBadge.className = 'inventory-slot-tag';
+                slotBadge.textContent = slotInfo.slotLabel;
+                card.appendChild(slotBadge);
+            }
+
+            if (typeof options.decorateCard === 'function') {
+                options.decorateCard({
+                    card,
+                    icon,
+                    name,
+                    thing,
+                    slotInfo,
+                    controlsHost: card,
+                    viewMode: resolvedViewMode
+                });
+            }
+
+            if (options.contextMenuOptions) {
+                registerThingContextMenu(card, thing, options.contextMenuOptions);
+            }
+
+            if (options.enableTooltip !== false) {
+                bindThingTooltip(card, thing, options.tooltipOptions || {});
+            }
+
+            return { card, icon, name, slotInfo };
+        }
+
+        function renderThingCollectionPanel({
+            items = [],
+            panelKey = '',
+            grid,
+            empty,
+            countEl = null,
+            searchInput = null,
+            viewShell = null,
+            sortShell = null,
+            slotFilter = null,
+            slotFilterWrapper = null,
+            showAllRadio = null,
+            equippedOnlyRadio = null,
+            equippableOnlyRadio = null,
+            nonEquippableOnlyRadio = null,
+            emptyMessage = 'No items available.',
+            filteredEmptyMessage = 'No items match your filters.',
+            singularLabel = 'item',
+            pluralLabel = 'items',
+            enableEquipmentFilters = false,
+            keepGridVisibleWhenEmpty = false,
+            buildCard
+        } = {}) {
+            if (!grid) {
+                return [];
+            }
+
+            const safeItems = Array.isArray(items) ? items : [];
+            syncThingListViewOptions(viewShell, panelKey);
+            const viewMode = getThingListViewState(panelKey);
+            syncThingListSortOptions(sortShell, panelKey);
+            const sortedItems = applyThingCollectionSort(safeItems, { panelKey });
+            syncThingSlotFilterOptions(slotFilter, sortedItems, { wrapper: slotFilterWrapper });
+            const filters = getThingListFilterState({
+                searchInput,
+                slotFilter,
+                showAllRadio,
+                equippedOnlyRadio,
+                equippableOnlyRadio,
+                nonEquippableOnlyRadio
+            });
+            const filteredItems = filterThingCollection(sortedItems, filters, { enableEquipmentFilters });
+            const applyEquippableFilter = enableEquipmentFilters
+                ? !(filters.equippableOnlyActive && filters.nonEquippableOnlyActive)
+                : false;
+            const filtersApplied = Boolean(filters.searchText)
+                || Boolean(filters.slotFilterValue)
+                || (enableEquipmentFilters && (
+                    filters.equippedOnlyActive
+                    || (applyEquippableFilter && (filters.equippableOnlyActive || filters.nonEquippableOnlyActive))
+                ));
+
+            if (countEl) {
+                countEl.textContent = formatThingListCountText({
+                    filteredCount: filteredItems.length,
+                    totalCount: sortedItems.length,
+                    singularLabel,
+                    pluralLabel,
+                    filtersApplied
+                });
+            }
+
+            grid.innerHTML = '';
+            grid.dataset.viewMode = viewMode;
+            grid.classList.toggle('thing-collection-view--classic', viewMode === 'classic');
+            grid.classList.toggle('thing-collection-view--table', viewMode === 'table');
+            grid.classList.toggle('thing-collection-view--grid', viewMode === 'grid');
+
+            if (!filteredItems.length) {
+                grid.hidden = !keepGridVisibleWhenEmpty;
+                grid.style.display = '';
+                if (empty) {
+                    empty.textContent = sortedItems.length === 0 ? emptyMessage : filteredEmptyMessage;
+                    empty.hidden = false;
+                    empty.style.display = 'block';
+                }
+                return filteredItems;
+            }
+
+            grid.hidden = false;
+            grid.style.display = '';
+            if (empty) {
+                empty.hidden = true;
+                empty.style.display = 'none';
+            }
+
+            filteredItems.forEach(item => {
+                const built = typeof buildCard === 'function'
+                    ? buildCard(item, { viewMode })
+                    : buildThingCollectionEntry(item, { viewMode });
+                if (built?.card) {
+                    grid.appendChild(built.card);
+                }
+            });
+
+            return filteredItems;
+        }
+
         async function setNpcItemEquipped(npcId, item, shouldEquip, { slotName = null, slotType = null } = {}) {
             if (!npcId || !item || !item.id) {
                 return;
@@ -13585,263 +15237,71 @@
             }
 
             const safeItems = Array.isArray(items) ? items : [];
-            const filterValueRaw = typeof npcInventoryFilterInput?.value === 'string'
-                ? npcInventoryFilterInput.value.trim().toLowerCase()
-                : '';
-            const equippedOnlyActive = Boolean(npcInventoryEquippedOnlyRadio?.checked);
-            const equippableOnlyActive = Boolean(npcInventoryEquippableOnlyRadio?.checked);
-            const nonEquippableOnlyActive = Boolean(npcInventoryNonEquippableOnlyRadio?.checked);
-
-            // If both equippable-only and non-equippable-only are checked, treat as no equippable filter (show all)
-            const applyEquippableFilter = !(equippableOnlyActive && nonEquippableOnlyActive);
-
-            const normalizeSlotLabel = (value) => {
-                if (value === undefined || value === null) {
-                    return null;
-                }
-                const text = typeof value === 'string' ? value.trim() : String(value).trim();
-                if (!text || text.toLowerCase() === 'n/a') {
-                    return null;
-                }
-                return text;
-            };
-
-            const getItemSlotInfo = (item) => {
-                const slotTypeValueRaw = typeof item?.slot === 'string' && item.slot.trim()
-                    ? item.slot.trim()
-                    : (typeof item?.metadata?.slot === 'string' && item.metadata.slot.trim()
-                        ? item.metadata.slot.trim()
-                        : null);
-                const equippedSlot = normalizeSlotLabel(item?.equippedSlot);
-                const rawSlot = normalizeSlotLabel(slotTypeValueRaw);
-                const slotLabel = equippedSlot || rawSlot || null;
-                const canModifyEquipment = Boolean(slotTypeValueRaw || equippedSlot);
-                return {
-                    slotTypeValueRaw,
-                    equippedSlot,
-                    rawSlot,
-                    slotLabel,
-                    canModifyEquipment
-                };
-            };
-
-            const slotMap = new Map();
-            if (npcInventorySlotFilter) {
-                safeItems.forEach(item => {
-                    const slotInfo = getItemSlotInfo(item);
-                    const candidates = [
-                        slotInfo.slotLabel,
-                        slotInfo.rawSlot,
-                        slotInfo.equippedSlot,
-                        normalizeSlotLabel(item?.slot),
-                        normalizeSlotLabel(item?.metadata?.slot)
-                    ].filter(Boolean);
-                    for (const candidate of candidates) {
-                        const normalized = candidate.toLowerCase();
-                        if (!slotMap.has(normalized)) {
-                            slotMap.set(normalized, candidate);
+            renderThingCollectionPanel({
+                items: safeItems,
+                panelKey: 'npcInventory',
+                grid: npcInventoryGrid,
+                empty: npcInventoryEmpty,
+                countEl: npcInventoryCount,
+                searchInput: npcInventoryFilterInput,
+                viewShell: npcInventoryView,
+                sortShell: npcInventorySort,
+                slotFilter: npcInventorySlotFilter,
+                slotFilterWrapper: npcInventorySlotFilterWrapper,
+                showAllRadio: npcInventoryShowAllRadio,
+                equippedOnlyRadio: npcInventoryEquippedOnlyRadio,
+                equippableOnlyRadio: npcInventoryEquippableOnlyRadio,
+                nonEquippableOnlyRadio: npcInventoryNonEquippableOnlyRadio,
+                emptyMessage: npcInventoryEmptyDefaultText,
+                filteredEmptyMessage: 'No items match your filters.',
+                singularLabel: 'item',
+                pluralLabel: 'items',
+                enableEquipmentFilters: true,
+                buildCard: (item, { viewMode } = {}) => buildThingCollectionEntry(item, {
+                    viewMode,
+                    contextMenuOptions: { context: 'npc-inventory', npcId: currentNpcInventoryNpcId },
+                    tooltipOptions: {
+                        equipmentOwner: () => {
+                            if (currentNpcInventoryNpcId) {
+                                const currentPlayerId = typeof window.currentPlayerData?.id === 'string'
+                                    ? window.currentPlayerData.id
+                                    : null;
+                                if (currentPlayerId && currentPlayerId === currentNpcInventoryNpcId) {
+                                    return window.currentPlayerData || null;
+                                }
+                                if (window.currentNpcData instanceof Map && window.currentNpcData.has(currentNpcInventoryNpcId)) {
+                                    return window.currentNpcData.get(currentNpcInventoryNpcId) || null;
+                                }
+                            }
+                            return window.currentPlayerData || null;
                         }
-                    }
-                });
-
-                const slotEntries = Array.from(slotMap.entries())
-                    .sort((a, b) => a[1].localeCompare(b[1], undefined, { sensitivity: 'base' }));
-                const signature = JSON.stringify(slotEntries.map(([value]) => value));
-                if (npcInventorySlotFilter.dataset.optionSignature !== signature) {
-                    const previousValue = typeof npcInventorySlotFilter.value === 'string'
-                        ? npcInventorySlotFilter.value
-                        : '';
-                    const previousLabel = previousValue
-                        ? (npcInventorySlotFilter.options[npcInventorySlotFilter.selectedIndex]?.textContent || previousValue)
-                        : '';
-                    npcInventorySlotFilter.innerHTML = '';
-                    const allOption = document.createElement('option');
-                    allOption.value = '';
-                    allOption.textContent = 'All slots';
-                    npcInventorySlotFilter.appendChild(allOption);
-                    slotEntries.forEach(([value, label]) => {
-                        const option = document.createElement('option');
-                        option.value = value;
-                        option.textContent = label;
-                        npcInventorySlotFilter.appendChild(option);
-                    });
-                    // Preserve any active slot filter across inventory refreshes (equip/unequip updates).
-                    if (previousValue) {
-                        if (!slotMap.has(previousValue)) {
-                            const preservedOption = document.createElement('option');
-                            preservedOption.value = previousValue;
-                            preservedOption.textContent = previousLabel || previousValue;
-                            preservedOption.dataset.preserved = 'true';
-                            npcInventorySlotFilter.appendChild(preservedOption);
-                        }
-                        npcInventorySlotFilter.value = previousValue;
-                    }
-                    npcInventorySlotFilter.dataset.optionSignature = signature;
-                }
-            }
-
-            const filteredItems = safeItems.filter(item => {
-                const slotInfo = getItemSlotInfo(item);
-                const isEquipped = Boolean(item?.isEquipped || item?.equippedSlot);
-
-                if (npcInventorySlotFilter && npcInventorySlotFilter.value) {
-                    const normalizedSlotFilter = npcInventorySlotFilter.value.toLowerCase();
-                    const slotCandidates = [slotInfo.slotLabel, slotInfo.rawSlot, slotInfo.equippedSlot]
-                        .map(value => (typeof value === 'string' ? value.trim().toLowerCase() : null))
-                        .filter(Boolean);
-                    if (!slotCandidates.includes(normalizedSlotFilter)) {
-                        return false;
-                    }
-                }
-
-                if (equippedOnlyActive && !isEquipped) {
-                    return false;
-                }
-
-                if (applyEquippableFilter) {
-                    if (equippableOnlyActive && !slotInfo.canModifyEquipment) {
-                        return false;
-                    }
-                    if (nonEquippableOnlyActive && slotInfo.canModifyEquipment) {
-                        return false;
-                    }
-                }
-
-                if (!filterValueRaw) {
-                    return true;
-                }
-
-                const haystack = [
-                    item?.name,
-                    item?.description,
-                    item?.thingType,
-                    item?.rarity,
-                    item?.slot,
-                    item?.metadata?.slot,
-                    item?.metadata?.properties,
-                    slotInfo.canModifyEquipment ? 'equippable' : 'non-equippable'
-                ];
-                return haystack.some(value => typeof value === 'string' && value.toLowerCase().includes(filterValueRaw));
-            });
-
-            npcInventoryGrid.innerHTML = '';
-            const filtersApplied = Boolean(filterValueRaw)
-                || equippedOnlyActive
-                || (applyEquippableFilter && (equippableOnlyActive || nonEquippableOnlyActive));
-
-            npcInventoryCount.textContent = filtersApplied
-                ? `${filteredItems.length} of ${safeItems.length} ${safeItems.length === 1 ? 'item' : 'items'}`
-                : `${safeItems.length} ${safeItems.length === 1 ? 'item' : 'items'}`;
-
-            if (!filteredItems.length) {
-                npcInventoryGrid.style.display = 'none';
-                npcInventoryEmpty.textContent = safeItems.length === 0
-                    ? npcInventoryEmptyDefaultText
-                    : 'No items match your filters.';
-                npcInventoryEmpty.style.display = 'block';
-            } else {
-                npcInventoryGrid.style.display = 'flex';
-                npcInventoryEmpty.textContent = npcInventoryEmptyDefaultText;
-                npcInventoryEmpty.style.display = 'none';
-            }
-
-            filteredItems.forEach(item => {
-                const card = document.createElement('div');
-                card.className = 'entity-card entity-card--item location-entity-card inventory-card';
-
-                const equipped = Boolean(item?.isEquipped || item?.equippedSlot);
-                if (equipped) {
-                    card.classList.add('is-equipped');
-                }
-
-                const slotInfo = getItemSlotInfo(item);
-
-                const icon = document.createElement('div');
-                icon.className = 'entity-icon inventory-icon';
-                renderEntityImage({
-                    element: icon,
-                    entityType: 'thing',
-                    entityId: item.id,
-                    imageId: item.imageId || null,
-                    altText: item.name || 'Inventory item',
-                    placeholderIcon: item.thingType === 'scenery' ? '🏞️' : '🎁',
-                    placeholderClass: 'entity-icon-placeholder location-entity-placeholder',
-                    badges: getThingPropertyBadges(item),
-                    countBadgeText: getThingCountBadgeText(item)
-                });
-
-                const name = document.createElement('div');
-                name.className = 'entity-name inventory-name';
-                setRenderedName(name, item.name, 'Unknown Item', {
-                    longWordCharacterLimit: LONG_NAME_WORD_CHARACTER_LIMIT
-                });
-                applyRarityClass(name, item.rarity);
-
-                const equippedSlot = slotInfo.equippedSlot;
-                const slotTypeValueRaw = slotInfo.slotTypeValueRaw;
-                const rawSlot = slotInfo.rawSlot;
-                const slotLabel = slotInfo.slotLabel;
-                const canModifyEquipment = slotInfo.canModifyEquipment;
-
-                const slotBadge = document.createElement('div');
-                slotBadge.className = 'inventory-slot-tag';
-                if (slotLabel) {
-                    slotBadge.textContent = slotLabel;
-                }
-
-                let equipToggle = null;
-                if (canModifyEquipment) {
-                    equipToggle = document.createElement('button');
-                    equipToggle.type = 'button';
-                    equipToggle.className = 'inventory-equip-toggle';
-                    equipToggle.textContent = equipped ? 'Unequip' : 'Equip';
-
-                    equipToggle.addEventListener('click', (event) => {
-                        event.stopPropagation();
-                        event.preventDefault();
-                        if (!currentNpcInventoryNpcId) {
+                    },
+                    decorateCard: ({ card, thing, slotInfo, controlsHost, viewMode: activeViewMode }) => {
+                        const equipped = Boolean(thing?.isEquipped || thing?.equippedSlot);
+                        if (!slotInfo.canModifyEquipment || activeViewMode === 'grid') {
                             return;
                         }
-                        equipToggle.disabled = true;
-                        setNpcItemEquipped(currentNpcInventoryNpcId, item, !equipped, {
-                            slotName: equippedSlot || null,
-                            slotType: slotTypeValueRaw || null
-                        })
-                            .finally(() => {
+                        const equipToggle = document.createElement('button');
+                        equipToggle.type = 'button';
+                        equipToggle.className = 'inventory-equip-toggle';
+                        equipToggle.textContent = equipped ? 'Unequip' : 'Equip';
+                        equipToggle.addEventListener('click', (event) => {
+                            event.stopPropagation();
+                            event.preventDefault();
+                            if (!currentNpcInventoryNpcId) {
+                                return;
+                            }
+                            equipToggle.disabled = true;
+                            setNpcItemEquipped(currentNpcInventoryNpcId, thing, !equipped, {
+                                slotName: slotInfo.equippedSlot || null,
+                                slotType: slotInfo.slotTypeValueRaw || null
+                            }).finally(() => {
                                 equipToggle.disabled = false;
                             });
-                    });
-                }
-
-                card.appendChild(icon);
-                card.appendChild(name);
-                if (slotLabel) {
-                    card.appendChild(slotBadge);
-                }
-                if (equipToggle) {
-                    card.appendChild(equipToggle);
-                }
-
-                registerThingContextMenu(card, item, { context: 'npc-inventory', npcId: currentNpcInventoryNpcId });
-
-                bindThingTooltip(card, item, {
-                    equipmentOwner: () => {
-                        if (currentNpcInventoryNpcId) {
-                            const currentPlayerId = typeof window.currentPlayerData?.id === 'string'
-                                ? window.currentPlayerData.id
-                                : null;
-                            if (currentPlayerId && currentPlayerId === currentNpcInventoryNpcId) {
-                                return window.currentPlayerData || null;
-                            }
-                            if (window.currentNpcData instanceof Map && window.currentNpcData.has(currentNpcInventoryNpcId)) {
-                                return window.currentNpcData.get(currentNpcInventoryNpcId) || null;
-                            }
-                        }
-                        return window.currentPlayerData || null;
+                        });
+                        (controlsHost || card).appendChild(equipToggle);
                     }
-                });
-
-                npcInventoryGrid.appendChild(card);
+                })
             });
 
             try {
@@ -14505,6 +15965,12 @@
                 : (window.currentPlayerData || null);
             const inventoryItems = Array.isArray(playerData?.inventory) ? playerData.inventory : [];
 
+            if (craftingInventoryFilterInput) {
+                craftingInventoryFilterInput.value = '';
+            }
+            if (craftingInventorySlotFilter) {
+                craftingInventorySlotFilter.value = '';
+            }
             renderCraftingInventory(inventoryItems);
             renderCraftingSlots(currentCraftingSlotCount);
             updateCraftingActionState();
@@ -14542,7 +16008,6 @@
                     ? 'Optionally, describe what you are trying to create via processing. Include <N> to force your roll.'
                     : `Optionally, describe what you are trying to craft (${craftTargetLabel}). Include <N> to force your roll.`;
             }
-
             craftingModal.removeAttribute('hidden');
             craftingModal.setAttribute('aria-hidden', 'false');
             craftingModalBackdrop.removeAttribute('hidden');
@@ -14571,6 +16036,27 @@
             if (craftingNotesInput) {
                 craftingNotesInput.value = '';
             }
+            if (craftingInventoryFilterInput) {
+                craftingInventoryFilterInput.value = '';
+            }
+            if (craftingInventorySlotFilter) {
+                craftingInventorySlotFilter.value = '';
+            }
+            if (craftingInventoryShowAllRadio) {
+                craftingInventoryShowAllRadio.checked = true;
+            }
+            if (craftingInventoryEquippedOnlyRadio) {
+                craftingInventoryEquippedOnlyRadio.checked = false;
+            }
+            if (craftingInventoryEquippableOnlyRadio) {
+                craftingInventoryEquippableOnlyRadio.checked = false;
+            }
+            if (craftingInventoryNonEquippableOnlyRadio) {
+                craftingInventoryNonEquippableOnlyRadio.checked = false;
+            }
+            closeThingListFilterPopoverForPanel(craftingInventoryPanel);
+            closeThingListSortPopoverForPanel(craftingInventoryPanel);
+            closeThingListViewPopoverForPanel(craftingInventoryPanel);
             craftingIsOpen = false;
             document.body.classList.remove('modal-open');
             updateCraftingActionState();
@@ -14585,130 +16071,88 @@
                 craftingInventoryAllItems = items;
             }
 
-            craftingInventoryGrid.innerHTML = '';
             craftingInventoryLookup = new Map();
             craftingInventoryCardRefs = new Map();
             const safeItems = Array.isArray(craftingInventoryAllItems) ? craftingInventoryAllItems : [];
-
-            const filterValue = (craftingInventoryFilterInput?.value || '').toLowerCase().trim();
-            const filteredItems = filterValue
-                ? safeItems.filter(item => {
-                    const name = (item?.name || '').toLowerCase();
-                    const desc = (item?.description || '').toLowerCase();
-                    return name.includes(filterValue) || desc.includes(filterValue);
-                })
-                : safeItems;
-
-            if (!safeItems.length) {
-                craftingInventoryEmpty.removeAttribute('hidden');
-                craftingInventoryGrid.setAttribute('hidden', '');
-                return;
-            }
-
-            craftingInventoryEmpty.setAttribute('hidden', '');
-            craftingInventoryGrid.removeAttribute('hidden');
-
-            const itemsToRender = filteredItems.length ? filteredItems : [];
-
-            if (!itemsToRender.length) {
-                craftingInventoryGrid.innerHTML = '<div class="crafting-modal__empty">No items match your filter.</div>';
-            }
-
-            itemsToRender.forEach(item => {
-                const clone = cloneThingRecord(item) || { ...item };
-                if (clone.id) {
-                    craftingInventoryLookup.set(clone.id, clone);
-                }
-                const card = document.createElement('div');
-                card.className = 'entity-card entity-card--item location-entity-card inventory-card crafting-inventory-card';
-                card.tabIndex = 0;
-                if (clone.id) {
-                    card.dataset.thingId = clone.id;
-                    card.draggable = true;
-                    craftingInventoryCardRefs.set(clone.id, card);
-                }
-
-                const icon = document.createElement('div');
-                icon.className = 'entity-icon inventory-icon';
-                renderEntityImage({
-                    element: icon,
-                    entityType: 'thing',
-                    entityId: clone.id || '',
-                    imageId: clone.imageId || null,
-                    altText: clone.name || 'Inventory item',
-                    placeholderIcon: clone.thingType === 'scenery' ? '🏞️' : '🎁',
-                    placeholderClass: 'entity-icon-placeholder location-entity-placeholder',
-                    badges: getThingPropertyBadges(clone),
-                    countBadgeText: getThingCountBadgeText(clone)
-                });
-
-                const name = document.createElement('div');
-                name.className = 'entity-name inventory-name';
-                setRenderedName(name, clone.name, 'Unknown Item', {
-                    longWordCharacterLimit: LONG_NAME_WORD_CHARACTER_LIMIT
-                });
-                applyRarityClass(name, clone.rarity);
-
-                const rawSlot = typeof clone.slot === 'string' ? clone.slot.trim() : '';
-                const metadataSlot = typeof clone.metadata?.slot === 'string' ? clone.metadata.slot.trim() : '';
-                const slotLabelRaw = rawSlot && rawSlot.toLowerCase() !== 'n/a'
-                    ? rawSlot
-                    : (metadataSlot && metadataSlot.toLowerCase() !== 'n/a' ? metadataSlot : '');
-                card.appendChild(icon);
-                card.appendChild(name);
-                if (slotLabelRaw) {
-                    const slotBadge = document.createElement('div');
-                    slotBadge.className = 'inventory-slot-tag';
-                    slotBadge.textContent = slotLabelRaw;
-                    card.appendChild(slotBadge);
-                }
-
-                if (clone.id) {
-                    const isAlreadyAssigned = isItemIdAssignedToAnySlot(clone.id);
-                    if (isAlreadyAssigned) {
-                        markCraftingInventoryItemUsed(clone.id, true);
-                        card.draggable = false;
-                    } else {
-                        markCraftingInventoryItemUsed(clone.id, false);
-                        card.draggable = true;
+            renderThingCollectionPanel({
+                items: safeItems,
+                panelKey: 'craftingInventory',
+                grid: craftingInventoryGrid,
+                empty: craftingInventoryEmpty,
+                countEl: craftingInventoryCount,
+                searchInput: craftingInventoryFilterInput,
+                viewShell: craftingInventoryView,
+                sortShell: craftingInventorySort,
+                slotFilter: craftingInventorySlotFilter,
+                slotFilterWrapper: craftingInventorySlotFilterWrapper,
+                showAllRadio: craftingInventoryShowAllRadio,
+                equippedOnlyRadio: craftingInventoryEquippedOnlyRadio,
+                equippableOnlyRadio: craftingInventoryEquippableOnlyRadio,
+                nonEquippableOnlyRadio: craftingInventoryNonEquippableOnlyRadio,
+                emptyMessage: 'Player inventory is not available.',
+                filteredEmptyMessage: 'No items match your filters.',
+                singularLabel: 'item',
+                pluralLabel: 'items',
+                enableEquipmentFilters: true,
+                buildCard: (item) => {
+                    const clone = cloneThingRecord(item) || { ...item };
+                    if (clone.id) {
+                        craftingInventoryLookup.set(clone.id, clone);
                     }
-                    card.addEventListener('dragstart', handleCraftingInventoryDragStart);
-                    card.addEventListener('dragend', handleCraftingInventoryDragEnd);
-                    card.addEventListener('dblclick', () => {
-                        if (!assignItemToFirstAvailableSlot(clone.id)) {
-                            assignItemToCraftingSlot(0, clone.id);
-                        }
-                    });
-                    card.addEventListener('keydown', (event) => {
-                        if (event.key === 'Enter' || event.key === ' ') {
-                            event.preventDefault();
-                            if (!assignItemToFirstAvailableSlot(clone.id)) {
-                                assignItemToCraftingSlot(0, clone.id);
+                    const built = buildThingCollectionEntry(clone, {
+                        viewMode,
+                        extraClasses: ['crafting-inventory-card'],
+                        focusable: true,
+                        decorateCard: ({ card, icon, thing }) => {
+                            if (!thing?.id) {
+                                return;
                             }
+                            const isAlreadyAssigned = isItemIdAssignedToAnySlot(thing.id);
+                            if (isAlreadyAssigned) {
+                                markCraftingInventoryItemUsed(thing.id, true);
+                                card.draggable = false;
+                            } else {
+                                markCraftingInventoryItemUsed(thing.id, false);
+                                card.draggable = true;
+                            }
+                            craftingInventoryCardRefs.set(thing.id, card);
+                            card.addEventListener('dragstart', handleCraftingInventoryDragStart);
+                            card.addEventListener('dragend', handleCraftingInventoryDragEnd);
+                            card.addEventListener('dblclick', () => {
+                                if (!assignItemToFirstAvailableSlot(thing.id)) {
+                                    assignItemToCraftingSlot(0, thing.id);
+                                }
+                            });
+                            card.addEventListener('keydown', (event) => {
+                                if (event.key === 'Enter' || event.key === ' ') {
+                                    event.preventDefault();
+                                    if (!assignItemToFirstAvailableSlot(thing.id)) {
+                                        assignItemToCraftingSlot(0, thing.id);
+                                    }
+                                }
+                            });
+                            card.addEventListener('click', () => {
+                                if (!assignItemToFirstAvailableSlot(thing.id)) {
+                                    assignItemToCraftingSlot(0, thing.id);
+                                }
+                            });
+                            const iconClickHandler = (event) => {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                if (!assignItemToFirstAvailableSlot(thing.id)) {
+                                    assignItemToCraftingSlot(0, thing.id);
+                                }
+                            };
+                            icon.addEventListener('click', iconClickHandler);
+                            icon.addEventListener('keydown', (event) => {
+                                if (event.key === 'Enter' || event.key === ' ') {
+                                    iconClickHandler(event);
+                                }
+                            });
                         }
                     });
-                    card.addEventListener('click', () => {
-                        if (!assignItemToFirstAvailableSlot(clone.id)) {
-                            assignItemToCraftingSlot(0, clone.id);
-                        }
-                    });
-                    const iconClickHandler = (event) => {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        if (!assignItemToFirstAvailableSlot(clone.id)) {
-                            assignItemToCraftingSlot(0, clone.id);
-                        }
-                    };
-                    icon.addEventListener('click', iconClickHandler);
-                    icon.addEventListener('keydown', (event) => {
-                        if (event.key === 'Enter' || event.key === ' ') {
-                            iconClickHandler(event);
-                        }
-                    });
+                    return built;
                 }
-
-                bindThingTooltip(card, clone);
-                craftingInventoryGrid.appendChild(card);
             });
         }
 
@@ -14789,12 +16233,19 @@
 
         function assignItemToCraftingSlot(slotIndex, thingId) {
             if (!craftingInventoryLookup.has(thingId)) {
-                return;
+                return false;
             }
             if (isItemIdAssignedToAnySlot(thingId)) {
-                return;
+                return false;
             }
             const sourceThing = craftingInventoryLookup.get(thingId);
+            if (Boolean(sourceThing?.isEquipped || sourceThing?.equippedSlot)) {
+                const itemName = typeof sourceThing?.name === 'string' && sourceThing.name.trim()
+                    ? sourceThing.name.trim()
+                    : 'This item';
+                alert(`${itemName} must be unequipped first.`);
+                return false;
+            }
             const clone = cloneThingRecord(sourceThing) || { ...sourceThing };
             craftingSlotAssignments.set(slotIndex, clone);
             markCraftingInventoryItemUsed(thingId, true);
@@ -14803,6 +16254,7 @@
                 updateCraftingSlotElement(slotElement);
             }
             updateCraftingActionState();
+            return true;
         }
 
         function clearCraftingSlot(slotIndex) {
@@ -14824,8 +16276,7 @@
         function assignItemToFirstAvailableSlot(thingId) {
             for (let index = 0; index < currentCraftingSlotCount; index += 1) {
                 if (!craftingSlotAssignments.has(index)) {
-                    assignItemToCraftingSlot(index, thingId);
-                    return true;
+                    return assignItemToCraftingSlot(index, thingId);
                 }
             }
             return false;
@@ -16317,8 +17768,30 @@
             const locationOverlay = document.getElementById('locationOverlay');
             const locationOverlayText = document.getElementById('locationOverlayText');
             const locationNPCs = document.getElementById('locationNPCs');
+            const locationSceneryPanel = document.getElementById('locationSceneryPanel');
             const locationScenery = document.getElementById('locationScenery');
+            const locationSceneryEmpty = document.getElementById('locationSceneryEmpty');
+            const locationSceneryCount = document.getElementById('locationSceneryCount');
+            const locationSceneryFilterInput = document.getElementById('locationSceneryFilterInput');
+            const locationSceneryFilters = document.getElementById('locationSceneryFilters');
+            const locationSceneryFiltersToggle = document.getElementById('locationSceneryFiltersToggle');
+            const locationScenerySlotFilterWrapper = document.getElementById('locationScenerySlotFilterWrapper');
+            const locationScenerySlotFilter = document.getElementById('locationScenerySlotFilter');
+            const locationSceneryShowAllRadio = document.getElementById('locationSceneryShowAll');
+            const locationSceneryEquippableOnlyRadio = document.getElementById('locationSceneryEquippableOnly');
+            const locationSceneryNonEquippableOnlyRadio = document.getElementById('locationSceneryNonEquippableOnly');
+            const locationItemsPanel = document.getElementById('locationItemsPanel');
             const locationItems = document.getElementById('locationItems');
+            const locationItemsEmpty = document.getElementById('locationItemsEmpty');
+            const locationItemsCount = document.getElementById('locationItemsCount');
+            const locationItemsFilterInput = document.getElementById('locationItemsFilterInput');
+            const locationItemsFilters = document.getElementById('locationItemsFilters');
+            const locationItemsFiltersToggle = document.getElementById('locationItemsFiltersToggle');
+            const locationItemsSlotFilterWrapper = document.getElementById('locationItemsSlotFilterWrapper');
+            const locationItemsSlotFilter = document.getElementById('locationItemsSlotFilter');
+            const locationItemsShowAllRadio = document.getElementById('locationItemsShowAll');
+            const locationItemsEquippableOnlyRadio = document.getElementById('locationItemsEquippableOnly');
+            const locationItemsNonEquippableOnlyRadio = document.getElementById('locationItemsNonEquippableOnly');
             const npcDataCache = new Map();
             window.currentNpcData = npcDataCache;
             const npcMenuState = { openMenu: null, trigger: null, card: null };
@@ -20526,6 +21999,136 @@
 
         window.registerInventoryDropTarget = registerInventoryDropTarget;
 
+        function renderLocationThingCollections(location, things = []) {
+            const safeLocation = location && typeof location === 'object' ? location : null;
+            const safeThings = Array.isArray(things) ? things.filter(Boolean) : [];
+            const sceneryThings = safeThings
+                .filter(thing => thing && thing.thingType === 'scenery')
+                .map(thing => cloneThingRecord(thing) || { ...thing });
+            const itemThings = safeThings
+                .filter(thing => thing && thing.thingType !== 'scenery')
+                .map(thing => cloneThingRecord(thing) || { ...thing });
+
+            currentLocationThingCollections = {
+                locationId: safeLocation?.id || null,
+                items: itemThings,
+                scenery: sceneryThings
+            };
+
+            renderThingCollectionPanel({
+                items: sceneryThings,
+                panelKey: 'locationScenery',
+                grid: locationScenery,
+                empty: locationSceneryEmpty,
+                countEl: locationSceneryCount,
+                searchInput: locationSceneryFilterInput,
+                viewShell: locationSceneryViewEl,
+                sortShell: locationScenerySortEl,
+                slotFilter: locationScenerySlotFilter,
+                slotFilterWrapper: locationScenerySlotFilterWrapper,
+                showAllRadio: locationSceneryShowAllRadio,
+                equippableOnlyRadio: locationSceneryEquippableOnlyRadio,
+                nonEquippableOnlyRadio: locationSceneryNonEquippableOnlyRadio,
+                emptyMessage: 'No notable scenery present.',
+                filteredEmptyMessage: 'No scenery matches your filters.',
+                singularLabel: 'object',
+                pluralLabel: 'objects',
+                enableEquipmentFilters: true,
+                keepGridVisibleWhenEmpty: true,
+                buildCard: (thing, { viewMode } = {}) => buildThingCollectionEntry(thing, {
+                    viewMode,
+                    contextMenuOptions: { context: 'location', locationId: safeLocation?.id || null },
+                    tooltipOptions: {
+                        equipmentOwner: () => window.currentPlayerData || null
+                    },
+                    decorateCard: ({ card, thing }) => {
+                        if (!thing?.id) {
+                            return;
+                        }
+                        card.draggable = true;
+                        card.dataset.thingType = normalizeThingTypeForDrag(thing.thingType);
+                        card.addEventListener('dragstart', () => {
+                            draggedLocationThing = {
+                                id: thing.id,
+                                locationId: safeLocation?.id || null,
+                                thingType: normalizeThingTypeForDrag(thing.thingType),
+                                element: card,
+                                thing
+                            };
+                            card.classList.add('is-dragging');
+                        });
+                        card.addEventListener('dragend', () => {
+                            card.classList.remove('is-dragging');
+                        });
+                    }
+                })
+            });
+
+            renderThingCollectionPanel({
+                items: itemThings,
+                panelKey: 'locationItems',
+                grid: locationItems,
+                empty: locationItemsEmpty,
+                countEl: locationItemsCount,
+                searchInput: locationItemsFilterInput,
+                viewShell: locationItemsViewEl,
+                sortShell: locationItemsSortEl,
+                slotFilter: locationItemsSlotFilter,
+                slotFilterWrapper: locationItemsSlotFilterWrapper,
+                showAllRadio: locationItemsShowAllRadio,
+                equippableOnlyRadio: locationItemsEquippableOnlyRadio,
+                nonEquippableOnlyRadio: locationItemsNonEquippableOnlyRadio,
+                emptyMessage: 'No notable items present.',
+                filteredEmptyMessage: 'No items match your filters.',
+                singularLabel: 'item',
+                pluralLabel: 'items',
+                enableEquipmentFilters: true,
+                keepGridVisibleWhenEmpty: true,
+                buildCard: (thing, { viewMode } = {}) => buildThingCollectionEntry(thing, {
+                    viewMode,
+                    contextMenuOptions: { context: 'location', locationId: safeLocation?.id || null },
+                    tooltipOptions: {
+                        equipmentOwner: () => window.currentPlayerData || null
+                    },
+                    decorateCard: ({ card, thing }) => {
+                        if (!thing?.id) {
+                            return;
+                        }
+                        card.draggable = true;
+                        card.dataset.thingType = normalizeThingTypeForDrag(thing.thingType);
+                        card.addEventListener('dragstart', () => {
+                            draggedLocationThing = {
+                                id: thing.id,
+                                locationId: safeLocation?.id || null,
+                                thingType: normalizeThingTypeForDrag(thing.thingType),
+                                element: card,
+                                thing
+                            };
+                            card.classList.add('is-dragging');
+                        });
+                        card.addEventListener('dragend', () => {
+                            card.classList.remove('is-dragging');
+                        });
+                    }
+                })
+            });
+        }
+
+        function rerenderCurrentLocationThingCollections() {
+            const activeLocation = lastRenderedLocation || window.lastRenderedLocation || null;
+            if (!activeLocation) {
+                return;
+            }
+            const things = [
+                ...(Array.isArray(currentLocationThingCollections.scenery) ? currentLocationThingCollections.scenery : []),
+                ...(Array.isArray(currentLocationThingCollections.items) ? currentLocationThingCollections.items : [])
+            ];
+            renderLocationThingCollections(activeLocation, things);
+        }
+
+        window.renderLocationThingCollections = renderLocationThingCollections;
+        window.rerenderCurrentLocationThingCollections = rerenderCurrentLocationThingCollections;
+
         window.updateLocationDisplay = async function(location) {
                 const locationName = document.getElementById('locationName');
                 const locationNameIcon = document.getElementById('locationNameIcon');
@@ -21384,82 +22987,7 @@
 
                     if (locationScenery || locationItems) {
                         const things = await maybeLoadThingDetails(location);
-                        const sceneryThings = things.filter(thing => thing.thingType === 'scenery');
-                        const itemThings = things.filter(thing => thing.thingType !== 'scenery');
-
-                        const renderThingCollection = (container, collection, emptyMessage) => {
-                            if (!container) {
-                                return;
-                            }
-                            if (!collection.length) {
-                                container.innerHTML = `<div class="location-thing-empty">${emptyMessage}</div>`;
-                                return;
-                            }
-
-                            container.innerHTML = '';
-                            collection.forEach(thing => {
-                                const card = document.createElement('div');
-                                card.className = `entity-card location-entity-card ${thing.thingType === 'scenery' ? 'entity-card--scenery is-scenery' : 'entity-card--item is-item'}`;
-
-                                const icon = document.createElement('div');
-                                icon.className = 'entity-icon location-entity-icon';
-                                const placeholderIcon = thing.thingType === 'scenery' ? '🏞️' : '🎁';
-                                renderEntityImage({
-                                    element: icon,
-                                    entityType: 'thing',
-                                    entityId: thing.id,
-                                    imageId: thing.imageId || null,
-                                    altText: thing.name || 'Location item',
-                                    placeholderIcon,
-                                    placeholderClass: 'entity-icon-placeholder location-entity-placeholder',
-                                    badges: getThingPropertyBadges(thing),
-                                    countBadgeText: getThingCountBadgeText(thing)
-                                });
-
-                                const nameEl = document.createElement('div');
-                                nameEl.className = 'entity-name location-entity-name';
-                                setRenderedName(nameEl, thing.name, 'Unknown Object', {
-                                    longWordCharacterLimit: LONG_NAME_WORD_CHARACTER_LIMIT
-                                });
-                                applyRarityClass(nameEl, thing.rarity);
-
-                                card.appendChild(icon);
-                                card.appendChild(nameEl);
-
-                                registerThingContextMenu(card, thing, { context: 'location', locationId: location.id });
-
-                                if (tooltipController && typeof tooltipController.show === 'function') {
-                                    bindThingTooltip(card, thing, {
-                                        equipmentOwner: () => window.currentPlayerData || null
-                                    });
-                                }
-
-                                if (thing.id) {
-                                    card.draggable = true;
-                                    card.dataset.thingId = thing.id;
-                                    card.dataset.thingType = normalizeThingTypeForDrag(thing.thingType);
-                                    card.addEventListener('dragstart', () => {
-                                        draggedLocationThing = {
-                                            id: thing.id,
-                                            locationId: location.id || null,
-                                            thingType: normalizeThingTypeForDrag(thing.thingType),
-                                            element: card,
-                                            thing
-                                        };
-                                        card.classList.add('is-dragging');
-                                    });
-                                    card.addEventListener('dragend', () => {
-                                        card.classList.remove('is-dragging');
-                                        // Do not reset draggedLocationThing here; drop handler will handle cleanup
-                                    });
-                                }
-
-                                container.appendChild(card);
-                            });
-                        };
-
-                        renderThingCollection(locationScenery, sceneryThings, 'No notable scenery present.');
-                        renderThingCollection(locationItems, itemThings, 'No notable items present.');
+                        renderLocationThingCollections(location, things);
                     }
 
                     try { document.dispatchEvent(new Event('location:updated')); } catch (_) {}
@@ -21508,11 +23036,34 @@
                         locationNPCs.innerHTML = '<div class="location-npc-empty">No notable NPCs present.</div>';
                     }
                     if (locationScenery) {
-                        locationScenery.innerHTML = '<div class="location-thing-empty">No notable scenery present.</div>';
+                        locationScenery.innerHTML = '';
+                        locationScenery.style.display = 'none';
+                    }
+                    if (locationSceneryEmpty) {
+                        locationSceneryEmpty.textContent = 'No notable scenery present.';
+                        locationSceneryEmpty.hidden = false;
+                        locationSceneryEmpty.style.display = 'block';
+                    }
+                    if (locationSceneryCount) {
+                        locationSceneryCount.textContent = '0 objects';
                     }
                     if (locationItems) {
-                        locationItems.innerHTML = '<div class="location-thing-empty">No notable items present.</div>';
+                        locationItems.innerHTML = '';
+                        locationItems.style.display = 'none';
                     }
+                    if (locationItemsEmpty) {
+                        locationItemsEmpty.textContent = 'No notable items present.';
+                        locationItemsEmpty.hidden = false;
+                        locationItemsEmpty.style.display = 'block';
+                    }
+                    if (locationItemsCount) {
+                        locationItemsCount.textContent = '0 items';
+                    }
+                    currentLocationThingCollections = {
+                        locationId: null,
+                        items: [],
+                        scenery: []
+                    };
                     if (locationExitsList) {
                         locationExitsList.innerHTML = '<div class="no-exits">No exits discovered yet.</div>';
                     }

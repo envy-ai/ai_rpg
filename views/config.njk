@@ -1,10 +1,8 @@
 <!DOCTYPE html>
 <html lang="en">
+{% set pageTitleValue = title | default("AI RPG Configuration") %}
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ title | default("AI RPG Configuration") }}</title>
-    <link rel="stylesheet" href="/css/main.css">
+    {% include "_includes/head-common.njk" %}
     <link rel="stylesheet" href="/css/config.css">
 </head>
 <body>

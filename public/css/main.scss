@@ -466,6 +466,7 @@ p:not(:last-child) {
 .location-npc-content,
 .location-thing-content,
 .load-game-body,
+.thing-list-filters-shell,
 .npc-inventory-filters,
 .npc-view-equipment,
 .npc-skill-list,
@@ -473,6 +474,10 @@ p:not(:last-child) {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+.thing-list-filters-shell[hidden] {
+  display: none !important;
 }
 
 .quest-objectives {
@@ -1105,32 +1110,49 @@ p:not(:last-child) {
 
 .tab-bar {
   display: flex;
-  gap: 10px;
-  margin-bottom: 12px;
+  gap: 0;
+  margin-bottom: 0;
+  box-shadow: inset 0 -8px 14px rgba(0, 0, 0, 0.18);
 }
 
 .tab-button {
-  background: rgba(255, 255, 255, 0.15);
+  background: transparent;
   color: $white;
-  border: 1px solid rgba(255, 255, 255, 0.25);
-  border-radius: 8px;
-  padding: 8px 16px;
-  font-weight: 600;
+  border: 0;
+  border-radius: 999px;
+  padding: 6px;
+  line-height: 0;
   cursor: pointer;
   transition:
-    background 0.2s ease,
-    border 0.2s ease;
+    opacity 0.2s ease,
+    transform 0.2s ease,
+    filter 0.2s ease;
 }
 
 .tab-button:hover,
 .tab-button:focus {
-  background: rgba(255, 255, 255, 0.25);
-  border-color: rgba(255, 255, 255, 0.4);
+  opacity: 0.82;
 }
 
 .tab-button.active {
-  background: rgba(255, 255, 255, 0.35);
-  border-color: rgba(255, 255, 255, 0.6);
+  opacity: 1;
+  filter: drop-shadow(0 0 10px rgba(255, 255, 255, 0.3));
+  transform: translateY(-1px);
+}
+
+.tab-button:not(.active) {
+  opacity: 0.58;
+}
+
+.tab-button:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.75);
+  outline-offset: 2px;
+}
+
+.tab-button__icon {
+  display: block;
+  width: 28px;
+  height: 28px;
 }
 
 .tab-panels {
@@ -1181,6 +1203,7 @@ p:not(:last-child) {
     display: flex;
     flex-direction: column;
     overflow: auto;
+    border-radius: 0 0 $border-radius-lg 0;
   }
 
   // Custom scrollbar for location block
@@ -1525,7 +1548,8 @@ p:not(:last-child) {
 .location-thing-category {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
+  position: relative;
 }
 
 .location-thing-heading {
@@ -1534,6 +1558,227 @@ p:not(:last-child) {
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: rgba(226, 232, 240, 0.8);
+}
+
+.thing-list-panel {
+  position: relative;
+}
+
+.thing-list-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.thing-list-panel__heading-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.thing-list-panel__controls {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.thing-list-filters-row,
+.npc-inventory-filter-top-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.thing-list-panel__icon-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  line-height: 0;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+
+  &:hover,
+  &:focus {
+    opacity: 0.82;
+  }
+
+  &:focus-visible {
+    outline: none;
+    transform: scale(1.05);
+  }
+}
+
+.thing-list-panel__icon-toggle-icon {
+  display: block;
+  width: 22px;
+  height: 22px;
+}
+
+.thing-list-sort-shell {
+  position: absolute;
+  right: 0;
+  width: min(320px, calc(100vw - 48px));
+  max-width: calc(100vw - 48px);
+  padding: 10px;
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  background: rgba(15, 23, 42, 0.96);
+  box-shadow: 0 18px 36px rgba(2, 6, 23, 0.6);
+  z-index: 35;
+}
+
+.thing-list-view-shell {
+  position: absolute;
+  right: 0;
+  width: min(240px, calc(100vw - 48px));
+  max-width: calc(100vw - 48px);
+  padding: 10px;
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  background: rgba(15, 23, 42, 0.96);
+  box-shadow: 0 18px 36px rgba(2, 6, 23, 0.6);
+  z-index: 35;
+}
+
+.thing-list-sort-shell[hidden],
+.thing-list-view-shell[hidden],
+.thing-list-filters-shell[hidden] {
+  display: none !important;
+}
+
+.thing-list-sort-option {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: #e2e8f0;
+  text-align: left;
+  cursor: pointer;
+  opacity: 0.68;
+  transition:
+    opacity 0.2s ease,
+    background 0.2s ease,
+    transform 0.2s ease;
+
+  &:hover,
+  &:focus-visible {
+    opacity: 0.9;
+    background: rgba(148, 163, 184, 0.12);
+    outline: none;
+  }
+
+  &.is-current {
+    opacity: 1;
+    background: rgba(148, 163, 184, 0.18);
+  }
+}
+
+.thing-list-sort-option__direction,
+.thing-list-sort-option__icon {
+  display: block;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+}
+
+.thing-list-sort-option__direction {
+  opacity: 0;
+
+  &.is-visible {
+    opacity: 1;
+  }
+}
+
+.thing-list-sort-option__label {
+  display: block;
+  min-width: 0;
+  font-weight: 500;
+}
+
+.thing-list-view-option {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: #e2e8f0;
+  text-align: left;
+  cursor: pointer;
+  opacity: 0.68;
+  transition:
+    opacity 0.2s ease,
+    background 0.2s ease,
+    transform 0.2s ease;
+
+  &:hover,
+  &:focus-visible {
+    opacity: 0.9;
+    background: rgba(148, 163, 184, 0.12);
+    outline: none;
+  }
+
+  &.is-current {
+    opacity: 1;
+    background: rgba(148, 163, 184, 0.18);
+  }
+}
+
+.thing-list-view-option__icon {
+  display: block;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+}
+
+.thing-list-view-option__label {
+  display: block;
+  min-width: 0;
+  font-weight: 500;
+}
+
+.thing-list-panel--compact {
+  z-index: 2;
+
+  .thing-list-filters-shell {
+    position: absolute;
+    top: calc(100% - 2px);
+    right: 0;
+    width: min(360px, calc(100vw - 48px));
+    max-width: calc(100vw - 48px);
+    padding: 14px;
+    border-radius: 14px;
+    border: 1px solid rgba(148, 163, 184, 0.3);
+    background: rgba(15, 23, 42, 0.96);
+    box-shadow: 0 18px 36px rgba(2, 6, 23, 0.6);
+    z-index: 35;
+  }
+}
+
+.thing-list-panel--popover-open {
+  z-index: 60;
+
+  .thing-list-filters-shell,
+  .thing-list-view-shell,
+  .thing-list-sort-shell {
+    z-index: 61;
+  }
 }
 
 .button {
@@ -1933,6 +2178,8 @@ p:not(:last-child) {
   flex-wrap: wrap;
   gap: 16px;
   justify-content: center;
+  align-content: flex-start;
+  min-height: 48px;
 }
 
 .location-thing-meta {
@@ -2234,6 +2481,12 @@ p:not(:last-child) {
   color: $white-70;
 }
 
+.thing-collection-entry.is-dragging,
+.thing-collection-card.is-dragging {
+  opacity: 0.7;
+  cursor: grabbing;
+}
+
 .inventory-scroll {
   flex: 1;
   overflow-y: auto;
@@ -2247,6 +2500,27 @@ p:not(:last-child) {
   margin-top: 8px;
   overflow: visible;
   justify-content: center;
+}
+
+.inventory-grid.thing-collection-view--table,
+.location-entity-grid.thing-collection-view--table,
+.crafting-modal__inventory-grid.thing-collection-view--table {
+  display: flex;
+  flex-direction: column;
+  flex-wrap: nowrap;
+  gap: 6px;
+  justify-content: flex-start;
+  align-content: stretch;
+}
+
+.inventory-grid.thing-collection-view--grid,
+.location-entity-grid.thing-collection-view--grid,
+.crafting-modal__inventory-grid.thing-collection-view--grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1px;
+  justify-content: flex-start;
+  align-content: flex-start;
 }
 
 .inventory-empty {
@@ -2267,6 +2541,154 @@ p:not(:last-child) {
   background: rgba(56, 189, 248, 0.15);
   color: rgba(224, 242, 254, 0.95);
   text-transform: uppercase;
+}
+
+.thing-grid-tile {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 94px;
+  min-width: 94px;
+  min-height: 94px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  border-radius: 14px;
+  transition: transform 0.15s ease, opacity 0.15s ease;
+
+  &:hover,
+  &:focus-within {
+    transform: translateY(-2px);
+  }
+}
+
+.thing-grid-tile__icon {
+  border-width: 2px;
+  border-style: solid;
+  border-color: rgba(148, 163, 184, 0.35);
+}
+
+.thing-grid-tile__icon[class*="rarity-"] {
+  border-color: currentColor;
+}
+
+.thing-grid-tile.is-equipped .thing-grid-tile__icon {
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.45);
+}
+
+.thing-grid-tile .entity-context-menu-button {
+  top: 4px;
+  right: 4px;
+}
+
+.thing-table-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  min-height: 48px;
+  padding: 4px 44px 4px 4px;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  background: rgba(15, 23, 42, 0.6);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  transition:
+    background 0.2s ease,
+    border-color 0.2s ease,
+    transform 0.15s ease;
+
+  &:hover,
+  &:focus-within {
+    background: rgba(30, 41, 59, 0.72);
+    border-color: rgba(148, 163, 184, 0.42);
+  }
+}
+
+.thing-table-row.is-equipped {
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.28);
+}
+
+.thing-table-row__icon {
+  --thing-icon-size: 40px;
+  width: 40px;
+  height: 40px;
+  min-height: 40px;
+  border-radius: 10px;
+}
+
+.thing-table-row__content {
+  min-width: 0;
+}
+
+.thing-table-row__name {
+  text-align: left;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  line-height: 1.15;
+  font-size: 0.86rem;
+}
+
+.thing-table-row__utilities {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-height: 40px;
+  margin-right: 4px;
+}
+
+.thing-action-icon-list {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.thing-action-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.45);
+  color: #f8fafc;
+  font-size: 0.92rem;
+  line-height: 1;
+}
+
+button.thing-action-icon {
+  cursor: pointer;
+  transition: transform 0.15s ease, background 0.15s ease;
+
+  &:hover,
+  &:focus-visible {
+    transform: translateY(-1px);
+    background: rgba(59, 130, 246, 0.22);
+    outline: none;
+  }
+}
+
+.thing-table-row .entity-context-menu-button {
+  top: 50%;
+  right: 8px;
+  transform: translateY(-50%);
+}
+
+.thing-table-row .entity-context-menu-button:hover,
+.thing-table-row .entity-context-menu-button:focus {
+  transform: translateY(-50%);
+}
+
+.thing-table-row .entity-context-menu {
+  top: calc(100% - 4px);
+  right: 8px;
 }
 
 .inventory-equip-toggle {
@@ -3285,7 +3707,7 @@ body.dark .thing-toggle-hint {
 .chat-wrapper {
   display: flex;
   flex: 1;
-  gap: 1.5rem;
+  gap: 0;
   align-items: stretch;
   min-height: 0;
 }
@@ -3305,7 +3727,7 @@ body.dark .thing-toggle-hint {
   padding: 18px;
   @include glass-effect();
   border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 16px;
+  border-radius: 0 0 16px 0;
   overflow: auto;
   background: linear-gradient(
     145deg,
@@ -5982,6 +6404,7 @@ body.modal-open {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
+  margin-top: 8px;
   align-content: flex-start;
   max-height: 55vh;
   overflow-y: auto;
@@ -5995,6 +6418,23 @@ body.modal-open {
     &.is-dragging {
       opacity: 0.7;
     }
+  }
+
+  &.thing-collection-view--table {
+    display: flex;
+    flex-direction: column;
+    flex-wrap: nowrap;
+    gap: 6px;
+    justify-content: flex-start;
+    align-content: stretch;
+  }
+
+  &.thing-collection-view--grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1px;
+    justify-content: flex-start;
+    align-content: flex-start;
   }
 }
 
@@ -6137,6 +6577,12 @@ body.modal-open {
   pointer-events: none;
   cursor: not-allowed;
   filter: grayscale(0.2);
+}
+
+.crafting-inventory-card.is-equipped {
+  box-shadow:
+    0 0 0 2px rgba(248, 113, 113, 0.9),
+    0 0 0 4px rgba(127, 29, 29, 0.35);
 }
 
 .npc-edit-grid {
@@ -6434,13 +6880,6 @@ body.modal-open {
   width: 100%;
 }
 
-.npc-inventory-filter-top-row {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  flex-wrap: wrap;
-}
-
 .npc-inventory-filter-slot-wrapper {
   min-width: 200px;
 }
@@ -6468,6 +6907,7 @@ body.modal-open {
 }
 
 @media (max-width: 640px) {
+  .thing-list-filters-row,
   .npc-inventory-filter-top-row {
     flex-direction: column;
     align-items: stretch;
@@ -6476,6 +6916,23 @@ body.modal-open {
   .npc-inventory-filter-slot-wrapper {
     width: 100%;
   }
+}
+
+.crafting-modal__section-header.thing-list-panel__header {
+  align-items: flex-start;
+}
+
+.crafting-modal__heading-group {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.crafting-modal__heading-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
 .npc-inventory-scroll {

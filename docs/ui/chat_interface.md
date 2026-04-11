@@ -5,7 +5,8 @@ The main UI is rendered by `views/index.njk` and powered by `public/js/chat.js` 
 ## Layout and tabs
 
 - Tab bar controls panels with ids `tab-adventure`, `tab-map`, `tab-world-map`, `tab-character`, `tab-quests`, `tab-factions`, `tab-party`, `tab-story-tools`.
-- On mobile (`max-width: 768px`), the tab bar itself (`.tab-bar`) scrolls horizontally with nowrap tab buttons so labels stay readable.
+- The tab bar now uses icon-only buttons sourced from `assets/material-icons/game-tab-icons/`, with `story_tools.svg` assigned to the Story Tools tab and accessible tab names preserved via `aria-label`/`title`.
+- On mobile (`max-width: 768px`), the tab bar itself (`.tab-bar`) still scrolls horizontally with nowrap tab buttons so the icon strip remains usable without wrapping.
 - `initTabs()` in `views/index.njk` handles tab switching and updates `window.location.hash` as `#tab-{name}`.
 - Tab activation triggers:
   - `map` -> `window.loadRegionMap()`.
@@ -32,6 +33,7 @@ The main UI is rendered by `views/index.njk` and powered by `public/js/chat.js` 
   - Exits whose destination is a vehicle render a left-side vehicle icon on the travel button, using the destination vehicle's `vehicleInfo.icon` and falling back to `🚗` when icon metadata is missing.
   - Vehicle exits that leave a vehicle context render with a left-side `⬅️` icon and an `Exit Vehicle: <destination>` label.
   - Non-vehicle exit traversal applies the exit's stored `travelTimeMinutes` to world time on success; event-driven traversal uses that mechanical exit time instead of a duplicate LLM-authored `time_passed`.
+  - Compact location item/scenery filter popovers temporarily raise their owning panel above neighboring content so overlapping titles or card text do not paint over the open popup.
   - Unexplored region exit labels are destination-driven: vehicle destinations render as `Unexplored huge vehicle: <region>`, while non-vehicle destinations render as `Unexplored Region: <region>`; if the exit itself is marked vehicle to a non-vehicle destination, the label renders as `<vehicleType> to unexplored region: <region>`.
   - When move plausibility is configured for `unexplored_locations`, exit-button travel uses the chat/event-move path for unresolved region-entry exits and for expanded destination locations whose exit payload reports `destinationVisited === false`; merely being expanded no longer makes a location count as explored.
   - `exit.isVehicle`/`exit.vehicleType` are treated as edge metadata only and must not be used to infer that the destination location/region is itself a vehicle.
@@ -40,6 +42,18 @@ The main UI is rendered by `views/index.njk` and powered by `public/js/chat.js` 
   - Dead NPC/party cards only show a corpse countdown inside the skull indicator when `corpseCountdown` is numeric; persistent corpses (`persistWhenDead`) omit the countdown entirely.
   - Items/Scenery grids + "Craft" and "New Item/Scenery" buttons.
   - Thing cards render a lower-right thumbnail count badge from persisted `thing.count`; item cards always show it, while scenery cards suppress the badge when the count is `1`.
+  - Location item/scenery sections now use the same inventory-style thing-list renderer and search/slot-filter pipeline as the player/NPC inventory modal and crafting inventory. All four shared panels now expose a shared three-control header: a view popup, a sort popup, and the icon-only filter popup. View state is tracked per panel for the current page session, so changing one panel to `Table` or `Grid` does not affect the others and survives rerenders.
+  - Shared thing-list view modes:
+    - `Classic` keeps the existing card layout.
+    - `Table` renders draggable 48px rows with the thumbnail, rarity-colored item name, and inline action icons (craft/process/salvage/harvest) plus the standard context menu.
+    - `Grid` renders compact image-only tiles with the same thumbnail size, a `2px` rarity-colored border, and a `1px` gap between tiles.
+  - Shared thing-list filters:
+    - Location item/scenery panels expose `Show all`, `Equippable only`, and `Non-equippable only`.
+    - Player/NPC inventory and crafting inventory also expose `Equipped only`.
+  - Shared thing-list sort popup:
+    - `Alphabetical`, `Level`, `Quality`, `Value`, and `Equipment Slot`.
+    - Repeated sorts are intentionally stable so the current visible order becomes the secondary order for the next sort.
+  - Narrow panels still collapse only the filter controls behind the shared icon-only filter popover toggle, while sort and view each stay in their own collapsed popups.
   - Item thing-card context menus include `Separate`, which runs the `thing-separate` prompt and replaces the source item with the returned item stack(s); an explicit empty `<items>` result is treated as a no-op rather than an error.
   - Item thing-card context menus also include `Split Stack` for stacks with `count > 1` (prompting for an exact integer split amount) and `Merge Stacks` for item cards outside equipment views; merge scans same-name/same-checksum items in the same inventory or location and folds them into the selected stack while excluding equipped items.
   - Drag/drop behavior:
@@ -54,6 +68,7 @@ The main UI is rendered by `views/index.njk` and powered by `public/js/chat.js` 
   - Prefix actions preserve raw input markers in the API payload (`?`, `\`, `@`, `@@`, `@@@`) even though optimistic local entries render marker-stripped content.
   - The prefix-help modal documents `\` as a no-context prompt that is logged, excluded from future base-context history, and run without chat tools.
 - **Sidebar** (`.chat-sidebar`):
+  - Outer panel shape keeps only the bottom-right corner rounded.
   - Player card (portrait, health, need bars, quick actions, and a top-left warning triangle when unspent skill/attribute points are present).
   - Player "View" opens `#npcViewModal` in editable mode for attributes/skills using shared allocation partials; skills can now be added/removed directly in this modal for the player view. The modal now includes a Faction section above Equipment: NPCs show a single faction, while player view lists all factions with reputation tier labels and associated tier perks. NPCs use the same allocation sections in read-only mode, and their unspent point totals are hidden.
 - **Player level-up ability draft modal** (`#playerAbilitySelectionModal`):
@@ -72,7 +87,7 @@ The main UI is rendered by `views/index.njk` and powered by `public/js/chat.js` 
   - On confirm, closes immediately and calls `/api/prompts/cancel-all` (`waitForDrain: false`) before issuing `/api/load`.
 - Player/NPC "Edit" opens `#npcEditModal`, which includes an `Aliases` textarea (one alias per line) plus `Resistances`/`Vulnerabilities` textareas and saves through `PUT /api/npcs/:id`.
   - NPC edit mode also shows per-character need-bar applicability checkboxes; the player view omits that section.
-  - Player/NPC Inventory modal keeps active inventory filters (including slot filter selection) when equip/unequip triggers an inventory re-render.
+  - Player/NPC Inventory modal keeps active inventory filters (including slot filter selection) when equip/unequip triggers an inventory re-render, and serves as the shared thing-list card/filter implementation that location item/scenery sections and the crafting inventory now reuse.
   - Party summary list.
 - **World-time chip** (`#worldTimeIndicator`):
   - Rendered in the Adventure tab's left location panel (compact sidebar style).
@@ -152,6 +167,9 @@ LLM-backed modal submits close immediately (no visible waiting state); errors su
 - `#thingEditModal` create mode (adds item/scenery via `/api/locations/:id/things`; name is optional and can be generated).
 - `#newExitModal` (creates/edits exits via `/api/locations/:id/exits`, including a travel-time field that accepts the shared duration syntax such as `1m`, `1h10m`, or `2 hours`).
 - `#craftingModal` (crafting/processing via `/api/craft`, including a no-prose submit path for craft/process, with notes placeholders that mention `<N>` roll override support).
+  - The left-side player inventory list in this modal now uses the same shared thing-list renderer as the main inventory and location panels, including per-panel `Classic`/`Table`/`Grid` views, search/slot/equipment filters, and the shared stable sort popup, with narrow panels collapsing the filter controls behind the shared icon-only filter toggle.
+  - The player-inventory section header now renders the `Player Inventory` title/count row with the crafting hint directly beneath it, while the icon-only filter toggle remains a separate control on the right.
+  - Equipped items in the crafting inventory are highlighted with a red outline and are rejected from slot assignment across drag/drop, double-click, and keyboard assignment with a `must be unequipped first` alert.
 - `#salvageIntentModal` (salvage/harvest via `/api/craft`, including `Harvest (no prose)` / `Salvage (no prose)` submits, with intent placeholders that mention `<N>` roll override support).
 
 ## Insights and attachments

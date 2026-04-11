@@ -2,7 +2,7 @@ Slash Commands Quick Guide
 
 - Lifecycle
   - `server.js` initializes `SlashCommandRegistry` (loads `slashcommands/*.js`), then `/api/slash-command` in `api.js` invokes the matching module by name/alias.
-  - `public/js/chat.js` sends `/command arg=value` or `/command arg1 arg2` to `/api/slash-command`; replies are rendered as system messages.
+  - `public/js/chat.js` sends `/command arg=value` or `/command arg1 arg2` to `/api/slash-command`; replies are rendered as system messages. The request body also carries the current websocket `clientId` so commands can ask the invoking tab to refresh sidebar/location state without broadcasting to every client.
   - Commands may also reply with a typed action. `request_file_upload` opens the shared chat upload modal and then posts the selected file text(s) to `/api/slash-command/upload`, which dispatches back into the same command module.
 
 - Command shape
@@ -20,11 +20,13 @@ Slash Commands Quick Guide
 
 - Interaction API
   - `interaction.user.id` is the caller’s userId (may be null).
+  - `interaction.clientId` is the caller’s websocket client id when available.
   - `interaction.argsText` is the raw argument text after the slash command name.
   - `interaction.getChatHistory()` returns the live server `chatHistory` array.
   - `interaction.getHistory(query, options?)` returns assistant prose-like history entries whose content matches all case-insensitive query terms; `query` may be a string or an array of strings (AND semantics for arrays). `options.startIndex` is 1-based, and `options.count` caps returned matches. Positional numeric args (`query, startIndex, count`) are also accepted.
   - `interaction.performGameSave(saveName?)` is available when the save helper is in scope.
   - `interaction.adjustWorldTimeByMinutes(minutes, { source? })` is available when the command needs to move the world clock through the shared minute-based time path; positive values use normal forward advancement, apply elapsed per-minute need/status processing, refresh current player/location panels client-side, and process due arrivals, while negative values perform a raw rewind without undoing previously processed time-based side effects.
+  - `interaction.requestClientRefresh({ locationRefreshRequested? })` lets a slash command request the invoking chat tab to run its normal player/location reload path after the command completes.
   - `interaction.backfillRegionExitTravelTimes({ region?, regionId?, force? })` is available when the command needs to prompt-fill missing exit `travelTimeMinutes` for an existing region through the shared logged AI path; `force: true` regenerates populated values and rewrites both directions of a bidirectional pair from the first prompted side.
   - `interaction.parseThingsXml(xml, options?)` is available in slash-command context for XML item/scenery parsing.
   - `interaction.thingRegistry` exposes the live server `things` map for commands that create/import `Thing` instances.
