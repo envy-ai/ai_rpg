@@ -4709,7 +4709,24 @@ body.dark .thing-toggle-hint {
 }
 
 @media (max-width: 900px) {
+  body > .container {
+    height: auto;
+    min-height: calc(100vh - 20px);
+    overflow: visible;
+  }
+
+  .main-content,
+  .tab-panels,
+  #tab-adventure,
+  .adventure-content,
+  .chat-wrapper {
+    height: auto;
+    min-height: 0;
+    overflow: visible;
+  }
+
   .adventure-content {
+    flex: none;
     flex-direction: column;
   }
 
@@ -4720,6 +4737,7 @@ body.dark .thing-toggle-hint {
   }
 
   .chat-wrapper {
+    flex: none;
     flex-direction: column;
   }
 
@@ -4727,6 +4745,7 @@ body.dark .thing-toggle-hint {
     flex: none;
     max-width: none;
     width: 100%;
+    overflow: visible;
   }
 
   .chat-party-grid .entity-card {
@@ -4740,6 +4759,10 @@ body.dark .thing-toggle-hint {
     min-width: 0;
   }
 
+  .location-block > .container {
+    overflow: visible;
+  }
+
   .chat-party-grid .entity-card {
     flex: 1 1 calc(50% - 10px);
   }
@@ -4750,7 +4773,7 @@ body.dark .thing-toggle-hint {
   }
 
   .chat-log {
-    max-height: 48vh;
+    max-height: 75vh;
   }
 }
 

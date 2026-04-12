@@ -10,6 +10,7 @@
   - The Adventure-tab location panel keeps the shared glass `.container` styling but overrides the nested `.location-block .container` shape so only the bottom-right corner remains rounded.
   - The main Adventure layout uses a flush `.chat-wrapper` with no inter-column gap.
   - The Adventure-tab `.chat-sidebar` outer panel also keeps only the bottom-right corner rounded.
+  - On narrow/mobile layouts, the Adventure stack now clears the desktop fixed-height/inner-scroll chain (`.main-content` / `.tab-panels` / `#tab-adventure` / `.adventure-content` / `.chat-wrapper`) so `.location-block > .container` and `.chat-sidebar` grow with content instead of keeping redundant inner vertical scrollbars.
   - Compact thing-list popovers now promote their owning `.thing-list-panel` with a temporary `.thing-list-panel--popover-open` stacking class so location item/scenery text cannot paint above an open filter or sort popup.
   - Compiled output: `public/css/main.css`.
 - `public/css/settings.scss`

@@ -19,6 +19,7 @@ The main UI is rendered by `views/index.njk` and powered by `public/js/chat.js` 
 
 - **Location panel** (`.location-block`):
   - Compact world-time chip at the top (`#worldTimeIndicator`) showing `h:MM AM/PM`, date label, and segment/season.
+  - On narrow/mobile layouts, the Adventure stack now drops the desktop fixed-height panel chain so the location column and sidebar size to content instead of keeping their own nested vertical scroll areas.
   - The location-name prefix icon (`#locationNameIcon`) switches from map pin (`📍`) to a vehicle icon when the current location is a vehicle or its containing region is a vehicle; it prefers `vehicleInfo.icon` and falls back to `🚗`.
   - When in a vehicle context and the vehicle is not underway, a second header line renders under the location name as `Current location: <name>` using the active vehicle exit destination.
   - When in a vehicle context and the vehicle is underway, that header block instead renders `Enroute to <destination>`, a smaller `X days, Y hours, Z minutes to arrival` countdown line (omitting zero-value units), and a black/red progress bar with the vehicle icon positioned at the current trip progress point.
@@ -76,6 +77,7 @@ The main UI is rendered by `views/index.njk` and powered by `public/js/chat.js` 
 - **Sidebar** (`.chat-sidebar`):
   - Outer panel shape keeps only the bottom-right corner rounded.
   - Player card (portrait, health, need bars, quick actions, a top-left `L.<level>` badge, and a lower-left warning triangle positioned `1em` above the health bar when unspent skill/attribute points are present).
+  - On narrow/mobile layouts, the sidebar no longer keeps a separate inner vertical scrollbar just to fill leftover Adventure-tab height.
   - Player "View" opens `#npcViewModal` in editable mode for attributes/skills using shared allocation partials; skills can now be added/removed directly in this modal for the player view. The modal now includes a Faction section above Equipment: NPCs show a single faction, while player view lists all factions with reputation tier labels and associated tier perks. NPCs use the same allocation sections in read-only mode, and their unspent point totals are hidden.
 - **Player level-up ability draft modal** (`#playerAbilitySelectionModal`):
   - Opens when the player has any underfilled level (`player_abilities_per_level`) from level 1 through current level.
