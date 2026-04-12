@@ -51,6 +51,12 @@ Loaded on the chat page:
   long lines wrap inside the message column instead of forcing horizontal overflow.
 - Item tooltip styling includes stacked tooltip cards (`.tooltip-thing-stack*`) so hovering an
   equippable item can show currently equipped compatible-slot items beneath the primary card.
+- The shared image lightbox now has an optional two-pane thing-view mode driven by
+  `.image-lightbox--details`, `.image-lightbox__media`, and `.image-lightbox__details`,
+  reusing the existing tooltip-card markup inside the right-hand pane. Desktop keeps the image
+  in a left column capped to `67vw` and vertically centers the tooltip pane without stretching it
+  full-height, while mobile switches the panes vertical and makes the overall viewer scrollable.
+  Clicking either pane dismisses the lightbox.
 - Shared theming primitives for entity cards/menus live in `public/css/main.scss`:
   `.entity-card`, `.entity-icon`, `.entity-image`, `.entity-name`,
   `.entity-context-menu-button`, `.entity-context-menu`, `.entity-context-menu-item`.

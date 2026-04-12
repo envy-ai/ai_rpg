@@ -28,6 +28,7 @@ The main UI is rendered by `views/index.njk` and powered by `public/js/chat.js` 
   - On mobile (`max-width: 768px`), item/NPC/location tooltips are constrained to `80vw` for readability.
   - Equippable item tooltips include stacked comparison cards for currently equipped compatible-slot items (using the active actor context).
   - On touch/coarse-pointer devices, tapping any entity `•••` context-menu button temporarily suppresses floating tooltips so the menu remains reachable.
+  - Clicking/tapping a thing image now opens a combined lightbox: the item image on the left and the full tooltip content on the right, reusing the same stacked compatible-equipped comparison cards shown on hover for equippable items. On wider screens the image column is capped to the left `67%` of the viewport and the tooltip pane is vertically centered without stretching to the full viewer height; if the tooltip content is too tall, that desktop tooltip pane scrolls vertically on its own. Mobile switches to a vertical layout with a scrollable viewer instead of adding a second inner tooltip scrollbar. Clicking/tapping either the image pane or the tooltip pane dismisses the viewer.
   - Exits list + "New Exit" button.
   - Exit button labels append the stored travel time in compact form, for example `North Hall (1h10m)`.
   - Exits whose destination is a vehicle render a left-side vehicle icon on the travel button, using the destination vehicle's `vehicleInfo.icon` and falling back to `🚗` when icon metadata is missing.
@@ -190,7 +191,7 @@ Chat entries can include attachments rendered as inline "insights":
 
 - `renderEntityImage({ element, entityType, entityId, imageId, ... })` sets `data-*` and delegates to `window.AIRPG.imageManager`.
 - `renderImageBadgesOverlay` adds badges for crafting/processing/harvest/salvage on item images.
-  Images can be enlarged through `public/js/lightbox.js`.
+  Thing-image clicks now route through `public/js/lightbox.js` with a sidecar tooltip/details pane, while non-thing images still use the plain image-only lightbox.
 
 ## Quest, faction, and party panels
 

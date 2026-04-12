@@ -1971,9 +1971,12 @@
     </div>
 
     <div id="imageLightbox" class="image-lightbox" hidden aria-hidden="true" tabindex="-1">
-        <div class="image-lightbox__inner" role="dialog" aria-modal="true" aria-labelledby="imageLightboxCaption">
-            <img id="imageLightboxImage" class="image-lightbox__image" alt="" src="" loading="lazy">
-            <div id="imageLightboxCaption" class="image-lightbox__caption" hidden></div>
+        <div id="imageLightboxInner" class="image-lightbox__inner" role="dialog" aria-modal="true" aria-label="Image viewer">
+            <div id="imageLightboxMedia" class="image-lightbox__media">
+                <img id="imageLightboxImage" class="image-lightbox__image" alt="" src="" loading="lazy">
+                <div id="imageLightboxCaption" class="image-lightbox__caption" hidden></div>
+            </div>
+            <div id="imageLightboxDetails" class="image-lightbox__details" hidden></div>
         </div>
     </div>
 
@@ -2410,6 +2413,7 @@
             placeholderClass = 'image-placeholder',
             placeholderMarkup = null,
             enableLightbox = true,
+            lightboxDataProvider = null,
             force = false,
             badges = null,
             countBadgeText = ''
@@ -2484,7 +2488,7 @@
                     img.dataset.lightboxImage = img.src;
                     img.dataset.lightboxAlt = altText || safeAltText || 'Image';
                     img.dataset.lightboxCaption = altText || '';
-                    bindLightboxElement(img);
+                    bindLightboxElement(img, lightboxDataProvider || undefined);
                 }
                 applyBadgesOverlay();
             };
@@ -7169,6 +7173,48 @@
                     ${comparisonCards.join('')}
                 </div>
             `.trim();
+        };
+
+        function resolveThingTooltipEquipmentOwner(options = {}) {
+            if (options && Object.prototype.hasOwnProperty.call(options, 'equipmentOwner')) {
+                return typeof options.equipmentOwner === 'function'
+                    ? options.equipmentOwner()
+                    : options.equipmentOwner;
+            }
+            return window.currentPlayerData || null;
+        }
+
+        function getThingTooltipHtml(thing, options = {}) {
+            if (!thing) {
+                return '';
+            }
+            const description = thing.description || 'No description provided.';
+            const fallbackTooltip = `<div class="tooltip-thing is-item"><div class="tooltip-thing-description">${escapeHtml(description)}</div></div>`;
+            return formatThingTooltipWithCompatibleEquipped(thing, {
+                equipmentOwner: resolveThingTooltipEquipmentOwner(options)
+            }) || fallbackTooltip;
+        }
+
+        function createThingLightboxDataProvider(thing, options = {}) {
+            if (!thing) {
+                return null;
+            }
+            return (element) => {
+                const imageElement = element instanceof HTMLImageElement
+                    ? element
+                    : element?.querySelector?.('img');
+                const src = imageElement?.currentSrc || imageElement?.src || '';
+                const alt = thing?.name || imageElement?.alt || 'Item';
+                const detailsHtml = getThingTooltipHtml(thing, options);
+                if (!src && !detailsHtml) {
+                    return null;
+                }
+                return {
+                    src,
+                    alt,
+                    detailsHtml
+                };
+            };
         };
 
         const npcEditModal = document.getElementById('npcEditModal');
@@ -14390,22 +14436,9 @@
                 return;
             }
 
-            const resolveEquipmentOwner = () => {
-                if (options && Object.prototype.hasOwnProperty.call(options, 'equipmentOwner')) {
-                    return typeof options.equipmentOwner === 'function'
-                        ? options.equipmentOwner()
-                        : options.equipmentOwner;
-                }
-                return window.currentPlayerData || null;
-            };
-
             element.addEventListener('mouseenter', (event) => {
                 if (window.floatingTooltipController && typeof window.floatingTooltipController.show === 'function') {
-                    const description = thing.description || 'No description provided.';
-                    const fallbackTooltip = `<div class="tooltip-thing is-item"><div class="tooltip-thing-description">${escapeHtml(description)}</div></div>`;
-                    const tooltipContent = formatThingTooltipWithCompatibleEquipped(thing, {
-                        equipmentOwner: resolveEquipmentOwner
-                    }) || fallbackTooltip;
+                    const tooltipContent = getThingTooltipHtml(thing, options);
                     window.floatingTooltipController.show(tooltipContent, event, { allowHTML: true });
                 }
             });
@@ -15091,6 +15124,7 @@
             const resolvedViewMode = normalizeThingListViewMode(options.viewMode);
             const slotInfo = getThingSlotInfo(thing);
             const tableConfig = normalizeThingTableConfig(options.tableConfig);
+            const thingLightboxDataProvider = createThingLightboxDataProvider(thing, options.tooltipOptions || {});
             const equipped = Boolean(thing?.isEquipped || thing?.equippedSlot);
 
             if (resolvedViewMode === 'table') {
@@ -15130,6 +15164,7 @@
                     altText: thing?.name || 'Item',
                     placeholderIcon: normalizedThingType === 'scenery' ? '🏞️' : '🎁',
                     placeholderClass: 'entity-icon-placeholder location-entity-placeholder',
+                    lightboxDataProvider: thingLightboxDataProvider,
                     badges: [],
                     countBadgeText: getThingCountBadgeText(thing)
                 });
@@ -15257,6 +15292,7 @@
                     altText: thing?.name || 'Item',
                     placeholderIcon: normalizedThingType === 'scenery' ? '🏞️' : '🎁',
                     placeholderClass: 'entity-icon-placeholder location-entity-placeholder',
+                    lightboxDataProvider: thingLightboxDataProvider,
                     badges: getThingPropertyBadges(thing),
                     countBadgeText: getThingCountBadgeText(thing)
                 });
@@ -15322,6 +15358,7 @@
                 altText: thing?.name || 'Item',
                 placeholderIcon: normalizedThingType === 'scenery' ? '🏞️' : '🎁',
                 placeholderClass: 'entity-icon-placeholder location-entity-placeholder',
+                lightboxDataProvider: thingLightboxDataProvider,
                 badges: getThingPropertyBadges(thing),
                 countBadgeText: getThingCountBadgeText(thing)
             });
@@ -16652,7 +16689,9 @@
                 altText: assignedItem.name || 'Item',
                 placeholderIcon: assignedItem.thingType === 'scenery' ? '🏞️' : '🎁',
                 placeholderClass: 'crafting-slot__item-image-placeholder',
-                enableLightbox: false,
+                lightboxDataProvider: createThingLightboxDataProvider(assignedItem, {
+                    equipmentOwner: () => window.currentPlayerData || null
+                }),
                 badges: getThingPropertyBadges(assignedItem)
             });
 
@@ -17097,6 +17136,14 @@
                         altText: entry.item.name || 'Equipped item',
                         placeholderIcon,
                         placeholderClass: 'npc-view-equipment-icon-placeholder',
+                        lightboxDataProvider: createThingLightboxDataProvider(entry.item, {
+                            equipmentOwner: () => {
+                                if (currentNpcViewId && window.currentNpcData instanceof Map && window.currentNpcData.has(currentNpcViewId)) {
+                                    return window.currentNpcData.get(currentNpcViewId) || null;
+                                }
+                                return window.currentPlayerData || null;
+                            }
+                        }),
                         badges: getThingPropertyBadges(entry.item),
                         countBadgeText: getThingCountBadgeText(entry.item)
                     });

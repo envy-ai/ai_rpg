@@ -983,6 +983,19 @@ p:not(:last-child) {
     justify-content: center;
   }
 
+  &__media {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    max-width: 100%;
+    max-height: 90vh;
+
+    &[hidden] {
+      display: none !important;
+    }
+  }
+
   &__image {
     max-width: min(100%, 100vw);
     max-height: 100vh;
@@ -1003,11 +1016,114 @@ p:not(:last-child) {
     font-size: 0.9rem;
     pointer-events: none;
   }
+
+  &__details {
+    width: min(30vw, 34rem);
+    max-width: min(30vw, 34rem);
+    max-height: 90vh;
+    overflow-y: auto;
+    padding: 20px;
+    border-radius: 16px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(12, 16, 28, 0.92);
+    box-shadow: 0 25px 60px rgba(0, 0, 0, 0.5);
+    cursor: default;
+
+    &[hidden] {
+      display: none !important;
+    }
+  }
+
+  &--details {
+    cursor: default;
+
+    .image-lightbox__inner {
+      width: min(94vw, 1500px);
+      max-width: 94vw;
+      max-height: 90vh;
+      align-items: center;
+      justify-content: flex-start;
+      gap: 20px;
+    }
+
+    .image-lightbox__media {
+      flex: 0 1 67vw;
+      width: min(67vw, 1100px);
+      max-width: 67vw;
+      max-height: 90vh;
+    }
+
+    .image-lightbox__details {
+      align-self: center;
+      max-height: 90vh;
+      overflow-y: auto;
+      overflow-x: hidden;
+      overscroll-behavior: contain;
+    }
+
+    .image-lightbox__image {
+      max-width: 100%;
+      max-height: 90vh;
+    }
+
+    .image-lightbox__caption {
+      display: none;
+    }
+  }
+
+  &--details-only {
+    .image-lightbox__inner {
+      width: min(46rem, 94vw);
+    }
+
+    .image-lightbox__details {
+      width: 100%;
+      max-width: 100%;
+    }
+  }
 }
 
 .image-lightbox-trigger {
   cursor: zoom-in;
   position: relative;
+}
+
+@media (max-width: 768px) {
+  .image-lightbox {
+    padding: 12px;
+
+    &--details {
+      .image-lightbox__inner {
+        width: min(96vw, 100%);
+        max-width: 96vw;
+        max-height: 92vh;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 14px;
+        overflow-y: auto;
+      }
+
+      .image-lightbox__media {
+        flex: 0 0 auto;
+        width: 100%;
+        max-width: 100%;
+        max-height: none;
+      }
+
+      .image-lightbox__image {
+        width: 100%;
+        max-width: 100%;
+        max-height: 52vh;
+      }
+
+      .image-lightbox__details {
+        width: 100%;
+        max-width: 100%;
+        max-height: none;
+        overflow: visible;
+      }
+    }
+  }
 }
 
 // Popup cards
