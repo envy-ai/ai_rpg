@@ -71,8 +71,8 @@ Loaded on the chat page:
   `assets/material-icons/inventory-view-icons/filter.svg`,
   `assets/material-icons/inventory-view-icons/sort.svg`,
   `assets/material-icons/inventory-view-icons/view.svg`,
-  plus the per-sort glyphs and the `cards.svg` / `table.svg` / `grid.svg` /
-  `grid_small.svg` view icons in that same folder. The repeated toggle, sort-shell,
+  plus the per-sort glyphs (including `sort_chronological.svg` and `sort_quantity.svg`)
+  and the `cards.svg` / `table.svg` / `grid.svg` / `grid_small.svg` view icons in that same folder. The repeated toggle, sort-shell,
   and view-shell markup now comes from the
   shared `views/_includes/thing-list-filter-toggle.njk` macros so all four panels stay in sync.
   Size-related tuning for shared item/scenery imagery is centralized in the
@@ -88,11 +88,17 @@ Loaded on the chat page:
   rarity-colored border on the image/icon itself. `Small Grid` now overrides those shared
   sizing tokens to `0.7x` with SCSS math so the tile, image, count badge, overlay badge bar,
   and context-menu button all shrink together without transform scaling. Table mode now uses a real
-  HTML table (`<table>/<tbody>/<tr>/<td>`) with collapsed borders; its image cell and row height use the
-  full shared base icon size, the title cell is explicitly left-aligned and vertically centered, and
-  the shared default view is `Grid`;
-  row and cell borders are styled
-  as collapsed `2px` lines with zero spacing. The shared list container also gets semantic mode classes
+  HTML table (`<table>/<tbody>/<tr>/<td>`) with collapsed borders; its image cell and row height use
+  a shared `0.5x` scale derived from the base icon size, the title cell is explicitly left-aligned and vertically centered, and its `•••` context-menu button/menu are absolutely anchored from `.thing-table-row__content` instead of the utilities cell.
+  Inventory-style tables additionally opt into `.thing-table__head` / `.thing-table__head-cell`
+  for a blank icon header plus `Title`, `Level`, `Value`, `Equip`, and `Actions`, along with
+  `.thing-table__col--level`, `.thing-table__col--value`,
+  `.thing-table__col--equipment`, plus the matching `.thing-table-row__level`,
+  `.thing-table-row__value`, `.thing-table-row__equipment`, `.thing-table-row__equipment-inner`,
+  and `.thing-table-row__equipment-label` cell styles so `Level`, `Value`, and `Equipment Slot`
+  render as dedicated columns, with the equipment cell hosting the `Equip` / `Unequip` button.
+  Location item/scenery tables intentionally keep the slimmer three-column variant. The shared default view is `Grid`;
+  row and cell borders are styled as collapsed `2px` lines with zero spacing. The shared list container also gets semantic mode classes
   for downstream styling hooks: `.view-classic-mode`, `.view-table-mode`,
   `.view-grid-mode`, `.view-grid-mode-large`, and `.view-grid-mode-small`.
   Crafting cards also add a red equipped-state outline via `.crafting-inventory-card.is-equipped`

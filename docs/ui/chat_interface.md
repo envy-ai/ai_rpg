@@ -45,14 +45,14 @@ The main UI is rendered by `views/index.njk` and powered by `public/js/chat.js` 
   - Location item/scenery sections now use the same inventory-style thing-list renderer and search/slot-filter pipeline as the player/NPC inventory modal and crafting inventory. All four shared panels now expose a shared three-control header: a view popup, a sort popup, and the icon-only filter popup. View state is tracked per panel on the current player record, so changing one panel to `Table` or `Grid` does not affect the others, survives rerenders, persists across page reloads, and is serialized into saves. The default shared panel view is `Grid` until overridden by those saved per-panel preferences.
   - Shared thing-list view modes:
     - `Classic` keeps the existing card layout.
-    - `Table` renders as a real HTML table with draggable `<tr>` rows, a full-size shared image cell, a left-aligned vertically centered rarity-colored item name cell, collapsed 2px cell borders, and inline action icons (craft/process/salvage/harvest) plus the standard context menu in the utilities cell.
+    - `Table` renders as a real HTML table with draggable `<tr>` rows, a half-height shared image cell and row height derived from the base icon size, a left-aligned vertically centered rarity-colored item name cell, collapsed 2px cell borders, inline action icons (craft/process/salvage/harvest) in the utilities cell, and the `•••` context-menu button anchored in the upper-right corner of the name cell. Player/NPC inventory and crafting tables also add a header row (blank icon header plus `Title`, `Level`, `Value`, `Equip`, and `Actions`) and the matching `Level`, `Value`, and `Equipment Slot` columns; the equipment column hosts the `Equip` / `Unequip` button, while the location item/scenery tables intentionally omit both the header row and those extra columns.
     - `Grid` renders compact image-only tiles with the same thumbnail size, a `2px` rarity-colored border on the image itself, and a `1px` gap between tiles.
     - `Small Grid` uses the same grid layout rules as `Grid`, but overrides the shared item-view size tokens to `0.7x` so the image, count badge, overlay icons, and context-menu button all shrink together.
   - Shared thing-list filters:
     - Location item/scenery panels expose `Show all`, `Equippable only`, and `Non-equippable only`.
     - Player/NPC inventory and crafting inventory also expose `Equipped only`.
   - Shared thing-list sort popup:
-    - `Alphabetical`, `Level`, `Quality`, `Value`, and `Equipment Slot`.
+    - `Alphabetical`, `Chronological` (item creation time), `Level`, `Quality`, `Stack Size`, `Value`, and `Equipment Slot`.
     - Repeated sorts are intentionally stable so the current visible order becomes the secondary order for the next sort.
   - Narrow panels still collapse only the filter controls behind the shared icon-only filter popover toggle, while sort and view each stay in their own collapsed popups.
   - View popups close immediately after a view selection, and both the view and sort popups close when the user clicks anywhere outside the popup/toggle pair.

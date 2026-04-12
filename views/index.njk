@@ -4243,8 +4243,10 @@
         const THING_LIST_SORT_DESC_ICON = '/assets/material-icons/inventory-view-icons/arrow_down.svg';
         const thingListSortDefinitionMap = new Map([
             ['alphabetical', { key: 'alphabetical', label: 'Alphabetical' }],
+            ['chronological', { key: 'chronological', label: 'Chronological' }],
             ['level', { key: 'level', label: 'Level' }],
             ['quality', { key: 'quality', label: 'Quality' }],
+            ['stack-size', { key: 'stack-size', label: 'Stack Size' }],
             ['value', { key: 'value', label: 'Value' }],
             ['equipment-slot', { key: 'equipment-slot', label: 'Equipment Slot' }]
         ]);
@@ -4515,6 +4517,21 @@
             return Number.isFinite(metadataLevel) ? metadataLevel : null;
         }
 
+        function getThingCreatedAtTimestamp(thing = {}) {
+            const rawValue = thing?.createdAt ?? thing?.metadata?.createdAt;
+            if (typeof rawValue !== 'string' || !rawValue.trim()) {
+                return null;
+            }
+            const parsed = Date.parse(rawValue);
+            return Number.isFinite(parsed) ? parsed : null;
+        }
+
+        function getThingStackSize(thing = {}) {
+            const rawCount = thing?.count ?? thing?.metadata?.count;
+            const numericCount = Number(rawCount);
+            return Number.isFinite(numericCount) ? numericCount : null;
+        }
+
         function getThingNumericValue(thing = {}) {
             const candidates = [thing?.value, thing?.metadata?.value];
             for (const candidate of candidates) {
@@ -4588,6 +4605,13 @@
             switch (normalizedKey) {
                 case 'alphabetical':
                     return compareThingListTextValues(leftThing?.name, rightThing?.name, direction, { emptyLast: true });
+                case 'chronological':
+                    return compareThingListNumericValues(
+                        getThingCreatedAtTimestamp(leftThing),
+                        getThingCreatedAtTimestamp(rightThing),
+                        direction,
+                        { missingLast: true }
+                    );
                 case 'level':
                     return compareThingListNumericValues(
                         getThingNumericLevel(leftThing),
@@ -4599,6 +4623,13 @@
                     return compareThingListNumericValues(
                         getThingQualitySortRank(leftThing),
                         getThingQualitySortRank(rightThing),
+                        direction,
+                        { missingLast: true }
+                    );
+                case 'stack-size':
+                    return compareThingListNumericValues(
+                        getThingStackSize(leftThing),
+                        getThingStackSize(rightThing),
                         direction,
                         { missingLast: true }
                     );
@@ -14785,6 +14816,48 @@
             };
         }
 
+        function normalizeThingTableConfig(config = null) {
+            return {
+                showHeaders: Boolean(config?.showHeaders),
+                showLevel: Boolean(config?.showLevel),
+                showValue: Boolean(config?.showValue),
+                showEquipment: Boolean(config?.showEquipment)
+            };
+        }
+
+        function getThingTableLevelText(thing = {}) {
+            const numericLevel = Number(thing?.level);
+            if (Number.isFinite(numericLevel)) {
+                return String(Math.round(numericLevel));
+            }
+            return '—';
+        }
+
+        function getThingTableValueText(thing = {}) {
+            const rawValue = thing?.value ?? thing?.metadata?.value;
+            if (rawValue === undefined || rawValue === null || rawValue === '') {
+                return '—';
+            }
+            if (Array.isArray(rawValue)) {
+                return rawValue.map(entry => String(entry)).join(', ');
+            }
+            if (rawValue && typeof rawValue === 'object') {
+                try {
+                    return JSON.stringify(rawValue);
+                } catch (_) {
+                    return String(rawValue);
+                }
+            }
+            return String(rawValue);
+        }
+
+        function getThingTableEquipmentSlotText(thing = {}, slotInfo = getThingSlotInfo(thing)) {
+            if (!slotInfo?.canModifyEquipment) {
+                return 'Not equippable';
+            }
+            return slotInfo.equippedSlot || slotInfo.slotLabel || slotInfo.rawSlot || 'Equippable';
+        }
+
         function syncThingSlotFilterOptions(selectEl, items, { wrapper = null, allLabel = 'All slots' } = {}) {
             if (!selectEl) {
                 if (wrapper) {
@@ -15017,6 +15090,7 @@
                 : 'item';
             const resolvedViewMode = normalizeThingListViewMode(options.viewMode);
             const slotInfo = getThingSlotInfo(thing);
+            const tableConfig = normalizeThingTableConfig(options.tableConfig);
             const equipped = Boolean(thing?.isEquipped || thing?.equippedSlot);
 
             if (resolvedViewMode === 'table') {
@@ -15072,6 +15146,40 @@
                 applyRarityClass(name, thing?.rarity);
                 content.appendChild(name);
 
+                const detailCells = [];
+                let equipmentControlsHost = null;
+
+                if (tableConfig.showLevel) {
+                    const levelCell = document.createElement('td');
+                    levelCell.className = 'thing-table-row__level';
+                    levelCell.textContent = getThingTableLevelText(thing);
+                    detailCells.push(levelCell);
+                }
+
+                if (tableConfig.showValue) {
+                    const valueCell = document.createElement('td');
+                    valueCell.className = 'thing-table-row__value';
+                    valueCell.textContent = getThingTableValueText(thing);
+                    detailCells.push(valueCell);
+                }
+
+                if (tableConfig.showEquipment) {
+                    const equipmentCell = document.createElement('td');
+                    equipmentCell.className = 'thing-table-row__equipment';
+
+                    const equipmentInner = document.createElement('div');
+                    equipmentInner.className = 'thing-table-row__equipment-inner';
+
+                    const equipmentLabel = document.createElement('div');
+                    equipmentLabel.className = 'thing-table-row__equipment-label';
+                    equipmentLabel.textContent = getThingTableEquipmentSlotText(thing, slotInfo);
+                    equipmentInner.appendChild(equipmentLabel);
+                    equipmentCell.appendChild(equipmentInner);
+
+                    detailCells.push(equipmentCell);
+                    equipmentControlsHost = equipmentInner;
+                }
+
                 const utilities = document.createElement('td');
                 utilities.className = 'thing-table-row__utilities';
                 const utilitiesInner = document.createElement('div');
@@ -15084,6 +15192,7 @@
 
                 row.appendChild(iconCell);
                 row.appendChild(content);
+                detailCells.forEach(cell => row.appendChild(cell));
                 row.appendChild(utilities);
 
                 if (typeof options.decorateCard === 'function') {
@@ -15094,6 +15203,7 @@
                         thing,
                         slotInfo,
                         controlsHost: utilitiesInner,
+                        equipmentControlsHost,
                         viewMode: resolvedViewMode
                     });
                 }
@@ -15101,7 +15211,7 @@
                 if (options.contextMenuOptions) {
                     registerThingContextMenu(row, thing, {
                         ...options.contextMenuOptions,
-                        menuHost: utilities
+                        menuHost: content
                     });
                 }
 
@@ -15109,7 +15219,7 @@
                     bindThingTooltip(row, thing, options.tooltipOptions || {});
                 }
 
-                return { card: row, icon, name, slotInfo, controlsHost: utilitiesInner };
+                return { card: row, icon, name, slotInfo, controlsHost: utilitiesInner, equipmentControlsHost };
             }
 
             if (resolvedViewMode === 'grid' || resolvedViewMode === 'small-grid') {
@@ -15277,6 +15387,7 @@
             pluralLabel = 'items',
             enableEquipmentFilters = false,
             keepGridVisibleWhenEmpty = false,
+            tableConfig = null,
             buildCard
         } = {}) {
             if (!grid) {
@@ -15286,6 +15397,7 @@
             const safeItems = Array.isArray(items) ? items : [];
             syncThingListViewOptions(viewShell, panelKey);
             const viewMode = getThingListViewState(panelKey);
+            const normalizedTableConfig = normalizeThingTableConfig(tableConfig);
             syncThingListSortOptions(sortShell, panelKey);
             const sortedItems = applyThingCollectionSort(safeItems, { panelKey });
             syncThingSlotFilterOptions(slotFilter, sortedItems, { wrapper: slotFilterWrapper });
@@ -15358,12 +15470,79 @@
                 iconCol.className = 'thing-table__col thing-table__col--icon';
                 const nameCol = document.createElement('col');
                 nameCol.className = 'thing-table__col thing-table__col--name';
+                const levelCol = document.createElement('col');
+                levelCol.className = 'thing-table__col thing-table__col--level';
+                const valueCol = document.createElement('col');
+                valueCol.className = 'thing-table__col thing-table__col--value';
+                const equipmentCol = document.createElement('col');
+                equipmentCol.className = 'thing-table__col thing-table__col--equipment';
                 const utilitiesCol = document.createElement('col');
                 utilitiesCol.className = 'thing-table__col thing-table__col--utilities';
                 colgroup.appendChild(iconCol);
                 colgroup.appendChild(nameCol);
+                if (normalizedTableConfig.showLevel) {
+                    colgroup.appendChild(levelCol);
+                }
+                if (normalizedTableConfig.showValue) {
+                    colgroup.appendChild(valueCol);
+                }
+                if (normalizedTableConfig.showEquipment) {
+                    colgroup.appendChild(equipmentCol);
+                }
                 colgroup.appendChild(utilitiesCol);
                 table.appendChild(colgroup);
+
+                if (normalizedTableConfig.showHeaders) {
+                    const thead = document.createElement('thead');
+                    thead.className = 'thing-table__head';
+                    const headerRow = document.createElement('tr');
+                    headerRow.className = 'thing-table__header-row';
+
+                    const iconHeader = document.createElement('th');
+                    iconHeader.className = 'thing-table__head-cell thing-table__head-cell--icon';
+                    iconHeader.scope = 'col';
+                    iconHeader.setAttribute('aria-hidden', 'true');
+                    headerRow.appendChild(iconHeader);
+
+                    const nameHeader = document.createElement('th');
+                    nameHeader.className = 'thing-table__head-cell thing-table__head-cell--name';
+                    nameHeader.scope = 'col';
+                    nameHeader.textContent = 'Title';
+                    headerRow.appendChild(nameHeader);
+
+                    if (normalizedTableConfig.showLevel) {
+                        const levelHeader = document.createElement('th');
+                        levelHeader.className = 'thing-table__head-cell thing-table__head-cell--level';
+                        levelHeader.scope = 'col';
+                        levelHeader.textContent = 'Level';
+                        headerRow.appendChild(levelHeader);
+                    }
+
+                    if (normalizedTableConfig.showValue) {
+                        const valueHeader = document.createElement('th');
+                        valueHeader.className = 'thing-table__head-cell thing-table__head-cell--value';
+                        valueHeader.scope = 'col';
+                        valueHeader.textContent = 'Value';
+                        headerRow.appendChild(valueHeader);
+                    }
+
+                    if (normalizedTableConfig.showEquipment) {
+                        const equipmentHeader = document.createElement('th');
+                        equipmentHeader.className = 'thing-table__head-cell thing-table__head-cell--equipment';
+                        equipmentHeader.scope = 'col';
+                        equipmentHeader.textContent = 'Equip';
+                        headerRow.appendChild(equipmentHeader);
+                    }
+
+                    const utilitiesHeader = document.createElement('th');
+                    utilitiesHeader.className = 'thing-table__head-cell thing-table__head-cell--utilities';
+                    utilitiesHeader.scope = 'col';
+                    utilitiesHeader.textContent = 'Actions';
+                    headerRow.appendChild(utilitiesHeader);
+
+                    thead.appendChild(headerRow);
+                    table.appendChild(thead);
+                }
 
                 const tbody = document.createElement('tbody');
                 tbody.className = 'thing-table__body';
@@ -15374,8 +15553,8 @@
 
             filteredItems.forEach(item => {
                 const built = typeof buildCard === 'function'
-                    ? buildCard(item, { viewMode })
-                    : buildThingCollectionEntry(item, { viewMode });
+                    ? buildCard(item, { viewMode, tableConfig: normalizedTableConfig })
+                    : buildThingCollectionEntry(item, { viewMode, tableConfig: normalizedTableConfig });
                 if (built?.card) {
                     appendTarget.appendChild(built.card);
                 }
@@ -15415,14 +15594,73 @@
                     throw new Error(result?.error || `Request failed with status ${response.status}`);
                 }
 
-                const updatedInventory = Array.isArray(result.npc?.inventory) ? result.npc.inventory : [];
-                currentNpcInventory = updatedInventory;
-                renderNpcInventory(updatedInventory);
+                const updatedCharacter = result.npc || null;
+                const updatedInventory = Array.isArray(updatedCharacter?.inventory) ? updatedCharacter.inventory : [];
+
+                if (updatedCharacter?.id && window.currentNpcData instanceof Map) {
+                    window.currentNpcData.set(updatedCharacter.id, cloneActorRecord(updatedCharacter) || { ...updatedCharacter });
+                }
+
+                if (updatedCharacter?.id && window.currentPlayerData?.id === updatedCharacter.id) {
+                    window.currentPlayerData = cloneActorRecord(updatedCharacter) || { ...updatedCharacter };
+                    try {
+                        updateChatPlayerPanel(window.currentPlayerData);
+                    } catch (_) {}
+                }
+
+                if (updatedCharacter?.id && currentNpcInventoryNpcId === updatedCharacter.id) {
+                    currentNpcInventory = updatedInventory;
+                    renderNpcInventory(updatedInventory);
+                }
+
+                if (updatedCharacter?.id && currentNpcViewId === updatedCharacter.id && typeof showNpcViewModal === 'function') {
+                    showNpcViewModal(updatedCharacter);
+                }
+
+                if (updatedCharacter?.id && craftingIsOpen && window.currentPlayerData?.id === updatedCharacter.id) {
+                    craftingInventoryAllItems = updatedInventory;
+                    renderCraftingInventory(updatedInventory);
+                }
+
                 window.refreshParty?.();
             } catch (error) {
                 console.warn('Failed to update NPC equipment:', error);
                 alert(`Failed to update equipment: ${error.message || error}`);
             }
+        }
+
+        function appendThingEquipToggle({
+            host = null,
+            thing = null,
+            slotInfo = null,
+            actorId = null,
+            activeViewMode = 'classic'
+        } = {}) {
+            if (!(host instanceof HTMLElement) || !thing?.id || !actorId || !slotInfo?.canModifyEquipment) {
+                return null;
+            }
+
+            const equipped = Boolean(thing?.isEquipped || thing?.equippedSlot);
+            const equipToggle = document.createElement('button');
+            equipToggle.type = 'button';
+            equipToggle.className = 'inventory-equip-toggle';
+            if (activeViewMode === 'table') {
+                equipToggle.classList.add('small');
+            }
+            equipToggle.textContent = equipped ? 'Unequip' : 'Equip';
+            equipToggle.addEventListener('click', (event) => {
+                event.stopPropagation();
+                event.preventDefault();
+                equipToggle.disabled = true;
+                setNpcItemEquipped(actorId, thing, !equipped, {
+                    slotName: slotInfo.equippedSlot || null,
+                    slotType: slotInfo.slotTypeValueRaw || null
+                }).finally(() => {
+                    equipToggle.disabled = false;
+                });
+            });
+            host.appendChild(equipToggle);
+            return equipToggle;
         }
 
         function renderNpcInventory(items = []) {
@@ -15451,8 +15689,15 @@
                 singularLabel: 'item',
                 pluralLabel: 'items',
                 enableEquipmentFilters: true,
-                buildCard: (item, { viewMode } = {}) => buildThingCollectionEntry(item, {
+                tableConfig: {
+                    showHeaders: true,
+                    showLevel: true,
+                    showValue: true,
+                    showEquipment: true
+                },
+                buildCard: (item, { viewMode, tableConfig } = {}) => buildThingCollectionEntry(item, {
                     viewMode,
+                    tableConfig,
                     contextMenuOptions: { context: 'npc-inventory', npcId: currentNpcInventoryNpcId },
                     tooltipOptions: {
                         equipmentOwner: () => {
@@ -15470,30 +15715,17 @@
                             return window.currentPlayerData || null;
                         }
                     },
-                    decorateCard: ({ card, thing, slotInfo, controlsHost, viewMode: activeViewMode }) => {
-                        const equipped = Boolean(thing?.isEquipped || thing?.equippedSlot);
-                        if (!slotInfo.canModifyEquipment || activeViewMode === 'grid') {
+                    decorateCard: ({ card, thing, slotInfo, controlsHost, equipmentControlsHost, viewMode: activeViewMode }) => {
+                        if (activeViewMode === 'grid' || activeViewMode === 'small-grid') {
                             return;
                         }
-                        const equipToggle = document.createElement('button');
-                        equipToggle.type = 'button';
-                        equipToggle.className = 'inventory-equip-toggle';
-                        equipToggle.textContent = equipped ? 'Unequip' : 'Equip';
-                        equipToggle.addEventListener('click', (event) => {
-                            event.stopPropagation();
-                            event.preventDefault();
-                            if (!currentNpcInventoryNpcId) {
-                                return;
-                            }
-                            equipToggle.disabled = true;
-                            setNpcItemEquipped(currentNpcInventoryNpcId, thing, !equipped, {
-                                slotName: slotInfo.equippedSlot || null,
-                                slotType: slotInfo.slotTypeValueRaw || null
-                            }).finally(() => {
-                                equipToggle.disabled = false;
-                            });
+                        appendThingEquipToggle({
+                            host: (activeViewMode === 'table' && equipmentControlsHost) ? equipmentControlsHost : (controlsHost || card),
+                            thing,
+                            slotInfo,
+                            actorId: currentNpcInventoryNpcId,
+                            activeViewMode
                         });
-                        (controlsHost || card).appendChild(equipToggle);
                     }
                 })
             });
@@ -16288,16 +16520,23 @@
                 singularLabel: 'item',
                 pluralLabel: 'items',
                 enableEquipmentFilters: true,
-                buildCard: (item, { viewMode } = {}) => {
+                tableConfig: {
+                    showHeaders: true,
+                    showLevel: true,
+                    showValue: true,
+                    showEquipment: true
+                },
+                buildCard: (item, { viewMode, tableConfig } = {}) => {
                     const clone = cloneThingRecord(item) || { ...item };
                     if (clone.id) {
                         craftingInventoryLookup.set(clone.id, clone);
                     }
                     const built = buildThingCollectionEntry(clone, {
                         viewMode,
+                        tableConfig,
                         extraClasses: ['crafting-inventory-card'],
                         focusable: true,
-                        decorateCard: ({ card, icon, thing }) => {
+                        decorateCard: ({ card, icon, thing, slotInfo, equipmentControlsHost, viewMode: activeViewMode }) => {
                             if (!thing?.id) {
                                 return;
                             }
@@ -16343,6 +16582,18 @@
                                     iconClickHandler(event);
                                 }
                             });
+
+                            if (activeViewMode === 'table') {
+                                appendThingEquipToggle({
+                                    host: equipmentControlsHost,
+                                    thing,
+                                    slotInfo,
+                                    actorId: typeof window.currentPlayerData?.id === 'string'
+                                        ? window.currentPlayerData.id
+                                        : null,
+                                    activeViewMode
+                                });
+                            }
                         }
                     });
                     return built;

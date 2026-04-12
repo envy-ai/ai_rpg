@@ -45,8 +45,10 @@
 {% macro thingListSortShell(id, ariaLabel) %}
 <div class="thing-list-sort-shell" id="{{ id }}" hidden aria-label="{{ ariaLabel }}">
     {{ thingListSortOption("alphabetical", "/assets/material-icons/inventory-view-icons/sort_alpha.svg", "Alphabetical") }}
+    {{ thingListSortOption("chronological", "/assets/material-icons/inventory-view-icons/sort_chronological.svg", "Chronological") }}
     {{ thingListSortOption("level", "/assets/material-icons/inventory-view-icons/sort_level.svg", "Level") }}
     {{ thingListSortOption("quality", "/assets/material-icons/inventory-view-icons/sort_quality.svg", "Quality") }}
+    {{ thingListSortOption("stack-size", "/assets/material-icons/inventory-view-icons/sort_quantity.svg", "Stack Size") }}
     {{ thingListSortOption("value", "/assets/material-icons/inventory-view-icons/sort_value.svg", "Value") }}
     {{ thingListSortOption("equipment-slot", "/assets/material-icons/inventory-view-icons/sort_equpment_slot.svg", "Equipment Slot") }}
 </div>
