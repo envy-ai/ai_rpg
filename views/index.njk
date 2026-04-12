@@ -276,6 +276,7 @@
                                     <h3 class="chat-sidebar-heading" id="chatPlayerName">Player</h3>
                                     <div class="chat-player-card" id="chatPlayerCard">
                                         <div class="chat-player-portrait" id="chatPlayerPortrait">
+                                            <div class="character-level-badge chat-player-level-badge" id="chatPlayerLevelBadge" aria-hidden="true">L.?</div>
                                             <div class="chat-player-points-indicator" id="chatPlayerPointsIndicator" hidden aria-hidden="true">
                                                 <span class="chat-player-points-indicator-mark" aria-hidden="true">!</span>
                                             </div>
@@ -299,10 +300,8 @@
                                         </div>
                                         <div class="chat-player-details">
                                             <div class="chat-player-meta">
-                                                <span class="chat-player-level" id="chatPlayerLevel">Level ?</span>
                                                 <span class="chat-player-archetype" id="chatPlayerArchetype">Class · Race</span>
                                             </div>
-                                            <div class="chat-player-health" id="chatPlayerHealth">HP: ? / ?</div>
                                             <div class="chat-player-health" id="chatPlayerExperience">Exp: ? / 100</div>
                                             <div class="chat-player-health" id="chatPlayerCurrency">Coins: ?</div>
                                             <p class="chat-player-description" id="chatPlayerDescription">No description available.</p>
@@ -1910,66 +1909,6 @@
         </div>
     </div>
 
-    <div id="summonNpcModal" class="modal summon-modal" role="dialog" aria-modal="true" aria-hidden="true" hidden>
-        <div class="modal__dialog">
-            <header class="modal__header">
-                <h2 id="summonNpcModalTitle">Summon NPC</h2>
-                <button type="button" class="modal__close" id="summonNpcCloseBtn" aria-label="Close summon NPC dialog">
-                    <span aria-hidden="true">X</span>
-                </button>
-            </header>
-            <form id="summonNpcForm" class="modal__body location-edit-form summon-modal-form" novalidate>
-                <div class="location-edit-field">
-                    <label for="summonNpcSearch">Search NPCs</label>
-                    <input id="summonNpcSearch" type="search" placeholder="Type to filter by name or location" autocomplete="off" disabled>
-                </div>
-                <div class="location-edit-field">
-                    <label for="summonNpcSelect">Select NPC</label>
-                    <select id="summonNpcSelect" name="npcId" required disabled>
-                        <option value="" disabled selected hidden>Select an NPC</option>
-                    </select>
-                </div>
-                <footer class="location-edit-footer">
-                    <div class="location-edit-status" id="summonNpcStatus" role="status" aria-live="polite"></div>
-                    <div class="location-edit-actions">
-                        <button type="button" class="location-edit-cancel" id="summonNpcCancelBtn">Cancel</button>
-                        <button type="submit" class="location-edit-save" id="summonNpcConfirmBtn" disabled>Summon</button>
-                    </div>
-                </footer>
-            </form>
-        </div>
-    </div>
-
-    <div id="summonThingModal" class="modal summon-modal" role="dialog" aria-modal="true" aria-hidden="true" hidden>
-        <div class="modal__dialog">
-            <header class="modal__header">
-                <h2 id="summonThingModalTitle">Summon Item or Scenery</h2>
-                <button type="button" class="modal__close" id="summonThingCloseBtn" aria-label="Close summon item dialog">
-                    <span aria-hidden="true">X</span>
-                </button>
-            </header>
-            <form id="summonThingForm" class="modal__body location-edit-form summon-modal-form" novalidate>
-                <div class="location-edit-field">
-                    <label for="summonThingSearch">Search Items or Scenery</label>
-                    <input id="summonThingSearch" type="search" placeholder="Type to filter by name, type, or origin" autocomplete="off" disabled>
-                </div>
-                <div class="location-edit-field">
-                    <label for="summonThingSelect">Select Item or Scenery</label>
-                    <select id="summonThingSelect" name="thingId" required disabled>
-                        <option value="" disabled selected hidden>Select an item</option>
-                    </select>
-                </div>
-                <footer class="location-edit-footer">
-                    <div class="location-edit-status" id="summonThingStatus" role="status" aria-live="polite"></div>
-                    <div class="location-edit-actions">
-                        <button type="button" class="location-edit-cancel" id="summonThingCancelBtn">Cancel</button>
-                        <button type="submit" class="location-edit-save" id="summonThingConfirmBtn" disabled>Summon</button>
-                    </div>
-                </footer>
-            </form>
-        </div>
-    </div>
-
     <div id="imageLightbox" class="image-lightbox" hidden aria-hidden="true" tabindex="-1">
         <div id="imageLightboxInner" class="image-lightbox__inner" role="dialog" aria-modal="true" aria-label="Image viewer">
             <div id="imageLightboxMedia" class="image-lightbox__media">
@@ -2655,11 +2594,34 @@
             bar.className = ['health-bar', additionalClassNames].filter(Boolean).join(' ');
             bar.setAttribute('aria-hidden', 'true');
 
+            const readout = document.createElement('div');
+            readout.className = 'health-bar-readout';
+            readout.setAttribute('aria-hidden', 'true');
+            bar.appendChild(readout);
+
             const fill = document.createElement('div');
             fill.className = 'health-bar-fill';
             bar.appendChild(fill);
 
-            return { bar, fill };
+            return { bar, fill, readout };
+        }
+
+        function createCharacterLevelBadge(additionalClassNames = '') {
+            const badge = document.createElement('div');
+            badge.className = ['character-level-badge', additionalClassNames].filter(Boolean).join(' ');
+            badge.setAttribute('aria-hidden', 'true');
+            badge.textContent = 'L.?';
+            return badge;
+        }
+
+        function updateCharacterLevelBadge(badge, levelValue) {
+            if (!(badge instanceof HTMLElement)) {
+                return;
+            }
+            const numericLevel = Number(levelValue);
+            badge.textContent = Number.isFinite(numericLevel)
+                ? `L.${Math.trunc(numericLevel)}`
+                : 'L.?';
         }
 
         function applyNpcDeathStyling(card, portrait, npc) {
@@ -2767,6 +2729,8 @@
                 return;
             }
 
+            const readoutElement = barElement.querySelector('.health-bar-readout');
+
             if (!barElement.hasAttribute('role')) {
                 barElement.setAttribute('role', 'progressbar');
                 barElement.setAttribute('aria-valuemin', '0');
@@ -2786,6 +2750,10 @@
                 barElement.removeAttribute('aria-valuenow');
                 barElement.removeAttribute('aria-valuemax');
                 barElement.removeAttribute('title');
+                if (readoutElement) {
+                    readoutElement.textContent = '';
+                    readoutElement.setAttribute('aria-hidden', 'true');
+                }
                 return;
             }
 
@@ -2797,6 +2765,10 @@
             barElement.setAttribute('aria-valuenow', String(current));
             barElement.setAttribute('aria-valuemax', String(max || Math.max(current, 1)));
             barElement.setAttribute('title', max ? `Health: ${current} / ${max}` : `Health: ${current}`);
+            if (readoutElement) {
+                readoutElement.textContent = `${current}/${max ?? '?'}`;
+                readoutElement.setAttribute('aria-hidden', 'false');
+            }
         }
 
         function renderNeedBars(container, bars = [], options = {}) {
@@ -3107,6 +3079,7 @@
         const chatSidebarElements = {
             card: document.getElementById('chatPlayerCard'),
             portrait: document.getElementById('chatPlayerPortrait'),
+            levelBadge: document.getElementById('chatPlayerLevelBadge'),
             pointsIndicator: document.getElementById('chatPlayerPointsIndicator'),
             portraitImage: document.getElementById('chatPlayerPortraitImage'),
             healthBar: document.getElementById('chatPlayerHealthBar'),
@@ -3115,9 +3088,7 @@
             viewButton: document.getElementById('chatPlayerViewButton'),
             inventoryButton: document.getElementById('chatPlayerInventoryButton'),
             name: document.getElementById('chatPlayerName'),
-            level: document.getElementById('chatPlayerLevel'),
             archetype: document.getElementById('chatPlayerArchetype'),
-            health: document.getElementById('chatPlayerHealth'),
             experience: document.getElementById('chatPlayerExperience'),
             currency: document.getElementById('chatPlayerCurrency'),
             description: document.getElementById('chatPlayerDescription'),
@@ -3776,10 +3747,7 @@
                 setRenderedName(chatSidebarElements.name, name, 'Unnamed Adventurer');
             }
 
-            const levelLabel = Number.isFinite(data?.level) ? `Level ${data.level}` : 'Level ?';
-            if (chatSidebarElements.level) {
-                chatSidebarElements.level.textContent = levelLabel;
-            }
+            updateCharacterLevelBadge(chatSidebarElements.levelBadge, data?.level);
 
             const archetypeParts = [];
             if (data?.class) {
@@ -3791,12 +3759,6 @@
             const archetypeLabel = archetypeParts.length ? archetypeParts.join(' · ') : 'Unknown origin';
             if (chatSidebarElements.archetype) {
                 chatSidebarElements.archetype.textContent = archetypeLabel;
-            }
-
-            const healthCurrent = Number.isFinite(data?.health) ? data.health : '?';
-            const healthMaximum = Number.isFinite(data?.maxHealth) ? data.maxHealth : '?';
-            if (chatSidebarElements.health) {
-                chatSidebarElements.health.textContent = `HP: ${healthCurrent} / ${healthMaximum}`;
             }
 
             const experienceValue = Number.isFinite(data?.experience) ? data.experience : '?';
@@ -3944,6 +3906,9 @@
                 portraitImage.className = 'entity-image location-entity-image';
                 portrait.appendChild(portraitImage);
 
+                const levelBadge = createCharacterLevelBadge();
+                portrait.appendChild(levelBadge);
+
                 const { bar: npcHealthBar, fill: npcHealthFill } = createHealthBar('npc-health-bar');
                 npcHealthFill.classList.add('npc-health-bar-fill');
                 portrait.appendChild(npcHealthBar);
@@ -3970,6 +3935,7 @@
                     }
                 }
 
+                updateCharacterLevelBadge(levelBadge, member?.level);
                 updateHealthBar(npcHealthBar, npcHealthFill, member?.health, member?.maxHealth);
 
                 renderNeedBars(
@@ -5729,165 +5695,61 @@
                 return;
             }
 
-            const modal = document.createElement('div');
-            modal.className = 'npc-selection-modal';
+            showSearchSelectionModal({
+                title: npcId ? 'Teleport Character' : 'Teleport Item',
+                filterPlaceholder: 'Filter locations',
+                filterAriaLabel: 'Filter locations by name',
+                emptyMessage: 'No named locations are currently available to teleport to.',
+                noMatchesMessage: 'No locations match that search.',
+                options: options.map(entry => ({
+                    id: entry.id,
+                    label: entry.label,
+                    searchText: entry.normalizedLabel || entry.label
+                })),
+                onSelect: async (entry, { triggerButton, setStatus }) => {
+                    let overlayVisible = false;
+                    setStatus('Teleporting...', null);
+                    try {
+                        showLocationOverlay('Teleporting...');
+                        overlayVisible = true;
+                    } catch (_) {
+                        // Ignore overlay errors
+                    }
 
-            const backdrop = document.createElement('div');
-            backdrop.className = 'npc-selection-backdrop';
+                    try {
+                        if (npcId) {
+                            const npcDataCache = window.currentNpcData instanceof Map ? window.currentNpcData : null;
+                            const resolvedNpc = npc
+                                || (npcDataCache ? (npcDataCache.get(npcId) || null) : null)
+                                || { id: npcId };
 
-            const dialog = document.createElement('div');
-            dialog.className = 'npc-selection-dialog';
+                            await teleportNpcToLocation(resolvedNpc, entry.id, {
+                                card,
+                                originLocationId: locationId || (window.lastRenderedLocation?.id || null)
+                            });
+                            return;
+                        }
 
-            const header = document.createElement('div');
-            header.className = 'npc-selection-header';
-            const title = document.createElement('h2');
-            title.textContent = npcId ? 'Teleport Character' : 'Teleport Item';
-            header.appendChild(title);
-
-            const closeBtn = document.createElement('button');
-            closeBtn.type = 'button';
-            closeBtn.className = 'npc-selection-close';
-            closeBtn.textContent = '🗙';
-            closeBtn.setAttribute('aria-label', 'Close');
-            header.appendChild(closeBtn);
-
-            const body = document.createElement('div');
-            body.className = 'npc-selection-body';
-
-            const filterWrapper = document.createElement('div');
-            filterWrapper.className = 'npc-selection-filter';
-
-            const filterInput = document.createElement('input');
-            filterInput.type = 'search';
-            filterInput.className = 'npc-selection-filter-input';
-            filterInput.placeholder = 'Filter locations';
-            filterInput.setAttribute('aria-label', 'Filter locations by name');
-            filterWrapper.appendChild(filterInput);
-            body.appendChild(filterWrapper);
-
-            const list = document.createElement('ul');
-            list.className = 'npc-selection-list';
-            body.appendChild(list);
-
-            const decoratedOptions = options.map(entry => ({
-                id: entry.id,
-                label: entry.label,
-                normalizedLabel: entry.normalizedLabel || entry.label.toLowerCase()
-            }));
-
-            const renderTeleportOptions = (filterValue = '') => {
-                const normalizedFilter = filterValue.trim().toLowerCase();
-                list.textContent = '';
-
-                const filteredEntries = normalizedFilter
-                    ? decoratedOptions.filter(entry => entry.normalizedLabel.includes(normalizedFilter))
-                    : decoratedOptions;
-
-                filteredEntries.forEach(entry => {
-                    const button = document.createElement('button');
-                    button.type = 'button';
-                    button.className = 'npc-selection-item';
-                    button.textContent = entry.label;
-                    button.dataset.locationId = entry.id;
-
-                    const li = document.createElement('li');
-                    li.appendChild(button);
-                    list.appendChild(li);
-                });
-            };
-
-            renderTeleportOptions();
-
-            filterInput.addEventListener('input', () => {
-                renderTeleportOptions(filterInput.value);
-            });
-
-            const footer = document.createElement('div');
-            footer.className = 'npc-selection-footer';
-            const cancelBtn = document.createElement('button');
-            cancelBtn.type = 'button';
-            cancelBtn.className = 'npc-selection-cancel';
-            cancelBtn.textContent = 'Cancel';
-            footer.appendChild(cancelBtn);
-
-            dialog.appendChild(header);
-            dialog.appendChild(body);
-            dialog.appendChild(footer);
-            modal.appendChild(backdrop);
-            modal.appendChild(dialog);
-            document.body.appendChild(modal);
-            document.body.classList.add('modal-open');
-
-            const cleanup = () => {
-                document.body.classList.remove('modal-open');
-                modal.remove();
-            };
-
-            let isProcessing = false;
-
-            const handleSelection = async (targetLocationId, triggerButton) => {
-                if (!targetLocationId || isProcessing) {
-                    return;
-                }
-                isProcessing = true;
-                if (triggerButton) {
-                    triggerButton.disabled = true;
-                }
-
-                let overlayVisible = false;
-                try {
-                    showLocationOverlay('Teleporting...');
-                    overlayVisible = true;
-                } catch (_) {
-                    // ignore overlay errors
-                }
-
-                try {
-                    if (npcId) {
-                        const npcDataCache = window.currentNpcData instanceof Map ? window.currentNpcData : null;
-                        const resolvedNpc = npc
-                            || (npcDataCache ? (npcDataCache.get(npcId) || null) : null)
-                            || { id: npcId };
-
-                        await teleportNpcToLocation(resolvedNpc, targetLocationId, {
-                            card,
-                            originLocationId: locationId || (window.lastRenderedLocation?.id || null)
-                        });
-                    } else {
                         if (!thing || !thing.id) {
                             throw new Error('Item data unavailable for teleportation.');
                         }
-                        await teleportThingToLocation(thing, targetLocationId, {
+                        await teleportThingToLocation(thing, entry.id, {
                             context,
                             card,
                             npcId,
                             originLocationId: locationId || (window.lastRenderedLocation?.id || null)
                         });
-                    }
-                    cleanup();
-                } catch (error) {
-                    console.warn('Failed to teleport entity:', error);
-                    alert(`Failed to teleport ${npcId ? 'character' : 'item'}: ${error?.message || error}`);
-                    if (triggerButton) {
+                    } catch (error) {
+                        console.warn('Failed to teleport entity:', error);
+                        alert(`Failed to teleport ${npcId ? 'character' : 'item'}: ${error?.message || error}`);
                         triggerButton.disabled = false;
-                    }
-                } finally {
-                    isProcessing = false;
-                    if (overlayVisible) {
-                        hideLocationOverlay();
+                        throw error;
+                    } finally {
+                        if (overlayVisible) {
+                            hideLocationOverlay();
+                        }
                     }
                 }
-            };
-
-            closeBtn.addEventListener('click', cleanup);
-            cancelBtn.addEventListener('click', cleanup);
-            backdrop.addEventListener('click', cleanup);
-            list.addEventListener('click', (event) => {
-                if (!(event.target instanceof HTMLButtonElement)) {
-                    return;
-                }
-                const targetId = event.target.dataset.locationId || null;
-                handleSelection(targetId, event.target);
             });
         }
 
@@ -6345,163 +6207,65 @@
                             return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
                         });
 
-                        const modal = document.createElement('div');
-                        modal.className = 'npc-selection-modal';
+                        showSearchSelectionModal({
+                            title: 'Select Person',
+                            filterPlaceholder: 'Filter by name',
+                            filterAriaLabel: 'Filter people by name',
+                            emptyMessage: 'No NPCs are available to receive this item.',
+                            noMatchesMessage: 'No people match that search.',
+                            options: sortedNpcList.map(entry => ({
+                                id: entry.id,
+                                label: entry.name,
+                                searchText: entry.name
+                            })),
+                            onSelect: async (entry) => {
+                                let moveResult = null;
+                                try {
+                                    pickupButton.disabled = true;
+                                    const sourceLocationId = options.context === 'location'
+                                        ? (options.locationId || (window.lastRenderedLocation?.id || null))
+                                        : null;
+                                    moveResult = await moveThingToNpcInventory(thingDataCache.get(thing.id) || thing, entry.id, {
+                                        locationId: sourceLocationId
+                                    });
+                                } catch (error) {
+                                    console.warn('Failed to move item into inventory:', error);
+                                    alert(`Failed to move item: ${error?.message || error}`);
+                                    throw error;
+                                } finally {
+                                    pickupButton.disabled = false;
+                                }
 
-                        const backdrop = document.createElement('div');
-                        backdrop.className = 'npc-selection-backdrop';
+                                if (moveResult?.success) {
+                                    if (options.context === 'location' && card && card.parentElement) {
+                                        const container = resolveThingCollectionContainer(card);
+                                        card.remove();
 
-                        const dialog = document.createElement('div');
-                        dialog.className = 'npc-selection-dialog';
-
-                        const header = document.createElement('div');
-                        header.className = 'npc-selection-header';
-                        const title = document.createElement('h2');
-                        title.textContent = 'Select Person';
-                        header.appendChild(title);
-
-                        const closeBtn = document.createElement('button');
-                        closeBtn.type = 'button';
-                        closeBtn.className = 'npc-selection-close';
-                        closeBtn.textContent = '🗙';
-                        closeBtn.setAttribute('aria-label', 'Close');
-                        header.appendChild(closeBtn);
-
-                        const body = document.createElement('div');
-                        body.className = 'npc-selection-body';
-
-                        const filterWrapper = document.createElement('div');
-                        filterWrapper.className = 'npc-selection-filter';
-
-                        const filterInput = document.createElement('input');
-                        filterInput.type = 'search';
-                        filterInput.className = 'npc-selection-filter-input';
-                        filterInput.placeholder = 'Filter by name';
-                        filterInput.setAttribute('aria-label', 'Filter people by name');
-                        filterWrapper.appendChild(filterInput);
-                        body.appendChild(filterWrapper);
-
-                        const list = document.createElement('ul');
-                        list.className = 'npc-selection-list';
-                        body.appendChild(list);
-
-                        const decoratedNpcList = sortedNpcList.map(entry => ({
-                            id: entry.id,
-                            name: entry.name,
-                            normalizedName: entry.name.toLocaleLowerCase()
-                        }));
-
-                        const renderNpcButtons = (filterValue = '') => {
-                            const normalizedFilter = filterValue.trim().toLocaleLowerCase();
-                            list.textContent = '';
-
-                            const filteredEntries = normalizedFilter
-                                ? decoratedNpcList.filter(entry => entry.normalizedName.includes(normalizedFilter))
-                                : decoratedNpcList;
-
-                            filteredEntries.forEach(entry => {
-                                const itemButton = document.createElement('button');
-                                itemButton.type = 'button';
-                                itemButton.className = 'npc-selection-item';
-                                itemButton.textContent = entry.name;
-                                itemButton.dataset.npcId = entry.id;
-
-                                const itemLi = document.createElement('li');
-                                itemLi.appendChild(itemButton);
-                                list.appendChild(itemLi);
-                            });
-                        };
-
-                        renderNpcButtons();
-
-                        filterInput.addEventListener('input', () => {
-                            renderNpcButtons(filterInput.value);
-                        });
-
-                        const footer = document.createElement('div');
-                        footer.className = 'npc-selection-footer';
-                        const cancelBtn = document.createElement('button');
-                        cancelBtn.type = 'button';
-                        cancelBtn.className = 'npc-selection-cancel';
-                        cancelBtn.textContent = 'Cancel';
-                        footer.appendChild(cancelBtn);
-
-                        dialog.appendChild(header);
-                        dialog.appendChild(body);
-                        dialog.appendChild(footer);
-                        modal.appendChild(backdrop);
-                        modal.appendChild(dialog);
-                        document.body.appendChild(modal);
-                        document.body.classList.add('modal-open');
-
-                        const cleanup = () => {
-                            document.body.classList.remove('modal-open');
-                            modal.remove();
-                        };
-
-                        const handleSelection = async (npcId) => {
-                            if (!npcId) {
-                                return;
-                            }
-                            let moveResult = null;
-                            try {
-                                pickupButton.disabled = true;
-                                const sourceLocationId = options.context === 'location'
-                                    ? (options.locationId || (window.lastRenderedLocation?.id || null))
-                                    : null;
-                                moveResult = await moveThingToNpcInventory(thingDataCache.get(thing.id) || thing, npcId, {
-                                    locationId: sourceLocationId
-                                });
-                            } catch (error) {
-                                console.warn('Failed to move item into inventory:', error);
-                                alert(`Failed to move item: ${error?.message || error}`);
-                            } finally {
-                                pickupButton.disabled = false;
-                                cleanup();
-                            }
-
-                            if (moveResult?.success) {
-                                if (options.context === 'location' && card && card.parentElement) {
-                                    const container = resolveThingCollectionContainer(card);
-                                    card.remove();
-
-                                    const hasRemainingEntries = container?.querySelector('.thing-collection-entry');
-                                    if (container && !hasRemainingEntries) {
-                                        const emptyMessage = container.id === 'locationScenery'
-                                            ? 'No notable scenery present.'
-                                            : 'No notable items present.';
-                                        container.innerHTML = `<div class="location-thing-empty">${emptyMessage}</div>`;
-                                    }
-                                } else if (options.context === 'npc-inventory') {
-                                    const targetOwnerId = moveResult?.owner?.id || null;
-                                    if (targetOwnerId === currentNpcInventoryNpcId) {
-                                        const updatedInventory = Array.isArray(moveResult.owner?.inventory) ? moveResult.owner.inventory : [];
-                                        currentNpcInventory = updatedInventory;
-                                        renderNpcInventory(updatedInventory);
-                                    } else if (Array.isArray(currentNpcInventory)) {
-                                        currentNpcInventory = currentNpcInventory.filter(item => item && item.id !== thing.id);
-                                        renderNpcInventory(currentNpcInventory);
-                                    }
-                                } else if (options.context === 'player-inventory') {
-                                    try {
-                                        await window.refreshInventory?.();
-                                    } catch (inventoryError) {
-                                        console.warn('Failed to refresh player inventory after moving item:', inventoryError);
+                                        const hasRemainingEntries = container?.querySelector('.thing-collection-entry');
+                                        if (container && !hasRemainingEntries) {
+                                            const emptyMessage = container.id === 'locationScenery'
+                                                ? 'No notable scenery present.'
+                                                : 'No notable items present.';
+                                            container.innerHTML = `<div class="location-thing-empty">${emptyMessage}</div>`;
+                                        }
+                                    } else if (options.context === 'npc-inventory') {
+                                        const targetOwnerId = moveResult?.owner?.id || null;
+                                        if (targetOwnerId === currentNpcInventoryNpcId) {
+                                            const updatedInventory = Array.isArray(moveResult.owner?.inventory) ? moveResult.owner.inventory : [];
+                                            currentNpcInventory = updatedInventory;
+                                            renderNpcInventory(updatedInventory);
+                                        } else if (Array.isArray(currentNpcInventory)) {
+                                            currentNpcInventory = currentNpcInventory.filter(item => item && item.id !== thing.id);
+                                            renderNpcInventory(currentNpcInventory);
+                                        }
+                                    } else if (options.context === 'player-inventory') {
+                                        try {
+                                            await window.refreshInventory?.();
+                                        } catch (inventoryError) {
+                                            console.warn('Failed to refresh player inventory after moving item:', inventoryError);
+                                        }
                                     }
                                 }
-                            }
-                        };
-
-                        closeBtn.addEventListener('click', cleanup);
-                        cancelBtn.addEventListener('click', cleanup);
-                        backdrop.addEventListener('click', cleanup);
-                        list.addEventListener('click', (ev) => {
-                            if (!(ev.target instanceof HTMLButtonElement)) {
-                                return;
-                            }
-                            const targetId = ev.target.dataset.npcId || null;
-                            if (targetId) {
-                                handleSelection(targetId);
                             }
                         });
                     } catch (error) {
@@ -7488,22 +7252,6 @@
         const locationEditSaveBtn = document.getElementById('locationEditSaveBtn');
         const locationStatusEffectsList = document.getElementById('locationEditStatusEffectsList');
         const locationStatusEffectAddBtn = document.getElementById('locationStatusEffectAddBtn');
-        const summonNpcModal = document.getElementById('summonNpcModal');
-        const summonNpcForm = document.getElementById('summonNpcForm');
-        const summonNpcSearchInput = document.getElementById('summonNpcSearch');
-        const summonNpcSelect = document.getElementById('summonNpcSelect');
-        const summonNpcStatus = document.getElementById('summonNpcStatus');
-        const summonNpcCancelBtn = document.getElementById('summonNpcCancelBtn');
-        const summonNpcCloseBtn = document.getElementById('summonNpcCloseBtn');
-        const summonNpcConfirmBtn = document.getElementById('summonNpcConfirmBtn');
-        const summonThingModal = document.getElementById('summonThingModal');
-        const summonThingForm = document.getElementById('summonThingForm');
-        const summonThingSearchInput = document.getElementById('summonThingSearch');
-        const summonThingSelect = document.getElementById('summonThingSelect');
-        const summonThingStatus = document.getElementById('summonThingStatus');
-        const summonThingCancelBtn = document.getElementById('summonThingCancelBtn');
-        const summonThingCloseBtn = document.getElementById('summonThingCloseBtn');
-        const summonThingConfirmBtn = document.getElementById('summonThingConfirmBtn');
         const regionEditModal = document.getElementById('regionEditModal');
         const regionEditForm = document.getElementById('regionEditForm');
         const regionEditNameInput = document.getElementById('regionEditName');
@@ -17920,17 +17668,6 @@
                     return;
                 }
 
-                if (summonNpcModal && !summonNpcModal.hasAttribute('hidden')) {
-                    event.preventDefault();
-                    closeSummonNpcModal();
-                    return;
-                }
-
-                if (summonThingModal && !summonThingModal.hasAttribute('hidden')) {
-                    event.preventDefault();
-                    closeSummonThingModal();
-                    return;
-                }
         });
 
         function initTabs() {
@@ -20925,134 +20662,309 @@
             }
         }
 
-        const summonNpcOptionIndex = new Map();
-        const summonThingOptionIndex = new Map();
-        const summonNpcOptions = [];
-        const summonThingOptions = [];
+        let activeSearchSelectionModal = null;
 
-        function resetSummonSelect(selectElement, placeholderLabel) {
-            if (!selectElement) {
-                return;
-            }
-            selectElement.innerHTML = '';
-            const option = document.createElement('option');
-            option.value = '';
-            option.textContent = placeholderLabel;
-            option.disabled = true;
-            option.selected = true;
-            option.hidden = true;
-            selectElement.appendChild(option);
-            selectElement.value = '';
-        }
-
-        function resetSummonSearchInput(inputElement) {
-            if (!inputElement) {
-                return;
-            }
-            inputElement.value = '';
-            inputElement.disabled = true;
-        }
-
-        function normalizeSummonSearchValue(value) {
+        function normalizeSearchSelectionValue(value) {
             if (typeof value !== 'string') {
                 return '';
             }
             return value.trim().toLowerCase();
         }
 
-        function renderSummonNpcSelect(filterValue = '') {
-            if (!summonNpcSelect) {
-                return 0;
-            }
-
-            const normalizedFilter = normalizeSummonSearchValue(filterValue);
-            const previousValue = summonNpcSelect.value;
-            const matchingOptions = summonNpcOptions.filter(option => {
-                if (!normalizedFilter) {
-                    return true;
-                }
-                return option.searchText.includes(normalizedFilter);
-            });
-
-            resetSummonSelect(summonNpcSelect, 'Select an NPC');
-            const fragment = document.createDocumentFragment();
-            matchingOptions.forEach(option => {
-                const opt = document.createElement('option');
-                opt.value = option.id;
-                opt.textContent = option.displayLabel;
-                opt.dataset.locationId = option.locationId || '';
-                opt.dataset.locationName = option.locationName || '';
-                fragment.appendChild(opt);
-            });
-            summonNpcSelect.appendChild(fragment);
-
-            const hasPreviousSelection = matchingOptions.some(option => option.id === previousValue);
-            summonNpcSelect.value = hasPreviousSelection ? previousValue : '';
-            summonNpcSelect.disabled = matchingOptions.length === 0;
-            if (summonNpcConfirmBtn) {
-                summonNpcConfirmBtn.disabled = !summonNpcSelect.value;
-            }
-            return matchingOptions.length;
-        }
-
-        function renderSummonThingSelect(filterValue = '') {
-            if (!summonThingSelect) {
-                return 0;
-            }
-
-            const normalizedFilter = normalizeSummonSearchValue(filterValue);
-            const previousValue = summonThingSelect.value;
-            const matchingOptions = summonThingOptions.filter(option => {
-                if (!normalizedFilter) {
-                    return true;
-                }
-                return option.searchText.includes(normalizedFilter);
-            });
-
-            resetSummonSelect(summonThingSelect, 'Select an item');
-            const fragment = document.createDocumentFragment();
-            matchingOptions.forEach(option => {
-                const opt = document.createElement('option');
-                opt.value = option.id;
-                opt.textContent = option.displayLabel;
-                opt.dataset.origin = option.originLabel || '';
-                fragment.appendChild(opt);
-            });
-            summonThingSelect.appendChild(fragment);
-
-            const hasPreviousSelection = matchingOptions.some(option => option.id === previousValue);
-            summonThingSelect.value = hasPreviousSelection ? previousValue : '';
-            summonThingSelect.disabled = matchingOptions.length === 0;
-            if (summonThingConfirmBtn) {
-                summonThingConfirmBtn.disabled = !summonThingSelect.value;
-            }
-            return matchingOptions.length;
-        }
-
-        function setSummonNpcStatus(message = '', type = null) {
-            if (!summonNpcStatus) {
+        function syncSearchSelectionModalBodyState() {
+            if (document.querySelector('.modal[aria-hidden="false"], .npc-selection-modal')) {
+                document.body.classList.add('modal-open');
                 return;
             }
-            summonNpcStatus.textContent = message || '';
-            summonNpcStatus.classList.remove('is-error', 'is-success');
+            document.body.classList.remove('modal-open');
+        }
+
+        function setSearchSelectionStatus(statusElement, message = '', type = null) {
+            if (!(statusElement instanceof HTMLElement)) {
+                return;
+            }
+            statusElement.textContent = message || '';
+            statusElement.classList.remove('is-error', 'is-success');
             if (type === 'error') {
-                summonNpcStatus.classList.add('is-error');
+                statusElement.classList.add('is-error');
             } else if (type === 'success') {
-                summonNpcStatus.classList.add('is-success');
+                statusElement.classList.add('is-success');
             }
         }
 
-        function setSummonThingStatus(message = '', type = null) {
-            if (!summonThingStatus) {
-                return;
+        function closeSearchSelectionModal() {
+            if (activeSearchSelectionModal && typeof activeSearchSelectionModal.close === 'function') {
+                activeSearchSelectionModal.close();
             }
-            summonThingStatus.textContent = message || '';
-            summonThingStatus.classList.remove('is-error', 'is-success');
-            if (type === 'error') {
-                summonThingStatus.classList.add('is-error');
-            } else if (type === 'success') {
-                summonThingStatus.classList.add('is-success');
+        }
+
+        function showSearchSelectionModal(config = {}) {
+            const titleText = typeof config.title === 'string' && config.title.trim()
+                ? config.title.trim()
+                : 'Select Item';
+            const filterPlaceholder = typeof config.filterPlaceholder === 'string'
+                ? config.filterPlaceholder
+                : 'Filter';
+            const filterAriaLabel = typeof config.filterAriaLabel === 'string' && config.filterAriaLabel.trim()
+                ? config.filterAriaLabel.trim()
+                : filterPlaceholder;
+            const loadingMessage = typeof config.loadingMessage === 'string' ? config.loadingMessage : '';
+            const emptyMessage = typeof config.emptyMessage === 'string' && config.emptyMessage.trim()
+                ? config.emptyMessage.trim()
+                : 'No entries are available.';
+            const noMatchesMessage = typeof config.noMatchesMessage === 'string' && config.noMatchesMessage.trim()
+                ? config.noMatchesMessage.trim()
+                : 'No entries match that search.';
+            const cancelLabel = typeof config.cancelLabel === 'string' && config.cancelLabel.trim()
+                ? config.cancelLabel.trim()
+                : 'Cancel';
+            const onSelect = typeof config.onSelect === 'function' ? config.onSelect : null;
+            const onClose = typeof config.onClose === 'function' ? config.onClose : null;
+            const loadOptions = typeof config.loadOptions === 'function'
+                ? config.loadOptions
+                : async () => (Array.isArray(config.options) ? config.options : []);
+
+            if (!onSelect) {
+                throw new Error('Selection modal requires an onSelect handler.');
             }
+
+            closeSearchSelectionModal();
+
+            const modal = document.createElement('div');
+            modal.className = 'npc-selection-modal';
+
+            const backdrop = document.createElement('div');
+            backdrop.className = 'npc-selection-backdrop';
+
+            const dialog = document.createElement('div');
+            dialog.className = 'npc-selection-dialog';
+
+            const header = document.createElement('div');
+            header.className = 'npc-selection-header';
+            const title = document.createElement('h2');
+            title.textContent = titleText;
+            header.appendChild(title);
+
+            const closeBtn = document.createElement('button');
+            closeBtn.type = 'button';
+            closeBtn.className = 'npc-selection-close';
+            closeBtn.textContent = '🗙';
+            closeBtn.setAttribute('aria-label', 'Close');
+            header.appendChild(closeBtn);
+
+            const body = document.createElement('div');
+            body.className = 'npc-selection-body';
+
+            const filterWrapper = document.createElement('div');
+            filterWrapper.className = 'npc-selection-filter';
+
+            const filterInput = document.createElement('input');
+            filterInput.type = 'search';
+            filterInput.className = 'npc-selection-filter-input';
+            filterInput.placeholder = filterPlaceholder;
+            filterInput.setAttribute('aria-label', filterAriaLabel);
+            filterInput.disabled = true;
+            filterWrapper.appendChild(filterInput);
+            body.appendChild(filterWrapper);
+
+            const status = document.createElement('div');
+            status.className = 'npc-selection-status';
+            status.setAttribute('role', 'status');
+            status.setAttribute('aria-live', 'polite');
+            body.appendChild(status);
+
+            const list = document.createElement('ul');
+            list.className = 'npc-selection-list';
+            body.appendChild(list);
+
+            const footer = document.createElement('div');
+            footer.className = 'npc-selection-footer';
+            const cancelBtn = document.createElement('button');
+            cancelBtn.type = 'button';
+            cancelBtn.className = 'npc-selection-cancel';
+            cancelBtn.textContent = cancelLabel;
+            footer.appendChild(cancelBtn);
+
+            dialog.appendChild(header);
+            dialog.appendChild(body);
+            dialog.appendChild(footer);
+            modal.appendChild(backdrop);
+            modal.appendChild(dialog);
+            document.body.appendChild(modal);
+            syncSearchSelectionModalBodyState();
+
+            let closed = false;
+            let isSelecting = false;
+            let decoratedOptions = [];
+
+            const renderOptions = (filterValue = '') => {
+                if (closed) {
+                    return 0;
+                }
+
+                const normalizedFilter = normalizeSearchSelectionValue(filterValue);
+                list.textContent = '';
+
+                const filteredEntries = normalizedFilter
+                    ? decoratedOptions.filter(entry => entry.searchText.includes(normalizedFilter))
+                    : decoratedOptions;
+
+                if (!filteredEntries.length) {
+                    const emptyItem = document.createElement('li');
+                    emptyItem.className = 'npc-selection-empty';
+                    emptyItem.textContent = normalizedFilter ? noMatchesMessage : emptyMessage;
+                    list.appendChild(emptyItem);
+                    setSearchSelectionStatus(
+                        status,
+                        normalizedFilter ? noMatchesMessage : (decoratedOptions.length ? '' : emptyMessage),
+                        decoratedOptions.length ? null : 'error',
+                    );
+                    return 0;
+                }
+
+                setSearchSelectionStatus(status, '', null);
+                filteredEntries.forEach(entry => {
+                    const button = document.createElement('button');
+                    button.type = 'button';
+                    button.className = 'npc-selection-item';
+                    button.textContent = entry.label;
+                    button.dataset.optionId = entry.id;
+
+                    const li = document.createElement('li');
+                    li.appendChild(button);
+                    list.appendChild(li);
+                });
+
+                return filteredEntries.length;
+            };
+
+            const keydownHandler = (event) => {
+                if (!event || event.key !== 'Escape') {
+                    return;
+                }
+                event.preventDefault();
+                cleanup();
+            };
+
+            const cleanup = ({ force = false } = {}) => {
+                if (closed || (isSelecting && !force)) {
+                    return;
+                }
+                closed = true;
+                document.removeEventListener('keydown', keydownHandler);
+                modal.remove();
+                if (activeSearchSelectionModal && activeSearchSelectionModal.modal === modal) {
+                    activeSearchSelectionModal = null;
+                }
+                try {
+                    onClose?.();
+                } finally {
+                    syncSearchSelectionModalBodyState();
+                }
+            };
+
+            const selectionModalApi = {
+                modal,
+                close: () => cleanup({ force: true })
+            };
+            activeSearchSelectionModal = selectionModalApi;
+
+            closeBtn.addEventListener('click', () => cleanup());
+            cancelBtn.addEventListener('click', () => cleanup());
+            backdrop.addEventListener('click', () => cleanup());
+            filterInput.addEventListener('input', () => {
+                renderOptions(filterInput.value || '');
+            });
+            list.addEventListener('click', async (event) => {
+                if (!(event.target instanceof HTMLButtonElement)) {
+                    return;
+                }
+                if (isSelecting) {
+                    return;
+                }
+
+                const optionId = String(event.target.dataset.optionId || '');
+                const entry = decoratedOptions.find(option => option.id === optionId);
+                if (!entry) {
+                    return;
+                }
+
+                isSelecting = true;
+                filterInput.disabled = true;
+                event.target.disabled = true;
+                try {
+                    await onSelect(entry, {
+                        triggerButton: event.target,
+                        setStatus: (message = '', type = null) => setSearchSelectionStatus(status, message, type),
+                        close: () => cleanup({ force: true })
+                    });
+                    cleanup({ force: true });
+                } catch (error) {
+                    console.warn(`Failed to handle "${titleText}" selection:`, error);
+                    if (!status.textContent) {
+                        setSearchSelectionStatus(status, error?.message || 'Operation failed.', 'error');
+                    }
+                    filterInput.disabled = false;
+                    event.target.disabled = false;
+                    isSelecting = false;
+                }
+            });
+            document.addEventListener('keydown', keydownHandler);
+
+            (async () => {
+                setSearchSelectionStatus(status, loadingMessage, null);
+                try {
+                    const options = await loadOptions();
+                    if (closed) {
+                        return;
+                    }
+
+                    decoratedOptions = (Array.isArray(options) ? options : [])
+                        .map(option => {
+                            if (!option || option.id === undefined || option.id === null) {
+                                return null;
+                            }
+                            const label = typeof option.label === 'string' ? option.label.trim() : '';
+                            if (!label) {
+                                return null;
+                            }
+                            const searchTextSource = typeof option.searchText === 'string' && option.searchText.trim()
+                                ? option.searchText
+                                : label;
+                            return {
+                                ...option,
+                                id: String(option.id),
+                                label,
+                                searchText: normalizeSearchSelectionValue(searchTextSource),
+                            };
+                        })
+                        .filter(Boolean);
+
+                    filterInput.disabled = !decoratedOptions.length;
+                    renderOptions('');
+                    if (decoratedOptions.length) {
+                        requestAnimationFrame(() => {
+                            filterInput.focus();
+                            filterInput.select();
+                        });
+                    }
+                } catch (error) {
+                    if (closed) {
+                        return;
+                    }
+                    console.warn(`Failed to load "${titleText}" options:`, error);
+                    decoratedOptions = [];
+                    filterInput.disabled = true;
+                    list.textContent = '';
+                    const emptyItem = document.createElement('li');
+                    emptyItem.className = 'npc-selection-empty';
+                    emptyItem.textContent = error?.message || emptyMessage;
+                    list.appendChild(emptyItem);
+                    setSearchSelectionStatus(status, error?.message || emptyMessage, 'error');
+                }
+            })();
+
+            return selectionModalApi;
         }
 
         async function loadSummonActorDirectory() {
@@ -21225,354 +21137,140 @@
         }
 
         async function openSummonNpcModal() {
-            if (!summonNpcModal) {
-                alert('Summon NPC dialog is unavailable.');
-                return;
-            }
             const targetLocation = getLocationMenuContext();
             if (!targetLocation || !targetLocation.id) {
+                clearLocationMenuContext();
                 alert('No location is currently loaded.');
                 return;
             }
 
-            summonNpcOptionIndex.clear();
-            summonNpcOptions.length = 0;
-            resetSummonSelect(summonNpcSelect, 'Select an NPC');
-            resetSummonSearchInput(summonNpcSearchInput);
-            if (summonNpcSelect) {
-                summonNpcSelect.disabled = true;
-            }
-            if (summonNpcConfirmBtn) {
-                summonNpcConfirmBtn.disabled = true;
-            }
-            setSummonNpcStatus('Loading NPCs...', null);
-
-            summonNpcModal.removeAttribute('hidden');
-            summonNpcModal.setAttribute('aria-hidden', 'false');
-            summonNpcModal.classList.add('is-open');
-
-            try {
-                const options = await gatherSummonNpcOptions();
-
-                if (!options.length) {
-                    setSummonNpcStatus('No NPCs are available to summon.', 'error');
-                    return;
-                }
-
-                options.forEach(option => {
-                    const displayLabel = `${option.name} — ${option.locationName}`;
-                    summonNpcOptionIndex.set(option.id, option);
-                    summonNpcOptions.push({
+            showSearchSelectionModal({
+                title: 'Summon NPC',
+                filterPlaceholder: 'Filter NPCs',
+                filterAriaLabel: 'Filter NPCs by name or location',
+                loadingMessage: 'Loading NPCs...',
+                emptyMessage: 'No NPCs are available to summon.',
+                noMatchesMessage: 'No NPCs match that search.',
+                onClose: () => clearLocationMenuContext(),
+                loadOptions: async () => {
+                    const options = await gatherSummonNpcOptions();
+                    return options.map(option => ({
                         ...option,
-                        displayLabel,
-                        searchText: normalizeSummonSearchValue(`${option.name} ${option.locationName}`)
-                    });
-                });
+                        label: `${option.name} — ${option.locationName}`,
+                        searchText: `${option.name} ${option.locationName}`
+                    }));
+                },
+                onSelect: async (optionEntry, { setStatus }) => {
+                    const target = getLocationMenuContext();
+                    if (!target || !target.id) {
+                        setStatus('No location is currently loaded.', 'error');
+                        throw new Error('No location is currently loaded.');
+                    }
 
-                if (summonNpcSearchInput) {
-                    summonNpcSearchInput.disabled = false;
+                    setStatus('Summoning NPC...', null);
+
+                    let overlayVisible = false;
+                    try {
+                        showLocationOverlay('Summoning NPC...');
+                        overlayVisible = true;
+                    } catch (_) {
+                        // Ignore overlay errors
+                    }
+
+                    try {
+                        const npcRecord = optionEntry?.raw
+                            ? (cloneActorRecord(optionEntry.raw) || { ...optionEntry.raw })
+                            : { id: optionEntry.id };
+
+                        await teleportNpcToLocation(npcRecord, target.id, {
+                            originLocationId: optionEntry?.locationId || null
+                        });
+                    } catch (error) {
+                        console.warn('Failed to summon NPC:', error);
+                        setStatus(`Failed to summon NPC: ${error?.message || error}`, 'error');
+                        throw error;
+                    } finally {
+                        if (overlayVisible) {
+                            hideLocationOverlay();
+                        }
+                    }
                 }
-                renderSummonNpcSelect(summonNpcSearchInput?.value || '');
-
-                setSummonNpcStatus('', null);
-                requestAnimationFrame(() => {
-                    summonNpcSearchInput?.focus();
-                });
-            } catch (error) {
-                console.warn('Failed to load summon NPC options:', error);
-                setSummonNpcStatus(`Failed to load NPCs: ${error?.message || error}`, 'error');
-            }
-        }
-
-        function closeSummonNpcModal() {
-            if (!summonNpcModal) {
-                return;
-            }
-            summonNpcModal.setAttribute('hidden', '');
-            summonNpcModal.setAttribute('aria-hidden', 'true');
-            summonNpcModal.classList.remove('is-open');
-            setSummonNpcStatus('', null);
-            summonNpcOptionIndex.clear();
-            summonNpcOptions.length = 0;
-            resetSummonSelect(summonNpcSelect, 'Select an NPC');
-            resetSummonSearchInput(summonNpcSearchInput);
-            if (summonNpcSelect) {
-                summonNpcSelect.disabled = true;
-            }
-            if (summonNpcConfirmBtn) {
-                summonNpcConfirmBtn.disabled = true;
-            }
-            clearLocationMenuContext();
+            });
         }
 
         async function openSummonThingModal() {
-            if (!summonThingModal) {
-                alert('Summon item dialog is unavailable.');
-                return;
-            }
             const targetLocation = getLocationMenuContext();
             if (!targetLocation || !targetLocation.id) {
+                clearLocationMenuContext();
                 alert('No location is currently loaded.');
                 return;
             }
 
-            summonThingOptionIndex.clear();
-            summonThingOptions.length = 0;
-            resetSummonSelect(summonThingSelect, 'Select an item');
-            resetSummonSearchInput(summonThingSearchInput);
-            if (summonThingSelect) {
-                summonThingSelect.disabled = true;
-            }
-            if (summonThingConfirmBtn) {
-                summonThingConfirmBtn.disabled = true;
-            }
-            setSummonThingStatus('Loading items...', null);
-
-            summonThingModal.removeAttribute('hidden');
-            summonThingModal.setAttribute('aria-hidden', 'false');
-            summonThingModal.classList.add('is-open');
-
-            try {
-                const options = await gatherSummonThingOptions();
-
-                if (!options.length) {
-                    setSummonThingStatus('No items or scenery are available to summon.', 'error');
-                    return;
-                }
-
-                options.forEach(option => {
-                    const displayLabel = `${option.name} — ${option.type} · ${option.originLabel}`;
-                    summonThingOptionIndex.set(option.id, option);
-                    summonThingOptions.push({
+            showSearchSelectionModal({
+                title: 'Summon Item or Scenery',
+                filterPlaceholder: 'Filter items or scenery',
+                filterAriaLabel: 'Filter items or scenery by name, type, or origin',
+                loadingMessage: 'Loading items...',
+                emptyMessage: 'No items or scenery are available to summon.',
+                noMatchesMessage: 'No items or scenery match that search.',
+                onClose: () => clearLocationMenuContext(),
+                loadOptions: async () => {
+                    const options = await gatherSummonThingOptions();
+                    return options.map(option => ({
                         ...option,
-                        displayLabel,
-                        searchText: normalizeSummonSearchValue(`${option.name} ${option.type} ${option.originLabel}`)
-                    });
-                });
+                        label: `${option.name} — ${option.type} · ${option.originLabel}`,
+                        searchText: `${option.name} ${option.type} ${option.originLabel}`
+                    }));
+                },
+                onSelect: async (entry, { setStatus }) => {
+                    const target = getLocationMenuContext();
+                    if (!target || !target.id) {
+                        setStatus('No location is currently loaded.', 'error');
+                        throw new Error('No location is currently loaded.');
+                    }
 
-                if (summonThingSearchInput) {
-                    summonThingSearchInput.disabled = false;
-                }
-                renderSummonThingSelect(summonThingSearchInput?.value || '');
+                    setStatus('Summoning item...', null);
 
-                setSummonThingStatus('', null);
-                requestAnimationFrame(() => {
-                    summonThingSearchInput?.focus();
-                });
-            } catch (error) {
-                console.warn('Failed to load summon item options:', error);
-                setSummonThingStatus(`Failed to load items: ${error?.message || error}`, 'error');
-            }
-        }
-
-        function closeSummonThingModal() {
-            if (!summonThingModal) {
-                return;
-            }
-            summonThingModal.setAttribute('hidden', '');
-            summonThingModal.setAttribute('aria-hidden', 'true');
-            summonThingModal.classList.remove('is-open');
-            setSummonThingStatus('', null);
-            summonThingOptionIndex.clear();
-            summonThingOptions.length = 0;
-            resetSummonSelect(summonThingSelect, 'Select an item');
-            resetSummonSearchInput(summonThingSearchInput);
-            if (summonThingSelect) {
-                summonThingSelect.disabled = true;
-            }
-            if (summonThingConfirmBtn) {
-                summonThingConfirmBtn.disabled = true;
-            }
-            clearLocationMenuContext();
-        }
-
-        function handleSummonNpcSelectionChange() {
-            if (!summonNpcSelect) {
-                return;
-            }
-            const npcId = summonNpcSelect.value;
-            if (!npcId || !summonNpcOptionIndex.has(npcId)) {
-                if (summonNpcConfirmBtn) {
-                    summonNpcConfirmBtn.disabled = true;
-                }
-                return;
-            }
-            if (summonNpcConfirmBtn) {
-                summonNpcConfirmBtn.disabled = false;
-            }
-            setSummonNpcStatus('', null);
-        }
-
-        function handleSummonThingSelectionChange() {
-            if (!summonThingSelect) {
-                return;
-            }
-            const thingId = summonThingSelect.value;
-            if (!thingId || !summonThingOptionIndex.has(thingId)) {
-                if (summonThingConfirmBtn) {
-                    summonThingConfirmBtn.disabled = true;
-                }
-                return;
-            }
-            if (summonThingConfirmBtn) {
-                summonThingConfirmBtn.disabled = false;
-            }
-            setSummonThingStatus('', null);
-        }
-
-        function handleSummonNpcSearchInput() {
-            if (!summonNpcSearchInput) {
-                return;
-            }
-            const visibleCount = renderSummonNpcSelect(summonNpcSearchInput.value || '');
-            if ((summonNpcSearchInput.value || '').trim() && visibleCount === 0) {
-                setSummonNpcStatus('No NPCs match that search.', null);
-                return;
-            }
-            setSummonNpcStatus('', null);
-        }
-
-        function handleSummonThingSearchInput() {
-            if (!summonThingSearchInput) {
-                return;
-            }
-            const visibleCount = renderSummonThingSelect(summonThingSearchInput.value || '');
-            if ((summonThingSearchInput.value || '').trim() && visibleCount === 0) {
-                setSummonThingStatus('No items or scenery match that search.', null);
-                return;
-            }
-            setSummonThingStatus('', null);
-        }
-
-        function handleSummonSearchKeydown(event) {
-            if (!event || event.key !== 'Enter') {
-                return;
-            }
-            event.preventDefault();
-        }
-
-        async function submitSummonNpcForm(event) {
-            if (event) {
-                event.preventDefault();
-            }
-            if (!summonNpcSelect) {
-                return;
-            }
-            const npcId = summonNpcSelect.value;
-            if (!npcId || !summonNpcOptionIndex.has(npcId)) {
-                setSummonNpcStatus('Select an NPC to summon.', 'error');
-                return;
-            }
-            const targetLocation = getLocationMenuContext();
-            if (!targetLocation || !targetLocation.id) {
-                setSummonNpcStatus('No location is currently loaded.', 'error');
-                return;
-            }
-
-            if (summonNpcConfirmBtn) {
-                summonNpcConfirmBtn.disabled = true;
-            }
-            setSummonNpcStatus('Summoning NPC...', null);
-
-            let overlayVisible = false;
-            try {
-                showLocationOverlay('Summoning NPC...');
-                overlayVisible = true;
-            } catch (_) {
-                // Ignore overlay errors
-            }
-
-            try {
-                const optionEntry = summonNpcOptionIndex.get(npcId);
-                const npcRecord = optionEntry?.raw
-                    ? (cloneActorRecord(optionEntry.raw) || { ...optionEntry.raw })
-                    : { id: npcId };
-
-                await teleportNpcToLocation(npcRecord, targetLocation.id, {
-                    originLocationId: optionEntry?.locationId || null
-                });
-
-                closeSummonNpcModal();
-            } catch (error) {
-                console.warn('Failed to summon NPC:', error);
-                setSummonNpcStatus(`Failed to summon NPC: ${error?.message || error}`, 'error');
-            } finally {
-                if (overlayVisible) {
-                    hideLocationOverlay();
-                }
-                if (summonNpcConfirmBtn && summonNpcModal?.classList.contains('is-open')) {
-                    summonNpcConfirmBtn.disabled = false;
-                }
-            }
-        }
-
-        async function submitSummonThingForm(event) {
-            if (event) {
-                event.preventDefault();
-            }
-            if (!summonThingSelect) {
-                return;
-            }
-            const thingId = summonThingSelect.value;
-            const entry = thingId ? summonThingOptionIndex.get(thingId) : null;
-            if (!entry) {
-                setSummonThingStatus('Select an item or scenery to summon.', 'error');
-                return;
-            }
-            const targetLocation = getLocationMenuContext();
-            if (!targetLocation || !targetLocation.id) {
-                setSummonThingStatus('No location is currently loaded.', 'error');
-                return;
-            }
-
-            if (summonThingConfirmBtn) {
-                summonThingConfirmBtn.disabled = true;
-            }
-            setSummonThingStatus('Summoning item...', null);
-
-            let overlayVisible = false;
-            try {
-                showLocationOverlay('Summoning item...');
-                overlayVisible = true;
-            } catch (_) {
-                // Ignore overlay errors
-            }
-
-            try {
-                const teleportResult = await teleportThingToLocation(entry.raw, targetLocation.id, {
-                    context: 'general',
-                    originLocationId: entry.locationId || null
-                });
-
-                let locationUpdated = false;
-                if (teleportResult?.previousLocation) {
-                    locationUpdated = await applySummonLocationUpdate(teleportResult.previousLocation) || locationUpdated;
-                }
-                if (teleportResult?.destination) {
-                    locationUpdated = await applySummonLocationUpdate(teleportResult.destination) || locationUpdated;
-                }
-
-                if (!locationUpdated && typeof window.loadCurrentLocation === 'function') {
+                    let overlayVisible = false;
                     try {
-                        await window.loadCurrentLocation();
-                    } catch (refreshError) {
-                        console.warn('Failed to refresh location after item summon:', refreshError);
+                        showLocationOverlay('Summoning item...');
+                        overlayVisible = true;
+                    } catch (_) {
+                        // Ignore overlay errors
+                    }
+
+                    try {
+                        const teleportResult = await teleportThingToLocation(entry.raw, target.id, {
+                            context: 'general',
+                            originLocationId: entry.locationId || null
+                        });
+
+                        let locationUpdated = false;
+                        if (teleportResult?.previousLocation) {
+                            locationUpdated = await applySummonLocationUpdate(teleportResult.previousLocation) || locationUpdated;
+                        }
+                        if (teleportResult?.destination) {
+                            locationUpdated = await applySummonLocationUpdate(teleportResult.destination) || locationUpdated;
+                        }
+
+                        if (!locationUpdated && typeof window.loadCurrentLocation === 'function') {
+                            try {
+                                await window.loadCurrentLocation();
+                            } catch (refreshError) {
+                                console.warn('Failed to refresh location after item summon:', refreshError);
+                            }
+                        }
+                    } catch (error) {
+                        console.warn('Failed to summon item:', error);
+                        setStatus(`Failed to summon item: ${error?.message || error}`, 'error');
+                        throw error;
+                    } finally {
+                        if (overlayVisible) {
+                            hideLocationOverlay();
+                        }
                     }
                 }
-
-                closeSummonThingModal();
-            } catch (error) {
-                console.warn('Failed to summon item:', error);
-                console.debug(error);
-                setSummonThingStatus(`Failed to summon item: ${error?.message || error}`, 'error');
-            } finally {
-                if (overlayVisible) {
-                    hideLocationOverlay();
-                }
-                if (summonThingConfirmBtn && summonThingModal?.classList.contains('is-open')) {
-                    summonThingConfirmBtn.disabled = false;
-                }
-            }
+            });
         }
 
         function setRegionEditStatus(message = '', type = null) {
@@ -22257,40 +21955,6 @@
                 const row = createLocationStatusEffectRow({});
                 row?.querySelector('.thing-edit-status-description')?.focus();
             });
-        }
-
-        if (summonNpcCancelBtn) {
-            summonNpcCancelBtn.addEventListener('click', () => closeSummonNpcModal());
-        }
-        if (summonNpcCloseBtn) {
-            summonNpcCloseBtn.addEventListener('click', () => closeSummonNpcModal());
-        }
-        if (summonNpcForm) {
-            summonNpcForm.addEventListener('submit', submitSummonNpcForm);
-        }
-        if (summonNpcSearchInput) {
-            summonNpcSearchInput.addEventListener('input', handleSummonNpcSearchInput);
-            summonNpcSearchInput.addEventListener('keydown', handleSummonSearchKeydown);
-        }
-        if (summonNpcSelect) {
-            summonNpcSelect.addEventListener('change', handleSummonNpcSelectionChange);
-        }
-
-        if (summonThingCancelBtn) {
-            summonThingCancelBtn.addEventListener('click', () => closeSummonThingModal());
-        }
-        if (summonThingCloseBtn) {
-            summonThingCloseBtn.addEventListener('click', () => closeSummonThingModal());
-        }
-        if (summonThingForm) {
-            summonThingForm.addEventListener('submit', submitSummonThingForm);
-        }
-        if (summonThingSearchInput) {
-            summonThingSearchInput.addEventListener('input', handleSummonThingSearchInput);
-            summonThingSearchInput.addEventListener('keydown', handleSummonSearchKeydown);
-        }
-        if (summonThingSelect) {
-            summonThingSelect.addEventListener('change', handleSummonThingSelectionChange);
         }
 
         if (locationEditLevelInput) {
@@ -23387,6 +23051,9 @@
                                 portraitImage.className = 'entity-image location-entity-image';
                                 portrait.appendChild(portraitImage);
 
+                                const levelBadge = createCharacterLevelBadge();
+                                portrait.appendChild(levelBadge);
+
                                 const { bar: npcHealthBar, fill: npcHealthFill } = createHealthBar('npc-health-bar');
                                 npcHealthFill.classList.add('npc-health-bar-fill');
                                 portrait.appendChild(npcHealthBar);
@@ -23413,6 +23080,7 @@
                                     }
                                 }
 
+                                updateCharacterLevelBadge(levelBadge, npc?.level);
                                 updateHealthBar(npcHealthBar, npcHealthFill, npc?.health, npc?.maxHealth);
 
                                 renderNeedBars(
@@ -25560,6 +25228,9 @@
                     portraitImage.className = 'party-portrait-image';
                     portrait.appendChild(portraitImage);
 
+                    const levelBadge = createCharacterLevelBadge();
+                    portrait.appendChild(levelBadge);
+
                     const { bar: portraitHealthBar, fill: portraitHealthFill } = createHealthBar('npc-health-bar');
                     portraitHealthFill.classList.add('npc-health-bar-fill');
                     portrait.appendChild(portraitHealthBar);
@@ -25586,6 +25257,7 @@
                         }
                     }
 
+                    updateCharacterLevelBadge(levelBadge, member?.level);
                     updateHealthBar(portraitHealthBar, portraitHealthFill, member?.health, member?.maxHealth);
 
                     renderNeedBars(
@@ -25612,8 +25284,7 @@
 
                     const meta = document.createElement('div');
                     meta.className = 'party-meta';
-                    const levelText = typeof member.level === 'number' ? `Level ${member.level}` : 'Level ?';
-                    meta.textContent = `${levelText}${member.isNPC ? ' · NPC' : ''}`;
+                    meta.textContent = member.isNPC ? 'NPC' : '';
 
                     const stats = document.createElement('div');
                     stats.className = 'party-stats';
@@ -25655,7 +25326,9 @@
                     card.appendChild(portrait);
                     card.appendChild(name);
                     card.appendChild(role);
-                    card.appendChild(meta);
+                    if (meta.textContent) {
+                        card.appendChild(meta);
+                    }
                     card.appendChild(stats);
 
                     registerNpcPartyDragSource(card, member, 'party');

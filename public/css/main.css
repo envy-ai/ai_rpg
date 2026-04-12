@@ -176,6 +176,13 @@ p:not(:last-child) {
   margin-bottom: 14px;
 }
 
+.npc-selection-status {
+  min-height: 1.1em;
+  margin-bottom: 12px;
+  font-size: 0.85rem;
+  color: #e2e8f0;
+}
+
 .npc-selection-filter-input {
   width: 100%;
   padding: 10px 12px;
@@ -199,6 +206,15 @@ p:not(:last-child) {
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+.npc-selection-empty {
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 0.92rem;
+  font-style: italic;
 }
 
 .npc-selection-item {
@@ -1884,6 +1900,7 @@ p:not(:last-child) {
 }
 
 .load-game-status[data-variant=error],
+.npc-selection-status.is-error,
 .npc-adjustment-status.is-error,
 .npc-disposition-status.is-error,
 .npc-needs-status.is-error,
@@ -1895,6 +1912,7 @@ p:not(:last-child) {
 }
 
 .load-game-status[data-variant=success],
+.npc-selection-status.is-success,
 .npc-adjustment-status.is-success,
 .npc-disposition-status.is-success,
 .npc-needs-status.is-success,
@@ -2679,6 +2697,7 @@ p:not(:last-child) {
   height: 47px;
   margin: 0 auto;
   border-radius: 0;
+  border: 0;
   min-height: unset;
 }
 
@@ -2895,6 +2914,16 @@ button.thing-action-icon:hover, button.thing-action-icon:focus-visible {
 .entity-card--npc {
   background: radial-gradient(circle at top, rgba(236, 72, 153, 0.18) 0%, rgba(88, 28, 135, 0.68) 100%);
   border-color: rgba(236, 72, 153, 0.45);
+}
+.entity-card--npc .entity-name {
+  min-height: unset;
+}
+.entity-card--npc .entity-icon {
+  width: unset;
+  height: unset;
+}
+.entity-card--npc {
+  max-width: calc(50% - 8px);
 }
 
 .entity-card--npc.is-dead {
@@ -3720,6 +3749,22 @@ body.dark .thing-toggle-hint {
   justify-content: center;
 }
 
+.character-level-badge {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  display: inline-block;
+  color: #ffffff;
+  font-size: 0.82rem;
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  -webkit-text-stroke: 3px #000000;
+  paint-order: stroke fill;
+  pointer-events: none;
+  z-index: 35;
+}
+
 .party-portrait-image {
   width: 100%;
   height: 100%;
@@ -3894,6 +3939,10 @@ body.dark .thing-toggle-hint {
 }
 
 .chat-player-portrait {
+  --chat-player-health-bar-inset-x: 14px;
+  --chat-player-health-bar-bottom: 14px;
+  --chat-player-health-bar-height: 0.65rem;
+  --chat-player-points-indicator-gap: 1em;
   border-radius: 12px;
   overflow: hidden;
   position: relative;
@@ -3914,6 +3963,13 @@ body.dark .thing-toggle-hint {
   display: block;
 }
 
+.chat-player-level-badge {
+  min-width: 2.9rem;
+  padding: 0.18rem 0.56rem;
+  font-size: 0.94rem;
+  z-index: 41;
+}
+
 .chat-player-portrait-image {
   width: 100%;
   height: 100%;
@@ -3925,7 +3981,7 @@ body.dark .thing-toggle-hint {
 
 .chat-player-points-indicator {
   position: absolute;
-  top: 8px;
+  bottom: calc(var(--chat-player-health-bar-bottom) + var(--chat-player-health-bar-height) + var(--chat-player-points-indicator-gap));
   left: 8px;
   width: 2.1rem;
   height: 1.85rem;
@@ -3969,12 +4025,42 @@ body.dark .thing-toggle-hint {
   border-radius: 999px;
   background: rgba(15, 23, 42, 0.82);
   border: 1px solid rgba(248, 113, 113, 0.45);
-  overflow: hidden;
+  overflow: visible;
   box-shadow: 0 2px 6px rgba(248, 113, 113, 0.24), inset 0 0 6px rgba(15, 23, 42, 0.8);
   backdrop-filter: blur(2px);
+  --health-bar-readout-font-size: 0.7rem;
+  --health-bar-readout-stroke-width: 2.5px;
+  --health-bar-readout-shadow-y: 2px;
+  --health-bar-readout-shadow-blur: 3px;
 }
 
 .health-bar[aria-hidden=true] {
+  display: none;
+}
+
+.health-bar-readout {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translateX(-50%) translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: max-content;
+  color: #ffffff;
+  font-size: var(--health-bar-readout-font-size);
+  font-weight: 650;
+  line-height: 1;
+  letter-spacing: 0.01em;
+  pointer-events: none;
+  white-space: nowrap;
+  z-index: 3;
+  -webkit-text-stroke: var(--health-bar-readout-stroke-width) #000000;
+  paint-order: stroke fill;
+  text-shadow: 0 var(--health-bar-readout-shadow-y) var(--health-bar-readout-shadow-blur) rgba(0, 0, 0, 0.65);
+}
+
+.health-bar-readout[aria-hidden=true] {
   display: none;
 }
 
@@ -4014,16 +4100,22 @@ body.dark .thing-toggle-hint {
 .health-bar-fill {
   width: 0%;
   height: 100%;
+  border-radius: inherit;
   background: linear-gradient(90deg, #fecaca 0%, #fca5a5 25%, #f87171 60%, #ef4444 100%);
   transition: width 220ms ease-in-out;
 }
 
 .chat-health-bar {
-  left: 14px;
-  right: 14px;
-  bottom: 14px;
-  height: 0.65rem;
+  left: var(--chat-player-health-bar-inset-x);
+  right: var(--chat-player-health-bar-inset-x);
+  bottom: var(--chat-player-health-bar-bottom);
+  height: var(--chat-player-health-bar-height);
   border-width: 1.5px;
+  --health-bar-readout-font-size: 0.7rem;
+  --health-bar-readout-bottom-gap: 3px;
+  --health-bar-readout-stroke-width: 2.5px;
+  --health-bar-readout-shadow-y: 2px;
+  --health-bar-readout-shadow-blur: 4px;
   box-shadow: 0 4px 10px rgba(248, 113, 113, 0.3), inset 0 0 8px rgba(15, 23, 42, 0.85);
 }
 
@@ -4036,6 +4128,8 @@ body.dark .thing-toggle-hint {
   right: 6px;
   top: calc(100% + 2px);
   height: 0.45rem;
+  --health-bar-readout-font-size: 0.7rem;
+  --health-bar-readout-stroke-width: 2.5px;
 }
 
 .npc-health-bar-fill {

@@ -63,6 +63,14 @@ Loaded on the chat page:
   Legacy classes (for example `.location-entity-*`, `.inventory-*`, `.npc-card-menu*`)
   are still emitted in templates/scripts for compatibility, but unified styles bind to
   the shared `entity-*` classes.
+- Shared portrait health bars now include a `.health-bar-readout` overlay positioned directly
+  above the bar, using white text with a black outline plus a subtle drop shadow; size is tuned
+  per bar variant through CSS custom properties on `.health-bar`, `.chat-health-bar`, and
+  `.npc-health-bar`.
+- Portrait cards also share `.character-level-badge` for the top-left bare `L.<level>` text on player
+  and NPC portraits, using a `3px` black stroke for readability. The player portrait adds `.chat-player-level-badge`, while the unspent-points
+  warning triangle is anchored from the shared chat-health-bar geometry instead of the portrait's
+  top-left corner so it sits lower-left, just above the bar.
 - Thing thumbnails on item/scenery cards also use a shared `.thing-count-badge` overlay in the
   lower-right corner of the image area. Items always show their persisted `count`; scenery
   hides the badge when `count === 1`.

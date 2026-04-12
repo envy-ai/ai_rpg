@@ -80,8 +80,10 @@ Most modals live in `views/index.njk` and are wired up by the inline script or `
   - Status-effect duration fields accept shared minute-canonical duration input such as `4 hours, 15 minutes`, `1d11h30m`, or bare minute counts.
   - Both include a shared vehicle editor partial with an `Is Vehicle` checkbox that enables/disables fields, a single-select destination picker, a `Vehicle Exit` select rendered as `inside -> outside`, and a fixed-route destinations picker (add/remove list with live substring suggestions, capped at 10 matches). The destination picker edits the active trip target: `currentDestination` for resolved trips and `pendingDestination` while the vehicle is underway. Unresolved named pending targets still render in the picker even before they resolve to a concrete `locationId`, and region-only pending targets remain intact unless the user explicitly clears or replaces them. Both destination areas also include `New Region` buttons: the active destination button creates a region-only unresolved `pendingDestination`, while the fixed-route button adds a `pending-region:<region name>` route entry that continues to point at that not-yet-generated region name until a timed arrival resolves it. Region edit vehicle-exit options are limited to exits that leave the region.
 - `#newExitModal`: create or edit exits (new region/location, editable travel time, optional image).
-- `#summonNpcModal`: summon an existing NPC into current location, with a live substring filter over NPC name/location.
-- `#summonThingModal`: summon an existing item/scenery into current location, with a live substring filter over name/type/origin label (including inventory origins like `Bob's inventory`).
+- Summon NPC/item now reuse the shared searchable chooser modal (`.npc-selection-modal`) instead of dedicated `<select>`-based forms.
+  - `Summon NPC` filters existing NPCs by name/location and executes immediately on row click.
+  - `Summon Item or Scenery` filters existing thing records by name/type/origin label (including inventory origins like `Bob's inventory`) and executes immediately on row click.
+  - The same chooser implementation is also reused by teleport and `Put in Inventory` target selection, so all three flows share the same typeahead-without-`select` behavior.
 
 ## Crafting / processing
 

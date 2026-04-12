@@ -29,6 +29,7 @@ The main UI is rendered by `views/index.njk` and powered by `public/js/chat.js` 
   - Equippable item tooltips include stacked comparison cards for currently equipped compatible-slot items (using the active actor context).
   - On touch/coarse-pointer devices, tapping any entity `•••` context-menu button temporarily suppresses floating tooltips so the menu remains reachable.
   - Clicking/tapping a thing image now opens a combined lightbox: the item image on the left and the full tooltip content on the right, reusing the same stacked compatible-equipped comparison cards shown on hover for equippable items. On wider screens the image column is capped to the left `67%` of the viewport and the tooltip pane is vertically centered without stretching to the full viewer height; if the tooltip content is too tall, that desktop tooltip pane scrolls vertically on its own. Mobile switches to a vertical layout with a scrollable viewer instead of adding a second inner tooltip scrollbar. Clicking/tapping either the image pane or the tooltip pane dismisses the viewer.
+  - `Summon NPC`, `Summon Item or Scenery`, `Teleport`, and item `Put in Inventory` target selection now all reuse the same searchable chooser pattern: a filter input over a clickable result list, with no native `<select>` widget.
   - Exits list + "New Exit" button.
   - Exit button labels append the stored travel time in compact form, for example `North Hall (1h10m)`.
   - Exits whose destination is a vehicle render a left-side vehicle icon on the travel button, using the destination vehicle's `vehicleInfo.icon` and falling back to `🚗` when icon metadata is missing.
@@ -40,6 +41,8 @@ The main UI is rendered by `views/index.njk` and powered by `public/js/chat.js` 
   - `exit.isVehicle`/`exit.vehicleType` are treated as edge metadata only and must not be used to infer that the destination location/region is itself a vehicle.
   - NPC list + "Add NPC" button.
   - NPC and party-member card health bars sit just below the portrait image so they do not overlap the in-portrait need bars.
+  - Character-card and player-card health bars now show a centered outlined `current/max` readout directly above the bar itself; the player sidebar no longer repeats a separate `HP:` text row below the portrait metadata.
+  - Player, location-NPC, sidebar-party, and Party-tab portraits now show a top-left bare `L.<level>` text badge on the image itself instead of repeating the level in separate text rows.
   - Dead NPC/party cards only show a corpse countdown inside the skull indicator when `corpseCountdown` is numeric; persistent corpses (`persistWhenDead`) omit the countdown entirely.
   - Items/Scenery grids + "Craft" and "New Item/Scenery" buttons.
   - Thing cards render a lower-right thumbnail count badge from persisted `thing.count`; item cards always show it, while scenery cards suppress the badge when the count is `1`.
@@ -72,7 +75,7 @@ The main UI is rendered by `views/index.njk` and powered by `public/js/chat.js` 
   - The prefix-help modal documents `\` as a no-context prompt that is logged, excluded from future base-context history, and run without chat tools.
 - **Sidebar** (`.chat-sidebar`):
   - Outer panel shape keeps only the bottom-right corner rounded.
-  - Player card (portrait, health, need bars, quick actions, and a top-left warning triangle when unspent skill/attribute points are present).
+  - Player card (portrait, health, need bars, quick actions, a top-left `L.<level>` badge, and a lower-left warning triangle positioned `1em` above the health bar when unspent skill/attribute points are present).
   - Player "View" opens `#npcViewModal` in editable mode for attributes/skills using shared allocation partials; skills can now be added/removed directly in this modal for the player view. The modal now includes a Faction section above Equipment: NPCs show a single faction, while player view lists all factions with reputation tier labels and associated tier perks. NPCs use the same allocation sections in read-only mode, and their unspent point totals are hidden.
 - **Player level-up ability draft modal** (`#playerAbilitySelectionModal`):
   - Opens when the player has any underfilled level (`player_abilities_per_level`) from level 1 through current level.
