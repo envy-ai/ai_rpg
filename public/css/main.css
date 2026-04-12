@@ -126,7 +126,6 @@ p:not(:last-child) {
   position: absolute;
   inset: 0;
   background: rgba(10, 12, 24, 0.6);
-  -webkit-backdrop-filter: blur(2px);
   backdrop-filter: blur(2px);
 }
 
@@ -191,6 +190,9 @@ p:not(:last-child) {
   background: rgba(255, 255, 255, 0.05);
   color: rgba(255, 255, 255, 0.9);
   font-size: 0.95rem;
+}
+.npc-selection-filter-input::-moz-placeholder {
+  color: rgba(255, 255, 255, 0.55);
 }
 .npc-selection-filter-input::placeholder {
   color: rgba(255, 255, 255, 0.55);
@@ -540,7 +542,9 @@ p:not(:last-child) {
 }
 
 .quest-abandon-button {
-  appearance: none;
+  -webkit-appearance: none;
+     -moz-appearance: none;
+          appearance: none;
   border-radius: 999px;
   border: 1px solid rgba(255, 255, 255, 0.14);
   padding: 9px 18px;
@@ -815,7 +819,8 @@ p:not(:last-child) {
   border-radius: 16px;
   box-shadow: 0 25px 60px rgba(0, 0, 0, 0.65);
   border: 1px solid rgba(255, 255, 255, 0.1);
-  object-fit: contain;
+  -o-object-fit: contain;
+     object-fit: contain;
   background: rgba(12, 16, 28, 0.85);
 }
 .image-lightbox__caption {
@@ -2377,7 +2382,9 @@ p:not(:last-child) {
 }
 
 .equipment-select {
-  appearance: none;
+  -webkit-appearance: none;
+     -moz-appearance: none;
+          appearance: none;
   background: rgba(15, 23, 42, 0.85);
   border: 1px solid rgba(148, 163, 184, 0.2);
   border-radius: 10px;
@@ -2963,6 +2970,7 @@ button.thing-action-icon:hover, button.thing-action-icon:focus-visible {
   display: inline-flex;
   align-items: flex-end;
   justify-content: center;
+  width: -moz-max-content;
   width: max-content;
   min-width: 0;
   height: calc(var(--thing-icon-size, 94px) * 0.2);
@@ -3040,7 +3048,8 @@ button.thing-action-icon:hover, button.thing-action-icon:focus-visible {
 .entity-icon img {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  -o-object-fit: cover;
+     object-fit: cover;
   display: block;
 }
 
@@ -3778,14 +3787,16 @@ body.dark .thing-toggle-hint {
 .party-portrait-image img {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  -o-object-fit: cover;
+     object-fit: cover;
   display: block;
 }
 
 .party-portrait img {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  -o-object-fit: cover;
+     object-fit: cover;
   display: block;
 }
 
@@ -3959,7 +3970,8 @@ body.dark .thing-toggle-hint {
 .chat-player-portrait img {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  -o-object-fit: cover;
+     object-fit: cover;
   display: block;
 }
 
@@ -4042,10 +4054,11 @@ body.dark .thing-toggle-hint {
   position: absolute;
   left: 50%;
   top: 50%;
-  transform: translateX(-50%) translateY(-50%);
+  transform: translateX(-50%) translateY(-60%);
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  min-width: -moz-max-content;
   min-width: max-content;
   color: #ffffff;
   font-size: var(--health-bar-readout-font-size);
@@ -4111,9 +4124,8 @@ body.dark .thing-toggle-hint {
   bottom: var(--chat-player-health-bar-bottom);
   height: var(--chat-player-health-bar-height);
   border-width: 1.5px;
-  --health-bar-readout-font-size: 0.7rem;
-  --health-bar-readout-bottom-gap: 3px;
-  --health-bar-readout-stroke-width: 2.5px;
+  --health-bar-readout-font-size: 1.3rem;
+  --health-bar-readout-stroke-width: 4px;
   --health-bar-readout-shadow-y: 2px;
   --health-bar-readout-shadow-blur: 4px;
   box-shadow: 0 4px 10px rgba(248, 113, 113, 0.3), inset 0 0 8px rgba(15, 23, 42, 0.85);
@@ -4456,6 +4468,7 @@ body.dark .thing-toggle-hint {
   overflow-x: auto;
 }
 .message .message-content table {
+  width: -moz-max-content;
   width: max-content;
   min-width: 100%;
   border-spacing: 0;
@@ -4612,6 +4625,9 @@ body.dark .thing-toggle-hint {
   max-height: 150px;
   font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
   transition: background 0.3s ease;
+}
+.message-input::-moz-placeholder {
+  color: rgba(255, 255, 255, 0.7);
 }
 .message-input::placeholder {
   color: rgba(255, 255, 255, 0.7);
@@ -4851,6 +4867,9 @@ body.dark .thing-toggle-hint {
   color: #444444;
   font-size: 16px;
   transition: background 0.3s ease;
+}
+.form-group input::-moz-placeholder, .form-group select::-moz-placeholder, .form-group textarea::-moz-placeholder {
+  color: rgba(255, 255, 255, 0.7);
 }
 .form-group input::placeholder,
 .form-group select::placeholder,
@@ -5175,6 +5194,9 @@ body.dark .thing-toggle-hint {
   color: #444444;
   font-size: 16px;
   transition: background 0.3s ease;
+}
+.faction-assets input::-moz-placeholder, .faction-assets textarea::-moz-placeholder, .faction-relations select::-moz-placeholder, .faction-relations textarea::-moz-placeholder, .faction-tiers input::-moz-placeholder, .faction-tiers textarea::-moz-placeholder {
+  color: rgba(255, 255, 255, 0.7);
 }
 .faction-assets input::placeholder,
 .faction-assets textarea::placeholder,
@@ -5691,7 +5713,9 @@ body.dark .thing-toggle-hint {
   font-size: 12px;
   font-weight: bold;
   color: rgba(255, 255, 255, 0.7);
-  user-select: none;
+  -webkit-user-select: none;
+     -moz-user-select: none;
+          user-select: none;
   transition: color 0.3s ease;
   border-radius: 8px;
 }
@@ -5921,7 +5945,8 @@ body.dark .thing-toggle-hint {
   width: 100%;
   height: 100%;
   display: block;
-  object-fit: cover;
+  -o-object-fit: cover;
+     object-fit: cover;
 }
 .location-image-vehicle-pip__image .location-placeholder {
   width: 100%;
@@ -6019,7 +6044,6 @@ body.modal-open {
   position: fixed;
   inset: 0;
   background: var(--airpg-modal-backdrop);
-  -webkit-backdrop-filter: blur(6px);
   backdrop-filter: blur(6px);
   z-index: 900;
 }
@@ -6028,7 +6052,6 @@ body.modal-open {
 .chat-edit-modal__backdrop,
 .npc-selection-backdrop {
   background: var(--airpg-modal-backdrop);
-  -webkit-backdrop-filter: blur(6px);
   backdrop-filter: blur(6px);
 }
 
@@ -6544,7 +6567,8 @@ body.modal-open {
 .crafting-slot__item-image img {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  -o-object-fit: cover;
+     object-fit: cover;
 }
 .crafting-slot__item-icon {
   font-size: 2rem;
@@ -6695,7 +6719,9 @@ body.modal-open {
   cursor: pointer;
   color: #f8fafc;
   font-size: 0.9rem;
-  user-select: none;
+  -webkit-user-select: none;
+     -moz-user-select: none;
+          user-select: none;
 }
 
 .modal-checkbox input[type=checkbox] {
@@ -6708,7 +6734,9 @@ body.modal-open {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  appearance: none;
+  -webkit-appearance: none;
+     -moz-appearance: none;
+          appearance: none;
   cursor: pointer;
   transition: border 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
 }
@@ -6972,7 +7000,8 @@ body.modal-open {
 .npc-view-image img {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  -o-object-fit: cover;
+     object-fit: cover;
 }
 
 .npc-view-image-placeholder {
@@ -7437,7 +7466,9 @@ body.modal-open {
   border-radius: 4px;
   cursor: grab;
   font-size: 1.2rem;
-  user-select: none;
+  -webkit-user-select: none;
+     -moz-user-select: none;
+          user-select: none;
 }
 
 .npc-list-editor-handle:focus,
@@ -8661,6 +8692,4 @@ body.modal-open {
   width: 1.5rem;
   flex-shrink: 0;
   text-align: center;
-}
-
-/*# sourceMappingURL=main.css.map */
+}/*# sourceMappingURL=main.css.map */

@@ -4451,7 +4451,7 @@ body.dark .thing-toggle-hint {
   position: absolute;
   left: 50%;
   top: 50%;
-  transform: translateX(-50%) translateY(-50%);
+  transform: translateX(-50%) translateY(-60%);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -4528,9 +4528,8 @@ body.dark .thing-toggle-hint {
   bottom: var(--chat-player-health-bar-bottom);
   height: var(--chat-player-health-bar-height);
   border-width: 1.5px;
-  --health-bar-readout-font-size: 0.7rem;
-  --health-bar-readout-bottom-gap: 3px;
-  --health-bar-readout-stroke-width: 2.5px;
+  --health-bar-readout-font-size: 1.3rem;
+  --health-bar-readout-stroke-width: 4px;
   --health-bar-readout-shadow-y: 2px;
   --health-bar-readout-shadow-blur: 4px;
   box-shadow:
