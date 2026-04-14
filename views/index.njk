@@ -276,7 +276,9 @@
                                     <h3 class="chat-sidebar-heading" id="chatPlayerName">Player</h3>
                                     <div class="chat-player-card" id="chatPlayerCard">
                                         <div class="chat-player-portrait" id="chatPlayerPortrait">
-                                            <div class="character-level-badge chat-player-level-badge" id="chatPlayerLevelBadge" aria-hidden="true">L.?</div>
+                                            <div class="character-level-stack">
+                                                <div class="character-level-badge chat-player-level-badge" id="chatPlayerLevelBadge" aria-hidden="true">L.?</div>
+                                            </div>
                                             <div class="chat-player-points-indicator" id="chatPlayerPointsIndicator" hidden aria-hidden="true">
                                                 <span class="chat-player-points-indicator-mark" aria-hidden="true">!</span>
                                             </div>
@@ -2615,6 +2617,19 @@
             return badge;
         }
 
+        function ensureCharacterLevelStack(portrait) {
+            if (!(portrait instanceof HTMLElement)) {
+                return null;
+            }
+            let stack = portrait.querySelector('.character-level-stack');
+            if (!stack) {
+                stack = document.createElement('div');
+                stack.className = 'character-level-stack';
+                portrait.prepend(stack);
+            }
+            return stack;
+        }
+
         function updateCharacterLevelBadge(badge, levelValue) {
             if (!(badge instanceof HTMLElement)) {
                 return;
@@ -2643,9 +2658,30 @@
             const indicator = document.createElement('div');
             indicator.className = 'npc-death-indicator';
 
-            const icon = document.createElement('span');
+            const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
             icon.className = 'npc-death-indicator__icon';
-            icon.textContent = '💀';
+            icon.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+            icon.setAttribute('viewBox', '0 -960 960 960');
+            icon.setAttribute('width', '1em');
+            icon.setAttribute('height', '1em');
+            icon.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+            icon.setAttribute('aria-hidden', 'true');
+            icon.setAttribute('focusable', 'false');
+            icon.style.width = '1em';
+            icon.style.height = '1em';
+            icon.style.display = 'block';
+
+            const iconPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            iconPath.setAttribute(
+                'd',
+                'M252-96v-163l-24.5-13Q203-285 174-315.5T120.5-398Q96-450 96-528q0-145 110.5-240.5T480-864q163 0 273.5 95.5T864-528q0 78-24.5 130T786-315.5Q757-285 732.5-272L708-259v163H252Zm72-72h48v-72h72v72h72v-72h72v72h48v-139l24.5-7.5q24.5-7.5 53.5-31t53.5-67Q792-456 792-528q0-114-89-189t-223-75q-134 0-223 75t-89 189q0 72 24 115.5t53.5 67q29.5 23.5 54 31L324-307v139Zm96-192h120l-60-120-60 120Zm-83.79-96Q366-456 387-477.21t21-51Q408-558 386.79-579t-51-21Q306-600 285-578.79t-21 51Q264-498 285.21-477t51 21Zm288 0Q654-456 675-477.21t21-51Q696-558 674.79-579t-51-21Q594-600 573-578.79t-21 51Q552-498 573.21-477t51 21ZM480-168Z'
+            );
+            iconPath.setAttribute('fill', '#ffffff');
+            iconPath.setAttribute('stroke', '#000000');
+            iconPath.setAttribute('stroke-width', '3');
+            iconPath.setAttribute('vector-effect', 'non-scaling-stroke');
+            iconPath.setAttribute('paint-order', 'stroke fill');
+            icon.appendChild(iconPath);
             indicator.appendChild(icon);
 
             if (Number.isFinite(npc?.corpseCountdown)) {
@@ -2655,7 +2691,12 @@
                 indicator.appendChild(countdown);
             }
 
-            portrait.appendChild(indicator);
+            const stack = ensureCharacterLevelStack(portrait);
+            if (stack) {
+                stack.appendChild(indicator);
+            } else {
+                portrait.appendChild(indicator);
+            }
         }
 
         function escapeForSelector(value) {
@@ -3908,7 +3949,12 @@
                 portrait.appendChild(portraitImage);
 
                 const levelBadge = createCharacterLevelBadge();
-                portrait.appendChild(levelBadge);
+                const levelStack = ensureCharacterLevelStack(portrait);
+                if (levelStack) {
+                    levelStack.appendChild(levelBadge);
+                } else {
+                    portrait.appendChild(levelBadge);
+                }
 
                 const { bar: npcHealthBar, fill: npcHealthFill } = createHealthBar('npc-health-bar');
                 npcHealthFill.classList.add('npc-health-bar-fill');
@@ -23053,7 +23099,12 @@
                                 portrait.appendChild(portraitImage);
 
                                 const levelBadge = createCharacterLevelBadge();
-                                portrait.appendChild(levelBadge);
+                                const levelStack = ensureCharacterLevelStack(portrait);
+                                if (levelStack) {
+                                    levelStack.appendChild(levelBadge);
+                                } else {
+                                    portrait.appendChild(levelBadge);
+                                }
 
                                 const { bar: npcHealthBar, fill: npcHealthFill } = createHealthBar('npc-health-bar');
                                 npcHealthFill.classList.add('npc-health-bar-fill');
@@ -25230,7 +25281,12 @@
                     portrait.appendChild(portraitImage);
 
                     const levelBadge = createCharacterLevelBadge();
-                    portrait.appendChild(levelBadge);
+                    const levelStack = ensureCharacterLevelStack(portrait);
+                    if (levelStack) {
+                        levelStack.appendChild(levelBadge);
+                    } else {
+                        portrait.appendChild(levelBadge);
+                    }
 
                     const { bar: portraitHealthBar, fill: portraitHealthFill } = createHealthBar('npc-health-bar');
                     portraitHealthFill.classList.add('npc-health-bar-fill');

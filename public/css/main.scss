@@ -1611,6 +1611,12 @@ p:not(:last-child) {
   }
 }
 
+#tab-map[hidden],
+#tab-world-map[hidden],
+.tab-panel[hidden] {
+  display: none !important;
+}
+
 #tab-map #mapContainer,
 #tab-world-map #worldMapContainer {
   flex: 1 1 auto;
@@ -3105,9 +3111,16 @@ p:not(:last-child) {
 .thing-action-icon-list {
   display: inline-flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: center;
+  min-width: 48px;
   gap: $thing-action-icon-list-gap;
   flex-wrap: wrap;
+  &:has(> *:nth-child(5)) {
+    min-width: 72px;
+  }
+  &:has(> *:nth-child(7)) {
+    min-width: 96px;
+  }
 }
 
 .thing-action-icon {
@@ -3435,24 +3448,24 @@ button.thing-action-icon {
 }
 
 .npc-death-indicator {
-  position: absolute;
-  top: 6px;
-  left: 6px;
   display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 6px;
-  border-radius: 999px;
-  background: rgba(15, 23, 42, 0.85);
-  color: #f8fafc;
+  align-items: flex-start;
+  gap: 2px;
+  color: #ffffff;
   font-size: 0.7rem;
-  font-weight: 600;
+  font-weight: 700;
   letter-spacing: 0.01em;
-  pointer-events: none;
+  -webkit-text-stroke: 3px #000000;
+  paint-order: stroke fill;
 }
 
 .npc-death-indicator__icon {
+  width: 1em;
+  height: 1em;
+  display: block;
   line-height: 1;
+  overflow: visible;
+  flex: 0 0 1em;
 }
 
 .npc-death-indicator__countdown {
@@ -4142,10 +4155,19 @@ body.dark .thing-toggle-hint {
   justify-content: center;
 }
 
-.character-level-badge {
+.character-level-stack {
   position: absolute;
   top: 8px;
   left: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  pointer-events: none;
+  z-index: 35;
+}
+
+.character-level-badge {
   display: inline-block;
   color: #ffffff;
   font-size: 0.82rem;
@@ -4154,8 +4176,6 @@ body.dark .thing-toggle-hint {
   letter-spacing: 0.02em;
   -webkit-text-stroke: 3px #000000;
   paint-order: stroke fill;
-  pointer-events: none;
-  z-index: 35;
 }
 
 .party-portrait-image {
@@ -4367,10 +4387,7 @@ body.dark .thing-toggle-hint {
 }
 
 .chat-player-level-badge {
-  min-width: 2.9rem;
-  padding: 0.18rem 0.56rem;
   font-size: 0.94rem;
-  z-index: 41;
 }
 
 .chat-player-portrait-image {

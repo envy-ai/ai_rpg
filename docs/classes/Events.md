@@ -62,6 +62,8 @@ Runs LLM-based event checks on narrative text, parses structured outcomes, and a
 - `alter_npc` requests now require an `<npc>...</npc>` block from the model and always log prompt/response payloads through `LLMClient.logPrompt` before parse/apply.
 - `_parseCharacterAlterXml` can parse wrapped or escaped model output by decoding basic entities and extracting the first `<npc>...</npc>` block before XML parsing.
 - `suppressMoveEvents` skips applying `move_location` and `move_new_location` outcomes; this is primarily used for split `<travelProse>` origin/destination checks where movement is handled by the travel pipeline.
+- `move_new_location` parsing treats `sublocation` as `location` so sublocations generate full location stubs when move events are applied (unless move events are suppressed).
+- When `move_new_location` entries are present but `context.location` is missing, the handler now logs a warning before skipping movement/exit creation.
 - Non-`<travelProse>` turns should generally leave move suppression disabled so narrated movement in event checks can still move the player.
 - Follow-up event-check passes inherit `suppressMoveEvents`/`allowMoveTurnAppearances` from the parent check to keep move-handling behavior consistent across queued reward/follow-up prose.
 - `allowMoveTurnAppearances` allows `item_appear` / `scenery_appear` handlers to run even when `Globals.processedMove` is true (used for `<travelProse>` event-check passes).

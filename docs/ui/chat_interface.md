@@ -14,6 +14,7 @@ The main UI is rendered by `views/index.njk` and powered by `public/js/chat.js` 
   - `party` -> `window.refreshParty()`.
   - `story-tools` -> `window.refreshStoryTools({ preserveSelection: true })`.
   - `factions` -> `window.refreshFactions()`.
+  - Hidden tab panels explicitly override any display styles so inactive tabs never render, even when they define their own flex layouts.
 
 ## Adventure tab structure
 
@@ -44,7 +45,7 @@ The main UI is rendered by `views/index.njk` and powered by `public/js/chat.js` 
   - NPC and party-member card health bars sit just below the portrait image so they do not overlap the in-portrait need bars.
   - Character-card and player-card health bars now show a centered outlined `current/max` readout directly above the bar itself; the player sidebar no longer repeats a separate `HP:` text row below the portrait metadata.
   - Player, location-NPC, sidebar-party, and Party-tab portraits now show a top-left bare `L.<level>` text badge on the image itself instead of repeating the level in separate text rows.
-  - Dead NPC/party cards only show a corpse countdown inside the skull indicator when `corpseCountdown` is numeric; persistent corpses (`persistWhenDead`) omit the countdown entirely.
+  - Dead NPC/party cards only show a skull icon plus corpse countdown under the top-left `L.<level>` badge when `corpseCountdown` is numeric; persistent corpses (`persistWhenDead`) omit the countdown entirely.
   - Items/Scenery grids + "Craft" and "New Item/Scenery" buttons.
   - Thing cards render a lower-right thumbnail count badge from persisted `thing.count`; item cards always show it, while scenery cards suppress the badge when the count is `1`.
   - Location item/scenery sections now use the same inventory-style thing-list renderer and search/slot-filter pipeline as the player/NPC inventory modal and crafting inventory. All four shared panels now expose a shared three-control header: a view popup, a sort popup, and the icon-only filter popup. View state is tracked per panel on the current player record, so changing one panel to `Table` or `Grid` does not affect the others, survives rerenders, persists across page reloads, and is serialized into saves. The default shared panel view is `Grid` until overridden by those saved per-panel preferences.

@@ -72,6 +72,9 @@ Loaded on the chat page:
   and NPC portraits, using a `3px` black stroke for readability. The player portrait adds `.chat-player-level-badge`, while the unspent-points
   warning triangle is anchored from the shared chat-health-bar geometry instead of the portrait's
   top-left corner so it sits lower-left, just above the bar.
+- Dead NPC/party cards position a `skull.svg` icon plus corpse countdown just below the level text and use the same
+  `3px` black outline styling instead of a pill background, with the skull scaled to the line
+  height via `1em` sizing so it tracks the countdown text.
 - Thing thumbnails on item/scenery cards also use a shared `.thing-count-badge` overlay in the
   lower-right corner of the image area. Items always show their persisted `count`; scenery
   hides the badge when `count === 1`.

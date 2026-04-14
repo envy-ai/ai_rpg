@@ -432,6 +432,11 @@ async function applyExitDiscovery(
         typeof Location?.get !== "function" ||
         typeof ensureExitConnection !== "function"
     ) {
+        if (movePlayer && entries && entries.length > 0) {
+            console.warn(
+                `[${eventLabel}] Skipping move/exit creation because context.location is missing.`,
+            );
+        }
         return;
     }
 
@@ -3630,6 +3635,9 @@ class Events {
                         let [name, kind, vehicle, ...descriptionParts] = parts;
                         let normalizedKind = (kind || "").toLowerCase();
 
+                        // Sublocations intentionally promote to full locations so they create new
+                        // location stubs when move_new_location is applied (unless move events are
+                        // suppressed for travel-prose splits).
                         if (normalizedKind === "sublocation") normalizedKind = "location";
                         if (
                             !name ||
