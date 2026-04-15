@@ -15,17 +15,41 @@ short_description:
 
 # OpenAI-compatible API configuration
 ai:
+  # Text generation backend:
+  # - openai_compatible: send requests to an OpenAI-style /chat/completions endpoint
+  # - codex_cli_bridge: run requests through the local Codex CLI bridge
+  backend: openai_compatible
+
   # API endpoint URL (examples):
   # OpenAI - "https://api.openai.com/v1"
   # LocalAI - "http://localhost:8080/v1"
   # Ollama - "http://localhost:11434/v1"
   # nano-gpt - "https://nano-gpt.com/api/v1"
   # OpenRouter - "https://openrouter.ai/api/v1"
+  # Required for openai_compatible backend
   endpoint: "https://nano-gpt.com/api/v1"
 
   # Your API key (keep this secure!)
+  # Required for openai_compatible backend
   apiKey: "your-api-key-here"
+
+  # Used by both backends. For codex_cli_bridge this becomes the `codex -m` model.
   model: zai-org/glm-4.7
+
+  # Codex bridge settings. These are used only when ai.backend is codex_cli_bridge.
+  codex_bridge:
+    command: codex
+    home: ./tmp/codex-bridge-home
+    # fresh, resume_last, or resume_id
+    session_mode: fresh
+    session_id: ""
+    sandbox: read-only
+    skip_git_repo_check: true
+    # Optional Codex reasoning effort override: none, minimal, low, medium, high, xhigh
+    reasoning_effort: ""
+    profile: ""
+    # Optional instructions prepended ahead of the generated bridge wrapper prompt.
+    prompt_preamble: ""
 
   # Optional: Additional parameters
   maxTokens: 10000
@@ -43,6 +67,8 @@ ai:
   waitAfterError: 10
   # Optional override used specifically for 429 rate-limit responses
   waitAfterRateLimitError: 10
+  # Prepends a random [cachebuster:<uuid>] line to the final user message when true.
+  cachebuster: false
   max_concurrent_requests: 6
 
   # Streaming -- enable if API supports it (it probably does)

@@ -6,6 +6,7 @@ const { response } = require('express');
 const Utils = require('./Utils.js');
 const { dump } = require('js-yaml');
 const readline = require('readline');
+const CodexBridgeClient = require('./CodexBridgeClient.js');
 let sharpModule = null;
 
 class Semaphore {
@@ -377,8 +378,32 @@ class LLMClient {
         return aiConfig;
     }
 
+    static resolveBackend(aiConfigOverride = null) {
+        const config = aiConfigOverride || LLMClient.ensureAiConfig();
+        return CodexBridgeClient.normalizeBackend(config?.backend);
+    }
+
+    static getConfigurationErrors(aiConfigOverride = null) {
+        const config = aiConfigOverride === null
+            ? Globals?.config?.ai
+            : aiConfigOverride;
+        return CodexBridgeClient.getConfigurationErrors(config);
+    }
+
+    static isConfigured(aiConfigOverride = null) {
+        try {
+            return LLMClient.getConfigurationErrors(aiConfigOverride).length === 0;
+        } catch (_) {
+            return false;
+        }
+    }
+
     static getMaxConcurrent(aiConfigOverride = null) {
         const config = aiConfigOverride || LLMClient.ensureAiConfig();
+        const backend = LLMClient.resolveBackend(config);
+        if (backend === CodexBridgeClient.backendName) {
+            return CodexBridgeClient.getMaxConcurrent(config);
+        }
         const raw = Number(config?.max_concurrent_requests);
         if (Number.isInteger(raw) && raw > 0) {
             return raw;
@@ -1931,6 +1956,7 @@ class LLMClient {
                     }
                 }
 
+                const resolvedBackend = LLMClient.resolveBackend(aiConfig);
                 const effectiveCustomArgs = LLMClient.#buildEffectiveCustomArgs({
                     baseCustomArgs: aiConfig.custom_args,
                     overrideCustomArgs
@@ -1991,7 +2017,9 @@ class LLMClient {
                     stream,
                     payload.stream !== undefined ? payload.stream : aiConfig.stream
                 );
-                payload.stream = resolvedStream !== false;
+                payload.stream = resolvedBackend === CodexBridgeClient.backendName
+                    ? false
+                    : resolvedStream !== false;
 
                 if (maxTokens !== undefined) {
                     if (!Number.isFinite(maxTokens) || maxTokens <= 0) {
@@ -2008,13 +2036,9 @@ class LLMClient {
                 );
                 payload.temperature = resolvedTemperature;
 
-                const resolvedEndpoint = LLMClient.resolveChatEndpoint(endpoint || aiConfig.endpoint);
-                const resolvedApiKey = apiKey || aiConfig.apiKey;
-                if (!resolvedApiKey) {
-                    throw new Error('AI API key is not configured.');
-                }
-
-                const configuredMaxConcurrent = LLMClient.getMaxConcurrent(aiConfig);
+                const configuredMaxConcurrent = resolvedBackend === CodexBridgeClient.backendName
+                    ? CodexBridgeClient.getMaxConcurrent(aiConfig)
+                    : LLMClient.getMaxConcurrent(aiConfig);
                 const effectiveMaxConcurrent = Number.isInteger(maxConcurrent) && maxConcurrent > 0
                     ? maxConcurrent
                     : configuredMaxConcurrent;
@@ -2046,7 +2070,19 @@ class LLMClient {
                     }
                     resolvedWaitAfterRateLimitError = configuredRateLimitWait;
                 }
-                const semaphoreKey = `${resolvedApiKey || 'no-key'}::${resolvedModel || 'no-model'}`;
+                const resolvedEndpoint = resolvedBackend === CodexBridgeClient.backendName
+                    ? null
+                    : LLMClient.resolveChatEndpoint(endpoint || aiConfig.endpoint);
+                const resolvedApiKey = resolvedBackend === CodexBridgeClient.backendName
+                    ? null
+                    : (apiKey || aiConfig.apiKey);
+                if (resolvedBackend !== CodexBridgeClient.backendName && !resolvedApiKey) {
+                    throw new Error('AI API key is not configured.');
+                }
+
+                const semaphoreKey = resolvedBackend === CodexBridgeClient.backendName
+                    ? `${resolvedBackend}::${resolvedModel || 'no-model'}`
+                    : `${resolvedApiKey || 'no-key'}::${resolvedModel || 'no-model'}`;
                 const resolvedTimeout = LLMClient.resolveTimeout(timeoutMs, timeoutScale);
                 const baseStartTimeoutMs = Number.isFinite(aiConfig.stream_start_timeout)
                     ? aiConfig.stream_start_timeout * 1000
@@ -2062,6 +2098,28 @@ class LLMClient {
                     : 0;
                 const streamStartTimeoutMs = baseStartTimeoutMs + (incrementStartTimeoutMs * attemptNumber);
                 const streamContinueTimeoutMs = baseContinueTimeoutMs + (incrementContinueTimeoutMs * attemptNumber);
+
+                if (resolvedBackend === CodexBridgeClient.backendName) {
+                    return {
+                        backend: resolvedBackend,
+                        aiConfig,
+                        bridgeConfig: CodexBridgeClient.resolveBridgeConfig(aiConfig),
+                        payload,
+                        requestMessages,
+                        resolvedModel,
+                        resolvedEndpoint,
+                        resolvedApiKey,
+                        resolvedTemperature,
+                        resolvedTimeout,
+                        effectiveMaxConcurrent,
+                        resolvedWaitAfterError,
+                        resolvedWaitAfterRateLimitError,
+                        semaphoreKey,
+                        streamStartTimeoutMs,
+                        streamContinueTimeoutMs,
+                        baseAxiosOptions: null
+                    };
+                }
 
                 const requestHeaders = {
                     'Authorization': `Bearer ${resolvedApiKey}`,
@@ -2084,7 +2142,9 @@ class LLMClient {
                 }
 
                 return {
+                    backend: resolvedBackend,
                     aiConfig,
+                    bridgeConfig: null,
                     payload,
                     requestMessages,
                     resolvedModel,
@@ -2147,6 +2207,7 @@ class LLMClient {
                 let attemptRuntime = null;
                 let payload = null;
                 let requestMessages = messages;
+                let resolvedBackend = null;
                 let resolvedModel = null;
                 let resolvedEndpoint = null;
                 let resolvedTimeout = null;
@@ -2193,6 +2254,7 @@ class LLMClient {
                         attemptRuntime = resolveAttemptRuntime({ attemptNumber: attempt });
                         payload = attemptRuntime.payload;
                         requestMessages = attemptRuntime.requestMessages;
+                        resolvedBackend = attemptRuntime.backend;
                         resolvedModel = attemptRuntime.resolvedModel;
                         resolvedEndpoint = attemptRuntime.resolvedEndpoint;
                         resolvedTimeout = attemptRuntime.resolvedTimeout;
@@ -2216,35 +2278,47 @@ class LLMClient {
                         );
                         await attemptSemaphore.acquire();
 
-                        const axiosOptions = { ...attemptRuntime.baseAxiosOptions, signal: controller.signal };
-                        streamTrackerId = payload.stream && !isSilent
-                            ? LLMClient.#trackStreamStart(metadataLabel, {
-                                startTimeoutMs: streamStartTimeoutMs,
-                                continueTimeoutMs: streamContinueTimeoutMs,
-                                isBackground: Boolean(runInBackground),
+                        if (resolvedBackend === CodexBridgeClient.backendName) {
+                            response = await CodexBridgeClient.chatCompletion({
+                                messages: requestMessages,
                                 model: resolvedModel,
-                                promptText: LLMClient.formatMessagesForErrorLog(payload.messages)
-                            })
-                            : null;
-                        if (streamTrackerId) {
-                            LLMClient.#abortControllers.set(streamTrackerId, controller);
-                        }
-                        if (payload.stream) {
-                            startTimer = setTimeout(() => {
-                                controller.abort(new Error('Stream start timeout'));
-                            }, streamStartTimeoutMs);
-                        }
-                        response = await axios.post(resolvedEndpoint, payload, axiosOptions);
-                        if (startTimer) {
-                            clearTimeout(startTimer);
-                            startTimer = null;
+                                timeoutMs: resolvedTimeout,
+                                metadataLabel,
+                                additionalPayload: payload,
+                                aiConfig: attemptRuntime.aiConfig
+                            });
+                        } else {
+                            const axiosOptions = { ...attemptRuntime.baseAxiosOptions, signal: controller.signal };
+                            streamTrackerId = payload.stream && !isSilent
+                                ? LLMClient.#trackStreamStart(metadataLabel, {
+                                    startTimeoutMs: streamStartTimeoutMs,
+                                    continueTimeoutMs: streamContinueTimeoutMs,
+                                    isBackground: Boolean(runInBackground),
+                                    model: resolvedModel,
+                                    promptText: LLMClient.formatMessagesForErrorLog(payload.messages)
+                                })
+                                : null;
+                            if (streamTrackerId) {
+                                LLMClient.#abortControllers.set(streamTrackerId, controller);
+                            }
+                            if (payload.stream) {
+                                startTimer = setTimeout(() => {
+                                    controller.abort(new Error('Stream start timeout'));
+                                }, streamStartTimeoutMs);
+                            }
+                            response = await axios.post(resolvedEndpoint, payload, axiosOptions);
+                            if (startTimer) {
+                                clearTimeout(startTimer);
+                                startTimer = null;
+                            }
                         }
                         if (response?.data?.usage && Number.isFinite(response.data.usage.total_tokens)) {
                             lastTotalTokens = response.data.usage.total_tokens;
                         }
 
                         // On any 5xx response, wait waitAfterError seconds and then retry
-                        if (response.status == 429 || (response.status >= 500 && response.status < 600)) {
+                        if (resolvedBackend !== CodexBridgeClient.backendName
+                            && (response.status == 429 || (response.status >= 500 && response.status < 600))) {
                             errorLog(`Server error from LLM (status ${response.status}) on attempt ${attempt + 1}.`);
                             const retryWaitSeconds = response.status == 429
                                 ? waitAfterRateLimitErrorSeconds

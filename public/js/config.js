@@ -4,6 +4,10 @@ class ConfigManager {
         this.statusMessage = document.getElementById('status-message');
         this.tabButtons = [];
         this.tabPanels = [];
+        this.aiBackendSelect = null;
+        this.aiBackendSections = [];
+        this.codexSessionModeSelect = null;
+        this.codexSessionModeSections = [];
         this.modelSelect = null;
         this.modelOptionsInput = null;
         this.modelOptions = [];
@@ -20,10 +24,11 @@ class ConfigManager {
     
     init() {
         this.bindEvents();
-        this.validateForm();
         this.initializeTabs();
         this.initializeModelSelector();
+        this.initializeAiBackendFields();
         this.initializeGameConfigOverride();
+        this.validateForm();
     }
     
     bindEvents() {
@@ -264,6 +269,63 @@ class ConfigManager {
         }
     }
 
+    initializeAiBackendFields() {
+        this.aiBackendSelect = document.getElementById('ai-backend');
+        this.aiBackendSections = Array.from(document.querySelectorAll('[data-ai-backend-section]'));
+        this.codexSessionModeSelect = document.getElementById('ai-codex-sessionMode');
+        this.codexSessionModeSections = Array.from(document.querySelectorAll('[data-codex-session-mode-section]'));
+
+        if (this.aiBackendSelect) {
+            this.aiBackendSelect.addEventListener('change', () => {
+                this.updateAiBackendVisibility();
+                this.validateForm();
+            });
+        }
+
+        if (this.codexSessionModeSelect) {
+            this.codexSessionModeSelect.addEventListener('change', () => {
+                this.updateAiBackendVisibility();
+                this.validateForm();
+            });
+        }
+
+        this.updateAiBackendVisibility();
+    }
+
+    updateAiBackendVisibility() {
+        const backend = this.aiBackendSelect?.value || 'openai_compatible';
+        const codexSessionMode = this.codexSessionModeSelect?.value || 'fresh';
+
+        this.aiBackendSections.forEach((section) => {
+            const requiredBackend = section.dataset.aiBackendSection;
+            const isVisible = !requiredBackend || requiredBackend === backend;
+            section.hidden = !isVisible;
+        });
+
+        this.codexSessionModeSections.forEach((section) => {
+            const requiredMode = section.dataset.codexSessionModeSection;
+            const isVisible = backend === 'codex_cli_bridge'
+                && (!requiredMode || requiredMode === codexSessionMode);
+            section.hidden = !isVisible;
+        });
+
+        const backendRequiredFields = this.form
+            ? Array.from(this.form.querySelectorAll('[data-required-backend]'))
+            : [];
+        backendRequiredFields.forEach((field) => {
+            const requiredBackend = field.dataset.requiredBackend;
+            field.required = requiredBackend === backend;
+        });
+
+        const codexSessionRequiredFields = this.form
+            ? Array.from(this.form.querySelectorAll('[data-required-codex-session-mode]'))
+            : [];
+        codexSessionRequiredFields.forEach((field) => {
+            const requiredMode = field.dataset.requiredCodexSessionMode;
+            field.required = backend === 'codex_cli_bridge' && requiredMode === codexSessionMode;
+        });
+    }
+
     handleModelChange() {
         if (!this.modelSelect) {
             return;
@@ -443,12 +505,23 @@ function togglePassword(fieldId) {
 }
 
 async function testConnection() {
+    const backend = document.getElementById('ai-backend')?.value || 'openai_compatible';
     const endpoint = document.getElementById('ai-endpoint').value;
     const apiKey = document.getElementById('ai-apiKey').value;
     const model = document.getElementById('ai-model').value;
-    
-    if (!endpoint || !apiKey || !model) {
+    const codexSessionMode = document.getElementById('ai-codex-sessionMode')?.value || 'fresh';
+    const codexSessionId = document.getElementById('ai-codex-sessionId')?.value || '';
+
+    if (!model) {
+        showTestResult('Please fill in the model before testing.', 'error');
+        return;
+    }
+    if (backend === 'openai_compatible' && (!endpoint || !apiKey)) {
         showTestResult('Please fill in endpoint, API key, and model before testing.', 'error');
+        return;
+    }
+    if (backend === 'codex_cli_bridge' && codexSessionMode === 'resume_id' && !codexSessionId.trim()) {
+        showTestResult('Please provide a Codex session ID when using resume_id mode.', 'error');
         return;
     }
     
@@ -465,9 +538,21 @@ async function testConnection() {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
+                backend,
                 endpoint: endpoint,
                 apiKey: apiKey,
-                model: model
+                model: model,
+                codexBridge: {
+                    command: document.getElementById('ai-codex-command')?.value || '',
+                    home: document.getElementById('ai-codex-home')?.value || '',
+                    session_mode: codexSessionMode,
+                    session_id: codexSessionId,
+                    sandbox: document.getElementById('ai-codex-sandbox')?.value || 'read-only',
+                    skip_git_repo_check: Boolean(document.getElementById('ai-codex-skipGitRepoCheck')?.checked),
+                    reasoning_effort: document.getElementById('ai-codex-reasoningEffort')?.value || '',
+                    profile: document.getElementById('ai-codex-profile')?.value || '',
+                    prompt_preamble: document.getElementById('ai-codex-promptPreamble')?.value || ''
+                }
             })
         });
         

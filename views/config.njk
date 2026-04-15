@@ -83,18 +83,71 @@
                 <!-- AI Configuration -->
                 <div class="config-section">
                     <h2>🤖 AI Configuration</h2>
+                    {% set aiBackend = config.ai.backend or 'openai_compatible' %}
+                    {% set codexBridgeConfig = config.ai.codex_bridge or {} %}
+                    {% set codexCommandValue = codexBridgeConfig.command or 'codex' %}
+                    {% set codexHomeValue = codexBridgeConfig.home or './tmp/codex-bridge-home' %}
+                    {% set codexSessionModeValue = codexBridgeConfig.session_mode or 'fresh' %}
+                    {% set codexSandboxValue = codexBridgeConfig.sandbox or 'read-only' %}
+                    {% set codexReasoningEffortValue = codexBridgeConfig.reasoning_effort or '' %}
+                    {% set codexProfileValue = codexBridgeConfig.profile or '' %}
+                    {% set codexPromptPreambleValue = codexBridgeConfig.prompt_preamble or '' %}
                     <div class="form-grid">
                         <div class="form-group full-width">
+                            <label for="ai-backend">Backend:</label>
+                            <select id="ai-backend" name="ai.backend::string" required>
+                                <option value="openai_compatible" {% if aiBackend == 'openai_compatible' %}selected{% endif %}>openai_compatible</option>
+                                <option value="codex_cli_bridge" {% if aiBackend == 'codex_cli_bridge' %}selected{% endif %}>codex_cli_bridge</option>
+                            </select>
+                            <span class="help-text">Choose the text-generation backend. The OpenAI-compatible path remains available, and Codex can be enabled as a separate bridge-backed option.</span>
+                        </div>
+
+                        <div class="form-group full-width"
+                             data-ai-backend-section="openai_compatible"
+                             {% if aiBackend != 'openai_compatible' %}hidden{% endif %}>
                             <label for="ai-endpoint">API Endpoint:</label>
-                            <input type="url" id="ai-endpoint" name="ai.endpoint::string" value="{{ config.ai.endpoint }}" required>
+                            <input type="url"
+                                   id="ai-endpoint"
+                                   name="ai.endpoint::string"
+                                   value="{{ config.ai.endpoint }}"
+                                   data-required-backend="openai_compatible">
                             <span class="help-text">OpenAI-compatible API endpoint URL</span>
                         </div>
                         
-                        <div class="form-group full-width">
+                        <div class="form-group full-width"
+                             data-ai-backend-section="openai_compatible"
+                             {% if aiBackend != 'openai_compatible' %}hidden{% endif %}>
                             <label for="ai-apiKey">API Key:</label>
-                            <input type="password" id="ai-apiKey" name="ai.apiKey::string" value="{{ config.ai.apiKey }}" required>
+                            <input type="password"
+                                   id="ai-apiKey"
+                                   name="ai.apiKey::string"
+                                   value="{{ config.ai.apiKey }}"
+                                   data-required-backend="openai_compatible">
                             <span class="help-text">Your API key (keep this secure!)</span>
                             <button type="button" class="toggle-password" onclick="togglePassword('ai-apiKey')">👁️</button>
+                        </div>
+
+                        <div class="form-group full-width"
+                             data-ai-backend-section="codex_cli_bridge"
+                             {% if aiBackend != 'codex_cli_bridge' %}hidden{% endif %}>
+                            <label for="ai-codex-command">Codex Command:</label>
+                            <input type="text"
+                                   id="ai-codex-command"
+                                   name="ai.codex_bridge.command::string"
+                                   value="{{ codexCommandValue }}"
+                                   data-required-backend="codex_cli_bridge">
+                            <span class="help-text">Command or absolute path used to launch Codex.</span>
+                        </div>
+
+                        <div class="form-group full-width"
+                             data-ai-backend-section="codex_cli_bridge"
+                             {% if aiBackend != 'codex_cli_bridge' %}hidden{% endif %}>
+                            <label for="ai-codex-home">Codex Home:</label>
+                            <input type="text"
+                                   id="ai-codex-home"
+                                   name="ai.codex_bridge.home::string"
+                                   value="{{ codexHomeValue }}">
+                            <span class="help-text">State directory used by the bridge. Relative paths are resolved from the repo root. Resume modes only see sessions recorded under this same Codex home.</span>
                         </div>
                         
                         <div class="form-group full-width">
@@ -107,6 +160,97 @@
                             </select>
                             <span class="help-text">Select the AI model to use</span>
                         </div>
+
+                        <div class="form-group"
+                             data-ai-backend-section="codex_cli_bridge"
+                             {% if aiBackend != 'codex_cli_bridge' %}hidden{% endif %}>
+                            <label for="ai-codex-sessionMode">Codex Session Mode:</label>
+                            <select id="ai-codex-sessionMode" name="ai.codex_bridge.session_mode::string">
+                                <option value="fresh" {% if codexSessionModeValue == 'fresh' %}selected{% endif %}>fresh</option>
+                                <option value="resume_last" {% if codexSessionModeValue == 'resume_last' %}selected{% endif %}>resume_last</option>
+                                <option value="resume_id" {% if codexSessionModeValue == 'resume_id' %}selected{% endif %}>resume_id</option>
+                            </select>
+                            <span class="help-text">`fresh` is the safest default. The resume modes target an existing Codex session.</span>
+                        </div>
+
+                        <div class="form-group"
+                             data-ai-backend-section="codex_cli_bridge"
+                             {% if aiBackend != 'codex_cli_bridge' %}hidden{% endif %}>
+                            <label for="ai-codex-sandbox">Codex Sandbox:</label>
+                            <select id="ai-codex-sandbox" name="ai.codex_bridge.sandbox::string">
+                                <option value="read-only" {% if codexSandboxValue == 'read-only' %}selected{% endif %}>read-only</option>
+                                <option value="workspace-write" {% if codexSandboxValue == 'workspace-write' %}selected{% endif %}>workspace-write</option>
+                                <option value="danger-full-access" {% if codexSandboxValue == 'danger-full-access' %}selected{% endif %}>danger-full-access</option>
+                            </select>
+                            <span class="help-text">Applies only to fresh Codex bridge runs.</span>
+                        </div>
+
+                        <div class="form-group full-width"
+                             data-ai-backend-section="codex_cli_bridge"
+                             data-codex-session-mode-section="resume_id"
+                             {% if aiBackend != 'codex_cli_bridge' or codexSessionModeValue != 'resume_id' %}hidden{% endif %}>
+                            <label for="ai-codex-sessionId">Codex Session ID:</label>
+                            <input type="text"
+                                   id="ai-codex-sessionId"
+                                   name="ai.codex_bridge.session_id::string"
+                                   value="{{ codexBridgeConfig.session_id }}"
+                                   data-required-backend="codex_cli_bridge"
+                                   data-required-codex-session-mode="resume_id">
+                            <span class="help-text">Required only when the bridge should resume a specific Codex session.</span>
+                        </div>
+
+                        <div class="form-group"
+                             data-ai-backend-section="codex_cli_bridge"
+                             {% if aiBackend != 'codex_cli_bridge' %}hidden{% endif %}>
+                            <label for="ai-codex-reasoningEffort">Codex Reasoning Effort:</label>
+                            <select id="ai-codex-reasoningEffort" name="ai.codex_bridge.reasoning_effort::string">
+                                <option value="" {% if codexReasoningEffortValue == '' %}selected{% endif %}>default</option>
+                                <option value="none" {% if codexReasoningEffortValue == 'none' %}selected{% endif %}>none</option>
+                                <option value="minimal" {% if codexReasoningEffortValue == 'minimal' %}selected{% endif %}>minimal</option>
+                                <option value="low" {% if codexReasoningEffortValue == 'low' %}selected{% endif %}>low</option>
+                                <option value="medium" {% if codexReasoningEffortValue == 'medium' %}selected{% endif %}>medium</option>
+                                <option value="high" {% if codexReasoningEffortValue == 'high' %}selected{% endif %}>high</option>
+                                <option value="xhigh" {% if codexReasoningEffortValue == 'xhigh' %}selected{% endif %}>xhigh</option>
+                            </select>
+                            <span class="help-text">Optional `model_reasoning_effort` override passed through to Codex. `none` is the lowest supported setting.</span>
+                        </div>
+
+                        <div class="form-group"
+                             data-ai-backend-section="codex_cli_bridge"
+                             {% if aiBackend != 'codex_cli_bridge' %}hidden{% endif %}>
+                            <label for="ai-codex-profile">Codex Profile:</label>
+                            <input type="text"
+                                   id="ai-codex-profile"
+                                   name="ai.codex_bridge.profile::string"
+                                   value="{{ codexProfileValue }}">
+                            <span class="help-text">Optional Codex config profile to pass through to the bridge.</span>
+                        </div>
+
+                        <div class="form-group"
+                             data-ai-backend-section="codex_cli_bridge"
+                             {% if aiBackend != 'codex_cli_bridge' %}hidden{% endif %}>
+                            <label for="ai-codex-skipGitRepoCheck">Skip Git Repo Check:</label>
+                            <div class="checkbox-wrapper">
+                                <input type="hidden" name="ai.codex_bridge.skip_git_repo_check::boolean" value="false">
+                                <input type="checkbox"
+                                       id="ai-codex-skipGitRepoCheck"
+                                       name="ai.codex_bridge.skip_git_repo_check::boolean"
+                                       value="true"
+                                       {% if codexBridgeConfig.skip_git_repo_check %}checked{% endif %}>
+                            </div>
+                            <span class="help-text">Useful when the bridge should run even if Codex objects to the current git state.</span>
+                        </div>
+
+                        <div class="form-group full-width"
+                             data-ai-backend-section="codex_cli_bridge"
+                             {% if aiBackend != 'codex_cli_bridge' %}hidden{% endif %}>
+                            <label for="ai-codex-promptPreamble">Codex Prompt Preamble:</label>
+                            <textarea id="ai-codex-promptPreamble"
+                                      name="ai.codex_bridge.prompt_preamble::string"
+                                      rows="4">{{ codexPromptPreambleValue }}</textarea>
+                            <span class="help-text">Optional instructions prepended ahead of the bridge wrapper prompt.</span>
+                        </div>
+
                         <div class="form-group full-width">
                             <label for="model-options">Model Swap Options (JSON Array):</label>
                             <textarea id="model-options" name="model_swap_options::string-array" rows="4">{{ modelOptions | dump }}</textarea>

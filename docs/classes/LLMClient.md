@@ -21,6 +21,9 @@ Centralized client for LLM chat completions with concurrency limits, streaming p
 - `cancelAllPrompts(reason)`: aborts all currently tracked in-flight prompt attempts.
 - `waitForPromptDrain({ timeoutMs, pollIntervalMs })`: waits until tracked prompt activity is fully drained.
 - `ensureAiConfig()`: validates `Globals.config.ai`.
+- `resolveBackend(aiConfigOverride)`: resolves the active text backend (`openai_compatible` or `codex_cli_bridge`).
+- `getConfigurationErrors(aiConfigOverride)`: returns backend-aware config validation errors.
+- `isConfigured(aiConfigOverride)`: true when the selected backend has the required config.
 - `getMaxConcurrent(aiConfigOverride)`: reads `max_concurrent_requests`.
 - `resetForcedOutputState()`: clears cached forced-output fixture data/counters.
 - `writeLogFile({ prefix, metadataLabel, payload, serializeJson, onFailureMessage, error, append })`: writes error logs.
@@ -50,6 +53,7 @@ Centralized client for LLM chat completions with concurrency limits, streaming p
 - Image handling: `#getSharp`, `#parseImageDataUrl`, `#convertImageDataUrlToWebp`, `#convertMessagesToWebp`.
 
 ## Notes
+- `chatCompletion(...)` is now backend-aware: the default `openai_compatible` path still POSTs to `/chat/completions`, while `codex_cli_bridge` delegates transport to `CodexBridgeClient` and then reuses the same response normalization, retry, prompt logging, and XML/regex validation flow.
 - Streaming progress is broadcast through `Globals.realtimeHub` when available, including per-prompt `promptText` content for the request payload and `previewText` content for the currently streamed textual response.
 - Streamed tool calls are allowed: empty textual content is accepted when valid tool calls are present, and regex/XML output validation is skipped for those tool-call turns.
 - Retries are built in; stream timeouts are incrementally increased on retry.
@@ -58,6 +62,7 @@ Centralized client for LLM chat completions with concurrency limits, streaming p
 - Retry wait time between automatic attempts comes from `waitAfterError` (per-call override), else `ai.waitAfterError` (including per-prompt `ai_model_overrides`), else default `10` seconds. Rate-limit (`429`) retries can use `waitAfterRateLimitError`/`ai.waitAfterRateLimitError`, which overrides the general retry wait for those failures only.
 - `ai.custom_args` supports structured provider-specific top-level request args; profile `ai_model_overrides` merge `custom_args` per key (deep merge), with `null` deleting inherited keys.
 - `ai.headers` supports global HTTP request headers; profile `ai_model_overrides` merge `headers` per key, with `null` deleting inherited headers.
-- `ai.cachebuster: true` prepends a fresh `[cachebuster:<uuid>]` line to the final `user` message for each outbound request attempt; the payload copy, prompt-progress broadcast, and error logs show the tagged prompt, while the caller's original `messages` array remains unchanged.
+- `ai.cachebuster` is boolean; omitted or `false` disables it, while `true` prepends a fresh `[cachebuster:<uuid>]` line to the final `user` message for each outbound request attempt. The payload copy, prompt-progress broadcast, and error logs show the tagged prompt, while the caller's original `messages` array remains unchanged.
+- When the Codex bridge backend is selected, effective concurrency is forced to `1` regardless of `ai.max_concurrent_requests`.
 - `logPrompt` is the standard logging path for prompts throughout the codebase.
 - The chat completion payload no longer forces `reasoning: true`; it is only sent when configured explicitly.

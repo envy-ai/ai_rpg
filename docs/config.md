@@ -65,6 +65,62 @@ Rules:
 - Disabled mods are skipped for `mod.js` loading, defs overlays, and `public/` asset serving.
 - The active mod set is frozen at startup, so changing mod enablement on disk still requires a server restart to apply. `/reload_config` reports drift but does not hot-toggle mods.
 
+## AI backend selection
+
+`config.ai.backend` selects which text-generation transport the game uses.
+
+```yaml
+ai:
+  backend: openai_compatible
+```
+
+Supported values:
+- `openai_compatible`: the existing `/chat/completions` HTTP path using `ai.endpoint`, `ai.apiKey`, and `ai.model`.
+- `codex_cli_bridge`: runs text requests through the local Codex CLI bridge; this backend uses `ai.model` plus `ai.codex_bridge.*` and does not require `ai.endpoint` or `ai.apiKey`.
+
+Validation rules:
+- `backend` defaults to `openai_compatible` when omitted.
+- Unknown backend values fail validation loudly at startup and on reload.
+
+## Codex CLI bridge
+
+When `config.ai.backend` is `codex_cli_bridge`, the game runs text completions by spawning the local `codex` CLI and translating its final message back into the same normalized response shape `LLMClient` expects.
+
+```yaml
+ai:
+  backend: codex_cli_bridge
+  model: gpt-5.4-mini
+  codex_bridge:
+    command: codex
+    home: ./tmp/codex-bridge-home
+    session_mode: fresh
+    session_id: ""
+    sandbox: read-only
+    skip_git_repo_check: true
+    reasoning_effort: none
+    profile: ""
+    prompt_preamble: ""
+```
+
+Fields:
+- `command`: command or absolute path used to launch Codex.
+- `home`: Codex state directory for the bridge; relative paths resolve from the repo root.
+- `session_mode`: `fresh`, `resume_last`, or `resume_id`.
+- `session_id`: required only when `session_mode` is `resume_id`.
+- `sandbox`: sandbox passed to fresh bridge runs (`read-only`, `workspace-write`, `danger-full-access`).
+- `skip_git_repo_check`: forwards `--skip-git-repo-check` to Codex.
+- `reasoning_effort`: optional `model_reasoning_effort` override passed through with `codex -c`; supported values are `none`, `minimal`, `low`, `medium`, `high`, `xhigh`. `none` is the lowest setting.
+- `profile`: optional Codex config profile.
+- `prompt_preamble`: optional text prepended ahead of the generated bridge wrapper prompt.
+
+Behavior notes:
+- `fresh` is the safest default because each request is isolated from prior bridge context.
+- Resume modes intentionally target an existing Codex session and therefore can accumulate extra context from earlier bridge turns or manual use of that session.
+- Resume modes only see sessions stored under the selected `home` directory. If you want to attach to an already-running Codex CLI session, point `ai.codex_bridge.home` at the same Codex home that session is using instead of the default isolated `./tmp` bridge home.
+- The bridge serializes requests effectively to one active Codex request at a time, even if `ai.max_concurrent_requests` is higher.
+- The bridge uses the shared `ai.model` field as the `codex -m` model argument.
+- The bridge forwards its wrapper instructions and all incoming chat `system` messages through Codex `developer_instructions`; only non-system messages are flattened into the user-message conversation transcript.
+
 ## AI custom args
 
 `config.ai.custom_args` lets you inject structured top-level request arguments into every LLM chat-completion payload.
@@ -143,10 +199,11 @@ Merge semantics:
 
 ```yaml
 ai:
-  cachebuster: true
+  cachebuster: false
 ```
 
 - Must be a boolean when present.
+- Omitted or `false` disables the cachebuster.
 - When `true`, each outbound request attempt gets a fresh line in the form `[cachebuster:<uuid>]` before the final `user` message body.
 - The original caller-provided `messages` array is not mutated; the tag is applied only to the request payload copy.
 - The live prompt-progress viewer and chat-completion error logs reflect the cachebusted prompt actually sent on that attempt.

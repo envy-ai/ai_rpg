@@ -9,6 +9,7 @@ const Location = require('./Location.js');
 const VehicleInfo = require('./VehicleInfo.js');
 const Globals = require('./Globals.js');
 const LLMClient = require('./LLMClient.js');
+const CodexBridgeClient = require('./CodexBridgeClient.js');
 const SlashCommandRegistry = require('./SlashCommandRegistry.js');
 const SanitizedStringSet = require('./SanitizedStringSet.js');
 const Events = require('./Events.js');
@@ -31726,7 +31727,42 @@ module.exports = function registerApiRoutes(scope) {
         // API endpoint to test configuration without saving
         app.post('/api/test-config', async (req, res) => {
             try {
-                const { endpoint, apiKey, model } = req.body;
+                const {
+                    backend: rawBackend,
+                    endpoint,
+                    apiKey,
+                    model,
+                    codexBridge
+                } = req.body || {};
+                const backend = CodexBridgeClient.normalizeBackend(rawBackend);
+
+                if (backend === CodexBridgeClient.backendName) {
+                    const aiConfig = {
+                        backend,
+                        model,
+                        codex_bridge: codexBridge
+                    };
+                    const configurationErrors = CodexBridgeClient.getConfigurationErrors(aiConfig);
+                    if (configurationErrors.length) {
+                        return res.status(400).json({ error: configurationErrors.join('. ') });
+                    }
+
+                    const response = await CodexBridgeClient.chatCompletion({
+                        messages: [
+                            { role: 'system', content: 'You are validating a Codex bridge configuration.' },
+                            { role: 'user', content: 'Return a short confirmation that the bridge is working.' }
+                        ],
+                        model,
+                        timeoutMs: baseTimeoutMilliseconds,
+                        metadataLabel: 'config_test',
+                        aiConfig
+                    });
+
+                    if (response?.data?.choices?.length > 0) {
+                        return res.json({ success: true, message: 'Configuration test successful' });
+                    }
+                    return res.status(500).json({ error: 'Invalid response from Codex bridge' });
+                }
 
                 if (!endpoint || !apiKey || !model) {
                     return res.status(400).json({ error: 'Missing required parameters' });

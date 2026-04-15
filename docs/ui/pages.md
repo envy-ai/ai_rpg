@@ -58,6 +58,7 @@ This page maps routes to templates and the client scripts/styles they load.
 - Data injected by `server.js`:
   - `config`, `modConfigs`, `modelOptions`, `savedMessage`, `errorMessage`, `gameConfigOverrideYaml`, `gameLoaded`.
 - Notes: the page is split into `Server Configuration` and `Game Configuration` tabs.
+- Notes: the AI section includes a backend selector. `openai_compatible` shows endpoint/API-key inputs, while `codex_cli_bridge` shows Codex command/home/session settings plus conditional session-id validation for `resume_id`.
 - Notes: the `Game Configuration` tab exposes a fixed-width YAML textarea for the currently loaded game's runtime config override. It saves through `PUT /api/game-config-override`, reloads config immediately on change, persists to the save as `gameConfigOverride.yaml`, and stays disabled when no game is loaded.
 
 ## Game settings manager

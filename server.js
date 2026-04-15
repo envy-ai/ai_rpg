@@ -93,6 +93,10 @@ let cachedNpcNameBlockedWords = null;
 let cachedSystemPromptPrefixByPrompt = null;
 let cachedPointPoolFormulaRuntime = null;
 
+function hasConfiguredAiBackend(aiConfig = config?.ai) {
+    return LLMClient.isConfigured(aiConfig);
+}
+
 function loadDefaultSkillsForSettings() {
     try {
         const { value } = loadMergedDefinitionFile({
@@ -1846,19 +1850,7 @@ async function validateConfiguration() {
     }
 
     // Validate AI configuration
-    if (!config.ai) {
-        validationErrors.push('AI configuration missing');
-    } else {
-        if (!config.ai.endpoint) {
-            validationErrors.push('AI endpoint not specified');
-        }
-        if (!config.ai.apiKey) {
-            validationErrors.push('AI API key not specified');
-        }
-        if (!config.ai.model) {
-            validationErrors.push('AI model not specified');
-        }
-    }
+    validationErrors.push(...LLMClient.getConfigurationErrors(config.ai));
 
     // Report validation results
     if (validationErrors.length > 0) {
@@ -5887,7 +5879,7 @@ function parseChooseImportantMemoriesResponse(responseText, maxCount) {
 }
 
 function kickOffChooseImportantMemoriesJob({ actors, maxMemories, baseContext, turnKey }) {
-    const canCallAi = Boolean(config?.ai?.endpoint && config.ai.apiKey && config.ai.model);
+    const canCallAi = hasConfiguredAiBackend();
     if (!canCallAi || !actors.length) {
         return;
     }
@@ -6220,9 +6212,9 @@ function parseSceneSummaryResponse(responseText, indexMap) {
 }
 
 async function summarizeScenesForHistoryRange({ chatHistory, startIndex, endIndex, redo = false } = {}) {
-    const canCallAi = Boolean(config?.ai?.endpoint && config.ai.apiKey && config.ai.model);
+    const canCallAi = hasConfiguredAiBackend();
     if (!canCallAi) {
-        throw new Error('Scene summarization requires a configured AI endpoint, apiKey, and model.');
+        throw new Error('Scene summarization requires a configured AI backend.');
     }
 
     const indexedEntries = buildSceneSummaryIndex(chatHistory, { excludeSummaries: true });
@@ -11522,7 +11514,7 @@ async function separateThingByPrompt({
     const itemForPrompt = buildThingPromptItem(thing);
     const originalState = thing.toJSON();
 
-    if (!config?.ai?.endpoint || !config.ai.apiKey || !config.ai.model) {
+    if (!hasConfiguredAiBackend()) {
         throw new Error('AI configuration missing; cannot separate item.');
     }
 
@@ -11673,7 +11665,7 @@ async function alterThingByPrompt({
         item: itemForPrompt
     };
 
-    if (!config?.ai?.endpoint || !config.ai.apiKey || !config.ai.model) {
+    if (!hasConfiguredAiBackend()) {
         throw new Error('AI configuration missing; cannot alter item.');
     }
 
@@ -17857,7 +17849,7 @@ async function enforceBannedNpcNameForPlayer({
 
     const resolvedConversation = Array.isArray(conversationMessages) ? conversationMessages : [];
 
-    if (!config?.ai?.endpoint || !config.ai.apiKey || !config.ai.model) {
+    if (!hasConfiguredAiBackend()) {
         throw new Error('Missing AI configuration for NPC name enforcement');
     }
 
@@ -18599,7 +18591,7 @@ async function generateLocationThingsForLocation({ location } = {}) {
         return [];
     }
 
-    if (!config.ai || !config.ai.endpoint || !config.ai.apiKey || !config.ai.model) {
+    if (!hasConfiguredAiBackend()) {
         return [];
     }
 
@@ -19433,7 +19425,7 @@ async function ensureThingNamesAllowed({
         trackedThings.set(thing.id, thing);
     }
 
-    if (!config?.ai?.endpoint || !config.ai.apiKey || !config.ai.model) {
+    if (!hasConfiguredAiBackend()) {
         throw new Error('AI configuration missing for item name regeneration.');
     }
 
@@ -19646,7 +19638,7 @@ async function ensureUniqueThingNames({ things: candidateThings = [], location =
         return;
     }
 
-    if (!config?.ai?.endpoint || !config.ai.apiKey || !config.ai.model) {
+    if (!hasConfiguredAiBackend()) {
         return;
     }
 
@@ -20377,7 +20369,7 @@ async function generateSkillsList({ count, settingDescription, existingSkills = 
         { role: 'user', content: generationPrompt }
     ];
 
-    if (!config?.ai?.endpoint || !config.ai.apiKey || !config.ai.model) {
+    if (!hasConfiguredAiBackend()) {
         console.warn('AI configuration missing for skill generation, using fallback skills.');
         return buildFallbackSkills({ count: safeCount, attributes: attributeEntries });
     }
@@ -20437,7 +20429,7 @@ async function generateFactionsList({ count, settingDescription, generationNotes
         return [];
     }
 
-    if (!config?.ai?.endpoint || !config.ai.apiKey || !config.ai.model) {
+    if (!hasConfiguredAiBackend()) {
         throw new Error('AI configuration missing for faction generation.');
     }
 
@@ -20723,7 +20715,7 @@ async function generateSkillsByNames({ skillNames = [], settingDescription }) {
         return normalized.map(name => new Skill({ name, description: '', attribute: '' }));
     }
 
-    if (!config?.ai?.endpoint || !config.ai.apiKey || !config.ai.model) {
+    if (!hasConfiguredAiBackend()) {
         return normalized.map(name => new Skill({ name, description: '', attribute: '' }));
     }
 
@@ -26527,7 +26519,15 @@ async function startServer() {
         console.log(`🚀 Server is running on http://${HOST}:${PORT}`);
         console.log(`📡 API endpoint available at http://${HOST}:${PORT}/api/hello`);
         console.log(`🎮 Using AI model: ${config.ai.model}`);
-        console.log(`🤖 AI endpoint: ${config.ai.endpoint}`);
+        console.log(`🤖 AI backend: ${LLMClient.resolveBackend(config.ai)}`);
+        if (LLMClient.resolveBackend(config.ai) === 'openai_compatible') {
+            console.log(`🌐 AI endpoint: ${config.ai.endpoint}`);
+        } else {
+            const codexHome = typeof config?.ai?.codex_bridge?.home === 'string' && config.ai.codex_bridge.home.trim()
+                ? config.ai.codex_bridge.home.trim()
+                : '(default)';
+            console.log(`🧰 Codex bridge home: ${codexHome}`);
+        }
 
         if (config.imagegen && config.imagegen.enabled) {
             if (comfyUIClient) {
