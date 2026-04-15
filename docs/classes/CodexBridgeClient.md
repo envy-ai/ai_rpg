@@ -29,7 +29,7 @@ Bridges the game's text-generation requests into the local Codex CLI when `confi
 - Resume modes still use `-o`, but rely on prompt instructions rather than `--output-schema` because the resume subcommand does not expose that flag.
 - Direct assistant output is normalized into `choices[0].message.content`.
 - Bridge-emulated tool calls are normalized into OpenAI-style `choices[0].message.tool_calls` so the existing chat-tool loop can execute them unchanged.
-- The wrapped bridge prompt and normalized response are logged through `LLMClient.logPrompt(...)`, including captured Codex stdout/stderr when available.
+- The wrapped bridge prompt and normalized response are logged through `LLMClient.logPrompt(...)`, including captured Codex stdout/stderr when available. When the normalized response has plain assistant `content`, the main `=== RESPONSE ===` log section now writes that content directly instead of JSON-escaping the whole response object; the full normalized payload still appears separately in `=== RESPONSE JSON ===`.
 - When `ai.codex_bridge.reasoning_effort` is set, the bridge forwards it with `-c 'model_reasoning_effort="..."'`. Codex accepts `none`, `minimal`, `low`, `medium`, `high`, and `xhigh`.
 - When `LLMClient` supplies progress callbacks, the bridge forwards coarse Codex stdout lifecycle events (`thread.started`, `turn.started`, `item.completed`, `turn.completed`, failures/errors, etc.) into the existing prompt-progress system instead of trying to emulate token streaming.
 - When Codex emits `turn.completed.usage`, the bridge normalizes that into an OpenAI-style top-level `usage` object (`input_tokens`, `cached_input_tokens`, `output_tokens`, `total_tokens`) so `LLMClient` can report prompt burn in server logs.

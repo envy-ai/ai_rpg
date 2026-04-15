@@ -23,6 +23,7 @@ function loadInstantiateThingFromBlueprint() {
         Array,
         currentPlayer: { id: 'player-1', level: 7 },
         stationName: 'Fine Enchanting Workstation',
+        normalizeAttributeBonusesForItem: (value) => value,
         scaleAttributeBonusesForItem: () => [],
         sanitizeMetadataObject: (value) => value,
         Thing: MockThing

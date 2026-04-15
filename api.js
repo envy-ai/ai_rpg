@@ -4574,6 +4574,78 @@ module.exports = function registerApiRoutes(scope) {
             return payload;
         }
 
+        function resolveCraftConsumedThings({
+            inputThings,
+            consumedNames,
+            mode = 'craft',
+            allowFallbackConsumeFirst = false
+        } = {}) {
+            if (!Array.isArray(inputThings)) {
+                throw new TypeError('resolveCraftConsumedThings requires an inputThings array.');
+            }
+            if (!Array.isArray(consumedNames)) {
+                throw new TypeError('resolveCraftConsumedThings requires a consumedNames array.');
+            }
+            if (typeof mode !== 'string' || !mode.trim()) {
+                throw new TypeError('resolveCraftConsumedThings requires a non-empty mode string.');
+            }
+            if (typeof allowFallbackConsumeFirst !== 'boolean') {
+                throw new TypeError('resolveCraftConsumedThings allowFallbackConsumeFirst must be a boolean.');
+            }
+
+            const remainingPool = [...inputThings];
+            const consumedThings = [];
+            const unmatchedConsumedNames = [];
+            const normalizedAvailableNames = inputThings
+                .map(thing => (typeof thing?.name === 'string' ? thing.name.trim() : ''))
+                .filter(Boolean);
+
+            const takeMatch = (name) => {
+                if (!name || typeof name !== 'string') {
+                    return null;
+                }
+                const normalized = name.trim().toLowerCase();
+                const idx = remainingPool.findIndex(candidate =>
+                    candidate
+                    && typeof candidate.name === 'string'
+                    && candidate.name.trim().toLowerCase() === normalized
+                );
+                if (idx >= 0) {
+                    return remainingPool.splice(idx, 1)[0];
+                }
+                return null;
+            };
+
+            consumedNames.forEach(name => {
+                const match = takeMatch(name);
+                if (match) {
+                    consumedThings.push(match);
+                    return;
+                }
+                unmatchedConsumedNames.push(name);
+            });
+
+            if (unmatchedConsumedNames.length) {
+                const availableLabel = normalizedAvailableNames.length
+                    ? normalizedAvailableNames.join(', ')
+                    : '(none)';
+                throw new Error(
+                    `${mode} result referenced consumed item names that did not match the provided inputs: `
+                    + `${unmatchedConsumedNames.join(', ')}. Available inputs: ${availableLabel}.`
+                );
+            }
+
+            if (allowFallbackConsumeFirst && consumedThings.length === 0 && remainingPool.length) {
+                consumedThings.push(remainingPool.shift());
+            }
+
+            return {
+                consumedThings,
+                unmatchedConsumedNames,
+                remainingPool
+            };
+        }
+
         function consumeThingById(thingId) {
             if (!thingId || typeof thingId !== 'string') {
                 throw new Error('Thing ID is required for consumption.');
@@ -24662,50 +24734,19 @@ module.exports = function registerApiRoutes(scope) {
 
 
                 const availableThings = slotItems.map(entry => entry.thing);
-                const remainingPool = [...availableThings];
-                const consumedThings = [];
-                const unmatchedConsumedNames = [];
-
-                const takeMatch = (name) => {
-                    if (!name) {
-                        return null;
-                    }
-                    const normalized = name.trim().toLowerCase();
-                    const idx = remainingPool.findIndex(candidate =>
-                        candidate &&
-                        typeof candidate.name === 'string' &&
-                        candidate.name.trim().toLowerCase() === normalized
-                    );
-                    if (idx >= 0) {
-                        return remainingPool.splice(idx, 1)[0];
-                    }
-                    return null;
-                };
-
-                consumedNameList.forEach(name => {
-                    const match = takeMatch(name);
-                    if (match) {
-                        console.log(`🗑️ Consuming item for crafting: ${match.name} (ID: ${match.id})`);
-                        consumedThings.push(match);
-                    } else {
-                        console.log(`❌ Unmatched consumed item: ${name}`);
-                        unmatchedConsumedNames.push(name);
-                    }
+                const {
+                    consumedThings,
+                    unmatchedConsumedNames
+                } = resolveCraftConsumedThings({
+                    inputThings: availableThings,
+                    consumedNames: consumedNameList,
+                    mode: craftingMode,
+                    allowFallbackConsumeFirst: isSalvageAction
                 });
 
-                if (isSalvageAction && consumedThings.length === 0 && remainingPool.length) {
-                    consumedThings.push(remainingPool.shift());
-                }
-
-                if (!isSalvageAction && !isHarvestAction && consumedThings.length === 0 && consumedNameList.length === 0 && actionOutcome.success) {
-                    while (remainingPool.length) {
-                        consumedThings.push(remainingPool.shift());
-                    }
-                } else if (!isSalvageAction && !isHarvestAction && consumedThings.length === 0 && consumedNameList.length > 0) {
-                    while (remainingPool.length) {
-                        consumedThings.push(remainingPool.shift());
-                    }
-                }
+                consumedThings.forEach(match => {
+                    console.log(`🗑️ Consuming item for crafting: ${match.name} (ID: ${match.id})`);
+                });
 
                 const instantiateThingFromBlueprint = (itemBlueprint, {
                     defaultName = 'Crafted Item',

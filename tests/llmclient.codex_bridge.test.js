@@ -393,6 +393,63 @@ test('CodexBridgeClient fresh mode spawns Codex with schema output and cleans up
     });
 });
 
+test('CodexBridgeClient prompt logs write plain response content when available', { concurrency: false }, async () => {
+    fs.chmodSync(FAKE_CODEX_PATH, 0o755);
+
+    const originalConfig = Globals.config;
+    const metadataLabel = 'codex_bridge_plaintext_log';
+    const logDir = path.join(process.cwd(), 'logs');
+    fs.mkdirSync(logDir, { recursive: true });
+    const existingFiles = new Set(
+        fs.readdirSync(logDir).filter(name => name.includes(`_prompt_${metadataLabel}.log`))
+    );
+
+    const aiConfig = buildCodexAiConfig({
+        codex_bridge: {
+            command: FAKE_CODEX_PATH,
+            home: './tmp/test-codex-home-log',
+            session_mode: 'fresh',
+            session_id: '',
+            sandbox: 'read-only',
+            skip_git_repo_check: true,
+            reasoning_effort: '',
+            profile: '',
+            prompt_preamble: ''
+        }
+    });
+
+    Globals.config = { ai: aiConfig };
+
+    try {
+        await withFakeCodexEnv({
+            FAKE_CODEX_RESPONSE: JSON.stringify({
+                content: '<final>log as plain text</final>',
+                tool_calls: []
+            }),
+            FAKE_CODEX_THREAD_ID: 'log-thread-789',
+            FAKE_CODEX_EXIT_CODE: '0'
+        }, async () => {
+            await CodexBridgeClient.chatCompletion({
+                messages: [{ role: 'user', content: 'Write a plain log response.' }],
+                model: 'gpt-5.4-mini',
+                metadataLabel,
+                aiConfig
+            });
+        });
+
+        const createdFiles = fs.readdirSync(logDir)
+            .filter(name => name.includes(`_prompt_${metadataLabel}.log`) && !existingFiles.has(name))
+            .sort();
+        assert.equal(createdFiles.length, 1);
+
+        const logText = fs.readFileSync(path.join(logDir, createdFiles[0]), 'utf8');
+        assert.match(logText, /=== RESPONSE ===\n<final>log as plain text<\/final>\n/);
+        assert.match(logText, /=== RESPONSE JSON ===\n\{/);
+    } finally {
+        Globals.config = originalConfig;
+    }
+});
+
 test('CodexBridgeClient resume_id mode uses resume args and normalizes tool calls', { concurrency: false }, async () => {
     fs.chmodSync(FAKE_CODEX_PATH, 0o755);
 

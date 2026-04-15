@@ -547,6 +547,29 @@ function cleanupFile(filePath) {
     }
 }
 
+function getBridgeLogResponseText(normalizedResponse) {
+    if (!normalizedResponse || typeof normalizedResponse !== 'object') {
+        return JSON.stringify(normalizedResponse ?? {}, null, 2);
+    }
+
+    const message = normalizedResponse?.choices?.[0]?.message;
+    const content = typeof message?.content === 'string'
+        ? message.content
+        : '';
+    if (content) {
+        return content;
+    }
+
+    const toolCalls = Array.isArray(message?.tool_calls)
+        ? message.tool_calls
+        : [];
+    if (toolCalls.length) {
+        return JSON.stringify({ tool_calls: toolCalls }, null, 2);
+    }
+
+    return JSON.stringify(normalizedResponse, null, 2);
+}
+
 function logBridgePrompt({
     metadataLabel,
     model,
@@ -587,7 +610,7 @@ function logBridgePrompt({
             generationPrompt: promptText,
             response: error
                 ? (error?.stack || error?.message || String(error))
-                : JSON.stringify(normalizedResponse ?? {}, null, 2),
+                : getBridgeLogResponseText(normalizedResponse),
             requestPayload,
             responsePayload: normalizedResponse ?? null,
             sections,
