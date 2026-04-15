@@ -2429,6 +2429,36 @@ function pushChatEntry(entry, collector = null, locationId = null) {
     return normalized;
 }
 
+Globals.appendChatEntry = function appendChatEntry(
+    entry,
+    {
+        collector = null,
+        locationId = null,
+        clientId = null,
+        emitClientRefresh = false,
+        refreshPayload = null
+    } = {}
+) {
+    const currentPlayerLocationId = typeof Globals.currentPlayer?.currentLocation === 'string'
+        ? Globals.currentPlayer.currentLocation.trim()
+        : '';
+    const resolvedLocationId = typeof locationId === 'string' && locationId.trim()
+        ? locationId.trim()
+        : currentPlayerLocationId;
+    if (!resolvedLocationId) {
+        throw new Error('Globals.appendChatEntry requires a valid locationId or current player location.');
+    }
+
+    const storedEntry = pushChatEntry(entry, collector, resolvedLocationId);
+    if (emitClientRefresh) {
+        const payload = refreshPayload && typeof refreshPayload === 'object' && !Array.isArray(refreshPayload)
+            ? { ...refreshPayload }
+            : {};
+        Globals.emitToClient(clientId, 'chat_history_updated', payload);
+    }
+    return storedEntry;
+};
+
 async function loadSlopwordConfig({ defaultPpmOverride = null } = {}) {
     try {
         const { value } = loadMergedDefinitionFile({

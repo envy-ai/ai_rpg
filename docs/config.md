@@ -117,7 +117,8 @@ Behavior notes:
 - `fresh` is the safest default because each request is isolated from prior bridge context.
 - Resume modes intentionally target an existing Codex session and therefore can accumulate extra context from earlier bridge turns or manual use of that session.
 - Resume modes only see sessions stored under the selected `home` directory. If you want to attach to an already-running Codex CLI session, point `ai.codex_bridge.home` at the same Codex home that session is using instead of the default isolated `./tmp` bridge home.
-- The bridge serializes requests effectively to one active Codex request at a time, even if `ai.max_concurrent_requests` is higher.
+- `fresh` mode honors `ai.max_concurrent_requests`, so multiple isolated Codex requests can run in parallel.
+- `resume_last` and `resume_id` stay serialized at one active request per targeted session/home to avoid interleaving turns into the same resumed Codex session.
 - The bridge uses the shared `ai.model` field as the `codex -m` model argument.
 - The bridge forwards its wrapper instructions and all incoming chat `system` messages through Codex `developer_instructions`; only non-system messages are flattened into the user-message conversation transcript.
 

@@ -83,7 +83,7 @@ Most modals live in `views/index.njk` and are wired up by the inline script or `
 - Summon NPC/item now reuse the shared searchable chooser modal (`.npc-selection-modal`) instead of dedicated `<select>`-based forms.
   - `Summon NPC` filters existing NPCs by name/location and executes immediately on row click.
   - `Summon Item or Scenery` filters existing thing records by name/type/origin label (including inventory origins like `Bob's inventory`) and executes immediately on row click.
-  - The same chooser implementation is also reused by teleport and `Put in Inventory` target selection, so all three flows share the same typeahead-without-`select` behavior.
+  - The same chooser implementation is also reused by teleport and `Put in Inventory` target selection, so all three flows share the same typeahead-without-`select` behavior through the shared `window.showSearchSelectionModal(...)` helper.
 
 ## Crafting / processing
 

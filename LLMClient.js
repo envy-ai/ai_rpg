@@ -69,9 +69,24 @@ class LLMClient {
     static #streamCounter = 0;
     static #abortControllers = new Map();
     static #controllerAbortIntents = new WeakMap();
+    static #codexUsageStats = {
+        promptCount: 0,
+        quotaTurnCount: 0,
+        inputTokens: 0,
+        cachedInputTokens: 0,
+        outputTokens: 0,
+        totalTokens: 0
+    };
+    static #codexQuotaTurnKeys = new Set();
+    static #codexQuotaTurnKeyQueue = [];
 
     static #isInteractive() {
         return process.stdout && process.stdout.isTTY;
+    }
+
+    static #shouldTrackPromptProgress() {
+        return LLMClient.#isInteractive()
+            || Boolean(Globals?.realtimeHub && typeof Globals.realtimeHub.emit === 'function');
     }
 
     static #renderStreamProgress() {
@@ -118,7 +133,7 @@ class LLMClient {
     }
 
     static #ensureProgressTicker() {
-        if (!LLMClient.#isInteractive()) {
+        if (!LLMClient.#shouldTrackPromptProgress()) {
             return;
         }
         if (LLMClient.#streamProgress.timer) {
@@ -126,7 +141,7 @@ class LLMClient {
         }
         LLMClient.#streamProgress.timer = setInterval(() => {
             if (!LLMClient.#streamProgress.active.size) {
-                if (LLMClient.#streamProgress.lastLines > 0) {
+                if (LLMClient.#isInteractive() && LLMClient.#streamProgress.lastLines > 0) {
                     // Clear previous lines then stop ticking
                     const { moveCursor, clearLine } = readline;
                     moveCursor(process.stdout, 0, -LLMClient.#streamProgress.lastLines);
@@ -149,7 +164,7 @@ class LLMClient {
     }
 
     static #trackStreamStart(label, { startTimeoutMs = null, continueTimeoutMs = null, isBackground = false, model = null, promptText = '' } = {}) {
-        if (!LLMClient.#isInteractive()) {
+        if (!LLMClient.#shouldTrackPromptProgress()) {
             return null;
         }
         const idNum = ++LLMClient.#streamCounter;
@@ -191,6 +206,448 @@ class LLMClient {
             entry.continueDeadline = now + continueTimeoutMs;
         } else {
             entry.continueDeadline = now;
+        }
+    }
+
+    static #trackStreamStatus(id, statusText, continueTimeoutMs = null) {
+        if (!id) return;
+        const trimmed = typeof statusText === 'string' ? statusText.trim() : '';
+        if (!trimmed) {
+            return;
+        }
+        const entry = LLMClient.#streamProgress.active.get(id);
+        if (!entry) {
+            return;
+        }
+        const separator = entry.previewText && !entry.previewText.endsWith('\n') ? '\n' : '';
+        LLMClient.#trackStreamBytes(id, 0, continueTimeoutMs, `${separator}${trimmed}\n`);
+    }
+
+    static #formatCodexProgressEvent(event) {
+        if (!event || typeof event !== 'object') {
+            return '';
+        }
+        const type = typeof event.type === 'string' ? event.type.trim() : '';
+        if (!type) {
+            return '';
+        }
+        const nestedErrorMessage = typeof event.error?.message === 'string'
+            ? event.error.message.trim()
+            : '';
+        const message = typeof event.message === 'string'
+            ? event.message.trim()
+            : nestedErrorMessage;
+        switch (type) {
+            case 'thread.started':
+                if (typeof event.thread_id === 'string' && event.thread_id.trim()) {
+                    return `Codex thread started (${event.thread_id.trim()}).`;
+                }
+                return 'Codex thread started.';
+            case 'turn.started':
+                return 'Codex turn started.';
+            case 'turn.completed':
+                return 'Codex turn completed.';
+            case 'turn.failed':
+                return message ? `Codex turn failed: ${message}` : 'Codex turn failed.';
+            case 'error':
+                return message ? `Codex error: ${message}` : 'Codex reported an error.';
+            case 'item.started': {
+                const itemType = typeof event.item?.type === 'string' ? event.item.type.trim() : '';
+                return itemType ? `Codex started ${itemType}.` : 'Codex started an item.';
+            }
+            case 'item.completed': {
+                const itemType = typeof event.item?.type === 'string' ? event.item.type.trim() : '';
+                return itemType ? `Codex completed ${itemType}.` : 'Codex completed an item.';
+            }
+            default:
+                return `Codex event: ${type}`;
+        }
+    }
+
+    static #formatTokenCount(value) {
+        return Number.isFinite(value) ? Math.trunc(value).toLocaleString() : '0';
+    }
+
+    static #formatEpochTimestamp(epochValue) {
+        if (!Number.isFinite(epochValue)) {
+            return 'unknown';
+        }
+        const normalized = epochValue > 1e12 ? epochValue : epochValue * 1000;
+        return new Date(normalized).toISOString();
+    }
+
+    static #normalizeEpochMilliseconds(epochValue) {
+        if (!Number.isFinite(epochValue)) {
+            return null;
+        }
+        return epochValue > 1e12 ? epochValue : epochValue * 1000;
+    }
+
+    static #getOrdinalSuffix(dayValue) {
+        const day = Number(dayValue);
+        if (!Number.isInteger(day)) {
+            return '';
+        }
+        const mod100 = day % 100;
+        if (mod100 >= 11 && mod100 <= 13) {
+            return 'th';
+        }
+        const mod10 = day % 10;
+        if (mod10 === 1) {
+            return 'st';
+        }
+        if (mod10 === 2) {
+            return 'nd';
+        }
+        if (mod10 === 3) {
+            return 'rd';
+        }
+        return 'th';
+    }
+
+    static #formatLocalClockTime(epochValue) {
+        const normalized = LLMClient.#normalizeEpochMilliseconds(epochValue);
+        if (normalized === null) {
+            return null;
+        }
+        return new Intl.DateTimeFormat('en-US', {
+            hour: 'numeric',
+            minute: '2-digit'
+        }).format(new Date(normalized));
+    }
+
+    static #formatLocalMonthDayAtTime(epochValue) {
+        const normalized = LLMClient.#normalizeEpochMilliseconds(epochValue);
+        if (normalized === null) {
+            return null;
+        }
+        const date = new Date(normalized);
+        const monthDayParts = new Intl.DateTimeFormat('en-US', {
+            month: 'short',
+            day: 'numeric'
+        }).formatToParts(date);
+        const month = monthDayParts.find(part => part.type === 'month')?.value || '';
+        const dayText = monthDayParts.find(part => part.type === 'day')?.value || '';
+        const day = Number.parseInt(dayText, 10);
+        const timeText = LLMClient.#formatLocalClockTime(epochValue);
+        if (!month || !Number.isInteger(day) || !timeText) {
+            return null;
+        }
+        return `${month} ${day}${LLMClient.#getOrdinalSuffix(day)} at ${timeText}`;
+    }
+
+    static #buildCodexCreditsLine(credits) {
+        if (!credits || typeof credits !== 'object') {
+            return null;
+        }
+        if (credits.unlimited === true || credits.hasCredits === false) {
+            return null;
+        }
+        const rawBalance = typeof credits.balance === 'string'
+            ? credits.balance.trim()
+            : '';
+        if (!rawBalance) {
+            return null;
+        }
+        const numericBalance = Number(rawBalance.replace(/,/g, ''));
+        if (Number.isFinite(numericBalance) && numericBalance <= 0) {
+            return null;
+        }
+        return `${rawBalance} credits`;
+    }
+
+    static #buildCodexQuotaWindowLine(label, window, { includeDate = false } = {}) {
+        if (!window || typeof window !== 'object') {
+            return null;
+        }
+        const usedPercent = Number(window.usedPercent);
+        const remainingPercent = Number.isFinite(usedPercent)
+            ? Math.max(0, 100 - Math.trunc(usedPercent))
+            : null;
+        const resetText = includeDate
+            ? LLMClient.#formatLocalMonthDayAtTime(Number(window.resetsAt))
+            : LLMClient.#formatLocalClockTime(Number(window.resetsAt));
+        let line = `${label}: ${remainingPercent === null ? 'remaining unknown' : `${remainingPercent}% remaining`}`;
+        if (resetText) {
+            line += `; resets ${resetText}`;
+        }
+        return line;
+    }
+
+    static #formatCodexRateLimitWindow(label, window) {
+        if (!window || typeof window !== 'object') {
+            return `${label}: unavailable`;
+        }
+        const usedPercent = Number(window.usedPercent);
+        const remainingPercent = Number.isFinite(usedPercent)
+            ? Math.max(0, 100 - Math.trunc(usedPercent))
+            : null;
+        const duration = Number.isFinite(Number(window.windowDurationMins))
+            ? `${Math.trunc(Number(window.windowDurationMins))}m`
+            : 'unknown';
+        const resetAt = LLMClient.#formatEpochTimestamp(Number(window.resetsAt));
+        return `${label}: used=${Number.isFinite(usedPercent) ? `${Math.trunc(usedPercent)}%` : 'unknown'}`
+            + `${remainingPercent === null ? '' : ` remaining~=${remainingPercent}%`}`
+            + ` window=${duration} reset=${resetAt}`;
+    }
+
+    static #formatCodexRateLimits(snapshot) {
+        if (!snapshot || typeof snapshot !== 'object') {
+            return 'rate limits unavailable';
+        }
+        const buckets = snapshot.rateLimitsByLimitId && typeof snapshot.rateLimitsByLimitId === 'object'
+            ? Object.entries(snapshot.rateLimitsByLimitId)
+            : [];
+        const effectiveBuckets = buckets.length
+            ? buckets
+            : [['default', snapshot.rateLimits]];
+        const renderedBuckets = effectiveBuckets.map(([bucketKey, bucketValue]) => {
+            const label = bucketValue?.limitName || bucketValue?.limitId || bucketKey;
+            const plan = bucketValue?.planType ? `plan=${bucketValue.planType}` : 'plan=unknown';
+            const credits = (() => {
+                const snapshotCredits = bucketValue?.credits;
+                if (!snapshotCredits || typeof snapshotCredits !== 'object') {
+                    return 'credits=unavailable';
+                }
+                if (snapshotCredits.unlimited === true) {
+                    return 'credits=unlimited';
+                }
+                if (snapshotCredits.hasCredits === false) {
+                    return 'credits=none';
+                }
+                if (typeof snapshotCredits.balance === 'string' && snapshotCredits.balance.trim()) {
+                    return `credits=${snapshotCredits.balance.trim()}`;
+                }
+                return 'credits=available';
+            })();
+            return `${label} { ${plan}; ${credits}; ${LLMClient.#formatCodexRateLimitWindow('primary', bucketValue?.primary)}; `
+                + `${LLMClient.#formatCodexRateLimitWindow('secondary', bucketValue?.secondary)} }`;
+        });
+        return renderedBuckets.join(' | ');
+    }
+
+    static #getCodexRateLimitBuckets(snapshot) {
+        if (!snapshot || typeof snapshot !== 'object') {
+            return [];
+        }
+        const buckets = snapshot.rateLimitsByLimitId && typeof snapshot.rateLimitsByLimitId === 'object'
+            ? Object.entries(snapshot.rateLimitsByLimitId)
+            : [];
+        if (buckets.length) {
+            return buckets;
+        }
+        if (snapshot.rateLimits && typeof snapshot.rateLimits === 'object') {
+            return [['default', snapshot.rateLimits]];
+        }
+        return [];
+    }
+
+    static #buildCodexQuotaChatEntry(snapshot) {
+        const buckets = LLMClient.#getCodexRateLimitBuckets(snapshot);
+        if (!buckets.length) {
+            return null;
+        }
+
+        const [bucketKey, bucketValue] = buckets[0];
+        if (!bucketValue || typeof bucketValue !== 'object') {
+            return null;
+        }
+
+        const label = bucketValue.limitName || bucketValue.limitId || bucketKey || 'Codex';
+        const primaryWindow = bucketValue.primary && typeof bucketValue.primary === 'object'
+            ? bucketValue.primary
+            : null;
+        const usedPercent = Number(primaryWindow?.usedPercent);
+        const remainingPercent = Number.isFinite(usedPercent)
+            ? Math.max(0, 100 - Math.trunc(usedPercent))
+            : null;
+        const resetAtRaw = Number(primaryWindow?.resetsAt);
+        const credits = bucketValue.credits && typeof bucketValue.credits === 'object'
+            ? bucketValue.credits
+            : null;
+        const secondaryWindow = bucketValue.secondary && typeof bucketValue.secondary === 'object'
+            ? bucketValue.secondary
+            : null;
+        const creditsLine = LLMClient.#buildCodexCreditsLine(credits);
+        const primaryLine = LLMClient.#buildCodexQuotaWindowLine('Primary', primaryWindow, { includeDate: false });
+        const secondaryLine = LLMClient.#buildCodexQuotaWindowLine('Secondary', secondaryWindow, { includeDate: true });
+        const summaryItems = [creditsLine, primaryLine, secondaryLine]
+            .filter(line => typeof line === 'string' && line.trim())
+            .map(line => ({
+                icon: '•',
+                text: line.trim()
+            }));
+        if (!summaryItems.length) {
+            return null;
+        }
+
+        const metadata = {
+            excludeFromBaseContextHistory: true,
+            codexQuotaSnapshot: {
+                limitId: bucketValue.limitId || null,
+                limitName: bucketValue.limitName || label,
+                remainingPercent,
+                usedPercent: Number.isFinite(usedPercent) ? Math.trunc(usedPercent) : null,
+                creditsBalance: typeof credits?.balance === 'string' ? credits.balance.trim() : null,
+                resetAt: Number.isFinite(resetAtRaw) ? LLMClient.#formatEpochTimestamp(resetAtRaw) : null,
+                primary: primaryWindow ? {
+                    remainingPercent,
+                    usedPercent: Number.isFinite(usedPercent) ? Math.trunc(usedPercent) : null,
+                    resetAt: Number.isFinite(resetAtRaw) ? LLMClient.#formatEpochTimestamp(resetAtRaw) : null
+                } : null,
+                secondary: secondaryWindow ? {
+                    remainingPercent: Number.isFinite(Number(secondaryWindow.usedPercent))
+                        ? Math.max(0, 100 - Math.trunc(Number(secondaryWindow.usedPercent)))
+                        : null,
+                    usedPercent: Number.isFinite(Number(secondaryWindow.usedPercent))
+                        ? Math.trunc(Number(secondaryWindow.usedPercent))
+                        : null,
+                    resetAt: Number.isFinite(Number(secondaryWindow.resetsAt))
+                        ? LLMClient.#formatEpochTimestamp(Number(secondaryWindow.resetsAt))
+                        : null
+                } : null
+            }
+        };
+
+        return {
+            role: 'assistant',
+            type: 'status-summary',
+            content: summaryItems.map(item => item.text).join('\n'),
+            summaryTitle: '🌀 Codex Quota',
+            summaryItems,
+            timestamp: new Date().toISOString(),
+            metadata
+        };
+    }
+
+    static #appendCodexQuotaChatEntry({ snapshot = null, clientId = null } = {}) {
+        if (!snapshot || typeof snapshot !== 'object') {
+            return null;
+        }
+        if (typeof Globals?.appendChatEntry !== 'function') {
+            throw new Error('Globals.appendChatEntry is not available.');
+        }
+        const entry = LLMClient.#buildCodexQuotaChatEntry(snapshot);
+        if (!entry) {
+            return null;
+        }
+        return Globals.appendChatEntry(entry, {
+            clientId: typeof clientId === 'string' && clientId.trim() ? clientId.trim() : null,
+            emitClientRefresh: true,
+            refreshPayload: {
+                reason: 'codex_quota_check'
+            }
+        });
+    }
+
+    static #consumeCodexQuotaTurn(metadata = null) {
+        if (!metadata || typeof metadata !== 'object') {
+            return false;
+        }
+        const explicitCount = metadata.__codexQuotaCountAsTurn;
+        if (explicitCount !== true) {
+            return false;
+        }
+        const turnKey = typeof metadata.__codexQuotaTurnKey === 'string'
+            ? metadata.__codexQuotaTurnKey.trim()
+            : '';
+        if (!turnKey) {
+            throw new Error('Codex quota turn counting requires metadata.__codexQuotaTurnKey when __codexQuotaCountAsTurn is true.');
+        }
+        if (LLMClient.#codexQuotaTurnKeys.has(turnKey)) {
+            return false;
+        }
+        LLMClient.#codexQuotaTurnKeys.add(turnKey);
+        LLMClient.#codexQuotaTurnKeyQueue.push(turnKey);
+        const maxTrackedTurnKeys = 1000;
+        while (LLMClient.#codexQuotaTurnKeyQueue.length > maxTrackedTurnKeys) {
+            const expiredKey = LLMClient.#codexQuotaTurnKeyQueue.shift();
+            if (expiredKey) {
+                LLMClient.#codexQuotaTurnKeys.delete(expiredKey);
+            }
+        }
+        return true;
+    }
+
+    static async #reportCodexUsage({
+        metadataLabel = '',
+        model = '',
+        usage = null,
+        aiConfig = null,
+        attemptNumber = 1,
+        clientId = null,
+        metadata = null
+    } = {}) {
+        if (!usage || typeof usage !== 'object') {
+            return;
+        }
+        const inputTokens = Number(usage.input_tokens);
+        const cachedInputTokens = Number(usage.cached_input_tokens);
+        const outputTokens = Number(usage.output_tokens);
+        const totalTokens = Number(usage.total_tokens);
+        if (
+            !Number.isFinite(inputTokens)
+            && !Number.isFinite(cachedInputTokens)
+            && !Number.isFinite(outputTokens)
+            && !Number.isFinite(totalTokens)
+        ) {
+            return;
+        }
+
+        LLMClient.#codexUsageStats.promptCount += 1;
+        if (Number.isFinite(inputTokens)) {
+            LLMClient.#codexUsageStats.inputTokens += Math.trunc(inputTokens);
+        }
+        if (Number.isFinite(cachedInputTokens)) {
+            LLMClient.#codexUsageStats.cachedInputTokens += Math.trunc(cachedInputTokens);
+        }
+        if (Number.isFinite(outputTokens)) {
+            LLMClient.#codexUsageStats.outputTokens += Math.trunc(outputTokens);
+        }
+        if (Number.isFinite(totalTokens)) {
+            LLMClient.#codexUsageStats.totalTokens += Math.trunc(totalTokens);
+        }
+
+        const promptIndex = LLMClient.#codexUsageStats.promptCount;
+        const label = typeof metadataLabel === 'string' && metadataLabel.trim()
+            ? metadataLabel.trim()
+            : 'unknown';
+        const modelLabel = typeof model === 'string' && model.trim() ? model.trim() : 'codex';
+        console.log(
+            `[codex usage ${promptIndex}] prompt=${label} attempt=${attemptNumber} model=${modelLabel}`
+            + ` input=${LLMClient.#formatTokenCount(inputTokens)}`
+            + ` cached=${LLMClient.#formatTokenCount(cachedInputTokens)}`
+            + ` output=${LLMClient.#formatTokenCount(outputTokens)}`
+            + ` total=${LLMClient.#formatTokenCount(totalTokens)}`
+            + ` | running input=${LLMClient.#formatTokenCount(LLMClient.#codexUsageStats.inputTokens)}`
+            + ` cached=${LLMClient.#formatTokenCount(LLMClient.#codexUsageStats.cachedInputTokens)}`
+            + ` output=${LLMClient.#formatTokenCount(LLMClient.#codexUsageStats.outputTokens)}`
+            + ` total=${LLMClient.#formatTokenCount(LLMClient.#codexUsageStats.totalTokens)}`
+        );
+
+        if (!LLMClient.#consumeCodexQuotaTurn(metadata)) {
+            return;
+        }
+
+        LLMClient.#codexUsageStats.quotaTurnCount += 1;
+        const quotaTurnIndex = LLMClient.#codexUsageStats.quotaTurnCount;
+        if (quotaTurnIndex % 5 !== 0) {
+            return;
+        }
+
+        try {
+            const rateLimits = await CodexBridgeClient.readRateLimits({ aiConfig });
+            console.log(`[codex quota turn ${quotaTurnIndex}] ${LLMClient.#formatCodexRateLimits(rateLimits)}`);
+            try {
+                LLMClient.#appendCodexQuotaChatEntry({
+                    snapshot: rateLimits,
+                    clientId
+                });
+            } catch (error) {
+                console.warn(`[codex quota turn ${quotaTurnIndex}] chat notice failed: ${error?.message || error}`);
+            }
+        } catch (error) {
+            console.warn(`[codex quota turn ${quotaTurnIndex}] failed: ${error?.message || error}`);
         }
     }
 
@@ -2081,7 +2538,7 @@ class LLMClient {
                 }
 
                 const semaphoreKey = resolvedBackend === CodexBridgeClient.backendName
-                    ? `${resolvedBackend}::${resolvedModel || 'no-model'}`
+                    ? CodexBridgeClient.getSemaphoreKey(aiConfig, resolvedModel)
                     : `${resolvedApiKey || 'no-key'}::${resolvedModel || 'no-model'}`;
                 const resolvedTimeout = LLMClient.resolveTimeout(timeoutMs, timeoutScale);
                 const baseStartTimeoutMs = Number.isFinite(aiConfig.stream_start_timeout)
@@ -2278,6 +2735,21 @@ class LLMClient {
                         );
                         await attemptSemaphore.acquire();
 
+                        const shouldTrackPromptProgress = !isSilent
+                            && (payload.stream || resolvedBackend === CodexBridgeClient.backendName);
+                        streamTrackerId = shouldTrackPromptProgress
+                            ? LLMClient.#trackStreamStart(metadataLabel, {
+                                startTimeoutMs: streamStartTimeoutMs,
+                                continueTimeoutMs: streamContinueTimeoutMs,
+                                isBackground: Boolean(runInBackground),
+                                model: resolvedModel,
+                                promptText: LLMClient.formatMessagesForErrorLog(payload.messages)
+                            })
+                            : null;
+                        if (streamTrackerId) {
+                            LLMClient.#abortControllers.set(streamTrackerId, controller);
+                        }
+
                         if (resolvedBackend === CodexBridgeClient.backendName) {
                             response = await CodexBridgeClient.chatCompletion({
                                 messages: requestMessages,
@@ -2285,22 +2757,35 @@ class LLMClient {
                                 timeoutMs: resolvedTimeout,
                                 metadataLabel,
                                 additionalPayload: payload,
-                                aiConfig: attemptRuntime.aiConfig
+                                aiConfig: attemptRuntime.aiConfig,
+                                signal: controller.signal,
+                                onStdoutChunk: (chunkText) => {
+                                    if (!streamTrackerId || typeof chunkText !== 'string' || !chunkText) {
+                                        return;
+                                    }
+                                    const chunkBytes = Buffer.byteLength(chunkText, 'utf8');
+                                    LLMClient.#trackStreamBytes(
+                                        streamTrackerId,
+                                        chunkBytes,
+                                        streamContinueTimeoutMs
+                                    );
+                                },
+                                onStdoutEvent: (event) => {
+                                    if (!streamTrackerId) {
+                                        return;
+                                    }
+                                    const statusLine = LLMClient.#formatCodexProgressEvent(event);
+                                    if (statusLine) {
+                                        LLMClient.#trackStreamStatus(
+                                            streamTrackerId,
+                                            statusLine,
+                                            streamContinueTimeoutMs
+                                        );
+                                    }
+                                }
                             });
                         } else {
                             const axiosOptions = { ...attemptRuntime.baseAxiosOptions, signal: controller.signal };
-                            streamTrackerId = payload.stream && !isSilent
-                                ? LLMClient.#trackStreamStart(metadataLabel, {
-                                    startTimeoutMs: streamStartTimeoutMs,
-                                    continueTimeoutMs: streamContinueTimeoutMs,
-                                    isBackground: Boolean(runInBackground),
-                                    model: resolvedModel,
-                                    promptText: LLMClient.formatMessagesForErrorLog(payload.messages)
-                                })
-                                : null;
-                            if (streamTrackerId) {
-                                LLMClient.#abortControllers.set(streamTrackerId, controller);
-                            }
                             if (payload.stream) {
                                 startTimer = setTimeout(() => {
                                     controller.abort(new Error('Stream start timeout'));
@@ -2467,6 +2952,18 @@ class LLMClient {
                         responseFinishReason = firstChoice?.finish_reason || null;
                     }
 
+                    if (resolvedBackend === CodexBridgeClient.backendName && responseUsage) {
+                        await LLMClient.#reportCodexUsage({
+                            metadataLabel,
+                            model: resolvedModel,
+                            usage: responseUsage,
+                            aiConfig: attemptRuntime?.aiConfig,
+                            attemptNumber: attempt + 1,
+                            clientId: typeof metadata?.clientId === 'string' ? metadata.clientId : null,
+                            metadata
+                        });
+                    }
+
                     const normalizedResponseData = LLMClient.#buildNormalizedResponseData({
                         rawResponseData: payload.stream ? null : response.data,
                         fallbackModel: resolvedModel,
@@ -2631,6 +3128,10 @@ class LLMClient {
                             }
                         }
                     }
+                    if (resolvedBackend === CodexBridgeClient.backendName && streamTrackerId) {
+                        LLMClient.#trackStreamEnd(streamTrackerId);
+                        streamTrackerId = null;
+                    }
                     break;
 
                 } catch (error) {
@@ -2705,11 +3206,12 @@ class LLMClient {
 
                 errorLog(`Retrying chat completion (attempt ${attempt + 2} of ${retryAttempts + 1})...`);
                 attempt++;
-                if (attemptRuntime?.payload?.stream) {
+                if ((attemptRuntime?.payload?.stream || attemptRuntime?.backend === CodexBridgeClient.backendName) && streamTrackerId) {
                     // bump retry count on all active streams
-                    LLMClient.#streamProgress.active.forEach(entry => {
+                    const entry = LLMClient.#streamProgress.active.get(streamTrackerId);
+                    if (entry) {
                         entry.retries = (entry.retries || 0) + 1;
-                    });
+                    }
                 }
             }
 

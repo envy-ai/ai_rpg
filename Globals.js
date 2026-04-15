@@ -899,6 +899,10 @@ class Globals {
     throw new Error('Globals.parseXMLTemplate called before being set.');
   }
 
+  static appendChatEntry = function () {
+    throw new Error('Globals.appendChatEntry called before being set.');
+  }
+
   static getSceneSummaries() {
     if (!Globals.sceneSummaries) {
       throw new Error('Globals.sceneSummaries accessed before being initialized.');

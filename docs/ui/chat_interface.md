@@ -123,6 +123,7 @@ The main UI is rendered by `views/index.njk` and powered by `public/js/chat.js` 
   - `chatHistory` (system + local), `serverHistory` (from `/api/chat/history`).
   - `pendingRequests` for in-flight requests and status UI.
   - Websocket state (`ws`, `wsReady`, reconnect timers).
+- Input history recall now waits to see whether native `ArrowUp`/`ArrowDown` caret movement actually changed the textarea cursor position before stepping through prior drafted messages, so wrapped/multiline editing keeps the expected arrow-key behavior.
 - Uses `markdown-it` for rendering message content when available.
 
 ## Websocket events
@@ -138,7 +139,7 @@ The chat client listens on `/ws?clientId=...` and handles:
 - `location_exit_created`, `location_exit_deleted` (refresh location + map).
 - `image_job_update` (image job completion via `ImageGenerationManager`).
 - `chat_history_updated` (refresh history, quest panel, and Story Tools data).
-- `prompt_progress`, `prompt_progress_cleared` (floating prompt-progress overlay with per-prompt eye/cancel/retry controls plus a header-level "Abort + Reload" action that cancels all tracked prompts and reloads the latest autosave; the eye control opens a separate floating viewer with one combined text pane that renders the selected prompt first in a differently styled inline span, exposes a `Copy Prompt` action, streams the selected prompt's response text live beneath it as chunks arrive, supports header dragging plus native resize, and keeps the combined pane vertically scrollable when it overflows; the overlay auto-closes the load-game modal before showing prompt activity, renders in the upper modal layer above the full interface, auto-anchors below top navigation controls so header options remain clickable, includes contract/expand toggle, drag handle on the header, native resize handle, and a 3.5-second hidden-placeholder-row debounce before the empty table state is hidden).
+- `prompt_progress`, `prompt_progress_cleared` (floating prompt-progress overlay with per-prompt eye/cancel/retry controls plus a header-level "Abort + Reload" action that cancels all tracked prompts and reloads the latest autosave; the eye control opens a separate floating viewer with one combined text pane that renders the selected prompt first in a differently styled inline span, exposes a `Copy Prompt` action, streams the selected prompt's response text live beneath it as chunks arrive, or shows backend status text for non-token-streaming backends such as `codex_cli_bridge`; the overlay auto-closes the load-game modal before showing prompt activity, renders in the upper modal layer above the full interface, auto-anchors below top navigation controls so header options remain clickable, includes contract/expand toggle, drag handle on the header, native resize handle, and a 3.5-second hidden-placeholder-row debounce before the empty table state is hidden).
 - `quest_confirmation_request` (modal prompt).
 
 `processChatPayload()` also consumes `payload.worldTime` from streamed/final chat responses, updates the world-time chip, and emits transition summaries (`segment`/`season`) into the event-summary flow.

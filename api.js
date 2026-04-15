@@ -12246,7 +12246,6 @@ module.exports = function registerApiRoutes(scope) {
                     console.log(`Running plausibility check for NPC: ${npc.name || npcName}`);
 
                     const plausibilityResult = await runNpcPlausibilityPrompt({ npc, locationOverride: npcLocation });
-                    console.log('Plausibility result:', plausibilityResult); 0
                     const plan = plausibilityResult.structured;
                     if (!plan || !plan.description) {
                         continue;
@@ -14162,7 +14161,12 @@ module.exports = function registerApiRoutes(scope) {
                 const requestOptions = {
                     messages: finalMessages,
                     metadataLabel: promptMetadataLabel,
-                    metadata: { __aiMetricsStart: metricsStart },
+                    metadata: {
+                        __aiMetricsStart: metricsStart,
+                        clientId: stream.clientId || null,
+                        __codexQuotaCountAsTurn: promptMetadataLabel === 'player_action',
+                        __codexQuotaTurnKey: stream.requestId || `player_turn_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`
+                    },
                     onResponse: (response) => {
                         capturedResponse = response;
                     },
@@ -25068,7 +25072,14 @@ module.exports = function registerApiRoutes(scope) {
                                 { role: 'system', content: playerActionTemplate.systemPrompt },
                                 { role: 'user', content: playerActionTemplate.generationPrompt }
                             ],
-                            metadataLabel: 'craft_player_action'
+                            metadataLabel: 'craft_player_action',
+                            metadata: {
+                                clientId: typeof payload.clientId === 'string' ? payload.clientId.trim() || null : null,
+                                __codexQuotaCountAsTurn: true,
+                                __codexQuotaTurnKey: (typeof payload.requestId === 'string' && payload.requestId.trim())
+                                    ? payload.requestId.trim()
+                                    : `craft_turn_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`
+                            }
                         });
 
                         LLMClient.logPrompt({

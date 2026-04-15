@@ -7,6 +7,7 @@ const Globals = require('./Globals.js');
 const BACKEND_OPENAI = 'openai_compatible';
 const BACKEND_CODEX = 'codex_cli_bridge';
 const CODEX_REASONING_EFFORTS = Object.freeze(['none', 'minimal', 'low', 'medium', 'high', 'xhigh']);
+const CODEX_APP_SERVER_TIMEOUT_MS = 15000;
 const DEFAULT_CODEX_BRIDGE_CONFIG = Object.freeze({
     command: 'codex',
     home: './tmp/codex-bridge-home',
@@ -444,9 +445,67 @@ function parseBridgeMessage(rawText, { allowToolCalls }) {
     };
 }
 
-function buildResponseData({ content, toolCalls, model, threadId }) {
+function parseJsonLines(rawText) {
+    const text = typeof rawText === 'string' ? rawText : '';
+    if (!text) {
+        return [];
+    }
+    const parsed = [];
+    for (const rawLine of text.split('\n')) {
+        const line = rawLine.trim();
+        if (!line.startsWith('{')) {
+            continue;
+        }
+        try {
+            parsed.push(JSON.parse(line));
+        } catch (_) {
+            // Ignore malformed JSONL records; callers can decide if absence is an error.
+        }
+    }
+    return parsed;
+}
+
+function normalizeUsage(rawUsage) {
+    if (!rawUsage || typeof rawUsage !== 'object') {
+        return null;
+    }
+    const inputTokens = Number(rawUsage.input_tokens);
+    const cachedInputTokens = Number(rawUsage.cached_input_tokens);
+    const outputTokens = Number(rawUsage.output_tokens);
+    const normalized = {};
+    if (Number.isFinite(inputTokens) && inputTokens >= 0) {
+        normalized.input_tokens = Math.trunc(inputTokens);
+    }
+    if (Number.isFinite(cachedInputTokens) && cachedInputTokens >= 0) {
+        normalized.cached_input_tokens = Math.trunc(cachedInputTokens);
+    }
+    if (Number.isFinite(outputTokens) && outputTokens >= 0) {
+        normalized.output_tokens = Math.trunc(outputTokens);
+    }
+    if (Object.keys(normalized).length === 0) {
+        return null;
+    }
+    normalized.total_tokens = (normalized.input_tokens || 0) + (normalized.output_tokens || 0);
+    return normalized;
+}
+
+function extractUsageFromStdout(rawText) {
+    const events = parseJsonLines(rawText);
+    for (let index = events.length - 1; index >= 0; index -= 1) {
+        const event = events[index];
+        if (event?.type === 'turn.completed') {
+            const usage = normalizeUsage(event.usage);
+            if (usage) {
+                return usage;
+            }
+        }
+    }
+    return null;
+}
+
+function buildResponseData({ content, toolCalls, model, threadId, usage = null }) {
     const finishReason = Array.isArray(toolCalls) && toolCalls.length ? 'tool_calls' : 'stop';
-    return {
+    const response = {
         id: threadId || `codex-bridge-${randomUUID()}`,
         object: 'chat.completion',
         created: buildNowTimestamp(),
@@ -463,6 +522,11 @@ function buildResponseData({ content, toolCalls, model, threadId }) {
             }
         ]
     };
+    const normalizedUsage = normalizeUsage(usage);
+    if (normalizedUsage) {
+        response.usage = normalizedUsage;
+    }
+    return response;
 }
 
 function readIfExists(filePath) {
@@ -556,8 +620,28 @@ class CodexBridgeClient {
         return CodexBridgeClient.normalizeBackend(aiConfig?.backend) === BACKEND_CODEX;
     }
 
-    static getMaxConcurrent(_aiConfig) {
-        return 1;
+    static getMaxConcurrent(aiConfig = Globals?.config?.ai) {
+        const bridgeConfig = CodexBridgeClient.resolveBridgeConfig(aiConfig);
+        if (bridgeConfig.session_mode !== 'fresh') {
+            return 1;
+        }
+        const configured = Number(aiConfig?.max_concurrent_requests);
+        return Number.isInteger(configured) && configured > 0 ? configured : 1;
+    }
+
+    static getSemaphoreKey(aiConfig = Globals?.config?.ai, model = '') {
+        const bridgeConfig = CodexBridgeClient.resolveBridgeConfig(aiConfig);
+        const normalizedModel = typeof model === 'string' && model.trim() ? model.trim() : 'no-model';
+        if (bridgeConfig.session_mode === 'fresh') {
+            return `${BACKEND_CODEX}::fresh::${normalizedModel}`;
+        }
+
+        const homePath = CodexBridgeClient.resolveHomePath(aiConfig) || '(default-home)';
+        if (bridgeConfig.session_mode === 'resume_last') {
+            return `${BACKEND_CODEX}::resume_last::${homePath}`;
+        }
+
+        return `${BACKEND_CODEX}::resume_id::${homePath}::${bridgeConfig.session_id}`;
     }
 
     static getConfigurationErrors(aiConfig) {
@@ -758,15 +842,214 @@ class CodexBridgeClient {
         return args;
     }
 
+    static extractUsageFromStdout(rawText) {
+        return extractUsageFromStdout(rawText);
+    }
+
+    static async readRateLimits({ aiConfig = Globals?.config?.ai, timeoutMs = CODEX_APP_SERVER_TIMEOUT_MS } = {}) {
+        const bridgeConfig = CodexBridgeClient.resolveBridgeConfig(aiConfig);
+        const homePath = CodexBridgeClient.resolveHomePath(aiConfig);
+        const env = { ...process.env };
+        if (homePath) {
+            env.CODEX_HOME = homePath;
+        }
+        return await new Promise((resolve, reject) => {
+            const child = spawn(bridgeConfig.command, ['app-server', '--listen', 'stdio://'], {
+                cwd: Globals?.baseDir || process.cwd(),
+                env,
+                stdio: ['pipe', 'pipe', 'pipe']
+            });
+
+            let settled = false;
+            let stdout = '';
+            let stderr = '';
+            let stdoutBuffer = '';
+            let timeoutHandle = null;
+            const pending = new Map();
+
+            const finishReject = (error) => {
+                if (settled) {
+                    return;
+                }
+                settled = true;
+                if (timeoutHandle) {
+                    clearTimeout(timeoutHandle);
+                }
+                try {
+                    child.kill('SIGTERM');
+                } catch (_) {
+                    // Ignore child termination failures during cleanup.
+                }
+                pending.forEach(({ reject: rejectPending }) => {
+                    rejectPending(error);
+                });
+                pending.clear();
+                reject(error);
+            };
+
+            const finishResolve = (result) => {
+                if (settled) {
+                    return;
+                }
+                settled = true;
+                if (timeoutHandle) {
+                    clearTimeout(timeoutHandle);
+                }
+                try {
+                    child.stdin.end();
+                } catch (_) {
+                    // Ignore stdin close failures during cleanup.
+                }
+                resolve(result);
+            };
+
+            const request = (id, method, params) => new Promise((resolveRequest, rejectRequest) => {
+                pending.set(id, { resolve: resolveRequest, reject: rejectRequest, method });
+                const payload = JSON.stringify({
+                    jsonrpc: '2.0',
+                    id,
+                    method,
+                    params
+                });
+                child.stdin.write(`${payload}\n`, (error) => {
+                    if (error) {
+                        pending.delete(id);
+                        rejectRequest(error);
+                    }
+                });
+            });
+
+            if (Number.isFinite(timeoutMs) && timeoutMs > 0) {
+                timeoutHandle = setTimeout(() => {
+                    finishReject(new Error(`Codex rate limit query timed out after ${timeoutMs} ms.`));
+                }, timeoutMs);
+            }
+
+            child.on('error', (error) => {
+                finishReject(new Error(`Failed to start Codex app-server process: ${error.message}`));
+            });
+
+            child.stdout.on('data', (chunk) => {
+                const text = chunk.toString('utf8');
+                stdout += text;
+                stdoutBuffer += text;
+                const lines = stdoutBuffer.split('\n');
+                stdoutBuffer = lines.pop() || '';
+                for (const rawLine of lines) {
+                    const line = rawLine.trim();
+                    if (!line.startsWith('{')) {
+                        continue;
+                    }
+                    let parsed = null;
+                    try {
+                        parsed = JSON.parse(line);
+                    } catch (_) {
+                        continue;
+                    }
+                    const pendingRequest = pending.get(parsed.id);
+                    if (!pendingRequest) {
+                        continue;
+                    }
+                    pending.delete(parsed.id);
+                    if (parsed.error) {
+                        const errorMessage = typeof parsed.error?.message === 'string' && parsed.error.message.trim()
+                            ? parsed.error.message.trim()
+                            : `Codex app-server request ${pendingRequest.method} failed.`;
+                        pendingRequest.reject(new Error(errorMessage));
+                        continue;
+                    }
+                    pendingRequest.resolve(parsed.result ?? null);
+                }
+            });
+
+            child.stderr.on('data', (chunk) => {
+                stderr += chunk.toString('utf8');
+            });
+
+            child.on('close', (code, signal) => {
+                if (settled) {
+                    return;
+                }
+                const trailingEvents = parseJsonLines(stdoutBuffer);
+                if (trailingEvents.length) {
+                    for (const parsed of trailingEvents) {
+                        const pendingRequest = pending.get(parsed.id);
+                        if (!pendingRequest) {
+                            continue;
+                        }
+                        pending.delete(parsed.id);
+                        if (parsed.error) {
+                            const errorMessage = typeof parsed.error?.message === 'string' && parsed.error.message.trim()
+                                ? parsed.error.message.trim()
+                                : `Codex app-server request ${pendingRequest.method} failed.`;
+                            pendingRequest.reject(new Error(errorMessage));
+                            continue;
+                        }
+                        pendingRequest.resolve(parsed.result ?? null);
+                    }
+                }
+                const pendingEntries = Array.from(pending.values());
+                pending.clear();
+                if (pendingEntries.length) {
+                    const details = [
+                        `Codex app-server process exited with code ${code}${signal ? ` (signal: ${signal})` : ''} before all requests completed.`
+                    ];
+                    if (stderr.trim()) {
+                        details.push(`stderr:\n${stderr.trim()}`);
+                    }
+                    if (stdout.trim()) {
+                        details.push(`stdout:\n${stdout.trim()}`);
+                    }
+                    const error = new Error(details.join('\n\n'));
+                    pendingEntries.forEach(({ reject: rejectPending }) => rejectPending(error));
+                    finishReject(error);
+                    return;
+                }
+            });
+
+            (async () => {
+                try {
+                    await request(1, 'initialize', {
+                        clientInfo: {
+                            name: 'ai_rpg_codex_bridge',
+                            version: '1.0.0'
+                        }
+                    });
+                    const rateLimits = await request(2, 'account/rateLimits/read', null);
+                    finishResolve(rateLimits);
+                } catch (error) {
+                    const details = [];
+                    if (error?.message) {
+                        details.push(error.message);
+                    }
+                    if (stderr.trim()) {
+                        details.push(`stderr:\n${stderr.trim()}`);
+                    }
+                    finishReject(new Error(details.join('\n\n') || 'Failed to query Codex rate limits.'));
+                }
+            })();
+        });
+    }
+
     static async runCodexCommand({
         command,
         args,
         promptText,
         timeoutMs,
         cwd,
-        env
+        env,
+        signal = null,
+        onStdoutChunk = null,
+        onStdoutEvent = null
     }) {
         return await new Promise((resolve, reject) => {
+            if (signal?.aborted) {
+                const reason = signal.reason instanceof Error
+                    ? signal.reason.message
+                    : 'Codex bridge request aborted before process start.';
+                reject(new Error(reason));
+                return;
+            }
             const child = spawn(command, args, {
                 cwd,
                 env,
@@ -780,6 +1063,7 @@ class CodexBridgeClient {
             let settled = false;
             let timeoutHandle = null;
             let killEscalationHandle = null;
+            let abortHandler = null;
 
             const finalizeReject = (error) => {
                 if (settled) {
@@ -791,6 +1075,9 @@ class CodexBridgeClient {
                 }
                 if (killEscalationHandle) {
                     clearTimeout(killEscalationHandle);
+                }
+                if (signal && abortHandler) {
+                    signal.removeEventListener('abort', abortHandler);
                 }
                 reject(error);
             };
@@ -805,6 +1092,9 @@ class CodexBridgeClient {
                 }
                 if (killEscalationHandle) {
                     clearTimeout(killEscalationHandle);
+                }
+                if (signal && abortHandler) {
+                    signal.removeEventListener('abort', abortHandler);
                 }
                 resolve(result);
             };
@@ -834,6 +1124,16 @@ class CodexBridgeClient {
                 }, timeoutMs);
             }
 
+            if (signal) {
+                abortHandler = () => {
+                    const reason = signal.reason instanceof Error
+                        ? signal.reason.message
+                        : 'Codex bridge request aborted.';
+                    terminateChild(reason);
+                };
+                signal.addEventListener('abort', abortHandler, { once: true });
+            }
+
             child.on('error', (error) => {
                 finalizeReject(new Error(`Failed to start Codex bridge process: ${error.message}`));
             });
@@ -842,24 +1142,42 @@ class CodexBridgeClient {
                 const text = chunk.toString('utf8');
                 stdout += text;
                 stdoutBuffer += text;
+                if (typeof onStdoutChunk === 'function') {
+                    try {
+                        onStdoutChunk(text);
+                    } catch (error) {
+                        terminateChild(`Codex stdout progress handler failed: ${error?.message || error}`);
+                        return;
+                    }
+                }
                 const lines = stdoutBuffer.split('\n');
                 stdoutBuffer = lines.pop() || '';
-                const captureThreadIdFromLine = (rawLine) => {
+                const captureEventFromLine = (rawLine) => {
                     const line = rawLine.trim();
                     if (!line.startsWith('{')) {
-                        return;
+                        return null;
                     }
                     try {
                         const parsed = JSON.parse(line);
                         if (parsed?.type === 'thread.started' && typeof parsed.thread_id === 'string' && parsed.thread_id.trim()) {
                             threadId = parsed.thread_id.trim();
                         }
+                        return parsed;
                     } catch (_) {
                         // Ignore non-JSON or partial lines in the bridge event stream.
+                        return null;
                     }
                 };
                 for (const rawLine of lines) {
-                    captureThreadIdFromLine(rawLine);
+                    const parsedEvent = captureEventFromLine(rawLine);
+                    if (parsedEvent && typeof onStdoutEvent === 'function') {
+                        try {
+                            onStdoutEvent(parsedEvent);
+                        } catch (error) {
+                            terminateChild(`Codex stdout event handler failed: ${error?.message || error}`);
+                            return;
+                        }
+                    }
                 }
             });
 
@@ -877,6 +1195,9 @@ class CodexBridgeClient {
                         const parsed = JSON.parse(trailingStdoutLine);
                         if (parsed?.type === 'thread.started' && typeof parsed.thread_id === 'string' && parsed.thread_id.trim()) {
                             threadId = parsed.thread_id.trim();
+                        }
+                        if (typeof onStdoutEvent === 'function') {
+                            onStdoutEvent(parsed);
                         }
                     } catch (_) {
                         // Ignore non-JSON or partial trailing lines in the bridge event stream.
@@ -918,7 +1239,10 @@ class CodexBridgeClient {
         timeoutMs,
         metadataLabel = '',
         additionalPayload = {},
-        aiConfig = Globals?.config?.ai
+        aiConfig = Globals?.config?.ai,
+        signal = null,
+        onStdoutChunk = null,
+        onStdoutEvent = null
     } = {}) {
         const bridgeConfig = CodexBridgeClient.resolveBridgeConfig(aiConfig);
         const allowedTools = Array.isArray(additionalPayload?.tools) ? additionalPayload.tools : [];
@@ -970,10 +1294,14 @@ class CodexBridgeClient {
                 promptText,
                 timeoutMs,
                 cwd: Globals?.baseDir || process.cwd(),
-                env
+                env,
+                signal,
+                onStdoutChunk,
+                onStdoutEvent
             });
             commandStdout = stdout;
             commandStderr = stderr;
+            const usage = CodexBridgeClient.extractUsageFromStdout(stdout);
 
             const rawOutput = readIfExists(outputPath).trim();
             if (!rawOutput) {
@@ -984,7 +1312,8 @@ class CodexBridgeClient {
                 content: parsed.content,
                 toolCalls: parsed.toolCalls,
                 model,
-                threadId
+                threadId,
+                usage
             });
             logBridgePrompt({
                 metadataLabel,

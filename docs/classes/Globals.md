@@ -15,6 +15,7 @@ Centralized static state and helpers used across the server. Provides access to 
 - `setSaveMetadata(metadata)` / `getSaveMetadata()`.
 - `setCurrentSaveInfo(info)` / `getCurrentSaveInfo()`.
 - `getBasePromptContext`, `getPromptEnv`, `parseXMLTemplate`: placeholders that must be assigned.
+- `appendChatEntry(entry, { collector, locationId, clientId, emitClientRefresh, refreshPayload })`: server-assigned helper that routes through `pushChatEntry` and can optionally emit `chat_history_updated`.
 - `getSceneSummaries()`: throws if not initialized.
 - `get currentPlayer()` / `set currentPlayer(player)`: resolves through `Player` unless overridden.
 - `set processedMove(value)` / `get processedMove()`.

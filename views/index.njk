@@ -5742,7 +5742,7 @@
                 return;
             }
 
-            showSearchSelectionModal({
+            window.showSearchSelectionModal({
                 title: npcId ? 'Teleport Character' : 'Teleport Item',
                 filterPlaceholder: 'Filter locations',
                 filterAriaLabel: 'Filter locations by name',
@@ -6254,7 +6254,7 @@
                             return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
                         });
 
-                        showSearchSelectionModal({
+                        window.showSearchSelectionModal({
                             title: 'Select Person',
                             filterPlaceholder: 'Filter by name',
                             filterAriaLabel: 'Filter people by name',
@@ -21014,6 +21014,8 @@
             return selectionModalApi;
         }
 
+        window.showSearchSelectionModal = showSearchSelectionModal;
+
         async function loadSummonActorDirectory() {
             const response = await fetch('/api/players', { cache: 'no-store' });
             const data = await response.json().catch(() => ({}));
@@ -21191,7 +21193,7 @@
                 return;
             }
 
-            showSearchSelectionModal({
+            window.showSearchSelectionModal({
                 title: 'Summon NPC',
                 filterPlaceholder: 'Filter NPCs',
                 filterAriaLabel: 'Filter NPCs by name or location',
@@ -21253,7 +21255,7 @@
                 return;
             }
 
-            showSearchSelectionModal({
+            window.showSearchSelectionModal({
                 title: 'Summon Item or Scenery',
                 filterPlaceholder: 'Filter items or scenery',
                 filterAriaLabel: 'Filter items or scenery by name, type, or origin',

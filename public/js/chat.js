@@ -3695,11 +3695,61 @@ class AIRPGChat {
         this.inputHistoryDraft = '';
     }
 
+    navigateInputHistory(key, currentValue = '') {
+        if (!this.messageInput || !this.inputHistory.length) {
+            return false;
+        }
+        if (key !== 'ArrowUp' && key !== 'ArrowDown') {
+            return false;
+        }
+
+        const selectionStart = this.messageInput.selectionStart ?? 0;
+        const selectionEnd = this.messageInput.selectionEnd ?? 0;
+        const selectionCollapsed = selectionStart === selectionEnd;
+        if (!selectionCollapsed) {
+            return false;
+        }
+
+        const atEnd = selectionStart === currentValue.length && selectionEnd === currentValue.length;
+
+        if (key === 'ArrowUp') {
+            if (this.inputHistoryIndex === null) {
+                this.inputHistoryDraft = currentValue;
+                this.inputHistoryIndex = this.inputHistory.length - 1;
+            } else if (this.inputHistoryIndex > 0) {
+                this.inputHistoryIndex -= 1;
+            }
+            const nextValue = this.inputHistory[this.inputHistoryIndex] ?? '';
+            this.setMessageInputValue(nextValue);
+            return true;
+        }
+
+        if (key === 'ArrowDown') {
+            if (!atEnd) {
+                return false;
+            }
+            if (this.inputHistoryIndex === null) {
+                return false;
+            }
+            if (this.inputHistoryIndex < this.inputHistory.length - 1) {
+                this.inputHistoryIndex += 1;
+                const nextValue = this.inputHistory[this.inputHistoryIndex] ?? '';
+                this.setMessageInputValue(nextValue);
+            } else {
+                this.inputHistoryIndex = null;
+                this.setMessageInputValue(this.inputHistoryDraft || '');
+            }
+            return true;
+        }
+
+        return false;
+    }
+
     handleInputHistoryNavigation(event) {
         if (!event || !this.messageInput) {
             return false;
         }
-        if (event.ctrlKey || event.metaKey || event.altKey) {
+        if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) {
             return false;
         }
 
@@ -3716,44 +3766,26 @@ class AIRPGChat {
         const selectionStart = this.messageInput.selectionStart ?? 0;
         const selectionEnd = this.messageInput.selectionEnd ?? 0;
         const selectionCollapsed = selectionStart === selectionEnd;
-        const isSingleLine = !currentValue.includes('\n');
-        const atStart = selectionStart === 0 && selectionEnd === 0;
-        const atEnd = selectionStart === currentValue.length && selectionEnd === currentValue.length;
-
-        if (key === 'ArrowUp') {
-            if (!(atStart || (isSingleLine && selectionCollapsed))) {
-                return false;
-            }
-            event.preventDefault();
-            if (this.inputHistoryIndex === null) {
-                this.inputHistoryDraft = currentValue;
-                this.inputHistoryIndex = this.inputHistory.length - 1;
-            } else if (this.inputHistoryIndex > 0) {
-                this.inputHistoryIndex -= 1;
-            }
-            const nextValue = this.inputHistory[this.inputHistoryIndex] ?? '';
-            this.setMessageInputValue(nextValue);
-            return true;
+        if (!selectionCollapsed) {
+            return false;
         }
 
-        if (key === 'ArrowDown') {
-            if (!(atEnd || (isSingleLine && selectionCollapsed))) {
-                return false;
+        window.requestAnimationFrame(() => {
+            if (!this.messageInput || document.activeElement !== this.messageInput) {
+                return;
             }
-            if (this.inputHistoryIndex === null) {
-                return false;
+
+            const nextValue = this.messageInput.value || '';
+            const nextSelectionStart = this.messageInput.selectionStart ?? 0;
+            const nextSelectionEnd = this.messageInput.selectionEnd ?? 0;
+            const caretMoved = nextSelectionStart !== selectionStart || nextSelectionEnd !== selectionEnd;
+            const valueChanged = nextValue !== currentValue;
+            if (caretMoved || valueChanged) {
+                return;
             }
-            event.preventDefault();
-            if (this.inputHistoryIndex < this.inputHistory.length - 1) {
-                this.inputHistoryIndex += 1;
-                const nextValue = this.inputHistory[this.inputHistoryIndex] ?? '';
-                this.setMessageInputValue(nextValue);
-            } else {
-                this.inputHistoryIndex = null;
-                this.setMessageInputValue(this.inputHistoryDraft || '');
-            }
-            return true;
-        }
+
+            this.navigateInputHistory(key, nextValue);
+        });
 
         return false;
     }
