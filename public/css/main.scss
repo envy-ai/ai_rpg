@@ -6552,6 +6552,24 @@ body.dark .thing-toggle-hint {
   z-index: 80;
 }
 
+.entity-context-menu.entity-context-menu--floating {
+  position: fixed;
+  top: 0;
+  right: auto;
+  left: 0;
+  width: max-content;
+  min-width: 0;
+  z-index: 11050;
+  max-width: calc(100vw - 16px);
+  max-height: calc(100vh - 16px);
+  overflow: auto;
+
+  .entity-context-menu-item {
+    white-space: nowrap;
+    display: block;
+  }
+}
+
 .entity-context-menu.is-open {
   opacity: 1;
   pointer-events: auto;

@@ -300,22 +300,45 @@ test('Codex bridge configuration rejects invalid reasoning effort values', { con
     assert.match(errors.join('\n'), /reasoning_effort must be one of/i);
 });
 
-test('CodexBridgeClient fresh mode spawns Codex with schema output and cleans up temporary output file', { concurrency: false }, async () => {
-    fs.chmodSync(FAKE_CODEX_PATH, 0o755);
+test('CodexBridgeClient fresh mode uses app-server transport with structured output', { concurrency: false }, async () => {
+    const originalRunCodexAppServer = CodexBridgeClient.runCodexAppServer;
+    const requests = [];
+    let appServerArgs = null;
 
-    const runtimeDir = path.join(process.cwd(), 'tmp', 'codex-bridge-test-runtime');
-    fs.mkdirSync(runtimeDir, { recursive: true });
-    const argLogPath = path.join(runtimeDir, 'fresh-args.json');
+    CodexBridgeClient.runCodexAppServer = async (args) => {
+        appServerArgs = args;
+        const stdoutLines = [];
+        const emit = (payload) => {
+            stdoutLines.push(JSON.stringify(payload));
+            args.onStdoutChunk?.(`${JSON.stringify(payload)}\n`);
+            args.onStdoutEvent?.(payload);
+        };
+        const request = async (method, params) => {
+            requests.push({ method, params });
+            if (method === 'thread/start') {
+                return { thread: { id: 'fresh-thread-123' } };
+            }
+            if (method === 'turn/start') {
+                emit({ type: 'turn.started', threadId: 'fresh-thread-123', turn: { id: 'turn-1', items: [], status: 'inProgress' } });
+                emit({ type: 'item.agentMessage.delta', threadId: 'fresh-thread-123', turnId: 'turn-1', itemId: 'msg-1', delta: '{"' });
+                emit({ type: 'item.agentMessage.delta', threadId: 'fresh-thread-123', turnId: 'turn-1', itemId: 'msg-1', delta: 'content' });
+                emit({ type: 'item.agentMessage.delta', threadId: 'fresh-thread-123', turnId: 'turn-1', itemId: 'msg-1', delta: '":"<final>fresh bridge ok</final>","tool_calls":[]}' });
+                emit({ type: 'item.completed', threadId: 'fresh-thread-123', turnId: 'turn-1', item: { type: 'agentMessage', id: 'msg-1', text: '{"content":"<final>fresh bridge ok</final>","tool_calls":[]}' } });
+                emit({ type: 'thread.tokenUsage.updated', threadId: 'fresh-thread-123', turnId: 'turn-1', tokenUsage: { last: { inputTokens: 12, cachedInputTokens: 2, outputTokens: 7, totalTokens: 19 } } });
+                emit({ type: 'turn.completed', threadId: 'fresh-thread-123', turn: { id: 'turn-1', items: [], status: 'completed' } });
+                return { turn: { id: 'turn-1', items: [], status: 'inProgress' } };
+            }
+            throw new Error(`Unexpected request method: ${method}`);
+        };
+        const result = await args.sessionHandler({ request });
+        return {
+            result,
+            stdout: stdoutLines.join('\n'),
+            stderr: ''
+        };
+    };
 
-    await withFakeCodexEnv({
-        FAKE_CODEX_ARG_LOG: argLogPath,
-        FAKE_CODEX_RESPONSE: JSON.stringify({
-            content: '<final>fresh bridge ok</final>',
-            tool_calls: []
-        }),
-        FAKE_CODEX_THREAD_ID: 'fresh-thread-123',
-        FAKE_CODEX_EXIT_CODE: '0'
-    }, async () => {
+    try {
         const response = await CodexBridgeClient.chatCompletion({
             messages: [
                 { role: 'system', content: 'Fresh bridge system instructions.' },
@@ -359,44 +382,40 @@ test('CodexBridgeClient fresh mode spawns Codex with schema output and cleans up
         assert.ok(typeof response?.data?.id === 'string' && response.data.id.length > 0);
         assert.equal(response?.data?.choices?.[0]?.message?.content, '<final>fresh bridge ok</final>');
 
-        const invocation = JSON.parse(fs.readFileSync(argLogPath, 'utf8'));
-        const outputIndex = invocation.args.indexOf('-o');
-        const schemaIndex = invocation.args.indexOf('--output-schema');
-        assert.notEqual(outputIndex, -1);
-        assert.notEqual(schemaIndex, -1);
-        assert.equal(invocation.args[0], 'exec');
-        assert.ok(invocation.args.includes('--json'));
-        assert.ok(invocation.args.includes('--ephemeral'));
-        assert.ok(invocation.args.includes('--output-schema'));
-        assert.ok(invocation.args.includes('--sandbox'));
-        assert.ok(invocation.args.includes('workspace-write'));
-        assert.ok(invocation.args.includes('--skip-git-repo-check'));
-        assert.ok(invocation.args.includes('-c'));
-        assert.ok(invocation.args.includes('model_reasoning_effort="none"'));
-        const developerInstructionsArg = invocation.args.find(arg => arg.startsWith('developer_instructions='));
-        assert.ok(developerInstructionsArg);
-        assert.ok(developerInstructionsArg.includes('Fresh bridge system instructions.'));
-        assert.ok(developerInstructionsArg.includes('You are acting as a completion bridge for an external application.'));
-        assert.ok(developerInstructionsArg.includes('Available tools:'));
-        assert.ok(invocation.stdinText.includes('Conversation:'));
-        assert.ok(invocation.stdinText.includes('Message 1 (user)'));
-        assert.ok(invocation.stdinText.includes('Say hello from the fresh bridge.'));
-        assert.equal(invocation.stdinText.includes('Fresh bridge system instructions.'), false);
-        const schema = JSON.parse(fs.readFileSync(invocation.args[schemaIndex + 1], 'utf8'));
+        assert.equal(appServerArgs?.aiConfig?.codex_bridge?.command, FAKE_CODEX_PATH);
+        const threadStartRequest = requests.find(entry => entry.method === 'thread/start');
+        const turnStartRequest = requests.find(entry => entry.method === 'turn/start');
+        assert.ok(threadStartRequest);
+        assert.ok(turnStartRequest);
+        assert.equal(threadStartRequest.params?.ephemeral, true);
+        assert.equal(threadStartRequest.params?.sandbox, 'workspace-write');
+        assert.equal(threadStartRequest.params?.approvalPolicy, 'never');
+        assert.equal(threadStartRequest.params?.model, 'gpt-5.4-mini');
+        assert.match(threadStartRequest.params?.developerInstructions || '', /Fresh bridge system instructions\./);
+        assert.match(threadStartRequest.params?.developerInstructions || '', /You are acting as a completion bridge for an external application\./);
+        assert.match(threadStartRequest.params?.developerInstructions || '', /Available tools:/);
+        assert.equal(turnStartRequest.params?.effort, 'none');
+        assert.equal(turnStartRequest.params?.threadId, 'fresh-thread-123');
+        assert.equal(turnStartRequest.params?.sandboxPolicy?.type, 'workspaceWrite');
+        assert.deepEqual(turnStartRequest.params?.sandboxPolicy?.writableRoots, [process.cwd()]);
+        assert.match(turnStartRequest.params?.input?.[0]?.text || '', /Conversation:/);
+        assert.match(turnStartRequest.params?.input?.[0]?.text || '', /Message 1 \(user\)/);
+        assert.match(turnStartRequest.params?.input?.[0]?.text || '', /Say hello from the fresh bridge\./);
+        assert.doesNotMatch(turnStartRequest.params?.input?.[0]?.text || '', /Fresh bridge system instructions\./);
+        const schema = turnStartRequest.params?.outputSchema;
         assert.equal(Object.prototype.hasOwnProperty.call(schema, 'oneOf'), false);
         assert.equal(schema?.properties?.content?.type, 'string');
         assert.equal(schema?.properties?.tool_calls?.type, 'array');
         assert.equal(schema?.properties?.tool_calls?.items?.properties?.arguments?.type, 'string');
         assert.deepEqual(schema?.required, ['content', 'tool_calls']);
-        assert.ok(invocation.codexHome.endsWith(path.join('tmp', 'test-codex-home-fresh')));
-        assert.equal(fs.existsSync(invocation.args[outputIndex + 1]), false);
-    });
+    } finally {
+        CodexBridgeClient.runCodexAppServer = originalRunCodexAppServer;
+    }
 });
 
 test('CodexBridgeClient prompt logs write plain response content when available', { concurrency: false }, async () => {
-    fs.chmodSync(FAKE_CODEX_PATH, 0o755);
-
     const originalConfig = Globals.config;
+    const originalRunCodexAppServer = CodexBridgeClient.runCodexAppServer;
     const metadataLabel = 'codex_bridge_plaintext_log';
     const logDir = path.join(process.cwd(), 'logs');
     fs.mkdirSync(logDir, { recursive: true });
@@ -419,24 +438,34 @@ test('CodexBridgeClient prompt logs write plain response content when available'
     });
 
     Globals.config = { ai: aiConfig };
+    CodexBridgeClient.runCodexAppServer = async (args) => {
+        const stdoutLines = [];
+        const emit = (payload) => {
+            stdoutLines.push(JSON.stringify(payload));
+            args.onStdoutEvent?.(payload);
+        };
+        const request = async (method) => {
+            if (method === 'thread/start') {
+                return { thread: { id: 'log-thread-789' } };
+            }
+            if (method === 'turn/start') {
+                emit({ type: 'item.completed', threadId: 'log-thread-789', turnId: 'turn-log', item: { type: 'agentMessage', id: 'msg-log', text: '{"content":"<final>log as plain text</final>"}' } });
+                emit({ type: 'turn.completed', threadId: 'log-thread-789', turn: { id: 'turn-log', items: [], status: 'completed' } });
+                return { turn: { id: 'turn-log', items: [], status: 'inProgress' } };
+            }
+            throw new Error(`Unexpected request method: ${method}`);
+        };
+        const result = await args.sessionHandler({ request });
+        return { result, stdout: stdoutLines.join('\n'), stderr: '' };
+    };
 
     try {
-        await withFakeCodexEnv({
-            FAKE_CODEX_RESPONSE: JSON.stringify({
-                content: '<final>log as plain text</final>',
-                tool_calls: []
-            }),
-            FAKE_CODEX_THREAD_ID: 'log-thread-789',
-            FAKE_CODEX_EXIT_CODE: '0'
-        }, async () => {
-            await CodexBridgeClient.chatCompletion({
-                messages: [{ role: 'user', content: 'Write a plain log response.' }],
-                model: 'gpt-5.4-mini',
-                metadataLabel,
-                aiConfig
-            });
+        await CodexBridgeClient.chatCompletion({
+            messages: [{ role: 'user', content: 'Write a plain log response.' }],
+            model: 'gpt-5.4-mini',
+            metadataLabel,
+            aiConfig
         });
-
         const createdFiles = fs.readdirSync(logDir)
             .filter(name => name.includes(`_prompt_${metadataLabel}.log`) && !existingFiles.has(name))
             .sort();
@@ -446,33 +475,55 @@ test('CodexBridgeClient prompt logs write plain response content when available'
         assert.match(logText, /=== RESPONSE ===\n<final>log as plain text<\/final>\n/);
         assert.match(logText, /=== RESPONSE JSON ===\n\{/);
     } finally {
+        CodexBridgeClient.runCodexAppServer = originalRunCodexAppServer;
         Globals.config = originalConfig;
     }
 });
 
-test('CodexBridgeClient resume_id mode uses resume args and normalizes tool calls', { concurrency: false }, async () => {
-    fs.chmodSync(FAKE_CODEX_PATH, 0o755);
+test('CodexBridgeClient resume_id mode resumes an app-server thread and normalizes tool calls', { concurrency: false }, async () => {
+    const originalRunCodexAppServer = CodexBridgeClient.runCodexAppServer;
+    const requests = [];
 
-    const runtimeDir = path.join(process.cwd(), 'tmp', 'codex-bridge-test-runtime');
-    fs.mkdirSync(runtimeDir, { recursive: true });
-    const argLogPath = path.join(runtimeDir, 'resume-args.json');
+    CodexBridgeClient.runCodexAppServer = async (args) => {
+        const stdoutLines = [];
+        const emit = (payload) => {
+            stdoutLines.push(JSON.stringify(payload));
+            args.onStdoutEvent?.(payload);
+        };
+        const request = async (method, params) => {
+            requests.push({ method, params });
+            if (method === 'thread/resume') {
+                return { thread: { id: params.threadId } };
+            }
+            if (method === 'turn/start') {
+                emit({
+                    type: 'item.completed',
+                    threadId: 'session-123',
+                    turnId: 'turn-resume',
+                    item: {
+                        type: 'agentMessage',
+                        id: 'msg-resume',
+                        text: JSON.stringify({
+                            content: '',
+                            tool_calls: [
+                                {
+                                    name: 'moreInfo',
+                                    arguments: JSON.stringify({ name: 'Ancient Dock' })
+                                }
+                            ]
+                        })
+                    }
+                });
+                emit({ type: 'turn.completed', threadId: 'session-123', turn: { id: 'turn-resume', items: [], status: 'completed' } });
+                return { turn: { id: 'turn-resume', items: [], status: 'inProgress' } };
+            }
+            throw new Error(`Unexpected request method: ${method}`);
+        };
+        const result = await args.sessionHandler({ request });
+        return { result, stdout: stdoutLines.join('\n'), stderr: '' };
+    };
 
-    await withFakeCodexEnv({
-        FAKE_CODEX_ARG_LOG: argLogPath,
-        FAKE_CODEX_RESPONSE: JSON.stringify({
-            content: '',
-            tool_calls: [
-                {
-                    name: 'moreInfo',
-                    arguments: JSON.stringify({
-                        name: 'Ancient Dock'
-                    })
-                }
-            ]
-        }),
-        FAKE_CODEX_THREAD_ID: 'resume-thread-456',
-        FAKE_CODEX_EXIT_CODE: '0'
-    }, async () => {
+    try {
         const response = await CodexBridgeClient.chatCompletion({
             messages: [
                 { role: 'system', content: 'Resume bridge system instructions.' },
@@ -519,22 +570,87 @@ test('CodexBridgeClient resume_id mode uses resume args and normalizes tool call
         assert.equal(toolCall?.function?.name, 'moreInfo');
         assert.deepEqual(JSON.parse(toolCall?.function?.arguments || '{}'), { name: 'Ancient Dock' });
 
-        const invocation = JSON.parse(fs.readFileSync(argLogPath, 'utf8'));
-        assert.equal(invocation.args[0], 'exec');
-        assert.equal(invocation.args[1], 'resume');
-        assert.ok(invocation.args.includes('session-123'));
-        assert.ok(invocation.args.includes('--json'));
-        assert.ok(invocation.args.includes('--skip-git-repo-check'));
-        assert.ok(invocation.args.includes('-c'));
-        assert.ok(invocation.args.includes('model_reasoning_effort="none"'));
-        const developerInstructionsArg = invocation.args.find(arg => arg.startsWith('developer_instructions='));
-        assert.ok(developerInstructionsArg);
-        assert.ok(developerInstructionsArg.includes('Resume bridge system instructions.'));
-        assert.equal(invocation.stdinText.includes('Resume bridge system instructions.'), false);
-        assert.ok(invocation.stdinText.includes('Use a tool call.'));
-        assert.equal(invocation.args.includes('--output-schema'), false);
-        assert.equal(invocation.args.includes('--sandbox'), false);
-    });
+        const resumeRequest = requests.find(entry => entry.method === 'thread/resume');
+        const turnStartRequest = requests.find(entry => entry.method === 'turn/start');
+        assert.ok(resumeRequest);
+        assert.ok(turnStartRequest);
+        assert.equal(resumeRequest.params?.threadId, 'session-123');
+        assert.equal(resumeRequest.params?.sandbox, 'read-only');
+        assert.equal(resumeRequest.params?.approvalPolicy, 'never');
+        assert.match(resumeRequest.params?.developerInstructions || '', /Resume bridge system instructions\./);
+        assert.equal(turnStartRequest.params?.threadId, 'session-123');
+        assert.equal(turnStartRequest.params?.effort, 'none');
+        assert.equal(turnStartRequest.params?.sandboxPolicy?.type, 'readOnly');
+        assert.match(turnStartRequest.params?.input?.[0]?.text || '', /Use a tool call\./);
+        assert.doesNotMatch(turnStartRequest.params?.input?.[0]?.text || '', /Resume bridge system instructions\./);
+    } finally {
+        CodexBridgeClient.runCodexAppServer = originalRunCodexAppServer;
+    }
+});
+
+test('CodexBridgeClient converts app-server JSON deltas into plain content preview events', { concurrency: false }, async () => {
+    const originalRunCodexAppServer = CodexBridgeClient.runCodexAppServer;
+    const previewEvents = [];
+
+    CodexBridgeClient.runCodexAppServer = async (args) => {
+        const stdoutLines = [];
+        const emit = (payload) => {
+            stdoutLines.push(JSON.stringify(payload));
+            args.onStdoutEvent?.(payload);
+        };
+        const request = async (method) => {
+            if (method === 'thread/start') {
+                return { thread: { id: 'preview-thread-321' } };
+            }
+            if (method === 'turn/start') {
+                emit({ type: 'item.agentMessage.delta', threadId: 'preview-thread-321', turnId: 'turn-preview', itemId: 'msg-preview', delta: '{"' });
+                emit({ type: 'item.agentMessage.delta', threadId: 'preview-thread-321', turnId: 'turn-preview', itemId: 'msg-preview', delta: 'content' });
+                emit({ type: 'item.agentMessage.delta', threadId: 'preview-thread-321', turnId: 'turn-preview', itemId: 'msg-preview', delta: '":"'} );
+                emit({ type: 'item.agentMessage.delta', threadId: 'preview-thread-321', turnId: 'turn-preview', itemId: 'msg-preview', delta: 'hello' });
+                emit({ type: 'item.agentMessage.delta', threadId: 'preview-thread-321', turnId: 'turn-preview', itemId: 'msg-preview', delta: '"}' });
+                emit({ type: 'item.completed', threadId: 'preview-thread-321', turnId: 'turn-preview', item: { type: 'agentMessage', id: 'msg-preview', text: '{"content":"hello"}' } });
+                emit({ type: 'turn.completed', threadId: 'preview-thread-321', turn: { id: 'turn-preview', items: [], status: 'completed' } });
+                return { turn: { id: 'turn-preview', items: [], status: 'inProgress' } };
+            }
+            throw new Error(`Unexpected request method: ${method}`);
+        };
+        const result = await args.sessionHandler({ request });
+        return { result, stdout: stdoutLines.join('\n'), stderr: '' };
+    };
+
+    try {
+        const response = await CodexBridgeClient.chatCompletion({
+            messages: [{ role: 'user', content: 'Say hello.' }],
+            model: 'gpt-5.4-mini',
+            metadataLabel: 'codex_bridge_preview_events',
+            aiConfig: buildCodexAiConfig({
+                codex_bridge: {
+                    command: FAKE_CODEX_PATH,
+                    home: './tmp/test-codex-home-preview',
+                    session_mode: 'fresh',
+                    session_id: '',
+                    sandbox: 'read-only',
+                    skip_git_repo_check: true,
+                    reasoning_effort: '',
+                    profile: '',
+                    prompt_preamble: ''
+                }
+            }),
+            onStdoutEvent: (event) => {
+                previewEvents.push(event);
+            }
+        });
+
+        assert.equal(response?.data?.choices?.[0]?.message?.content, 'hello');
+    } finally {
+        CodexBridgeClient.runCodexAppServer = originalRunCodexAppServer;
+    }
+
+    const textDeltas = previewEvents.filter(event => event?.type === 'agent_message_delta').map(event => event.delta);
+    assert.ok(textDeltas.includes('hello'));
+    assert.equal(textDeltas.some(delta => typeof delta === 'string' && delta.includes('"content"')), false);
+    const finalPreviewEvent = previewEvents.find(event => event?.type === 'item.completed' && event?.item?.type === 'agent_message');
+    assert.equal(finalPreviewEvent?.item?.text, 'hello');
 });
 
 test('CodexBridgeClient extracts usage from stdout turn.completed events', { concurrency: false }, () => {
@@ -549,6 +665,36 @@ test('CodexBridgeClient extracts usage from stdout turn.completed events', { con
         cached_input_tokens: 25,
         output_tokens: 8,
         total_tokens: 128
+    });
+});
+
+test('CodexBridgeClient extracts usage from stdout method-style turn/completed events', { concurrency: false }, () => {
+    const usage = CodexBridgeClient.extractUsageFromStdout([
+        '{"method":"thread/started","params":{"thread_id":"usage-thread-2"}}',
+        '{"method":"turn/started","params":{}}',
+        '{"method":"turn/completed","params":{"usage":{"input_tokens":77,"cached_input_tokens":11,"output_tokens":9}}}'
+    ].join('\n'));
+
+    assert.deepEqual(usage, {
+        input_tokens: 77,
+        cached_input_tokens: 11,
+        output_tokens: 9,
+        total_tokens: 86
+    });
+});
+
+test('CodexBridgeClient extracts usage from app-server thread/tokenUsage/updated events', { concurrency: false }, () => {
+    const usage = CodexBridgeClient.extractUsageFromStdout([
+        '{"method":"thread/started","params":{"thread":{"id":"usage-thread-3"}}}',
+        '{"method":"thread/tokenUsage/updated","params":{"threadId":"usage-thread-3","tokenUsage":{"last":{"inputTokens":33,"cachedInputTokens":4,"outputTokens":6,"totalTokens":39}}}}',
+        '{"method":"turn/completed","params":{"threadId":"usage-thread-3","turn":{"id":"turn-1","status":"completed","items":[]}}}'
+    ].join('\n'));
+
+    assert.deepEqual(usage, {
+        input_tokens: 33,
+        cached_input_tokens: 4,
+        output_tokens: 6,
+        total_tokens: 39
     });
 });
 
@@ -728,7 +874,8 @@ test('LLMClient.chatCompletion logs Codex usage each prompt and rate limits ever
         const usageLines = loggedLines.filter(line => line.includes('[codex usage'));
         assert.equal(usageLines.length, 7);
         assert.ok(usageLines[0].includes('prompt=player_action'));
-        assert.ok(usageLines[6].includes('running input=700'));
+        assert.ok(usageLines[6].includes('input=100'));
+        assert.equal(usageLines[6].includes('running input='), false);
         assert.equal(rateLimitReads, 1);
         assert.ok(loggedLines.some(line => line.includes('[codex quota turn 5]')));
         assert.equal(appendedEntries.length, 1);
@@ -753,9 +900,150 @@ test('LLMClient.chatCompletion logs Codex usage each prompt and rate limits ever
     }
 });
 
-test('LLMClient.chatCompletion broadcasts Codex bridge progress through prompt_progress', { concurrency: false }, async () => {
-    fs.chmodSync(FAKE_CODEX_PATH, 0o755);
+test('LLMClient.chatCompletion prefers the generic codex quota bucket over unrelated model buckets', { concurrency: false }, async () => {
+    const originalAxiosPost = axios.post;
+    const originalBridgeChatCompletion = CodexBridgeClient.chatCompletion;
+    const originalReadRateLimits = CodexBridgeClient.readRateLimits;
+    const originalConfig = Globals.config;
+    const originalAppendChatEntry = Globals.appendChatEntry;
+    const originalConsoleLog = console.log;
+    const originalConsoleWarn = console.warn;
 
+    const loggedLines = [];
+    const warnedLines = [];
+    const appendedEntries = [];
+
+    axios.post = async () => {
+        throw new Error('axios.post should not be called for codex_cli_bridge backend.');
+    };
+    CodexBridgeClient.chatCompletion = async () => ({
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config: { backend: 'codex_cli_bridge' },
+        data: {
+            id: 'bridge-response-quota-bucket-selection',
+            object: 'chat.completion',
+            created: 1,
+            model: 'gpt-5.4',
+            usage: {
+                input_tokens: 100,
+                cached_input_tokens: 20,
+                output_tokens: 5,
+                total_tokens: 105
+            },
+            choices: [
+                {
+                    index: 0,
+                    finish_reason: 'stop',
+                    message: {
+                        role: 'assistant',
+                        content: '<final>quota bucket selection</final>'
+                    }
+                }
+            ]
+        }
+    });
+    CodexBridgeClient.readRateLimits = async () => ({
+        rateLimitsByLimitId: {
+            'GPT-5.3-Codex-Spark': {
+                limitId: 'GPT-5.3-Codex-Spark',
+                limitName: 'GPT-5.3-Codex-Spark',
+                planType: 'pro',
+                primary: {
+                    usedPercent: 0,
+                    resetsAt: 1777000000000,
+                    windowDurationMins: 300
+                },
+                secondary: {
+                    usedPercent: 0,
+                    resetsAt: 1777600000000,
+                    windowDurationMins: 10080
+                },
+                credits: {
+                    hasCredits: false,
+                    unlimited: false
+                }
+            },
+            codex: {
+                limitId: 'codex',
+                limitName: 'codex',
+                planType: 'pro',
+                primary: {
+                    usedPercent: 20,
+                    resetsAt: 1776991260000,
+                    windowDurationMins: 300
+                },
+                secondary: {
+                    usedPercent: 23,
+                    resetsAt: 1777110975000,
+                    windowDurationMins: 10080
+                },
+                credits: {
+                    hasCredits: false,
+                    unlimited: false
+                }
+            }
+        }
+    });
+    Globals.config = {
+        ai: buildCodexAiConfig({
+            model: 'gpt-5.4'
+        })
+    };
+    Globals.appendChatEntry = (entry, options = {}) => {
+        appendedEntries.push({
+            entry: entry ? JSON.parse(JSON.stringify(entry)) : entry,
+            options: options ? JSON.parse(JSON.stringify(options)) : options
+        });
+        return entry;
+    };
+    console.log = (...args) => {
+        loggedLines.push(args.join(' '));
+    };
+    console.warn = (...args) => {
+        warnedLines.push(args.join(' '));
+    };
+
+    try {
+        for (let index = 0; index < 5; index += 1) {
+            const result = await LLMClient.chatCompletion({
+                messages: [{ role: 'user', content: `Quota selection request ${index + 1}` }],
+                metadataLabel: 'player_action',
+                metadata: {
+                    clientId: 'test-client-2',
+                    __codexQuotaCountAsTurn: true,
+                    __codexQuotaTurnKey: `quota_selection_turn_${index + 1}`
+                },
+                requiredRegex: /<final>[\s\S]*?<\/final>/,
+                validateXML: false,
+                output: 'silent'
+            });
+            assert.equal(result, '<final>quota bucket selection</final>');
+        }
+
+        const quotaLine = loggedLines.find(line => /\[codex quota turn \d+\]/.test(line));
+        assert.ok(quotaLine);
+        assert.match(quotaLine, /\[codex quota turn \d+\] codex \{/);
+        assert.doesNotMatch(quotaLine, /GPT-5\.3-Codex-Spark/);
+        assert.equal(appendedEntries.length, 1);
+        assert.equal(appendedEntries[0].entry?.metadata?.codexQuotaSnapshot?.limitId, 'codex');
+        assert.match(appendedEntries[0].entry?.summaryItems?.[0]?.text || '', /^Primary: 80% remaining; resets \d{1,2}:\d{2} [AP]M$/);
+        assert.match(appendedEntries[0].entry?.summaryItems?.[1]?.text || '', /^Secondary: 77% remaining; resets [A-Z][a-z]{2} \d{1,2}(st|nd|rd|th) at \d{1,2}:\d{2} [AP]M$/);
+        assert.deepEqual(warnedLines, []);
+    } finally {
+        axios.post = originalAxiosPost;
+        CodexBridgeClient.chatCompletion = originalBridgeChatCompletion;
+        CodexBridgeClient.readRateLimits = originalReadRateLimits;
+        Globals.config = originalConfig;
+        Globals.appendChatEntry = originalAppendChatEntry;
+        console.log = originalConsoleLog;
+        console.warn = originalConsoleWarn;
+    }
+});
+
+test('LLMClient.chatCompletion streams Codex preview text through prompt_progress when available', { concurrency: false }, async () => {
+    const originalBridgeChatCompletion = CodexBridgeClient.chatCompletion;
     const originalConfig = Globals.config;
     const originalRealtimeHub = Globals.realtimeHub;
     const emittedEvents = [];
@@ -763,7 +1051,7 @@ test('LLMClient.chatCompletion broadcasts Codex bridge progress through prompt_p
     Globals.config = {
         ai: buildCodexAiConfig({
             codex_bridge: {
-                command: FAKE_CODEX_PATH,
+                command: 'codex',
                 home: './tmp/test-codex-home-progress',
                 session_mode: 'fresh',
                 session_id: '',
@@ -780,32 +1068,53 @@ test('LLMClient.chatCompletion broadcasts Codex bridge progress through prompt_p
             emittedEvents.push({ type, payload });
         }
     };
+    CodexBridgeClient.chatCompletion = async ({ onStdoutChunk, onStdoutEvent }) => {
+        onStdoutChunk?.('{"type":"thread.started","thread_id":"progress-thread-1"}\n');
+        onStdoutEvent?.({ type: 'thread.started', thread_id: 'progress-thread-1' });
+        onStdoutChunk?.('{"type":"turn.started"}\n');
+        onStdoutEvent?.({ type: 'turn.started' });
+        onStdoutChunk?.('{"type":"agent_message_delta","delta":"<final>codex "}\n');
+        onStdoutEvent?.({ type: 'agent_message_delta', delta: '<final>codex ' });
+        onStdoutChunk?.('{"type":"item.agentMessage.delta","delta":"progress "}\n');
+        onStdoutEvent?.({ type: 'item.agentMessage.delta', delta: 'progress ' });
+        onStdoutChunk?.('{"type":"item.completed","item":{"type":"agent_message","text":"<final>codex progress ok</final>"}}\n');
+        onStdoutEvent?.({ type: 'item.completed', item: { type: 'agent_message', text: '<final>codex progress ok</final>' } });
+        onStdoutChunk?.('{"type":"turn.completed"}\n');
+        onStdoutEvent?.({ type: 'turn.completed' });
+        return {
+            status: 200,
+            statusText: 'OK',
+            headers: {},
+            config: { backend: 'codex_cli_bridge' },
+            data: {
+                id: 'bridge-response-progress',
+                object: 'chat.completion',
+                created: 1,
+                model: 'gpt-5.4-mini',
+                choices: [
+                    {
+                        index: 0,
+                        finish_reason: 'stop',
+                        message: {
+                            role: 'assistant',
+                            content: '<final>codex progress ok</final>'
+                        }
+                    }
+                ]
+            }
+        };
+    };
 
     try {
-        const result = await withFakeCodexEnv({
-            FAKE_CODEX_RESPONSE: JSON.stringify({
-                content: '<final>codex progress ok</final>',
-                tool_calls: []
-            }),
-            FAKE_CODEX_STDOUT_EVENTS: JSON.stringify([
-                { type: 'thread.started', thread_id: 'progress-thread-1' },
-                { type: 'turn.started' },
-                { type: 'item.completed', item: { type: 'message' } },
-                { type: 'turn.completed' }
-            ]),
-            FAKE_CODEX_DELAY_MS: '700',
-            FAKE_CODEX_EXIT_CODE: '0'
-        }, async () => {
-            return await LLMClient.chatCompletion({
-                messages: [
-                    { role: 'system', content: 'System instructions for progress test.' },
-                    { role: 'user', content: 'Show prompt progress in the popup.' }
-                ],
-                metadataLabel: 'codex_progress_popup_test',
-                requiredRegex: /<final>[\s\S]*?<\/final>/,
-                validateXML: false,
-                output: 'stdout'
-            });
+        const result = await LLMClient.chatCompletion({
+            messages: [
+                { role: 'system', content: 'System instructions for progress test.' },
+                { role: 'user', content: 'Show prompt progress in the popup.' }
+            ],
+            metadataLabel: 'codex_progress_popup_test',
+            requiredRegex: /<final>[\s\S]*?<\/final>/,
+            validateXML: false,
+            output: 'stdout'
         });
 
         assert.equal(result, '<final>codex progress ok</final>');
@@ -815,13 +1124,112 @@ test('LLMClient.chatCompletion broadcasts Codex bridge progress through prompt_p
         const activeProgressEvents = promptProgressEvents.filter(event => Array.isArray(event.payload?.entries) && event.payload.entries.length > 0);
         assert.ok(activeProgressEvents.length > 0);
 
-        const latestActiveEntry = activeProgressEvents[activeProgressEvents.length - 1].payload.entries[0];
-        assert.equal(latestActiveEntry.model, 'gpt-5.4-mini');
-        assert.ok(Number.isFinite(Number(latestActiveEntry.bytes)));
-        assert.match(latestActiveEntry.promptText || '', /Show prompt progress in the popup\./);
-        assert.equal(typeof latestActiveEntry.previewText, 'string');
+        const textPreviewEntry = activeProgressEvents
+            .map(event => event.payload.entries[0])
+            .find(entry => typeof entry?.previewText === 'string' && entry.previewText.includes('<final>codex progress '));
+        assert.ok(textPreviewEntry);
+        assert.equal(textPreviewEntry.model, 'gpt-5.4-mini');
+        assert.ok(Number.isFinite(Number(textPreviewEntry.bytes)));
+        assert.match(textPreviewEntry.promptText || '', /Show prompt progress in the popup\./);
+        assert.equal(typeof textPreviewEntry.previewText, 'string');
+        assert.equal(textPreviewEntry.previewText.includes('Codex thread started'), false);
         assert.ok(emittedEvents.some(event => event.type === 'prompt_progress_cleared'));
     } finally {
+        CodexBridgeClient.chatCompletion = originalBridgeChatCompletion;
+        Globals.config = originalConfig;
+        Globals.realtimeHub = originalRealtimeHub;
+    }
+});
+
+test('LLMClient.chatCompletion throttles high-frequency prompt_progress byte updates', { concurrency: false }, async () => {
+    const originalBridgeChatCompletion = CodexBridgeClient.chatCompletion;
+    const originalConfig = Globals.config;
+    const originalRealtimeHub = Globals.realtimeHub;
+    const emittedEvents = [];
+
+    Globals.config = {
+        ai: buildCodexAiConfig({
+            codex_bridge: {
+                command: 'codex',
+                home: './tmp/test-codex-home-progress-throttle',
+                session_mode: 'fresh',
+                session_id: '',
+                sandbox: 'read-only',
+                skip_git_repo_check: true,
+                reasoning_effort: 'none',
+                profile: '',
+                prompt_preamble: ''
+            }
+        })
+    };
+    Globals.realtimeHub = {
+        emit(_room, type, payload) {
+            emittedEvents.push({ type, payload, ts: Date.now() });
+        }
+    };
+    CodexBridgeClient.chatCompletion = async ({ onStdoutChunk, onStdoutEvent }) => {
+        for (let index = 0; index < 12; index += 1) {
+            const delta = `chunk-${index} `;
+            onStdoutChunk?.(JSON.stringify({ type: 'agent_message_delta', delta }) + '\n');
+            onStdoutEvent?.({ type: 'agent_message_delta', delta });
+        }
+        await new Promise(resolve => setTimeout(resolve, 650));
+        return {
+            status: 200,
+            statusText: 'OK',
+            headers: {},
+            config: { backend: 'codex_cli_bridge' },
+            data: {
+                id: 'bridge-response-progress-throttle',
+                object: 'chat.completion',
+                created: 1,
+                model: 'gpt-5.4-mini',
+                choices: [
+                    {
+                        index: 0,
+                        finish_reason: 'stop',
+                        message: {
+                            role: 'assistant',
+                            content: '<final>throttled progress ok</final>'
+                        }
+                    }
+                ]
+            }
+        };
+    };
+
+    try {
+        const result = await LLMClient.chatCompletion({
+            messages: [
+                { role: 'system', content: 'System instructions for progress throttle test.' },
+                { role: 'user', content: 'Throttle prompt progress updates.' }
+            ],
+            metadataLabel: 'codex_progress_throttle_test',
+            requiredRegex: /<final>[\s\S]*?<\/final>/,
+            validateXML: false,
+            output: 'stdout'
+        });
+
+        assert.equal(result, '<final>throttled progress ok</final>');
+        await LLMClient.waitForPromptDrain({ timeoutMs: 3000, pollIntervalMs: 25 });
+
+        const activeProgressEvents = emittedEvents
+            .filter(event => event.type === 'prompt_progress')
+            .filter(event => Array.isArray(event.payload?.entries) && event.payload.entries.length > 0);
+        assert.ok(
+            activeProgressEvents.length <= 2,
+            `expected throttled active prompt_progress events, got ${activeProgressEvents.length}`,
+        );
+        if (activeProgressEvents.length > 1) {
+            assert.ok(
+                activeProgressEvents[1].ts - activeProgressEvents[0].ts >= 450,
+                'active prompt_progress events should be separated by roughly the 500ms throttle interval',
+            );
+        }
+        const latestPreview = activeProgressEvents.at(-1)?.payload?.entries?.[0]?.previewText || '';
+        assert.match(latestPreview, /chunk-11/);
+    } finally {
+        CodexBridgeClient.chatCompletion = originalBridgeChatCompletion;
         Globals.config = originalConfig;
         Globals.realtimeHub = originalRealtimeHub;
     }

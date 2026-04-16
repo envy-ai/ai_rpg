@@ -340,6 +340,9 @@ autosaves_to_retain: 50
 # Number of recent turns to include immediately before the AI generates prose. Previous turns are included further back in the prompt.
 recent_history_turns: 25
 
+# When true, base-context templates ignore prompt-level omission flags such as omitGameHistory.
+prompt_uses_caching: false
+
 # Number of eligible player-action turns between automatic plot-expander prompt runs.
 # Set to 0 to disable automatic plot-expander runs.
 plot_expander_prompt_frequency: 10

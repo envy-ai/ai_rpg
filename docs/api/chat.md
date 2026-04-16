@@ -48,6 +48,7 @@ Response (200):
   - `eventsOrigin`, `eventsDestination`: object | array (structured events when travel prose is split)
   - `experienceAwards`, `currencyChanges`, `environmentalDamageEvents`, `needBarChanges`, `dispositionChanges`, `factionReputationChanges`: arrays
   - `questsAwarded`, `questRewards`, `questObjectivesCompleted`, `followupEventChecks`: arrays
+    - `questObjectivesCompleted[]` entries include quest/objective identifiers plus `objectiveDescription`, `reason`, `questCompleted`, and `questJustCompleted` when relevant
   - `npcTurns`: array (NPC turn payloads)
   - `npcUpdates`: `{ added: string[], departed: string[], movedLocations: string[] }`
   - `locationRefreshRequested`: boolean

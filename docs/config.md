@@ -84,7 +84,7 @@ Validation rules:
 
 ## Codex CLI bridge
 
-When `config.ai.backend` is `codex_cli_bridge`, the game runs text completions by spawning the local `codex` CLI and translating its final message back into the same normalized response shape `LLMClient` expects.
+When `config.ai.backend` is `codex_cli_bridge`, the game runs text completions through the local Codex app-server stdio protocol and translates the final structured assistant message back into the same normalized response shape `LLMClient` expects.
 
 ```yaml
 ai:
@@ -107,20 +107,25 @@ Fields:
 - `home`: Codex state directory for the bridge; relative paths resolve from the repo root.
 - `session_mode`: `fresh`, `resume_last`, or `resume_id`.
 - `session_id`: required only when `session_mode` is `resume_id`.
-- `sandbox`: sandbox passed to fresh bridge runs (`read-only`, `workspace-write`, `danger-full-access`).
-- `skip_git_repo_check`: forwards `--skip-git-repo-check` to Codex.
-- `reasoning_effort`: optional `model_reasoning_effort` override passed through with `codex -c`; supported values are `none`, `minimal`, `low`, `medium`, `high`, `xhigh`. `none` is the lowest setting.
+- `sandbox`: sandbox passed to Codex app-server thread/turn creation (`read-only`, `workspace-write`, `danger-full-access`).
+- `skip_git_repo_check`: retained bridge config field; the current app-server turn path does not need the old `codex exec --skip-git-repo-check` flag.
+- `reasoning_effort`: optional reasoning-effort override passed through on app-server `turn/start`; supported values are `none`, `minimal`, `low`, `medium`, `high`, `xhigh`. `none` is the lowest setting.
 - `profile`: optional Codex config profile.
 - `prompt_preamble`: optional text prepended ahead of the generated bridge wrapper prompt.
 
 Behavior notes:
 - `fresh` is the safest default because each request is isolated from prior bridge context.
+- Session-mode mapping:
+  - `fresh` starts a new ephemeral Codex thread for each request.
+  - `resume_last` looks up the most recently updated thread under the configured Codex home, then resumes it.
+  - `resume_id` resumes the exact Codex thread id in `session_id`.
 - Resume modes intentionally target an existing Codex session and therefore can accumulate extra context from earlier bridge turns or manual use of that session.
 - Resume modes only see sessions stored under the selected `home` directory. If you want to attach to an already-running Codex CLI session, point `ai.codex_bridge.home` at the same Codex home that session is using instead of the default isolated `./tmp` bridge home.
 - `fresh` mode honors `ai.max_concurrent_requests`, so multiple isolated Codex requests can run in parallel.
 - `resume_last` and `resume_id` stay serialized at one active request per targeted session/home to avoid interleaving turns into the same resumed Codex session.
-- The bridge uses the shared `ai.model` field as the `codex -m` model argument.
+- The bridge uses the shared `ai.model` field as the Codex thread/turn model override.
 - The bridge forwards its wrapper instructions and all incoming chat `system` messages through Codex `developer_instructions`; only non-system messages are flattened into the user-message conversation transcript.
+- Prompt-progress live preview now streams real assistant `content` text from Codex app-server message deltas, rather than waiting for the old `codex exec --json` final-message file path.
 
 ## AI custom args
 
@@ -483,6 +488,22 @@ client_message_history:
 `client_message_history.max_messages` is interpreted as a **turn cap** (anchored on user entries; assistant prose anchors are used only as fallback when user entries are unavailable). This does not change `recent_history_turns`.
 
 `client_message_history.prune_to` remains a validated config value (`<= max_messages`) for prune-mode flows, but the standard chat-history responses now use `max_messages` turn-capped output so client-visible history length no longer tracks `recent_history_turns`.
+
+## Base-context prompt caching hint
+
+`prompt_uses_caching` tells the base-context template to keep prompt-level history blocks present even when a caller requests `omitGameHistory: true`.
+
+```yaml
+prompt_uses_caching: true
+```
+
+Rules:
+- Must be a boolean when present.
+- Default is `false`.
+- When `true`, prompt-level omissions inside `prompts/base-context.xml.njk` are ignored so the prompt shape stays more stable for cache reuse experiments.
+- Currently this affects the template-level `omitGameHistory` flag, causing `<olderStoryHistory>` to remain present even for prompt families that would normally suppress it.
+- When `true`, slop-remover also switches from the standalone `prompts/slop-remover.xml.njk` template to the base-context include path (`prompts/base-context.xml.njk` with `promptType: slop-remover`), and the `attack_precheck` prompt is skipped entirely.
+- This does **not** override lower-level base-context builder exclusions such as `base_context.omit_inventory_items`, `base_context.omit_abilities`, `base_context.omit_craft_history`, or per-call `omitEventSummaryHistory`.
 
 ## Plot expander cadence
 

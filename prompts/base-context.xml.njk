@@ -4,6 +4,8 @@
     {%- if (not systemPromptPrefix) and getSystemPromptPrefix is defined and promptType -%}
     {%- set systemPromptPrefix = getSystemPromptPrefix(promptType) -%}
     {%- endif -%}
+    {%- set ignorePromptLevelOmissions = config and config.prompt_uses_caching == true -%}
+    {%- set effectiveOmitGameHistory = omitGameHistory and not ignorePromptLevelOmissions -%}
     <systemPrompt>
 {%- if systemPromptPrefix -%}{{ systemPromptPrefix }}
 
@@ -59,7 +61,7 @@ The below context is an account of the current game state, including the setting
   <itemRarityLevels>{% for rarity in rarityDefinitions %}
     {{ rarity.label }}: {{ rarity.description }}
 {% endfor %}  </itemRarityLevels>
-  {% if gameHistory and gameHistory | trim and not omitGameHistory %}
+  {% if gameHistory and gameHistory | trim and not effectiveOmitGameHistory %}
   <olderStoryHistory>{{ gameHistory }}</olderStoryHistory>
   {% endif %}
   <worldOutline>

@@ -5038,7 +5038,15 @@
             return request;
         }
 
-        const thingMenuState = { openMenu: null, trigger: null, card: null, host: null };
+        const thingMenuState = {
+            openMenu: null,
+            trigger: null,
+            card: null,
+            host: null,
+            originalParent: null,
+            originalNextSibling: null,
+            repositionHandler: null
+        };
         let thingMenuListenersAttached = false;
 
         function attachThingMenuListeners() {
@@ -5068,7 +5076,30 @@
 
         function closeThingContextMenu() {
             if (thingMenuState.openMenu) {
+                if (thingMenuState.repositionHandler) {
+                    window.removeEventListener('resize', thingMenuState.repositionHandler);
+                    window.removeEventListener('scroll', thingMenuState.repositionHandler, true);
+                }
                 thingMenuState.openMenu.classList.remove('is-open');
+                thingMenuState.openMenu.classList.remove('entity-context-menu--floating');
+                thingMenuState.openMenu.style.left = '';
+                thingMenuState.openMenu.style.top = '';
+                thingMenuState.openMenu.style.right = '';
+                if (thingMenuState.originalParent?.isConnected) {
+                    if (
+                        thingMenuState.originalNextSibling
+                        && thingMenuState.originalNextSibling.parentNode === thingMenuState.originalParent
+                    ) {
+                        thingMenuState.originalParent.insertBefore(
+                            thingMenuState.openMenu,
+                            thingMenuState.originalNextSibling
+                        );
+                    } else {
+                        thingMenuState.originalParent.appendChild(thingMenuState.openMenu);
+                    }
+                } else if (thingMenuState.openMenu.parentNode === document.body) {
+                    thingMenuState.openMenu.remove();
+                }
             }
             if (thingMenuState.trigger) {
                 thingMenuState.trigger.setAttribute('aria-expanded', 'false');
@@ -5083,6 +5114,77 @@
             thingMenuState.trigger = null;
             thingMenuState.card = null;
             thingMenuState.host = null;
+            thingMenuState.originalParent = null;
+            thingMenuState.originalNextSibling = null;
+            thingMenuState.repositionHandler = null;
+        }
+
+        function positionFloatingThingContextMenu(menu, trigger) {
+            if (!(menu instanceof HTMLElement) || !(trigger instanceof HTMLElement)) {
+                return;
+            }
+
+            const viewportPadding = 8;
+            const menuGap = 2;
+            const triggerRect = trigger.getBoundingClientRect();
+            const viewportWidth = document.documentElement?.clientWidth || window.innerWidth || 0;
+            const viewportHeight = document.documentElement?.clientHeight || window.innerHeight || 0;
+
+            menu.style.left = '0px';
+            menu.style.top = '0px';
+            const menuRect = menu.getBoundingClientRect();
+
+            let left = triggerRect.right - menuRect.width;
+            if (left < viewportPadding) {
+                left = triggerRect.left;
+            }
+            left = Math.max(
+                viewportPadding,
+                Math.min(left, Math.max(viewportPadding, viewportWidth - menuRect.width - viewportPadding))
+            );
+
+            let top = triggerRect.bottom + menuGap;
+            if (top + menuRect.height > viewportHeight - viewportPadding) {
+                top = triggerRect.top - menuRect.height - menuGap;
+            }
+            top = Math.max(
+                viewportPadding,
+                Math.min(top, Math.max(viewportPadding, viewportHeight - menuRect.height - viewportPadding))
+            );
+
+            menu.style.left = `${Math.round(left)}px`;
+            menu.style.top = `${Math.round(top)}px`;
+        }
+
+        function openThingContextMenu({ menu, button, card, menuHost }) {
+            if (
+                !(menu instanceof HTMLElement)
+                || !(button instanceof HTMLElement)
+                || !(card instanceof HTMLElement)
+                || !(menuHost instanceof HTMLElement)
+            ) {
+                return;
+            }
+
+            thingMenuState.originalParent = menu.parentNode;
+            thingMenuState.originalNextSibling = menu.nextSibling;
+
+            menu.classList.add('entity-context-menu--floating');
+            menu.classList.add('is-open');
+            document.body.appendChild(menu);
+            button.setAttribute('aria-expanded', 'true');
+            thingMenuState.openMenu = menu;
+            thingMenuState.trigger = button;
+            thingMenuState.card = card;
+            thingMenuState.host = menuHost;
+            card.classList.add('context-menu-open');
+            menuHost.classList.add('context-menu-open');
+
+            const reposition = () => positionFloatingThingContextMenu(menu, button);
+            thingMenuState.repositionHandler = reposition;
+            window.addEventListener('resize', reposition);
+            window.addEventListener('scroll', reposition, true);
+            reposition();
         }
 
         function updateLocationThingReference(thingId, updater) {
@@ -5931,14 +6033,12 @@
                 const wasOpen = thingMenuState.openMenu === menu;
                 closeThingContextMenu();
                 if (!wasOpen) {
-                    menu.classList.add('is-open');
-                    button.setAttribute('aria-expanded', 'true');
-                    thingMenuState.openMenu = menu;
-                    thingMenuState.trigger = button;
-                    thingMenuState.card = card;
-                    thingMenuState.host = menuHost;
-                    card.classList.add('context-menu-open');
-                    menuHost.classList.add('context-menu-open');
+                    openThingContextMenu({
+                        menu,
+                        button,
+                        card,
+                        menuHost
+                    });
                 }
             });
 
@@ -15262,6 +15362,7 @@
                 });
             }
 
+            closeThingContextMenu();
             grid.innerHTML = '';
             grid.dataset.viewMode = viewMode;
             grid.classList.toggle('thing-collection-view--classic', viewMode === 'classic');

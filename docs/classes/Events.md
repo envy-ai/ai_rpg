@@ -13,9 +13,9 @@ Runs LLM-based event checks on narrative text, parses structured outcomes, and a
 - `initialize(deps)`: registers dependencies and builds parsers/aggregators/handlers.
 - `runEventChecks({ textToCheck, actionText, stream, allowEnvironmentalEffects, isNpcTurn, suppressMoveEvents, allowMoveTurnAppearances, _depth, followupQueue })`:
     - Renders grouped event-check prompts plus a dedicated parallel need-bar prompt, calls `LLMClient.chatCompletion`, parses `<final>` and `<characters>` responses, and applies results through the shared handler pipeline.
-- `runQuestChecks({ allowWithoutEventChecks })`: LLM check for quest objective completion.
+- `runQuestChecks({ allowWithoutEventChecks })`: LLM check for quest objective completion, including per-objective prompt `statusReason` text for completed objectives.
 - `applyEventOutcomes(parsedEvents, context)`: applies structured changes to world state.
-- `processQuestObjectiveCompletionEntries(entries, context)`: applies quest objective completion and rewards (items/xp/currency plus per-faction reputation deltas when configured on the quest).
+- `processQuestObjectiveCompletionEntries(entries, context)`: applies quest objective completion and rewards (items/xp/currency plus per-faction reputation deltas when configured on the quest), preserving the prompt-supplied completion reason on emitted objective updates.
 - `mergeQuestOutcomesIntoStructured(parsedEvents, questOutcomes)`.
 - `extractItemAndSceneryNames(rawEvents)`.
 - `resolveLocationCandidate(candidate)`.
@@ -74,7 +74,7 @@ Runs LLM-based event checks on narrative text, parses structured outcomes, and a
 - Event-created location stubs now store both a concrete stub base level and the original relative-level base so later stub expansion keeps location-relative difficulty anchored to the origin location level instead of drifting to player/default prompt context; event-created region-entry stubs likewise stamp a concrete stub base level from the current region average.
 - `_generateItemsIntoWorld` passes generation `options` to `generateItemsByNames`; `treatAsScenery` / `treatAsResource` now preserve scenery classification in generated `Thing` records.
 - `_parseCharacterAlterXml` treats a missing/blank `<relativeLevel>` as null (no level write), preventing accidental resets to base-relative level 0 during `alter_npc`.
-- `time_passed` parsing uses `Utils.parseDurationToMinutes` (`HH:MM`, integer minutes, or day/hour/minute/round units); malformed values are logged and skipped.
+- `time_passed` parsing ignores the prompt's leading reasoning field and parses only the final arrow-delimited duration segment through `Utils.parseDurationToMinutes` (`HH:MM`, integer minutes, or day/hour/minute/round units); legacy duration-only responses still work, and malformed duration values are logged and skipped.
 - `time_passed` accepts `0` from event checks; when this occurs, Events still advances canonical world time by 1 minute to avoid fully static clocks on zero-time turns.
 - Arrow-delimited event parsing accepts both ASCII `->` and unicode arrows (for example `→`), preventing malformed NPC/item names when models emit typographic arrows.
 - `disposition_check` is parsed and applied directly to NPC disposition toward the current player, and applied deltas are emitted as `dispositionChanges`.

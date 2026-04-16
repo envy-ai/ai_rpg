@@ -93,6 +93,10 @@ class AIRPGChat {
         this.promptProgressMessage = null;
         this.promptProgressEntries = [];
         this.promptProgressHideTimer = null;
+        this.promptProgressRenderThrottleMs = 500;
+        this.promptProgressRenderTimer = null;
+        this.promptProgressPendingEntries = null;
+        this.promptProgressLastRenderTs = 0;
         this.promptProgressDragState = {
             active: false,
             pointerId: null,
@@ -3207,6 +3211,51 @@ class AIRPGChat {
         this.renderPromptProgress(this.promptProgressEntries);
     }
 
+    clearPendingPromptProgressRender() {
+        if (this.promptProgressRenderTimer) {
+            clearTimeout(this.promptProgressRenderTimer);
+            this.promptProgressRenderTimer = null;
+        }
+    }
+
+    flushPromptProgressRender(entries = null) {
+        this.clearPendingPromptProgressRender();
+        const entriesToRender = Array.isArray(entries)
+            ? entries
+            : (Array.isArray(this.promptProgressPendingEntries)
+                ? this.promptProgressPendingEntries
+                : []);
+        this.promptProgressPendingEntries = null;
+        this.promptProgressLastRenderTs = Date.now();
+        this.renderPromptProgress(entriesToRender);
+    }
+
+    schedulePromptProgressRender(entries = [], { force = false } = {}) {
+        const normalizedEntries = Array.isArray(entries)
+            ? entries.filter(entry => entry && typeof entry === 'object')
+            : [];
+        this.promptProgressPendingEntries = normalizedEntries;
+
+        if (force || !this.promptProgressMessage || !this.promptProgressLastRenderTs) {
+            this.flushPromptProgressRender(normalizedEntries);
+            return;
+        }
+
+        const now = Date.now();
+        const elapsed = now - this.promptProgressLastRenderTs;
+        if (elapsed >= this.promptProgressRenderThrottleMs) {
+            this.flushPromptProgressRender(normalizedEntries);
+            return;
+        }
+
+        if (!this.promptProgressRenderTimer) {
+            this.promptProgressRenderTimer = setTimeout(() => {
+                this.promptProgressRenderTimer = null;
+                this.flushPromptProgressRender();
+            }, Math.max(0, this.promptProgressRenderThrottleMs - elapsed));
+        }
+    }
+
     renderPromptProgress(entries = []) {
         if (!Array.isArray(entries)) {
             return;
@@ -3509,7 +3558,7 @@ class AIRPGChat {
 
     async handlePromptProgressCleared(payload) {
         // Remove any existing prompt progress UI and refresh adventure tab sections without a full reload.
-        this.renderPromptProgress([]);
+        this.schedulePromptProgressRender([], { force: true });
 
         const refreshTasks = [];
 
@@ -3556,15 +3605,11 @@ class AIRPGChat {
         }
         const entries = Array.isArray(payload.entries) ? payload.entries : [];
         if (payload.done && (!entries.length)) {
-            this.renderPromptProgress([]);
+            this.schedulePromptProgressRender([], { force: true });
             return;
         }
         if (entries.length) {
-            if (!this.promptProgressMessage) {
-                this.renderPromptProgress(entries);
-                return;
-            }
-            this.renderPromptProgress(entries);
+            this.schedulePromptProgressRender(entries);
         }
     }
 

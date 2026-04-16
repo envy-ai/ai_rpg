@@ -1852,6 +1852,10 @@ async function validateConfiguration() {
     // Validate AI configuration
     validationErrors.push(...LLMClient.getConfigurationErrors(config.ai));
 
+    if (config.prompt_uses_caching !== undefined && typeof config.prompt_uses_caching !== 'boolean') {
+        validationErrors.push('prompt_uses_caching must be a boolean when provided');
+    }
+
     // Report validation results
     if (validationErrors.length > 0) {
         console.error('❌ Configuration validation failed:');
@@ -5710,8 +5714,6 @@ function buildBasePromptContext({
         factions: factionSummaries
     };
 
-    populateNpcSelectedMemoriesSync(context);
-
     return context;
 }
 
@@ -6019,18 +6021,29 @@ function kickOffChooseImportantMemoriesJob({ actors, maxMemories, baseContext, t
     }
 }
 
-async function populateNpcSelectedMemories(baseContext) {
+function scheduleChooseImportantMemoriesJob({ actors, maxMemories, baseContext, turnKey }) {
+    // Defer the chooser so the current foreground request can claim the shared LLM slot first.
+    setImmediate(() => {
+        kickOffChooseImportantMemoriesJob({ actors, maxMemories, baseContext, turnKey });
+    });
+}
+
+function populateNpcSelectedMemories(baseContext, { deferSelectionJob = false } = {}) {
     if (!baseContext || !config || !Globals.gameLoaded) {
         return;
     }
 
     const { actors, maxMemories, turnKey } = populateNpcSelectedMemoriesSync(baseContext);
+    if (deferSelectionJob) {
+        scheduleChooseImportantMemoriesJob({ actors, maxMemories, baseContext, turnKey });
+        return;
+    }
     kickOffChooseImportantMemoriesJob({ actors, maxMemories, baseContext, turnKey });
 }
 
 async function prepareBasePromptContext(options = {}) {
     const baseContext = buildBasePromptContext(options);
-    await populateNpcSelectedMemories(baseContext);
+    populateNpcSelectedMemories(baseContext, { deferSelectionJob: true });
     return baseContext;
 }
 Globals.getBasePromptContext = prepareBasePromptContext;

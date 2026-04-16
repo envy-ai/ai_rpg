@@ -55,7 +55,7 @@ const EVENT_PROMPT_ORDER = [
         },
         {
             key: "alter_location",
-            prompt: `Was the current location permanently altered in a significant way (major changes to the location itself, not npcs, items, or scenery)? If so, answer in the format "[current location name] → [new location name] → [1 sentence description of alteration]". If not (or if the player moved from one location to another, which isn't an alteration), answer N/A. Pay close attention to things that are listed as sceneryItems in the location context, as these are not the location itself. Note that it is not necessary to change the name of the location if it remains appropriate after the alteration; in this case, simply repeat the same name for new location name.`,
+            prompt: `Has the visual description of the location changed? If so, answer in the format "[current location name] → [new location name] → [1 sentence description of alteration]". If not (or if the player moved from one location to another, which isn't a change to the current location), answer N/A. Note that it is not necessary to change the name of the location if it remains appropriate after the alteration; in this case, simply repeat the same name for new location name.`,
         },
     ],
     // Item stuff
@@ -206,11 +206,11 @@ const EVENT_PROMPT_ORDER = [
         },
         {
             key: "dummy_event",
-            prompt: `Did anything happen this turn (such as an activity, a night of sleep, travel, etc) that would cause time to pass? If yes, describe it in 10 words or less, along with how long it took. Answer N/A if no. Examples: "Took road to town (15 minutes)", "cooked dinner (30 minutes)", "slept for 8 hours (8 hours)", "Moved from town square to tavern (5 minutes)", "waited for someone to arrive (45 minutes)", "Dropped a letter off at the mailbox and talked to passerby (3 minutes)", "Spoke a few sentences (1 minute)", etc. Time can pass even without explicit duration statements. Consider whether described actions (prayer, conversation, travel, crafting, etc.) inherently require time to complete. Don't round down to zero just because something only takes a couple of minutes. Travelling inside a vehicle doesn't necessarily cause time to pass, unless the player actively chooses to wait some length of time or perform an action that takes time.`,
+            prompt: `Itemize any activities that happened in the text, and list how long, in minutes and/or hours, they would have realistically happened in wall clock time, in this format: "[activity] -> [time]", separated with vertical bars in the case of multiple entries.`,
         },
         {
             key: "time_passed",
-            prompt: `How much time passed this turn? Answer using one of: HH:MM (duration), integer minutes (e.g., 15), or explicit units (e.g., "1 day, 2 hours, 30 minutes", "45 minutes", "2 hours"). If no time has passed, answer 0.`,
+            prompt: `How long did the things that happened in the text for the turn realistically take in elapsed wall-clock time (consider whether some of the above activities could have happened in parallel)? Estimate the duration of the concrete actions described, not how long the prose takes to read and not how long a simple game action usually takes. If the text summarizes an extended activity such as cleaning, searching, crafting, repairing, cooking, resting, training, travel, or careful investigation, estimate the full real-world time required. Consider whether multiple characters worked in parallel; use elapsed wall-clock time rather than summing every person's labor. First briefly identify the time-consuming actions and any parallel work, then provide one best duration estimate. Answer in the format "[brief breakdown/reasoning] -> [time taken]". Format time taken with one of: HH:MM, integer minutes, or explicit units. If no time passed, answer "Nothing time-consuming happened -> 0".`,
         },
         {
             key: "triggered_abilities",
@@ -360,6 +360,13 @@ function stripAfterFirstArrow(raw) {
     const normalized = normalizeArrowDelimiters(raw);
     const arrowIndex = normalized.indexOf("→");
     const segment = arrowIndex === -1 ? normalized : normalized.slice(0, arrowIndex);
+    return segment.trim();
+}
+
+function stripBeforeLastArrow(raw) {
+    const normalized = normalizeArrowDelimiters(raw);
+    const arrowIndex = normalized.lastIndexOf("→");
+    const segment = arrowIndex === -1 ? normalized : normalized.slice(arrowIndex + 1);
     return segment.trim();
 }
 
@@ -2537,6 +2544,10 @@ class Events {
                     ? entry.objectiveNumber
                     : null,
                 objectiveDescription: entry.objectiveDescription || null,
+                reason:
+                    typeof entry?.reason === "string" && entry.reason.trim()
+                        ? entry.reason.trim()
+                        : null,
                 questCompleted: Boolean(entry.questCompleted),
                 questJustCompleted: Boolean(entry.questJustCompleted),
             }));
@@ -2558,7 +2569,12 @@ class Events {
                         (entry.objectiveIndex !== null
                             ? `Objective ${entry.objectiveIndex + 1}`
                             : null);
-                    return `${questLabel} → ${description || "Objective completed"}`;
+                    const reason =
+                        typeof entry?.reason === "string" && entry.reason.trim()
+                            ? entry.reason.trim()
+                            : "";
+                    const baseText = `${questLabel} → ${description || "Objective completed"}`;
+                    return reason ? `${baseText} (${reason})` : baseText;
                 })
                 .filter(Boolean);
             if (rawSegments.length) {
@@ -2769,6 +2785,12 @@ class Events {
                 objectiveIndex: zeroBasedIndex,
                 objectiveNumber: zeroBasedIndex + 1,
                 objectiveDescription: objective.description || null,
+                reason:
+                    typeof entry?.statusReason === "string" && entry.statusReason.trim()
+                        ? entry.statusReason.trim()
+                        : (typeof entry?.reason === "string" && entry.reason.trim()
+                            ? entry.reason.trim()
+                            : null),
                 questCompleted: questIsComplete,
                 questJustCompleted,
             });
@@ -3713,12 +3735,19 @@ class Events {
                 if (!text || NO_EVENT_TOKENS.has(text.toLowerCase())) {
                     return null;
                 }
+                const durationText = stripBeforeLastArrow(text);
+                if (!durationText || NO_EVENT_TOKENS.has(durationText.toLowerCase())) {
+                    return null;
+                }
                 try {
-                    return Utils.parseDurationToMinutes(text, { fieldName: "time_passed" });
+                    return Utils.parseDurationToMinutes(durationText, {
+                        fieldName: "time_passed",
+                    });
                 } catch (error) {
                     console.warn("Skipping invalid time_passed duration entry:", {
                         value: text,
-                        error: error?.message || error
+                        durationText,
+                        error: error?.message || error,
                     });
                     return null;
                 }
@@ -8469,6 +8498,10 @@ class Events {
                     if (!isCompleted) {
                         continue;
                     }
+                    const statusReasonText =
+                        objectiveNode
+                            .getElementsByTagName("statusReason")[0]
+                            ?.textContent?.trim() || "";
                     const indexValue = Number.parseInt(indexText, 10);
                     if (
                         !Number.isFinite(indexValue) ||
@@ -8481,6 +8514,11 @@ class Events {
                         questId: questMeta.questId,
                         questIndex: questIndexValue,
                         objectiveIndex: indexValue,
+                        statusReason:
+                            statusReasonText &&
+                                statusReasonText.toLowerCase() !== "n/a"
+                                ? statusReasonText
+                                : null,
                     });
                 }
             }

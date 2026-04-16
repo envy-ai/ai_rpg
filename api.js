@@ -1014,6 +1014,37 @@ module.exports = function registerApiRoutes(scope) {
             }
 
             const slopContext = buildSlopContextText();
+            const renderSlopRemoverTemplate = async ({
+                systemPromptPrefix,
+                settingContext,
+                storyText,
+                textToEdit,
+                slopWords,
+                slopNgrams
+            }) => {
+                if (config?.prompt_uses_caching === true) {
+                    const baseContext = await prepareBasePromptContext();
+                    return promptEnv.render('base-context.xml.njk', {
+                        ...baseContext,
+                        promptType: 'slop-remover',
+                        systemPromptPrefix,
+                        storyText,
+                        textToEdit,
+                        slopWords,
+                        slopNgrams
+                    });
+                }
+
+                return promptEnv.render('slop-remover.xml.njk', {
+                    systemPromptPrefix,
+                    setting: settingContext,
+                    config,
+                    storyText,
+                    textToEdit,
+                    slopWords,
+                    slopNgrams
+                });
+            };
             const parseSlopRemoverEditedTextResponse = (responseText) => {
                 if (typeof responseText !== 'string') {
                     throw new Error('non-text response');
@@ -1073,10 +1104,9 @@ module.exports = function registerApiRoutes(scope) {
                     const systemPromptPrefix = typeof resolveSystemPromptPrefix === 'function'
                         ? resolveSystemPromptPrefix('slop_remover')
                         : '';
-                    const rendered = promptEnv.render('slop-remover.xml.njk', {
+                    const rendered = await renderSlopRemoverTemplate({
                         systemPromptPrefix,
-                        setting: settingContext,
-                        config,
+                        settingContext,
                         storyText: slopContext,
                         textToEdit: currentProse,
                         slopWords,
@@ -6244,7 +6274,11 @@ module.exports = function registerApiRoutes(scope) {
                                     || (Number.isFinite(entry.objectiveNumber) ? `Objective ${entry.objectiveNumber}` : null)
                                     || (Number.isFinite(entry.objectiveIndex) ? `Objective ${entry.objectiveIndex + 1}` : 'Objective')
                                 );
-                                add('✅', `Quest objective complete: **${questLabel}** - *${description}*`);
+                                const reason = safeSummaryItem(entry.reason || '', '');
+                                const summaryText = reason
+                                    ? `Quest objective complete: **${questLabel}** - *${description}* - ${reason}`
+                                    : `Quest objective complete: **${questLabel}** - *${description}*`;
+                                add('✅', summaryText);
                                 if (entry.questJustCompleted) {
                                     add('🏆', `Finished quest ${questLabel}!`);
                                 }
@@ -9387,6 +9421,11 @@ module.exports = function registerApiRoutes(scope) {
         async function runAttackPrecheck({ actionText }) {
             if (Globals.config?.plausibility_checks?.enabled === false) {
                 console.info('Attack precheck skipped: plausibility_checks.enabled is false.');
+                return true;
+            }
+
+            if (config?.prompt_uses_caching === true) {
+                console.info('Attack precheck skipped: prompt_uses_caching is true.');
                 return true;
             }
 
@@ -15167,6 +15206,10 @@ module.exports = function registerApiRoutes(scope) {
                                 const displayNumber = hasIndex ? item.objectiveIndex + 1 : null;
                                 const description = item.objectiveDescription || (displayNumber !== null ? `Objective ${displayNumber}` : 'Objective completed');
                                 let label = displayNumber !== null ? `Objective ${displayNumber}: ${description}` : description;
+                                const reason = typeof item.reason === 'string' ? item.reason.trim() : '';
+                                if (reason) {
+                                    label = `${label} - ${reason}`;
+                                }
                                 if (item.questJustCompleted || (!item.questJustCompleted && item.questCompleted)) {
                                     label = `${label} (Quest complete!)`;
                                 }
@@ -25472,6 +25515,10 @@ module.exports = function registerApiRoutes(scope) {
                                         const displayNumber = hasIndex ? item.objectiveIndex + 1 : null;
                                         const description = item.objectiveDescription || (displayNumber !== null ? `Objective ${displayNumber}` : 'Objective completed');
                                         let label = displayNumber !== null ? `Objective ${displayNumber}: ${description}` : description;
+                                        const reason = typeof item.reason === 'string' ? item.reason.trim() : '';
+                                        if (reason) {
+                                            label = `${label} - ${reason}`;
+                                        }
                                         if (item.questJustCompleted || (!item.questJustCompleted && item.questCompleted)) {
                                             label = `${label} (Quest complete!)`;
                                         }

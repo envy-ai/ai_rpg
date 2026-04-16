@@ -80,7 +80,9 @@ Quick refresher on where these systems live and how they're wired.
 
 ### Slop remover flow
 - Entry point: `api.js` → `applySlopRemoval(prose, { returnDiagnostics })`.
-- Prompt: `prompts/slop-remover.xml.njk`.
+- Prompt:
+  - default: `prompts/slop-remover.xml.njk`
+  - when `config.prompt_uses_caching === true`: `prompts/base-context.xml.njk` with `promptType: slop-remover`, which pulls `prompts/_includes/slop-remover.njk`
 - Prompt inputs:
   - `systemPromptPrefix` (resolved for `slop_remover`)
   - `setting` (same normalized setting context shape used by base-context)

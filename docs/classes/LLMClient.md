@@ -14,7 +14,7 @@ Centralized client for LLM chat completions with concurrency limits, streaming p
 - `#streamProgress`: active stream tracking and ticker state.
 - `#abortControllers`: map of in-flight requests by stream id.
 - `#controllerAbortIntents`: per-attempt abort intent (`cancel` vs `retry`) keyed by abort controller.
-- `#codexUsageStats`: running in-process totals for Codex prompt count plus input/cached/output/total token usage.
+- `#codexUsageStats`: in-process counters for Codex prompt count and quota-turn cadence.
 
 ## Public API (Static)
 - `cancelPrompt(streamId, reason)`: aborts an in-flight request.
@@ -47,7 +47,7 @@ Centralized client for LLM chat completions with concurrency limits, streaming p
   - Uses `LLMClient.logPrompt` and emits prompt progress via `Globals.realtimeHub`.
 
 ## Private Helpers (Selected)
-- Stream tracking: `#isInteractive`, `#shouldTrackPromptProgress`, `#renderStreamProgress`, `#ensureProgressTicker`, `#trackStreamStart`, `#trackStreamBytes`, `#trackStreamStatus`, `#trackStreamEnd`, `#formatCodexProgressEvent`, `#broadcastProgress`.
+- Stream tracking: `#isInteractive`, `#shouldTrackPromptProgress`, `#renderStreamProgress`, `#ensureProgressTicker`, `#trackStreamStart`, `#trackStreamBytes`, `#applyStreamPreviewText`, `#trackStreamStatus`, `#trackStreamEnd`, `#formatCodexProgressEvent`, `#extractCodexPreviewUpdate`, `#broadcastProgress`.
 - Codex reporting: `#formatTokenCount`, `#formatEpochTimestamp`, `#formatCodexRateLimitWindow`, `#formatCodexRateLimits`, `#reportCodexUsage`.
 - Concurrency: `#ensureSemaphore`.
 - Formatting: `#formatMessageContent`, `#cloneAiConfig`.
@@ -56,7 +56,7 @@ Centralized client for LLM chat completions with concurrency limits, streaming p
 
 ## Notes
 - `chatCompletion(...)` is now backend-aware: the default `openai_compatible` path still POSTs to `/chat/completions`, while `codex_cli_bridge` delegates transport to `CodexBridgeClient` and then reuses the same response normalization, retry, prompt logging, and XML/regex validation flow.
-- Streaming/progress updates are broadcast through `Globals.realtimeHub` when available, including per-prompt `promptText` content for the request payload and `previewText` content for the currently streamed textual response or backend status text.
+- Streaming/progress updates are broadcast through `Globals.realtimeHub` when available, including per-prompt `promptText` content for the request payload and `previewText` content for the currently streamed textual response or backend status text. High-frequency streamed byte/preview broadcasts are coalesced so active `prompt_progress` client updates are sent at most once every 500 ms, with final/clear events still emitted immediately.
 - Prompt-progress tracking no longer depends on an interactive TTY alone; it stays active whenever the realtime hub is available, so the browser prompt-progress popup can still work when the server process is running non-interactively.
 - Streamed tool calls are allowed: empty textual content is accepted when valid tool calls are present, and regex/XML output validation is skipped for those tool-call turns.
 - Retries are built in; stream timeouts are incrementally increased on retry.
@@ -68,9 +68,10 @@ Centralized client for LLM chat completions with concurrency limits, streaming p
 - `ai.cachebuster` is boolean; omitted or `false` disables it, while `true` prepends a fresh `[cachebuster:<uuid>]` line to the final `user` message for each outbound request attempt. The payload copy, prompt-progress broadcast, and error logs show the tagged prompt, while the caller's original `messages` array remains unchanged.
 - When the Codex bridge backend is selected, `fresh` mode uses `ai.max_concurrent_requests`, while resumed Codex session modes remain serialized through backend-specific semaphore keys.
 - Codex bridge requests reuse the same prompt-progress ids and abort-controller registry as streamed OpenAI requests, so the existing prompt-progress popup's cancel/retry controls work for Codex runs too.
-- Codex bridge progress is coarse-grained rather than token-streamed: `LLMClient` tracks stdout byte counts plus short status lines such as thread/turn/item lifecycle events, then clears the popup when the bridge finishes or aborts.
-- When a Codex response includes normalized `usage`, `LLMClient` writes an unconditional server-console usage line for that prompt attempt and accumulates running totals for the current server process.
+- Codex bridge progress now comes from the Codex app-server transport: the bridge converts structured-output JSON message deltas into plain assistant `content` preview text before handing them to `LLMClient`, with lifecycle-status fallback only before real assistant text starts.
+- When a Codex response includes normalized `usage`, `LLMClient` writes an unconditional server-console usage line for that prompt attempt using the per-prompt input/cached/output/total token counts.
 - `LLMClient` now queries the local Codex app-server for a rate-limit snapshot every 5 counted gameplay turns rather than every N raw prompts. Counted turns are opt-in via request metadata (`__codexQuotaCountAsTurn` + stable `__codexQuotaTurnKey`) so tool-loop rounds do not double-count. If that auxiliary quota query fails, it logs a clear warning instead of silently claiming quota data.
+- When Codex returns multiple rate-limit buckets, `LLMClient` now selects one preferred bucket for reporting: exact match on the active model first, then the generic `codex` bucket, then first bucket as a final fallback. Both the console quota line and the `🌀 Codex Quota` chat notice use that same selected bucket instead of mixing or blindly taking the first entry.
 - Successful 5-turn Codex quota snapshots also append a visible `status-summary` chat entry (`🌀 Codex Quota`) with up to three short lines: optional positive credit balance, `Primary: <percent> remaining; resets <time>`, and `Secondary: <percent> remaining; resets <month day ordinal> at <time>`. The entry is flagged `metadata.excludeFromBaseContextHistory = true` so it never enters base prompt history.
 - `logPrompt` is the standard logging path for prompts throughout the codebase.
 - The chat completion payload no longer forces `reasoning: true`; it is only sent when configured explicitly.
