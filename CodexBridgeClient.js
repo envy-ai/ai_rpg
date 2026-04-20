@@ -24,7 +24,8 @@ const DEFAULT_CODEX_BRIDGE_CONFIG = Object.freeze({
     skip_git_repo_check: true,
     reasoning_effort: '',
     profile: '',
-    prompt_preamble: ''
+    prompt_preamble: '',
+    idle_timeout_ms: 30000
 });
 
 function isPlainObject(value) {
@@ -978,6 +979,12 @@ class CodexBridgeClient {
         if (reasoningEffort && !CODEX_REASONING_EFFORTS.includes(reasoningEffort)) {
             errors.push(`ai.codex_bridge.reasoning_effort must be one of: ${CODEX_REASONING_EFFORTS.join(', ')}`);
         }
+        if (resolvedBridgeConfig.idle_timeout_ms !== undefined && resolvedBridgeConfig.idle_timeout_ms !== null) {
+            const idleTimeoutMs = Number(resolvedBridgeConfig.idle_timeout_ms);
+            if (!Number.isFinite(idleTimeoutMs) || idleTimeoutMs <= 0) {
+                errors.push('ai.codex_bridge.idle_timeout_ms must be a positive number when provided');
+            }
+        }
         return errors;
     }
 
@@ -1002,7 +1009,20 @@ class CodexBridgeClient {
         resolved.profile = typeof resolved.profile === 'string' ? resolved.profile.trim() : '';
         resolved.prompt_preamble = typeof resolved.prompt_preamble === 'string' ? resolved.prompt_preamble.trim() : '';
         resolved.skip_git_repo_check = resolved.skip_git_repo_check !== false;
+        resolved.idle_timeout_ms = Number(resolved.idle_timeout_ms);
         return resolved;
+    }
+
+    static resolveBridgeIdleTimeoutMs(aiConfig = Globals?.config?.ai) {
+        const bridgeConfig = CodexBridgeClient.resolveBridgeConfig(aiConfig);
+        if (Number.isFinite(bridgeConfig.idle_timeout_ms) && bridgeConfig.idle_timeout_ms > 0) {
+            return bridgeConfig.idle_timeout_ms;
+        }
+        const baseTimeoutSeconds = Number(aiConfig?.baseTimeoutSeconds);
+        if (Number.isFinite(baseTimeoutSeconds) && baseTimeoutSeconds > 0) {
+            return baseTimeoutSeconds * 1000;
+        }
+        return 30000;
     }
 
     static resolveHomePath(aiConfig = Globals?.config?.ai) {
@@ -1231,11 +1251,18 @@ class CodexBridgeClient {
                 });
             });
 
-            if (Number.isFinite(timeoutMs) && timeoutMs > 0) {
+            const resetIdleTimeout = () => {
+                if (!Number.isFinite(timeoutMs) || timeoutMs <= 0 || settled) {
+                    return;
+                }
+                if (timeoutHandle) {
+                    clearTimeout(timeoutHandle);
+                }
                 timeoutHandle = setTimeout(() => {
-                    finishReject(new Error(`Codex app-server request timed out after ${timeoutMs} ms.`));
+                    finishReject(new Error(`Codex app-server request timed out after ${timeoutMs} ms without streamed data.`));
                 }, timeoutMs);
-            }
+            };
+            resetIdleTimeout();
 
             if (signal) {
                 abortHandler = () => {
@@ -1264,6 +1291,7 @@ class CodexBridgeClient {
             });
 
             child.stdout.on('data', (chunk) => {
+                resetIdleTimeout();
                 const text = chunk.toString('utf8');
                 stdout += text;
                 stdoutBuffer += text;
@@ -1496,11 +1524,18 @@ class CodexBridgeClient {
                 finalizeReject(new Error(reason));
             };
 
-            if (Number.isFinite(timeoutMs) && timeoutMs > 0) {
+            const resetIdleTimeout = () => {
+                if (!Number.isFinite(timeoutMs) || timeoutMs <= 0 || settled) {
+                    return;
+                }
+                if (timeoutHandle) {
+                    clearTimeout(timeoutHandle);
+                }
                 timeoutHandle = setTimeout(() => {
-                    terminateChild(`Codex bridge request timed out after ${timeoutMs} ms.`);
+                    terminateChild(`Codex bridge request timed out after ${timeoutMs} ms without streamed data.`);
                 }, timeoutMs);
-            }
+            };
+            resetIdleTimeout();
 
             if (signal) {
                 abortHandler = () => {
@@ -1517,6 +1552,7 @@ class CodexBridgeClient {
             });
 
             child.stdout.on('data', (chunk) => {
+                resetIdleTimeout();
                 const text = chunk.toString('utf8');
                 stdout += text;
                 stdoutBuffer += text;

@@ -300,6 +300,26 @@ test('Codex bridge configuration rejects invalid reasoning effort values', { con
     assert.match(errors.join('\n'), /reasoning_effort must be one of/i);
 });
 
+test('Codex bridge configuration rejects invalid idle timeout values', { concurrency: false }, () => {
+    const aiConfig = buildCodexAiConfig({
+        codex_bridge: {
+            command: 'codex',
+            home: './tmp/test-codex-home',
+            session_mode: 'fresh',
+            session_id: '',
+            sandbox: 'read-only',
+            skip_git_repo_check: true,
+            reasoning_effort: '',
+            profile: '',
+            prompt_preamble: '',
+            idle_timeout_ms: 0
+        }
+    });
+
+    const errors = CodexBridgeClient.getConfigurationErrors(aiConfig);
+    assert.match(errors.join('\n'), /idle_timeout_ms must be a positive number/i);
+});
+
 test('CodexBridgeClient fresh mode uses app-server transport with structured output', { concurrency: false }, async () => {
     const originalRunCodexAppServer = CodexBridgeClient.runCodexAppServer;
     const requests = [];
@@ -1126,10 +1146,13 @@ test('LLMClient.chatCompletion streams Codex preview text through prompt_progres
 
         const textPreviewEntry = activeProgressEvents
             .map(event => event.payload.entries[0])
-            .find(entry => typeof entry?.previewText === 'string' && entry.previewText.includes('<final>codex progress '));
+            .find(entry => typeof entry?.previewText === 'string' && entry.previewText === '<final>codex progress ok</final>');
         assert.ok(textPreviewEntry);
         assert.equal(textPreviewEntry.model, 'gpt-5.4-mini');
-        assert.ok(Number.isFinite(Number(textPreviewEntry.bytes)));
+        const expectedReceivedCharacters = Array.from('<final>codex progress ok</final>').length;
+        assert.equal(textPreviewEntry.receivedUnit, 'characters');
+        assert.equal(textPreviewEntry.receivedCount, expectedReceivedCharacters);
+        assert.equal(textPreviewEntry.bytes, expectedReceivedCharacters);
         assert.match(textPreviewEntry.promptText || '', /Show prompt progress in the popup\./);
         assert.equal(typeof textPreviewEntry.previewText, 'string');
         assert.equal(textPreviewEntry.previewText.includes('Codex thread started'), false);
@@ -1141,7 +1164,7 @@ test('LLMClient.chatCompletion streams Codex preview text through prompt_progres
     }
 });
 
-test('LLMClient.chatCompletion throttles high-frequency prompt_progress byte updates', { concurrency: false }, async () => {
+test('LLMClient.chatCompletion throttles high-frequency prompt_progress received-count updates', { concurrency: false }, async () => {
     const originalBridgeChatCompletion = CodexBridgeClient.chatCompletion;
     const originalConfig = Globals.config;
     const originalRealtimeHub = Globals.realtimeHub;
@@ -1228,6 +1251,12 @@ test('LLMClient.chatCompletion throttles high-frequency prompt_progress byte upd
         }
         const latestPreview = activeProgressEvents.at(-1)?.payload?.entries?.[0]?.previewText || '';
         assert.match(latestPreview, /chunk-11/);
+        const latestEntry = activeProgressEvents.at(-1)?.payload?.entries?.[0] || {};
+        const expectedReceivedCharacters = Array.from(
+            Array.from({ length: 12 }, (_, index) => `chunk-${index} `).join('')
+        ).length;
+        assert.equal(latestEntry.receivedUnit, 'characters');
+        assert.equal(latestEntry.receivedCount, expectedReceivedCharacters);
     } finally {
         CodexBridgeClient.chatCompletion = originalBridgeChatCompletion;
         Globals.config = originalConfig;

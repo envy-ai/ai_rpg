@@ -33,6 +33,12 @@ body {
   );
   --airpg-modal-text: rgba(255, 255, 255, 0.9);
   --airpg-modal-muted: rgba(255, 255, 255, 0.72);
+  --airpg-ability-active: #fb923c;
+  --airpg-ability-active-border: rgba(251, 146, 60, 0.85);
+  --airpg-ability-passive: #38bdf8;
+  --airpg-ability-passive-border: rgba(56, 189, 248, 0.85);
+  --airpg-ability-triggered: #facc15;
+  --airpg-ability-triggered-border: rgba(250, 204, 21, 0.85);
 }
 
 // Shared thing-view sizing tokens
@@ -1425,6 +1431,10 @@ p:not(:last-child) {
 }
 
 .adventure-content {
+  --adventure-location-width: min(25vw, 420px);
+  --adventure-party-width: 30%;
+  --adventure-chat-min-width: 360px;
+  --adventure-resize-handle-width: 8px;
   flex: 1;
   display: flex;
   flex-direction: row;
@@ -1434,8 +1444,10 @@ p:not(:last-child) {
 
 // left column of adventure content
 .location-block {
-  flex: 0 0 25%;
-  max-width: 420px;
+  flex: 0 0 var(--adventure-location-width);
+  width: var(--adventure-location-width);
+  min-width: 220px;
+  max-width: none;
   display: flex;
   flex-direction: column;
 
@@ -2746,6 +2758,23 @@ p:not(:last-child) {
   cursor: grabbing;
 }
 
+.thing-collection-entry .entity-icon,
+.thing-collection-entry .entity-icon img,
+.thing-collection-entry .image-placeholder,
+.thing-collection-entry .entity-icon-placeholder {
+  -webkit-touch-callout: none;
+  -webkit-user-drag: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.thing-collection-entry[data-modal-touch-drag-wired="true"] .entity-icon,
+.thing-collection-entry[data-modal-touch-drag-wired="true"] .entity-icon img,
+.thing-collection-entry[data-modal-touch-drag-wired="true"] .image-placeholder,
+.thing-collection-entry[data-modal-touch-drag-wired="true"] .entity-icon-placeholder {
+  touch-action: none;
+}
+
 .inventory-scroll {
   flex: 1;
   overflow-y: auto;
@@ -3994,15 +4023,15 @@ body.dark .thing-toggle-hint {
   }
 
   &.ability-type-active {
-    border-left: 3px solid rgba(96, 165, 250, 0.85);
+    border-left: 3px solid var(--airpg-ability-active-border);
   }
 
   &.ability-type-passive {
-    border-left: 3px solid rgba(52, 211, 153, 0.85);
+    border-left: 3px solid var(--airpg-ability-passive-border);
   }
 
   &.ability-type-triggered {
-    border-left: 3px solid rgba(249, 168, 212, 0.85);
+    border-left: 3px solid var(--airpg-ability-triggered-border);
   }
 }
 
@@ -4024,6 +4053,11 @@ body.dark .thing-toggle-hint {
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: rgba(148, 163, 184, 0.85);
+}
+
+.ability-type-label {
+  font-weight: 700;
+  letter-spacing: 0.08em;
 }
 
 .ability-description {
@@ -4247,6 +4281,50 @@ body.dark .thing-toggle-hint {
   }
 }
 
+.adventure-resize-handle {
+  flex: 0 0 var(--adventure-resize-handle-width);
+  width: var(--adventure-resize-handle-width);
+  min-width: var(--adventure-resize-handle-width);
+  align-self: stretch;
+  position: relative;
+  z-index: 6;
+  cursor: col-resize;
+  touch-action: none;
+  user-select: none;
+  outline: none;
+
+  &::before {
+    content: "";
+    position: absolute;
+    top: 12px;
+    bottom: 12px;
+    left: 50%;
+    width: 2px;
+    transform: translateX(-50%);
+    border-radius: 999px;
+    background: rgba(148, 163, 184, 0.22);
+    box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.35);
+    transition:
+      background 140ms ease,
+      box-shadow 140ms ease,
+      width 140ms ease;
+  }
+
+  &:hover::before,
+  &:focus-visible::before,
+  &.is-dragging::before {
+    width: 4px;
+    background: rgba(56, 189, 248, 0.75);
+    box-shadow: 0 0 16px rgba(14, 165, 233, 0.45);
+  }
+}
+
+.adventure-panel-resize-active,
+.adventure-panel-resize-active * {
+  cursor: col-resize !important;
+  user-select: none !important;
+}
+
 // Chat layout and sidebar
 .chat-wrapper {
   display: flex;
@@ -4258,13 +4336,16 @@ body.dark .thing-toggle-hint {
 
 .chat-container {
   flex: 1;
+  min-width: var(--adventure-chat-min-width);
   min-height: 0;
   display: flex;
   flex-direction: column;
 }
 
 .chat-sidebar {
-  flex: 0 0 30%;
+  flex: 0 0 var(--adventure-party-width);
+  width: var(--adventure-party-width);
+  min-width: 220px;
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
@@ -4747,6 +4828,10 @@ body.dark .thing-toggle-hint {
     flex-direction: column;
   }
 
+  .adventure-resize-handle {
+    display: none;
+  }
+
   .location-block {
     flex: none;
     max-width: none;
@@ -4761,6 +4846,7 @@ body.dark .thing-toggle-hint {
   .chat-sidebar {
     flex: none;
     max-width: none;
+    min-width: 0;
     width: 100%;
     overflow: visible;
   }
@@ -4785,6 +4871,7 @@ body.dark .thing-toggle-hint {
   }
 
   .chat-container {
+    min-width: 0;
     max-height: 95vh;
     overflow: auto;
   }
@@ -6929,6 +7016,18 @@ body.modal-open {
     box-shadow 0.2s ease;
 }
 
+.player-ability-selection-card.ability-type-active {
+  border-left: 3px solid var(--airpg-ability-active-border);
+}
+
+.player-ability-selection-card.ability-type-passive {
+  border-left: 3px solid var(--airpg-ability-passive-border);
+}
+
+.player-ability-selection-card.ability-type-triggered {
+  border-left: 3px solid var(--airpg-ability-triggered-border);
+}
+
 .player-ability-selection-card:hover,
 .player-ability-selection-card:focus {
   border-color: rgba(125, 211, 252, 0.62);
@@ -7319,6 +7418,52 @@ body.modal-open {
   box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.35);
 }
 
+.ability-type-text--active,
+.npc-ability-row .ability-type-text--active,
+.ability-type-select--active,
+.npc-ability-row .ability-type-select--active,
+.ability-type-option--active {
+  color: var(--airpg-ability-active);
+}
+
+.ability-type-text--passive,
+.npc-ability-row .ability-type-text--passive,
+.ability-type-select--passive,
+.npc-ability-row .ability-type-select--passive,
+.ability-type-option--passive {
+  color: var(--airpg-ability-passive);
+}
+
+.ability-type-text--triggered,
+.npc-ability-row .ability-type-text--triggered,
+.ability-type-select--triggered,
+.npc-ability-row .ability-type-select--triggered,
+.ability-type-option--triggered {
+  color: var(--airpg-ability-triggered);
+}
+
+.npc-ability-row .ability-type-select {
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.npc-ability-row .ability-type-select--active {
+  border-color: var(--airpg-ability-active-border);
+}
+
+.npc-ability-row .ability-type-select--passive {
+  border-color: var(--airpg-ability-passive-border);
+}
+
+.npc-ability-row .ability-type-select--triggered {
+  border-color: var(--airpg-ability-triggered-border);
+}
+
+.ability-type-option {
+  background: #0f172a;
+  font-weight: 700;
+}
+
 .npc-edit-field--readonly .npc-edit-readonly-value {
   padding: 10px 12px;
   border-radius: 10px;
@@ -7450,6 +7595,12 @@ body.modal-open {
   background: rgba(37, 99, 235, 0.35);
   color: #ffffff;
   outline: none;
+}
+
+.npc-edit-add-btn:disabled,
+.npc-edit-remove-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .npc-edit-remove-btn {
@@ -7599,6 +7750,168 @@ body.modal-open {
 .npc-inventory-modal .inventory-card {
   min-width: 120px;
   max-width: 140px;
+}
+
+.thing-container-modal__dialog {
+  width: min(1120px, 96vw);
+  max-height: 92vh;
+}
+
+.thing-container-modal__body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  overflow: hidden;
+}
+
+.thing-container-modal__toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.thing-container-modal__bulk-button {
+  padding: 6px 10px;
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+
+.thing-container-modal__breadcrumbs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  color: rgba(226, 232, 240, 0.72);
+  font-size: 0.85rem;
+}
+
+.thing-container-modal__breadcrumb-button {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: #93c5fd;
+  font: inherit;
+  cursor: pointer;
+
+  &:hover,
+  &:focus-visible {
+    color: #bfdbfe;
+    text-decoration: underline;
+    outline: none;
+  }
+}
+
+.thing-container-modal__breadcrumb-current {
+  color: #f8fafc;
+  font-weight: 600;
+}
+
+.thing-container-modal__breadcrumb-separator {
+  color: rgba(148, 163, 184, 0.8);
+}
+
+.thing-container-modal__columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 18px;
+  min-height: 0;
+}
+
+.thing-container-modal__panel {
+  display: flex;
+  min-width: 0;
+  min-height: 420px;
+  flex-direction: column;
+  padding: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.26);
+  border-radius: 16px;
+  background: rgba(15, 23, 42, 0.42);
+}
+
+.thing-container-modal__dropzone {
+  align-content: flex-start;
+  flex: 1 1 auto;
+  min-height: 260px;
+  max-height: 58vh;
+  overflow-y: auto;
+  padding: 10px;
+  border: 1px dashed rgba(148, 163, 184, 0.24);
+  border-radius: 14px;
+  background: rgba(15, 23, 42, 0.26);
+  transition:
+    border-color 0.16s ease,
+    background 0.16s ease;
+
+  &.is-drag-over {
+    border-color: rgba(125, 211, 252, 0.8);
+    background: rgba(14, 116, 144, 0.2);
+  }
+}
+
+.thing-container-modal__draggable-item {
+  cursor: grab;
+
+  &:active {
+    cursor: grabbing;
+  }
+
+  &.is-touch-dragging {
+    opacity: 0.42;
+  }
+}
+
+.thing-touch-drag-active {
+  user-select: none;
+}
+
+.thing-touch-drag-ghost {
+  position: fixed;
+  z-index: 2400;
+  pointer-events: none;
+  opacity: 0.92;
+  transform: translate(-50%, -50%) scale(0.96);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.45);
+  filter: saturate(1.08);
+}
+
+@media (max-width: 860px) {
+  .thing-container-modal {
+    align-items: stretch;
+    padding: 10px;
+  }
+
+  .thing-container-modal__dialog {
+    width: min(1120px, 96vw);
+    height: calc(100vh - 20px);
+    max-height: calc(100vh - 20px);
+  }
+
+  .thing-container-modal__body {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
+  .thing-container-modal__columns {
+    display: flex;
+    flex: 1 1 auto;
+    min-height: 0;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .thing-container-modal__panel {
+    flex: 1 1 0;
+    min-height: 0;
+    overflow: hidden;
+    padding: 10px;
+  }
+
+  .thing-container-modal__dropzone {
+    min-height: 0;
+    max-height: none;
+  }
 }
 
 .npc-view-modal .modal__dialog {
@@ -8636,6 +8949,67 @@ body.modal-open {
 }
 
 .npc-view-equipment[hidden] {
+  display: none;
+}
+
+.npc-view-ability-cards {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.npc-view-ability-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  text-align: left;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.34);
+  background: linear-gradient(
+    160deg,
+    rgba(15, 23, 42, 0.72),
+    rgba(30, 41, 59, 0.62)
+  );
+  color: #f8fafc;
+  padding: 14px;
+}
+
+.npc-view-ability-card.ability-type-active {
+  border-left: 3px solid var(--airpg-ability-active-border);
+}
+
+.npc-view-ability-card.ability-type-passive {
+  border-left: 3px solid var(--airpg-ability-passive-border);
+}
+
+.npc-view-ability-card.ability-type-triggered {
+  border-left: 3px solid var(--airpg-ability-triggered-border);
+}
+
+.npc-view-ability-card-header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.npc-view-ability-card-name {
+  font-size: 0.98rem;
+  font-weight: 600;
+}
+
+.npc-view-ability-card-meta {
+  font-size: 0.78rem;
+  color: rgba(191, 219, 254, 0.9);
+}
+
+.npc-view-ability-card-description {
+  margin: 0;
+  font-size: 0.84rem;
+  line-height: 1.5;
+  color: rgba(226, 232, 240, 0.9);
+}
+
+.npc-view-ability-cards[hidden] {
   display: none;
 }
 

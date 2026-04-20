@@ -13,6 +13,14 @@ document.addEventListener('DOMContentLoaded', function () {
   const DEFAULT_HEALTH_ATTRIBUTE = 'constitution';
   let playerHealthAttributeKey = DEFAULT_HEALTH_ATTRIBUTE;
 
+  function formatHealthDisplayValue(value) {
+    const numericValue = Number(value);
+    if (!Number.isFinite(numericValue)) {
+      return null;
+    }
+    return Math.ceil(Math.max(0, numericValue));
+  }
+
   const playerStatusModifierTemplates = {
     buildOptions(selectEl) {
       if (!selectEl) {
@@ -287,8 +295,8 @@ document.addEventListener('DOMContentLoaded', function () {
     if (!display) {
       return;
     }
-    const numeric = Number.parseInt(playerData.maxHealth ?? '', 10);
-    display.textContent = Number.isFinite(numeric) ? numeric : '—';
+    const displayHealth = formatHealthDisplayValue(playerData.maxHealth);
+    display.textContent = displayHealth !== null ? displayHealth : '—';
   }
 
   // Initialize attribute modifier calculations
@@ -361,7 +369,7 @@ document.addEventListener('DOMContentLoaded', function () {
     playerData.name = formData.get('name');
     playerData.description = formData.get('description');
     playerData.level = parseInt(formData.get('level'));
-    playerData.health = parseInt(formData.get('health'));
+    playerData.health = Number(formData.get('health'));
     if (playerHealthAttributeKey) {
       playerData.healthAttribute = playerHealthAttributeKey;
     }
@@ -552,7 +560,10 @@ document.addEventListener('DOMContentLoaded', function () {
     if (nameField) nameField.value = playerData.name || '';
     if (descField) descField.value = playerData.description || '';
     if (levelField) levelField.value = playerData.level || 1;
-    if (healthField) healthField.value = playerData.health || 25;
+    if (healthField) {
+      const displayHealth = formatHealthDisplayValue(playerData.health);
+      healthField.value = displayHealth !== null ? displayHealth : 25;
+    }
 
     if (playerData.healthAttribute) {
       playerHealthAttributeKey = playerData.healthAttribute.toString().trim().toLowerCase() || DEFAULT_HEALTH_ATTRIBUTE;

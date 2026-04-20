@@ -24,7 +24,7 @@ Persist the current player's shared thing-list panel view mode for one panel.
 
 Request:
 - Body: `{ panelKey: string, viewMode: string }`
-  - Supported `panelKey` values: `npcInventory`, `craftingInventory`, `locationScenery`, `locationItems`
+  - Supported `panelKey` values: `npcInventory`, `craftingInventory`, `locationScenery`, `locationItems`, `containerPlayerInventory`, `containerContents`
   - Supported `viewMode` values: `classic`, `table`, `grid`, `small-grid`
 
 Response:
@@ -149,7 +149,7 @@ Response:
 Modify player health.
 
 Request:
-- Body: `{ amount: number, reason?: string }`
+- Body: `{ amount: number, reason?: string }` (`amount` may be fractional)
 
 Response:
 - 200: `{ success: true, healthChange, player: NpcProfile, message }`

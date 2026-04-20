@@ -57,6 +57,7 @@ class Player {
     #needBars;
     #needBarApplicability = new Map();
     #needBarRatesAppliedAt = null;
+    #healthRegenAppliedAt = null;
     #experience;
     #currency;
     #personalityType;
@@ -105,7 +106,9 @@ class Player {
         'npcInventory',
         'craftingInventory',
         'locationScenery',
-        'locationItems'
+        'locationItems',
+        'containerPlayerInventory',
+        'containerContents'
     ]);
     static #thingListViewModes = new Set([
         'classic',
@@ -123,6 +126,23 @@ class Player {
 
     static #experienceThreshold = 100;
     static #experienceRolloverMultiplier = 2 / 3;
+
+    static #normalizeHealthValue(value, fieldName = 'Health') {
+        const numericValue = Number(value);
+        if (!Number.isFinite(numericValue) || numericValue < 0) {
+            throw new Error(`${fieldName} must be a non-negative finite number`);
+        }
+        return numericValue;
+    }
+
+    static #getHealthRegenPercentPerMinute() {
+        const rawValue = Globals.config?.healthRegenPercentPerMinute ?? 0;
+        const numericValue = Number(rawValue);
+        if (!Number.isFinite(numericValue) || numericValue < 0) {
+            throw new Error('healthRegenPercentPerMinute must be a non-negative finite number.');
+        }
+        return numericValue;
+    }
 
     static #rebuildIndexes() {
         this.#indexById = new Map();
@@ -1380,6 +1400,7 @@ class Player {
      */
     static applyStatusEffectNeedBarsToAll() {
         const adjustments = [];
+        const healthRegenPercentPerMinute = Player.#getHealthRegenPercentPerMinute();
         let currentWorldMinutes = null;
         try {
             if (typeof Globals?.getTotalWorldMinutes === 'function') {
@@ -1414,6 +1435,53 @@ class Player {
             }
 
             let playerChanged = false;
+            const hasHealthRegenAppliedAt = Number.isFinite(player.#healthRegenAppliedAt)
+                && player.#healthRegenAppliedAt >= 0;
+            if (!hasHealthRegenAppliedAt) {
+                player.#healthRegenAppliedAt = baselineMinutes;
+                playerChanged = true;
+            } else {
+                const elapsedHealthRegenMinutes = Math.floor(baselineMinutes - player.#healthRegenAppliedAt);
+                if (Number.isFinite(elapsedHealthRegenMinutes) && elapsedHealthRegenMinutes > 0) {
+                    if (healthRegenPercentPerMinute > 0 && !player.isDead) {
+                        const previousHealth = Number.isFinite(player.#health) ? player.#health : 0;
+                        const maxHealth = Number(player.maxHealth);
+                        if (!Number.isFinite(maxHealth) || maxHealth <= 0) {
+                            throw new Error(`Cannot apply health regeneration for ${player.name || player.id || 'player'}: max health is invalid.`);
+                        }
+
+                        if (previousHealth < maxHealth) {
+                            const changePerMinute = maxHealth * (healthRegenPercentPerMinute / 100);
+                            const nextHealth = Math.min(
+                                maxHealth,
+                                previousHealth + (changePerMinute * elapsedHealthRegenMinutes)
+                            );
+
+                            if (nextHealth !== previousHealth) {
+                                player.#health = nextHealth;
+                                adjustments.push({
+                                    playerId: player.id || null,
+                                    playerName: player.name || null,
+                                    bar: 'Health',
+                                    needBarName: 'Health',
+                                    previousValue: previousHealth,
+                                    newValue: nextHealth,
+                                    delta: nextHealth - previousHealth,
+                                    ticksApplied: elapsedHealthRegenMinutes,
+                                    changePerMinute,
+                                    source: 'health_regen'
+                                });
+                            }
+                        }
+                    }
+                    player.#healthRegenAppliedAt = baselineMinutes;
+                    playerChanged = true;
+                } else if (Number.isFinite(elapsedHealthRegenMinutes) && elapsedHealthRegenMinutes < 0) {
+                    player.#healthRegenAppliedAt = baselineMinutes;
+                    playerChanged = true;
+                }
+            }
+
             if (player.#needBars instanceof Map) {
                 const hasRateAppliedAt = Number.isFinite(player.#needBarRatesAppliedAt)
                     && player.#needBarRatesAppliedAt >= 0;
@@ -1537,6 +1605,7 @@ class Player {
                                     playerId: player.id || null,
                                     playerName: player.name || null,
                                     bar: 'Health',
+                                    needBarName: 'Health',
                                     previousValue: beforeHealth,
                                     newValue: afterHealth,
                                     delta: totalDelta,
@@ -1837,7 +1906,9 @@ class Player {
         this.#level = options.level ?? 1;
 
         const initialMaxHealth = this.#calculateBaseHealth();
-        this.#health = options.health ?? initialMaxHealth;
+        this.#health = options.health !== undefined && options.health !== null
+            ? Player.#normalizeHealthValue(options.health)
+            : initialMaxHealth;
 
         // Player identification
         this.#name = options.name ?? "Unnamed Player";
@@ -1882,6 +1953,9 @@ class Player {
             : 0;
         this.#needBarRatesAppliedAt = Number.isFinite(options.needBarRatesAppliedAt) && options.needBarRatesAppliedAt >= 0
             ? Math.floor(options.needBarRatesAppliedAt)
+            : null;
+        this.#healthRegenAppliedAt = Number.isFinite(options.healthRegenAppliedAt) && options.healthRegenAppliedAt >= 0
+            ? Math.floor(options.healthRegenAppliedAt)
             : null;
 
         const personalityOption = options.personality && typeof options.personality === 'object'
@@ -2478,6 +2552,13 @@ class Player {
             }
             const cleanupKeys = ['ownerID', 'owner_id', 'inventoryOwnerId'];
             for (const key of cleanupKeys) {
+                if (metadata[key] !== undefined) {
+                    delete metadata[key];
+                    metadataChanged = true;
+                }
+            }
+            const containerKeys = ['containerId', 'containerID', 'container_id'];
+            for (const key of containerKeys) {
                 if (metadata[key] !== undefined) {
                     delete metadata[key];
                     metadataChanged = true;
@@ -3553,10 +3634,11 @@ class Player {
         }
 
         this.#healthAttribute = resolved;
+        const newMaxHealth = this.maxHealth;
 
         if (oldMaxHealth > 0) {
             const healthRatio = this.#health / oldMaxHealth;
-            this.#health = Math.max(0, Math.min(newMaxHealth, Math.round(newMaxHealth * healthRatio)));
+            this.#health = Math.max(0, Math.min(newMaxHealth, newMaxHealth * healthRatio));
         } else {
             this.#health = Math.min(this.#health, newMaxHealth);
         }
@@ -4228,9 +4310,13 @@ class Player {
      * Modify health (damage or healing)
      */
     modifyHealth(amount, reason = '') {
+        const numericAmount = Number(amount);
+        if (!Number.isFinite(numericAmount)) {
+            throw new Error('Health modification amount must be a finite number');
+        }
         const maxHealth = this.maxHealth;
         const oldHealth = this.#health;
-        this.#health = Math.max(0, Math.min(maxHealth, this.#health + amount));
+        this.#health = Math.max(0, Math.min(maxHealth, this.#health + numericAmount));
         this.#lastUpdated = new Date().toISOString();
 
         return {
@@ -5168,7 +5254,7 @@ class Player {
         // Adjust current health proportionally
         if (oldMaxHealth > 0) {
             const healthRatio = this.#health / oldMaxHealth;
-            this.#health = Math.max(0, Math.min(newMaxHealth, Math.round(newMaxHealth * healthRatio)));
+            this.#health = Math.max(0, Math.min(newMaxHealth, newMaxHealth * healthRatio));
         }
 
         this.#lastUpdated = new Date().toISOString();
@@ -5185,11 +5271,9 @@ class Player {
      * Set current health
      */
     setHealth(health) {
-        if (!Number.isInteger(health) || health < 0) {
-            throw new Error('Health must be a non-negative integer');
-        }
+        const numericHealth = Player.#normalizeHealthValue(health);
         const maxHealth = this.maxHealth;
-        this.#health = Math.min(health, maxHealth);
+        this.#health = Math.min(numericHealth, maxHealth);
         this.#lastUpdated = new Date().toISOString();
         return this.#health;
     }
@@ -5619,6 +5703,7 @@ class Player {
             needBars: this.getNeedBars({ scope: 'stored' }),
             needBarApplicability: this.getNeedBarApplicability(),
             needBarRatesAppliedAt: this.#needBarRatesAppliedAt,
+            healthRegenAppliedAt: this.#healthRegenAppliedAt,
             thingListViewPreferences: this.getThingListViewPreferences(),
             factionStandings: this.getFactionStandings(),
             importantMemories: this.importantMemories,
@@ -5696,6 +5781,7 @@ class Player {
             needBars: legacyNeedBarLoadState.needBars,
             needBarApplicability: legacyNeedBarLoadState.needBarApplicability,
             needBarRatesAppliedAt: data.needBarRatesAppliedAt,
+            healthRegenAppliedAt: data.healthRegenAppliedAt,
             thingListViewPreferences: data.thingListViewPreferences && typeof data.thingListViewPreferences === 'object'
                 ? data.thingListViewPreferences
                 : {},
@@ -5919,8 +6005,8 @@ class Player {
         }
 
         const ratio = previousHealth / previousMaxHealth;
-        const nextHealthRaw = Math.floor(ratio * nextMaxHealth);
-        const nextHealth = Math.max(1, Math.min(nextMaxHealth, nextHealthRaw));
+        const nextHealthRaw = ratio * nextMaxHealth;
+        const nextHealth = Math.max(0, Math.min(nextMaxHealth, nextHealthRaw));
 
         if (!Number.isFinite(nextHealth)) {
             throw new Error('Cannot preserve health ratio: computed health is invalid.');

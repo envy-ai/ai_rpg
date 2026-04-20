@@ -4,12 +4,12 @@
 Represents items and scenery in the game world. Supports rarity metadata, attribute bonuses, status effects (including AI enrichment), and placement in locations or inventories. Maintains indexes by id and name. Rarity definitions are loaded from root `defs/rarities.yaml` plus any matching mod defs overlays.
 
 ## Key State
-- Core fields: `#id`, `#name`, `#description`, `#shortDescription`, `#thingType`, `#imageId`, `#count`.
+- Core fields: `#id`, `#name`, `#description`, `#shortDescription`, `#thingType`, `#imageId`, `#count`, `#containedThingIds`.
 - Metadata: `#metadata` (mirrors slot, applied bonuses, raw prompt-scale `unscaledAttributeBonuses`, cause effects, flags, levels).
 - Rarity and level: `#rarity`, `#itemTypeDetail`, `#level`, `#relativeLevel`.
 - Harvest history: `#previouslyHarvestedItems` (deduped list of item names harvested from this node) and `#lastHarvested` (absolute world minutes at the last successful harvest).
 - Status: `#statusEffects`, `#causeStatusEffect` (applied to target/equipper).
-- Flags: `#flags` (SanitizedStringSet) with boolean flag helpers (`isVehicle`, `isCraftingStation`, etc).
+- Flags: `#flags` (SanitizedStringSet) with boolean flag helpers (`isVehicle`, `isCraftingStation`, `isContainer`, etc).
 - Static indexes: `#indexByID`, `#indexByName`.
 
 ## Construction
@@ -33,7 +33,8 @@ Represents items and scenery in the game world. Supports rarity metadata, attrib
 ## Accessors
 - Basic getters: `id`, `name`, `description`, `shortDescription`, `thingType`, `imageId`, `createdAt`, `lastUpdated`, `checksum`, `count`.
 - Equipment helpers: `equippedBy`, `isEquipped`, `equippedSlot`.
-- Flags: `isVehicle`, `isCraftingStation`, `isProcessingStation`, `isHarvestable`, `isSalvageable` (get/set).
+- Flags: `isVehicle`, `isCraftingStation`, `isProcessingStation`, `isHarvestable`, `isSalvageable`, `isContainer` (get/set).
+- Container helpers: `containedThingIds`, `getInventoryItems()`, `addInventoryItem()`, `removeInventoryItem()`, `hasInventoryItem()`, `setInventory()`, `clearInventory()`, `whoseContainer()`.
 - Rarity/level: `rarity`, `itemTypeDetail`, `level`, `relativeLevel` (get/set).
 - Metadata: `metadata` (get/set), `slot` (get/set), `attributeBonuses` (get/set), `unscaledAttributeBonuses` (get/set; prompt-scale source bonuses mirrored into metadata when known).
 - Stack size: `count` (get/set; persisted integer quantity, defaults to `1`).
@@ -47,6 +48,7 @@ Represents items and scenery in the game world. Supports rarity metadata, attrib
 - Harvest tracking: `recordSuccessfulHarvest(itemNames, { harvestedAtMinutes })` appends newly seen harvested item names and stamps `lastHarvested` at the successful completion time.
 - Distinct target/equipper cause effects remain separate through constructor ingestion and metadata sync; dual-effect items are not collapsed into one shared payload.
 - Serialization: `toJSON()`, `copy({...})`, `delete()`.
+- Container inventories: only explicit `isContainer` things can hold contents; contents must be item-type things, equipped items are rejected, and nested containers are allowed only when they do not create self/descendant cycles.
 - Status effects: `getStatusEffects()`, `setStatusEffects(effects)`, `addStatusEffect(effect, defaultDuration)`, `removeStatusEffect(description)`, `tickStatusEffects(elapsedMinutes)`, `clearExpiredStatusEffects()`.
 - Consumption: `consumeOne({ things })` decrements persisted `count` by `1` when the stack is larger than `1`; otherwise it fully deletes the thing from inventories/locations, static indexes, and the provided runtime `things` container.
 - Inventory/world placement: `whoseInventory()`, `removeFromWorld()`, `drop(locationIdOverride)`, `putInLocation(locationId)`, `putInInventory(playerId)`.
@@ -55,6 +57,7 @@ Represents items and scenery in the game world. Supports rarity metadata, attrib
 
 ## Static Inventory/World Helpers
 - `whoseInventoryById(thingId)`.
+- `whoseContainerById(thingId)`.
 - `removeFromWorldById(thingId)`.
 - `dropById(thingId)`.
 - `getAllByLocationId(locationId)`.
@@ -72,6 +75,8 @@ Represents items and scenery in the game world. Supports rarity metadata, attrib
 - Status effect enrichment calls `StatusEffect.generateFromDescriptions` using `Globals` prompt hooks.
 - Name lookups are location-aware: `getByName` prefers current location/region contexts.
 - Harvest history is persisted in both top-level `Thing` JSON and mirrored metadata so save/load and metadata-based paths stay in sync.
+- Container state persists as top-level `containedThingIds`; contained items keep `metadata.containerId` and have owner/player/location placement metadata cleared.
+- `removeFromWorld()` removes a thing from players, locations, and all container inventories. `delete()` rejects non-empty containers so contents cannot be orphaned accidentally.
 - `checksum` is a fast non-cryptographic FNV-1a hash of canonicalized `toJSON()` data. It intentionally excludes volatile identity/timestamp fields (`id`, `createdAt`, `lastUpdated`), the persisted `count`, prompt-roundtrip-only metadata (`unscaledAttributeBonuses`), and placement/ownership metadata (`location*`, `owner*`, `player*`, `inventoryOwnerId`) so equivalent things remain stable across saves and movement.
-- `copy({...})` creates a new `Thing` with a fresh id/timestamps but the same hashable data and image by default; stack-splitting paths use it to preserve item identity details while changing only count/placement metadata as needed.
+- `copy({...})` creates a new `Thing` with a fresh id/timestamps but the same hashable data and image by default; stack-splitting paths use it to preserve item identity details while changing only count/placement metadata as needed. Container contents are not copied unless `containedThingIds` is explicitly supplied.
 - Shared consumption code should call `consumeOne({ things })` instead of directly deleting a consumed thing; this preserves stacked items by decrementing `count` in place when possible.

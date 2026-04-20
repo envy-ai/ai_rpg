@@ -363,3 +363,55 @@ Original prompt: In the eye button window, also render the full prompt before th
 - Updated docs:
   - `docs/ui/assets_styles.md`
   - `docs/README.md`
+
+Original prompt: Now, on the dual column container inventory modal, put an "Add all" button on the player side and a "Remove all" button on the container side. These should add and remove all items that are currently visible with the current filter in their respective column. In general, when viewing an inventory modal, dragging an item outside of the modal should drop it at the location.
+
+- Added visible-filtered `Add all` and `Remove all` controls to `#thingContainerModal`.
+- Bulk container transfers snapshot the currently rendered filtered item lists and move whole stacks sequentially via existing container move endpoints, refreshing the modal/player inventory afterward.
+- Added shared modal-inventory drag state so dragging items out of container, NPC inventory, or crafting inventory modals drops them into the current location through the existing item-drop route.
+- Updated container, NPC inventory, and crafting inventory drag wiring to participate in modal-outside drops while preserving existing in-modal drag/drop behavior.
+- Updated docs:
+  - `docs/ui/chat_interface.md`
+  - `docs/ui/modals_overlays.md`
+  - `docs/ui/assets_styles.md`
+  - `docs/README.md`
+- Validation:
+  - `npm run scss:build:main` ✅
+  - rendered `views/index.njk` inline script `node --check` ✅
+  - `node --test tests/thing.container.test.js` ✅
+  - `npm run test:e2e:headless` ✅ (3 passed, 3 skipped)
+- Tightened `Add all` preflight validation so a visible equipped item or the open container itself fails before any bulk move starts, avoiding partial success on known-invalid visible sets.
+
+Follow-up for the same container modal prompt:
+- Changed container `move-in`/`move-out` API routes to accept either a single `thingId` or bulk `thingIds` arrays.
+- Bulk container API moves validate the whole list before moving anything, then return one refreshed container payload.
+- Updated the client `Add all` / `Remove all` actions to send one bulk request instead of one request per visible item.
+- Updated docs: `docs/api/things.md`, `docs/ui/chat_interface.md`, `docs/ui/modals_overlays.md`, `docs/README.md`.
+- Validation:
+  - `node --check api.js` ✅
+  - rendered `views/index.njk` inline script `node --check` ✅
+  - `node --check tests/api.container_moves.test.js` ✅
+  - `node --test tests/api.container_moves.test.js tests/thing.container.test.js` ✅
+  - `npm run test:e2e:headless` ✅ (3 passed, 3 skipped)
+
+Original prompt: Make item text filtering filter on item detail as well. Follow-up: maybe also do status effect text, if it's not already done, since that's user visible.
+
+- Expanded shared thing-list text filtering to search item/scenery detail fields, recursive metadata text/numeric detail values, and status-effect text (`statusEffects`, `causeStatusEffectOnTarget`, and `causeStatusEffectOnEquipper`).
+- Updated docs: `docs/ui/chat_interface.md`, `docs/README.md`.
+- Validation:
+  - rendered `views/index.njk` inline script `node --check` ✅
+  - `npm run test:e2e:headless` ✅ (3 passed, 3 skipped)
+
+Original prompt: In mobile mode, rather than columns, the player inventory should take the top half the box vertically and the container the bottom half. On a touch screen, long pressing on an item should initiate a drag (wait for lift to do the short press action).
+
+- Updated the thing-container modal mobile layout so the dialog fills the viewport height and the player/container panels split the modal vertically half-and-half.
+- Added simulated long-press touch dragging for modal inventory item cards:
+  - Container modal cards can long-press drag between the player inventory and container panels.
+  - NPC inventory and crafting inventory cards can long-press drag outside the modal to drop at the current location.
+  - Short taps are left for normal click behavior; completed touch drags suppress the follow-up synthetic click.
+- Added touch-drag ghost/active styling in `public/css/main.scss` and rebuilt `public/css/main.css`.
+- Updated docs: `docs/ui/chat_interface.md`, `docs/ui/modals_overlays.md`, `docs/ui/assets_styles.md`, `docs/README.md`.
+- Validation:
+  - `npm run scss:build:main` ✅
+  - rendered `views/index.njk` inline script `node --check` ✅
+  - `npm run test:e2e:headless` ✅ (3 passed, 3 skipped)

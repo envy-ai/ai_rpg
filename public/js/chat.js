@@ -1736,7 +1736,7 @@ class AIRPGChat {
 
     normalizeSlopRemovalPayload(slopRemoval) {
         if (!slopRemoval || typeof slopRemoval !== 'object') {
-            return { slopWords: [], slopNgrams: [] };
+            return { slopWords: [], slopRegexes: [], slopNgrams: [] };
         }
         const source = slopRemoval.slopRemoval && typeof slopRemoval.slopRemoval === 'object'
             ? slopRemoval.slopRemoval
@@ -1744,15 +1744,18 @@ class AIRPGChat {
         const slopWords = Array.isArray(source.slopWords)
             ? source.slopWords.map(word => (typeof word === 'string' ? word.trim() : '')).filter(Boolean)
             : [];
+        const slopRegexes = Array.isArray(source.slopRegexes)
+            ? source.slopRegexes.map(name => (typeof name === 'string' ? name.trim() : '')).filter(Boolean)
+            : [];
         const slopNgrams = Array.isArray(source.slopNgrams)
             ? source.slopNgrams.map(ngram => (typeof ngram === 'string' ? ngram.trim() : '')).filter(Boolean)
             : [];
-        return { slopWords, slopNgrams };
+        return { slopWords, slopRegexes, slopNgrams };
     }
 
     renderSlopRemovalMarkup(slopRemoval) {
         const normalized = this.normalizeSlopRemovalPayload(slopRemoval);
-        if (!normalized.slopWords.length && !normalized.slopNgrams.length) {
+        if (!normalized.slopWords.length && !normalized.slopRegexes.length && !normalized.slopNgrams.length) {
             return '';
         }
 
@@ -1762,6 +1765,12 @@ class AIRPGChat {
                 .map(word => `<li>${this.escapeHtml(word)}</li>`)
                 .join('');
             sections.push(`<div class="slop-remover-section"><h4>Slop words</h4><ul>${words}</ul></div>`);
+        }
+        if (normalized.slopRegexes.length) {
+            const regexes = normalized.slopRegexes
+                .map(name => `<li>${this.escapeHtml(name)}</li>`)
+                .join('');
+            sections.push(`<div class="slop-remover-section"><h4>Regex matches</h4><ul>${regexes}</ul></div>`);
         }
         if (normalized.slopNgrams.length) {
             const ngrams = normalized.slopNgrams
@@ -2270,6 +2279,34 @@ class AIRPGChat {
             return '';
         }
         return String(timestamp).replace('T', ' ').replace('Z', '');
+    }
+
+    formatHealthDisplayValue(value) {
+        const numericValue = Number(value);
+        if (!Number.isFinite(numericValue)) {
+            return null;
+        }
+        return Math.ceil(Math.max(0, numericValue));
+    }
+
+    isHealthNeedBarChange(change, barName = '') {
+        const resolvedBarName = String(barName || change?.needBarName || change?.needBar || change?.bar || change?.needBarId || '').trim().toLowerCase();
+        const source = String(change?.source || '').trim().toLowerCase();
+        return resolvedBarName === 'health' || source === 'health_regen';
+    }
+
+    formatNeedBarDelta(change, delta, barName = '', { roundNonHealth = false } = {}) {
+        if (!Number.isFinite(delta) || delta === 0) {
+            return '';
+        }
+
+        if (this.isHealthNeedBarChange(change, barName)) {
+            const displayDelta = Math.ceil(Math.abs(delta));
+            return `${delta > 0 ? '+' : '-'}${displayDelta}`;
+        }
+
+        const displayDelta = roundNonHealth ? Math.round(delta) : delta;
+        return `${delta > 0 ? '+' : ''}${displayDelta}`;
     }
 
     setupEditModal() {
@@ -3147,10 +3184,8 @@ class AIRPGChat {
         const previousPromptId = viewer.dataset.promptId || '';
         const promptText = typeof entry.promptText === 'string' ? entry.promptText : '';
         const previewText = typeof entry.previewText === 'string' ? entry.previewText : '';
-        const byteLabel = Number.isFinite(Number(entry.bytes))
-            ? `${Number(entry.bytes).toLocaleString()} bytes`
-            : null;
-        const metaParts = [entry.model || null, byteLabel].filter(Boolean);
+        const receivedLabel = this.formatPromptProgressReceived(entry);
+        const metaParts = [entry.model || null, receivedLabel !== '-' ? receivedLabel : null].filter(Boolean);
 
         if (previousPromptId !== (entry.id || '') && copyButton) {
             if (copyButton._feedbackTimer) {
@@ -3211,6 +3246,24 @@ class AIRPGChat {
         this.renderPromptProgress(this.promptProgressEntries);
     }
 
+    formatPromptProgressReceived(entry) {
+        const rawCount = entry?.receivedCount ?? entry?.bytes;
+        const count = Number(rawCount);
+        if (!Number.isFinite(count)) {
+            return '-';
+        }
+        return count.toLocaleString();
+    }
+
+    formatPromptProgressAverage(entry) {
+        const rawAverage = entry?.avgReceivedPerSecond ?? entry?.avgBps;
+        const average = Number(rawAverage);
+        if (!Number.isFinite(average)) {
+            return '-';
+        }
+        return average.toLocaleString();
+    }
+
     clearPendingPromptProgressRender() {
         if (this.promptProgressRenderTimer) {
             clearTimeout(this.promptProgressRenderTimer);
@@ -3261,7 +3314,7 @@ class AIRPGChat {
             return;
         }
         this.promptProgressEntries = entries.filter(entry => entry && typeof entry === 'object');
-        const tableHeaderHtml = '<tr><th class="prompt-progress-cancel-header">Actions</th><th>Prompt</th><th>Model</th><th>Bytes</th><th>Seconds</th><th>Timeout In</th><th>Latency</th><th>Avg B/s</th><th>Retries</th></tr>';
+        const tableHeaderHtml = '<tr><th class="prompt-progress-cancel-header">Actions</th><th>Prompt</th><th>Model</th><th>Received</th><th>Seconds</th><th>Timeout In</th><th>Latency</th><th>Avg/s</th><th>Retries</th></tr>';
         const renderTimestamp = () => new Date().toISOString().replace('T', ' ').replace('Z', '');
 
         if (!this.promptProgressEntries.length) {
@@ -3310,11 +3363,6 @@ class AIRPGChat {
         }
 
         this.closeLoadGameModalIfOpen();
-
-        const formatBytes = (value) => {
-            if (!Number.isFinite(value)) return '-';
-            return value.toLocaleString();
-        };
 
         const table = document.createElement('table');
         table.className = 'prompt-progress-table';
@@ -3383,8 +3431,8 @@ class AIRPGChat {
             labelCell.textContent = entry.label || 'prompt';
             const modelCell = document.createElement('td');
             modelCell.textContent = entry.model || '-';
-            const bytesCell = document.createElement('td');
-            bytesCell.textContent = formatBytes(Number(entry.bytes));
+            const receivedCell = document.createElement('td');
+            receivedCell.textContent = this.formatPromptProgressReceived(entry);
             const secondsCell = document.createElement('td');
             secondsCell.textContent = Number.isFinite(entry.seconds) ? `${Math.round(entry.seconds)}s` : '-';
             const timeoutCell = document.createElement('td');
@@ -3392,13 +3440,13 @@ class AIRPGChat {
             const latencyCell = document.createElement('td');
             latencyCell.textContent = Number.isFinite(entry.latencyMs) ? `${(entry.latencyMs / 1000).toFixed(1)}s` : '-';
             const avgCell = document.createElement('td');
-            avgCell.textContent = Number.isFinite(entry.avgBps) ? `${entry.avgBps}` : '-';
+            avgCell.textContent = this.formatPromptProgressAverage(entry);
             const retryCell = document.createElement('td');
             retryCell.textContent = Number.isFinite(entry.retries) ? `${entry.retries}` : '0';
             row.appendChild(cancelCell);
             row.appendChild(labelCell);
             row.appendChild(modelCell);
-            row.appendChild(bytesCell);
+            row.appendChild(receivedCell);
             row.appendChild(secondsCell);
             row.appendChild(timeoutCell);
             row.appendChild(latencyCell);
@@ -4119,7 +4167,9 @@ class AIRPGChat {
 
             const definitions = Array.isArray(window.needBarDefinitions) ? window.needBarDefinitions : [];
             const barId = typeof change?.needBarId === 'string' ? change.needBarId.trim() : '';
-            const barName = typeof change?.needBarName === 'string' ? change.needBarName.trim().toLowerCase() : '';
+            const barName = typeof change?.needBarName === 'string'
+                ? change.needBarName.trim().toLowerCase()
+                : (typeof change?.bar === 'string' ? change.bar.trim().toLowerCase() : '');
             const match = definitions.find((definition) => {
                 if (!definition || typeof definition !== 'object') {
                     return false;
@@ -4142,7 +4192,7 @@ class AIRPGChat {
                     return;
                 }
                 const actorName = change.actorName || change.actorId || 'Unknown';
-                const barName = change.needBarName || change.needBar || 'Need Bar';
+                const barName = change.needBarName || change.needBar || change.bar || change.needBarId || 'Need Bar';
                 const direction = typeof change.direction === 'string' ? change.direction.trim().toLowerCase() : '';
                 const magnitude = typeof change.magnitude === 'string' ? change.magnitude.trim().toLowerCase() : '';
                 const parts = [];
@@ -4159,7 +4209,7 @@ class AIRPGChat {
 
                 const delta = Number(change.delta);
                 if (Number.isFinite(delta) && delta !== 0) {
-                    segments.push(`Δ ${delta > 0 ? '+' : ''}${Math.round(delta)}`);
+                    segments.push(`Δ ${this.formatNeedBarDelta(change, delta, barName, { roundNonHealth: true })}`);
                 }
 
                 const reason = change.reason && String(change.reason).trim();
@@ -4197,10 +4247,11 @@ class AIRPGChat {
                 return;
             }
             const actorName = change.actorName || change.actorId || 'Unknown';
-            const barName = change.needBarName || change.needBarId || 'Need Bar';
+            const barName = change.needBarName || change.needBar || change.bar || change.needBarId || 'Need Bar';
             const delta = Number(change.delta);
             const newValue = Number(change.newValue);
             const maxValue = Number(change.max);
+            const isHealthChange = this.isHealthNeedBarChange(change, barName);
             const magnitudeLabel = capitalize(change.magnitude || '');
             const directionLabel = capitalize(change.direction || '');
             const reason = typeof change.reason === 'string' ? change.reason.trim() : '';
@@ -4209,16 +4260,22 @@ class AIRPGChat {
             segments.push(`<strong>${this.escapeHtml(String(actorName))}</strong> – ${this.escapeHtml(String(barName))}`);
 
             if (Number.isFinite(delta) && delta !== 0) {
-                segments.push(`${delta > 0 ? '+' : ''}${delta}`);
+                segments.push(this.formatNeedBarDelta(change, delta, barName));
             } else if (change.magnitude === 'all' || change.magnitude === 'fill') {
                 segments.push('Adjusted to limit');
             }
 
             if (Number.isFinite(newValue)) {
-                const capText = Number.isFinite(maxValue) && maxValue !== newValue
-                    ? `/${maxValue}`
-                    : (Number.isFinite(maxValue) ? `/${maxValue}` : '');
-                segments.push(`now ${newValue}${capText}`);
+                const displayNewValue = isHealthChange
+                    ? this.formatHealthDisplayValue(newValue)
+                    : newValue;
+                const displayMaxValue = isHealthChange
+                    ? this.formatHealthDisplayValue(maxValue)
+                    : maxValue;
+                const capText = Number.isFinite(maxValue) && displayMaxValue !== null
+                    ? `/${displayMaxValue}`
+                    : '';
+                segments.push(`now ${displayNewValue}${capText}`);
             }
 
             const labelParts = [];
@@ -5118,7 +5175,7 @@ class AIRPGChat {
 
     addSlopRemovalMessage(slopRemoval) {
         const normalized = this.normalizeSlopRemovalPayload(slopRemoval);
-        if (!normalized.slopWords.length && !normalized.slopNgrams.length) {
+        if (!normalized.slopWords.length && !normalized.slopRegexes.length && !normalized.slopNgrams.length) {
             return;
         }
 
@@ -6004,10 +6061,12 @@ class AIRPGChat {
         if (typeof target.startingHealth === 'number' || typeof target.remainingHealth === 'number') {
             const targetParts = [];
             if (typeof target.startingHealth === 'number') {
-                targetParts.push(`Start ${target.startingHealth}`);
+                const startingHealth = this.formatHealthDisplayValue(target.startingHealth);
+                targetParts.push(`Start ${startingHealth}`);
             }
             if (typeof target.remainingHealth === 'number') {
-                targetParts.push(`End ${target.remainingHealth}`);
+                const remainingHealth = this.formatHealthDisplayValue(target.remainingHealth);
+                targetParts.push(`End ${remainingHealth}`);
             }
             if (typeof target.healthLostPercent === 'number') {
                 targetParts.push(`Lost ${target.healthLostPercent}%`);

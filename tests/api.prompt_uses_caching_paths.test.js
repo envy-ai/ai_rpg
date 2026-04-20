@@ -122,6 +122,7 @@ test('slop remover uses standalone template when prompt_uses_caching is false', 
         storyText: 'Older context',
         textToEdit: 'Current prose',
         slopWords: ['glimmering'],
+        slopRegexes: ['Elara'],
         slopNgrams: ['stood there']
     });
 
@@ -131,6 +132,7 @@ test('slop remover uses standalone template when prompt_uses_caching is false', 
     assert.equal(call.templateName, 'slop-remover.xml.njk');
     assert.equal(call.payload.storyText, 'Older context');
     assert.deepEqual(call.payload.setting, { genre: 'Fantasy', tone: 'Neutral' });
+    assert.deepEqual(call.payload.slopRegexes, ['Elara']);
 });
 
 test('slop remover uses base-context include when prompt_uses_caching is true', async () => {
@@ -143,6 +145,7 @@ test('slop remover uses base-context include when prompt_uses_caching is true', 
         storyText: 'Older context',
         textToEdit: 'Current prose',
         slopWords: ['glimmering'],
+        slopRegexes: ['Elara'],
         slopNgrams: ['stood there']
     });
 
@@ -153,6 +156,7 @@ test('slop remover uses base-context include when prompt_uses_caching is true', 
     assert.equal(call.payload.promptType, 'slop-remover');
     assert.equal(call.payload.storyText, 'Older context');
     assert.equal(call.payload.currentPlayer.name, 'Tester');
+    assert.deepEqual(call.payload.slopRegexes, ['Elara']);
 });
 
 test('attack precheck is skipped when prompt_uses_caching is true', async () => {

@@ -2504,7 +2504,14 @@ async function loadSlopwordConfig({ defaultPpmOverride = null } = {}) {
             throw new Error('Slopwords ngrams list is missing or invalid.');
         }
 
-        return { defaultPpm, slopwords, ngramDefault, ngrams };
+        const regexes = slopConfig.regexes === undefined || slopConfig.regexes === null
+            ? []
+            : slopConfig.regexes;
+        if (!Array.isArray(regexes)) {
+            throw new Error('Slopwords regexes list must be an array when provided.');
+        }
+
+        return { defaultPpm, slopwords, ngramDefault, ngrams, regexes };
     } catch (error) {
         throw new Error(`Failed to load slopwords definitions: ${error.message}`);
     }
@@ -2566,6 +2573,195 @@ function getSlopwordThreshold(rawLimit, defaultPpm, wordLabel) {
         throw new Error(`Invalid ppm limit for "${wordLabel}".`);
     }
     return numericLimit;
+}
+
+function normalizeRegexLiteralPattern(rawPattern, entryName) {
+    if (typeof rawPattern !== 'string' || !rawPattern.trim()) {
+        throw new Error(`Slop regex "${entryName}" is missing a pattern.`);
+    }
+
+    const literal = rawPattern.trim().replace(/\u0008/g, '\\b');
+    if (!literal.startsWith('/')) {
+        throw new Error(`Slop regex "${entryName}" pattern must use /pattern/flags syntax.`);
+    }
+
+    let lastSlash = -1;
+    let escaped = false;
+    for (let i = literal.length - 1; i > 0; i -= 1) {
+        if (literal[i] !== '/') {
+            continue;
+        }
+
+        escaped = false;
+        for (let j = i - 1; j >= 0 && literal[j] === '\\'; j -= 1) {
+            escaped = !escaped;
+        }
+        if (!escaped) {
+            lastSlash = i;
+            break;
+        }
+    }
+
+    if (lastSlash <= 0) {
+        throw new Error(`Slop regex "${entryName}" pattern must use /pattern/flags syntax.`);
+    }
+
+    const source = literal.slice(1, lastSlash);
+    const rawFlags = literal.slice(lastSlash + 1);
+    if (!source) {
+        throw new Error(`Slop regex "${entryName}" pattern body is empty.`);
+    }
+    if (!/^[dgimsuvy]*$/.test(rawFlags)) {
+        throw new Error(`Slop regex "${entryName}" has invalid flags "${rawFlags}".`);
+    }
+
+    const uniqueFlags = Array.from(new Set(rawFlags.split('').filter(Boolean))).join('');
+    if (uniqueFlags.length !== rawFlags.length) {
+        throw new Error(`Slop regex "${entryName}" has duplicate flags "${rawFlags}".`);
+    }
+
+    return {
+        source,
+        flags: uniqueFlags
+    };
+}
+
+function withGlobalRegexFlags(flags) {
+    const normalizedFlags = typeof flags === 'string' ? flags : '';
+    if (normalizedFlags.includes('g')) {
+        return normalizedFlags;
+    }
+    return `${normalizedFlags}g`;
+}
+
+function countRegexMatches(text, regex) {
+    if (typeof text !== 'string') {
+        return 0;
+    }
+    if (!(regex instanceof RegExp)) {
+        throw new TypeError('Regex match counting requires a RegExp.');
+    }
+
+    regex.lastIndex = 0;
+    let count = 0;
+    let match = null;
+    while ((match = regex.exec(text)) !== null) {
+        count += 1;
+        if (match[0] === '') {
+            regex.lastIndex += 1;
+        }
+    }
+    regex.lastIndex = 0;
+    return count;
+}
+
+async function loadSlopRegexDefinitions({ defaultPpmOverride = null } = {}) {
+    const { defaultPpm, regexes } = await loadSlopwordConfig({ defaultPpmOverride });
+    const definitions = [];
+    const seenNames = new Set();
+
+    regexes.forEach((entry, index) => {
+        if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+            throw new Error(`Slop regex entry at index ${index} must be an object.`);
+        }
+
+        const name = typeof entry.name === 'string' ? entry.name.trim() : '';
+        if (!name) {
+            throw new Error(`Slop regex entry at index ${index} is missing a name.`);
+        }
+        if (seenNames.has(name)) {
+            throw new Error(`Duplicate slop regex name "${name}".`);
+        }
+        seenNames.add(name);
+
+        const { source, flags } = normalizeRegexLiteralPattern(entry.pattern, name);
+        const ppm = getSlopwordThreshold(entry.ppm, defaultPpm, name);
+        let regex;
+        try {
+            regex = new RegExp(source, withGlobalRegexFlags(flags));
+        } catch (error) {
+            throw new Error(`Invalid slop regex "${name}": ${error.message}`);
+        }
+
+        definitions.push({
+            name,
+            ppm,
+            source,
+            flags,
+            regex
+        });
+    });
+
+    return definitions;
+}
+
+function filterSlopRegexDefinitions(definitions, {
+    includeZeroPpm = true,
+    includePositivePpm = true,
+    names = null
+} = {}) {
+    const nameSet = Array.isArray(names) ? new Set(names) : null;
+    return definitions.filter((definition) => {
+        if (!definition || typeof definition !== 'object') {
+            return false;
+        }
+        if (nameSet && !nameSet.has(definition.name)) {
+            return false;
+        }
+        if (definition.ppm === 0) {
+            return includeZeroPpm;
+        }
+        return includePositivePpm;
+    });
+}
+
+async function findSlopRegexesInText(text, {
+    defaultPpmOverride = null,
+    includeZeroPpm = true,
+    includePositivePpm = true,
+    names = null
+} = {}) {
+    if (typeof text !== 'string' || !text.trim()) {
+        throw new Error('Slop regex matching requires a non-empty string.');
+    }
+
+    const definitions = filterSlopRegexDefinitions(
+        await loadSlopRegexDefinitions({ defaultPpmOverride }),
+        { includeZeroPpm, includePositivePpm, names }
+    );
+    const flagged = [];
+    for (const definition of definitions) {
+        if (countRegexMatches(text, definition.regex) > 0) {
+            flagged.push(definition.name);
+        }
+    }
+    return flagged;
+}
+
+async function analyzeSlopRegexesForText(text, {
+    defaultPpmOverride = null,
+    includeZeroPpm = true,
+    includePositivePpm = true
+} = {}) {
+    const tokens = tokenizeSlopText(text);
+    if (!tokens.length) {
+        throw new Error('Slop regex analysis requires a non-empty string.');
+    }
+
+    const definitions = filterSlopRegexDefinitions(
+        await loadSlopRegexDefinitions({ defaultPpmOverride }),
+        { includeZeroPpm, includePositivePpm }
+    );
+    const totalWords = tokens.length;
+    const flagged = [];
+    for (const definition of definitions) {
+        const count = countRegexMatches(text, definition.regex);
+        const ppm = (count / totalWords) * 1000000;
+        if (ppm > definition.ppm) {
+            flagged.push(definition.name);
+        }
+    }
+    return flagged;
 }
 
 async function analyzeSlopwordsForText(text, { defaultPpmOverride = null } = {}) {
@@ -2736,6 +2932,8 @@ async function analyzeChatSlopwords({ defaultPpmOverride = null } = {}) {
 Globals.analyzeChatSlopwords = analyzeChatSlopwords;
 Globals.analyzeSlopwordsForText = analyzeSlopwordsForText;
 Globals.analyzeConfiguredNgramsForText = analyzeConfiguredNgramsForText;
+Globals.analyzeSlopRegexesForText = analyzeSlopRegexesForText;
+Globals.findSlopRegexesInText = findSlopRegexesInText;
 
 function shouldGenerateNpcImage(npc) {
     if (!npc) {
@@ -4569,20 +4767,26 @@ function buildBasePromptContext({
         connectedRegions
     };
 
-    function mapItemContext(item, equippedSlot = null) {
+    function mapItemContext(item, equippedSlot = null, options = {}) {
         if (!item) {
             return null;
         }
 
+        const metadata = item.metadata && typeof item.metadata === 'object'
+            ? item.metadata
+            : {};
         const name = item.name || item.title || 'Unknown Item';
         const description = item.description || item.summary || '';
         const statusEffects = normalizeStatusEffects(item);
         const equipped = equippedSlot || null;
-        const metadataIsScenery = typeof item?.metadata?.isScenery === 'boolean'
-            ? item.metadata.isScenery
+        const metadataIsScenery = typeof metadata.isScenery === 'boolean'
+            ? metadata.isScenery
             : null;
-        const metadataIsVehicle = typeof item?.metadata?.isVehicle === 'boolean'
-            ? item.metadata.isVehicle
+        const metadataIsVehicle = typeof metadata.isVehicle === 'boolean'
+            ? metadata.isVehicle
+            : null;
+        const metadataIsContainer = typeof metadata.isContainer === 'boolean'
+            ? metadata.isContainer
             : null;
 
         const resolveTypeValue = (value) => {
@@ -4624,24 +4828,66 @@ function buildBasePromptContext({
             isVehicle = false;
         }
 
+        let isContainer = null;
+        if (typeof item?.isContainer === 'boolean') {
+            isContainer = item.isContainer;
+        } else if (metadataIsContainer !== null) {
+            isContainer = metadataIsContainer;
+        }
+        if (isContainer === null) {
+            isContainer = false;
+        }
+
+        const actualThing = item?.id
+            ? (things.get(item.id) || (typeof Thing.getById === 'function' ? Thing.getById(item.id) : null))
+            : null;
+        const visitedContainers = options.visitedContainers instanceof Set
+            ? new Set(options.visitedContainers)
+            : new Set();
+        const containerContents = [];
+        const actualContainerId = actualThing?.id || item?.id || null;
+        if (isContainer && actualThing && typeof actualThing.getInventoryItems === 'function' && actualContainerId && !visitedContainers.has(actualContainerId)) {
+            visitedContainers.add(actualContainerId);
+            const containedItems = actualThing.getInventoryItems();
+            for (const contained of containedItems) {
+                const mappedContained = mapItemContext(contained, null, { visitedContainers });
+                if (!mappedContained) {
+                    continue;
+                }
+                containerContents.push({
+                    name: mappedContained.name,
+                    count: mappedContained.count,
+                    shortDescription: mappedContained.shortDescription,
+                    description: mappedContained.description,
+                    isContainer: mappedContained.isContainer,
+                    containerContents: mappedContained.containerContents
+                });
+            }
+        }
+
         return {
             name,
             description,
-            shortDescription: item.shortDescription || item.metadata?.shortDescription || '',
+            shortDescription: item.shortDescription || metadata.shortDescription || '',
             statusEffects,
             equippedSlot: equipped,
             isScenery,
             isVehicle,
+            isContainer,
+            count: Number.isInteger(Number(item.count ?? metadata.count)) && Number(item.count ?? metadata.count) > 0
+                ? Number(item.count ?? metadata.count)
+                : 1,
+            containerContents,
             thingType: normalizedThingType || (isScenery ? 'scenery' : null),
             rarity: item.rarity || null,
             level: Number.isFinite(item.level) ? item.level
-                : (Number.isFinite(Number(item?.metadata?.level)) ? Number(item.metadata.level) : null),
+                : (Number.isFinite(Number(metadata.level)) ? Number(metadata.level) : null),
             attributeBonuses: Array.isArray(item.attributeBonuses) ? item.attributeBonuses : [],
             causeStatusEffectOnTarget: item.causeStatusEffectOnTarget || null,
             causeStatusEffectOnEquipper: item.causeStatusEffectOnEquipper || null,
-            value: item.metadata.value,
-            weight: item.metadata.weight,
-            properties: item.metadata.properties
+            value: metadata.value,
+            weight: metadata.weight,
+            properties: metadata.properties
         };
     }
 
@@ -10927,7 +11173,7 @@ function restoreCharacterHealthToMaximum(character) {
     }
 
     try {
-        character.setHealth(Math.round(maxHealth));
+        character.setHealth(maxHealth);
     } catch (error) {
         const characterName = character?.name || character?.id || 'character';
         console.warn(`Failed to restore health for ${characterName}:`, error?.message || error);
@@ -11524,6 +11770,7 @@ function buildThingPromptItem(thing) {
         isProcessingStation: resolveBooleanFlag('isProcessingStation'),
         isHarvestable: resolveBooleanFlag('isHarvestable'),
         isSalvageable: resolveBooleanFlag('isSalvageable'),
+        isContainer: resolveBooleanFlag('isContainer'),
         attributeBonuses: attributeBonuses,
         causeStatusEffectOnTarget,
         causeStatusEffectOnEquipper,
@@ -11690,6 +11937,7 @@ async function alterThingByPrompt({
         isProcessingStation: itemForPrompt.isProcessingStation ? 'true' : 'false',
         isHarvestable: itemForPrompt.isHarvestable ? 'true' : 'false',
         isSalvageable: itemForPrompt.isSalvageable ? 'true' : 'false',
+        isContainer: itemForPrompt.isContainer ? 'true' : 'false',
         properties: itemForPrompt.properties,
         attributeBonuses: itemForPrompt.attributeBonuses,
         causeStatusEffect: itemForPrompt.causeStatusEffect
@@ -14403,7 +14651,7 @@ function applyGeneratedNpcStartingHealth(npc, startingHealth) {
         if (typeof npc.setHealth !== 'function') {
             throw new Error('Generated NPC starting health requires setHealth().');
         }
-        npc.setHealth(Math.round(resolved.health));
+        npc.setHealth(resolved.health);
     }
 
     return resolved;
@@ -18497,7 +18745,8 @@ async function parseThingsXml(xmlContent, { isInventory = false, promptEnv = nul
                 isCraftingStation: parseBooleanTag('isCraftingStation'),
                 isProcessingStation: parseBooleanTag('isProcessingStation'),
                 isHarvestable: parseBooleanTag('isHarvestable'),
-                isSalvageable: parseBooleanTag('isSalvageable')
+                isSalvageable: parseBooleanTag('isSalvageable'),
+                isContainer: parseBooleanTag('isContainer')
             };
 
             //console.log('Parsed item entry:', entry);
@@ -18595,7 +18844,8 @@ async function parseThingSeparateResponse(xmlContent, options = {}) {
             isCraftingStation: Boolean(thing.isCraftingStation),
             isProcessingStation: Boolean(thing.isProcessingStation),
             isHarvestable: Boolean(thing.isHarvestable),
-            isSalvageable: Boolean(thing.isSalvageable)
+            isSalvageable: Boolean(thing.isSalvageable),
+            isContainer: Boolean(thing.isContainer)
         }];
     }
 
@@ -26384,6 +26634,7 @@ const apiScope = {
     parseXMLTemplate,
     parseThingsXml,
     parseThingSeparateResponse,
+    alterThingByPrompt,
     separateThingByPrompt,
     queueNpcAssetsForLocation,
     resolveActionOutcome,

@@ -102,7 +102,7 @@ Fields:
 - `id`, `name`, `description`, `shortDescription`
 - `class`, `race`, `level`
 - `resistances`, `vulnerabilities` (strings)
-- `health`, `maxHealth`, `healthAttribute`
+- `health`, `maxHealth`, `healthAttribute` (`health` may be fractional; clients display health readouts rounded upward)
 - `imageId`
 - `isNPC`, `isPlayer`, `isHostile`, `isDead`
 - `persistWhenDead`
@@ -161,7 +161,8 @@ Fields:
 - `causeStatusEffectOnTarget`, `causeStatusEffectOnEquipper`
 - `causeStatusEffect` (legacy field)
 - `level`, `relativeLevel`
-- Boolean flags: `isVehicle`, `isCraftingStation`, `isProcessingStation`, `isHarvestable`, `isSalvageable`
+- Boolean flags: `isVehicle`, `isCraftingStation`, `isProcessingStation`, `isHarvestable`, `isSalvageable`, `isContainer`
+- `containedThingIds` (array of item ids held by this thing when `isContainer` is true)
 - `flags` (string array) and `metadata` (object)
 - `statusEffects` (array of StatusEffect)
 

@@ -61,7 +61,7 @@
                            <input type="number"
                                   id="player-health"
                                   name="health"
-                                  value="{{ player.health if player else 25 }}"
+                                  value="{{ player.health | round(0, 'ceil') if player else 25 }}"
                                   min="0"
                                   max="999"
                                   form="player-stats-form">
@@ -70,7 +70,7 @@
 
                         <div class="form-group">
                             <label>Maximum Health</label>
-                            <div id="player-max-health-display" class="form-static-value">{{ player.maxHealth if player else 'Automatically calculated' }}</div>
+                            <div id="player-max-health-display" class="form-static-value">{{ player.maxHealth | round(0, 'ceil') if player else 'Automatically calculated' }}</div>
                             <span class="help-text">Calculated automatically from level and health attribute.</span>
                         </div>
                 </div>

@@ -16,7 +16,11 @@
       if (!imageId) {
         return null;
       }
-      return `/generated-images/${imageId}.png`;
+      return `/api/images/${encodeURIComponent(imageId)}/file`;
+    }
+
+    buildImageUrl(imageId) {
+      return this._buildImageUrl(imageId);
     }
 
     _dispatch(eventName, detail) {

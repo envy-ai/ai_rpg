@@ -54,7 +54,7 @@ Quick refresher on where these systems live and how they're wired.
 ## Slop checking + slop remover
 
 ### What it does
-- Detects "slop words" (based on ppm thresholds) and repeated 3+-grams from recent prose history.
+- Detects "slop words", configured regex matches, and repeated 3+-grams from recent prose history.
 - If either are found, it calls the **slop remover** prompt to rewrite the text while preserving meaning.
 - Results are logged and displayed as a 🧹 insight icon in the chat UI.
 
@@ -71,6 +71,12 @@ Quick refresher on where these systems live and how they're wired.
   - Active-setting additions: `currentSetting.customSlopWords` entries with multiple tokens are normalized and added as configured ngrams (using `ngram_default` ppm threshold).
   - Normalization matches overlap detection (`Utils.normalizeKgramTokens`): lowercase, punctuation stripping, common-word removal, and NPC name/alias token removal while retaining `could`/`would` variants.
   - `api.js` → `getFilteredConfiguredNgrams()` runs analyzer on combined slop history + current response, then filters to ngrams present in the current response.
+- Configured regexes:
+  - Source: `defs/slopwords.yaml` → `regexes`, an array of `{ pattern, name, ppm }` entries. Patterns use JavaScript-style `/pattern/flags` strings.
+  - Analyzer: `server.js` → `analyzeSlopRegexesForText()` computes ppm against raw regex matches and returns triggered `name` values, not raw patterns.
+  - Regex matching uses the raw text and does not use k-gram normalization, common-word removal, or NPC name/alias exclusion.
+  - `api.js` → `getFilteredSlopRegexes()` checks `ppm: 0` regexes directly against the current response so it does not scan full slop history when one match is sufficient. Positive-ppm regexes are checked against combined slop history + current response, then filtered to regex names that also match the current response.
+  - YAML double-quoted `\b` escape sequences are treated as regex word-boundary escapes when compiling configured regexes.
 - Repeated n-grams:
   - `api.js` → `collectSlopNgrams()`, which combines two scans using `Utils.findKgramOverlaps()`.
   - Base scan: `minK: 3` across the last 20 slop history segments.
@@ -90,10 +96,11 @@ Quick refresher on where these systems live and how they're wired.
   - `storyText` (last 5 prose entries + last 5 player entries, merged chronologically)
   - `textToEdit` (current response)
   - `slopWords`
+  - `slopRegexes` (triggered regex names)
   - `slopNgrams`
 - Output must be XML containing `<editedText>...</editedText>`. The `LLMClient` request now has strict XML validation enabled for this prompt, and the server also parses the response with `Utils.parseXmlDocumentStrict(...)`, treating malformed XML or missing/empty `<editedText>` as parse failures. It retries up to `config.slop_remover_base_attempts` (default `2`) with extension up to 5 attempts on parse failures.
-- After each attempt, the server re-checks for remaining slop words and n-grams; if it hits max attempts, it logs and allows remaining slop.
-- Diagnostics (`slopWords` + `slopNgrams`) are attached to the response and recorded in chat history.
+- After each attempt, the server re-checks for remaining slop words, regex names, and n-grams; if it hits max attempts, it logs and allows remaining slop.
+- Diagnostics (`slopWords` + `slopRegexes` + `slopNgrams`) are attached to the response and recorded in chat history.
 
 ### Where it runs
 - Player action prose (after LLM response): `api.js` → main player-action flow
@@ -112,7 +119,7 @@ Quick refresher on where these systems live and how they're wired.
 - Chat insight icon: 🧹, rendered from `public/js/chat.js`.
 - Slop removal records:
   - `api.js` → `recordSlopRemovalEntry()` stores an attachment with type `slop-remover`.
-  - Attachments are visible as tooltip details (slop words + repeated n-grams).
+  - Attachments are visible as tooltip details (slop words + regex matches + repeated n-grams).
 - LLM logs for slop remover: `logs/*_slop_remover_*.log`.
 
 ### Config switches
@@ -122,6 +129,7 @@ Quick refresher on where these systems live and how they're wired.
   - `default` for slop words.
   - `ngram_default` for configured ngrams.
   - `slopwords` and `ngrams` maps support per-entry numeric ppm or `default`.
+  - `regexes` array entries support per-entry numeric `ppm` or `default`, and are listed in slop-remover prompts by `name`.
 
 ## Primary code map
 - Detection utilities: `Utils.js`
@@ -129,7 +137,7 @@ Quick refresher on where these systems live and how they're wired.
   - `findKgramOverlap()` / `findKgramOverlaps()` / `pruneContainedKgrams()`
 - Debug helper: `scripts/ngram_checker.js` (standalone k-gram overlap checker using the same normalization)
 - Slop words config: `defs/slopwords.yaml`
-- Slop analyzers: `server.js` → `analyzeSlopwordsForText()`, `analyzeConfiguredNgramsForText()`
-- Slop removal + n-gram detection: `api.js` → `getFilteredSlopWords()`, `getFilteredConfiguredNgrams()`, `collectRepeatedNgrams()`, `collectSlopNgrams()`, `buildSlopContextText()`, `applySlopRemoval()`
+- Slop analyzers: `server.js` → `analyzeSlopwordsForText()`, `analyzeConfiguredNgramsForText()`, `analyzeSlopRegexesForText()`, `findSlopRegexesInText()`
+- Slop removal + n-gram/regex detection: `api.js` → `getFilteredSlopWords()`, `getFilteredSlopRegexes()`, `getFilteredConfiguredNgrams()`, `collectRepeatedNgrams()`, `collectSlopNgrams()`, `buildSlopContextText()`, `applySlopRemoval()`
 - Repetition buster prompt: `prompts/_includes/player-action.njk`
 - UI insights: `public/js/chat.js` (🧹 icon)

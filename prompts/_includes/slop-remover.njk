@@ -20,10 +20,15 @@ Here is the text that needs to be edited to remove overused words and phrases:
 {{ textToEdit }}
 </textToEdit>
 
-Here are the specific words and n-grams you need to remove (don't worry about other words or phrases, just focus on these):
+Here are the specific words, regex-match names, and n-grams you need to remove (don't worry about other words or phrases, just focus on these):
 {%- if slopWords.length > 0 -%}
 {%- for word in slopWords %}
   {{ word }}
+{%- endfor -%}
+{%- endif -%}
+{%- if slopRegexes.length > 0 -%}
+{%- for regexName in slopRegexes %}
+  {{ regexName }}
 {%- endfor -%}
 {%- endif -%}
 {%- if slopNgrams.length > 0 -%}

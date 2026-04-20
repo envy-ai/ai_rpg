@@ -10,9 +10,13 @@
   - The Adventure-tab location panel keeps the shared glass `.container` styling but overrides the nested `.location-block .container` shape so only the bottom-right corner remains rounded.
   - The main Adventure layout uses a flush `.chat-wrapper` with no inter-column gap.
   - The Adventure-tab `.chat-sidebar` outer panel also keeps only the bottom-right corner rounded.
+  - Desktop Adventure layout exposes slim `.adventure-resize-handle` separators for the location and player/party columns. They use `col-resize`, highlight on hover/focus/drag, disable text selection while dragging, and are hidden in the stacked narrow layout.
   - On narrow/mobile layouts, the Adventure stack now clears the desktop fixed-height/inner-scroll chain (`.main-content` / `.tab-panels` / `#tab-adventure` / `.adventure-content` / `.chat-wrapper`) so `.location-block > .container` and `.chat-sidebar` grow with content instead of keeping redundant inner vertical scrollbars.
   - Compact thing-list popovers now promote their owning `.thing-list-panel` with a temporary `.thing-list-panel--popover-open` stacking class so location item/scenery text cannot paint above an open filter or sort popup.
   - Open item context menus use the `.entity-context-menu--floating` body-level positioning class while open, so Scenery menus can paint above the Things section and modal inventory/crafting menus are not clipped by scroll containers; the floating menu width shrinks to the widest visible option instead of keeping the legacy minimum width.
+  - Thing-list icon surfaces opt out of native mobile long-press image/callout behavior (`-webkit-touch-callout`, image drag, and selection); modal drag-wired icons also use `touch-action: none` so custom pointer/touch long-press dragging is not canceled by native gestures.
+  - The thing-container inventory modal uses `.thing-container-modal__*` classes for a wide two-column layout, compact visible-item bulk buttons, dashed drag/drop zones, breadcrumb buttons, touch-drag ghost styling, and a mobile vertical half-and-half split instead of a free-height one-column stack.
+  - Character view ability cards use `.npc-view-ability-*` classes and visually mirror the player level-up ability selector cards without inheriting the selector's clickable/selected behavior. Shared `.ability-type-*` classes color-code active/passive/triggered ability names, uppercase type labels, and NPC editor ability type controls.
   - Compiled output: `public/css/main.css`.
 - `public/css/settings.scss`
   - Settings page layout and field styling.
@@ -23,7 +27,7 @@
   - Shared container styling for Region and World map tabs.
 
 ## Images
-- `public/generated-images/` is the image output directory for entity images.
+- `public/generated-images/` is the image output directory for entity images; persisted image IDs are displayed through `/api/images/:imageId/file` so PNG/JPEG/WebP/GIF files do not require extension-specific client URLs.
 - `public/icons/` stores static UI icon assets (for example, `sword-shield.svg`).
 - `public/js/image-manager.js` coordinates image job requests and updates.
 - `public/js/lightbox.js` provides the full-screen lightbox viewer.
@@ -68,7 +72,8 @@ Loaded on the chat page:
 - Shared portrait health bars now include a `.health-bar-readout` overlay positioned directly
   above the bar, using white text with a black outline plus a subtle drop shadow; size is tuned
   per bar variant through CSS custom properties on `.health-bar`, `.chat-health-bar`, and
-  `.npc-health-bar`.
+  `.npc-health-bar`. Readout text displays current/max health as upward-rounded integers even
+  though the underlying health values may be fractional.
 - Portrait cards also share `.character-level-badge` for the top-left bare `L.<level>` text on player
   and NPC portraits, using a `3px` black stroke for readability. The player portrait adds `.chat-player-level-badge`, while the unspent-points
   warning triangle is anchored from the shared chat-health-bar geometry instead of the portrait's

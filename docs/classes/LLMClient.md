@@ -47,7 +47,7 @@ Centralized client for LLM chat completions with concurrency limits, streaming p
   - Uses `LLMClient.logPrompt` and emits prompt progress via `Globals.realtimeHub`.
 
 ## Private Helpers (Selected)
-- Stream tracking: `#isInteractive`, `#shouldTrackPromptProgress`, `#renderStreamProgress`, `#ensureProgressTicker`, `#trackStreamStart`, `#trackStreamBytes`, `#applyStreamPreviewText`, `#trackStreamStatus`, `#trackStreamEnd`, `#formatCodexProgressEvent`, `#extractCodexPreviewUpdate`, `#broadcastProgress`.
+- Stream tracking: `#isInteractive`, `#shouldTrackPromptProgress`, `#renderStreamProgress`, `#ensureProgressTicker`, `#trackStreamStart`, `#trackStreamReceived`, `#trackStreamBytes`, `#applyStreamPreviewText`, `#applyCodexPreviewUpdate`, `#trackStreamStatus`, `#trackStreamEnd`, `#formatCodexProgressEvent`, `#extractCodexPreviewUpdate`, `#broadcastProgress`.
 - Codex reporting: `#formatTokenCount`, `#formatEpochTimestamp`, `#formatCodexRateLimitWindow`, `#formatCodexRateLimits`, `#reportCodexUsage`.
 - Concurrency: `#ensureSemaphore`.
 - Formatting: `#formatMessageContent`, `#cloneAiConfig`.
@@ -56,7 +56,7 @@ Centralized client for LLM chat completions with concurrency limits, streaming p
 
 ## Notes
 - `chatCompletion(...)` is now backend-aware: the default `openai_compatible` path still POSTs to `/chat/completions`, while `codex_cli_bridge` delegates transport to `CodexBridgeClient` and then reuses the same response normalization, retry, prompt logging, and XML/regex validation flow.
-- Streaming/progress updates are broadcast through `Globals.realtimeHub` when available, including per-prompt `promptText` content for the request payload and `previewText` content for the currently streamed textual response or backend status text. High-frequency streamed byte/preview broadcasts are coalesced so active `prompt_progress` client updates are sent at most once every 500 ms, with final/clear events still emitted immediately.
+- Streaming/progress updates are broadcast through `Globals.realtimeHub` when available, including per-prompt `promptText` content for the request payload and `previewText` content for the currently streamed textual response or backend status text. High-frequency streamed received-count/preview broadcasts are coalesced so active `prompt_progress` client updates are sent at most once every 500 ms, with final/clear events still emitted immediately. OpenAI-compatible streams count received bytes; Codex bridge streams count decoded assistant characters manually from each preview delta or final replacement rather than trusting raw Codex/stdout counts.
 - Prompt-progress tracking no longer depends on an interactive TTY alone; it stays active whenever the realtime hub is available, so the browser prompt-progress popup can still work when the server process is running non-interactively.
 - Streamed tool calls are allowed: empty textual content is accepted when valid tool calls are present, and regex/XML output validation is skipped for those tool-call turns.
 - Retries are built in; stream timeouts are incrementally increased on retry.

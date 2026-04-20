@@ -421,6 +421,7 @@ module.exports = function registerApiRoutes(scope) {
                 `      <isProcessingStation>${resolveBoolean(data?.isProcessingStation ?? metadata.isProcessingStation ?? thing.isProcessingStation)}</isProcessingStation>`,
                 `      <isHarvestable>${resolveBoolean(data?.isHarvestable ?? metadata.isHarvestable ?? thing.isHarvestable)}</isHarvestable>`,
                 `      <isSalvageable>${resolveBoolean(data?.isSalvageable ?? metadata.isSalvageable ?? thing.isSalvageable)}</isSalvageable>`,
+                `      <isContainer>${resolveBoolean(data?.isContainer ?? metadata.isContainer ?? thing.isContainer)}</isContainer>`,
                 '      <attributeBonuses>'
             ];
 
@@ -652,6 +653,123 @@ module.exports = function registerApiRoutes(scope) {
             }
             return matches;
         };
+
+        const alterNpcByEvent = async ({ npc, alteration } = {}) => {
+            if (!npc || typeof npc !== 'object') {
+                throw new Error('alterNpcByEvent requires an NPC object.');
+            }
+            const npcName = typeof npc.name === 'string' ? npc.name.trim() : '';
+            if (!npcName) {
+                throw new Error('alterNpcByEvent requires an NPC with a name.');
+            }
+            const changeDescription = typeof alteration === 'string' ? alteration.trim() : '';
+            if (!changeDescription) {
+                throw new Error('alterNpcByEvent requires a non-empty alteration description.');
+            }
+            if (!Events || typeof Events._handleAlterNpcEvents !== 'function') {
+                throw new Error('alterNpcByEvent requires Events._handleAlterNpcEvents.');
+            }
+
+            const context = {};
+            if (npc.currentLocation && Location && typeof Location.get === 'function') {
+                try {
+                    const location = Location.get(npc.currentLocation);
+                    if (location) {
+                        context.location = location;
+                    }
+                } catch (error) {
+                    throw new Error(`Failed to resolve NPC location "${npc.currentLocation}": ${error.message}`);
+                }
+            }
+            if (context.location && typeof findRegionByLocationId === 'function') {
+                try {
+                    const region = findRegionByLocationId(context.location.id);
+                    if (region) {
+                        context.region = region;
+                    }
+                } catch (error) {
+                    throw new Error(`Failed to resolve NPC region for "${context.location.id}": ${error.message}`);
+                }
+            }
+
+            await Events._handleAlterNpcEvents([
+                {
+                    name: npcName,
+                    description: changeDescription,
+                    changeDescription
+                }
+            ], context);
+
+            const summaries = Array.isArray(context.alteredCharacters)
+                ? context.alteredCharacters
+                : [];
+            const npcId = typeof npc.id === 'string' ? npc.id.trim() : '';
+            const matchingSummary = summaries.find(summary => (
+                npcId && typeof summary?.npcId === 'string' && summary.npcId === npcId
+            )) || summaries.find(summary => (
+                typeof summary?.originalName === 'string' && summary.originalName === npcName
+            )) || null;
+
+            if (!matchingSummary) {
+                throw new Error(`alter_npc did not return an alteration summary for "${npcName}".`);
+            }
+            return matchingSummary;
+        };
+
+        const alterLocationByEvent = async ({ location, alteration } = {}) => {
+            if (!location || typeof location !== 'object') {
+                throw new Error('alterLocationByEvent requires a Location object.');
+            }
+            const locationName = typeof location.name === 'string' ? location.name.trim() : '';
+            if (!locationName) {
+                throw new Error('alterLocationByEvent requires a location with a name.');
+            }
+            const changeDescription = typeof alteration === 'string' ? alteration.trim() : '';
+            if (!changeDescription) {
+                throw new Error('alterLocationByEvent requires a non-empty alteration description.');
+            }
+            const handler = Events?._handlers?.alter_location;
+            if (typeof handler !== 'function') {
+                throw new Error('alterLocationByEvent requires Events alter_location handler.');
+            }
+
+            const context = { location };
+            if (typeof findRegionByLocationId === 'function') {
+                try {
+                    const region = findRegionByLocationId(location.id);
+                    if (region) {
+                        context.region = region;
+                    }
+                } catch (error) {
+                    throw new Error(`Failed to resolve location region for "${location.id}": ${error.message}`);
+                }
+            }
+
+            await handler.call(Events, [
+                {
+                    currentName: locationName,
+                    newName: locationName,
+                    description: changeDescription,
+                    changeDescription
+                }
+            ], context);
+
+            const summaries = Array.isArray(context.alteredLocations)
+                ? context.alteredLocations
+                : [];
+            const locationId = typeof location.id === 'string' ? location.id.trim() : '';
+            const matchingSummary = summaries.find(summary => (
+                locationId && typeof summary?.locationId === 'string' && summary.locationId === locationId
+            )) || summaries.find(summary => (
+                typeof summary?.originalName === 'string' && summary.originalName === locationName
+            )) || null;
+
+            if (!matchingSummary) {
+                throw new Error(`alter_location did not return an alteration summary for "${locationName}".`);
+            }
+            return matchingSummary;
+        };
+
         const { collectHistoryMatches, runChatCompletionWithToolLoop } = createChatToolRuntime({
             getConfig: () => config,
             getChatHistory: () => chatHistory,
@@ -664,6 +782,9 @@ module.exports = function registerApiRoutes(scope) {
             generateItemsByNames,
             ensureExitConnection,
             findRegionByLocationId,
+            alterThingByPrompt: typeof alterThingByPrompt === 'function' ? alterThingByPrompt : null,
+            alterNpcByEvent,
+            alterLocationByEvent,
             LLMClient,
             Player,
             Thing,
@@ -795,6 +916,52 @@ module.exports = function registerApiRoutes(scope) {
             }
             const tokenSet = new Set(tokens);
             return flagged.filter(word => tokenSet.has(word));
+        };
+
+        const getFilteredSlopRegexes = async (prose) => {
+            if (typeof prose !== 'string' || !prose.trim()) {
+                throw new Error('Slop regex analysis requires non-empty prose.');
+            }
+
+            const analyzer = Globals.analyzeSlopRegexesForText;
+            const matcher = Globals.findSlopRegexesInText;
+            if (typeof analyzer !== 'function' || typeof matcher !== 'function') {
+                throw new Error('Slop regex analysis is unavailable on this server.');
+            }
+
+            const currentZeroPpmMatches = await matcher(prose, {
+                includeZeroPpm: true,
+                includePositivePpm: false
+            });
+            if (!Array.isArray(currentZeroPpmMatches)) {
+                throw new Error('Slop regex matching returned an invalid zero-ppm result.');
+            }
+
+            const combinedText = [...getSlopHistorySegments(), prose].join('\n\n');
+            const combinedPositivePpmMatches = await analyzer(combinedText, {
+                includeZeroPpm: false,
+                includePositivePpm: true
+            });
+            if (!Array.isArray(combinedPositivePpmMatches)) {
+                throw new Error('Slop regex analysis returned an invalid positive-ppm result.');
+            }
+
+            let currentPositivePpmMatches = [];
+            if (combinedPositivePpmMatches.length) {
+                currentPositivePpmMatches = await matcher(prose, {
+                    includeZeroPpm: false,
+                    includePositivePpm: true,
+                    names: combinedPositivePpmMatches
+                });
+                if (!Array.isArray(currentPositivePpmMatches)) {
+                    throw new Error('Slop regex matching returned an invalid positive-ppm result.');
+                }
+            }
+
+            return Array.from(new Set([
+                ...currentZeroPpmMatches,
+                ...currentPositivePpmMatches
+            ].map(name => (typeof name === 'string' ? name.trim() : '')).filter(Boolean)));
         };
 
         const containsNormalizedNgram = (tokens, ngramTokens) => {
@@ -995,17 +1162,20 @@ module.exports = function registerApiRoutes(scope) {
             }
 
             const slopWordSet = new Set(await getFilteredSlopWords(currentProse));
+            const slopRegexSet = new Set(await getFilteredSlopRegexes(currentProse));
             const slopNgramSet = new Set(await collectSlopNgrams(currentProse));
 
             const detectedSlopWords = Array.from(slopWordSet);
+            const detectedSlopRegexes = Array.from(slopRegexSet);
             const detectedSlopNgrams = Array.from(slopNgramSet);
-            const shouldRun = slopWordSet.size > 0 || slopNgramSet.size > 0;
+            const shouldRun = slopWordSet.size > 0 || slopRegexSet.size > 0 || slopNgramSet.size > 0;
 
             if (!shouldRun) {
                 if (returnDiagnostics) {
                     return {
                         text: currentProse,
                         slopWords: [],
+                        slopRegexes: [],
                         slopNgrams: [],
                         ran: false
                     };
@@ -1019,8 +1189,9 @@ module.exports = function registerApiRoutes(scope) {
                 settingContext,
                 storyText,
                 textToEdit,
-                slopWords,
-                slopNgrams
+                slopWords = [],
+                slopRegexes = [],
+                slopNgrams = []
             }) => {
                 if (config?.prompt_uses_caching === true) {
                     const baseContext = await prepareBasePromptContext();
@@ -1031,6 +1202,7 @@ module.exports = function registerApiRoutes(scope) {
                         storyText,
                         textToEdit,
                         slopWords,
+                        slopRegexes,
                         slopNgrams
                     });
                 }
@@ -1042,6 +1214,7 @@ module.exports = function registerApiRoutes(scope) {
                     storyText,
                     textToEdit,
                     slopWords,
+                    slopRegexes,
                     slopNgrams
                 });
             };
@@ -1074,6 +1247,7 @@ module.exports = function registerApiRoutes(scope) {
             let maxAttempts = resolveSlopRemoverBaseAttempts();
             for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
                 const slopWords = Array.from(slopWordSet).sort((a, b) => a.localeCompare(b));
+                const slopRegexes = Array.from(slopRegexSet).sort((a, b) => a.localeCompare(b));
                 const slopNgrams = Array.from(slopNgramSet)
                     .sort((a, b) => {
                         const lengthDiff = b.split(' ').length - a.split(' ').length;
@@ -1110,6 +1284,7 @@ module.exports = function registerApiRoutes(scope) {
                         storyText: slopContext,
                         textToEdit: currentProse,
                         slopWords,
+                        slopRegexes,
                         slopNgrams
                     });
                     promptData = parseXMLTemplate(rendered);
@@ -1167,19 +1342,22 @@ module.exports = function registerApiRoutes(scope) {
                 currentProse = candidateProse;
 
                 const remainingWords = await getFilteredSlopWords(currentProse);
+                const remainingRegexes = await getFilteredSlopRegexes(currentProse);
                 const remainingNgrams = await collectSlopNgrams(currentProse);
-                if (!remainingWords.length && !remainingNgrams.length) {
+                if (!remainingWords.length && !remainingRegexes.length && !remainingNgrams.length) {
                     break;
                 }
                 if (attempt === maxAttempts - 1) {
                     const remainingSummary = [
                         remainingWords.length ? `words=${remainingWords.join(', ')}` : null,
+                        remainingRegexes.length ? `regexes=${remainingRegexes.join(', ')}` : null,
                         remainingNgrams.length ? `ngrams=${remainingNgrams.join(', ')}` : null
                     ].filter(Boolean).join(' | ');
                     console.warn(`Slop remover reached max attempts; allowing response with remaining slop: ${remainingSummary}`);
                     break;
                 }
                 remainingWords.forEach(word => slopWordSet.add(word));
+                remainingRegexes.forEach(regexName => slopRegexSet.add(regexName));
                 remainingNgrams.forEach(ngram => slopNgramSet.add(ngram));
             }
 
@@ -1188,6 +1366,7 @@ module.exports = function registerApiRoutes(scope) {
                     return {
                         text: originalProse,
                         slopWords: detectedSlopWords,
+                        slopRegexes: detectedSlopRegexes,
                         slopNgrams: detectedSlopNgrams,
                         ran: shouldRun
                     };
@@ -1199,6 +1378,7 @@ module.exports = function registerApiRoutes(scope) {
                 return {
                     text: currentProse,
                     slopWords: detectedSlopWords,
+                    slopRegexes: detectedSlopRegexes,
                     slopNgrams: detectedSlopNgrams,
                     ran: shouldRun
                 };
@@ -3119,6 +3299,7 @@ module.exports = function registerApiRoutes(scope) {
                 if (slopResult.ran) {
                     slopRemovalInfo = {
                         slopWords: slopResult.slopWords || [],
+                        slopRegexes: slopResult.slopRegexes || [],
                         slopNgrams: slopResult.slopNgrams || []
                     };
                 }
@@ -4364,9 +4545,18 @@ module.exports = function registerApiRoutes(scope) {
                 return result;
             }
 
+            if (thing.isContainer && Array.isArray(thing.containedThingIds) && thing.containedThingIds.length > 0) {
+                return {
+                    success: false,
+                    error: `Cannot delete non-empty container "${thing.name || thingId}". Empty it first.`,
+                    status: 409
+                };
+            }
+
             const affectedLocationIds = new Set();
             const affectedPlayerIds = new Set();
             const affectedNpcIds = new Set();
+            const affectedContainerIds = new Set();
 
             for (const location of gameLocations.values()) {
                 if (!location) {
@@ -4410,6 +4600,15 @@ module.exports = function registerApiRoutes(scope) {
                 }
             }
 
+            for (const container of Thing.getAll()) {
+                if (!container || container.id === thingId || typeof container.removeInventoryItem !== 'function') {
+                    continue;
+                }
+                if (container.removeInventoryItem(thingId)) {
+                    affectedContainerIds.add(container.id);
+                }
+            }
+
             things.delete(thingId);
             thing.delete();
 
@@ -4418,7 +4617,8 @@ module.exports = function registerApiRoutes(scope) {
                 thing,
                 locationIds: Array.from(affectedLocationIds),
                 playerIds: Array.from(affectedPlayerIds),
-                npcIds: Array.from(affectedNpcIds)
+                npcIds: Array.from(affectedNpcIds),
+                containerIds: Array.from(affectedContainerIds)
             };
         }
 
@@ -4525,6 +4725,67 @@ module.exports = function registerApiRoutes(scope) {
             return location;
         }
 
+        function resolveThingContainerById(containerId) {
+            if (!containerId || typeof containerId !== 'string') {
+                return null;
+            }
+            const trimmedId = containerId.trim();
+            if (!trimmedId) {
+                return null;
+            }
+            return things.get(trimmedId) || Thing.getById(trimmedId) || null;
+        }
+
+        function resolveContainerOuterContext(container, visited = new Set()) {
+            if (!container || typeof container !== 'object') {
+                return { owner: null, location: null, container: null };
+            }
+            if (visited.has(container.id)) {
+                throw new Error(`Container cycle detected at "${container.name || container.id}".`);
+            }
+            visited.add(container.id);
+
+            const owners = typeof container.whoseInventory === 'function'
+                ? container.whoseInventory().filter(Boolean)
+                : [];
+            if (owners.length > 1) {
+                throw new Error(`Container "${container.name || container.id}" is in multiple inventories.`);
+            }
+            if (owners[0]) {
+                return {
+                    owner: owners[0],
+                    location: owners[0].currentLocation ? resolveThingLocationById(owners[0].currentLocation) : null,
+                    container: null
+                };
+            }
+
+            const parentContainers = typeof container.whoseContainer === 'function'
+                ? container.whoseContainer().filter(Boolean)
+                : [];
+            if (parentContainers.length > 1) {
+                throw new Error(`Container "${container.name || container.id}" is in multiple containers.`);
+            }
+            if (parentContainers[0]) {
+                const parentContext = resolveContainerOuterContext(parentContainers[0], visited);
+                return {
+                    ...parentContext,
+                    container: parentContainers[0]
+                };
+            }
+
+            const metadata = container.metadata && typeof container.metadata === 'object'
+                ? container.metadata
+                : {};
+            if (typeof metadata.locationId === 'string' && metadata.locationId.trim()) {
+                return {
+                    owner: null,
+                    location: resolveThingLocationById(metadata.locationId.trim()),
+                    container: null
+                };
+            }
+            return { owner: null, location: null, container: null };
+        }
+
         function resolveThingContainerContext(thing) {
             if (!thing || typeof thing !== 'object') {
                 throw new Error('resolveThingContainerContext requires a valid thing.');
@@ -4539,6 +4800,12 @@ module.exports = function registerApiRoutes(scope) {
             if (owners.length > 1) {
                 throw new Error(`Thing "${thing.name}" is in multiple inventories and cannot be processed safely.`);
             }
+            const containers = typeof thing.whoseContainer === 'function'
+                ? thing.whoseContainer().filter(Boolean)
+                : [];
+            if (containers.length > 1) {
+                throw new Error(`Thing "${thing.name}" is in multiple containers and cannot be processed safely.`);
+            }
 
             const owner = owners[0]
                 || resolveThingActorById(
@@ -4547,10 +4814,23 @@ module.exports = function registerApiRoutes(scope) {
                         : (typeof metadata.ownerID === 'string' ? metadata.ownerID.trim() : ''),
                 )
                 || null;
+            const container = containers[0]
+                || resolveThingContainerById(
+                    typeof metadata.containerId === 'string'
+                        ? metadata.containerId.trim()
+                        : (typeof metadata.containerID === 'string' ? metadata.containerID.trim() : ''),
+                )
+                || null;
 
             const location = (() => {
                 if (owner?.currentLocation) {
                     return resolveThingLocationById(owner.currentLocation);
+                }
+                if (container) {
+                    const outerContext = resolveContainerOuterContext(container);
+                    if (outerContext.location) {
+                        return outerContext.location;
+                    }
                 }
                 if (typeof metadata.locationId === 'string' && metadata.locationId.trim()) {
                     return resolveThingLocationById(metadata.locationId.trim());
@@ -4561,7 +4841,7 @@ module.exports = function registerApiRoutes(scope) {
                 return null;
             })();
 
-            if (!owner && !location) {
+            if (!owner && !container && !location) {
                 throw new Error(`Thing "${thing.name}" is not attached to an inventory or location.`);
             }
 
@@ -4572,6 +4852,7 @@ module.exports = function registerApiRoutes(scope) {
             return {
                 metadata,
                 owner,
+                container,
                 location,
                 region
             };
@@ -4580,6 +4861,7 @@ module.exports = function registerApiRoutes(scope) {
         function buildThingMutationResponsePayload({
             things: responseThings = [],
             owner = null,
+            container = null,
             location = null,
             message = '',
             extra = {}
@@ -4599,6 +4881,13 @@ module.exports = function registerApiRoutes(scope) {
 
             if (owner && typeof serializeNpcForClient === 'function') {
                 payload.owner = serializeNpcForClient(owner);
+            }
+
+            if (container && typeof container.toJSON === 'function') {
+                payload.container = container.toJSON();
+                payload.contents = typeof container.getInventoryItems === 'function'
+                    ? container.getInventoryItems().map(item => (item && typeof item.toJSON === 'function' ? item.toJSON() : item))
+                    : [];
             }
 
             return payload;
@@ -5341,75 +5630,6 @@ module.exports = function registerApiRoutes(scope) {
             }
 
             return normalized;
-        };
-
-        const emitAiUsageMetrics = (response, { label = 'chat_completion', streamEmitter = null } = {}) => {
-            if (!response || !response.data || typeof response.data !== 'object') {
-                return null;
-            }
-
-            const url = response.config?.url || response.config?.baseURL || '';
-            const hostnameMatches = (target) => typeof target === 'string' && (
-                target.includes('://localhost')
-                || target.includes('://127.0.0.1')
-                || target.includes('://0.0.0.0')
-                || target.includes('://[::1]')
-            );
-            const isLocalhostCall = hostnameMatches(url) || hostnameMatches(response.config?.baseURL || '');
-            if (isLocalhostCall) {
-                return null;
-            }
-
-            const usage = response.data.usage || {};
-            const coalesceNumber = (...values) => {
-                for (const value of values) {
-                    const numeric = Number(value);
-                    if (Number.isFinite(numeric)) {
-                        return numeric;
-                    }
-                }
-                return null;
-            };
-
-            const promptTokens = coalesceNumber(usage.prompt_tokens, usage.promptTokens);
-            const completionTokens = coalesceNumber(usage.completion_tokens, usage.completionTokens);
-            const totalTokens = coalesceNumber(
-                usage.total_tokens,
-                usage.totalTokens,
-                promptTokens !== null && completionTokens !== null ? promptTokens + completionTokens : null
-            );
-            const cachedTokens = coalesceNumber(usage.cached_tokens, usage.prompt_tokens_cached, usage.prompt_tokens_cache);
-
-            if (promptTokens === null && completionTokens === null && totalTokens === null && cachedTokens === null) {
-                return null;
-            }
-
-            const startTimestamp = response.config?.metadata?.__aiMetricsStart || null;
-            const durationMs = startTimestamp ? Date.now() - startTimestamp : null;
-            const durationSeconds = durationMs ? durationMs / 1000 : null;
-            const tokensPerSecond = durationSeconds && durationSeconds > 0 && totalTokens !== null
-                ? Number((totalTokens / durationSeconds).toFixed(2))
-                : null;
-
-            const metricsPayload = {
-                label,
-                promptTokens,
-                completionTokens,
-                totalTokens,
-                cachedTokens,
-                durationMs,
-                tokensPerSecond
-            };
-
-            if (streamEmitter?.isEnabled) {
-                try {
-                    streamEmitter.status('ai_metrics:usage', metricsPayload);
-                } catch (error) {
-                    console.warn('Failed to emit AI usage metrics to client:', error.message);
-                }
-            }
-
-            return metricsPayload;
         };
 
         const getSummaryConfig = () => config?.summaries || {};
@@ -6451,7 +6671,8 @@ module.exports = function registerApiRoutes(scope) {
                         return;
                     }
                     const actorName = safeSummaryName(entry.actorName || entry.actorId || 'Unknown');
-                    const barName = safeSummaryItem(entry.needBarName || entry.needBar || 'Need Bar');
+                    const rawBarName = entry.needBarName || entry.needBar || entry.bar || entry.needBarId || 'Need Bar';
+                    const barName = safeSummaryItem(rawBarName);
                     const directionLabel = formatLabel(entry.direction || '');
                     const magnitudeLabel = formatLabel(entry.magnitude || '');
                     const parts = [];
@@ -6465,7 +6686,12 @@ module.exports = function registerApiRoutes(scope) {
                     const segments = [`${actorName}'s ${barName} ${detail}`];
                     const delta = Number(entry.delta);
                     if (Number.isFinite(delta) && delta !== 0) {
-                        segments.push(`Δ ${delta > 0 ? '+' : ''}${Math.round(delta)}`);
+                        const normalizedBarName = String(rawBarName).trim().toLowerCase();
+                        const normalizedSource = String(entry.source || '').trim().toLowerCase();
+                        const roundedDelta = normalizedBarName === 'health' || normalizedSource === 'health_regen'
+                            ? `${delta > 0 ? '+' : '-'}${Math.ceil(Math.abs(delta))}`
+                            : `${delta > 0 ? '+' : ''}${Math.round(delta)}`;
+                        segments.push(`Δ ${roundedDelta}`);
                     }
                     const reason = entry.reason && String(entry.reason).trim();
                     if (reason) {
@@ -6830,11 +7056,14 @@ module.exports = function registerApiRoutes(scope) {
             const slopWords = Array.isArray(data.slopWords)
                 ? data.slopWords.map(word => (typeof word === 'string' ? word.trim() : '')).filter(Boolean)
                 : [];
+            const slopRegexes = Array.isArray(data.slopRegexes)
+                ? data.slopRegexes.map(name => (typeof name === 'string' ? name.trim() : '')).filter(Boolean)
+                : [];
             const slopNgrams = Array.isArray(data.slopNgrams)
                 ? data.slopNgrams.map(ngram => (typeof ngram === 'string' ? ngram.trim() : '')).filter(Boolean)
                 : [];
 
-            if (!slopWords.length && !slopNgrams.length) {
+            if (!slopWords.length && !slopRegexes.length && !slopNgrams.length) {
                 return null;
             }
 
@@ -6847,6 +7076,7 @@ module.exports = function registerApiRoutes(scope) {
                 parentId: parentId || null,
                 slopRemoval: {
                     slopWords,
+                    slopRegexes,
                     slopNgrams
                 },
                 locationId: resolvedLocationId
@@ -8654,6 +8884,7 @@ module.exports = function registerApiRoutes(scope) {
                     if (slopResult.ran) {
                         slopRemovalInfo = {
                             slopWords: slopResult.slopWords || [],
+                            slopRegexes: slopResult.slopRegexes || [],
                             slopNgrams: slopResult.slopNgrams || []
                         };
                     }
@@ -12475,6 +12706,7 @@ module.exports = function registerApiRoutes(scope) {
                         if (slopResult.ran) {
                             npcSlopRemovalInfo = {
                                 slopWords: slopResult.slopWords || [],
+                                slopRegexes: slopResult.slopRegexes || [],
                                 slopNgrams: slopResult.slopNgrams || []
                             };
                         }
@@ -12862,9 +13094,19 @@ module.exports = function registerApiRoutes(scope) {
             if (Array.isArray(statusNeedAdjustments) && statusNeedAdjustments.length) {
                 const lines = statusNeedAdjustments.map(entry => {
                     const actorName = entry.playerName || 'Character';
-                    const barName = entry.bar || 'Need';
-                    const deltaText = Number.isFinite(entry.delta) ? `${entry.delta > 0 ? '+' : ''}${entry.delta}` : '';
-                    const newValText = Number.isFinite(entry.newValue) ? `${entry.newValue}` : null;
+                    const barName = entry.needBarName || entry.bar || 'Need';
+                    const isHealthEntry = String(barName).trim().toLowerCase() === 'health'
+                        || String(entry.source || '').trim().toLowerCase() === 'health_regen';
+                    const delta = Number(entry.delta);
+                    const deltaText = Number.isFinite(delta) && delta !== 0
+                        ? (isHealthEntry
+                            ? `${delta > 0 ? '+' : '-'}${Math.ceil(Math.abs(delta))}`
+                            : `${delta > 0 ? '+' : ''}${delta}`)
+                        : '';
+                    const newValue = Number(entry.newValue);
+                    const newValText = Number.isFinite(newValue)
+                        ? `${isHealthEntry ? Math.ceil(Math.max(0, newValue)) : newValue}`
+                        : null;
                     const changeText = newValText ? `${barName}: ${deltaText} (now ${newValText})` : `${barName}: ${deltaText}`;
                     return `${actorName} • ${changeText}`;
                 }).filter(Boolean);
@@ -14256,8 +14498,6 @@ module.exports = function registerApiRoutes(scope) {
                     additionalPayload.tool_choice = 'auto';
                 }
 
-                const metricsStart = Date.now();
-                let capturedResponse = null;
                 let toolInvocations = [];
                 const promptMetadataLabel = promptType === 'question'
                     ? 'question'
@@ -14273,13 +14513,9 @@ module.exports = function registerApiRoutes(scope) {
                     messages: finalMessages,
                     metadataLabel: promptMetadataLabel,
                     metadata: {
-                        __aiMetricsStart: metricsStart,
                         clientId: stream.clientId || null,
                         __codexQuotaCountAsTurn: promptMetadataLabel === 'player_action',
                         __codexQuotaTurnKey: stream.requestId || `player_turn_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`
-                    },
-                    onResponse: (response) => {
-                        capturedResponse = response;
                     },
                     validateXML: false
                 };
@@ -14312,8 +14548,6 @@ module.exports = function registerApiRoutes(scope) {
                 }
                 let travelProsePayload = null;
                 //console.log("Player Prose Request Options:", requestOptions);
-
-                const usageMetrics = emitAiUsageMetrics(capturedResponse, { label: promptMetadataLabel, streamEmitter: stream });
 
                 if (typeof aiResponse === 'string' && aiResponse.trim()) {
 
@@ -14407,6 +14641,7 @@ module.exports = function registerApiRoutes(scope) {
                         if (slopResult.ran) {
                             slopRemovalInfo = {
                                 slopWords: slopResult.slopWords || [],
+                                slopRegexes: slopResult.slopRegexes || [],
                                 slopNgrams: slopResult.slopNgrams || []
                             };
                         }
@@ -14462,10 +14697,6 @@ module.exports = function registerApiRoutes(scope) {
 
                     if (toolInvocations.length) {
                         responseData.toolInvocations = toolInvocations;
-                    }
-
-                    if (usageMetrics) {
-                        responseData.aiUsage = usageMetrics;
                     }
 
                     if (aiResponseEntry?.summary) {
@@ -18118,7 +18349,7 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 if (health !== undefined) {
-                    const parsedHealth = Number.parseInt(health, 10);
+                    const parsedHealth = Number(health);
                     if (Number.isFinite(parsedHealth) && parsedHealth >= 0) {
                         npc.setHealth(parsedHealth);
                     }
@@ -19355,7 +19586,7 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 if (health !== undefined && !isNaN(health) && health >= 0) {
-                    currentPlayer.setHealth(parseInt(health));
+                    currentPlayer.setHealth(Number(health));
                 }
 
 
@@ -19622,6 +19853,11 @@ module.exports = function registerApiRoutes(scope) {
                     level: level && !isNaN(level) ? Math.max(1, parseInt(level)) : 1,
                     attributes: {}
                 };
+
+                const parsedHealth = Number(health);
+                if (Number.isFinite(parsedHealth) && parsedHealth >= 0) {
+                    playerData.health = parsedHealth;
+                }
 
                 // Process attributes
                 if (attributes && typeof attributes === 'object') {
@@ -23536,7 +23772,8 @@ module.exports = function registerApiRoutes(scope) {
                     isHarvestable: Boolean(rawSeed.isHarvestable),
                     isCraftingStation: Boolean(rawSeed.isCraftingStation),
                     isProcessingStation: Boolean(rawSeed.isProcessingStation),
-                    isSalvageable: Boolean(rawSeed.isSalvageable)
+                    isSalvageable: Boolean(rawSeed.isSalvageable),
+                    isContainer: Boolean(rawSeed.isContainer)
                 };
                 if (rawName) {
                     seed.name = rawName;
@@ -24866,7 +25103,8 @@ module.exports = function registerApiRoutes(scope) {
                         isCraftingStation: itemBlueprint.isCraftingStation,
                         isProcessingStation: itemBlueprint.isProcessingStation,
                         isHarvestable: itemBlueprint.isHarvestable,
-                        isSalvageable: itemBlueprint.isSalvageable
+                        isSalvageable: itemBlueprint.isSalvageable,
+                        isContainer: itemBlueprint.isContainer
                     });
                 };
 
@@ -25207,6 +25445,7 @@ module.exports = function registerApiRoutes(scope) {
                         if (slopResult.ran) {
                             craftingSlopRemovalInfo = {
                                 slopWords: slopResult.slopWords || [],
+                                slopRegexes: slopResult.slopRegexes || [],
                                 slopNgrams: slopResult.slopNgrams || []
                             };
                         }
@@ -25544,6 +25783,11 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 const craftingTimeProgress = Globals.advanceTime(appliedTimeTakenMinutes, { source: 'craft_action' });
+                try {
+                    Player.applyStatusEffectNeedBarsToAll();
+                } catch (timeEffectError) {
+                    console.warn('Failed to apply time-based need/health changes after crafting:', timeEffectError?.message || timeEffectError);
+                }
                 if (isHarvestAction && salvageTargetThing && recoveredThingInstances.length) {
                     salvageTargetThing.recordSuccessfulHarvest(
                         recoveredThingInstances.map(item => item.name || 'Harvested Material'),
@@ -26249,6 +26493,12 @@ module.exports = function registerApiRoutes(scope) {
                         error: 'Only item-type things can be separated.'
                     });
                 }
+                if (sourceThing.isContainer && typeof sourceThing.getInventoryItems === 'function' && sourceThing.getInventoryItems().length > 0) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Non-empty containers cannot be separated.'
+                    });
+                }
 
                 if (typeof separateThingByPrompt !== 'function') {
                     throw new Error('Thing separation prompt helper is unavailable.');
@@ -26272,6 +26522,7 @@ module.exports = function registerApiRoutes(scope) {
                 const {
                     metadata: sourceMetadata,
                     owner: sourceOwner,
+                    container: sourceContainer,
                     location: sourceLocation,
                     region: sourceRegion
                 } = resolveThingContainerContext(sourceThing);
@@ -26325,7 +26576,7 @@ module.exports = function registerApiRoutes(scope) {
                         ? (sourceThing.thingType === 'scenery' ? 'scenery' : 'item')
                         : normalizedType;
 
-                    if (sourceOwner && effectiveThingType !== 'item') {
+                    if ((sourceOwner || sourceContainer) && effectiveThingType !== 'item') {
                         throw new Error(`Thing separation returned scenery "${itemData.name}" for an inventory-bound item.`);
                     }
 
@@ -26427,7 +26678,8 @@ module.exports = function registerApiRoutes(scope) {
                             isCraftingStation: Boolean(sourceThing.isCraftingStation),
                             isProcessingStation: Boolean(sourceThing.isProcessingStation),
                             isHarvestable: Boolean(sourceThing.isHarvestable),
-                            isSalvageable: Boolean(sourceThing.isSalvageable)
+                            isSalvageable: Boolean(sourceThing.isSalvageable),
+                            isContainer: Boolean(sourceThing.isContainer)
                         }
                         : extractThingBooleanFlagsFromPayload(itemData);
                     const metadata = sanitizeMetadataObject({
@@ -26446,10 +26698,12 @@ module.exports = function registerApiRoutes(scope) {
                         relativeLevel,
                         ...(sourceOwner
                             ? { ownerId: sourceOwner.id }
-                            : {
+                            : (sourceContainer
+                                ? { containerId: sourceContainer.id }
+                                : {
                                 locationId: sourceLocation.id,
                                 locationName: sourceLocation.name || sourceLocation.id
-                            }),
+                                })),
                         ...booleanFlags
                     });
 
@@ -26508,6 +26762,8 @@ module.exports = function registerApiRoutes(scope) {
                         if (!added) {
                             throw new Error(`Failed to add separated item "${stagedThing.name}" to ${sourceOwner.name || sourceOwner.id}.`);
                         }
+                    } else if (sourceContainer) {
+                        sourceContainer.addInventoryItem(stagedThing);
                     } else if (sourceLocation) {
                         sourceLocation.addThingId(stagedThing.id);
                     } else {
@@ -26529,6 +26785,11 @@ module.exports = function registerApiRoutes(scope) {
 
                 if (sourceOwner && typeof serializeNpcForClient === 'function') {
                     responsePayload.owner = serializeNpcForClient(sourceOwner);
+                }
+
+                if (sourceContainer && typeof sourceContainer.toJSON === 'function') {
+                    responsePayload.container = sourceContainer.toJSON();
+                    responsePayload.contents = sourceContainer.getInventoryItems().map(item => item.toJSON());
                 }
 
                 res.json(responsePayload);
@@ -26576,6 +26837,12 @@ module.exports = function registerApiRoutes(scope) {
                         error: 'Only item-type things can be split.'
                     });
                 }
+                if (sourceThing.isContainer && typeof sourceThing.getInventoryItems === 'function' && sourceThing.getInventoryItems().length > 0) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Non-empty containers cannot be split.'
+                    });
+                }
 
                 const sourceCount = Number.isInteger(sourceThing.count) && sourceThing.count > 0
                     ? sourceThing.count
@@ -26610,6 +26877,7 @@ module.exports = function registerApiRoutes(scope) {
 
                 const {
                     owner: sourceOwner,
+                    container: sourceContainer,
                     location: sourceLocation
                 } = resolveThingContainerContext(sourceThing);
 
@@ -26634,6 +26902,8 @@ module.exports = function registerApiRoutes(scope) {
                     if (!added) {
                         throw new Error(`Failed to add split stack "${splitThing.name}" to ${sourceOwner.name || sourceOwner.id}.`);
                     }
+                } else if (sourceContainer) {
+                    sourceContainer.addInventoryItem(splitThing);
                 } else if (sourceLocation) {
                     sourceLocation.addThingId(splitThing.id);
                 } else {
@@ -26643,6 +26913,7 @@ module.exports = function registerApiRoutes(scope) {
                 return res.json(buildThingMutationResponsePayload({
                     things: [sourceThing, splitThing],
                     owner: sourceOwner,
+                    container: sourceContainer,
                     location: sourceLocation,
                     message: `${sourceThing.name || 'Item'} stack split successfully.`,
                     extra: {
@@ -26694,6 +26965,13 @@ module.exports = function registerApiRoutes(scope) {
                     });
                 }
 
+                if (sourceThing.isContainer) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Containers cannot be merged.'
+                    });
+                }
+
                 if (sourceThing.isEquipped) {
                     return res.status(400).json({
                         success: false,
@@ -26703,6 +26981,7 @@ module.exports = function registerApiRoutes(scope) {
 
                 const {
                     owner: sourceOwner,
+                    container: sourceContainer,
                     location: sourceLocation
                 } = resolveThingContainerContext(sourceThing);
 
@@ -26714,6 +26993,9 @@ module.exports = function registerApiRoutes(scope) {
                         if (candidate.thingType !== 'item' || candidate.isEquipped) {
                             return false;
                         }
+                        if (candidate.isContainer) {
+                            return false;
+                        }
                         if (candidate.checksum !== sourceThing.checksum) {
                             return false;
                         }
@@ -26723,8 +27005,11 @@ module.exports = function registerApiRoutes(scope) {
                             if (sourceOwner) {
                                 return candidateContext.owner?.id === sourceOwner.id;
                             }
+                            if (sourceContainer) {
+                                return candidateContext.container?.id === sourceContainer.id;
+                            }
                             if (sourceLocation) {
-                                return !candidateContext.owner && candidateContext.location?.id === sourceLocation.id;
+                                return !candidateContext.owner && !candidateContext.container && candidateContext.location?.id === sourceLocation.id;
                             }
                         } catch (_) {
                             return false;
@@ -26737,6 +27022,7 @@ module.exports = function registerApiRoutes(scope) {
                     return res.json(buildThingMutationResponsePayload({
                         things: [sourceThing],
                         owner: sourceOwner,
+                        container: sourceContainer,
                         location: sourceLocation,
                         message: `No matching stacks found for ${sourceThing.name || 'item'}.`,
                         extra: {
@@ -26774,6 +27060,7 @@ module.exports = function registerApiRoutes(scope) {
                 return res.json(buildThingMutationResponsePayload({
                     things: [sourceThing],
                     owner: sourceOwner,
+                    container: sourceContainer,
                     location: sourceLocation,
                     message: `${sourceThing.name || 'Item'} stacks merged successfully.`,
                     extra: {
@@ -26787,6 +27074,197 @@ module.exports = function registerApiRoutes(scope) {
                 return res.status(500).json({
                     success: false,
                     error: error?.message || 'Failed to merge stacks'
+                });
+            }
+        });
+
+        function resolveRequestContainer(containerId) {
+            const normalizedContainerId = typeof containerId === 'string' ? containerId.trim() : '';
+            if (!normalizedContainerId) {
+                const error = new Error('Container ID is required');
+                error.status = 400;
+                throw error;
+            }
+            const container = things.get(normalizedContainerId) || Thing.getById(normalizedContainerId);
+            if (!container) {
+                const error = new Error('Container not found');
+                error.status = 404;
+                throw error;
+            }
+            if (!container.isContainer) {
+                const error = new Error(`Thing "${container.name || normalizedContainerId}" is not a container.`);
+                error.status = 400;
+                throw error;
+            }
+            return container;
+        }
+
+        function createContainerMoveError(message, status = 400) {
+            const error = new Error(message);
+            error.status = status;
+            return error;
+        }
+
+        function resolveContainerMoveThingIds(body = {}) {
+            const requestBody = body && typeof body === 'object' ? body : {};
+            const rawThingIds = Array.isArray(requestBody.thingIds)
+                ? requestBody.thingIds
+                : [requestBody.thingId];
+            const thingIds = rawThingIds.map(value => (typeof value === 'string' ? value.trim() : ''));
+            if (thingIds.length === 0 || thingIds.some(thingId => !thingId)) {
+                throw createContainerMoveError(Array.isArray(requestBody.thingIds) ? 'thingIds must be a non-empty array of strings' : 'thingId is required', 400);
+            }
+            const seen = new Set();
+            for (const thingId of thingIds) {
+                if (seen.has(thingId)) {
+                    throw createContainerMoveError(`Duplicate thingId "${thingId}" is not allowed.`, 400);
+                }
+                seen.add(thingId);
+            }
+            return thingIds;
+        }
+
+        function resolveContainerMoveItems(thingIds) {
+            return thingIds.map(thingId => {
+                const item = things.get(thingId) || Thing.getById(thingId);
+                if (!item) {
+                    throw createContainerMoveError(`Thing "${thingId}" not found`, 404);
+                }
+                return item;
+            });
+        }
+
+        function validateContainerMoveInItems(container, items) {
+            for (const item of items) {
+                if (item.thingType !== 'item') {
+                    throw createContainerMoveError('Only item-type things can be placed in containers.', 400);
+                }
+                if (item.id === container.id) {
+                    throw createContainerMoveError('A container cannot contain itself.', 400);
+                }
+                if (!currentPlayer.hasInventoryItem(item.id)) {
+                    throw createContainerMoveError(`${item.name || 'Item'} is not in the current player's inventory.`, 409);
+                }
+                if (item.isEquipped) {
+                    throw createContainerMoveError('Equipped items cannot be placed in containers.', 400);
+                }
+                if (container.hasInventoryItem(item.id)) {
+                    throw createContainerMoveError(`${item.name || 'Item'} is already in ${container.name || 'container'}.`, 409);
+                }
+                if (item.isContainer && item.containsThingRecursive(container.id)) {
+                    throw createContainerMoveError('Cannot place a container inside one of its own descendants.', 400);
+                }
+            }
+        }
+
+        function validateContainerMoveOutItems(container, items) {
+            for (const item of items) {
+                if (!container.hasInventoryItem(item.id)) {
+                    throw createContainerMoveError(`${item.name || 'Item'} is not in ${container.name || 'container'}.`, 409);
+                }
+                if (item.thingType !== 'item') {
+                    throw createContainerMoveError('Only item-type things can be moved into player inventory.', 400);
+                }
+                if (currentPlayer.hasInventoryItem(item.id)) {
+                    throw createContainerMoveError(`${item.name || 'Item'} is already in the current player's inventory.`, 409);
+                }
+            }
+        }
+
+        function buildContainerInventoryPayload(container) {
+            if (!currentPlayer) {
+                const error = new Error('No current player found');
+                error.status = 404;
+                throw error;
+            }
+            const playerPayload = serializeNpcForClient(currentPlayer);
+            const contents = typeof container.getInventoryItems === 'function'
+                ? container.getInventoryItems().map(item => (item && typeof item.toJSON === 'function' ? item.toJSON() : item))
+                : [];
+            return {
+                success: true,
+                container: typeof container.toJSON === 'function' ? container.toJSON() : { id: container.id },
+                contents,
+                player: playerPayload,
+                playerInventory: Array.isArray(playerPayload?.inventory) ? playerPayload.inventory : []
+            };
+        }
+
+        app.get('/api/things/:id/container', (req, res) => {
+            try {
+                const container = resolveRequestContainer(req.params.id);
+                return res.json(buildContainerInventoryPayload(container));
+            } catch (error) {
+                return res.status(error.status || 500).json({
+                    success: false,
+                    error: error.message || 'Failed to load container inventory'
+                });
+            }
+        });
+
+        app.post('/api/things/:id/container/move-in', (req, res) => {
+            try {
+                if (!currentPlayer) {
+                    return res.status(404).json({
+                        success: false,
+                        error: 'No current player found'
+                    });
+                }
+
+                const container = resolveRequestContainer(req.params.id);
+                const thingIds = resolveContainerMoveThingIds(req.body);
+                const itemsToMove = resolveContainerMoveItems(thingIds);
+                validateContainerMoveInItems(container, itemsToMove);
+
+                for (const item of itemsToMove) {
+                    container.addInventoryItem(item);
+                }
+                if (things instanceof Map) {
+                    for (const item of itemsToMove) {
+                        things.set(item.id, item);
+                    }
+                    things.set(container.id, container);
+                }
+                return res.json(buildContainerInventoryPayload(container));
+            } catch (error) {
+                return res.status(error.status || 500).json({
+                    success: false,
+                    error: error.message || 'Failed to move item into container'
+                });
+            }
+        });
+
+        app.post('/api/things/:id/container/move-out', (req, res) => {
+            try {
+                if (!currentPlayer) {
+                    return res.status(404).json({
+                        success: false,
+                        error: 'No current player found'
+                    });
+                }
+
+                const container = resolveRequestContainer(req.params.id);
+                const thingIds = resolveContainerMoveThingIds(req.body);
+                const itemsToMove = resolveContainerMoveItems(thingIds);
+                validateContainerMoveOutItems(container, itemsToMove);
+
+                for (const item of itemsToMove) {
+                    const added = currentPlayer.addInventoryItem(item, { suppressNpcEquip: true });
+                    if (!added || !currentPlayer.hasInventoryItem(item.id)) {
+                        throw createContainerMoveError(`Failed to move ${item.name || 'item'} into player inventory.`, 500);
+                    }
+                }
+                if (things instanceof Map) {
+                    for (const item of itemsToMove) {
+                        things.set(item.id, item);
+                    }
+                    things.set(container.id, container);
+                }
+                return res.json(buildContainerInventoryPayload(container));
+            } catch (error) {
+                return res.status(error.status || 500).json({
+                    success: false,
+                    error: error.message || 'Failed to move item out of container'
                 });
             }
         });
@@ -26959,6 +27437,9 @@ module.exports = function registerApiRoutes(scope) {
                 delete updatedMetadata.ownerID;
                 delete updatedMetadata.locationId;
                 delete updatedMetadata.locationID;
+                delete updatedMetadata.containerId;
+                delete updatedMetadata.containerID;
+                delete updatedMetadata.container_id;
                 thing.metadata = updatedMetadata;
 
                 if (things instanceof Map) {
@@ -27091,6 +27572,9 @@ module.exports = function registerApiRoutes(scope) {
                 delete updatedMetadata.owner;
                 delete updatedMetadata.ownerId;
                 delete updatedMetadata.ownerID;
+                delete updatedMetadata.containerId;
+                delete updatedMetadata.containerID;
+                delete updatedMetadata.container_id;
                 updatedMetadata.locationId = destinationLocation.id;
                 thing.metadata = updatedMetadata;
 
@@ -27268,6 +27752,9 @@ module.exports = function registerApiRoutes(scope) {
                 delete updatedMetadata.owner;
                 delete updatedMetadata.ownerId;
                 delete updatedMetadata.ownerID;
+                delete updatedMetadata.containerId;
+                delete updatedMetadata.containerID;
+                delete updatedMetadata.container_id;
                 updatedMetadata.locationId = targetLocation.id;
                 thing.metadata = updatedMetadata;
 
@@ -27317,7 +27804,8 @@ module.exports = function registerApiRoutes(scope) {
                     message: 'Thing deleted successfully',
                     locationIds: Array.isArray(result.locationIds) ? result.locationIds : [],
                     playerIds: Array.isArray(result.playerIds) ? result.playerIds : [],
-                    npcIds: Array.isArray(result.npcIds) ? result.npcIds : []
+                    npcIds: Array.isArray(result.npcIds) ? result.npcIds : [],
+                    containerIds: Array.isArray(result.containerIds) ? result.containerIds : []
                 });
             } catch (error) {
                 console.error('Failed to delete thing:', error);
@@ -32394,10 +32882,127 @@ module.exports = function registerApiRoutes(scope) {
             });
         });
 
+        const GENERATED_IMAGE_FILE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.webp', '.gif'];
+
+        function normalizeGeneratedImageIdForLookup(rawImageId) {
+            const imageId = typeof rawImageId === 'string' ? rawImageId.trim() : '';
+            if (!imageId) {
+                return null;
+            }
+            if (imageId !== path.basename(imageId) || imageId.includes('/') || imageId.includes('\\')) {
+                return null;
+            }
+            return imageId;
+        }
+
+        function getGeneratedImagesDirectory() {
+            return path.join(resolveBaseDirectory(), 'public', 'generated-images');
+        }
+
+        function findGeneratedImageFile(imageId) {
+            const normalizedImageId = normalizeGeneratedImageIdForLookup(imageId);
+            if (!normalizedImageId) {
+                return null;
+            }
+
+            const imagesDir = getGeneratedImagesDirectory();
+            for (const ext of GENERATED_IMAGE_FILE_EXTENSIONS) {
+                const filename = `${normalizedImageId}${ext}`;
+                const filepath = path.join(imagesDir, filename);
+                if (fs.existsSync(filepath)) {
+                    return {
+                        imageId: normalizedImageId,
+                        filename,
+                        filepath,
+                        url: `/generated-images/${filename}`,
+                        size: fs.statSync(filepath).size
+                    };
+                }
+            }
+            return null;
+        }
+
+        function getFirstLocalGeneratedImageUrl(metadata) {
+            const images = Array.isArray(metadata?.images) ? metadata.images : [];
+            for (const image of images) {
+                const url = typeof image?.url === 'string' ? image.url.trim() : '';
+                if (url.startsWith('/generated-images/')) {
+                    return url;
+                }
+            }
+            return null;
+        }
+
+        function resolveGeneratedImageMetadata(imageId) {
+            const normalizedImageId = normalizeGeneratedImageIdForLookup(imageId);
+            if (!normalizedImageId) {
+                return null;
+            }
+
+            const existingMetadata = generatedImages.get(normalizedImageId) || null;
+            if (getFirstLocalGeneratedImageUrl(existingMetadata)) {
+                return existingMetadata;
+            }
+
+            const fileInfo = findGeneratedImageFile(normalizedImageId);
+            if (!fileInfo) {
+                return existingMetadata;
+            }
+
+            const imageEntry = {
+                imageId: normalizedImageId,
+                filename: fileInfo.filename,
+                url: fileInfo.url,
+                size: fileInfo.size
+            };
+            const metadata = {
+                ...(existingMetadata && typeof existingMetadata === 'object' ? existingMetadata : {}),
+                id: normalizedImageId,
+                images: [imageEntry]
+            };
+            generatedImages.set(normalizedImageId, metadata);
+            return metadata;
+        }
+
+        function resolveGeneratedImageFilePath(imageId) {
+            const metadata = resolveGeneratedImageMetadata(imageId);
+            const url = getFirstLocalGeneratedImageUrl(metadata);
+            if (url) {
+                const filename = path.basename(url);
+                try {
+                    const extension = path.extname(filename).toLowerCase();
+                    if (filename && filename === decodeURIComponent(filename) && GENERATED_IMAGE_FILE_EXTENSIONS.includes(extension)) {
+                        const filepath = path.join(getGeneratedImagesDirectory(), filename);
+                        if (fs.existsSync(filepath)) {
+                            return filepath;
+                        }
+                    }
+                } catch (_) {
+                    // Fall through to extension scanning for malformed saved URLs.
+                }
+            }
+
+            const fileInfo = findGeneratedImageFile(imageId);
+            return fileInfo?.filepath || null;
+        }
+
+        // API endpoint to serve a generated image without assuming its extension
+        app.get('/api/images/:imageId/file', (req, res) => {
+            const imageId = req.params.imageId;
+            const filepath = resolveGeneratedImageFilePath(imageId);
+            if (!filepath) {
+                return res.status(404).json({
+                    success: false,
+                    error: 'Image file not found'
+                });
+            }
+            return res.sendFile(filepath);
+        });
+
         // API endpoint to get image metadata
         app.get('/api/images/:imageId', (req, res) => {
             const imageId = req.params.imageId;
-            const metadata = generatedImages.get(imageId);
+            const metadata = resolveGeneratedImageMetadata(imageId);
 
             if (!metadata) {
                 console.log('Image not found in metadata map:', imageId);

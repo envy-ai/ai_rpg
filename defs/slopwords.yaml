@@ -3,6 +3,13 @@ default: 200
 ngram_default: 5
 
 # A list of slop words (ngrams are listed below as well) and their allowable parts per million before being flagged as repetitive
+regexes:
+  - pattern: "/\bElara\b/i"
+    name: "Elara"
+    ppm: 0
+  - pattern: "/gossip/i"
+    name: "gossip/gossiping/etc"
+    ppm: default
 slopwords:
   # Custom ones first:
   singing: default

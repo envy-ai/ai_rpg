@@ -204,6 +204,16 @@
                             </div>
                         </div>
 
+                        <div
+                            class="adventure-resize-handle adventure-resize-handle--location"
+                            id="adventureLocationResizeHandle"
+                            role="separator"
+                            tabindex="0"
+                            aria-label="Resize location panel"
+                            aria-orientation="vertical"
+                            data-adventure-resize-target="location"
+                        ></div>
+
                         <div class="chat-wrapper">
                             <div class="chat-container">
                                 <div class="chat-log" id="chatLog">
@@ -270,6 +280,16 @@
                                     </div>
                                 </div>
                             </div>
+
+                            <div
+                                class="adventure-resize-handle adventure-resize-handle--party"
+                                id="adventurePartyResizeHandle"
+                                role="separator"
+                                tabindex="0"
+                                aria-label="Resize party panel"
+                                aria-orientation="vertical"
+                                data-adventure-resize-target="party"
+                            ></div>
 
                             <aside class="chat-sidebar" aria-label="Player and party overview">
                                 <section class="chat-player-section">
@@ -403,7 +423,7 @@
                                     <input type="number"
                                            id="player-health"
                                            name="health"
-                                           value="{{ player.health if player else 25 }}"
+                                           value="{{ player.health | round(0, 'ceil') if player else 25 }}"
                                            min="0"
                                            max="999"
                                            form="player-stats-form">
@@ -412,7 +432,7 @@
 
                                 <div class="form-group">
                                     <label>Maximum Health</label>
-                                    <div id="player-max-health-display" class="form-static-value">{{ player.maxHealth if player else 'Automatically calculated' }}</div>
+                                    <div id="player-max-health-display" class="form-static-value">{{ player.maxHealth | round(0, 'ceil') if player else 'Automatically calculated' }}</div>
                                     <span class="help-text">Calculated automatically from level and health attribute.</span>
                                 </div>
                             </div>
@@ -505,10 +525,12 @@
                             <div class="abilities-grid" id="abilitiesList">
                                 {% if player and player.abilities %}
                                     {% for ability in player.abilities %}
-                                        <div class="ability-card ability-type-{{ ability.type | default('Passive') | lower }}">
+                                        {% set abilityType = ability.type | default('Passive') %}
+                                        {% set abilityTypeKey = abilityType | lower %}
+                                        <div class="ability-card ability-type-{{ abilityTypeKey }}">
                                             <div class="ability-header">
-                                                <span class="ability-name">{{ ability.name }}</span>
-                                                <span class="ability-meta">{{ ability.type | default('Passive') }}{% if ability.level %} • Level {{ ability.level }}{% endif %}</span>
+                                                <span class="ability-name ability-type-text ability-type-text--{{ abilityTypeKey }}">{{ ability.name }}</span>
+                                                <span class="ability-meta"><span class="ability-type-label ability-type-text ability-type-text--{{ abilityTypeKey }}">{{ abilityType | upper }}</span>{% if ability.level %} • Level {{ ability.level }}{% endif %}</span>
                                             </div>
                                             {% if ability.description %}
                                             <div class="ability-description">{{ ability.description }}</div>
@@ -996,6 +1018,121 @@
             </div>
         </div>
     </div>
+
+    <div id="thingContainerModal" class="modal thing-container-modal" role="dialog" aria-modal="true" aria-hidden="true" hidden>
+        <div class="modal__dialog thing-container-modal__dialog">
+            <header class="modal__header">
+                <div>
+                    <h2 id="thingContainerModalTitle">Container</h2>
+                    <div id="thingContainerBreadcrumbs" class="thing-container-modal__breadcrumbs"></div>
+                </div>
+                <button type="button" class="modal__close" id="thingContainerCloseBtn" aria-label="Close container inventory">
+                    <span aria-hidden="true">X</span>
+                </button>
+            </header>
+            <div class="modal__body thing-container-modal__body">
+                <div class="thing-container-modal__toolbar">
+                    <button type="button" class="npc-edit-add-btn" id="thingContainerBackBtn" hidden>Back</button>
+                    <span class="npc-edit-hint">Drag items between columns or shift-click to move a whole stack.</span>
+                </div>
+                <div class="thing-container-modal__columns">
+                    <section class="thing-list-panel thing-container-modal__panel" id="containerPlayerInventoryPanel">
+                        <div class="thing-list-panel__header">
+                            <div class="thing-list-panel__heading-group">
+                                <h3>Player Inventory</h3>
+                                <span class="inventory-count" id="containerPlayerInventoryCount">0 items</span>
+                            </div>
+                            <div class="thing-list-panel__controls">
+                                <button type="button" class="npc-edit-add-btn thing-container-modal__bulk-button" id="containerPlayerInventoryAddAllBtn" disabled>Add all</button>
+                                {{ thingListViewToggle("containerPlayerInventoryViewToggle", "containerPlayerInventoryView", "Change player inventory view") }}
+                                {{ thingListSortToggle("containerPlayerInventorySortToggle", "containerPlayerInventorySort", "Sort player inventory") }}
+                                {{ thingListFiltersToggle("containerPlayerInventoryFiltersToggle", "containerPlayerInventoryFilters", "Search and filter player inventory") }}
+                            </div>
+                        </div>
+                        {{ thingListViewShell("containerPlayerInventoryView", "Change player inventory view") }}
+                        {{ thingListSortShell("containerPlayerInventorySort", "Sort player inventory") }}
+                        <div class="thing-list-filters-shell" id="containerPlayerInventoryFilters">
+                            <div class="thing-list-filters-row">
+                                <div class="npc-inventory-filter-search-wrapper">
+                                    <label class="sr-only" for="containerPlayerInventoryFilterInput">Filter player inventory</label>
+                                    <input type="search" id="containerPlayerInventoryFilterInput" class="npc-selection-filter-input" placeholder="Filter inventory" aria-label="Filter player inventory">
+                                </div>
+                                <div class="npc-inventory-filter-slot-wrapper" id="containerPlayerInventorySlotFilterWrapper">
+                                    <label class="sr-only" for="containerPlayerInventorySlotFilter">Filter player inventory by slot</label>
+                                    <select id="containerPlayerInventorySlotFilter" class="npc-inventory-slot-filter" aria-label="Filter player inventory by slot">
+                                        <option value="">All slots</option>
+                                    </select>
+                                </div>
+                                <label class="npc-inventory-filter-radio" for="containerPlayerInventoryShowAll">
+                                    <input type="radio" id="containerPlayerInventoryShowAll" name="containerPlayerInventoryItemFilter" value="all" checked>
+                                    Show all
+                                </label>
+                                <label class="npc-inventory-filter-radio" for="containerPlayerInventoryEquippedOnly">
+                                    <input type="radio" id="containerPlayerInventoryEquippedOnly" name="containerPlayerInventoryItemFilter" value="equipped">
+                                    Equipped only
+                                </label>
+                                <label class="npc-inventory-filter-radio" for="containerPlayerInventoryEquippableOnly">
+                                    <input type="radio" id="containerPlayerInventoryEquippableOnly" name="containerPlayerInventoryItemFilter" value="equippable">
+                                    Equippable only
+                                </label>
+                                <label class="npc-inventory-filter-radio" for="containerPlayerInventoryNonEquippableOnly">
+                                    <input type="radio" id="containerPlayerInventoryNonEquippableOnly" name="containerPlayerInventoryItemFilter" value="non-equippable">
+                                    Non-equippable only
+                                </label>
+                            </div>
+                        </div>
+                        <div class="inventory-grid thing-container-modal__dropzone" id="containerPlayerInventoryGrid"></div>
+                        <div class="inventory-empty" id="containerPlayerInventoryEmpty">Inventory is empty.</div>
+                    </section>
+
+                    <section class="thing-list-panel thing-container-modal__panel" id="containerContentsPanel">
+                        <div class="thing-list-panel__header">
+                            <div class="thing-list-panel__heading-group">
+                                <h3 id="containerContentsName">Contents</h3>
+                                <span class="inventory-count" id="containerContentsCount">0 items</span>
+                            </div>
+                            <div class="thing-list-panel__controls">
+                                <button type="button" class="npc-edit-add-btn thing-container-modal__bulk-button" id="containerContentsRemoveAllBtn" disabled>Remove all</button>
+                                {{ thingListViewToggle("containerContentsViewToggle", "containerContentsView", "Change container contents view") }}
+                                {{ thingListSortToggle("containerContentsSortToggle", "containerContentsSort", "Sort container contents") }}
+                                {{ thingListFiltersToggle("containerContentsFiltersToggle", "containerContentsFilters", "Search and filter container contents") }}
+                            </div>
+                        </div>
+                        {{ thingListViewShell("containerContentsView", "Change container contents view") }}
+                        {{ thingListSortShell("containerContentsSort", "Sort container contents") }}
+                        <div class="thing-list-filters-shell" id="containerContentsFilters">
+                            <div class="thing-list-filters-row">
+                                <div class="npc-inventory-filter-search-wrapper">
+                                    <label class="sr-only" for="containerContentsFilterInput">Filter container contents</label>
+                                    <input type="search" id="containerContentsFilterInput" class="npc-selection-filter-input" placeholder="Filter contents" aria-label="Filter container contents">
+                                </div>
+                                <div class="npc-inventory-filter-slot-wrapper" id="containerContentsSlotFilterWrapper">
+                                    <label class="sr-only" for="containerContentsSlotFilter">Filter container contents by slot</label>
+                                    <select id="containerContentsSlotFilter" class="npc-inventory-slot-filter" aria-label="Filter container contents by slot">
+                                        <option value="">All slots</option>
+                                    </select>
+                                </div>
+                                <label class="npc-inventory-filter-radio" for="containerContentsShowAll">
+                                    <input type="radio" id="containerContentsShowAll" name="containerContentsItemFilter" value="all" checked>
+                                    Show all
+                                </label>
+                                <label class="npc-inventory-filter-radio" for="containerContentsEquippableOnly">
+                                    <input type="radio" id="containerContentsEquippableOnly" name="containerContentsItemFilter" value="equippable">
+                                    Equippable only
+                                </label>
+                                <label class="npc-inventory-filter-radio" for="containerContentsNonEquippableOnly">
+                                    <input type="radio" id="containerContentsNonEquippableOnly" name="containerContentsItemFilter" value="non-equippable">
+                                    Non-equippable only
+                                </label>
+                            </div>
+                        </div>
+                        <div class="inventory-grid thing-container-modal__dropzone" id="containerContentsGrid"></div>
+                        <div class="inventory-empty" id="containerContentsEmpty">Container is empty.</div>
+                    </section>
+                </div>
+            </div>
+        </div>
+    </div>
     <div id="npcViewModal" class="modal npc-view-modal" role="dialog" aria-modal="true" aria-hidden="true" hidden>
         <div class="modal__dialog">
             <header class="modal__header">
@@ -1066,7 +1203,7 @@
                     </section>
                     <section class="npc-view-section" id="npcViewAbilitiesSection">
                         <h4>Abilities</h4>
-                        <ul class="npc-view-list" id="npcViewAbilities"></ul>
+                        <div class="npc-view-ability-cards" id="npcViewAbilities" role="list"></div>
                         <div class="npc-view-empty" id="npcViewAbilitiesEmpty">No abilities listed.</div>
                     </section>
                     <section class="npc-view-section" id="npcViewStatusSection">
@@ -1719,6 +1856,13 @@
                                 <span class="thing-toggle-hint">Can be broken down for parts or resources (consumed when salvaged).</span>
                             </div>
                         </label>
+                        <label class="thing-toggle">
+                            <input type="checkbox" id="thingEditIsContainer">
+                            <div class="thing-toggle-details">
+                                <span class="thing-toggle-label">Container</span>
+                                <span class="thing-toggle-hint">Can hold item stacks in its own inventory.</span>
+                            </div>
+                        </label>
                     </div>
                 </div>
 
@@ -2288,6 +2432,7 @@
                 || entry.key === 'isProcessingStation'
                 || entry.key === 'isSalvageable'
                 || entry.key === 'isHarvestable'
+                || entry.key === 'isContainer'
             );
             if (hasInteractiveBadges) {
                 overlay.classList.add('entity-image-badges--interactive');
@@ -2306,11 +2451,24 @@
                 const isProcessingAction = badge.key === 'isProcessingStation';
                 const isSalvageAction = badge.key === 'isSalvageable';
                 const isHarvestAction = badge.key === 'isHarvestable';
-                if (isCraftingAction || isProcessingAction || isSalvageAction || isHarvestAction) {
+                const isContainerAction = badge.key === 'isContainer';
+                if (isCraftingAction || isProcessingAction || isSalvageAction || isHarvestAction || isContainerAction) {
                     span.classList.add('entity-image-badge--action');
                     span.setAttribute('role', 'button');
                     span.setAttribute('tabindex', '0');
-                    if (isSalvageAction || isHarvestAction) {
+                    if (isContainerAction) {
+                        const activateBadge = (event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            openThingContainerModalFromElement(element);
+                        };
+                        span.addEventListener('click', activateBadge);
+                        span.addEventListener('keydown', (event) => {
+                            if (event.key === 'Enter' || event.key === ' ') {
+                                activateBadge(event);
+                            }
+                        });
+                    } else if (isSalvageAction || isHarvestAction) {
                         const activateBadge = (event) => {
                             event.preventDefault();
                             event.stopPropagation();
@@ -2343,6 +2501,18 @@
                 overlay.appendChild(span);
             });
             element.appendChild(overlay);
+        }
+
+        function getGeneratedImageUrl(imageId) {
+            const normalizedImageId = typeof imageId === 'string' ? imageId.trim() : '';
+            if (!normalizedImageId) {
+                return null;
+            }
+            const manager = window.AIRPG?.imageManager;
+            if (manager && typeof manager.buildImageUrl === 'function') {
+                return manager.buildImageUrl(normalizedImageId);
+            }
+            return `/api/images/${encodeURIComponent(normalizedImageId)}/file`;
         }
 
         function renderEntityImage({
@@ -2426,6 +2596,10 @@
 
                 element.innerHTML = `<img src="${url}" alt="${safeAltText}" loading="lazy" onerror="this.parentElement.innerHTML='<div class=\\'${placeholderClass}\\' role=\\'img\\'>${placeholderIcon}</div>'">`;
                 const img = element.querySelector('img');
+                if (img && entityType === 'thing') {
+                    img.draggable = false;
+                    img.setAttribute('draggable', 'false');
+                }
                 if (img && enableLightbox) {
                     img.dataset.lightboxImage = img.src;
                     img.dataset.lightboxAlt = altText || safeAltText || 'Image';
@@ -2462,7 +2636,7 @@
 
             if (imageId) {
                 element.dataset.imageId = imageId;
-                applyImageMarkup(`/generated-images/${imageId}.png`);
+                applyImageMarkup(getGeneratedImageUrl(imageId));
             } else {
                 delete element.dataset.imageId;
                 setPlaceholder();
@@ -2489,7 +2663,7 @@
                     element.dataset.imageId = result.imageId;
                 }
 
-                const imageUrl = result?.imageUrl || (result?.imageId ? `/generated-images/${result.imageId}.png` : null);
+                const imageUrl = result?.imageUrl || getGeneratedImageUrl(result?.imageId || null);
                 if (imageUrl) {
                     applyImageMarkup(imageUrl);
                 } else if (!result?.skipped) {
@@ -2591,6 +2765,200 @@
                 adventureBackgroundElement.classList.remove('has-image');
             }
         }
+
+        function initializeAdventurePanelResizing() {
+            const root = document.querySelector('#tab-adventure .adventure-content');
+            const locationPanel = root?.querySelector('.location-block');
+            const chatWrapper = root?.querySelector('.chat-wrapper');
+            const chatPanel = chatWrapper?.querySelector('.chat-container');
+            const partyPanel = chatWrapper?.querySelector('.chat-sidebar');
+            const locationHandle = document.getElementById('adventureLocationResizeHandle');
+            const partyHandle = document.getElementById('adventurePartyResizeHandle');
+            if (!root || !locationPanel || !chatWrapper || !chatPanel || !partyPanel || !locationHandle || !partyHandle) {
+                return;
+            }
+
+            const STORAGE_KEY = 'aiRpg.adventurePanelWidths';
+            const desktopMedia = window.matchMedia('(min-width: 901px)');
+            const minLocationWidth = 220;
+            const minPartyWidth = 220;
+            const minChatWidth = 360;
+            const handleAllowance = 28;
+            const keyboardStep = 24;
+            const largeKeyboardStep = 64;
+            let panelWidths = {};
+
+            const readStoredWidths = () => {
+                try {
+                    const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+                    return parsed && typeof parsed === 'object' ? parsed : {};
+                } catch (error) {
+                    console.warn('Failed to read Adventure panel width preferences:', error);
+                    return {};
+                }
+            };
+
+            const writeStoredWidths = () => {
+                try {
+                    localStorage.setItem(STORAGE_KEY, JSON.stringify(panelWidths));
+                } catch (error) {
+                    console.warn('Failed to save Adventure panel width preferences:', error);
+                }
+            };
+
+            const getRootWidth = () => root.getBoundingClientRect().width || 0;
+            const getPanelWidth = (target) => {
+                const source = target === 'party' ? partyPanel : locationPanel;
+                const measured = source.getBoundingClientRect().width;
+                const stored = Number(panelWidths[target]);
+                return Number.isFinite(measured) && measured > 0
+                    ? measured
+                    : (Number.isFinite(stored) ? stored : 0);
+            };
+
+            const clampPanelWidth = (target, requestedWidth) => {
+                const rootWidth = getRootWidth();
+                const currentLocationWidth = target === 'location'
+                    ? requestedWidth
+                    : getPanelWidth('location');
+                const currentPartyWidth = target === 'party'
+                    ? requestedWidth
+                    : getPanelWidth('party');
+                const otherPanelWidth = target === 'location' ? currentPartyWidth : currentLocationWidth;
+                const minWidth = target === 'party' ? minPartyWidth : minLocationWidth;
+                const availableMax = rootWidth - otherPanelWidth - minChatWidth - handleAllowance;
+                const maxWidth = Math.max(minWidth, availableMax);
+                return Math.min(maxWidth, Math.max(minWidth, requestedWidth));
+            };
+
+            const applyPanelWidth = (target, requestedWidth, { persist = true } = {}) => {
+                if (!desktopMedia.matches) {
+                    return;
+                }
+                const numericWidth = Number(requestedWidth);
+                if (!Number.isFinite(numericWidth)) {
+                    return;
+                }
+                const clampedWidth = Math.round(clampPanelWidth(target, numericWidth));
+                const propertyName = target === 'party'
+                    ? '--adventure-party-width'
+                    : '--adventure-location-width';
+                root.style.setProperty(propertyName, `${clampedWidth}px`);
+                panelWidths[target] = clampedWidth;
+                if (persist) {
+                    writeStoredWidths();
+                }
+            };
+
+            const applyStoredWidths = () => {
+                panelWidths = readStoredWidths();
+                if (!desktopMedia.matches) {
+                    return;
+                }
+                if (Number.isFinite(Number(panelWidths.location))) {
+                    applyPanelWidth('location', Number(panelWidths.location), { persist: false });
+                }
+                if (Number.isFinite(Number(panelWidths.party))) {
+                    applyPanelWidth('party', Number(panelWidths.party), { persist: false });
+                }
+            };
+
+            const resetPanelWidth = (target) => {
+                const propertyName = target === 'party'
+                    ? '--adventure-party-width'
+                    : '--adventure-location-width';
+                root.style.removeProperty(propertyName);
+                delete panelWidths[target];
+                writeStoredWidths();
+            };
+
+            const attachHandle = (handle, target) => {
+                let dragState = null;
+
+                const finishDrag = (event) => {
+                    if (!dragState) {
+                        return;
+                    }
+                    try {
+                        handle.releasePointerCapture?.(dragState.pointerId);
+                    } catch (_) {
+                        // Pointer capture may already be released by the browser.
+                    }
+                    dragState = null;
+                    document.body.classList.remove('adventure-panel-resize-active');
+                    handle.classList.remove('is-dragging');
+                    event?.preventDefault?.();
+                };
+
+                handle.addEventListener('pointerdown', (event) => {
+                    if (!desktopMedia.matches || event.button !== 0) {
+                        return;
+                    }
+                    event.preventDefault();
+                    const panel = target === 'party' ? partyPanel : locationPanel;
+                    dragState = {
+                        pointerId: event.pointerId,
+                        startX: event.clientX,
+                        startWidth: panel.getBoundingClientRect().width
+                    };
+                    handle.setPointerCapture?.(event.pointerId);
+                    document.body.classList.add('adventure-panel-resize-active');
+                    handle.classList.add('is-dragging');
+                });
+
+                handle.addEventListener('pointermove', (event) => {
+                    if (!dragState) {
+                        return;
+                    }
+                    event.preventDefault();
+                    const deltaX = event.clientX - dragState.startX;
+                    const nextWidth = target === 'party'
+                        ? dragState.startWidth - deltaX
+                        : dragState.startWidth + deltaX;
+                    applyPanelWidth(target, nextWidth);
+                });
+
+                handle.addEventListener('pointerup', finishDrag);
+                handle.addEventListener('pointercancel', finishDrag);
+                handle.addEventListener('lostpointercapture', finishDrag);
+
+                handle.addEventListener('dblclick', (event) => {
+                    event.preventDefault();
+                    resetPanelWidth(target);
+                });
+
+                handle.addEventListener('keydown', (event) => {
+                    if (!desktopMedia.matches) {
+                        return;
+                    }
+                    if (event.key === 'Home' || event.key === 'Escape') {
+                        event.preventDefault();
+                        resetPanelWidth(target);
+                        return;
+                    }
+                    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') {
+                        return;
+                    }
+                    event.preventDefault();
+                    const direction = event.key === 'ArrowRight' ? 1 : -1;
+                    const signedDirection = target === 'party' ? -direction : direction;
+                    const step = event.shiftKey ? largeKeyboardStep : keyboardStep;
+                    applyPanelWidth(target, getPanelWidth(target) + (signedDirection * step));
+                });
+            };
+
+            attachHandle(locationHandle, 'location');
+            attachHandle(partyHandle, 'party');
+            applyStoredWidths();
+            window.addEventListener('resize', applyStoredWidths);
+            if (typeof desktopMedia.addEventListener === 'function') {
+                desktopMedia.addEventListener('change', applyStoredWidths);
+            } else if (typeof desktopMedia.addListener === 'function') {
+                desktopMedia.addListener(applyStoredWidths);
+            }
+        }
+
+        initializeAdventurePanelResizing();
 
         function createHealthBar(additionalClassNames = '') {
             const bar = document.createElement('div');
@@ -2766,6 +3134,14 @@
             });
         }
 
+        function formatHealthDisplayValue(value) {
+            const numericValue = Number(value);
+            if (!Number.isFinite(numericValue)) {
+                return null;
+            }
+            return Math.ceil(Math.max(0, numericValue));
+        }
+
         function updateHealthBar(barElement, fillElement, currentValue, maxValue) {
             if (!barElement || !fillElement) {
                 return;
@@ -2785,6 +3161,8 @@
                 ? Math.max(0, Number(maxValue))
                 : null;
             const max = maxRaw && maxRaw > 0 ? maxRaw : null;
+            const displayCurrent = formatHealthDisplayValue(current);
+            const displayMax = max ? formatHealthDisplayValue(max) : null;
 
             if (current === null) {
                 fillElement.style.width = '0%';
@@ -2804,11 +3182,11 @@
             fillElement.style.width = `${(clampedRatio * 100).toFixed(1)}%`;
 
             barElement.setAttribute('aria-hidden', 'false');
-            barElement.setAttribute('aria-valuenow', String(current));
-            barElement.setAttribute('aria-valuemax', String(max || Math.max(current, 1)));
-            barElement.setAttribute('title', max ? `Health: ${current} / ${max}` : `Health: ${current}`);
+            barElement.setAttribute('aria-valuenow', String(displayCurrent));
+            barElement.setAttribute('aria-valuemax', String(displayMax || Math.max(displayCurrent, 1)));
+            barElement.setAttribute('title', displayMax ? `Health: ${displayCurrent} / ${displayMax}` : `Health: ${displayCurrent}`);
             if (readoutElement) {
-                readoutElement.textContent = `${current}/${max ?? '?'}`;
+                readoutElement.textContent = `${displayCurrent}/${displayMax ?? '?'}`;
                 readoutElement.setAttribute('aria-hidden', 'false');
             }
         }
@@ -3010,7 +3388,8 @@
             const indicator = document.createElement('div');
             indicator.className = 'health-change-float';
             indicator.classList.add(delta > 0 ? 'health-change--gain' : 'health-change--loss');
-            indicator.textContent = `${delta > 0 ? '+' : ''}${Math.round(delta)}`;
+            const displayDelta = Math.ceil(Math.abs(delta));
+            indicator.textContent = `${delta > 0 ? '+' : '-'}${displayDelta}`;
             indicator.setAttribute('aria-hidden', 'true');
 
             const computedStyle = window.getComputedStyle(target);
@@ -3158,6 +3537,30 @@
             }
             const trimmed = value.trim();
             return trimmed ? trimmed.toLowerCase() : '';
+        }
+
+        function normalizeAbilityTypeKey(value) {
+            if (typeof value !== 'string') {
+                return 'passive';
+            }
+            const key = value.trim().toLowerCase();
+            return ['active', 'passive', 'triggered'].includes(key) ? key : 'passive';
+        }
+
+        function formatAbilityTypeLabel(value) {
+            return normalizeAbilityTypeKey(value).toUpperCase();
+        }
+
+        function applyAbilityTypeClass(element, baseClass, typeValue) {
+            if (!element || !baseClass) {
+                return;
+            }
+            element.classList.remove(
+                `${baseClass}--active`,
+                `${baseClass}--passive`,
+                `${baseClass}--triggered`
+            );
+            element.classList.add(`${baseClass}--${normalizeAbilityTypeKey(typeValue)}`);
         }
 
         function extractAbilitySelectionState(payload) {
@@ -3408,15 +3811,24 @@
 
                 const header = document.createElement('div');
                 header.className = 'player-ability-selection-card-header';
-                const name = document.createElement('span');
-                name.className = 'player-ability-selection-card-name';
-                name.textContent = abilityName;
-                const meta = document.createElement('span');
-                meta.className = 'player-ability-selection-card-meta';
                 const typeText = typeof option?.type === 'string' && option.type.trim()
                     ? option.type.trim()
                     : 'Passive';
-                meta.textContent = `${typeText} • Level ${selection.level}`;
+                const typeKey = normalizeAbilityTypeKey(typeText);
+                card.classList.add(`ability-type-${typeKey}`);
+
+                const name = document.createElement('span');
+                name.className = 'player-ability-selection-card-name ability-type-text';
+                applyAbilityTypeClass(name, 'ability-type-text', typeKey);
+                name.textContent = abilityName;
+                const meta = document.createElement('span');
+                meta.className = 'player-ability-selection-card-meta';
+                const typeLabel = document.createElement('span');
+                typeLabel.className = 'ability-type-label ability-type-text';
+                applyAbilityTypeClass(typeLabel, 'ability-type-text', typeKey);
+                typeLabel.textContent = formatAbilityTypeLabel(typeKey);
+                meta.appendChild(typeLabel);
+                meta.appendChild(document.createTextNode(` • Level ${selection.level}`));
                 header.appendChild(name);
                 header.appendChild(meta);
 
@@ -4277,7 +4689,9 @@
             'npcInventory',
             'craftingInventory',
             'locationScenery',
-            'locationItems'
+            'locationItems',
+            'containerPlayerInventory',
+            'containerContents'
         ]);
         const thingRaritySortRankByKey = new Map();
         rarityDefinitions.forEach((definition, index) => {
@@ -5332,6 +5746,33 @@
                 console.warn('Failed to refresh party after drop:', partyError);
             }
 
+            if (
+                (options.context === 'container-player-inventory' || options.context === 'container-contents')
+                && currentThingContainerId
+                && thingContainerModal
+                && !thingContainerModal.hasAttribute('hidden')
+            ) {
+                try {
+                    const payload = await fetchThingContainerPayload(currentThingContainerId);
+                    applyThingContainerPayload(payload);
+                } catch (containerError) {
+                    console.warn('Failed to refresh container after drop:', containerError);
+                }
+            }
+
+            if (options.context === 'crafting-inventory') {
+                for (const [slotIndex, assignedItem] of Array.from(craftingSlotAssignments.entries())) {
+                    if (assignedItem?.id === thing.id) {
+                        craftingSlotAssignments.delete(slotIndex);
+                    }
+                }
+                craftingInventoryAllItems = Array.isArray(craftingInventoryAllItems)
+                    ? craftingInventoryAllItems.filter(item => item && item.id !== thing.id)
+                    : [];
+                renderCraftingInventory(craftingInventoryAllItems);
+                updateCraftingActionState();
+            }
+
             return result;
         }
 
@@ -5438,6 +5879,25 @@
 
             if (Array.isArray(result?.things)) {
                 result.things.forEach(cacheThingData);
+            }
+            if (result?.container) {
+                cacheThingData(result.container);
+                if (
+                    currentThingContainerId
+                    && result.container.id === currentThingContainerId
+                    && thingContainerModal
+                    && !thingContainerModal.hasAttribute('hidden')
+                ) {
+                    applyThingContainerPayload({
+                        success: true,
+                        container: result.container,
+                        contents: Array.isArray(result.contents) ? result.contents : currentThingContainerContents,
+                        player: result.player || window.currentPlayerData || null,
+                        playerInventory: Array.isArray(result.playerInventory)
+                            ? result.playerInventory
+                            : currentThingContainerPlayerInventory
+                    });
+                }
             }
 
             const ownerData = result?.owner || null;
@@ -5946,6 +6406,16 @@
             editButton.textContent = 'Edit';
             menu.appendChild(editButton);
 
+            const canOpenContainer = resolveThingBooleanFlag(thing, 'isContainer');
+            let openContainerButton = null;
+            if (canOpenContainer) {
+                openContainerButton = document.createElement('button');
+                openContainerButton.type = 'button';
+                openContainerButton.className = 'entity-context-menu-item thing-card-menu-item';
+                openContainerButton.textContent = 'Open Container';
+                menu.appendChild(openContainerButton);
+            }
+
             const isItemThing = (thing.thingType || '').trim().toLowerCase() === 'item';
             const parsedThingCount = Number(thing.count);
             const thingCount = Number.isInteger(parsedThingCount) && parsedThingCount > 0
@@ -6001,7 +6471,8 @@
                 menu.appendChild(dropButton);
             }
 
-            const canPickup = true;
+            const canPickup = options.context !== 'container-player-inventory'
+                && options.context !== 'container-contents';
             let pickupButton = null;
             if (canPickup) {
                 pickupButton = document.createElement('button');
@@ -6052,6 +6523,30 @@
                     console.warn('Failed to open thing editor:', error);
                 }
             });
+
+            if (openContainerButton) {
+                openContainerButton.addEventListener('click', async (event) => {
+                    event.stopPropagation();
+                    closeThingContextMenu();
+                    openContainerButton.disabled = true;
+                    try {
+                        const cachedThing = thingDataCache.get(thing.id) || thing;
+                        await openThingContainerModal(cachedThing, {
+                            pushHistory: Boolean(
+                                thingContainerModal
+                                && !thingContainerModal.hasAttribute('hidden')
+                                && currentThingContainerId
+                                && currentThingContainerId !== cachedThing.id
+                            )
+                        });
+                    } catch (error) {
+                        console.warn('Failed to open container:', error);
+                        alert(`Failed to open container: ${error?.message || error}`);
+                    } finally {
+                        openContainerButton.disabled = false;
+                    }
+                });
+            }
 
             if (separateButton) {
                 separateButton.addEventListener('click', async (event) => {
@@ -6468,6 +6963,7 @@
                         const locationIds = Array.isArray(result.locationIds) ? result.locationIds : [];
                         const playerIds = Array.isArray(result.playerIds) ? result.playerIds : [];
                         const npcIds = Array.isArray(result.npcIds) ? result.npcIds : [];
+                        const containerIds = Array.isArray(result.containerIds) ? result.containerIds : [];
 
                         const refreshLocationsByIds = async (ids = []) => {
                             if (typeof window.updateLocationDisplay !== 'function' || !Array.isArray(ids) || !ids.length) {
@@ -6530,6 +7026,13 @@
                                 if (!refreshed && card && card.parentElement) {
                                     card.remove();
                                 }
+                            } else if (
+                                context === 'container-contents'
+                                && currentThingContainerId
+                                && containerIds.includes(currentThingContainerId)
+                            ) {
+                                const payload = await fetchThingContainerPayload(currentThingContainerId);
+                                applyThingContainerPayload(payload);
                             } else {
                                 await window.refreshInventory?.();
                                 let refreshed = await refreshLocationsByIds(locationIds);
@@ -7309,6 +7812,47 @@
         const npcInventoryEmptyDefaultText = npcInventoryEmpty ? npcInventoryEmpty.textContent : 'Inventory is empty.';
         const npcInventoryCount = document.getElementById('npcInventoryCount');
         const npcInventoryName = document.getElementById('npcInventoryName');
+        const thingContainerModal = document.getElementById('thingContainerModal');
+        const thingContainerModalTitle = document.getElementById('thingContainerModalTitle');
+        const thingContainerCloseBtn = document.getElementById('thingContainerCloseBtn');
+        const thingContainerBackBtn = document.getElementById('thingContainerBackBtn');
+        const thingContainerBreadcrumbs = document.getElementById('thingContainerBreadcrumbs');
+        const containerPlayerInventoryPanel = document.getElementById('containerPlayerInventoryPanel');
+        const containerPlayerInventoryGrid = document.getElementById('containerPlayerInventoryGrid');
+        const containerPlayerInventoryCount = document.getElementById('containerPlayerInventoryCount');
+        const containerPlayerInventoryEmpty = document.getElementById('containerPlayerInventoryEmpty');
+        const containerPlayerInventoryFilterInput = document.getElementById('containerPlayerInventoryFilterInput');
+        const containerPlayerInventoryFilters = document.getElementById('containerPlayerInventoryFilters');
+        const containerPlayerInventoryFiltersToggle = document.getElementById('containerPlayerInventoryFiltersToggle');
+        const containerPlayerInventoryView = document.getElementById('containerPlayerInventoryView');
+        const containerPlayerInventoryViewToggle = document.getElementById('containerPlayerInventoryViewToggle');
+        const containerPlayerInventorySort = document.getElementById('containerPlayerInventorySort');
+        const containerPlayerInventorySortToggle = document.getElementById('containerPlayerInventorySortToggle');
+        const containerPlayerInventoryAddAllBtn = document.getElementById('containerPlayerInventoryAddAllBtn');
+        const containerPlayerInventorySlotFilterWrapper = document.getElementById('containerPlayerInventorySlotFilterWrapper');
+        const containerPlayerInventorySlotFilter = document.getElementById('containerPlayerInventorySlotFilter');
+        const containerPlayerInventoryShowAllRadio = document.getElementById('containerPlayerInventoryShowAll');
+        const containerPlayerInventoryEquippedOnlyRadio = document.getElementById('containerPlayerInventoryEquippedOnly');
+        const containerPlayerInventoryEquippableOnlyRadio = document.getElementById('containerPlayerInventoryEquippableOnly');
+        const containerPlayerInventoryNonEquippableOnlyRadio = document.getElementById('containerPlayerInventoryNonEquippableOnly');
+        const containerContentsPanel = document.getElementById('containerContentsPanel');
+        const containerContentsName = document.getElementById('containerContentsName');
+        const containerContentsGrid = document.getElementById('containerContentsGrid');
+        const containerContentsCount = document.getElementById('containerContentsCount');
+        const containerContentsEmpty = document.getElementById('containerContentsEmpty');
+        const containerContentsFilterInput = document.getElementById('containerContentsFilterInput');
+        const containerContentsFilters = document.getElementById('containerContentsFilters');
+        const containerContentsFiltersToggle = document.getElementById('containerContentsFiltersToggle');
+        const containerContentsView = document.getElementById('containerContentsView');
+        const containerContentsViewToggle = document.getElementById('containerContentsViewToggle');
+        const containerContentsSort = document.getElementById('containerContentsSort');
+        const containerContentsSortToggle = document.getElementById('containerContentsSortToggle');
+        const containerContentsRemoveAllBtn = document.getElementById('containerContentsRemoveAllBtn');
+        const containerContentsSlotFilterWrapper = document.getElementById('containerContentsSlotFilterWrapper');
+        const containerContentsSlotFilter = document.getElementById('containerContentsSlotFilter');
+        const containerContentsShowAllRadio = document.getElementById('containerContentsShowAll');
+        const containerContentsEquippableOnlyRadio = document.getElementById('containerContentsEquippableOnly');
+        const containerContentsNonEquippableOnlyRadio = document.getElementById('containerContentsNonEquippableOnly');
         const locationSceneryPanelEl = document.getElementById('locationSceneryPanel');
         const locationSceneryViewEl = document.getElementById('locationSceneryView');
         const locationSceneryViewToggleEl = document.getElementById('locationSceneryViewToggle');
@@ -7535,6 +8079,7 @@
         const thingEditIsProcessingStationInput = document.getElementById('thingEditIsProcessingStation');
         const thingEditIsHarvestableInput = document.getElementById('thingEditIsHarvestable');
         const thingEditIsSalvageableInput = document.getElementById('thingEditIsSalvageable');
+        const thingEditIsContainerInput = document.getElementById('thingEditIsContainer');
         const thingMetadataList = document.getElementById('thingEditMetadataList');
         const thingMetadataAddBtn = document.getElementById('thingMetadataAddBtn');
         const thingAttributeBonusesList = document.getElementById('thingEditAttributeBonusesList');
@@ -7806,6 +8351,10 @@
             return Boolean(window.navigator && window.navigator.maxTouchPoints > 0);
         }
 
+        function isTouchLikePointerEvent(event) {
+            return Boolean(event && (event.pointerType === 'touch' || event.pointerType === 'pen'));
+        }
+
         function shouldSuppressContextTooltips() {
             if (!isTouchOrCoarsePointerContext()) {
                 return false;
@@ -7843,6 +8392,45 @@
             button.addEventListener('touchstart', suppress, { capture: true, passive: true });
             button.dataset.touchTooltipSuppressWired = 'true';
         }
+
+        const THING_ICON_TOUCH_CONTEXT_SUPPRESS_MS = 1800;
+        let thingIconTouchContextSuppressUntil = 0;
+
+        function isThingIconNativeTouchTarget(target) {
+            if (!(target instanceof Element)) {
+                return false;
+            }
+            if (target.closest('.entity-context-menu-button, .thing-card-menu-button, .entity-image-badge--action, button, a, input, select, textarea')) {
+                return false;
+            }
+            const icon = target.closest('.thing-collection-entry .entity-icon, .thing-collection-entry .entity-icon img, .thing-collection-entry .image-placeholder, .thing-collection-entry .entity-icon-placeholder');
+            return Boolean(icon && icon.closest('.thing-collection-entry'));
+        }
+
+        function markThingIconTouchContextSuppression(event) {
+            const isTouchEvent = event?.type === 'touchstart';
+            const isTouchPointerEvent = event?.type === 'pointerdown' && isTouchLikePointerEvent(event);
+            if ((!isTouchEvent && !isTouchPointerEvent) || !isTouchOrCoarsePointerContext() || !isThingIconNativeTouchTarget(event.target)) {
+                return;
+            }
+            thingIconTouchContextSuppressUntil = Math.max(
+                thingIconTouchContextSuppressUntil,
+                Date.now() + THING_ICON_TOUCH_CONTEXT_SUPPRESS_MS
+            );
+        }
+
+        function suppressThingIconNativeTouchContextMenu(event) {
+            if (Date.now() > thingIconTouchContextSuppressUntil || !isThingIconNativeTouchTarget(event.target)) {
+                return;
+            }
+            event.preventDefault();
+            event.stopPropagation();
+            suppressContextTooltipsForTouch();
+        }
+
+        document.addEventListener('pointerdown', markThingIconTouchContextSuppression, { capture: true, passive: true });
+        document.addEventListener('touchstart', markThingIconTouchContextSuppression, { capture: true, passive: true });
+        document.addEventListener('contextmenu', suppressThingIconNativeTouchContextMenu, { capture: true });
 
         function openLocationImageMenu() {
             if (!locationImageMenu || !locationImageMenuButton) {
@@ -8050,7 +8638,8 @@
             { key: 'isHarvestable', icon: '🌾', label: 'Harvestable Resource' },
             { key: 'isCraftingStation', icon: '⚒️', label: 'Crafting Station' },
             { key: 'isProcessingStation', icon: '⚙️', label: 'Processing Station' },
-            { key: 'isSalvageable', icon: '♻️', label: 'Salvageable' }
+            { key: 'isSalvageable', icon: '♻️', label: 'Salvageable' },
+            { key: 'isContainer', icon: '📦', label: 'Container' }
         ];
         const THING_BOOLEAN_METADATA_KEYS = THING_BADGE_DEFINITIONS.map(def => def.key);
 
@@ -8601,6 +9190,9 @@
             if (thingEditIsSalvageableInput) {
                 thingEditIsSalvageableInput.checked = resolveThingBooleanFlag(thing, 'isSalvageable');
             }
+            if (thingEditIsContainerInput) {
+                thingEditIsContainerInput.checked = resolveThingBooleanFlag(thing, 'isContainer');
+            }
 
             currentThingLockedMetadata = {};
             if (thing && typeof thing.metadata === 'object' && thing.metadata) {
@@ -8750,10 +9342,23 @@
         }
 
         let currentNpcEditId = null;
+        let currentNpcOriginalHealthDisplayValue = null;
         let currentNpcOriginalHealthAttribute = '';
         let currentNpcOriginalMaxHealth = null;
         let currentNpcInventory = [];
         let currentNpcInventoryNpcId = null;
+        let currentThingContainerId = null;
+        let currentThingContainerData = null;
+        let currentThingContainerContents = [];
+        let currentThingContainerPlayerInventory = [];
+        let currentThingContainerVisibleContents = [];
+        let currentThingContainerVisiblePlayerInventory = [];
+        let thingContainerHistory = [];
+        let thingContainerMoveInFlight = false;
+        let currentThingContainerDragSource = null;
+        let modalInventoryDragState = null;
+        let modalInventoryDropInFlight = false;
+        let modalInventoryTouchDragState = null;
         let currentNpcViewId = null;
         let currentNpcViewIsPlayer = false;
         let npcViewAllocator = null;
@@ -8769,6 +9374,446 @@
         let draggedNpcMemoryRow = null;
         let currentNpcGoalsId = null;
         let currentNpcGoalsName = '';
+
+        function isModalInventoryDragOutsideSourceModal(event) {
+            const sourceModal = modalInventoryDragState?.modal || null;
+            if (!(sourceModal instanceof HTMLElement) || sourceModal.hasAttribute('hidden')) {
+                return false;
+            }
+            const target = event?.target || null;
+            return !(target instanceof Node) || !sourceModal.contains(target);
+        }
+
+        function clearModalInventoryDragState() {
+            modalInventoryDragState = null;
+        }
+
+        function getTouchByIdentifier(touchList, identifier) {
+            if (!touchList || identifier === null || identifier === undefined) {
+                return null;
+            }
+            for (const touch of Array.from(touchList)) {
+                if (touch.identifier === identifier) {
+                    return touch;
+                }
+            }
+            return null;
+        }
+
+        function isTouchDragInteractiveTarget(target) {
+            return Boolean(target?.closest?.('.entity-context-menu-button, .thing-card-menu-button, button, a, input, select, textarea'));
+        }
+
+        function releaseModalInventoryTouchPointerCapture(state) {
+            if (!state || state.inputType !== 'pointer' || state.pointerId === null || state.pointerId === undefined) {
+                return;
+            }
+            const captureElement = state.pointerCaptureElement instanceof HTMLElement
+                ? state.pointerCaptureElement
+                : state.card;
+            if (!(captureElement instanceof HTMLElement) || typeof captureElement.releasePointerCapture !== 'function') {
+                return;
+            }
+            try {
+                if (typeof captureElement.hasPointerCapture !== 'function' || captureElement.hasPointerCapture(state.pointerId)) {
+                    captureElement.releasePointerCapture(state.pointerId);
+                }
+            } catch (_) {
+                // Pointer capture may already be released after browser cancellation.
+            }
+        }
+
+        function createModalInventoryTouchDragGhost(card) {
+            if (!(card instanceof HTMLElement)) {
+                return null;
+            }
+            const rect = card.getBoundingClientRect();
+            const ghost = card.cloneNode(true);
+            ghost.classList.add('thing-touch-drag-ghost');
+            ghost.style.width = `${Math.max(1, Math.round(rect.width))}px`;
+            ghost.style.height = `${Math.max(1, Math.round(rect.height))}px`;
+            document.body.appendChild(ghost);
+            return ghost;
+        }
+
+        function positionModalInventoryTouchDragGhost(state) {
+            if (!state?.ghost) {
+                return;
+            }
+            state.ghost.style.left = `${state.currentX}px`;
+            state.ghost.style.top = `${state.currentY}px`;
+        }
+
+        function clearThingContainerTouchDropHighlights() {
+            containerPlayerInventoryGrid?.classList.remove('is-drag-over');
+            containerContentsGrid?.classList.remove('is-drag-over');
+        }
+
+        function cancelModalInventoryTouchDrag({ suppressClick = false } = {}) {
+            const state = modalInventoryTouchDragState;
+            if (!state) {
+                return;
+            }
+            modalInventoryTouchDragState = null;
+            if (state.longPressTimer) {
+                clearTimeout(state.longPressTimer);
+            }
+            releaseModalInventoryTouchPointerCapture(state);
+            state.card?.classList.remove('is-touch-dragging');
+            if (suppressClick && state.card instanceof HTMLElement) {
+                state.card.dataset.touchDragSuppressClick = 'true';
+                window.setTimeout(() => {
+                    if (state.card?.dataset?.touchDragSuppressClick === 'true') {
+                        delete state.card.dataset.touchDragSuppressClick;
+                    }
+                }, 350);
+            }
+            state.ghost?.remove();
+            document.body.classList.remove('thing-touch-drag-active');
+            clearThingContainerTouchDropHighlights();
+            currentThingContainerDragSource = null;
+        }
+
+        function beginModalInventoryTouchDrag(state) {
+            if (!state || state.dragStarted || !state.thing?.id || !(state.modal instanceof HTMLElement)) {
+                return;
+            }
+            state.dragStarted = true;
+            state.card?.classList.add('is-touch-dragging');
+            state.ghost = createModalInventoryTouchDragGhost(state.card);
+            document.body.classList.add('thing-touch-drag-active');
+            modalInventoryDragState = {
+                thingId: state.thing.id,
+                thing: state.thing,
+                modal: state.modal,
+                context: state.context || '',
+                npcId: state.npcId || null
+            };
+            suppressContextTooltipsForTouch(2400);
+            positionModalInventoryTouchDragGhost(state);
+            if (typeof state.onTouchDragStart === 'function') {
+                state.onTouchDragStart(state);
+            }
+        }
+
+        async function finishModalInventoryTouchDrag(state) {
+            const target = document.elementFromPoint(state.currentX, state.currentY);
+            const thing = thingDataCache.get(state.thing?.id) || state.thing || { id: state.thing?.id };
+            let handled = false;
+
+            if (typeof state.onTouchDrop === 'function') {
+                handled = await state.onTouchDrop({
+                    ...state,
+                    thing,
+                    target
+                });
+            }
+
+            if (handled) {
+                return;
+            }
+
+            if (state.modal instanceof HTMLElement && state.modal.contains(target)) {
+                return;
+            }
+
+            await dropThingToCurrentLocation(thing, {
+                context: state.context || 'general',
+                npcId: state.npcId || null
+            });
+        }
+
+        function wireModalInventoryTouchDrag(card, {
+            thing = null,
+            modal = null,
+            context = '',
+            npcId = null,
+            onTouchDragStart = null,
+            onTouchDragMove = null,
+            onTouchDrop = null
+        } = {}) {
+            if (!(card instanceof HTMLElement) || !thing?.id || !(modal instanceof HTMLElement) || card.dataset.modalTouchDragWired === 'true') {
+                return;
+            }
+            card.dataset.modalTouchDragWired = 'true';
+
+            const longPressMs = 460;
+            const moveTolerance = 12;
+
+            const createTouchDragState = ({
+                inputType,
+                identifier = null,
+                pointerId = null,
+                startX,
+                startY,
+                pointerCaptureElement = null
+            }) => {
+                modalInventoryTouchDragState = {
+                    card,
+                    thing,
+                    modal,
+                    context,
+                    npcId,
+                    inputType,
+                    identifier,
+                    pointerId,
+                    pointerCaptureElement,
+                    startX,
+                    startY,
+                    currentX: startX,
+                    currentY: startY,
+                    dragStarted: false,
+                    ghost: null,
+                    onTouchDragStart,
+                    onTouchDragMove,
+                    onTouchDrop,
+                    longPressTimer: window.setTimeout(() => {
+                        beginModalInventoryTouchDrag(modalInventoryTouchDragState);
+                    }, longPressMs)
+                };
+            };
+
+            const startPointerLongPress = (event) => {
+                if (!isTouchOrCoarsePointerContext()
+                    || !isTouchLikePointerEvent(event)
+                    || event.isPrimary === false
+                    || event.button !== 0
+                    || modalInventoryTouchDragState) {
+                    return;
+                }
+                if (isTouchDragInteractiveTarget(event.target)) {
+                    return;
+                }
+                if (typeof card.setPointerCapture === 'function') {
+                    try {
+                        card.setPointerCapture(event.pointerId);
+                    } catch (_) {
+                        // Pointer capture can fail on detached nodes; movement still works through bubbling when possible.
+                    }
+                }
+                createTouchDragState({
+                    inputType: 'pointer',
+                    pointerId: event.pointerId,
+                    pointerCaptureElement: card,
+                    startX: event.clientX,
+                    startY: event.clientY
+                });
+            };
+
+            const updatePointerLongPress = (event) => {
+                const state = modalInventoryTouchDragState;
+                if (!state || state.card !== card || state.inputType !== 'pointer' || state.pointerId !== event.pointerId) {
+                    return;
+                }
+                const dx = event.clientX - state.startX;
+                const dy = event.clientY - state.startY;
+                if (!state.dragStarted && Math.hypot(dx, dy) > moveTolerance) {
+                    cancelModalInventoryTouchDrag();
+                    return;
+                }
+
+                state.currentX = event.clientX;
+                state.currentY = event.clientY;
+                if (!state.dragStarted) {
+                    return;
+                }
+
+                event.preventDefault();
+                positionModalInventoryTouchDragGhost(state);
+                if (typeof state.onTouchDragMove === 'function') {
+                    state.onTouchDragMove(state);
+                }
+            };
+
+            const finishPointerLongPress = (event) => {
+                const state = modalInventoryTouchDragState;
+                if (!state || state.card !== card || state.inputType !== 'pointer' || state.pointerId !== event.pointerId) {
+                    return;
+                }
+                state.currentX = event.clientX;
+                state.currentY = event.clientY;
+
+                if (!state.dragStarted) {
+                    cancelModalInventoryTouchDrag();
+                    return;
+                }
+
+                event.preventDefault();
+                event.stopPropagation();
+                const dropState = { ...state };
+                cancelModalInventoryTouchDrag({ suppressClick: true });
+                finishModalInventoryTouchDrag(dropState).catch(error => {
+                    console.warn('Failed to complete pointer touch drag:', error);
+                    alert(`Failed to move item: ${error?.message || error}`);
+                });
+            };
+
+            const cancelPointerLongPress = (event) => {
+                const state = modalInventoryTouchDragState;
+                if (state?.card === card && state.inputType === 'pointer' && state.pointerId === event.pointerId) {
+                    cancelModalInventoryTouchDrag({ suppressClick: state.dragStarted });
+                }
+            };
+
+            card.addEventListener('pointerdown', startPointerLongPress);
+            card.addEventListener('pointermove', updatePointerLongPress);
+            card.addEventListener('pointerup', finishPointerLongPress);
+            card.addEventListener('pointercancel', cancelPointerLongPress);
+            card.addEventListener('lostpointercapture', cancelPointerLongPress);
+
+            card.addEventListener('touchstart', (event) => {
+                if (!isTouchOrCoarsePointerContext() || event.touches.length !== 1 || modalInventoryTouchDragState) {
+                    return;
+                }
+                if (isTouchDragInteractiveTarget(event.target)) {
+                    return;
+                }
+                const touch = event.changedTouches[0];
+                createTouchDragState({
+                    inputType: 'touch',
+                    identifier: touch.identifier,
+                    startX: touch.clientX,
+                    startY: touch.clientY
+                });
+            }, { passive: true });
+
+            card.addEventListener('touchmove', (event) => {
+                const state = modalInventoryTouchDragState;
+                if (!state || state.card !== card || state.inputType !== 'touch') {
+                    return;
+                }
+                const touch = getTouchByIdentifier(event.changedTouches, state.identifier)
+                    || getTouchByIdentifier(event.touches, state.identifier);
+                if (!touch) {
+                    return;
+                }
+                const dx = touch.clientX - state.startX;
+                const dy = touch.clientY - state.startY;
+                if (!state.dragStarted && Math.hypot(dx, dy) > moveTolerance) {
+                    cancelModalInventoryTouchDrag();
+                    return;
+                }
+
+                state.currentX = touch.clientX;
+                state.currentY = touch.clientY;
+                if (!state.dragStarted) {
+                    return;
+                }
+
+                event.preventDefault();
+                positionModalInventoryTouchDragGhost(state);
+                if (typeof state.onTouchDragMove === 'function') {
+                    state.onTouchDragMove(state);
+                }
+            }, { passive: false });
+
+            card.addEventListener('touchend', (event) => {
+                const state = modalInventoryTouchDragState;
+                if (!state || state.card !== card || state.inputType !== 'touch') {
+                    return;
+                }
+                const touch = getTouchByIdentifier(event.changedTouches, state.identifier);
+                if (touch) {
+                    state.currentX = touch.clientX;
+                    state.currentY = touch.clientY;
+                }
+
+                if (!state.dragStarted) {
+                    cancelModalInventoryTouchDrag();
+                    return;
+                }
+
+                event.preventDefault();
+                event.stopPropagation();
+                const dropState = { ...state };
+                cancelModalInventoryTouchDrag({ suppressClick: true });
+                finishModalInventoryTouchDrag(dropState).catch(error => {
+                    console.warn('Failed to complete touch drag:', error);
+                    alert(`Failed to move item: ${error?.message || error}`);
+                });
+            }, { passive: false });
+
+            card.addEventListener('touchcancel', () => {
+                const state = modalInventoryTouchDragState;
+                if (state?.card === card && state.inputType === 'touch') {
+                    cancelModalInventoryTouchDrag({ suppressClick: state.dragStarted });
+                }
+            }, { passive: true });
+
+            card.addEventListener('click', (event) => {
+                if (card.dataset.touchDragSuppressClick === 'true') {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    event.stopImmediatePropagation();
+                }
+            }, true);
+        }
+
+        function beginModalInventoryDrag(event, {
+            thing = null,
+            modal = null,
+            context = '',
+            npcId = null
+        } = {}) {
+            if (!event?.dataTransfer || !thing?.id || !(modal instanceof HTMLElement)) {
+                return false;
+            }
+
+            modalInventoryDragState = {
+                thingId: thing.id,
+                thing,
+                modal,
+                context,
+                npcId
+            };
+
+            event.dataTransfer.setData('application/x-ai-rpg-thing-id', thing.id);
+            event.dataTransfer.setData('application/x-ai-rpg-modal-inventory-context', context || '');
+            event.dataTransfer.setData('text/plain', thing.id);
+            return true;
+        }
+
+        async function dropModalInventoryDragAtCurrentLocation(event) {
+            if (!modalInventoryDragState || modalInventoryDropInFlight) {
+                return;
+            }
+            if (!isModalInventoryDragOutsideSourceModal(event)) {
+                return;
+            }
+
+            event.preventDefault();
+            event.stopPropagation();
+            const dragState = modalInventoryDragState;
+            clearModalInventoryDragState();
+            modalInventoryDropInFlight = true;
+            try {
+                const thing = thingDataCache.get(dragState.thingId) || dragState.thing || { id: dragState.thingId };
+                await dropThingToCurrentLocation(thing, {
+                    context: dragState.context || 'general',
+                    npcId: dragState.npcId || null
+                });
+            } catch (error) {
+                console.warn('Failed to drop dragged inventory item:', error);
+                alert(`Failed to drop item: ${error?.message || error}`);
+            } finally {
+                modalInventoryDropInFlight = false;
+            }
+        }
+
+        document.addEventListener('dragover', (event) => {
+            if (!modalInventoryDragState || !isModalInventoryDragOutsideSourceModal(event)) {
+                return;
+            }
+            event.preventDefault();
+            if (event.dataTransfer) {
+                event.dataTransfer.dropEffect = 'move';
+            }
+        }, true);
+
+        document.addEventListener('drop', (event) => {
+            dropModalInventoryDragAtCurrentLocation(event);
+        }, true);
+
         let npcGoalsDirty = false;
         let draggedNpcGoalRow = null;
         let locationImageGenerationEnabled = true;
@@ -9723,7 +10768,7 @@
             }
 
             const resolvedValue = Number.isFinite(currentNpcOriginalMaxHealth)
-                ? Math.round(currentNpcOriginalMaxHealth)
+                ? formatHealthDisplayValue(currentNpcOriginalMaxHealth)
                 : null;
             npcEditMaxHealthDisplay.textContent = resolvedValue !== null ? resolvedValue : '—';
         }
@@ -9833,17 +10878,20 @@
 
             const nameInput = document.createElement('input');
             nameInput.type = 'text';
-            nameInput.className = 'npc-ability-name';
+            nameInput.className = 'npc-ability-name ability-type-text';
             nameInput.placeholder = 'Ability name';
             nameInput.autocomplete = 'off';
             nameInput.value = ability.name || '';
 
             const typeSelect = document.createElement('select');
-            typeSelect.className = 'npc-ability-type';
+            typeSelect.className = 'npc-ability-type ability-type-select';
             ['Passive', 'Active', 'Triggered'].forEach(optionValue => {
                 const option = document.createElement('option');
                 option.value = optionValue;
-                option.textContent = optionValue;
+                option.textContent = formatAbilityTypeLabel(optionValue);
+                option.className = 'ability-type-option ability-type-text';
+                applyAbilityTypeClass(option, 'ability-type-option', optionValue);
+                applyAbilityTypeClass(option, 'ability-type-text', optionValue);
                 typeSelect.appendChild(option);
             });
             const normalizedType = typeof ability.type === 'string'
@@ -9855,6 +10903,13 @@
                     typeSelect.value = match.charAt(0).toUpperCase() + match.slice(1);
                 }
             }
+            const syncAbilityTypeColor = () => {
+                applyAbilityTypeClass(nameInput, 'ability-type-text', typeSelect.value);
+                applyAbilityTypeClass(typeSelect, 'ability-type-select', typeSelect.value);
+                applyAbilityTypeClass(typeSelect, 'ability-type-text', typeSelect.value);
+            };
+            syncAbilityTypeColor();
+            typeSelect.addEventListener('change', syncAbilityTypeColor);
 
             const levelInput = document.createElement('input');
             levelInput.type = 'number';
@@ -10141,10 +11196,11 @@
                 npcEditLevelInput.value = Number.isFinite(numericLevel) ? numericLevel : '';
             }
             if (npcEditHealthInput) {
-                const numericHealth = Number.parseInt(npc.health, 10);
-                npcEditHealthInput.value = Number.isFinite(numericHealth) ? numericHealth : '';
+                const displayHealth = formatHealthDisplayValue(npc.health);
+                currentNpcOriginalHealthDisplayValue = displayHealth;
+                npcEditHealthInput.value = displayHealth !== null ? displayHealth : '';
             }
-            const numericMax = Number.parseInt(npc.maxHealth, 10);
+            const numericMax = Number(npc.maxHealth);
             currentNpcOriginalMaxHealth = Number.isFinite(numericMax) ? numericMax : null;
             updateNpcMaxHealth();
             if (npcEditCurrencyInput) {
@@ -10231,6 +11287,7 @@
                 document.body.classList.remove('modal-open');
             }
             currentNpcEditId = null;
+            currentNpcOriginalHealthDisplayValue = null;
             currentNpcOriginalHealthAttribute = '';
             currentNpcOriginalMaxHealth = null;
             updateNpcEditStatus('');
@@ -10268,6 +11325,8 @@
             closeThingListViewPopoverForPanel(npcInventoryPanel);
             currentNpcInventory = [];
             currentNpcInventoryNpcId = null;
+            clearModalInventoryDragState();
+            cancelModalInventoryTouchDrag({ suppressClick: true });
             try {
                 window.floatingTooltipController?.hide?.();
             } catch (_) {}
@@ -12876,7 +13935,8 @@
             const newExitHidden = !newExitModal || newExitModal.hasAttribute('hidden');
             const addNpcHidden = !addNpcModal || addNpcModal.hasAttribute('hidden');
             const loadGameHidden = !loadGameModal || loadGameModal.hasAttribute('hidden');
-            if (npcModalHidden && npcInventoryHidden && npcViewHidden && dispositionHidden && needsHidden && memoriesHidden && goalsHidden && newExitHidden && addNpcHidden && loadGameHidden) {
+            const containerHidden = !thingContainerModal || thingContainerModal.hasAttribute('hidden');
+            if (npcModalHidden && npcInventoryHidden && npcViewHidden && dispositionHidden && needsHidden && memoriesHidden && goalsHidden && newExitHidden && addNpcHidden && loadGameHidden && containerHidden) {
                 npcModalBackdrop.setAttribute('hidden', '');
                 document.body.classList.remove('modal-open');
             }
@@ -13526,6 +14586,38 @@
             popoverShell: npcInventorySort
         });
         initializeThingListViewPopover({
+            panel: containerPlayerInventoryPanel,
+            toggleButton: containerPlayerInventoryViewToggle,
+            popoverShell: containerPlayerInventoryView
+        });
+        initializeThingListFilterPopover({
+            panel: containerPlayerInventoryPanel,
+            toggleButton: containerPlayerInventoryFiltersToggle,
+            filtersShell: containerPlayerInventoryFilters,
+            compactThreshold: 560
+        });
+        initializeThingListSortPopover({
+            panel: containerPlayerInventoryPanel,
+            toggleButton: containerPlayerInventorySortToggle,
+            popoverShell: containerPlayerInventorySort
+        });
+        initializeThingListViewPopover({
+            panel: containerContentsPanel,
+            toggleButton: containerContentsViewToggle,
+            popoverShell: containerContentsView
+        });
+        initializeThingListFilterPopover({
+            panel: containerContentsPanel,
+            toggleButton: containerContentsFiltersToggle,
+            filtersShell: containerContentsFilters,
+            compactThreshold: 560
+        });
+        initializeThingListSortPopover({
+            panel: containerContentsPanel,
+            toggleButton: containerContentsSortToggle,
+            popoverShell: containerContentsSort
+        });
+        initializeThingListViewPopover({
             panel: craftingInventoryPanel,
             toggleButton: craftingInventoryViewToggle,
             popoverShell: craftingInventoryView
@@ -13586,6 +14678,28 @@
             rerender: () => renderNpcInventory(currentNpcInventory)
         });
         bindThingListSortShell({
+            panelKey: 'containerPlayerInventory',
+            sortShell: containerPlayerInventorySort,
+            rerender: () => renderThingContainerModal()
+        });
+        bindThingListViewShell({
+            panel: containerPlayerInventoryPanel,
+            panelKey: 'containerPlayerInventory',
+            viewShell: containerPlayerInventoryView,
+            rerender: () => renderThingContainerModal()
+        });
+        bindThingListSortShell({
+            panelKey: 'containerContents',
+            sortShell: containerContentsSort,
+            rerender: () => renderThingContainerModal()
+        });
+        bindThingListViewShell({
+            panel: containerContentsPanel,
+            panelKey: 'containerContents',
+            viewShell: containerContentsView,
+            rerender: () => renderThingContainerModal()
+        });
+        bindThingListSortShell({
             panelKey: 'craftingInventory',
             sortShell: craftingInventorySort,
             rerender: () => renderCraftingInventory()
@@ -13628,6 +14742,30 @@
         if (npcInventorySlotFilter) {
             npcInventorySlotFilter.addEventListener('change', () => {
                 renderNpcInventory(currentNpcInventory);
+            });
+        }
+
+        if (containerPlayerInventoryFilterInput) {
+            containerPlayerInventoryFilterInput.addEventListener('input', () => {
+                renderThingContainerModal();
+            });
+        }
+
+        if (containerPlayerInventorySlotFilter) {
+            containerPlayerInventorySlotFilter.addEventListener('change', () => {
+                renderThingContainerModal();
+            });
+        }
+
+        if (containerContentsFilterInput) {
+            containerContentsFilterInput.addEventListener('input', () => {
+                renderThingContainerModal();
+            });
+        }
+
+        if (containerContentsSlotFilter) {
+            containerContentsSlotFilter.addEventListener('change', () => {
+                renderThingContainerModal();
             });
         }
 
@@ -13691,6 +14829,75 @@
                 }
             });
         });
+
+        [
+            containerPlayerInventoryShowAllRadio,
+            containerPlayerInventoryEquippedOnlyRadio,
+            containerPlayerInventoryEquippableOnlyRadio,
+            containerPlayerInventoryNonEquippableOnlyRadio,
+            containerContentsShowAllRadio,
+            containerContentsEquippableOnlyRadio,
+            containerContentsNonEquippableOnlyRadio
+        ].filter(Boolean).forEach(radio => {
+            radio.addEventListener('change', () => {
+                if (radio.checked) {
+                    renderThingContainerModal();
+                }
+            });
+        });
+
+        bindThingContainerDropzone(containerPlayerInventoryGrid, 'player');
+        bindThingContainerDropzone(containerContentsGrid, 'container');
+
+        if (containerPlayerInventoryAddAllBtn) {
+            containerPlayerInventoryAddAllBtn.addEventListener('click', async () => {
+                containerPlayerInventoryAddAllBtn.disabled = true;
+                try {
+                    await moveVisibleThingContainerItems('player');
+                } catch (error) {
+                    console.warn('Failed to add visible items to container:', error);
+                    alert(`Failed to add visible items: ${error?.message || error}`);
+                } finally {
+                    updateThingContainerBulkButtons();
+                }
+            });
+        }
+
+        if (containerContentsRemoveAllBtn) {
+            containerContentsRemoveAllBtn.addEventListener('click', async () => {
+                containerContentsRemoveAllBtn.disabled = true;
+                try {
+                    await moveVisibleThingContainerItems('container');
+                } catch (error) {
+                    console.warn('Failed to remove visible items from container:', error);
+                    alert(`Failed to remove visible items: ${error?.message || error}`);
+                } finally {
+                    updateThingContainerBulkButtons();
+                }
+            });
+        }
+
+        if (thingContainerCloseBtn) {
+            thingContainerCloseBtn.addEventListener('click', () => {
+                closeThingContainerModal();
+            });
+        }
+
+        if (thingContainerBackBtn) {
+            thingContainerBackBtn.addEventListener('click', async () => {
+                const previous = thingContainerHistory.pop();
+                if (!previous?.id) {
+                    renderThingContainerModal();
+                    return;
+                }
+                try {
+                    await openThingContainerModal(previous.id, { pushHistory: false, resetHistory: false });
+                } catch (error) {
+                    console.warn('Failed to navigate container history:', error);
+                    alert(error?.message || 'Failed to open previous container.');
+                }
+            });
+        }
 
         if (npcViewCloseBtn) {
             npcViewCloseBtn.addEventListener('click', () => {
@@ -13771,6 +14978,8 @@
                         closeNpcViewModal();
                     } else if (npcInventoryModal && !npcInventoryModal.hasAttribute('hidden')) {
                         closeNpcInventoryModal();
+                    } else if (thingContainerModal && !thingContainerModal.hasAttribute('hidden')) {
+                        closeThingContainerModal();
                     } else if (npcEditModal && !npcEditModal.hasAttribute('hidden')) {
                         closeNpcEditModal();
                     }
@@ -13872,8 +15081,15 @@
                     payload.level = parsedLevel;
                 }
 
-                const parsedHealth = Number.parseInt(npcEditHealthInput?.value ?? '', 10);
-                if (Number.isFinite(parsedHealth)) {
+                const parsedHealth = Number(npcEditHealthInput?.value ?? '');
+                if (
+                    Number.isFinite(parsedHealth) &&
+                    parsedHealth >= 0 &&
+                    (
+                        currentNpcOriginalHealthDisplayValue === null ||
+                        parsedHealth !== currentNpcOriginalHealthDisplayValue
+                    )
+                ) {
                     payload.health = parsedHealth;
                 }
 
@@ -14097,6 +15313,24 @@
                     if (rarityKey) {
                         seed.rarity = getRarityLabel(rarityKey);
                     }
+                    if (thingEditIsVehicleInput) {
+                        seed.isVehicle = Boolean(thingEditIsVehicleInput.checked);
+                    }
+                    if (thingEditIsCraftingStationInput) {
+                        seed.isCraftingStation = Boolean(thingEditIsCraftingStationInput.checked);
+                    }
+                    if (thingEditIsProcessingStationInput) {
+                        seed.isProcessingStation = Boolean(thingEditIsProcessingStationInput.checked);
+                    }
+                    if (thingEditIsHarvestableInput) {
+                        seed.isHarvestable = Boolean(thingEditIsHarvestableInput.checked);
+                    }
+                    if (thingEditIsSalvageableInput) {
+                        seed.isSalvageable = Boolean(thingEditIsSalvageableInput.checked);
+                    }
+                    if (thingEditIsContainerInput) {
+                        seed.isContainer = Boolean(thingEditIsContainerInput.checked);
+                    }
 
                     const payload = { seed };
 
@@ -14237,6 +15471,11 @@
                     const flag = Boolean(thingEditIsSalvageableInput.checked);
                     finalMetadata.isSalvageable = flag;
                     payload.isSalvageable = flag;
+                }
+                if (thingEditIsContainerInput) {
+                    const flag = Boolean(thingEditIsContainerInput.checked);
+                    finalMetadata.isContainer = flag;
+                    payload.isContainer = flag;
                 }
                 payload.metadata = finalMetadata;
 
@@ -14883,6 +16122,117 @@
             };
         }
 
+        function collectThingFilterDetailText(value, { depth = 0, seen = new WeakSet(), parentKey = '' } = {}) {
+            const detailText = [];
+            const normalizedParentKey = typeof parentKey === 'string' ? parentKey.trim().toLowerCase() : '';
+            const ignoredKeys = new Set([
+                'id',
+                'ids',
+                'thingid',
+                'thingids',
+                'imageid',
+                'checksum',
+                'createdat',
+                'lastupdated',
+                'ownerid',
+                'owner_id',
+                'playerid',
+                'player_id',
+                'locationid',
+                'location_id',
+                'containerid',
+                'container_id',
+                'containedthingids',
+                'inventoryownerid',
+                'inventory_owner_id'
+            ]);
+
+            const appendPrimitive = (entry) => {
+                if (typeof entry === 'string') {
+                    const trimmed = entry.trim();
+                    if (trimmed) {
+                        detailText.push(trimmed);
+                    }
+                    return;
+                }
+                if (typeof entry === 'number' || typeof entry === 'boolean') {
+                    detailText.push(String(entry));
+                }
+            };
+
+            if (ignoredKeys.has(normalizedParentKey)) {
+                return detailText;
+            }
+            if (value === null || value === undefined) {
+                return detailText;
+            }
+            if (typeof value !== 'object') {
+                appendPrimitive(value);
+                return detailText;
+            }
+            if (seen.has(value) || depth >= 5) {
+                return detailText;
+            }
+
+            seen.add(value);
+            if (Array.isArray(value)) {
+                value.forEach(entry => {
+                    detailText.push(...collectThingFilterDetailText(entry, {
+                        depth: depth + 1,
+                        seen,
+                        parentKey
+                    }));
+                });
+                return detailText;
+            }
+
+            Object.entries(value).forEach(([key, entry]) => {
+                detailText.push(...collectThingFilterDetailText(entry, {
+                    depth: depth + 1,
+                    seen,
+                    parentKey: key
+                }));
+            });
+            return detailText;
+        }
+
+        function buildThingFilterHaystack(item, slotInfo) {
+            const metadata = item?.metadata && typeof item.metadata === 'object' ? item.metadata : {};
+            const detailSources = [
+                item?.details,
+                item?.detail,
+                item?.notes,
+                item?.tags,
+                item?.itemTypeDetail,
+                item?.typeDetail,
+                item?.quantity,
+                item?.count,
+                item?.value,
+                item?.weight,
+                item?.level,
+                item?.relativeLevel,
+                item?.statusEffects,
+                item?.causeStatusEffectOnTarget,
+                item?.causeStatusEffectOnEquipper,
+                item?.attributeBonuses,
+                item?.unscaledAttributeBonuses,
+                metadata
+            ];
+
+            return [
+                item?.name,
+                item?.description,
+                item?.shortDescription,
+                item?.thingType,
+                item?.rarity,
+                item?.slot,
+                metadata.slot,
+                metadata.properties,
+                slotInfo.canModifyEquipment ? 'equippable' : 'non-equippable',
+                ...detailSources.flatMap(source => collectThingFilterDetailText(source))
+            ];
+        }
+
         function filterThingCollection(items, filters = {}, { enableEquipmentFilters = false } = {}) {
             const safeItems = Array.isArray(items) ? items : [];
             const applyEquippableFilter = enableEquipmentFilters
@@ -14919,18 +16269,7 @@
                     return true;
                 }
 
-                const haystack = [
-                    item?.name,
-                    item?.description,
-                    item?.shortDescription,
-                    item?.thingType,
-                    item?.rarity,
-                    item?.slot,
-                    item?.metadata?.slot,
-                    item?.metadata?.properties,
-                    slotInfo.canModifyEquipment ? 'equippable' : 'non-equippable'
-                ];
-
+                const haystack = buildThingFilterHaystack(item, slotInfo);
                 return haystack.some(value => typeof value === 'string' && value.toLowerCase().includes(filters.searchText));
             });
         }
@@ -14968,7 +16307,8 @@
                 const isProcessingAction = badge.key === 'isProcessingStation';
                 const isSalvageAction = badge.key === 'isSalvageable';
                 const isHarvestAction = badge.key === 'isHarvestable';
-                const isInteractive = isCraftingAction || isProcessingAction || isSalvageAction || isHarvestAction;
+                const isContainerAction = badge.key === 'isContainer';
+                const isInteractive = isCraftingAction || isProcessingAction || isSalvageAction || isHarvestAction || isContainerAction;
                 const element = document.createElement(isInteractive ? 'button' : 'span');
                 element.className = 'thing-action-icon';
                 element.textContent = badge.icon;
@@ -14986,6 +16326,8 @@
                             attemptHarvestFromBadge(activationHost);
                         } else if (isSalvageAction) {
                             attemptSalvageFromBadge(activationHost);
+                        } else if (isContainerAction) {
+                            openThingContainerModalFromElement(activationHost);
                         } else {
                             openCraftingModalFromBadge(
                                 isProcessingAction ? 'isProcessingStation' : 'isCraftingStation',
@@ -15649,6 +16991,30 @@
                         }
                     },
                     decorateCard: ({ card, thing, slotInfo, controlsHost, equipmentControlsHost, viewMode: activeViewMode }) => {
+                        if (thing?.id && card instanceof HTMLElement) {
+                            card.draggable = true;
+                            card.addEventListener('dragstart', (event) => {
+                                if (!beginModalInventoryDrag(event, {
+                                    thing,
+                                    modal: npcInventoryModal,
+                                    context: 'npc-inventory',
+                                    npcId: currentNpcInventoryNpcId
+                                })) {
+                                    event.preventDefault();
+                                    return;
+                                }
+                                event.dataTransfer.effectAllowed = 'move';
+                            });
+                            card.addEventListener('dragend', () => {
+                                clearModalInventoryDragState();
+                            });
+                            wireModalInventoryTouchDrag(card, {
+                                thing,
+                                modal: npcInventoryModal,
+                                context: 'npc-inventory',
+                                npcId: currentNpcInventoryNpcId
+                            });
+                        }
                         if (activeViewMode === 'grid' || activeViewMode === 'small-grid') {
                             return;
                         }
@@ -15666,6 +17032,588 @@
             try {
                 document.dispatchEvent(new Event('inventory:updated'));
             } catch (_) {}
+        }
+
+        function isSharedNpcBackdropModalHidden(modal) {
+            return !modal || modal.hasAttribute('hidden');
+        }
+
+        function hideNpcBackdropIfNoSharedModalOpen() {
+            const allHidden = [
+                npcInventoryModal,
+                npcViewModal,
+                npcEditModal,
+                thingEditModal,
+                thingContainerModal,
+                npcDispositionModal,
+                npcNeedsModal,
+                npcMemoriesModal,
+                npcGoalsModal,
+                newExitModal,
+                addNpcModal,
+                loadGameModal
+            ].every(isSharedNpcBackdropModalHidden);
+
+            if (npcModalBackdrop && allHidden) {
+                npcModalBackdrop.setAttribute('hidden', '');
+                document.body.classList.remove('modal-open');
+            }
+        }
+
+        function showThingContainerShell(containerName = 'Container') {
+            if (!thingContainerModal || !npcModalBackdrop) {
+                throw new Error('Container modal is unavailable.');
+            }
+            thingContainerModal.removeAttribute('hidden');
+            thingContainerModal.setAttribute('aria-hidden', 'false');
+            thingContainerModal.setAttribute('aria-busy', 'true');
+            npcModalBackdrop.removeAttribute('hidden');
+            document.body.classList.add('modal-open');
+            if (thingContainerModalTitle) {
+                thingContainerModalTitle.textContent = containerName;
+            }
+            updateThingContainerBulkButtons();
+            scrollModalToTop(thingContainerModal);
+        }
+
+        function cacheThingContainerPayload(payload = {}) {
+            if (payload.container) {
+                cacheThingData(payload.container);
+            }
+            if (Array.isArray(payload.contents)) {
+                payload.contents.forEach(cacheThingData);
+            }
+            if (Array.isArray(payload.playerInventory)) {
+                payload.playerInventory.forEach(cacheThingData);
+            }
+        }
+
+        function renderThingContainerBreadcrumbs() {
+            if (!thingContainerBreadcrumbs) {
+                return;
+            }
+            thingContainerBreadcrumbs.innerHTML = '';
+            const entries = [
+                ...thingContainerHistory,
+                currentThingContainerData
+                    ? { id: currentThingContainerData.id, name: currentThingContainerData.name || 'Container' }
+                    : null
+            ].filter(entry => entry && entry.id);
+
+            entries.forEach((entry, index) => {
+                if (index > 0) {
+                    const separator = document.createElement('span');
+                    separator.className = 'thing-container-modal__breadcrumb-separator';
+                    separator.textContent = '/';
+                    thingContainerBreadcrumbs.appendChild(separator);
+                }
+
+                const isCurrent = index === entries.length - 1;
+                if (isCurrent) {
+                    const label = document.createElement('span');
+                    label.className = 'thing-container-modal__breadcrumb-current';
+                    label.textContent = entry.name || 'Container';
+                    thingContainerBreadcrumbs.appendChild(label);
+                    return;
+                }
+
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.className = 'thing-container-modal__breadcrumb-button';
+                button.textContent = entry.name || 'Container';
+                button.addEventListener('click', async () => {
+                    const target = thingContainerHistory[index];
+                    if (!target?.id) {
+                        return;
+                    }
+                    thingContainerHistory = thingContainerHistory.slice(0, index);
+                    await openThingContainerModal(target.id, { resetHistory: false, pushHistory: false });
+                });
+                thingContainerBreadcrumbs.appendChild(button);
+            });
+        }
+
+        function updateThingContainerBulkButtons() {
+            const hasOpenContainer = Boolean(currentThingContainerId && thingContainerModal && !thingContainerModal.hasAttribute('hidden'));
+            const modalBusy = Boolean(thingContainerModal && thingContainerModal.getAttribute('aria-busy') === 'true');
+            if (containerPlayerInventoryAddAllBtn) {
+                containerPlayerInventoryAddAllBtn.disabled = thingContainerMoveInFlight
+                    || modalBusy
+                    || !hasOpenContainer
+                    || currentThingContainerVisiblePlayerInventory.length === 0;
+            }
+            if (containerContentsRemoveAllBtn) {
+                containerContentsRemoveAllBtn.disabled = thingContainerMoveInFlight
+                    || modalBusy
+                    || !hasOpenContainer
+                    || currentThingContainerVisibleContents.length === 0;
+            }
+        }
+
+        function renderThingContainerModal() {
+            if (!thingContainerModal) {
+                return;
+            }
+
+            const containerName = currentThingContainerData?.name || 'Container';
+            if (thingContainerModalTitle) {
+                thingContainerModalTitle.textContent = containerName;
+            }
+            if (containerContentsName) {
+                setRenderedName(containerContentsName, containerName, 'Contents');
+            }
+            if (thingContainerBackBtn) {
+                thingContainerBackBtn.hidden = thingContainerHistory.length === 0;
+            }
+            renderThingContainerBreadcrumbs();
+
+            const resolveContainerTouchDropTarget = (state) => {
+                const element = document.elementFromPoint(state.currentX, state.currentY);
+                const dropzone = element?.closest?.('#containerPlayerInventoryGrid, #containerContentsGrid') || null;
+                if (dropzone === containerContentsGrid) {
+                    return { element, dropzone, target: 'container' };
+                }
+                if (dropzone === containerPlayerInventoryGrid) {
+                    return { element, dropzone, target: 'player' };
+                }
+                return { element, dropzone: null, target: '' };
+            };
+
+            const updateContainerTouchDropHighlight = (state) => {
+                const { target } = resolveContainerTouchDropTarget(state);
+                const canDropToContainer = state.containerMoveSource === 'player' && target === 'container';
+                const canDropToPlayer = state.containerMoveSource === 'container' && target === 'player';
+                containerContentsGrid?.classList.toggle('is-drag-over', canDropToContainer);
+                containerPlayerInventoryGrid?.classList.toggle('is-drag-over', canDropToPlayer);
+            };
+
+            const makeDecorator = (source) => ({ card, thing }) => {
+                if (!(card instanceof HTMLElement) || !thing?.id) {
+                    return;
+                }
+                card.classList.add('thing-container-modal__draggable-item');
+                card.dataset.containerMoveSource = source;
+                card.draggable = true;
+                card.addEventListener('dragstart', (event) => {
+                    if (!event.dataTransfer) {
+                        return;
+                    }
+                    currentThingContainerDragSource = source;
+                    event.dataTransfer.effectAllowed = 'move';
+                    event.dataTransfer.setData('application/x-ai-rpg-thing-id', thing.id);
+                    event.dataTransfer.setData('application/x-ai-rpg-container-source', source);
+                    event.dataTransfer.setData('text/plain', thing.id);
+                    beginModalInventoryDrag(event, {
+                        thing,
+                        modal: thingContainerModal,
+                        context: source === 'player' ? 'container-player-inventory' : 'container-contents'
+                    });
+                });
+                card.addEventListener('dragend', () => {
+                    currentThingContainerDragSource = null;
+                    clearModalInventoryDragState();
+                    containerPlayerInventoryGrid?.classList.remove('is-drag-over');
+                    containerContentsGrid?.classList.remove('is-drag-over');
+                });
+                wireModalInventoryTouchDrag(card, {
+                    thing,
+                    modal: thingContainerModal,
+                    context: source === 'player' ? 'container-player-inventory' : 'container-contents',
+                    onTouchDragStart: (state) => {
+                        state.containerMoveSource = source;
+                        currentThingContainerDragSource = source;
+                        updateContainerTouchDropHighlight(state);
+                    },
+                    onTouchDragMove: (state) => {
+                        state.containerMoveSource = source;
+                        updateContainerTouchDropHighlight(state);
+                    },
+                    onTouchDrop: async (state) => {
+                        const { element, target } = resolveContainerTouchDropTarget(state);
+                        if ((source === 'player' && target === 'container') || (source === 'container' && target === 'player')) {
+                            await moveThingBetweenContainerColumns(state.thing, source);
+                            return true;
+                        }
+                        if (thingContainerModal instanceof HTMLElement && thingContainerModal.contains(element)) {
+                            return true;
+                        }
+                        return false;
+                    }
+                });
+                card.addEventListener('click', async (event) => {
+                    if (!event.shiftKey || event.button !== 0) {
+                        return;
+                    }
+                    if (event.target?.closest?.('.entity-context-menu-button, .thing-card-menu-button, button, a, input, select, textarea')) {
+                        return;
+                    }
+                    event.preventDefault();
+                    event.stopPropagation();
+                    event.stopImmediatePropagation();
+                    try {
+                        await moveThingBetweenContainerColumns(thing, source);
+                    } catch (error) {
+                        console.warn('Failed to move container item:', error);
+                        alert(error?.message || 'Failed to move item.');
+                    }
+                });
+            };
+
+            currentThingContainerVisiblePlayerInventory = renderThingCollectionPanel({
+                items: currentThingContainerPlayerInventory,
+                panelKey: 'containerPlayerInventory',
+                grid: containerPlayerInventoryGrid,
+                empty: containerPlayerInventoryEmpty,
+                countEl: containerPlayerInventoryCount,
+                searchInput: containerPlayerInventoryFilterInput,
+                viewShell: containerPlayerInventoryView,
+                sortShell: containerPlayerInventorySort,
+                slotFilter: containerPlayerInventorySlotFilter,
+                slotFilterWrapper: containerPlayerInventorySlotFilterWrapper,
+                showAllRadio: containerPlayerInventoryShowAllRadio,
+                equippedOnlyRadio: containerPlayerInventoryEquippedOnlyRadio,
+                equippableOnlyRadio: containerPlayerInventoryEquippableOnlyRadio,
+                nonEquippableOnlyRadio: containerPlayerInventoryNonEquippableOnlyRadio,
+                emptyMessage: 'Inventory is empty.',
+                filteredEmptyMessage: 'No inventory items match your filters.',
+                singularLabel: 'item',
+                pluralLabel: 'items',
+                enableEquipmentFilters: true,
+                keepGridVisibleWhenEmpty: true,
+                tableConfig: {
+                    showHeaders: true,
+                    showLevel: true,
+                    showValue: true,
+                    showEquipment: true
+                },
+                buildCard: (item, { viewMode, tableConfig } = {}) => buildThingCollectionEntry(item, {
+                    viewMode,
+                    tableConfig,
+                    contextMenuOptions: { context: 'container-player-inventory', allowDelete: false },
+                    tooltipOptions: {
+                        equipmentOwner: () => window.currentPlayerData || null
+                    },
+                    decorateCard: makeDecorator('player')
+                })
+            });
+
+            currentThingContainerVisibleContents = renderThingCollectionPanel({
+                items: currentThingContainerContents,
+                panelKey: 'containerContents',
+                grid: containerContentsGrid,
+                empty: containerContentsEmpty,
+                countEl: containerContentsCount,
+                searchInput: containerContentsFilterInput,
+                viewShell: containerContentsView,
+                sortShell: containerContentsSort,
+                slotFilter: containerContentsSlotFilter,
+                slotFilterWrapper: containerContentsSlotFilterWrapper,
+                showAllRadio: containerContentsShowAllRadio,
+                equippableOnlyRadio: containerContentsEquippableOnlyRadio,
+                nonEquippableOnlyRadio: containerContentsNonEquippableOnlyRadio,
+                emptyMessage: 'Container is empty.',
+                filteredEmptyMessage: 'No container items match your filters.',
+                singularLabel: 'item',
+                pluralLabel: 'items',
+                enableEquipmentFilters: true,
+                keepGridVisibleWhenEmpty: true,
+                tableConfig: {
+                    showHeaders: true,
+                    showLevel: true,
+                    showValue: true,
+                    showEquipment: false
+                },
+                buildCard: (item, { viewMode, tableConfig } = {}) => buildThingCollectionEntry(item, {
+                    viewMode,
+                    tableConfig,
+                    contextMenuOptions: { context: 'container-contents' },
+                    decorateCard: makeDecorator('container')
+                })
+            });
+
+            thingContainerModal.removeAttribute('aria-busy');
+            updateThingContainerBulkButtons();
+        }
+
+        function applyThingContainerPayload(payload = {}) {
+            if (!payload?.success || !payload.container) {
+                throw new Error(payload?.error || 'Container response did not include a container.');
+            }
+            cacheThingContainerPayload(payload);
+            currentThingContainerData = payload.container;
+            currentThingContainerId = payload.container.id || null;
+            currentThingContainerContents = Array.isArray(payload.contents)
+                ? payload.contents
+                : currentThingContainerContents;
+            currentThingContainerPlayerInventory = Array.isArray(payload.playerInventory)
+                ? payload.playerInventory
+                : currentThingContainerPlayerInventory;
+            if (payload.player && payload.player.id) {
+                window.currentPlayerData = {
+                    ...(window.currentPlayerData || {}),
+                    ...payload.player
+                };
+            }
+            renderThingContainerModal();
+            return payload;
+        }
+
+        async function fetchThingContainerPayload(containerId) {
+            const normalizedContainerId = typeof containerId === 'string' ? containerId.trim() : '';
+            if (!normalizedContainerId) {
+                throw new Error('Container ID is required.');
+            }
+            const response = await fetch(`/api/things/${encodeURIComponent(normalizedContainerId)}/container`, {
+                cache: 'no-store'
+            });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || !payload?.success) {
+                throw new Error(payload?.error || `Request failed with status ${response.status}`);
+            }
+            return payload;
+        }
+
+        async function openThingContainerModal(thingOrId, { pushHistory = false, resetHistory = true } = {}) {
+            const thing = typeof thingOrId === 'string'
+                ? (thingDataCache.get(thingOrId) || { id: thingOrId, name: 'Container', isContainer: true })
+                : thingOrId;
+            const containerId = typeof thing?.id === 'string' ? thing.id.trim() : '';
+            if (!containerId) {
+                throw new Error('Container ID is required.');
+            }
+            if (thing && thing.isContainer !== undefined && !resolveThingBooleanFlag(thing, 'isContainer')) {
+                throw new Error(`${thing.name || 'Thing'} is not marked as a container.`);
+            }
+
+            const modalAlreadyOpen = thingContainerModal && !thingContainerModal.hasAttribute('hidden');
+            if (pushHistory && modalAlreadyOpen && currentThingContainerId && currentThingContainerId !== containerId) {
+                thingContainerHistory.push({
+                    id: currentThingContainerId,
+                    name: currentThingContainerData?.name || 'Container'
+                });
+            } else if (!pushHistory && resetHistory && !modalAlreadyOpen) {
+                thingContainerHistory = [];
+            } else if (!pushHistory && resetHistory && modalAlreadyOpen && currentThingContainerId !== containerId) {
+                thingContainerHistory = [];
+            }
+
+            showThingContainerShell(thing?.name || 'Container');
+            const payload = await fetchThingContainerPayload(containerId);
+            return applyThingContainerPayload(payload);
+        }
+
+        async function openThingContainerModalFromElement(hostElement) {
+            const thingId = hostElement?.dataset?.imageEntityId || null;
+            if (!thingId) {
+                alert('Unable to open container: missing item reference.');
+                return;
+            }
+            const thing = thingDataCache.get(thingId) || await fetchThingDetails(thingId);
+            if (!thing) {
+                alert('Unable to open container: item details are unavailable.');
+                return;
+            }
+            await openThingContainerModal(thing, {
+                pushHistory: Boolean(
+                    thingContainerModal
+                    && !thingContainerModal.hasAttribute('hidden')
+                    && currentThingContainerId
+                    && currentThingContainerId !== thing.id
+                )
+            });
+        }
+
+        async function requestThingContainerMove(thingIdOrIds, source) {
+            if (!currentThingContainerId) {
+                throw new Error('No open container.');
+            }
+            const endpoint = source === 'player' ? 'move-in' : 'move-out';
+            if (source !== 'player' && source !== 'container') {
+                throw new Error(`Unsupported container move source "${source}".`);
+            }
+            const thingIds = Array.isArray(thingIdOrIds)
+                ? thingIdOrIds.map(value => (typeof value === 'string' ? value.trim() : '')).filter(Boolean)
+                : [];
+            const singleThingId = typeof thingIdOrIds === 'string' ? thingIdOrIds.trim() : '';
+            if (!singleThingId && thingIds.length === 0) {
+                throw new Error('Missing item information.');
+            }
+            const body = thingIds.length > 0
+                ? { thingIds }
+                : { thingId: singleThingId };
+            const response = await fetch(`/api/things/${encodeURIComponent(currentThingContainerId)}/container/${endpoint}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || !payload?.success) {
+                throw new Error(payload?.error || `Request failed with status ${response.status}`);
+            }
+            return payload;
+        }
+
+        async function moveThingBetweenContainerColumns(thing, source, { refreshInventory = true } = {}) {
+            if (!currentThingContainerId) {
+                throw new Error('No open container.');
+            }
+            if (!thing?.id) {
+                throw new Error('Missing item information.');
+            }
+            if (thingContainerMoveInFlight) {
+                return null;
+            }
+            if (source !== 'player' && source !== 'container') {
+                throw new Error(`Unsupported container move source "${source}".`);
+            }
+            thingContainerMoveInFlight = true;
+            updateThingContainerBulkButtons();
+            try {
+                const payload = await requestThingContainerMove(thing.id, source);
+                applyThingContainerPayload(payload);
+                if (refreshInventory) {
+                    try {
+                        await window.refreshInventory?.();
+                    } catch (error) {
+                        console.warn('Failed to refresh inventory after container move:', error);
+                    }
+                }
+                return payload;
+            } finally {
+                thingContainerMoveInFlight = false;
+                updateThingContainerBulkButtons();
+            }
+        }
+
+        async function moveVisibleThingContainerItems(source) {
+            if (!currentThingContainerId) {
+                throw new Error('No open container.');
+            }
+            if (source !== 'player' && source !== 'container') {
+                throw new Error(`Unsupported container move source "${source}".`);
+            }
+            if (thingContainerMoveInFlight) {
+                return null;
+            }
+
+            const visibleItems = (source === 'player'
+                ? currentThingContainerVisiblePlayerInventory
+                : currentThingContainerVisibleContents
+            ).filter(item => item && item.id);
+
+            if (visibleItems.length === 0) {
+                return null;
+            }
+
+            if (source === 'player') {
+                const selfItem = visibleItems.find(item => item.id === currentThingContainerId);
+                if (selfItem) {
+                    throw new Error(`${selfItem.name || 'This container'} cannot be added to itself. Hide it with filters or move items individually.`);
+                }
+                const equippedItem = visibleItems.find(item => Boolean(item?.isEquipped || item?.equippedSlot));
+                if (equippedItem) {
+                    throw new Error(`${equippedItem.name || 'A visible item'} is equipped. Unequip it or hide it with filters before using Add all.`);
+                }
+            }
+
+            thingContainerMoveInFlight = true;
+            updateThingContainerBulkButtons();
+            try {
+                const payload = await requestThingContainerMove(visibleItems.map(item => item.id), source);
+                applyThingContainerPayload(payload);
+                try {
+                    await window.refreshInventory?.();
+                } catch (error) {
+                    console.warn('Failed to refresh inventory after bulk container move:', error);
+                }
+                return payload;
+            } finally {
+                thingContainerMoveInFlight = false;
+                updateThingContainerBulkButtons();
+            }
+        }
+
+        function bindThingContainerDropzone(grid, target) {
+            if (!(grid instanceof HTMLElement) || grid.dataset.containerDropzoneBound === 'true') {
+                return;
+            }
+            grid.dataset.containerDropzoneBound = 'true';
+            grid.addEventListener('dragover', (event) => {
+                const source = currentThingContainerDragSource || event.dataTransfer?.getData('application/x-ai-rpg-container-source') || '';
+                if ((target === 'container' && source === 'player') || (target === 'player' && source === 'container')) {
+                    event.preventDefault();
+                    if (event.dataTransfer) {
+                        event.dataTransfer.dropEffect = 'move';
+                    }
+                    grid.classList.add('is-drag-over');
+                }
+            });
+            grid.addEventListener('dragleave', (event) => {
+                if (!grid.contains(event.relatedTarget)) {
+                    grid.classList.remove('is-drag-over');
+                }
+            });
+            grid.addEventListener('drop', async (event) => {
+                grid.classList.remove('is-drag-over');
+                const source = currentThingContainerDragSource || event.dataTransfer?.getData('application/x-ai-rpg-container-source') || '';
+                const thingId = event.dataTransfer?.getData('application/x-ai-rpg-thing-id')
+                    || event.dataTransfer?.getData('text/plain')
+                    || '';
+                currentThingContainerDragSource = null;
+                if (!thingId) {
+                    return;
+                }
+                if (!((target === 'container' && source === 'player') || (target === 'player' && source === 'container'))) {
+                    return;
+                }
+                event.preventDefault();
+                const collection = source === 'player'
+                    ? currentThingContainerPlayerInventory
+                    : currentThingContainerContents;
+                const thing = collection.find(entry => entry && entry.id === thingId)
+                    || thingDataCache.get(thingId)
+                    || null;
+                try {
+                    await moveThingBetweenContainerColumns(thing, source);
+                } catch (error) {
+                    console.warn('Failed to move dropped container item:', error);
+                    alert(error?.message || 'Failed to move item.');
+                }
+            });
+        }
+
+        function closeThingContainerModal() {
+            if (!thingContainerModal) {
+                return;
+            }
+            thingContainerModal.setAttribute('aria-hidden', 'true');
+            thingContainerModal.setAttribute('hidden', '');
+            thingContainerModal.removeAttribute('aria-busy');
+            closeThingContextMenu();
+            closeThingListFilterPopoverForPanel(containerPlayerInventoryPanel);
+            closeThingListSortPopoverForPanel(containerPlayerInventoryPanel);
+            closeThingListViewPopoverForPanel(containerPlayerInventoryPanel);
+            closeThingListFilterPopoverForPanel(containerContentsPanel);
+            closeThingListSortPopoverForPanel(containerContentsPanel);
+            closeThingListViewPopoverForPanel(containerContentsPanel);
+            if (containerPlayerInventoryGrid) {
+                containerPlayerInventoryGrid.innerHTML = '';
+            }
+            if (containerContentsGrid) {
+                containerContentsGrid.innerHTML = '';
+            }
+            currentThingContainerId = null;
+            currentThingContainerData = null;
+            currentThingContainerContents = [];
+            currentThingContainerPlayerInventory = [];
+            currentThingContainerVisibleContents = [];
+            currentThingContainerVisiblePlayerInventory = [];
+            thingContainerHistory = [];
+            currentThingContainerDragSource = null;
+            clearModalInventoryDragState();
+            cancelModalInventoryTouchDrag({ suppressClick: true });
+            updateThingContainerBulkButtons();
+            hideNpcBackdropIfNoSharedModalOpen();
         }
 
         async function showNpcDispositionModal(npc) {
@@ -16392,6 +18340,8 @@
             craftingInventoryCardRefs = new Map();
             craftingSourceThing = null;
             currentCraftingTargetType = 'item';
+            clearModalInventoryDragState();
+            cancelModalInventoryTouchDrag({ suppressClick: true });
             if (craftingNotesInput) {
                 craftingNotesInput.value = '';
             }
@@ -16484,6 +18434,11 @@
                             craftingInventoryCardRefs.set(thing.id, card);
                             card.addEventListener('dragstart', handleCraftingInventoryDragStart);
                             card.addEventListener('dragend', handleCraftingInventoryDragEnd);
+                            wireModalInventoryTouchDrag(card, {
+                                thing,
+                                modal: craftingModal,
+                                context: 'crafting-inventory'
+                            });
                             card.addEventListener('dblclick', () => {
                                 if (!assignItemToFirstAvailableSlot(thing.id)) {
                                     assignItemToCraftingSlot(0, thing.id);
@@ -16711,13 +18666,23 @@
                 event.preventDefault();
                 return;
             }
+            const thing = craftingInventoryLookup.get(thingId) || thingDataCache.get(thingId) || { id: thingId };
+            if (!beginModalInventoryDrag(event, {
+                thing,
+                modal: craftingModal,
+                context: 'crafting-inventory'
+            })) {
+                event.preventDefault();
+                return;
+            }
             target.classList.add('is-dragging');
             event.dataTransfer.setData('text/x-thing-id', thingId);
-            event.dataTransfer.effectAllowed = 'copy';
+            event.dataTransfer.effectAllowed = 'copyMove';
         }
 
         function handleCraftingInventoryDragEnd(event) {
             event.currentTarget?.classList.remove('is-dragging');
+            clearModalInventoryDragState();
         }
 
         function handleCraftingSlotDragOver(event) {
@@ -17104,6 +19069,81 @@
             });
         }
 
+        function renderAbilityCards(container, emptyState, abilities = []) {
+            if (!container) {
+                return;
+            }
+
+            container.innerHTML = '';
+            const safeAbilities = Array.isArray(abilities) ? abilities.filter(Boolean) : [];
+            if (!safeAbilities.length) {
+                if (emptyState) {
+                    emptyState.removeAttribute('hidden');
+                }
+                container.setAttribute('hidden', '');
+                return;
+            }
+
+            container.removeAttribute('hidden');
+            if (emptyState) {
+                emptyState.setAttribute('hidden', '');
+            }
+
+            safeAbilities.forEach(ability => {
+                const card = document.createElement('article');
+                card.className = 'npc-view-ability-card';
+                card.setAttribute('role', 'listitem');
+
+                const header = document.createElement('div');
+                header.className = 'npc-view-ability-card-header';
+
+                const typeText = typeof ability?.type === 'string' && ability.type.trim()
+                    ? ability.type.trim()
+                    : 'Passive';
+                const typeKey = normalizeAbilityTypeKey(typeText);
+                card.classList.add(`ability-type-${typeKey}`);
+
+                const name = document.createElement('span');
+                name.className = 'npc-view-ability-card-name ability-type-text';
+                applyAbilityTypeClass(name, 'ability-type-text', typeKey);
+                const abilityName = typeof ability?.name === 'string' && ability.name.trim()
+                    ? ability.name.trim()
+                    : 'Ability';
+                name.textContent = abilityName;
+
+                const numericLevel = Number(ability?.level);
+                const meta = document.createElement('span');
+                meta.className = 'npc-view-ability-card-meta';
+                const typeLabel = document.createElement('span');
+                typeLabel.className = 'ability-type-label ability-type-text';
+                applyAbilityTypeClass(typeLabel, 'ability-type-text', typeKey);
+                typeLabel.textContent = formatAbilityTypeLabel(typeKey);
+                meta.appendChild(typeLabel);
+                if (Number.isFinite(numericLevel)) {
+                    meta.appendChild(document.createTextNode(` • Level ${numericLevel}`));
+                }
+
+                header.appendChild(name);
+                header.appendChild(meta);
+
+                const description = document.createElement('p');
+                description.className = 'npc-view-ability-card-description';
+                description.textContent = (
+                    typeof ability?.shortDescription === 'string' && ability.shortDescription.trim()
+                        ? ability.shortDescription.trim()
+                        : (typeof ability?.description === 'string' && ability.description.trim()
+                            ? ability.description.trim()
+                            : (typeof ability?.text === 'string' && ability.text.trim()
+                                ? ability.text.trim()
+                                : 'No description provided.'))
+                );
+
+                card.appendChild(header);
+                card.appendChild(description);
+                container.appendChild(card);
+            });
+        }
+
         function updateNpcViewAllocationStatus(message = '', type = null) {
             if (!npcViewAllocationStatus) {
                 return;
@@ -17363,8 +19403,8 @@
             const classLabel = resolveTagValue(latestNpc?.class, latestNpc?.className, latestNpc?.classLabel) || 'Unknown';
             const raceLabel = resolveTagValue(latestNpc?.race, latestNpc?.species, latestNpc?.raceName) || 'Unknown';
             const levelValue = Number.isFinite(Number(latestNpc?.level)) ? Number(latestNpc.level) : null;
-            const healthValue = Number.isFinite(Number(latestNpc?.health)) ? Number(latestNpc.health) : null;
-            const maxHealthValue = Number.isFinite(Number(latestNpc?.maxHealth)) ? Number(latestNpc.maxHealth) : null;
+            const healthValue = formatHealthDisplayValue(latestNpc?.health);
+            const maxHealthValue = formatHealthDisplayValue(latestNpc?.maxHealth);
             const parseNonNegativeInt = (value) => {
                 const parsed = Number.parseInt(value, 10);
                 return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
@@ -17670,27 +19710,7 @@
             equipmentEntries.sort((a, b) => a.slotLabel.localeCompare(b.slotLabel));
             renderEquipmentList(npcViewEquipment, npcViewEquipmentEmpty, equipmentEntries);
 
-            const abilityEntries = [];
-            if (Array.isArray(latestNpc?.abilities)) {
-                latestNpc.abilities.forEach(ability => {
-                    if (!ability) return;
-                    const label = ability.name || 'Ability';
-                    const typeLabel = ability.type ? String(ability.type) : '';
-                    const numericLevel = Number.isFinite(Number(ability.level)) ? Number(ability.level) : null;
-                    const metaParts = [];
-                    if (typeLabel) {
-                        metaParts.push(typeLabel);
-                    }
-                    if (numericLevel !== null) {
-                        metaParts.push(`Level ${numericLevel}`);
-                    }
-                    const metaSuffix = metaParts.length ? ` (${metaParts.join(' • ')})` : '';
-                    const descriptionText = ability.description || ability.text || '';
-                    const entry = `<strong>${escapeHtml(label)}${escapeHtml(metaSuffix)}</strong>${descriptionText ? `<span class="npc-view-list-description">${escapeHtml(descriptionText)}</span>` : ''}`;
-                    abilityEntries.push(entry);
-                });
-            }
-            renderList(npcViewAbilities, npcViewAbilitiesEmpty, abilityEntries, { allowHTML: true });
+            renderAbilityCards(npcViewAbilities, npcViewAbilitiesEmpty, latestNpc?.abilities);
 
             const statusEntries = [];
             if (Array.isArray(latestNpc?.statusEffects)) {
@@ -22903,7 +24923,7 @@
                                 if (result?.imageId && locationHint) {
                                     locationHint.textContent = location.description ? 'Hover over the location image for a description.' : 'No description available for this location yet.';
                                 }
-                                const imageUrl = result?.imageUrl || (result?.imageId ? `/generated-images/${result.imageId}.png` : null);
+                                const imageUrl = result?.imageUrl || getGeneratedImageUrl(result?.imageId || null);
                                 updateAdventureBackground(imageUrl);
                             }).catch(() => {
                                 finalizeTooltip();
@@ -22913,7 +24933,7 @@
                                 updateAdventureBackground(null);
                             });
                         } else {
-                            const fallbackUrl = location.imageId ? `/generated-images/${location.imageId}.png` : null;
+                            const fallbackUrl = getGeneratedImageUrl(location.imageId || null);
                             updateAdventureBackground(fallbackUrl);
                         }
 

@@ -34,6 +34,24 @@ The below context is an account of the current game state, including the setting
   {% set saveFileVersion = Globals.saveGameSaveVersion %}
   {% endif %}
   {% set useShortDescriptions = saveFileVersion >= 1 %}
+  {% macro containerContentsSummary(contents) -%}
+{%- for contained in contents -%}
+{{ contained.name }}{% if contained.count and contained.count > 1 %} x{{ contained.count }}{% endif %}{% if contained.isContainer %} ({% if contained.containerContents and contained.containerContents.length %}contains {{ containerContentsSummary(contained.containerContents) }}{% else %}empty{% endif %}){% endif %}{% if not loop.last %}, {% endif %}
+{%- endfor -%}
+  {%- endmacro %}
+  {% macro renderContainerContentsXml(contents) -%}
+        <containerContents>
+          {% for contained in contents %}
+          <containedItem>
+            <name>{{ contained.name }}</name>
+            <count>{{ contained.count | default(1) }}</count>
+            <description>{{ contained.shortDescription | default(contained.description, true) }}</description>
+            <isContainer>{{ contained.isContainer | default(false) }}</isContainer>
+            {{ renderContainerContentsXml(contained.containerContents | default([], true)) }}
+          </containedItem>
+          {% endfor %}
+        </containerContents>
+  {%- endmacro %}
   <setting>
     <name>{{ setting.name }}</name>
     <description>{{ setting.description }}</description>
@@ -138,7 +156,7 @@ The below context is an account of the current game state, including the setting
     </exits>
     <items>{% if useShortDescriptions -%}
 {%- for item in currentLocation.items -%}
-{{ item.name }}: {{ item.rarity | default('common', true) }} level {{ item.level | default(1, true) }} - {{ item.shortDescription | default(item.description, true) }}{% if item.equippedSlot %} (Equipped to {{ item.equippedSlot }}){% endif %}{% if not loop.last %}{{ "\n" }}{% endif %}
+{{ item.name }}{% if item.count and item.count > 1 %} x{{ item.count }}{% endif %}: {{ item.rarity | default('common', true) }} level {{ item.level | default(1, true) }} - {{ item.shortDescription | default(item.description, true) }}{% if item.equippedSlot %} (Equipped to {{ item.equippedSlot }}){% endif %}{% if item.isContainer %} (Container{% if item.containerContents and item.containerContents.length %}: contains {{ containerContentsSummary(item.containerContents) }}{% else %}: empty{% endif %}){% endif %}{% if not loop.last %}{{ "\n" }}{% endif %}
 {%- endfor -%}
 {%- else %}
       {% for item in currentLocation.items %}
@@ -147,8 +165,10 @@ The below context is an account of the current game state, including the setting
         <description>{{ item.description }}</description>
         <isScenery>{{ item.isScenery | default(false) }}</isScenery>
         <isVehicle>{{ item.isVehicle | default(false) }}</isVehicle>
+        <isContainer>{{ item.isContainer | default(false) }}</isContainer>
         <rarity>{{ item.rarity | default('common') }}</rarity>
         <value>{{ item.value | default(0) }}</value>
+{{ renderContainerContentsXml(item.containerContents | default([], true)) }}
         <statusEffects>
           {% for effect in item.statusEffects %}
           <effect>
@@ -200,7 +220,7 @@ The below context is an account of the current game state, including the setting
         {% if not omitInventoryItems %}
         <inventory>{% if useShortDescriptions -%}
 {%- for item in npc.inventory -%}
-{{ item.name }}: {{ item.rarity | default('common', true) }} level {{ item.level | default(1, true) }} - {{ item.shortDescription | default(item.description, true) }}{% if item.equippedSlot %} (Equipped to {{ item.equippedSlot }}){% endif %}{% if not loop.last %}{{ "\n" }}{% endif %}
+{{ item.name }}{% if item.count and item.count > 1 %} x{{ item.count }}{% endif %}: {{ item.rarity | default('common', true) }} level {{ item.level | default(1, true) }} - {{ item.shortDescription | default(item.description, true) }}{% if item.equippedSlot %} (Equipped to {{ item.equippedSlot }}){% endif %}{% if item.isContainer %} (Container{% if item.containerContents and item.containerContents.length %}: contains {{ containerContentsSummary(item.containerContents) }}{% else %}: empty{% endif %}){% endif %}{% if not loop.last %}{{ "\n" }}{% endif %}
 {%- endfor -%}
 {%- else %}
           {% for item in npc.inventory %}<item>
@@ -253,8 +273,10 @@ The below context is an account of the current game state, including the setting
         <description>{{ item.description }}</description>
         <isScenery>{{ item.isScenery | default(false) }}</isScenery>
         <isVehicle>{{ item.isVehicle | default(false) }}</isVehicle>
+        <isContainer>{{ item.isContainer | default(false) }}</isContainer>
         <rarity>{{ item.rarity | default('common') }}</rarity>
         <value>{{ item.value | default(0) }}</value>
+{{ renderContainerContentsXml(item.containerContents | default([], true)) }}
         <statusEffects>
           {% for effect in item.statusEffects %}
           <effect>
@@ -270,7 +292,7 @@ The below context is an account of the current game state, including the setting
     {% endif %}</itemsInScene>
     <sceneryList>{% if useShortDescriptions -%}
 {%- for item in itemsInScene %}{% if item.isScenery -%}
-{{ item.name }}: {{ item.rarity | default('common', true) }} level {{ item.level | default(1, true) }} - {{ item.shortDescription | default(item.description, true) }}{% if item.equippedSlot %} (Equipped to {{ item.equippedSlot }}){% endif %}{% if not loop.last %}{{ "\n" }}{% endif %}
+{{ item.name }}{% if item.count and item.count > 1 %} x{{ item.count }}{% endif %}: {{ item.rarity | default('common', true) }} level {{ item.level | default(1, true) }} - {{ item.shortDescription | default(item.description, true) }}{% if item.equippedSlot %} (Equipped to {{ item.equippedSlot }}){% endif %}{% if item.isContainer %} (Container{% if item.containerContents and item.containerContents.length %}: contains {{ containerContentsSummary(item.containerContents) }}{% else %}: empty{% endif %}){% endif %}{% if not loop.last %}{{ "\n" }}{% endif %}
 {%- endif %}{%- endfor -%}
 {%- else %}
       {% for item in itemsInScene %}{% if item.isScenery %}
@@ -279,8 +301,10 @@ The below context is an account of the current game state, including the setting
         <description>{{ item.description }}</description>
         <isScenery>{{ item.isScenery | default(true) }}</isScenery>
         <isVehicle>{{ item.isVehicle | default(false) }}</isVehicle>
+        <isContainer>{{ item.isContainer | default(false) }}</isContainer>
         <rarity>{{ item.rarity | default('common') }}</rarity>
         <value>{{ item.value | default(0) }}</value>
+{{ renderContainerContentsXml(item.containerContents | default([], true)) }}
         <statusEffects>
           {% for effect in item.statusEffects %}
           <effect>

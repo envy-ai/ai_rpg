@@ -82,6 +82,12 @@ Validation rules:
 - `backend` defaults to `openai_compatible` when omitted.
 - Unknown backend values fail validation loudly at startup and on reload.
 
+## AI request timeout
+
+`ai.baseTimeoutSeconds` is the shared base request timeout for non-Codex text-generation calls. `LLMClient` converts this value to milliseconds before dispatching a request.
+
+For `codex_cli_bridge`, `ai.codex_bridge.idle_timeout_ms` is used instead. This is an idle timeout, not a fixed total deadline: the bridge starts the timer when the Codex app-server process starts, resets it whenever stdout data streams in from Codex, and terminates the request if no streamed data arrives before the timer expires. The default is `30000`, giving Codex prompts a 30-second no-data timeout that is not multiplied by prompt `timeoutScale`.
+
 ## Codex CLI bridge
 
 When `config.ai.backend` is `codex_cli_bridge`, the game runs text completions through the local Codex app-server stdio protocol and translates the final structured assistant message back into the same normalized response shape `LLMClient` expects.
@@ -100,6 +106,7 @@ ai:
     reasoning_effort: none
     profile: ""
     prompt_preamble: ""
+    idle_timeout_ms: 30000
 ```
 
 Fields:
@@ -112,6 +119,7 @@ Fields:
 - `reasoning_effort`: optional reasoning-effort override passed through on app-server `turn/start`; supported values are `none`, `minimal`, `low`, `medium`, `high`, `xhigh`. `none` is the lowest setting.
 - `profile`: optional Codex config profile.
 - `prompt_preamble`: optional text prepended ahead of the generated bridge wrapper prompt.
+- `idle_timeout_ms`: no-data timeout for Codex app-server stdout streaming. The timer resets on each stdout chunk and aborts the turn if no more data arrives before this many milliseconds.
 
 Behavior notes:
 - `fresh` is the safest default because each request is isolated from prior bridge context.
@@ -377,6 +385,19 @@ time:
 - `tickMinutes`: baseline tick value for systems that need default advancement.
 - `segmentBoundaries`: map of `segmentName -> startMinute` within the cycle.
 - Segment boundaries must be within `[0, cycleLengthMinutes)`.
+
+## Health
+
+`healthRegenPercentPerMinute` controls passive current-health regeneration as a percentage of each actor's current maximum health per elapsed world minute.
+
+```yaml
+# 0.01736111111% per minute is about 25% of max health per day.
+healthRegenPercentPerMinute: 0.01736111111
+```
+
+- The value must be a finite non-negative number.
+- Regeneration is applied when elapsed world-time effects are processed, and each actor persists `healthRegenAppliedAt` so reloads do not replay old elapsed minutes.
+- Current health is stored internally as a float; client health readouts round displayed values upward.
 
 ## Image generation thing size overrides
 

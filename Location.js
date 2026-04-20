@@ -1411,6 +1411,13 @@ class Location {
           metadataChanged = true;
         }
       }
+      const containerKeys = ['containerId', 'containerID', 'container_id'];
+      for (const key of containerKeys) {
+        if (metadata[key] !== undefined) {
+          delete metadata[key];
+          metadataChanged = true;
+        }
+      }
       if (metadata.owner !== undefined) {
         delete metadata.owner;
         metadataChanged = true;

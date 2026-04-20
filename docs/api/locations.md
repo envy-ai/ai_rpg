@@ -153,7 +153,7 @@ Notes:
 ## POST /api/locations/:id/things
 
 Request:
-- Body: `{ seed: { name?, description?, shortDescription?, type?, slot?, rarity?, itemOrScenery?, value?, weight?, level?, relativeLevel?, isVehicle?, isHarvestable?, isCraftingStation?, isProcessingStation?, isSalvageable?, notes? }, level? }`
+- Body: `{ seed: { name?, description?, shortDescription?, type?, slot?, rarity?, itemOrScenery?, value?, weight?, level?, relativeLevel?, isVehicle?, isHarvestable?, isCraftingStation?, isProcessingStation?, isSalvageable?, isContainer?, notes? }, level? }`
 
 Responses:
 - 200: `{ success: true, thing: ThingJson, location: LocationResponse, message }`

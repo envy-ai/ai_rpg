@@ -167,7 +167,7 @@
                         </div>
                         <div class="stat-card">
                             <div class="stat-label">Health</div>
-                            <div class="stat-value">{{ player.health }}/{{ player.maxHealth }}</div>
+                            <div class="stat-value">{{ player.health | round(0, 'ceil') }}/{{ player.maxHealth | round(0, 'ceil') }}</div>
                         </div>
                         <div class="stat-card">
                             <div class="stat-label">Status</div>

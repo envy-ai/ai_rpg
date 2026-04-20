@@ -5,11 +5,11 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
 
 ## Key State
 - Identity: `#id`, `#name`, `#aliases`, `#description`, `#shortDescription`, `#imageId`, `#class`, `#race`, `#gender`, `#isNPC`.
-- Core stats: `#attributes`, `#level`, `#experience`, `#health`, `#healthAttribute`.
+- Core stats: `#attributes`, `#level`, `#experience`, `#health` (finite float), `#healthAttribute`, `#healthRegenAppliedAt`.
 - Inventory/gear: `#inventory`, `#gearSlots`, `#gearSlotsByType`, `#gearSlotNameIndex`.
 - Skills/abilities: `#skills`, `#abilities`, `#unspentSkillPoints`, `#unspentAttributePoints`.
 - Pending level-up ability draft state: `#pendingAbilityOptionsByLevel` (per-level generated options for player-only ability selection flow).
-- Status/needs: `#statusEffects`, `#needBars`, `#needBarApplicability`.
+- Status/needs: `#statusEffects`, `#needBars`, `#needBarApplicability`, `#needBarRatesAppliedAt`.
 - Social: `#dispositions`, `#personalityType`, `#personalityTraits`, `#personalityNotes`, `#resistances`, `#vulnerabilities`.
 - Factions: `#factionId`, `#factionStandings` (map of `factionId -> number`).
 - UI state: `#thingListViewPreferences` (per-panel shared thing-list view modes for location/inventory/crafting panels).
@@ -36,7 +36,7 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
   - `reloadDefinitionCaches({ refreshInstances })` clears shared defs caches and can reapply merged need-bar definitions to already loaded actors.
   - `setAvailableSkills(skillsInput)`, `getAvailableSkills()`.
 - Global behaviors:
-  - `applyStatusEffectNeedBarsToAll()` (uses canonical world minutes, initializes missing actor/effect minute stamps without backfilling, applies baseline `change_per_minute` need-bar drift plus status-effect need-bar deltas once per elapsed minute, and decrements finite status-effect durations by elapsed minutes capped to remaining time).
+  - `applyStatusEffectNeedBarsToAll()` (uses canonical world minutes, initializes missing actor/effect/health-regeneration minute stamps without backfilling, applies configured health regeneration, baseline `change_per_minute` need-bar drift, plus status-effect need-bar deltas once per elapsed minute, and decrements finite status-effect durations by elapsed minutes capped to remaining time).
   - `updatePreviousLocationsForAll()`.
   - `setExperienceRolloverMultiplier(value)`.
 - Handlers:
@@ -90,7 +90,7 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
   - `getUnspentAttributePoints()`, `setUnspentAttributePoints(value)`, `adjustUnspentAttributePoints(delta)`.
   - `addExperience(amount, raw)` (normal gameplay XP is divided by `(currentLevel / 2)` for levels above `1`; for non-NPC actors with party members, shared XP is still derived from the original pre-division award and then scaled per recipient by `sourceLevel / recipientLevel`; `raw=true` bypasses both the level-based divisor and the party-recipient scaling), `addRawExperience(amount)`, `setExperience(value)`.
 - Health/combat:
-  - `modifyHealth(amount, reason)`, `setHealthAttribute(attributeName)`.
+  - `modifyHealth(amount, reason)`, `setHealth(health)`, `setHealthAttribute(attributeName)`.
   - `isAlive()`, `updateCorpseCountdown()`.
 - Status effects:
   - `getStatusEffects()`, `getIntrinsicStatusEffects()`.
@@ -125,7 +125,7 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
 - Initialization: `#loadDefinitions`, `#initializeAttributes`, `#initializeInventory`, `#initializeGear`, `#initializeSkills`, `#initializeDispositions`, `#initializeNeedBars`.
 - Gear helpers: `#resolveItemIdFromGearValue`, `#normalizeSlotType`, `#resolveSlotName`, `#syncGearWithInventory`, `#preserveHealthRatioAfterGearChange`.
 - Need bar helpers: `#normalizeNeedBarChangeList`, `#normalizeNeedMagnitudeKey`, `#normalizeNeedValueMap`, `#buildNeedBarDefinition`, `#cloneNeedBarDefinition`, `#loadNeedBarDefinitionState`, `#formatNeedBarForContext`, `#resolveNeedBarByIdentifier`, `#resolveNeedBarMagnitudeDelta`, `#resolveNeedBarThreshold`, `#applyNeedBarValue`.
-- Attributes/health: `#defaultHealthAttribute`, `#resolveHealthAttribute`, `#calculateBaseHealth`, `#validateAttributeValue`, `#calculateAttributeModifier`.
+- Attributes/health: `#normalizeHealthValue`, `#getHealthRegenPercentPerMinute`, `#defaultHealthAttribute`, `#resolveHealthAttribute`, `#calculateBaseHealth`, `#validateAttributeValue`, `#calculateAttributeModifier`.
 - Status/abilities: `#normalizeStatusEffects`, `#normalizeAbilities`, `#getIntrinsicStatusEffects`.
 - Pending draft options: `#normalizePendingAbilityOptionsByLevel`.
 - Dispositions: `#normalizeDispositionType`, `#sanitizePersonalityValue`, `#applyHostileDispositionsToCurrentPlayer`.
@@ -136,13 +136,15 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
 ## Notes
 - The class supports NPCs and players; many behaviors are shared with `isNPC` gating certain flows.
 - Gear and inventory are tightly coupled; equip/unequip flows update health and modifiers.
+- Current health is stored and serialized as a finite float. Health setters/modifiers accept finite non-negative numbers, while client-facing health readouts round displayed current/max health upward with `Math.ceil`.
+- `healthRegenPercentPerMinute` config applies passive health regeneration as a percentage of current max health for each elapsed world minute; per-actor `healthRegenAppliedAt` is persisted so reloads do not replay already-processed regeneration.
 - Need bar logic includes per-minute baseline drift (`change_per_minute`) and magnitude-based adjustments.
 - Global `defs/need_bars.yaml -> need_values` now defines separate `increase` and `decrease` default maps, each with its own `small` / `medium` / `large` deltas. Individual bars can override either direction via their own nested `need_values` block, and any missing per-bar directional keys still fall back to the matching global direction. These magnitudes preserve decimal values exactly instead of being rounded or forced up to a minimum of `1`.
 - `applyNeedBarChange(...)` now returns `needBarIcon` / `needBarColor` metadata alongside the usual delta/threshold payload so event summaries and notifications can use the configured need-bar icon directly.
 - Need bars now use explicit audience flags (`player`, `party`, `nonParty`). NPCs retain both party-only and non-party-only bar state internally so values survive party swaps. Active reads, prompt context, endpoint payloads, and per-minute drift treat `party` as “currently in the party or has ever been in the party,” while `nonParty` still means “not currently in the party,” so former party members can have both party-history bars and non-party bars active at once.
 - Per-actor need-bar minute drift now persists a `needBarRatesAppliedAt` timestamp in saves so reloads do not replay already-processed elapsed world minutes.
 - Need-bar applicability is now also persisted separately per actor in `needBarApplicability`. This is distinct from current audience activation: a bar can be defined for NPC audiences globally but still be explicitly disabled for a specific NPC. Save/load now persists the full resolved applicability map, and legacy saves missing need-bar state default storable bars to `value: 100` and `applicable: true` during hydration.
-- Shared thing-list UI view modes are now persisted per actor in `thingListViewPreferences`, keyed by the fixed panel ids `npcInventory`, `craftingInventory`, `locationScenery`, and `locationItems`, so page reloads and save/load restore the same panel view selections.
+- Shared thing-list UI view modes are now persisted per actor in `thingListViewPreferences`, keyed by the fixed panel ids `npcInventory`, `craftingInventory`, `locationScenery`, `locationItems`, `containerPlayerInventory`, and `containerContents`, so page reloads and save/load restore the same panel view selections.
 - `setNeedBarApplicability(...)` preserves stored values for bars that stay enabled, drops bars explicitly disabled for that actor, and restores newly re-enabled bars at `100`.
 - Status-effect-driven max-health increases now raise current health by the same max-health delta. Status-effect-driven decreases do not subtract health back out; they only clamp current health if it now exceeds the reduced max.
 - `persistWhenDead` is persisted per actor. When true, dead actors never receive a corpse countdown and are skipped by corpse cleanup; missing save data defaults it to `false`.

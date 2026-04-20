@@ -82,7 +82,7 @@ const EVENT_PROMPT_ORDER = [
         },
         {
             key: "alter_item",
-            prompt: `Was an item or piece of scenery in the scene or any inventory PERMANENTLY altered in any way (e.g., upgraded, modified, enchanted, broken, filled with items, etc.)? If so, answer in the format "[exact item name] → [new item name or same item name] → [1 sentence description of alteration]". If multiple items were altered, separate multiple entries with vertical bars. If it doesn't make sense for the name to change, use the same name for new item name. Note that if a meaningful fraction of an an object was consumed (a slice of cake, but not a single piece of wood from a large pile), this is considered an alteration. If the *entire* thing was consumed, this is considered completely consumed and not alteration. Being given, taken, worn, equipped, removed, dropped, etc, is not considered an alteration.`,
+            prompt: `Was an item or piece of scenery in the scene or any inventory PERMANENTLY altered in any way (e.g., upgraded, modified, enchanted, broken, filled with items, etc.)? If so, answer in the format "[exact item name] → [quantity altererd as a positive integer] → [new item name or same item name] → [1 sentence description of alteration]". If multiple items were altered, separate multiple entries with vertical bars. If it doesn't make sense for the name to change, use the same name for new item name. Note that if a meaningful fraction of an an object was consumed (a slice of cake, but not a single piece of wood from a large pile), this is considered an alteration. If the *entire* thing was consumed, this is considered completely consumed and not alteration. Being given, taken, worn, equipped, removed, dropped, etc, is not considered an alteration.`,
         },
         {
             key: "consume_item",
@@ -386,6 +386,16 @@ function parseRequiredEventQuantity(rawQuantity, { eventKey, entryText }) {
     }
 
     return parsedQuantity;
+}
+
+function parseRequiredEventQuantityOrAll(rawQuantity, { eventKey, entryText }) {
+    const normalizedQuantity = typeof rawQuantity === "string"
+        ? rawQuantity.trim()
+        : String(rawQuantity ?? "").trim();
+    if (normalizedQuantity.toLowerCase() === "all") {
+        return "all";
+    }
+    return parseRequiredEventQuantity(normalizedQuantity, { eventKey, entryText });
 }
 
 function locationHasExitToDestination(location, destinationId) {
@@ -3827,14 +3837,19 @@ class Events {
             alter_item: (raw) =>
                 splitPipeList(raw)
                     .map((entry) => {
-                        const parts = splitArrowParts(entry, 3);
+                        const parts = splitArrowParts(entry, 4);
                         if (!parts.length) {
                             return null;
                         }
 
                         const originalName = parts[0] ? parts[0].trim() : "";
-                        let newNameInput = parts.length > 1 ? parts[1].trim() : "";
-                        const description = parts.length > 2 ? parts[2].trim() : "";
+                        const rawQuantity = parts.length > 1 ? parts[1] : "";
+                        const quantity = parseRequiredEventQuantityOrAll(rawQuantity, {
+                            eventKey: "alter_item",
+                            entryText: entry,
+                        });
+                        let newNameInput = parts.length > 2 ? parts[2].trim() : "";
+                        const description = parts.length > 3 ? parts[3].trim() : "";
 
                         if (newNameInput && newNameInput.toLowerCase() === "n/a") {
                             return null;
@@ -3846,6 +3861,7 @@ class Events {
 
                         const normalized = {
                             originalName: originalName || null,
+                            quantity,
                             newName: newNameInput || null,
                             changeDescription: description || null,
                         };
@@ -4636,7 +4652,8 @@ class Events {
                     return;
                 }
 
-                const currentLocationName = Globals.location.name;
+                const currentLocationName =
+                    context.location?.name || Globals.location.name;
                 const validEntries = entries.filter(
                     (entry) => entry?.currentName === currentLocationName,
                 );
@@ -5705,9 +5722,11 @@ class Events {
 
                     tasks.push(
                         (async () => {
+                            let thingToAlter = thing;
+                            let partialSplitRollback = null;
                             let ownerCandidate = null;
 
-                            const metadataOwnerId = thing.metadata?.ownerId;
+                            const metadataOwnerId = thingToAlter.metadata?.ownerId;
                             if (metadataOwnerId && typeof findActorById === "function") {
                                 try {
                                     const found = findActorById(metadataOwnerId);
@@ -5721,10 +5740,10 @@ class Events {
 
                             if (
                                 !ownerCandidate &&
-                                typeof thing.whoseInventory === "function"
+                                typeof thingToAlter.whoseInventory === "function"
                             ) {
                                 try {
-                                    const owners = thing.whoseInventory() || [];
+                                    const owners = thingToAlter.whoseInventory() || [];
                                     if (Array.isArray(owners) && owners.length > 0) {
                                         ownerCandidate = owners[0] || null;
                                     }
@@ -5733,21 +5752,25 @@ class Events {
                                 }
                             }
 
-                            let locationCandidate = context.location || null;
-                            if (!locationCandidate) {
-                                const metadataLocationId = thing.metadata?.locationId;
-                                if (
-                                    metadataLocationId &&
-                                    Location &&
-                                    typeof Location.get === "function"
-                                ) {
-                                    try {
-                                        locationCandidate =
-                                            Location.get(metadataLocationId) || null;
-                                    } catch (_) {
-                                        locationCandidate = null;
-                                    }
+                            const containerCandidate =
+                                this._resolveContainingThing(thingToAlter);
+
+                            let locationCandidate = null;
+                            const metadataLocationId = thingToAlter.metadata?.locationId;
+                            if (
+                                metadataLocationId &&
+                                Location &&
+                                typeof Location.get === "function"
+                            ) {
+                                try {
+                                    locationCandidate =
+                                        Location.get(metadataLocationId) || null;
+                                } catch (_) {
+                                    locationCandidate = null;
                                 }
+                            }
+                            if (!locationCandidate) {
+                                locationCandidate = context.location || null;
                             }
                             if (
                                 !locationCandidate &&
@@ -5763,17 +5786,100 @@ class Events {
                                 }
                             }
 
-                            const outcome = await alterThingByPrompt({
-                                thing,
-                                changeDescription,
-                                newName: targetName,
-                                location: Globals.location,
-                                owner:
-                                    ownerCandidate ||
-                                    context.player ||
-                                    this.currentPlayer ||
-                                    null,
-                            });
+                            const sourceCount = this._getThingCount(thingToAlter);
+                            const quantityIsAll =
+                                typeof entry.quantity === "string" &&
+                                entry.quantity.trim().toLowerCase() === "all";
+                            const requestedQuantity =
+                                quantityIsAll
+                                    ? sourceCount
+                                    : parseRequiredEventQuantity(entry?.quantity, {
+                                        eventKey: "alter_item",
+                                        entryText: JSON.stringify(entry),
+                                    });
+                            if (requestedQuantity > sourceCount) {
+                                throw new Error(
+                                    `alter_item requested ${requestedQuantity} of "${thingToAlter.name}", but the stack only contains ${sourceCount}.`,
+                                );
+                            }
+
+                            if (requestedQuantity < sourceCount) {
+                                const sourceThing = thingToAlter;
+                                const originalSourceCount = sourceCount;
+                                const originalSourceMetadata =
+                                    sourceThing.metadata && typeof sourceThing.metadata === "object"
+                                        ? { ...sourceThing.metadata }
+                                        : {};
+                                let splitThing = null;
+                                try {
+                                    splitThing = this._splitThingForQuantity(
+                                        sourceThing,
+                                        requestedQuantity,
+                                    );
+                                    this._placeSplitThingWithSourceContext(splitThing, {
+                                        owner: ownerCandidate,
+                                        container: containerCandidate,
+                                        location: locationCandidate,
+                                    });
+                                    partialSplitRollback = () => {
+                                        sourceThing.count = originalSourceCount;
+                                        sourceThing.metadata = {
+                                            ...originalSourceMetadata,
+                                            count: originalSourceCount,
+                                        };
+                                        if (this.things instanceof Map) {
+                                            this.things.delete(splitThing.id);
+                                        }
+                                        if (typeof splitThing.delete === "function") {
+                                            splitThing.delete();
+                                        } else {
+                                            splitThing.removeFromWorld?.();
+                                        }
+                                    };
+                                    thingToAlter = splitThing;
+                                } catch (error) {
+                                    sourceThing.count = originalSourceCount;
+                                    sourceThing.metadata = {
+                                        ...originalSourceMetadata,
+                                        count: originalSourceCount,
+                                    };
+                                    if (splitThing) {
+                                        if (this.things instanceof Map) {
+                                            this.things.delete(splitThing.id);
+                                        }
+                                        if (typeof splitThing.delete === "function") {
+                                            try {
+                                                splitThing.delete();
+                                            } catch (_) {
+                                                splitThing.removeFromWorld?.();
+                                            }
+                                        } else {
+                                            splitThing.removeFromWorld?.();
+                                        }
+                                    }
+                                    throw error;
+                                }
+                            }
+
+                            let outcome = null;
+                            try {
+                                outcome = await alterThingByPrompt({
+                                    thing: thingToAlter,
+                                    changeDescription,
+                                    newName: targetName,
+                                    location: locationCandidate || Globals.location,
+                                    owner:
+                                        ownerCandidate ||
+                                        context.player ||
+                                        this.currentPlayer ||
+                                        null,
+                                });
+                            } catch (error) {
+                                if (typeof partialSplitRollback === "function") {
+                                    partialSplitRollback();
+                                }
+                                throw error;
+                            }
 
                             if (outcome?.originalName) {
                                 this.alteredItems.add(outcome.originalName);
@@ -5791,8 +5897,8 @@ class Events {
                             entry.from = entry.originalName;
                             entry.to = entry.newName;
 
-                            if (outcome.thing.thingType === "scenery") {
-                                thing.drop();
+                            if (outcome?.thing?.thingType === "scenery") {
+                                thingToAlter.drop();
                             }
                         })(),
                     );
@@ -9017,6 +9123,88 @@ class Events {
         return splitThing;
     }
 
+    static _resolveContainingThing(thing) {
+        if (!thing) {
+            return null;
+        }
+
+        if (typeof thing.whoseContainer === "function") {
+            const containers = thing.whoseContainer() || [];
+            if (Array.isArray(containers) && containers.length > 0) {
+                return containers[0] || null;
+            }
+        }
+
+        const metadata =
+            thing.metadata && typeof thing.metadata === "object" ? thing.metadata : {};
+        const containerIdCandidates = [
+            metadata.containerId,
+            metadata.containerID,
+            metadata.container_id,
+        ];
+        for (const candidate of containerIdCandidates) {
+            const containerId = typeof candidate === "string" ? candidate.trim() : "";
+            if (!containerId) {
+                continue;
+            }
+            const container = Thing.getById(containerId);
+            if (container) {
+                return container;
+            }
+        }
+
+        return null;
+    }
+
+    static _placeSplitThingWithSourceContext(
+        splitThing,
+        { owner = null, container = null, location = null } = {},
+    ) {
+        if (!splitThing) {
+            throw new Error("_placeSplitThingWithSourceContext requires a split thing.");
+        }
+
+        if (owner && typeof owner.addInventoryItem === "function") {
+            const added = owner.addInventoryItem(splitThing, {
+                suppressNpcEquip: true,
+            });
+            if (!added) {
+                throw new Error(
+                    `Unable to place split stack "${splitThing.name}" in owner inventory.`,
+                );
+            }
+            if (this.things instanceof Map) {
+                this.things.set(splitThing.id, splitThing);
+            }
+            return "owner";
+        }
+
+        if (container && typeof container.addInventoryItem === "function") {
+            const added = container.addInventoryItem(splitThing);
+            if (!added) {
+                throw new Error(
+                    `Unable to place split stack "${splitThing.name}" in container "${container.name || container.id}".`,
+                );
+            }
+            if (this.things instanceof Map) {
+                this.things.set(splitThing.id, splitThing);
+            }
+            return "container";
+        }
+
+        if (location && typeof location.addThingId === "function") {
+            location.addThingId(splitThing.id);
+            if (this.things instanceof Map) {
+                this.things.set(splitThing.id, splitThing);
+            }
+            return "location";
+        }
+
+        throw new Error(
+            `Unable to place split stack "${splitThing.name}" because the source placement could not be resolved.`,
+        );
+    }
+
     static _extractThingQuantityFromCandidates(candidates, quantity, { itemName, eventKey }) {
         if (!Array.isArray(candidates) || !candidates.length) {
             throw new Error(`${eventKey} could not find any thing matching "${itemName}".`);
@@ -9355,6 +9543,7 @@ class Events {
             description,
             thingType: "item",
             rarity: Thing.getDefaultRarityLabel(),
+            count: Number.isInteger(entry.quantity) ? entry.quantity : undefined,
             metadata,
         });
 

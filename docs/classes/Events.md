@@ -37,7 +37,7 @@ Runs LLM-based event checks on narrative text, parses structured outcomes, and a
 - Location alteration: `_parseLocationAlterXml`, `_applyLocationAlteration`, `_logAlterLocation`, `_clearLocationImage`.
 - Quest generation: `_parseQuestXml`, `_logQuestGeneration`, `_generateQuestName`, `parseQuestObjectiveStatusXml`.
 - NPC/character alteration: `_parseCharacterAlterXml`, `_applyCharacterAlteration`, `_handleAlterNpcEvents`.
-- Items: `_generateItemsIntoWorld`, `_ensureItemsExist`, `_removeItemFromInventories`, `_detachThingFromKnownLocation`, `_detachThingFromWorld`, `_createPlaceholderThingForAlter`.
+- Items: `_generateItemsIntoWorld`, `_ensureItemsExist`, `_removeItemFromInventories`, `_detachThingFromKnownLocation`, `_detachThingFromWorld`, `_resolveContainingThing`, `_placeSplitThingWithSourceContext`, `_createPlaceholderThingForAlter`.
 - Combat/healing helpers: `_estimateHealingAmount`, `_severityToDamage`.
 - Attribute normalization: `_mapAttributeRatingToValue`, `_clampAttributeValue`, `_clampLevel`, `_resolveNpcBaseLevelReference`.
 - Scene helpers: `_buildSceneItemNameSet`.
@@ -53,13 +53,14 @@ Runs LLM-based event checks on narrative text, parses structured outcomes, and a
 - Item alteration updates `Thing.shortDescription` when provided by the alteration prompt, otherwise preserving the existing value.
 - `item_inflict` events ignore the prompt-provided status effect text and always apply the item's configured target inflict effect (`causeStatusEffectOnTarget`) to the target when available.
 - `item_ingest` events now parse as `[item] → [target]` and infer the applied status effect from the ingested item's configured target effect instead of requiring the prompt to name the effect.
-- Quantity-aware item events now require explicit positive-integer quantities for `consume_item`, `transfer_item`, `pick_up_item`, `drop_item`, `harvest_gather`, and `item_appear`; legacy quantity-less forms are rejected during parsing.
-- Quantity-aware item handlers now move or remove exact stack amounts instead of implicitly acting on a whole `Thing`. Partial-stack moves/consumption preserve the original item's stats/image and keep existing `metadata.value` unchanged while only adjusting stack count.
+- Quantity-aware item events now require explicit positive-integer quantities for `consume_item`, `transfer_item`, `pick_up_item`, `drop_item`, `harvest_gather`, and `item_appear`; `alter_item` requires a positive integer or `all`; legacy quantity-less forms are rejected during parsing.
+- Quantity-aware item handlers now move, remove, or alter exact stack amounts instead of implicitly acting on a whole `Thing`. Partial-stack moves/consumption/alterations preserve the original item's stats/image and keep existing `metadata.value` unchanged while only adjusting stack count; partial `alter_item` splits the requested quantity into the same owner/location/container before altering that new stack.
 - If the same turn reports both `item_ingest` and `item_inflict` for the same item-target pair, the `item_inflict` entry is ignored so the effect is only applied once.
 - When `item_inflict` or `item_ingest` applies a status, Events emits a synthesized `status_effect_change` entry so status summaries are delivered to the client even if no separate NPC-group status entry is present.
 - `status_effect_change` de-duplicates gained effects against same-turn item-triggered status applications for the same entity; duplicate gain entries are skipped when names match exactly or when the status-change name starts with the already-applied item-triggered effect name.
 - `death_incapacitation` skips `dead` outcomes for NPCs already marked dead, preventing duplicate death application.
 - `alter_npc` requests now require an `<npc>...</npc>` block from the model and always log prompt/response payloads through `LLMClient.logPrompt` before parse/apply.
+- `alter_location` can be invoked from event checks or the chat `alterLocation` tool; when a tool supplies `context.location`, the handler matches that location instead of only the global current location.
 - `_parseCharacterAlterXml` can parse wrapped or escaped model output by decoding basic entities and extracting the first `<npc>...</npc>` block before XML parsing.
 - `suppressMoveEvents` skips applying `move_location` and `move_new_location` outcomes; this is primarily used for split `<travelProse>` origin/destination checks where movement is handled by the travel pipeline.
 - `move_new_location` parsing treats `sublocation` as `location` so sublocations generate full location stubs when move events are applied (unless move events are suppressed).

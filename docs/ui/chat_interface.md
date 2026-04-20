@@ -20,6 +20,7 @@ The main UI is rendered by `views/index.njk` and powered by `public/js/chat.js` 
 
 - **Location panel** (`.location-block`):
   - Compact world-time chip at the top (`#worldTimeIndicator`) showing `h:MM AM/PM`, date label, and segment/season.
+  - On desktop, a vertical drag handle on the panel's right edge resizes the location column horizontally. Width preferences are stored in browser `localStorage` and clamped so the chat column remains usable; double-click, `Home`, or `Escape` resets the panel to its default width.
   - On narrow/mobile layouts, the Adventure stack now drops the desktop fixed-height panel chain so the location column and sidebar size to content instead of keeping their own nested vertical scroll areas.
   - The location-name prefix icon (`#locationNameIcon`) switches from map pin (`📍`) to a vehicle icon when the current location is a vehicle or its containing region is a vehicle; it prefers `vehicleInfo.icon` and falls back to `🚗`.
   - When in a vehicle context and the vehicle is not underway, a second header line renders under the location name as `Current location: <name>` using the active vehicle exit destination.
@@ -43,7 +44,7 @@ The main UI is rendered by `views/index.njk` and powered by `public/js/chat.js` 
   - `exit.isVehicle`/`exit.vehicleType` are treated as edge metadata only and must not be used to infer that the destination location/region is itself a vehicle.
   - NPC list + "Add NPC" button.
   - NPC and party-member card health bars sit just below the portrait image so they do not overlap the in-portrait need bars.
-  - Character-card and player-card health bars now show a centered outlined `current/max` readout directly above the bar itself; the player sidebar no longer repeats a separate `HP:` text row below the portrait metadata.
+  - Character-card and player-card health bars now show a centered outlined `current/max` readout directly above the bar itself; readout values are rounded upward for display while bar fill still uses raw health, and the player sidebar no longer repeats a separate `HP:` text row below the portrait metadata.
   - Player, location-NPC, sidebar-party, and Party-tab portraits now show a top-left bare `L.<level>` text badge on the image itself instead of repeating the level in separate text rows.
   - Dead NPC/party cards only show a skull icon plus corpse countdown under the top-left `L.<level>` badge when `corpseCountdown` is numeric; persistent corpses (`persistWhenDead`) omit the countdown entirely.
   - Items/Scenery grids + "Craft" and "New Item/Scenery" buttons.
@@ -55,6 +56,7 @@ The main UI is rendered by `views/index.njk` and powered by `public/js/chat.js` 
     - `Grid` renders compact image-only tiles with the same thumbnail size, a `2px` rarity-colored border on the image itself, and a `1px` gap between tiles.
     - `Small Grid` uses the same grid layout rules as `Grid`, but overrides the shared item-view size tokens to `0.7x` so the image, count badge, overlay icons, and context-menu button all shrink together.
   - Shared thing-list filters:
+    - Text search matches item/scenery names, descriptions, short descriptions, visible detail fields, metadata text, numeric detail values, and status-effect text shown in tooltips/details.
     - Location item/scenery panels expose `Show all`, `Equippable only`, and `Non-equippable only`.
     - Player/NPC inventory and crafting inventory also expose `Equipped only`.
   - Shared thing-list sort popup:
@@ -64,9 +66,12 @@ The main UI is rendered by `views/index.njk` and powered by `public/js/chat.js` 
   - View popups close immediately after a view selection, and both the view and sort popups close when the user clicks anywhere outside the popup/toggle pair.
   - Item thing-card context menus include `Separate`, which runs the `thing-separate` prompt and replaces the source item with the returned item stack(s); an explicit empty `<items>` result is treated as a no-op rather than an error.
   - Item thing-card context menus also include `Split Stack` for stacks with `count > 1` (prompting for an exact integer split amount) and `Merge Stacks` for item cards outside equipment views; merge scans same-name/same-checksum items in the same inventory or location and folds them into the selected stack while excluding equipped items. While open, item menus are temporarily moved to a fixed body-level floating layer anchored to their trigger button, preventing lower location sections and modal scroll containers from painting over or clipping them, and shrinking the menu width to the widest option.
+  - Things marked `Container` show an `Open Container` context-menu action and container badge action. The container modal uses two shared thing-list panels: current player inventory on the left and the selected container contents on the right, with persisted view keys `containerPlayerInventory` and `containerContents`; on narrow/mobile layouts those panels split the modal vertically with player inventory in the top half and container contents in the bottom half.
+  - Container transfers move whole stacks by dragging between columns, long-press touch-dragging between stacked mobile panels, shift-clicking an item, or using the column-level `Add all` / `Remove all` buttons. Bulk buttons only affect items currently visible after that column's active search/slot/equipment filters, send the visible IDs in one bulk API request, and `Add all` fails before moving anything if the visible set includes an equipped item or the open container itself. Partial transfers use `Split Stack` first, then move the new stack. Nested containers open in the same modal with a breadcrumb/back stack while server-side validation rejects containment cycles.
   - Drag/drop behavior:
     - Any location thing card can be dragged to an inventory drop target only when its type is `item`.
     - Dragging a location card between the Items and Scenery grids converts its `thingType` (`item` <-> `scenery`) via `PUT /api/things/:id`.
+    - Dragging an item out of an open inventory-style modal drops it into the current location via the normal item drop route; touch devices use pointer/touch long-press drag, suppress native browser long-press image/callout behavior on thing icons, disable native touch gestures on wired modal drag icons, and suppress the follow-up short-tap click when the drag completes.
 - **Chat panel** (`.chat-container`):
   - Message list (`#chatLog`) with user/AI messages and event-summary batches.
   - Input area (`#messageInput`, `#sendButton`) with slash command support.
@@ -77,13 +82,15 @@ The main UI is rendered by `views/index.njk` and powered by `public/js/chat.js` 
   - The prefix-help modal documents `\` as a no-context prompt that is logged, excluded from future base-context history, and run without chat tools.
 - **Sidebar** (`.chat-sidebar`):
   - Outer panel shape keeps only the bottom-right corner rounded.
+  - On desktop, a vertical drag handle on the sidebar's left edge resizes the player/party column horizontally. Width preferences share the Adventure panel `localStorage` entry and are disabled on stacked mobile layouts.
   - Player card (portrait, health, need bars, quick actions, a top-left `L.<level>` badge, and a lower-left warning triangle positioned `1em` above the health bar when unspent skill/attribute points are present).
   - On narrow/mobile layouts, the sidebar no longer keeps a separate inner vertical scrollbar just to fill leftover Adventure-tab height.
-  - Player "View" opens `#npcViewModal` in editable mode for attributes/skills using shared allocation partials; skills can now be added/removed directly in this modal for the player view. The modal now includes a Faction section above Equipment: NPCs show a single faction, while player view lists all factions with reputation tier labels and associated tier perks. NPCs use the same allocation sections in read-only mode, and their unspent point totals are hidden.
+  - Player "View" opens `#npcViewModal` in editable mode for attributes/skills using shared allocation partials; skills can now be added/removed directly in this modal for the player view. The modal now includes a Faction section above Equipment: NPCs show a single faction, while player view lists all factions with reputation tier labels and associated tier perks. NPCs use the same allocation sections in read-only mode, their unspent point totals are hidden, and abilities render as read-only cards matching the level-up ability selector style with active/passive/triggered type color coding.
 - **Player level-up ability draft modal** (`#playerAbilitySelectionModal`):
   - Opens when the player has any underfilled level (`player_abilities_per_level`) from level 1 through current level.
   - Is suppressed entirely when no game is loaded/started, but new-game startup now flips the loaded gate before opening-scene generation so the modal can appear during fresh game setup.
   - Opens immediately before option generation with the message `Ability options for level-up are being generated`, then updates to card picks when generation completes.
+  - Ability option card names and uppercase type labels use the same active/passive/triggered colors as character-view ability cards.
   - During new-game startup, pending ability picks block the opening-scene intro until the final submit completes.
   - Passive ability-selection state polls are non-blocking; chat input is only disabled when the modal is actively pending/loading/submitting.
   - Offsets itself below header/tab controls so the top-row buttons remain clickable (including normal pointer cursor behavior) while options generate.
@@ -139,7 +146,7 @@ The chat client listens on `/ws?clientId=...` and handles:
 - `location_exit_created`, `location_exit_deleted` (refresh location + map).
 - `image_job_update` (image job completion via `ImageGenerationManager`).
 - `chat_history_updated` (refresh history, quest panel, and Story Tools data).
-- `prompt_progress`, `prompt_progress_cleared` (floating prompt-progress overlay with per-prompt eye/cancel/retry controls plus a header-level "Abort + Reload" action that cancels all tracked prompts and reloads the latest autosave; the eye control opens a separate floating viewer with one combined text pane that renders the selected prompt first in a differently styled inline span, exposes a `Copy Prompt` action, and streams the selected prompt's response text live beneath it as chunks arrive. For `codex_cli_bridge`, that preview now comes from the Codex app-server transport: assistant-message deltas are decoded back into plain bridge `content` text as they arrive, with backend status text only used until real assistant text starts; server byte/preview notifications and client overlay rerenders are both throttled to 500 ms so bytes and average B/s do not churn every frame; the overlay auto-closes the load-game modal before showing prompt activity, renders in the upper modal layer above the full interface, auto-anchors below top navigation controls so header options remain clickable, includes contract/expand toggle, drag handle on the header, native resize handle, and a 3.5-second hidden-placeholder-row debounce before the empty table state is hidden).
+- `prompt_progress`, `prompt_progress_cleared` (floating prompt-progress overlay with per-prompt eye/cancel/retry controls plus a header-level "Abort + Reload" action that cancels all tracked prompts and reloads the latest autosave; the eye control opens a separate floating viewer with one combined text pane that renders the selected prompt first in a differently styled inline span, exposes a `Copy Prompt` action, and streams the selected prompt's response text live beneath it as chunks arrive. For `codex_cli_bridge`, that preview now comes from the Codex app-server transport: assistant-message deltas are decoded back into plain bridge `content` text as they arrive, with backend status text only used until real assistant text starts; Codex received counts are manually derived from those decoded text deltas/replacements as characters instead of trusted Codex/stdout counts; server received-count/preview notifications and client overlay rerenders are both throttled to 500 ms so the unitless received total and average do not churn every frame; the overlay auto-closes the load-game modal before showing prompt activity, renders in the upper modal layer above the full interface, auto-anchors below top navigation controls so header options remain clickable, includes contract/expand toggle, drag handle on the header, native resize handle, and a 3.5-second hidden-placeholder-row debounce before the empty table state is hidden).
 - `quest_confirmation_request` (modal prompt).
 
 `processChatPayload()` also consumes `payload.worldTime` from streamed/final chat responses, updates the world-time chip, and emits transition summaries (`segment`/`season`) into the event-summary flow.
@@ -190,13 +197,13 @@ Chat entries can include attachments rendered as inline "insights":
 - `skill-check`, `attack-check`, `plausibility`, `slop-remover`.
 - Attack-check insight details include the computed damage multiplier/effectiveness line used in combat resolution.
 - Plausibility is rendered client-side with Nunjucks using `public/templates/plausibility.njk`.
-- Slop removal insight lists slop words / n-grams.
+- Slop removal insight lists slop words, regex-match names, and n-grams.
 
 ## Location + entity images
 
 `views/index.njk` defines helpers:
 
-- `renderEntityImage({ element, entityType, entityId, imageId, ... })` sets `data-*` and delegates to `window.AIRPG.imageManager`.
+- `renderEntityImage({ element, entityType, entityId, imageId, ... })` sets `data-*`, resolves existing image IDs through the extension-agnostic `/api/images/:imageId/file` route, and delegates generation/job tracking to `window.AIRPG.imageManager`.
 - `renderImageBadgesOverlay` adds badges for crafting/processing/harvest/salvage on item images.
   Thing-image clicks now route through `public/js/lightbox.js` with a sidecar tooltip/details pane, while non-thing images still use the plain image-only lightbox.
 

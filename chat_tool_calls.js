@@ -368,6 +368,10 @@ const CHAT_TOOL_DEFINITIONS = Object.freeze([
                     isSalvageable: {
                         type: 'boolean'
                     },
+                    isContainer: {
+                        type: 'boolean',
+                        description: 'Optional container flag. Set true for items or scenery that can visibly hold item stacks, such as chests, shelves, satchels, desk drawers, and cabinets.'
+                    },
                     attributeBonuses: {
                         type: 'array',
                         items: {
@@ -404,6 +408,76 @@ const CHAT_TOOL_DEFINITIONS = Object.freeze([
                     }
                 },
                 required: ['shortDescription', 'itemOrScenery'],
+                additionalProperties: false
+            }
+        }
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'alterThing',
+            description: 'Alter an existing thing by ID or name using the existing thing alteration prompt flow. Alters the whole resolved thing stack.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    thing: {
+                        type: 'string',
+                        description: 'Thing ID or name.'
+                    },
+                    alteration: {
+                        type: 'string',
+                        description: 'Detailed description of the alteration to apply.'
+                    }
+                },
+                required: ['thing', 'alteration'],
+                additionalProperties: false
+            }
+        }
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'alterNpc',
+            description: 'Alter an existing NPC by ID or name using the existing alter_npc event flow.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    npc: {
+                        type: 'string',
+                        description: 'NPC ID or name.'
+                    },
+                    alteration: {
+                        type: 'string',
+                        description: 'Detailed description of the alteration to apply.'
+                    }
+                },
+                required: ['npc', 'alteration'],
+                additionalProperties: false
+            }
+        }
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'alterLocation',
+            description: 'Alter an existing location by ID or name using the existing alter_location event flow.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    location: {
+                        type: 'string',
+                        description: 'Location ID or name.'
+                    },
+                    region: {
+                        type: 'string',
+                        description: 'Optional region ID or name used to disambiguate location matching.'
+                    },
+                    alteration: {
+                        type: 'string',
+                        description: 'Detailed description of the alteration to apply.'
+                    }
+                },
+                required: ['location', 'alteration'],
                 additionalProperties: false
             }
         }
@@ -716,6 +790,9 @@ const createChatToolRuntime = ({
     generateItemsByNames,
     ensureExitConnection,
     findRegionByLocationId,
+    alterThingByPrompt = null,
+    alterNpcByEvent = null,
+    alterLocationByEvent = null,
     LLMClient,
     Player,
     Thing,
@@ -2692,6 +2769,7 @@ const createChatToolRuntime = ({
         isProcessingStation = null,
         isHarvestable = null,
         isSalvageable = null,
+        isContainer = null,
         attributeBonuses = null,
         causeStatusEffectOnTarget = null,
         causeStatusEffectOnEquipper = null,
@@ -2796,6 +2874,8 @@ const createChatToolRuntime = ({
         if (isHarvestableValue !== null) seed.isHarvestable = isHarvestableValue;
         const isSalvageableValue = normalizeOptionalBoolean(isSalvageable, { functionName, fieldName: 'isSalvageable' });
         if (isSalvageableValue !== null) seed.isSalvageable = isSalvageableValue;
+        const isContainerValue = normalizeOptionalBoolean(isContainer, { functionName, fieldName: 'isContainer' });
+        if (isContainerValue !== null) seed.isContainer = isContainerValue;
 
         if (attributeBonuses !== null && attributeBonuses !== undefined) {
             if (!Array.isArray(attributeBonuses)) {
@@ -2887,6 +2967,222 @@ const createChatToolRuntime = ({
                 finalName,
                 thingType: createdThing?.thingType || null,
                 locationId: targetLocation.id || null
+            }
+        };
+    };
+
+    const executeAlterThingTool = async ({
+        thing,
+        alteration
+    } = {}) => {
+        const functionName = 'alterThing';
+        const thingQuery = normalizeRequiredString(thing, {
+            functionName,
+            fieldName: 'thing'
+        });
+        const changeDescription = normalizeRequiredString(alteration, {
+            functionName,
+            fieldName: 'alteration'
+        });
+
+        if (typeof alterThingByPrompt !== 'function') {
+            throw new ToolVisibleError(
+                'alterThing is unavailable because the alteration helper was not configured.',
+                { code: 'missing_dependency' }
+            );
+        }
+
+        const targetThing = resolveThingReference(thingQuery, { fieldName: 'thing' });
+        const outcome = await alterThingByPrompt({
+            thing: targetThing,
+            changeDescription,
+            newName: null
+        });
+
+        if (!outcome || typeof outcome !== 'object') {
+            throw new ToolVisibleError(
+                'alterThing completed without returning an alteration result.',
+                { code: 'alteration_failed' }
+            );
+        }
+
+        const alteredThing = outcome.thing || targetThing;
+        const originalName = normalizeOptionalString(outcome.originalName) || normalizeOptionalString(targetThing?.name);
+        const newName = normalizeOptionalString(outcome.newName) || normalizeOptionalString(alteredThing?.name) || originalName;
+        const thingId = normalizeOptionalString(alteredThing?.id) || normalizeOptionalString(targetThing?.id);
+        const thingType = normalizeOptionalString(alteredThing?.thingType) || normalizeOptionalString(targetThing?.thingType);
+
+        const lines = [
+            '<alterThingResult>',
+            '  <status>success</status>',
+            ...renderXmlNode('thing', {
+                id: thingId,
+                originalName,
+                newName,
+                thingType
+            }, 1),
+            ...renderXmlNode('alteration', changeDescription, 1),
+            '</alterThingResult>'
+        ];
+
+        return {
+            content: lines.join('\n'),
+            metadata: {
+                status: 'success',
+                thingId,
+                originalName,
+                newName,
+                thingType,
+                changeDescription
+            }
+        };
+    };
+
+    const isNpcEntity = (character) => {
+        if (!character) {
+            return false;
+        }
+        if (typeof character.isNPC === 'function') {
+            return Boolean(character.isNPC());
+        }
+        return Boolean(character.isNPC);
+    };
+
+    const executeAlterNpcTool = async ({
+        npc,
+        alteration
+    } = {}) => {
+        const functionName = 'alterNpc';
+        const npcQuery = normalizeRequiredString(npc, {
+            functionName,
+            fieldName: 'npc'
+        });
+        const changeDescription = normalizeRequiredString(alteration, {
+            functionName,
+            fieldName: 'alteration'
+        });
+
+        if (typeof alterNpcByEvent !== 'function') {
+            throw new ToolVisibleError(
+                'alterNpc is unavailable because the NPC alteration event wrapper was not configured.',
+                { code: 'missing_dependency' }
+            );
+        }
+
+        const targetNpc = resolveCharacterReference(npcQuery, { fieldName: 'npc' });
+        if (!isNpcEntity(targetNpc)) {
+            throw new ToolVisibleError(
+                `alterNpc can only alter NPCs; "${targetNpc?.name || npcQuery}" is not an NPC.`,
+                { code: 'invalid_target' }
+            );
+        }
+
+        const outcome = await alterNpcByEvent({
+            npc: targetNpc,
+            alteration: changeDescription
+        });
+
+        if (!outcome || typeof outcome !== 'object') {
+            throw new ToolVisibleError(
+                'alterNpc completed without returning an alteration result.',
+                { code: 'alteration_failed' }
+            );
+        }
+
+        const npcId = normalizeOptionalString(outcome.npcId) || normalizeOptionalString(targetNpc?.id);
+        const originalName = normalizeOptionalString(outcome.originalName) || normalizeOptionalString(targetNpc?.name);
+        const newName = normalizeOptionalString(outcome.name) || normalizeOptionalString(outcome.newName) || normalizeOptionalString(targetNpc?.name) || originalName;
+
+        const lines = [
+            '<alterNpcResult>',
+            '  <status>success</status>',
+            ...renderXmlNode('npc', {
+                id: npcId,
+                originalName,
+                newName
+            }, 1),
+            ...renderXmlNode('alteration', changeDescription, 1),
+            '</alterNpcResult>'
+        ];
+
+        return {
+            content: lines.join('\n'),
+            metadata: {
+                status: 'success',
+                npcId,
+                originalName,
+                newName,
+                changeDescription
+            }
+        };
+    };
+
+    const executeAlterLocationTool = async ({
+        location,
+        region = null,
+        alteration
+    } = {}) => {
+        const functionName = 'alterLocation';
+        const locationQuery = normalizeRequiredString(location, {
+            functionName,
+            fieldName: 'location'
+        });
+        const changeDescription = normalizeRequiredString(alteration, {
+            functionName,
+            fieldName: 'alteration'
+        });
+
+        if (typeof alterLocationByEvent !== 'function') {
+            throw new ToolVisibleError(
+                'alterLocation is unavailable because the location alteration event wrapper was not configured.',
+                { code: 'missing_dependency' }
+            );
+        }
+
+        const regionQuery = normalizeOptionalString(region);
+        const targetLocation = resolveLocationReference(locationQuery, {
+            fieldName: 'location',
+            regionQuery
+        });
+        const outcome = await alterLocationByEvent({
+            location: targetLocation,
+            alteration: changeDescription
+        });
+
+        if (!outcome || typeof outcome !== 'object') {
+            throw new ToolVisibleError(
+                'alterLocation completed without returning an alteration result.',
+                { code: 'alteration_failed' }
+            );
+        }
+
+        const locationId = normalizeOptionalString(outcome.locationId) || normalizeOptionalString(targetLocation?.id);
+        const originalName = normalizeOptionalString(outcome.originalName) || normalizeOptionalString(targetLocation?.name);
+        const newName = normalizeOptionalString(outcome.newName) || normalizeOptionalString(targetLocation?.name) || originalName;
+        const changed = typeof outcome.changed === 'boolean' ? outcome.changed : null;
+
+        const lines = [
+            '<alterLocationResult>',
+            '  <status>success</status>',
+            ...renderXmlNode('location', {
+                id: locationId,
+                originalName,
+                newName,
+                changed
+            }, 1),
+            ...renderXmlNode('alteration', changeDescription, 1),
+            '</alterLocationResult>'
+        ];
+
+        return {
+            content: lines.join('\n'),
+            metadata: {
+                status: 'success',
+                locationId,
+                originalName,
+                newName,
+                changed,
+                changeDescription
             }
         };
     };
@@ -3329,6 +3625,9 @@ const createChatToolRuntime = ({
         'createExit',
         'listLocationEntities',
         'createThing',
+        'alterThing',
+        'alterNpc',
+        'alterLocation',
         'locateNpcs',
         'locateThings'
     ]);
@@ -3360,6 +3659,12 @@ const createChatToolRuntime = ({
                 toolResult = executeListLocationEntitiesTool(argumentsObject);
             } else if (toolCall.functionName === 'createThing') {
                 toolResult = executeCreateThingTool(argumentsObject);
+            } else if (toolCall.functionName === 'alterThing') {
+                toolResult = executeAlterThingTool(argumentsObject);
+            } else if (toolCall.functionName === 'alterNpc') {
+                toolResult = executeAlterNpcTool(argumentsObject);
+            } else if (toolCall.functionName === 'alterLocation') {
+                toolResult = executeAlterLocationTool(argumentsObject);
             } else if (toolCall.functionName === 'locateNpcs') {
                 toolResult = executeLocateNpcsTool(argumentsObject);
             } else if (toolCall.functionName === 'locateThings') {

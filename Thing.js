@@ -33,6 +33,7 @@ class Thing {
   #relativeLevel;
   #previouslyHarvestedItems;
   #lastHarvested;
+  #containedThingIds;
   #flags = new SanitizedStringSet();
   #isEnrichingStatusEffects = false;
   #shortDescription;
@@ -42,7 +43,8 @@ class Thing {
     isCraftingStation: 'crafting_station',
     isProcessingStation: 'processing_station',
     isHarvestable: 'harvestable',
-    isSalvageable: 'salvageable'
+    isSalvageable: 'salvageable',
+    isContainer: 'container'
   });
   static #checksumExcludedTopLevelKeys = new Set([
     'id',
@@ -59,6 +61,8 @@ class Thing {
     'owner_id',
     'playerid',
     'player_id',
+    'containerid',
+    'container_id',
     'count',
     'unscaledattributebonuses',
     'inventoryownerid',
@@ -571,6 +575,8 @@ class Thing {
     isProcessingStation = null,
     isHarvestable = null,
     isSalvageable = null,
+    isContainer = null,
+    containedThingIds = [],
     flags = new SanitizedStringSet(),
     enrichStatusEffects = true
   } = {}) {
@@ -624,12 +630,15 @@ class Thing {
     this.#relativeLevel = Number.isFinite(relativeLevel) ? Math.max(-20, Math.min(20, Math.round(relativeLevel))) : null;
     this.#previouslyHarvestedItems = [];
     this.#lastHarvested = null;
+    this.#containedThingIds = new Set();
     this.#flags = flags instanceof SanitizedStringSet ? flags : new SanitizedStringSet(flags);
     this.isVehicle = isVehicle;
     this.isCraftingStation = isCraftingStation;
     this.isProcessingStation = isProcessingStation;
     this.isHarvestable = isHarvestable;
     this.isSalvageable = isSalvageable;
+    this.isContainer = isContainer;
+    this.#containedThingIds = new Set(this.#normalizeContainedThingIds(containedThingIds));
 
     this.#applyMetadataFieldsFromMetadata();
     const initialUnscaledAttributeBonuses = unscaledAttributeBonuses !== undefined
@@ -768,6 +777,19 @@ class Thing {
     const normalized = Thing.#normalizeBooleanFlag(value);
     const enabled = normalized === null ? false : normalized;
     this.#setBooleanFlag(Thing.#booleanFlagMap.isSalvageable, enabled, 'isSalvageable');
+  }
+
+  get isContainer() {
+    return this.#flags.has(Thing.#booleanFlagMap.isContainer);
+  }
+  set isContainer(value) {
+    const normalized = Thing.#normalizeBooleanFlag(value);
+    const enabled = normalized === null ? false : normalized;
+    this.#setBooleanFlag(Thing.#booleanFlagMap.isContainer, enabled, 'isContainer');
+  }
+
+  get containedThingIds() {
+    return Array.from(this.#containedThingIds);
   }
 
   get rarity() {
@@ -1505,8 +1527,34 @@ class Thing {
     return numericValue;
   }
 
+  #normalizeContainedThingIds(ids = []) {
+    if (ids === null || ids === undefined) {
+      return [];
+    }
+    if (!Array.isArray(ids)) {
+      throw new Error('containedThingIds must be an array of thing ids.');
+    }
+    const normalized = [];
+    const seen = new Set();
+    for (const entry of ids) {
+      if (typeof entry !== 'string') {
+        throw new Error('containedThingIds entries must be strings.');
+      }
+      const trimmed = entry.trim();
+      if (!trimmed || trimmed === this.#id || seen.has(trimmed)) {
+        continue;
+      }
+      seen.add(trimmed);
+      normalized.push(trimmed);
+    }
+    return normalized;
+  }
+
   // Instance methods
   delete() {
+    if (this.isContainer && this.#containedThingIds.size > 0) {
+      throw new Error(`Cannot delete non-empty container "${this.#name}". Empty it first.`);
+    }
     this.removeFromWorld();
     Thing.#indexByID.delete(this.#id);
     Thing.#removeThingFromNameIndex(this, this.#name);
@@ -1547,6 +1595,8 @@ class Thing {
       isProcessingStation: normalizeBoolean(this.isProcessingStation),
       isHarvestable: normalizeBoolean(this.isHarvestable),
       isSalvageable: normalizeBoolean(this.isSalvageable),
+      isContainer: normalizeBoolean(this.isContainer),
+      containedThingIds: Array.from(this.#containedThingIds),
       flags: this.#flags && this.#flags.size ? Array.from(this.#flags) : undefined,
       metadata: this.#metadata && Object.keys(this.#metadata).length ? { ...this.#metadata } : undefined,
       statusEffects: this.getStatusEffects()
@@ -1558,7 +1608,7 @@ class Thing {
       throw new Error('Invalid data provided to Thing.fromJSON');
     }
 
-    const booleanFlagKeys = ['isVehicle', 'isCraftingStation', 'isProcessingStation', 'isHarvestable', 'isSalvageable'];
+    const booleanFlagKeys = ['isVehicle', 'isCraftingStation', 'isProcessingStation', 'isHarvestable', 'isSalvageable', 'isContainer'];
     const booleanFlagOptions = {};
     for (const key of booleanFlagKeys) {
       if (Object.prototype.hasOwnProperty.call(data, key)) {
@@ -1602,6 +1652,7 @@ class Thing {
       relativeLevel: data.relativeLevel ?? data.metadata?.relativeLevel ?? null,
       previouslyHarvestedItems: data.previouslyHarvestedItems ?? data.metadata?.previouslyHarvestedItems ?? [],
       lastHarvested: data.lastHarvested ?? data.metadata?.lastHarvested ?? null,
+      containedThingIds: data.containedThingIds ?? data.metadata?.containedThingIds ?? [],
       flags: Array.isArray(data.flags) ? data.flags : (Array.isArray(data.metadata?.flags) ? data.metadata.flags : []),
       ...booleanFlagOptions,
       enrichStatusEffects: false
@@ -1643,6 +1694,9 @@ class Thing {
     delete serialized.lastUpdated;
 
     const overridePayload = clonePlain(overrides) || {};
+    if (!Object.prototype.hasOwnProperty.call(overridePayload, 'containedThingIds')) {
+      serialized.containedThingIds = [];
+    }
     const baseMetadata = serialized.metadata && typeof serialized.metadata === 'object'
       ? serialized.metadata
       : {};
@@ -1905,6 +1959,9 @@ class Thing {
 
     this.#previouslyHarvestedItems = this.#normalizePreviouslyHarvestedItems(meta.previouslyHarvestedItems);
     this.#lastHarvested = this.#normalizeLastHarvested(meta.lastHarvested);
+    if (Array.isArray(meta.containedThingIds)) {
+      this.#containedThingIds = new Set(this.#normalizeContainedThingIds(meta.containedThingIds));
+    }
 
     if (meta.isVehicle !== undefined) {
       this.isVehicle = Thing.#normalizeBooleanFlag(meta.isVehicle);
@@ -1920,6 +1977,9 @@ class Thing {
     }
     if (meta.isSalvageable !== undefined) {
       this.isSalvageable = meta.isSalvageable;
+    }
+    if (meta.isContainer !== undefined) {
+      this.isContainer = Thing.#normalizeBooleanFlag(meta.isContainer);
     }
 
     this.#syncFieldsToMetadata();
@@ -1983,6 +2043,7 @@ class Thing {
     } else {
       delete this.#metadata.lastHarvested;
     }
+    delete this.#metadata.containedThingIds;
 
     // Boolean flags: persist when true, default to false when absent.
     this.isVehicle = this.isVehicle;
@@ -1990,6 +2051,7 @@ class Thing {
     this.isProcessingStation = this.isProcessingStation;
     this.isHarvestable = this.isHarvestable;
     this.isSalvageable = this.isSalvageable;
+    this.isContainer = this.isContainer;
   }
 
   #normalizeStatusEffects(effects = []) {
@@ -2064,6 +2126,185 @@ class Thing {
       return [];
     }
     return thing.whoseInventory();
+  }
+
+  whoseContainer() {
+    return Thing.getAll().filter(container => container && container.id !== this.#id && container.hasInventoryItem(this.#id));
+  }
+
+  static whoseContainerById(thingId) {
+    const thing = Thing.getById(thingId);
+    if (!thing) {
+      return [];
+    }
+    return thing.whoseContainer();
+  }
+
+  #resolveInventoryThing(thingLike) {
+    if (!thingLike) {
+      return null;
+    }
+    if (thingLike instanceof Thing) {
+      return thingLike;
+    }
+    if (typeof thingLike === 'string') {
+      return Thing.getById(thingLike);
+    }
+    if (typeof thingLike === 'object' && thingLike.id) {
+      return Thing.getById(thingLike.id);
+    }
+    return null;
+  }
+
+  containsThingRecursive(thingId, visited = new Set()) {
+    if (typeof thingId !== 'string' || !thingId.trim()) {
+      return false;
+    }
+    const normalizedThingId = thingId.trim();
+    if (visited.has(this.#id)) {
+      return false;
+    }
+    visited.add(this.#id);
+
+    if (this.#containedThingIds.has(normalizedThingId)) {
+      return true;
+    }
+
+    for (const containedId of this.#containedThingIds) {
+      const contained = Thing.getById(containedId);
+      if (!contained || !contained.isContainer) {
+        continue;
+      }
+      if (contained.containsThingRecursive(normalizedThingId, visited)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  getInventoryItems() {
+    return Array.from(this.#containedThingIds)
+      .map(id => Thing.getById(id))
+      .filter(Boolean);
+  }
+
+  hasInventoryItem(thingLike) {
+    const resolved = this.#resolveInventoryThing(thingLike);
+    if (!resolved) {
+      return false;
+    }
+    return this.#containedThingIds.has(resolved.id);
+  }
+
+  addInventoryItem(thingLike, { updateTimestamp = true } = {}) {
+    if (!this.isContainer) {
+      throw new Error(`Thing "${this.#name}" is not a container.`);
+    }
+
+    const resolved = this.#resolveInventoryThing(thingLike);
+    if (!resolved) {
+      throw new Error('Container inventory item could not be resolved.');
+    }
+    if (resolved.id === this.#id) {
+      throw new Error('A container cannot contain itself.');
+    }
+    if (resolved.thingType !== 'item') {
+      throw new Error('Only item-type things can be placed in containers.');
+    }
+    if (resolved.isEquipped) {
+      throw new Error('Equipped items cannot be placed in containers.');
+    }
+    if (this.#containedThingIds.has(resolved.id)) {
+      throw new Error(`Thing "${resolved.name}" is already in container "${this.#name}".`);
+    }
+    if (resolved.isContainer && resolved.containsThingRecursive(this.#id)) {
+      throw new Error('Cannot place a container inside one of its own descendants.');
+    }
+
+    resolved.removeFromWorld();
+    this.#containedThingIds.add(resolved.id);
+
+    const metadata = resolved.metadata || {};
+    metadata.containerId = this.#id;
+    delete metadata.container;
+    delete metadata.containerID;
+    delete metadata.container_id;
+    delete metadata.owner;
+    delete metadata.ownerId;
+    delete metadata.ownerID;
+    delete metadata.owner_id;
+    delete metadata.playerId;
+    delete metadata.player_id;
+    delete metadata.inventoryOwnerId;
+    delete metadata.inventory_owner_id;
+    delete metadata.location;
+    delete metadata.locationId;
+    delete metadata.locationID;
+    delete metadata.location_id;
+    resolved.metadata = metadata;
+
+    if (updateTimestamp) {
+      this.#lastUpdated = new Date().toISOString();
+    }
+    return true;
+  }
+
+  removeInventoryItem(thingLike, { updateTimestamp = true } = {}) {
+    const resolved = this.#resolveInventoryThing(thingLike);
+    if (!resolved) {
+      return false;
+    }
+
+    const removed = this.#containedThingIds.delete(resolved.id);
+    if (removed) {
+      const metadata = resolved.metadata || {};
+      let metadataChanged = false;
+      const cleanupKeys = ['containerId', 'containerID', 'container_id'];
+      for (const key of cleanupKeys) {
+        const value = typeof metadata[key] === 'string' ? metadata[key].trim() : null;
+        if (value && value === this.#id) {
+          delete metadata[key];
+          metadataChanged = true;
+        }
+      }
+      if (metadata.container && typeof metadata.container === 'object') {
+        const containerObjId = typeof metadata.container.id === 'string' ? metadata.container.id.trim() : null;
+        if (containerObjId === this.#id) {
+          delete metadata.container;
+          metadataChanged = true;
+        }
+      }
+      if (metadataChanged) {
+        resolved.metadata = metadata;
+      }
+      if (updateTimestamp) {
+        this.#lastUpdated = new Date().toISOString();
+      }
+    }
+    return removed;
+  }
+
+  clearInventory() {
+    const contained = this.getInventoryItems();
+    for (const thing of contained) {
+      this.removeInventoryItem(thing, { updateTimestamp: false });
+    }
+    if (this.#containedThingIds.size > 0) {
+      this.#containedThingIds.clear();
+    }
+    this.#lastUpdated = new Date().toISOString();
+  }
+
+  setInventory(items = []) {
+    if (!Array.isArray(items)) {
+      throw new Error('Container inventory must be provided as an array.');
+    }
+    this.clearInventory();
+    for (const entry of items) {
+      this.addInventoryItem(entry, { updateTimestamp: false });
+    }
+    this.#lastUpdated = new Date().toISOString();
+    return this.getInventoryItems();
   }
 
   getStatusEffects() {
@@ -2235,6 +2476,13 @@ class Thing {
       if (Array.isArray(thingIds) && thingIds.includes(this.#id) && typeof location.removeThingId === 'function') {
         location.removeThingId(this.#id);
       }
+    }
+
+    for (const container of Thing.getAll()) {
+      if (!container || container.id === this.#id || !container.hasInventoryItem(this.#id)) {
+        continue;
+      }
+      container.removeInventoryItem(this.#id);
     }
   }
 

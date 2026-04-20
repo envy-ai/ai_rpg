@@ -33,9 +33,8 @@ Response (200):
   - `messages`: ChatEntry[] (new entries appended this request)
 - Optional fields (present when relevant):
   - `summary`: string
-  - `aiUsage`: object (token usage metrics)
   - `toolInvocations`: array (executed model tool calls for this turn; includes tool metadata such as lookup queries/match counts and world-mutation results)
-  - `slopRemoval`: `{ slopWords: string[], slopNgrams: string[] }`
+  - `slopRemoval`: `{ slopWords: string[], slopRegexes: string[], slopNgrams: string[] }`
   - `debug`: object (debug payload, when enabled)
   - `actionResolution`: ActionResolution
   - `attackCheck`: object (attack roll details)
@@ -106,7 +105,10 @@ Variants:
   - `createRegionStub({ regionName, originLocation?, originRegion?, description?, parentRegion?, vehicleType?, relativeLevel? })`: creates a new region-entry stub from an origin location.
   - `createLocationStub({ locationName, originLocation?, originRegion?, description?, targetRegion?, vehicleType?, relativeLevel? })`: creates or resolves a destination location stub, ensures an exit from origin to destination, and returns origin/destination metadata.
   - `createExit({ fromLocation, fromRegion?, toLocation?, toRegion?, description?, vehicleType?, relativeLevel? })`: creates exits to existing destinations and is the canonical creation path for new location/region stubs (missing destinations are stubbed automatically). Successful calls always ensure a two-way connection between origin and destination. If the requested origin→destination exit already exists, the tool returns `status=unchanged` and does not modify the existing exit.
-  - `createThing({ shortDescription, itemOrScenery, location?, region?, ...thingSeedFields })`: creates a new thing at the specified location (or current player location when omitted) via the `thing-generator-single` flow and returns the final created name (useful when requested names are normalized/adjusted by name checks).
+  - `createThing({ shortDescription, itemOrScenery, location?, region?, ...thingSeedFields })`: creates a new thing at the specified location (or current player location when omitted) via the `thing-generator-single` flow and returns the final created name (useful when requested names are normalized/adjusted by name checks). Seed fields include preferred name/description, type, slot, rarity, value, weight, relative level, boolean flags such as `isVehicle`, `isCraftingStation`, `isProcessingStation`, `isHarvestable`, `isSalvageable`, and `isContainer`, plus attribute bonuses, status effects, and freeform properties.
+  - `alterThing({ thing, alteration })`: resolves a thing by ID/name and runs the existing `thing-alter` prompt flow against the whole resolved thing stack. Partial stack changes should split the stack first, then alter the split stack.
+  - `alterNpc({ npc, alteration })`: resolves an NPC by ID/name and runs the existing `alter_npc` event flow. Player characters are rejected; use this only for NPCs.
+  - `alterLocation({ location, region?, alteration })`: resolves a location by ID/name (optionally disambiguated by region) and runs the existing `alter_location` event flow to update the location description/name/base level/short description.
 - For world-mutation tools above, recoverable problems are returned to the model as structured `<toolError>` output (including disambiguation candidates with IDs and location context) so it can choose follow-up calls. This includes async tool-handler rejections such as `ToolVisibleError` failures from stub-creation helpers.
 - When realtime streaming is enabled, the final response may omit `eventChecks`, `events`, and other event artifacts (they are stripped for streaming clients).
 - Realtime `chat_complete` websocket payloads may include `completionSoundPath` (from `chat_completion_sound` config) so clients can play a completion cue; travel actions may defer playback until movement completes.

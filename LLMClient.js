@@ -102,7 +102,9 @@ class LLMClient {
             let maxWidth = 0;
             const lines = entries.map(entry => {
                 const elapsedSec = Math.round((Date.now() - entry.startTs) / 1000);
-                const line = `📡 ${entry.label} – ${entry.bytes} bytes – ${elapsedSec}s`;
+                const receivedUnit = entry.receivedUnit === 'characters' ? '' : ' bytes';
+                const receivedCount = Number.isFinite(entry.receivedCount) ? entry.receivedCount : entry.bytes;
+                const line = `📡 ${entry.label} – ${receivedCount}${receivedUnit} – ${elapsedSec}s`;
                 if (line.length > maxWidth) {
                     maxWidth = line.length;
                 }
@@ -163,7 +165,7 @@ class LLMClient {
         }, 1000);
     }
 
-    static #trackStreamStart(label, { startTimeoutMs = null, continueTimeoutMs = null, isBackground = false, model = null, promptText = '' } = {}) {
+    static #trackStreamStart(label, { startTimeoutMs = null, continueTimeoutMs = null, isBackground = false, model = null, promptText = '', receivedUnit = 'bytes' } = {}) {
         if (!LLMClient.#shouldTrackPromptProgress()) {
             return null;
         }
@@ -172,11 +174,15 @@ class LLMClient {
         const startTs = Date.now();
         const labelWithCounter = `${label || 'chat'}[${idNum}]`;
         const startDeadline = Number.isFinite(startTimeoutMs) ? startTs + startTimeoutMs : null;
-        const continueDeadline = null; // set after first bytes arrive
+        const continueDeadline = null; // set after first received data arrives
+        const normalizedReceivedUnit = receivedUnit === 'characters' ? 'characters' : 'bytes';
         LLMClient.#streamProgress.active.set(id, {
             label: labelWithCounter,
             model: model || null,
             bytes: 0,
+            receivedCount: 0,
+            receivedUnit: normalizedReceivedUnit,
+            countedPreviewText: '',
             promptText: typeof promptText === 'string' ? promptText : '',
             previewText: '',
             hasTextPreview: false,
@@ -190,15 +196,29 @@ class LLMClient {
         return id;
     }
 
-    static #trackStreamBytes(id, bytes, continueTimeoutMs = null, previewDelta = '') {
+    static #countTextCharacters(text) {
+        if (typeof text !== 'string') {
+            return 0;
+        }
+        return Array.from(text).length;
+    }
+
+    static #trackStreamReceived(id, count, continueTimeoutMs = null, previewDelta = '') {
         if (!id) return;
         const entry = LLMClient.#streamProgress.active.get(id);
         if (!entry) return;
+        const numericCount = Number(count);
+        if (!Number.isFinite(numericCount)) {
+            throw new Error('Stream received count must be a finite number.');
+        }
         const now = Date.now();
         if (!entry.firstByteTs) {
             entry.firstByteTs = now;
         }
-        entry.bytes += bytes;
+        entry.bytes += numericCount;
+        entry.receivedCount = Number.isFinite(entry.receivedCount)
+            ? entry.receivedCount + numericCount
+            : entry.bytes;
         if (typeof previewDelta === 'string' && previewDelta) {
             entry.previewText += previewDelta;
             LLMClient.#renderStreamProgress();
@@ -209,6 +229,10 @@ class LLMClient {
         } else {
             entry.continueDeadline = now;
         }
+    }
+
+    static #trackStreamBytes(id, bytes, continueTimeoutMs = null, previewDelta = '') {
+        LLMClient.#trackStreamReceived(id, bytes, continueTimeoutMs, previewDelta);
     }
 
     static #applyStreamPreviewText(id, previewText, continueTimeoutMs = null, { replace = false } = {}) {
@@ -236,6 +260,48 @@ class LLMClient {
             entry.continueDeadline = now;
         }
         LLMClient.#renderStreamProgress();
+    }
+
+    static #applyCodexPreviewUpdate(id, previewUpdate, continueTimeoutMs = null) {
+        if (!id || !previewUpdate || typeof previewUpdate.text !== 'string' || !previewUpdate.text) {
+            return false;
+        }
+        const entry = LLMClient.#streamProgress.active.get(id);
+        if (!entry) {
+            return false;
+        }
+        if (entry.receivedUnit !== 'characters') {
+            throw new Error('Codex preview character tracking requires a character-counted stream entry.');
+        }
+
+        const nextPreviewText = previewUpdate.text;
+        const previousCountedText = typeof entry.countedPreviewText === 'string'
+            ? entry.countedPreviewText
+            : '';
+        let newlyReceivedText = nextPreviewText;
+
+        if (previewUpdate.replace === true) {
+            if (nextPreviewText === previousCountedText || previousCountedText.startsWith(nextPreviewText)) {
+                newlyReceivedText = '';
+            } else if (nextPreviewText.startsWith(previousCountedText)) {
+                newlyReceivedText = nextPreviewText.slice(previousCountedText.length);
+            }
+            entry.countedPreviewText = nextPreviewText;
+        } else {
+            entry.countedPreviewText = `${previousCountedText}${nextPreviewText}`;
+        }
+
+        const receivedCharacters = LLMClient.#countTextCharacters(newlyReceivedText);
+        if (receivedCharacters !== 0) {
+            LLMClient.#trackStreamReceived(id, receivedCharacters, continueTimeoutMs);
+        }
+        LLMClient.#applyStreamPreviewText(
+            id,
+            nextPreviewText,
+            continueTimeoutMs,
+            { replace: previewUpdate.replace === true }
+        );
+        return true;
     }
 
     static #trackStreamStatus(id, statusText, continueTimeoutMs = null) {
@@ -978,19 +1044,24 @@ class LLMClient {
             const timeoutSeconds = deadline ? Math.max(0, Math.round((deadline - now) / 1000)) : null;
             const latencyMs = entry.firstByteTs ? (entry.firstByteTs - entry.startTs) : null;
             const elapsedAfterFirst = entry.firstByteTs ? Math.max(1, (now - entry.firstByteTs) / 1000) : null;
-            const avgBps = elapsedAfterFirst ? Math.round(entry.bytes / elapsedAfterFirst) : null;
+            const receivedCount = Number.isFinite(entry.receivedCount) ? entry.receivedCount : entry.bytes;
+            const receivedUnit = entry.receivedUnit === 'characters' ? 'characters' : 'bytes';
+            const avgReceivedPerSecond = elapsedAfterFirst ? Math.round(receivedCount / elapsedAfterFirst) : null;
             return {
                 id,
                 label: entry.label,
                 model: entry.model || null,
                 bytes: entry.bytes,
+                receivedCount,
+                receivedUnit,
                 promptText: typeof entry.promptText === 'string' ? entry.promptText : '',
                 previewText: typeof entry.previewText === 'string' ? entry.previewText : '',
                 seconds: Math.round((now - entry.startTs) / 1000),
                 timeoutSeconds,
                 retries: entry.retries ?? 0,
                 latencyMs,
-                avgBps,
+                avgBps: avgReceivedPerSecond,
+                avgReceivedPerSecond,
                 isBackground: Boolean(entry.isBackground)
             };
         });
@@ -2742,11 +2813,11 @@ class LLMClient {
                 const semaphoreKey = resolvedBackend === CodexBridgeClient.backendName
                     ? CodexBridgeClient.getSemaphoreKey(aiConfig, resolvedModel)
                     : `${resolvedApiKey || 'no-key'}::${resolvedModel || 'no-model'}`;
-                const resolvedTimeout = LLMClient.resolveTimeout(timeoutMs, timeoutScale);
-                const baseStartTimeoutMs = Number.isFinite(aiConfig.stream_start_timeout)
+                let resolvedTimeout = LLMClient.resolveTimeout(timeoutMs, timeoutScale);
+                let baseStartTimeoutMs = Number.isFinite(aiConfig.stream_start_timeout)
                     ? aiConfig.stream_start_timeout * 1000
                     : 40000;
-                const baseContinueTimeoutMs = Number.isFinite(aiConfig.stream_continue_timeout)
+                let baseContinueTimeoutMs = Number.isFinite(aiConfig.stream_continue_timeout)
                     ? aiConfig.stream_continue_timeout * 1000
                     : 10000;
                 const incrementStartTimeoutMs = Number.isFinite(aiConfig.increment_start_timeout)
@@ -2755,8 +2826,19 @@ class LLMClient {
                 const incrementContinueTimeoutMs = Number.isFinite(aiConfig.increment_continue_timeout)
                     ? aiConfig.increment_continue_timeout * 1000
                     : 0;
-                const streamStartTimeoutMs = baseStartTimeoutMs + (incrementStartTimeoutMs * attemptNumber);
-                const streamContinueTimeoutMs = baseContinueTimeoutMs + (incrementContinueTimeoutMs * attemptNumber);
+                if (resolvedBackend === CodexBridgeClient.backendName) {
+                    resolvedTimeout = CodexBridgeClient.resolveBridgeIdleTimeoutMs(aiConfig);
+                    baseStartTimeoutMs = resolvedTimeout;
+                    baseContinueTimeoutMs = resolvedTimeout;
+                }
+                const effectiveIncrementStartTimeoutMs = resolvedBackend === CodexBridgeClient.backendName
+                    ? 0
+                    : incrementStartTimeoutMs;
+                const effectiveIncrementContinueTimeoutMs = resolvedBackend === CodexBridgeClient.backendName
+                    ? 0
+                    : incrementContinueTimeoutMs;
+                const streamStartTimeoutMs = baseStartTimeoutMs + (effectiveIncrementStartTimeoutMs * attemptNumber);
+                const streamContinueTimeoutMs = baseContinueTimeoutMs + (effectiveIncrementContinueTimeoutMs * attemptNumber);
 
                 if (resolvedBackend === CodexBridgeClient.backendName) {
                     return {
@@ -2945,7 +3027,8 @@ class LLMClient {
                                 continueTimeoutMs: streamContinueTimeoutMs,
                                 isBackground: Boolean(runInBackground),
                                 model: resolvedModel,
-                                promptText: LLMClient.formatMessagesForErrorLog(payload.messages)
+                                promptText: LLMClient.formatMessagesForErrorLog(payload.messages),
+                                receivedUnit: resolvedBackend === CodexBridgeClient.backendName ? 'characters' : 'bytes'
                             })
                             : null;
                         if (streamTrackerId) {
@@ -2961,28 +3044,16 @@ class LLMClient {
                                 additionalPayload: payload,
                                 aiConfig: attemptRuntime.aiConfig,
                                 signal: controller.signal,
-                                onStdoutChunk: (chunkText) => {
-                                    if (!streamTrackerId || typeof chunkText !== 'string' || !chunkText) {
-                                        return;
-                                    }
-                                    const chunkBytes = Buffer.byteLength(chunkText, 'utf8');
-                                    LLMClient.#trackStreamBytes(
-                                        streamTrackerId,
-                                        chunkBytes,
-                                        streamContinueTimeoutMs
-                                    );
-                                },
                                 onStdoutEvent: (event) => {
                                     if (!streamTrackerId) {
                                         return;
                                     }
                                     const previewUpdate = LLMClient.#extractCodexPreviewUpdate(event);
                                     if (previewUpdate) {
-                                        LLMClient.#applyStreamPreviewText(
+                                        LLMClient.#applyCodexPreviewUpdate(
                                             streamTrackerId,
-                                            previewUpdate.text,
-                                            streamContinueTimeoutMs,
-                                            { replace: previewUpdate.replace === true }
+                                            previewUpdate,
+                                            streamContinueTimeoutMs
                                         );
                                         return;
                                     }
@@ -3428,13 +3499,17 @@ class LLMClient {
             }
 
             let totalTime = Date.now() - currentTime;
-            const finalBytes = streamTrackerId && LLMClient.#streamProgress.active.has(streamTrackerId)
-                ? LLMClient.#streamProgress.active.get(streamTrackerId).bytes
+            const finalProgressEntry = streamTrackerId && LLMClient.#streamProgress.active.has(streamTrackerId)
+                ? LLMClient.#streamProgress.active.get(streamTrackerId)
                 : null;
-            const bytesNote = Number.isFinite(finalBytes) ? ` | bytes=${finalBytes}` : '';
+            const finalReceivedCount = finalProgressEntry
+                ? (Number.isFinite(finalProgressEntry.receivedCount) ? finalProgressEntry.receivedCount : finalProgressEntry.bytes)
+                : null;
+            const finalReceivedKey = finalProgressEntry?.receivedUnit === 'characters' ? 'received' : 'bytes';
+            const receivedNote = Number.isFinite(finalReceivedCount) ? ` | ${finalReceivedKey}=${finalReceivedCount}` : '';
             const tokensNote = Number.isFinite(lastTotalTokens) ? ` | tokens=${lastTotalTokens}` : '';
             const label = metadataLabel || 'unknown';
-            log(`Prompt '${label}' completed after ${attempt} retries in ${totalTime / 1000} seconds.${bytesNote}${tokensNote}`);
+            log(`Prompt '${label}' completed after ${attempt} retries in ${totalTime / 1000} seconds.${receivedNote}${tokensNote}`);
             return responseContent;
         } finally {
             // per-attempt resources are released inside the retry loop.

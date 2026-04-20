@@ -11,6 +11,7 @@ Most modals live in `views/index.njk` and are wired up by the inline script or `
   - Auto-anchors below the top header/tab controls by default so top navigation remains clickable.
   - Each prompt row includes an eye action that opens a separate floating viewer window with one combined text pane: the full prompt appears first in a differently styled inline span, followed by the live streamed response text, and the viewer header includes a `Copy Prompt` button.
   - The viewer supports header dragging, native resize, and an internal vertical scrollbar when the combined text pane overflows.
+  - Received-count and average-rate cells are displayed without byte/character unit labels; the `Avg/s` column header provides the rate context.
   - Supports drag/resize/contract; manual drag disables auto-anchoring for that session.
 - `#npcModalBackdrop`, `#questEditBackdrop`, `#craftingModalBackdrop`, `#salvageIntentBackdrop`:
   shared backdrops used to dim the page for certain modals.
@@ -43,7 +44,8 @@ Most modals live in `views/index.njk` and are wired up by the inline script or `
 ## NPC views and management
 
 - `#npcInventoryModal`: character inventory listing with filters.
-- `#npcViewModal`: character overview (attributes, skills, faction info, gear, abilities, status, plus read-only resistances/vulnerabilities text boxes).
+- `#thingContainerModal`: two-column thing-container inventory modal using the shared thing-list renderer for current player inventory and selected container contents; on mobile it becomes a two-row vertical split where player inventory takes the top half and container contents the bottom half. Drag/drop, touch long-press drag, shift-click, `Add all`, or `Remove all` moves whole stacks, and nested containers reuse the same modal with a breadcrumb/back stack. `Add all`/`Remove all` operate only on the currently visible filtered items in their column, send one bulk API request, and use preflight validation for equipped items and self-containment.
+- `#npcViewModal`: character overview (attributes, skills, faction info, gear, read-only ability cards with active/passive/triggered color coding, status, plus read-only resistances/vulnerabilities text boxes).
   - Attributes/skills now use the shared allocation partials from the New Game UI.
   - Section order now renders Skills, the `Apply Point Changes` action row, and a Faction section above Equipment in the modal body.
   - In NPC view mode, the Faction section shows that NPC's faction name.
@@ -57,7 +59,7 @@ Most modals live in `views/index.njk` and are wired up by the inline script or `
 - `#npcMemoriesModal`: edit important memories.
 - `#npcGoalsModal`: edit goals.
 - `#npcEditModal`: full NPC edit form (attributes, skills, abilities, status effects, faction membership, resistances, vulnerabilities).
-  - Abilities in the edit form include a required short description field.
+  - Abilities in the edit form include a required short description field, and their name/type fields are color-coded by active/passive/triggered type.
   - NPCs also expose per-character need-bar applicability checkboxes here; unchecked bars are removed for that NPC, and re-enabling them restores the bar at `100`. This section is omitted for the player.
 - `#addNpcModal`: generate and add a new NPC (optional reference image).
 
@@ -100,6 +102,7 @@ Most modals live in `views/index.njk` and are wired up by the inline script or `
 ## Player level-up ability draft
 
 - `#playerAbilitySelectionModal`: player-only blocking modal used when one or more levels are missing required abilities.
+  - Ability names and uppercase type labels use the shared active/passive/triggered color coding.
 - Shows `Ability options for level-up are being generated` while option generation is in progress.
 - Applies a dynamic top offset below header/tab controls so top-row UI buttons stay clickable during generation.
 - Renders card options for one level at a time and requires exactly `player_abilities_per_level` selections.

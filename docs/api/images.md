@@ -63,6 +63,20 @@ Response:
 - 200: `{ success: true, metadata }`
 - 404: `{ success: false, error }`
 
+Notes:
+- If metadata is missing but a matching file exists in `public/generated-images/` with a known image extension, the server reconstructs minimal metadata from the file before responding.
+
+## GET /api/images/:imageId/file
+Serve a generated image without requiring the client to know the stored file extension.
+
+Response:
+- 200: image bytes via `res.sendFile(...)`
+- 404: `{ success: false, error }`
+
+Notes:
+- The route resolves saved image metadata first, then scans `public/generated-images/` for known extensions (`.png`, `.jpg`, `.jpeg`, `.webp`, `.gif`).
+- Client image rendering uses this route for existing `imageId` references so WebP images continue to display after reload.
+
 ## GET /api/images
 List all generated images.
 

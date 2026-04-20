@@ -50,6 +50,8 @@ ai:
     profile: ""
     # Optional instructions prepended ahead of the generated bridge wrapper prompt.
     prompt_preamble: ""
+    # Abort Codex turns after this many milliseconds without streamed stdout data.
+    idle_timeout_ms: 30000
 
   # Optional: Additional parameters
   maxTokens: 10000
@@ -297,6 +299,8 @@ formulas:
     max_attribute: "infinity"
     max_skill: "infinity"
 baseHealthPerLevel: 15
+# Percent of max health regenerated per minute; 0.01736111111 works out to about 25% per day.
+healthRegenPercentPerMinute: 0.01736111111
 
 repetition_buster: true
 # repetition_buster_mode is passed to the prompt template so the prompt can be tailored to the model's strength and weaknesses. Currently implemented are "glm" and "kimi". GLM-5 writes more naturally by default and needs less hand-holding, while Kimi-K2.5 needs more direction to avoid common pitfalls.
