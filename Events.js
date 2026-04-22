@@ -16,6 +16,10 @@ const EVENT_PROMPT_ORDER = [
     // Location stuff
     [
         {
+            key: "_instructions_",
+            text: `Note: All item quantities should be listed as unitless positive integers. If someone picks up an armload of sticks, the item name should be singular and the quantity should be the total number of sticks. If someone picks up something that's not reasonable to give a quantity to, like a handful of sand, the item name should be 'Handful of Sand' and the quantity should be 1, as opposed to 'Sand' with a quantity of '1 handful'.`
+        },
+        {
             key: "dummy_event",
             prompt: `Did the text reveal, unlock, unblock, or otherwise create a new exit?`,
         },
@@ -210,7 +214,7 @@ const EVENT_PROMPT_ORDER = [
         },
         {
             key: "time_passed",
-            prompt: `How long did the things that happened in the text for the turn realistically take in elapsed wall-clock time (consider whether some of the above activities could have happened in parallel)? Estimate the duration of the concrete actions described, not how long the prose takes to read and not how long a simple game action usually takes. If the text summarizes an extended activity such as cleaning, searching, crafting, repairing, cooking, resting, training, travel, or careful investigation, estimate the full real-world time required. Consider whether multiple characters worked in parallel; use elapsed wall-clock time rather than summing every person's labor. First briefly identify the time-consuming actions and any parallel work, then provide one best duration estimate. Answer in the format "[brief breakdown/reasoning] -> [time taken]". Format time taken with one of: HH:MM, integer minutes, or explicit units. If no time passed, answer "Nothing time-consuming happened -> 0".`,
+            prompt: `How long did the things that happened in the text for the turn realistically take in elapsed wall-clock time (consider whether some of the above activities could have happened in parallel)? Estimate the duration of the concrete actions described, not how long the prose takes to read and not how long a simple game action usually takes. If the text summarizes an extended activity such as cleaning, searching, crafting, repairing, cooking, resting, training, travel, or careful investigation, estimate the full real-world time required. Consider whether multiple characters worked in parallel; use elapsed wall-clock time rather than summing every person's labor. First briefly identify the time-consuming actions and any parallel work, then provide one best duration estimate. Answer in the format "[brief breakdown/reasoning] -> [time taken]". Format time taken with one of: "HH:MM", "[INTEGER] [minutes/hours]", or "[INTEGER] hours, [INTEGER] minutes". Do NOT use time ranges ("10-20 minutes"); use exact times only (just pick a reasonable amount of time).  If no time passed, answer "Nothing time-consuming happened -> 0".`,
         },
         {
             key: "triggered_abilities",
@@ -4813,12 +4817,16 @@ class Events {
                             oldName,
                         };
 
+                        const preserveBaseLevel = context.preserveBaseLevel === true
+                            || entry.preserveBaseLevel === true;
+
                         const promptPayload = {
                             ...baseContext,
                             promptType: "location-alter",
                             changeDescription,
                             alteredLocation: baseSnapshot,
                             locationSeed,
+                            preserveBaseLevel,
                         };
 
                         let renderedTemplate;
@@ -4914,6 +4922,7 @@ class Events {
                             parsedLocation,
                             changeDescription,
                             generatedImages,
+                            preserveBaseLevel,
                         });
 
                         if (summary) {
@@ -8152,6 +8161,7 @@ class Events {
         parsedLocation,
         changeDescription,
         generatedImages,
+        preserveBaseLevel = false,
     }) {
         if (!location || !parsedLocation) {
             return null;
@@ -8179,7 +8189,7 @@ class Events {
             changed = true;
         }
 
-        if (Number.isFinite(parsedLocation.baseLevel)) {
+        if (!preserveBaseLevel && Number.isFinite(parsedLocation.baseLevel)) {
             const clampedLevel = this._clampLevel(
                 parsedLocation.baseLevel,
                 location.baseLevel,
@@ -8897,6 +8907,23 @@ class Events {
                 generatedImages.delete(previousId);
             } else if (generatedImages && typeof generatedImages === "object") {
                 delete generatedImages[previousId];
+            }
+        }
+        if (typeof location.clearImageVariants === "function") {
+            try {
+                const removedVariants = location.clearImageVariants();
+                for (const variant of removedVariants || []) {
+                    if (!variant?.imageId) {
+                        continue;
+                    }
+                    if (generatedImages instanceof Map) {
+                        generatedImages.delete(variant.imageId);
+                    } else if (generatedImages && typeof generatedImages === "object") {
+                        delete generatedImages[variant.imageId];
+                    }
+                }
+            } catch (error) {
+                console.warn("Failed to clear location image variants:", error?.message || error);
             }
         }
         try {

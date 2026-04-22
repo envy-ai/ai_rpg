@@ -1,5 +1,7 @@
 # Agent Notes
 
+- Re-read this file every time chat history is compacted!
+- Do not manually delete log files.
 - Use Superpowers skills if available
 - Prefer explicit exceptions over silent fallbacks. If an operation cannot proceed, raise or propagate a clear error instead of returning a placeholder result.
 - If instructions are unclear, ask for clarification before implementing.

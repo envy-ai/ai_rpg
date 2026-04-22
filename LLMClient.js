@@ -15,22 +15,54 @@ class Semaphore {
     constructor(maxConcurrent = 1) {
         this.maxConcurrent = Number.isInteger(maxConcurrent) && maxConcurrent > 0 ? maxConcurrent : 1;
         this.current = 0;
+        this.currentBackground = 0;
         this.queue = [];
     }
 
-    async acquire() {
-        if (this.current < this.maxConcurrent) {
+    maxBackgroundConcurrent() {
+        return this.maxConcurrent > 1 ? this.maxConcurrent - 1 : 1;
+    }
+
+    canAcquire(background = false) {
+        if (this.current >= this.maxConcurrent) {
+            return false;
+        }
+        if (!background) {
+            return true;
+        }
+        if (this.queue.some(entry => entry && entry.background === false)) {
+            return false;
+        }
+        return this.currentBackground < this.maxBackgroundConcurrent();
+    }
+
+    createPermit(background = false) {
+        return { background: Boolean(background) };
+    }
+
+    async acquire({ background = false } = {}) {
+        const isBackground = Boolean(background);
+        if (this.canAcquire(isBackground)) {
             this.current += 1;
-            return;
+            if (isBackground) {
+                this.currentBackground += 1;
+            }
+            return this.createPermit(isBackground);
         }
         return new Promise(resolve => {
-            this.queue.push(resolve);
+            this.queue.push({
+                resolve,
+                background: isBackground
+            });
         });
     }
 
-    release() {
+    release(permit = null) {
         if (this.current > 0) {
             this.current -= 1;
+        }
+        if (permit?.background && this.currentBackground > 0) {
+            this.currentBackground -= 1;
         }
         this.dispatch();
     }
@@ -45,10 +77,21 @@ class Semaphore {
 
     dispatch() {
         while (this.current < this.maxConcurrent && this.queue.length) {
-            const next = this.queue.shift();
-            if (typeof next === 'function') {
+            let nextIndex = this.queue.findIndex(entry => entry && entry.background === false && this.canAcquire(false));
+            if (nextIndex < 0) {
+                nextIndex = this.queue.findIndex(entry => entry && entry.background === true && this.canAcquire(true));
+            }
+            if (nextIndex < 0) {
+                break;
+            }
+
+            const next = this.queue.splice(nextIndex, 1)[0];
+            if (next && typeof next.resolve === 'function') {
                 this.current += 1;
-                next();
+                if (next.background) {
+                    this.currentBackground += 1;
+                }
+                next.resolve(this.createPermit(next.background));
             }
         }
     }
@@ -2945,6 +2988,7 @@ class LLMClient {
                 let responseUsage = null;
                 let responseFinishReason = null;
                 let attemptSemaphore = null;
+                let attemptSemaphorePermit = null;
                 let attemptRuntime = null;
                 let payload = null;
                 let requestMessages = messages;
@@ -3017,7 +3061,9 @@ class LLMClient {
                             attemptRuntime.effectiveMaxConcurrent,
                             log
                         );
-                        await attemptSemaphore.acquire();
+                        attemptSemaphorePermit = await attemptSemaphore.acquire({
+                            background: Boolean(runInBackground)
+                        });
 
                         const shouldTrackPromptProgress = !isSilent
                             && (payload.stream || resolvedBackend === CodexBridgeClient.backendName);
@@ -3483,7 +3529,7 @@ class LLMClient {
                         startTimer = null;
                     }
                     if (attemptSemaphore) {
-                        attemptSemaphore.release();
+                        attemptSemaphore.release(attemptSemaphorePermit);
                     }
                 }
 

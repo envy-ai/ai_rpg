@@ -1,0 +1,10 @@
+{{ image.prompt }}
+
+Time: noon
+{% if hasLocalWeather %}
+{% if weatherScope == 'outside' %}
+Weather outside: clear
+{% else %}
+Weather: clear
+{% endif %}
+{% endif %}

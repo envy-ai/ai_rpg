@@ -103,6 +103,34 @@ Notes:
 - `/api/load` now also resolves pending player level-up ability draft state for the loaded player (`player_ability_options_per_level` / `player_abilities_per_level`) without generating options yet; option generation runs when the client requests `/api/player/ability-selection` with generation enabled.
 - `metadata.npcAliasesGenerated` is normalized to a boolean on load (`true` only when explicitly set `true` in the save metadata).
 
+## GET /api/calendar
+Return the active in-game calendar definition and current world-time payload.
+
+Response:
+- 200: `{ success: true, calendarDefinition, worldTime }`
+- 500: `{ success: false, error }`
+
+Notes:
+- `calendarDefinition` is the normalized persisted calendar object used for date, season, holiday, and light-level resolution.
+- `worldTime` is rebuilt through the shared world-time payload path, including current-location weather fields when available.
+
+## PUT /api/calendar
+Replace the active in-game calendar definition.
+
+Request:
+- Body: `{ calendarDefinition: object }`
+
+Response:
+- 200: `{ success: true, message, calendarDefinition, worldTime }`
+- 400: `{ success: false, error }` when `calendarDefinition` is missing, not an object, or fails calendar validation.
+- 500: `{ success: false, error }`
+
+Notes:
+- Validation uses the same calendar normalization rules as new-game and load hydration.
+- Invalid calendars fail without mutating the active calendar.
+- The current `worldTime` `{ dayIndex, timeMinutes }` is preserved; only date/season/holiday/light interpretation changes.
+- The returned `calendarDefinition` is the normalized version that will be persisted on the next save.
+
 ## PUT /api/game-config-override
 Update the per-game YAML config override for the currently loaded game and reload merged runtime config immediately.
 

@@ -551,6 +551,21 @@ class Globals {
     return Globals.getWorldTimeContext();
   }
 
+  static setCalendarDefinition(calendarDefinition) {
+    const normalizedCalendarDefinition = Globals.#normalizeCalendarDefinition(calendarDefinition);
+    const normalizedWorldTime = Globals.worldTime
+      ? Globals.#normalizeWorldTime(Globals.worldTime)
+      : {
+        dayIndex: 0,
+        timeMinutes: Globals.#resolveDefaultStartMinute()
+      };
+
+    Globals.calendarDefinition = normalizedCalendarDefinition;
+    Globals.worldTime = normalizedWorldTime;
+    Globals.syncWorldTimeToPlayer();
+    return Globals.getSerializedCalendarDefinition();
+  }
+
   static getSerializedWorldTime() {
     Globals.ensureWorldTimeInitialized();
     return Globals.#deepClone(Globals.worldTime);

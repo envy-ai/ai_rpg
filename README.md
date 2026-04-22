@@ -116,6 +116,7 @@ The front end talks to the JSON API defined in `server.js`. Key routes cover cha
 ├── server.js              # Express entry point, API routes, prompt orchestration, job queue
 ├── Player.js / Region.js  # Core world state models (players, regions, items, exits)
 ├── prompts/               # Nunjucks prompt templates (XML/YAML) for story and imagery
+├── templates/             # Deterministic Nunjucks templates that do not call an LLM
 ├── imagegen/              # ComfyUI workflow JSON templates rendered via Nunjucks
 ├── public/                # Static assets, compiled CSS, ES modules, Cytoscape bundles
 ├── views/                 # Nunjucks views for the in-app UI

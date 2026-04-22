@@ -8,6 +8,7 @@ const nunjucks = require('nunjucks');
 const yaml = require('js-yaml');
 const fs = require('fs');
 const path = require('path');
+const sharp = require('sharp');
 const { randomUUID } = require('crypto');
 const { XMLSerializer } = require('@xmldom/xmldom');
 const Utils = require('./Utils.js');
@@ -1089,6 +1090,34 @@ function imageFileExists(imageId) {
     return false;
 }
 
+function resolveImageFilePath(imageId) {
+    const normalizedImageId = typeof imageId === 'string' ? imageId.trim() : '';
+    if (!normalizedImageId) {
+        return null;
+    }
+
+    const imagesDir = path.join(__dirname, 'public', 'generated-images');
+    const metadata = generatedImages.get(normalizedImageId) || null;
+    const filename = typeof metadata?.images?.[0]?.filename === 'string'
+        ? metadata.images[0].filename.trim()
+        : '';
+    if (filename) {
+        const candidate = path.join(imagesDir, filename);
+        if (fs.existsSync(candidate)) {
+            return candidate;
+        }
+    }
+
+    for (const ext of KNOWN_IMAGE_EXTENSIONS) {
+        const candidate = path.join(imagesDir, `${normalizedImageId}${ext}`);
+        if (fs.existsSync(candidate)) {
+            return candidate;
+        }
+    }
+
+    return null;
+}
+
 function hasExistingImage(imageId) {
     //console.log('Checking existing image for ID:', imageId);
     if (!imageId) {
@@ -1106,6 +1135,303 @@ function hasExistingImage(imageId) {
         return true;
     }
     return false;
+}
+
+function slugifyLocationVariantKeyPart(value, fallback = 'none') {
+    const normalized = typeof value === 'string'
+        ? value.trim().toLowerCase()
+            .replace(/&/g, ' and ')
+            .replace(/[^a-z0-9]+/g, '-')
+            .replace(/^-+|-+$/g, '')
+        : '';
+    return normalized || fallback;
+}
+
+function buildLocationWeatherVariantKey({ sourceImageId, lightingKey, weatherKey }) {
+    const source = slugifyLocationVariantKeyPart(sourceImageId, 'no-source');
+    const lighting = slugifyLocationVariantKeyPart(lightingKey, 'ambient');
+    const weather = slugifyLocationVariantKeyPart(weatherKey, 'none');
+    return `${source}__${lighting}__${weather}`;
+}
+
+function normalizeLocationWeatherExposure(value, fieldName = 'location hasWeather') {
+    if (value === null || value === undefined || value === '') {
+        return null;
+    }
+    if (typeof value === 'boolean') {
+        return value ? 'yes' : 'no';
+    }
+    if (typeof value === 'string') {
+        const lowered = value.trim().toLowerCase();
+        if (!lowered) {
+            return null;
+        }
+        if (['true', '1', 'yes'].includes(lowered)) {
+            return 'yes';
+        }
+        if (['false', '0', 'no'].includes(lowered)) {
+            return 'no';
+        }
+        if (lowered === 'outside') {
+            return 'outside';
+        }
+    }
+    throw new Error(`${fieldName} must be "yes", "no", "outside", true, false, or null.`);
+}
+
+function resolveLocationWeatherVariantConditions(location, { sourceImageId = null } = {}) {
+    if (!location || typeof location !== 'object') {
+        throw new Error('Location is required to resolve weather image variant conditions.');
+    }
+    const resolvedSourceImageId = typeof sourceImageId === 'string' && sourceImageId.trim()
+        ? sourceImageId.trim()
+        : (typeof location.imageId === 'string' && location.imageId.trim() ? location.imageId.trim() : '');
+    if (!resolvedSourceImageId) {
+        throw new Error('Location weather image variants require a source image id.');
+    }
+
+    const worldTimeContext = Globals.getWorldTimeContext();
+    const lightingLabel = typeof worldTimeContext.lightLevelDescription === 'string' && worldTimeContext.lightLevelDescription.trim()
+        ? worldTimeContext.lightLevelDescription.trim()
+        : (typeof worldTimeContext.lighting === 'string' && worldTimeContext.lighting.trim()
+            ? worldTimeContext.lighting.trim()
+            : (typeof worldTimeContext.segment === 'string' && worldTimeContext.segment.trim()
+                ? worldTimeContext.segment.trim()
+                : 'Ambient light'));
+    const lightingKey = slugifyLocationVariantKeyPart(lightingLabel, 'ambient');
+
+    const weatherScope = normalizeLocationWeatherExposure(resolveLocationHasWeather(location)) || 'yes';
+    const hasLocalWeather = weatherScope !== 'no';
+    let weatherName = null;
+    let weatherDescription = null;
+    let weatherKey = 'sheltered';
+    if (hasLocalWeather) {
+        let region = null;
+        try {
+            region = findRegionByLocationId(location.id);
+        } catch (error) {
+            console.warn(`Failed to resolve region for location weather variant ${location.id}:`, error.message);
+        }
+        const regionalWeather = resolveRegionWeatherForPrompt({
+            region,
+            location,
+            worldTimeContext
+        });
+        weatherName = typeof regionalWeather?.name === 'string' && regionalWeather.name.trim()
+            ? regionalWeather.name.trim()
+            : 'Unspecified weather';
+        weatherDescription = typeof regionalWeather?.description === 'string' && regionalWeather.description.trim()
+            ? regionalWeather.description.trim()
+            : null;
+        weatherKey = slugifyLocationVariantKeyPart(weatherName, 'weather');
+    }
+
+    const variantKey = buildLocationWeatherVariantKey({
+        sourceImageId: resolvedSourceImageId,
+        lightingKey,
+        weatherKey
+    });
+
+    return {
+        sourceImageId: resolvedSourceImageId,
+        variantKey,
+        lightingKey,
+        lightingLabel,
+        weatherKey,
+        weatherName,
+        weatherDescription,
+        hasLocalWeather,
+        weatherScope,
+        hasWeatherOutside: weatherScope === 'outside',
+        segment: worldTimeContext.segment || null,
+        timeLabel: worldTimeContext.timeLabel || null,
+        dateLabel: worldTimeContext.dateLabel || null,
+        season: worldTimeContext.season || null
+    };
+}
+
+function stripMarkupForImagePrompt(text) {
+    return typeof text === 'string'
+        ? text.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
+        : '';
+}
+
+function buildLocationWeatherVariantPrompt(location, conditions, { sourceImageMetadata = null } = {}) {
+    if (!location || !conditions) {
+        throw new Error('Location and conditions are required to build a weather image variant prompt.');
+    }
+
+    const locationName = typeof location.name === 'string' && location.name.trim()
+        ? location.name.trim()
+        : 'Unnamed location';
+    const shortDescription = stripMarkupForImagePrompt(location.shortDescription);
+    const description = stripMarkupForImagePrompt(location.description);
+    const sourcePrompt = typeof sourceImageMetadata?.prompt === 'string'
+        ? sourceImageMetadata.prompt.trim()
+        : '';
+
+    let weatherDetail = '';
+    if (conditions.hasLocalWeather && conditions.weatherName) {
+        weatherDetail = conditions.weatherDescription
+            ? `${conditions.weatherName} - ${conditions.weatherDescription}`
+            : conditions.weatherName;
+    }
+
+    let renderedPrompt;
+    try {
+        renderedPrompt = deterministicTemplateEnv.render('location-weather-variant-image-prompt.njk', {
+            location: {
+                name: locationName,
+                shortDescription,
+                description
+            },
+            sourcePrompt,
+            conditions,
+            weatherDetail
+        });
+    } catch (error) {
+        throw new Error(`Failed to render location weather variant image prompt template: ${error.message}`);
+    }
+
+    const prompt = typeof renderedPrompt === 'string'
+        ? renderedPrompt.replace(/\n{3,}/g, '\n\n').trim()
+        : '';
+    if (!prompt) {
+        throw new Error('Location weather variant image prompt template rendered empty output.');
+    }
+    return prompt;
+}
+
+function resolveLocationWeatherVariantSourceImage(location) {
+    if (!location || typeof location !== 'object') {
+        throw new Error('Location object is required to resolve weather image variant source image.');
+    }
+    const sourceImageId = typeof location.imageId === 'string' && location.imageId.trim()
+        ? location.imageId.trim()
+        : '';
+    if (!sourceImageId) {
+        return {
+            sourceImageId: '',
+            sourceImageMetadata: null,
+            isWeatherVariantSource: false,
+            originalSourceImageId: null
+        };
+    }
+
+    const sourceImageMetadata = generatedImages.get(sourceImageId) || null;
+    const isWeatherVariantSource = sourceImageMetadata?.source === 'location_weather_variant';
+    const originalSourceImageId = isWeatherVariantSource && typeof sourceImageMetadata?.sourceImageId === 'string'
+        ? sourceImageMetadata.sourceImageId.trim()
+        : null;
+
+    return {
+        sourceImageId,
+        sourceImageMetadata,
+        isWeatherVariantSource,
+        originalSourceImageId
+    };
+}
+
+async function readImageFileDimensions(filePath) {
+    if (!filePath || typeof filePath !== 'string') {
+        throw new Error('Image dimension inspection requires a file path.');
+    }
+    const metadata = await sharp(filePath).metadata();
+    const width = Number(metadata?.width);
+    const height = Number(metadata?.height);
+    if (!Number.isFinite(width) || !Number.isFinite(height)) {
+        throw new Error(`Image dimension metadata missing for ${filePath}.`);
+    }
+    return { width, height };
+}
+
+function logEditedImageSizeWarning({ job, sourceDimensions, editedDimensions, editedImageId }) {
+    if (!job?.payload?.isLocationWeatherVariant || !sourceDimensions || !editedDimensions) {
+        return;
+    }
+    if (sourceDimensions.width === editedDimensions.width && sourceDimensions.height === editedDimensions.height) {
+        return;
+    }
+    console.warn(
+        [
+            `🌦️ Location weather image variant size mismatch for ${job.payload.locationId || 'unknown location'} (${job.payload.variantKey || 'unknown variant'}):`,
+            `source ${job.payload.sourceImageId || 'unknown source'} is ${sourceDimensions.width}x${sourceDimensions.height};`,
+            `edited ${editedImageId || 'unknown image'} is ${editedDimensions.width}x${editedDimensions.height}.`
+        ].join(' ')
+    );
+}
+
+async function warnIfEditedImageSizeDiffers(job, saveResult, editedImageId) {
+    if (!job?.payload?.isLocationWeatherVariant) {
+        return;
+    }
+    try {
+        const sourceDimensions = await readImageFileDimensions(job.payload.sourceImagePath);
+        const editedDimensions = await readImageFileDimensions(saveResult.filepath);
+        logEditedImageSizeWarning({
+            job,
+            sourceDimensions,
+            editedDimensions,
+            editedImageId
+        });
+    } catch (error) {
+        console.warn(`🌦️ Failed to inspect location weather image variant dimensions: ${error.message}`);
+    }
+}
+
+function clearLocationImageVariants(location, { sourceImageId = null, deleteGeneratedImageMetadata = true } = {}) {
+    if (!location || typeof location.clearImageVariants !== 'function') {
+        return [];
+    }
+    const removed = location.clearImageVariants({ sourceImageId });
+    if (deleteGeneratedImageMetadata) {
+        for (const entry of removed) {
+            if (entry?.imageId && generatedImages && typeof generatedImages.delete === 'function') {
+                generatedImages.delete(entry.imageId);
+            }
+            if (entry?.variantKey && location?.id) {
+                clearEntityJob('location-variant', `${location.id}:${entry.variantKey}`, entry.jobId || null);
+            }
+        }
+    }
+    return removed;
+}
+
+function attachCompletedLocationWeatherVariantJob(job, result) {
+    const payload = job?.payload || {};
+    if (!payload.isLocationWeatherVariant || !payload.locationId || !payload.variantKey || !result?.imageId) {
+        return false;
+    }
+
+    const location = gameLocations.get(payload.locationId);
+    const sourceImageId = typeof payload.sourceImageId === 'string'
+        ? payload.sourceImageId.trim()
+        : '';
+    let attached = false;
+    if (location && sourceImageId && location.imageId === sourceImageId) {
+        const existingVariant = typeof location.getImageVariant === 'function'
+            ? (location.getImageVariant(payload.variantKey) || {})
+            : {};
+        location.setImageVariant(payload.variantKey, {
+            ...existingVariant,
+            variantKey: payload.variantKey,
+            sourceImageId,
+            imageId: result.imageId,
+            jobId: null,
+            conditions: payload.conditions || existingVariant.conditions || null,
+            prompt: payload.prompt || existingVariant.prompt || null,
+            createdAt: existingVariant.createdAt || new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            completedAt: new Date().toISOString()
+        });
+        attached = true;
+        console.log(`🌦️ Updated location ${location.id} weather image variant ${payload.variantKey} to: ${result.imageId}`);
+    } else {
+        generatedImages.delete(result.imageId);
+        console.warn(`🌦️ Discarded stale weather image variant ${payload.variantKey || ''} for location ${payload.locationId || ''}.`);
+    }
+    clearEntityJob('location-variant', `${payload.locationId}:${payload.variantKey}`, job.id);
+    return attached;
 }
 
 function parseImageDataUrl(dataUrl) {
@@ -1269,9 +1595,13 @@ function sanitizeJobForRealtime(job, extra = {}) {
             entityId: jobPayload.entityId || null,
             isPlayerPortrait: Boolean(jobPayload.isPlayerPortrait),
             isLocationScene: Boolean(jobPayload.isLocationScene),
+            isLocationWeatherVariant: Boolean(jobPayload.isLocationWeatherVariant),
             isThingImage: Boolean(jobPayload.isThingImage),
             isLocationExitImage: Boolean(jobPayload.isLocationExitImage),
-            isCustomImage: Boolean(jobPayload.isCustomImage || jobPayload.customJob)
+            isCustomImage: Boolean(jobPayload.isCustomImage || jobPayload.customJob),
+            sourceImageId: jobPayload.sourceImageId || null,
+            variantKey: jobPayload.variantKey || null,
+            conditions: jobPayload.conditions || null
         }
     };
 
@@ -1450,11 +1780,16 @@ async function processSingleJob(job) {
                 if (job.payload.isLocationScene && job.payload.locationId && result.imageId) {
                     const location = gameLocations.get(job.payload.locationId);
                     if (location) {
+                        clearLocationImageVariants(location);
                         location.imageId = result.imageId;
                         delete location.pendingImageJobId;
                         console.log(`🏞️ Updated location ${location.id} imageId to: ${result.imageId}`);
                     }
                     pendingLocationImages.delete(job.payload.locationId);
+                }
+
+                if (job.payload.isLocationWeatherVariant && job.payload.locationId && job.payload.variantKey && result.imageId) {
+                    attachCompletedLocationWeatherVariantJob(job, result);
                 }
 
                 // Update location exit's imageId if this was a location exit passage job
@@ -1512,6 +1847,14 @@ async function processSingleJob(job) {
                 if (job.payload.isLocationScene && job.payload.locationId) {
                     pendingLocationImages.delete(job.payload.locationId);
                 }
+                if (job.payload.isLocationWeatherVariant && job.payload.locationId && job.payload.variantKey) {
+                    const location = gameLocations.get(job.payload.locationId);
+                    const existingVariant = location?.getImageVariant?.(job.payload.variantKey) || null;
+                    if (location && existingVariant?.jobId === job.id) {
+                        location.removeImageVariant(job.payload.variantKey);
+                    }
+                    clearEntityJob('location-variant', `${job.payload.locationId}:${job.payload.variantKey}`, job.id);
+                }
                 emitJobUpdate(job, { phase: 'failed' });
             }
         }
@@ -1562,6 +1905,15 @@ async function processSingleJob(job) {
                     delete location.pendingImageJobId;
                 }
             }
+
+            if (payload.isLocationWeatherVariant && payload.locationId && payload.variantKey) {
+                clearEntityJob('location-variant', `${payload.locationId}:${payload.variantKey}`, currentJob.id);
+                const location = gameLocations.get(payload.locationId);
+                const existingVariant = location?.getImageVariant?.(payload.variantKey) || null;
+                if (location && currentJob.status !== JOB_STATUS.COMPLETED && existingVariant?.jobId === currentJob.id) {
+                    location.removeImageVariant(payload.variantKey);
+                }
+            }
         }
     }
 }
@@ -1597,6 +1949,10 @@ async function processImageGeneration(job) {
     const savedImages = [];
     const saveDirectory = path.join(__dirname, 'public', 'generated-images');
     let comfyQueueId = null;
+
+    if (job.payload?.isLocationWeatherVariant && engine !== 'comfyui') {
+        throw new Error('Location weather image variants require the ComfyUI image generation engine.');
+    }
 
     if (!fs.existsSync(saveDirectory)) {
         try {
@@ -1647,10 +2003,63 @@ async function processImageGeneration(job) {
         job.progress = 20;
         job.message = 'Rendering workflow template...';
 
+        let uploadedSourceImage = null;
+        if (job.payload?.isLocationWeatherVariant) {
+            const sourceImagePath = typeof job.payload.sourceImagePath === 'string'
+                ? job.payload.sourceImagePath.trim()
+                : '';
+            if (!sourceImagePath) {
+                throw new Error('Location weather image variant job is missing sourceImagePath.');
+            }
+            job.progress = 15;
+            job.message = 'Uploading source image to ComfyUI...';
+            uploadedSourceImage = await withRetry(async () => {
+                return await comfyUIClient.uploadInputImage(sourceImagePath, {
+                    filename: `${job.payload.sourceImageId || imageId}${path.extname(sourceImagePath) || '.png'}`,
+                    subfolder: 'airpg-location-variants',
+                    type: 'input',
+                    overwrite: true
+                });
+            });
+            templateVars.image.sourceFilename = uploadedSourceImage.imageReference;
+            templateVars.image.sourceSubfolder = uploadedSourceImage.subfolder || '';
+            templateVars.image.sourceType = uploadedSourceImage.type || 'input';
+            templateVars.image.denoise = Number.isFinite(Number(job.payload.denoise))
+                ? Number(job.payload.denoise)
+                : 0.45;
+            templateVars.image.cfg = Number.isFinite(Number(job.payload.cfg))
+                ? Number(job.payload.cfg)
+                : 6;
+            templateVars.image.sampler = typeof job.payload.sampler === 'string' && job.payload.sampler.trim()
+                ? job.payload.sampler.trim()
+                : 'dpmpp_2m';
+            templateVars.image.scheduler = typeof job.payload.scheduler === 'string' && job.payload.scheduler.trim()
+                ? job.payload.scheduler.trim()
+                : 'karras';
+            templateVars.image.variantKey = job.payload.variantKey || null;
+            console.log(
+                [
+                    `🌦️ Location weather image edit prompt for ${job.payload.locationId || 'unknown location'} (${job.payload.variantKey || 'unknown variant'}):`,
+                    templateVars.image.prompt
+                ].join('\n')
+            );
+        }
+
         let workflowJson;
         try {
+            let workflowTemplate;
+            if (job.payload?.isLocationWeatherVariant) {
+                workflowTemplate = typeof job.payload?.api_template === 'string'
+                    ? job.payload.api_template.trim()
+                    : '';
+                if (!workflowTemplate) {
+                    throw new Error('Location weather image variant job is missing imagegen.location_variant_settings.api_template.');
+                }
+            } else {
+                workflowTemplate = job.payload?.api_template || config.imagegen.api_template;
+            }
             workflowJson = await withRetry(() => {
-                return imagePromptEnv.render(config.imagegen.api_template, templateVars);
+                return imagePromptEnv.render(workflowTemplate, templateVars);
             });
         } catch (error) {
             throw new Error(`Template rendering failed: ${error.message}`);
@@ -1708,6 +2117,7 @@ async function processImageGeneration(job) {
                 );
 
                 if (saveResult.success) {
+                    await warnIfEditedImageSizeDiffers(job, saveResult, imageId);
                     savedImages.push({
                         imageId: imageId,
                         filename: saveResult.filename,
@@ -1739,6 +2149,13 @@ async function processImageGeneration(job) {
         comfyUIPromptId: comfyQueueId,
         images: savedImages
     };
+    if (job.payload?.isLocationWeatherVariant) {
+        imageMetadata.source = 'location_weather_variant';
+        imageMetadata.locationId = job.payload.locationId || null;
+        imageMetadata.sourceImageId = job.payload.sourceImageId || null;
+        imageMetadata.variantKey = job.payload.variantKey || null;
+        imageMetadata.conditions = job.payload.conditions || null;
+    }
 
     generatedImages.set(imageId, imageMetadata);
 
@@ -1786,15 +2203,29 @@ async function validateConfiguration() {
             validationErrors.push(`Image generation: unknown engine '${config.imagegen.engine}'`);
         }
 
+        const validateTemplateFile = (label, templateName) => {
+            const templatePath = path.join(__dirname, 'imagegen', templateName);
+            if (!fs.existsSync(templatePath)) {
+                validationErrors.push(`Image generation: ${label} template file not found: ${templatePath}`);
+            } else {
+                console.log(`✅ Template file found for ${label}: ${templateName}`);
+            }
+        };
+
         // Check template file exists
         if (!config.imagegen.api_template) {
             validationErrors.push('Image generation: api_template not specified');
         } else {
-            const templatePath = path.join(__dirname, 'imagegen', config.imagegen.api_template);
-            if (!fs.existsSync(templatePath)) {
-                validationErrors.push(`Image generation: template file not found: ${templatePath}`);
+            validateTemplateFile('api_template', config.imagegen.api_template);
+        }
+
+        const usingComfyUI = config.imagegen.engine === 'comfyui' || !config.imagegen.engine;
+        const locationVariantTemplate = config.imagegen.location_variant_settings?.api_template;
+        if (usingComfyUI) {
+            if (!locationVariantTemplate) {
+                validationErrors.push('Image generation: location_variant_settings.api_template not specified');
             } else {
-                console.log(`✅ Template file found: ${config.imagegen.api_template}`);
+                validateTemplateFile('location_variant_settings.api_template', locationVariantTemplate);
             }
         }
 
@@ -1834,6 +2265,7 @@ async function validateConfiguration() {
 
         validateOptionalImageSizeOverrides('item', config.imagegen.item_settings?.image);
         validateOptionalImageSizeOverrides('scenery', config.imagegen.scenery_settings?.image);
+        validateOptionalImageSizeOverrides('location variant', config.imagegen.location_variant_settings?.image);
 
         // Check if generated images directory exists, create if not
         const imagesDir = path.join(__dirname, 'public', 'generated-images');
@@ -2239,6 +2671,7 @@ const gameLocationExits = new Map(); // Store LocationExit instances by ID
 const regions = new Map(); // Store Region instances by ID
 const pendingRegionStubs = new Map(); // Store region definitions awaiting full generation
 const pendingLocationImages = new Map(); // Store active image job IDs per location
+const locationImageGenerationPromises = new Map(); // Store pre-job location image generation promises per location
 const npcGenerationPromises = new Map(); // Track in-flight NPC generations by normalized explicit name
 const levelUpAbilityPromises = new Map(); // Track in-flight level-up ability generations per character
 const playerAbilitySelectionPromises = new Map(); // Track in-flight player ability option generation per level
@@ -4268,13 +4701,15 @@ function resolveLocationHasWeather(location) {
     if (!location || typeof location !== 'object') {
         return null;
     }
-    if (typeof location.hasWeather === 'boolean') {
-        return location.hasWeather;
+    const directScope = normalizeLocationWeatherExposure(location.hasWeather, `location "${location.id || location.name || 'unknown'}" hasWeather`);
+    if (directScope) {
+        return directScope;
     }
 
     const details = typeof location.getDetails === 'function' ? location.getDetails() : location;
-    if (details && typeof details.hasWeather === 'boolean') {
-        return details.hasWeather;
+    const detailsScope = normalizeLocationWeatherExposure(details?.hasWeather, `location "${location.id || location.name || 'unknown'}" details.hasWeather`);
+    if (detailsScope) {
+        return detailsScope;
     }
 
     const metadata = location.stubMetadata && typeof location.stubMetadata === 'object'
@@ -4284,23 +4719,28 @@ function resolveLocationHasWeather(location) {
         ? location.generationHints
         : (details?.generationHints && typeof details.generationHints === 'object' ? details.generationHints : null);
     if (metadata) {
-        if (typeof metadata.hasWeather === 'boolean') {
-            return metadata.hasWeather;
+        const metadataScope = normalizeLocationWeatherExposure(metadata.hasWeather, `location "${location.id || location.name || 'unknown'}" stubMetadata.hasWeather`);
+        if (metadataScope) {
+            return metadataScope;
         }
-        if (typeof metadata.locationHasWeather === 'boolean') {
-            return metadata.locationHasWeather;
+        const locationMetadataScope = normalizeLocationWeatherExposure(metadata.locationHasWeather, `location "${location.id || location.name || 'unknown'}" stubMetadata.locationHasWeather`);
+        if (locationMetadataScope) {
+            return locationMetadataScope;
         }
     }
-    if (hints && typeof hints.hasWeather === 'boolean') {
-        return hints.hasWeather;
+    if (hints) {
+        const hintScope = normalizeLocationWeatherExposure(hints.hasWeather, `location "${location.id || location.name || 'unknown'}" generationHints.hasWeather`);
+        if (hintScope) {
+            return hintScope;
+        }
     }
 
     return null;
 }
 
 function resolveRegionWeatherForPrompt({ region, location, worldTimeContext }) {
-    const hasWeatherAtLocation = resolveLocationHasWeather(location);
-    if (hasWeatherAtLocation === false) {
+    const weatherScope = normalizeLocationWeatherExposure(resolveLocationHasWeather(location)) || 'yes';
+    if (weatherScope === 'no') {
         return {
             name: 'No local weather',
             description: 'This location is sheltered from outdoor weather.'
@@ -5866,7 +6306,8 @@ function buildBasePromptContext({
         factionSummaries.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
     }
 
-    const hasLocalWeather = resolveLocationHasWeather(location) !== false;
+    const weatherScope = normalizeLocationWeatherExposure(resolveLocationHasWeather(location)) || 'yes';
+    const hasLocalWeather = weatherScope !== 'no';
     const regionalWeather = resolveRegionWeatherForPrompt({
         region,
         location,
@@ -5875,6 +6316,8 @@ function buildBasePromptContext({
     const worldTimeContextWithConditions = {
         ...worldTimeContext,
         hasLocalWeather,
+        weatherScope,
+        hasWeatherOutside: weatherScope === 'outside',
         weatherName: regionalWeather?.name || 'Unspecified weather',
         weatherDescription: regionalWeather?.description || 'Weather conditions are not currently available.',
         lightLevelDescription: worldTimeContext.lightLevelDescription || worldTimeContext.lighting || 'Ambient conditions are unknown.'
@@ -10623,6 +11066,16 @@ const imagePromptEnv = nunjucks.configure('imagegen', {
     autoescape: false
 });
 
+const deterministicTemplateEnv = new nunjucks.Environment(
+    new nunjucks.FileSystemLoader(path.join(__dirname, 'templates'), { noCache: true }),
+    {
+        autoescape: false,
+        throwOnUndefined: false,
+        trimBlocks: true,
+        lstripBlocks: true
+    }
+);
+
 // Import and add dice filters to both environments
 const diceModule = require('./nunjucks_dice.js');
 const e = require('express');
@@ -10653,9 +11106,10 @@ function addDiceFilters(env) {
 addDiceFilters(viewsEnv);
 addDiceFilters(promptEnv);
 addDiceFilters(imagePromptEnv);
+addDiceFilters(deterministicTemplateEnv);
 
 const rarityDefinitions = Thing.getAllRarityDefinitions();
-[viewsEnv, promptEnv, imagePromptEnv].forEach(env => {
+[viewsEnv, promptEnv, imagePromptEnv, deterministicTemplateEnv].forEach(env => {
     if (env && typeof env.addGlobal === 'function') {
         env.addGlobal('rarityDefinitions', rarityDefinitions);
     }
@@ -22725,6 +23179,43 @@ function applyImagePromptPrefix(promptText, prefixType = null) {
     return prependBaseContextPreamble(combinedPrompt);
 }
 
+function renderLocationFinalImagePrompt(location, promptText) {
+    if (!location || typeof location !== 'object') {
+        throw new Error('Location object is required to render the final location image prompt.');
+    }
+    if (typeof promptText !== 'string') {
+        throw new TypeError('Location image prompt text must be a string.');
+    }
+
+    const basePrompt = promptText.trim();
+    if (!basePrompt) {
+        throw new Error('Location image prompt text is empty.');
+    }
+
+    const weatherScope = normalizeLocationWeatherExposure(resolveLocationHasWeather(location)) || 'yes';
+    let renderedPrompt;
+    try {
+        renderedPrompt = deterministicTemplateEnv.render('location-image-prompt.njk', {
+            image: {
+                prompt: basePrompt
+            },
+            location,
+            hasLocalWeather: weatherScope !== 'no',
+            weatherScope
+        });
+    } catch (error) {
+        throw new Error(`Failed to render location image prompt template: ${error.message}`);
+    }
+
+    const finalPrompt = typeof renderedPrompt === 'string'
+        ? renderedPrompt.replace(/\n{3,}/g, '\n\n').trim()
+        : '';
+    if (!finalPrompt) {
+        throw new Error('Location image prompt template rendered empty output.');
+    }
+    return finalPrompt;
+}
+
 async function generateImagePromptFromTemplate(prompts, options = {}) {
     const { prefixType = null } = options || {};
     try {
@@ -22863,60 +23354,306 @@ async function generateLocationImage(location, options = {}) {
         }
 
         if (force && location.imageId) {
+            clearLocationImageVariants(location);
             location.imageId = null;
         }
 
-        // Generate the location scene prompt using LLM
-        const promptTemplate = renderLocationImagePrompt(location);
-        const { prompt: finalImagePrompt } = await generateImagePromptFromTemplate(promptTemplate, { prefixType: 'location' });
+        const existingGenerationPromise = locationImageGenerationPromises.get(location.id);
+        if (existingGenerationPromise) {
+            console.log(`🏞️ Location ${location.id} already has image prompt generation in progress, joining existing request`);
+            const existingResult = await existingGenerationPromise;
+            const existingJobId = existingResult?.jobId || pendingLocationImages.get(location.id) || null;
+            const existingJob = existingJobId ? imageJobs.get(existingJobId) : null;
+            if (existingJob) {
+                addJobSubscriber(existingJob, clientId, { emitSnapshot: true });
+                return {
+                    ...existingResult,
+                    success: true,
+                    existingJob: true,
+                    jobId: existingJobId,
+                    job: getJobSnapshot(existingJobId)
+                };
+            }
+            return {
+                ...existingResult,
+                existingJob: true
+            };
+        }
 
-        // Create image generation job with location-specific settings
+        const generationPromise = Promise.resolve().then(async () => {
+            // Generate the location scene prompt using LLM
+            const promptTemplate = renderLocationImagePrompt(location);
+            const { prompt: generatedImagePrompt } = await generateImagePromptFromTemplate(promptTemplate, { prefixType: 'location' });
+            const finalImagePrompt = renderLocationFinalImagePrompt(location, generatedImagePrompt);
+
+            // Create image generation job with location-specific settings
+            const jobId = generateImageId();
+            const locationImageSettings = config.imagegen.location_settings?.image || {};
+            const defaultImageSettings = config.imagegen.default_settings?.image || {};
+            const locationNegative = buildNegativePrompt('blurry, low quality, modern elements, cars, technology, people, characters, portraits, indoor scenes only');
+            const payload = {
+                prompt: finalImagePrompt,
+                width: locationImageSettings.width || defaultImageSettings.width || 1024,
+                height: locationImageSettings.height || defaultImageSettings.height || 1024,
+                seed: Math.floor(Math.random() * 1000000),
+                steps: config.imagegen.location_settings?.sampling?.steps,
+                negative_prompt: locationNegative,
+                megapixels: resolveMegapixels(locationImageSettings.megapixels),
+                // Track which location this image is for
+                locationId: location.id,
+                renderedTemplate: promptTemplate.renderedTemplate,
+                isLocationScene: true,
+                force,
+                entityType: 'location',
+                entityId: location.id,
+                clientId
+            };
+
+            console.log(`🏞️ Generating scene for location ${location.id} with job ID: ${jobId}`);
+
+            // Create and queue the job
+            const job = createImageJob(jobId, payload);
+            jobQueue.push(jobId);
+
+            // Set imageId to the job ID temporarily - it will be updated to the final imageId when generation completes
+            location.pendingImageJobId = jobId;
+            pendingLocationImages.set(location.id, jobId);
+
+            // Start processing if not already running
+            setTimeout(() => processJobQueue(), 0);
+            console.log(`🏞️ Queued scene generation for location ${location.id}, tracking with job ID: ${jobId}`);
+
+            return {
+                success: true,
+                jobId: jobId,
+                status: job.status,
+                message: 'Location scene generation job queued',
+                estimatedTime: '30-90 seconds'
+            };
+        });
+
+        locationImageGenerationPromises.set(location.id, generationPromise);
+        try {
+            return await generationPromise;
+        } finally {
+            if (locationImageGenerationPromises.get(location.id) === generationPromise) {
+                locationImageGenerationPromises.delete(location.id);
+            }
+        }
+
+    } catch (error) {
+        console.error('Error generating location image:', error);
+        throw error;
+    }
+}
+
+async function generateLocationWeatherVariant(location, options = {}) {
+    try {
+        const { force = false, clientId = null } = options || {};
+        if (!config.imagegen || !config.imagegen.enabled) {
+            return {
+                success: false,
+                skipped: true,
+                reason: 'disabled'
+            };
+        }
+
+        const engine = String(config.imagegen?.engine || 'comfyui').trim().toLowerCase();
+        if (engine !== 'comfyui') {
+            return {
+                success: false,
+                skipped: true,
+                reason: 'unsupported-engine'
+            };
+        }
+
+        if (!comfyUIClient) {
+            return {
+                success: false,
+                skipped: true,
+                reason: 'no-client'
+            };
+        }
+
+        if (!location || typeof location !== 'object') {
+            throw new Error('Location object is required');
+        }
+
+        const sourceResolution = resolveLocationWeatherVariantSourceImage(location);
+        const sourceImageId = sourceResolution.sourceImageId;
+        if (!sourceImageId) {
+            return {
+                success: false,
+                skipped: true,
+                reason: 'no-source-image'
+            };
+        }
+        if (sourceResolution.isWeatherVariantSource) {
+            console.warn(
+                [
+                    `🌦️ Refusing to use weather/lighting variant ${sourceImageId} as the source image for location ${location.id || 'unknown location'}.`,
+                    sourceResolution.originalSourceImageId
+                        ? `Original source image is ${sourceResolution.originalSourceImageId}.`
+                        : 'Original source image is unavailable.'
+                ].join(' ')
+            );
+            return {
+                success: false,
+                skipped: true,
+                reason: 'source-image-is-weather-variant',
+                sourceImageId,
+                originalSourceImageId: sourceResolution.originalSourceImageId || null
+            };
+        }
+        if (!hasExistingImage(sourceImageId)) {
+            return {
+                success: false,
+                skipped: true,
+                reason: 'source-image-missing',
+                sourceImageId
+            };
+        }
+
+        const variantSettings = config.imagegen.location_variant_settings || {};
+        const variantTemplate = typeof variantSettings.api_template === 'string'
+            ? variantSettings.api_template.trim()
+            : '';
+        if (!variantTemplate) {
+            return {
+                success: false,
+                skipped: true,
+                reason: 'missing-variant-template',
+                sourceImageId
+            };
+        }
+        const variantTemplatePath = path.join(__dirname, 'imagegen', variantTemplate);
+        if (!fs.existsSync(variantTemplatePath)) {
+            return {
+                success: false,
+                skipped: true,
+                reason: 'variant-template-missing',
+                sourceImageId,
+                template: variantTemplate
+            };
+        }
+
+        const conditions = resolveLocationWeatherVariantConditions(location, { sourceImageId });
+        const existingVariant = typeof location.getImageVariant === 'function'
+            ? location.getImageVariant(conditions.variantKey)
+            : null;
+        if (!force && existingVariant?.sourceImageId === sourceImageId && existingVariant.imageId && hasExistingImage(existingVariant.imageId)) {
+            return {
+                success: true,
+                skipped: true,
+                locationId: location.id,
+                sourceImageId,
+                variantKey: conditions.variantKey,
+                conditions,
+                imageId: existingVariant.imageId
+            };
+        }
+
+        if (!force && existingVariant?.jobId) {
+            const pendingJob = imageJobs.get(existingVariant.jobId);
+            if (pendingJob && (pendingJob.status === JOB_STATUS.QUEUED || pendingJob.status === JOB_STATUS.PROCESSING)) {
+                addJobSubscriber(pendingJob, clientId, { emitSnapshot: true });
+                return {
+                    success: true,
+                    existingJob: true,
+                    locationId: location.id,
+                    sourceImageId,
+                    variantKey: conditions.variantKey,
+                    conditions,
+                    jobId: existingVariant.jobId,
+                    job: getJobSnapshot(existingVariant.jobId)
+                };
+            }
+        }
+
+        if (force && existingVariant) {
+            const removed = location.removeImageVariant(conditions.variantKey);
+            if (removed?.imageId) {
+                generatedImages.delete(removed.imageId);
+            }
+        }
+
+        const sourceImagePath = resolveImageFilePath(sourceImageId);
+        if (!sourceImagePath) {
+            return {
+                success: false,
+                skipped: true,
+                reason: 'source-file-missing',
+                sourceImageId,
+                variantKey: conditions.variantKey,
+                conditions
+            };
+        }
+
+        const sourceImageMetadata = sourceResolution.sourceImageMetadata || generatedImages.get(sourceImageId) || null;
+        const prompt = buildLocationWeatherVariantPrompt(location, conditions, { sourceImageMetadata });
         const jobId = generateImageId();
         const locationImageSettings = config.imagegen.location_settings?.image || {};
         const defaultImageSettings = config.imagegen.default_settings?.image || {};
-        const locationNegative = buildNegativePrompt('blurry, low quality, modern elements, cars, technology, people, characters, portraits, indoor scenes only');
+        const variantImageSettings = variantSettings.image || {};
+        const variantSampling = variantSettings.sampling || {};
+        const locationNegative = buildNegativePrompt('new people, new characters, text, logos, signage, changed architecture, changed camera angle, distorted landmarks, low quality, blurry');
         const payload = {
-            prompt: finalImagePrompt,
-            width: locationImageSettings.width || defaultImageSettings.width || 1024,
-            height: locationImageSettings.height || defaultImageSettings.height || 1024,
+            prompt,
+            width: variantImageSettings.width || sourceImageMetadata?.width || locationImageSettings.width || defaultImageSettings.width || 1024,
+            height: variantImageSettings.height || sourceImageMetadata?.height || locationImageSettings.height || defaultImageSettings.height || 1024,
             seed: Math.floor(Math.random() * 1000000),
-            steps: config.imagegen.location_settings?.sampling?.steps,
+            steps: variantSampling.steps || config.imagegen.location_settings?.sampling?.steps || config.imagegen.default_settings?.sampling?.steps,
+            denoise: variantSampling.denoise,
+            cfg: variantSampling.cfg,
+            sampler: variantSampling.sampler,
+            scheduler: variantSampling.scheduler,
             negative_prompt: locationNegative,
-            megapixels: resolveMegapixels(locationImageSettings.megapixels),
-            // Track which location this image is for
+            megapixels: resolveMegapixels(variantImageSettings.megapixels || locationImageSettings.megapixels),
+            api_template: variantTemplate,
             locationId: location.id,
-            renderedTemplate: promptTemplate.renderedTemplate,
-            isLocationScene: true,
+            sourceImageId,
+            sourceImagePath,
+            variantKey: conditions.variantKey,
+            conditions,
+            isLocationWeatherVariant: true,
             force,
-            entityType: 'location',
+            entityType: 'location-variant',
             entityId: location.id,
             clientId
         };
 
-        console.log(`🏞️ Generating scene for location ${location.id} with job ID: ${jobId}`);
+        const now = new Date().toISOString();
+        location.setImageVariant(conditions.variantKey, {
+            variantKey: conditions.variantKey,
+            sourceImageId,
+            imageId: null,
+            jobId,
+            conditions,
+            prompt,
+            createdAt: existingVariant?.createdAt || now,
+            updatedAt: now,
+            completedAt: null
+        });
 
-        // Create and queue the job
         const job = createImageJob(jobId, payload);
         jobQueue.push(jobId);
-
-        // Start processing if not already running
+        setEntityJob('location-variant', `${location.id}:${conditions.variantKey}`, jobId);
         setTimeout(() => processJobQueue(), 0);
-
-        // Set imageId to the job ID temporarily - it will be updated to the final imageId when generation completes
-        location.pendingImageJobId = jobId;
-        pendingLocationImages.set(location.id, jobId);
-        console.log(`🏞️ Queued scene generation for location ${location.id}, tracking with job ID: ${jobId}`);
 
         return {
             success: true,
-            jobId: jobId,
+            locationId: location.id,
+            sourceImageId,
+            variantKey: conditions.variantKey,
+            conditions,
+            jobId,
             status: job.status,
-            message: 'Location scene generation job queued',
+            job: getJobSnapshot(jobId),
+            message: 'Location weather image variant job queued',
             estimatedTime: '30-90 seconds'
         };
-
     } catch (error) {
-        console.error('Error generating location image:', error);
+        console.error('Error generating location weather image variant:', error);
         throw error;
     }
 }
@@ -24529,21 +25266,11 @@ function parseRegionStubLocations(xmlSnippet) {
         );
     };
 
-    const parseBooleanTagValue = (value, fieldName) => {
+    const parseLocationHasWeatherTagValue = (value, fieldName) => {
         if (value === null || value === undefined || value === '') {
             return null;
         }
-        if (typeof value === 'boolean') {
-            return value;
-        }
-        const lowered = String(value).trim().toLowerCase();
-        if (['true', '1', 'yes'].includes(lowered)) {
-            return true;
-        }
-        if (['false', '0', 'no'].includes(lowered)) {
-            return false;
-        }
-        throw new Error(`Invalid boolean value for ${fieldName}: "${value}"`);
+        return normalizeLocationWeatherExposure(value, fieldName);
     };
 
     return locationNodes.map(node => {
@@ -24582,7 +25309,7 @@ function parseRegionStubLocations(xmlSnippet) {
         const relativeLevel = Number.parseInt(relativeLevelRaw, 10);
         const numNpcs = Number.parseInt(numNpcsRaw, 10);
         const numHostiles = Number.parseInt(numHostilesRaw, 10);
-        const hasWeather = parseBooleanTagValue(hasWeatherRaw, `location "${name || 'Unnamed Location'}" hasWeather`);
+        const hasWeather = parseLocationHasWeatherTagValue(hasWeatherRaw, `location "${name || 'Unnamed Location'}" hasWeather`);
 
         return {
             name: name || 'Unnamed Location',
@@ -25639,9 +26366,10 @@ async function instantiateRegionLocations({
         const numHostiles = Number.isFinite(Number(blueprint.numHostiles))
             ? Math.max(0, Math.min(20, Math.round(Number(blueprint.numHostiles))))
             : null;
-        const hasWeather = typeof blueprint.hasWeather === 'boolean'
-            ? blueprint.hasWeather
-            : null;
+        const hasWeather = normalizeLocationWeatherExposure(
+            blueprint.hasWeather,
+            `location blueprint "${blueprint.name || 'Unnamed Location'}" hasWeather`
+        );
         const controllingFactionResolution = resolveFactionNameToId(blueprint.controllingFaction, {
             fieldLabel: `Location controlling faction for "${blueprint.name || 'Unnamed Location'}"`
         });
@@ -26551,6 +27279,7 @@ Events.initialize({
     ensureUniqueThingNames,
     expandRegionEntryStub,
     generateLocationImage,
+    generateLocationWeatherVariant,
     queueNpcAssetsForLocation,
     queueLocationThingImages,
     generateLocationExitImage,
@@ -26564,6 +27293,7 @@ Events.initialize({
     getCurrencyLabel,
     pushChatEntry,
     generatedImages,
+    clearLocationImageVariants,
     pendingRegionStubs,
     alterThingByPrompt,
     separateThingByPrompt,
@@ -26608,6 +27338,7 @@ const apiScope = {
     restoreCharacterHealthToMaximum,
     generateLocationFromPrompt,
     generateLocationImage,
+    generateLocationWeatherVariant,
     generatePlayerImage,
     generateRegionFromPrompt,
     backfillRegionExitTravelTimes,
@@ -26683,6 +27414,10 @@ const apiScope = {
     generatedImages,
     baseTimeoutMilliseconds,
     imageFileExists,
+    resolveImageFilePath,
+    resolveLocationWeatherVariantConditions,
+    buildLocationWeatherVariantPrompt,
+    clearLocationImageVariants,
     realtimeHub,
     addJobSubscriber,
     vehicleDebugEnabled: cliVehicleDebug,

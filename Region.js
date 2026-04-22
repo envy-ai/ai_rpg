@@ -124,6 +124,31 @@ class Region {
     throw new Error(`${fieldName} must be a boolean.`);
   }
 
+  static #normalizeWeatherExposure(value, fieldName) {
+    if (value === null || value === undefined || value === '') {
+      return null;
+    }
+    if (typeof value === 'boolean') {
+      return value ? 'yes' : 'no';
+    }
+    if (typeof value === 'string') {
+      const lowered = value.trim().toLowerCase();
+      if (!lowered) {
+        return null;
+      }
+      if (['true', '1', 'yes'].includes(lowered)) {
+        return 'yes';
+      }
+      if (['false', '0', 'no'].includes(lowered)) {
+        return 'no';
+      }
+      if (lowered === 'outside') {
+        return 'outside';
+      }
+    }
+    throw new Error(`${fieldName} must be "yes", "no", "outside", true, false, or null.`);
+  }
+
   static #normalizeDurationRange(range, fieldName) {
     if (!range || typeof range !== 'object' || Array.isArray(range)) {
       throw new Error(`${fieldName} must be an object with minMinutes and maxMinutes.`);
@@ -407,7 +432,7 @@ class Region {
 
     const numNpcs = normalizeCount(blueprint.numNpcs);
     const numHostiles = normalizeCount(blueprint.numHostiles);
-    const hasWeather = Region.#normalizeBoolean(blueprint.hasWeather, 'location blueprint hasWeather');
+    const hasWeather = Region.#normalizeWeatherExposure(blueprint.hasWeather, 'location blueprint hasWeather');
 
     return {
       name,
@@ -834,7 +859,7 @@ class Region {
       }
 
       if (hasWeatherNode) {
-        hasWeather = Region.#normalizeBoolean(hasWeatherNode.textContent?.trim(), `location "${locName}" hasWeather`);
+        hasWeather = Region.#normalizeWeatherExposure(hasWeatherNode.textContent?.trim(), `location "${locName}" hasWeather`);
       }
 
       const exitEntries = exitsNode
@@ -1292,7 +1317,7 @@ class Region {
     return seasonEntry.weatherTypes[seasonEntry.weatherTypes.length - 1];
   }
 
-  resolveCurrentWeather({ seasonName = null, totalMinutes = null, totalHours = null } = {}) {
+  resolveCurrentWeather({ seasonName = null, totalMinutes = null, totalHours = null, visitedRegionIds = null } = {}) {
     const hasTotalMinutes = totalMinutes !== null && totalMinutes !== undefined;
     const normalizedTotalMinutes = hasTotalMinutes
       ? Number(totalMinutes)
@@ -1301,8 +1326,22 @@ class Region {
       throw new Error('Region.resolveCurrentWeather requires a non-negative totalMinutes value.');
     }
 
+    const visited = visitedRegionIds instanceof Set ? new Set(visitedRegionIds) : new Set();
+    if (visited.has(this.#id)) {
+      throw new Error(`Circular parent region weather lookup detected at region "${this.#name}".`);
+    }
+    visited.add(this.#id);
+
     const weatherConfig = this.#weather;
     if (!weatherConfig || weatherConfig.hasDynamicWeather !== true) {
+      const parent = this.parentRegion;
+      if (parent && typeof parent.resolveCurrentWeather === 'function') {
+        return parent.resolveCurrentWeather({
+          seasonName,
+          totalMinutes: normalizedTotalMinutes,
+          visitedRegionIds: visited
+        });
+      }
       return {
         name: 'No active weather',
         description: 'Conditions are sheltered from weather effects.',

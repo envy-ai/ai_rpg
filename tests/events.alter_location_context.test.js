@@ -78,3 +78,45 @@ test('alter_location handler uses context.location for tool-driven location alte
         Globals.config = originalConfig;
     }
 });
+
+test('location alteration can preserve base level while applying text updates', () => {
+    const generatedImages = new Map([
+        ['old-image', { id: 'old-image' }],
+        ['variant-image', { id: 'variant-image' }]
+    ]);
+    const location = {
+        id: 'loc-preserve-level',
+        name: 'Quiet Study',
+        description: 'A dusty study.',
+        shortDescription: 'dusty study',
+        baseLevel: 4,
+        imageId: 'old-image',
+        clearImageVariants() {
+            return [{ imageId: 'variant-image' }];
+        },
+        addStatusEffect() {}
+    };
+
+    const summary = Events._applyLocationAlteration({
+        location,
+        parsedLocation: {
+            name: 'Restored Quiet Study',
+            description: 'A clean study with repaired windows.',
+            shortDescription: 'clean repaired study',
+            baseLevel: 12
+        },
+        changeDescription: 'Repair the study without changing its danger level.',
+        generatedImages,
+        preserveBaseLevel: true
+    });
+
+    assert.equal(location.name, 'Restored Quiet Study');
+    assert.equal(location.description, 'A clean study with repaired windows.');
+    assert.equal(location.shortDescription, 'clean repaired study');
+    assert.equal(location.baseLevel, 4);
+    assert.equal(location.imageId, null);
+    assert.equal(summary.baseLevelBefore, 4);
+    assert.equal(summary.baseLevelAfter, 4);
+    assert.equal(generatedImages.has('old-image'), false);
+    assert.equal(generatedImages.has('variant-image'), false);
+});

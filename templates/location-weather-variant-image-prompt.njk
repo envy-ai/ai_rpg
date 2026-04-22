@@ -1,0 +1,11 @@
+Change the image to reflect the following conditions:
+{% if conditions.lightingLabel %}
+Lighting: {{ conditions.lightingLabel }}.
+{% endif %}
+{% if conditions.hasLocalWeather and conditions.weatherName %}
+{% if conditions.weatherScope == 'outside' %}
+Weather outside: {{ weatherDetail }}.
+{% else %}
+Weather: {{ weatherDetail }}.
+{% endif %}
+{% endif %}

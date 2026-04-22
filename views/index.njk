@@ -69,6 +69,8 @@
                                         <div class="entity-context-menu location-image-menu" id="locationImageMenu" hidden>
                                             <button type="button" class="entity-context-menu-item location-image-menu-item" id="locationImageEditButton">Edit Location</button>
                                             <button type="button" class="entity-context-menu-item location-image-menu-item" id="locationRegionEditButton">Edit Region</button>
+                                            <button type="button" class="entity-context-menu-item location-image-menu-item" id="locationWeatherEditButton">Edit Weather</button>
+                                            <button type="button" class="entity-context-menu-item location-image-menu-item" id="locationCalendarEditButton">Edit Calendar</button>
                                             <button type="button" class="entity-context-menu-item location-image-menu-item" id="locationSummonNpcButton">Summon NPC</button>
                                             <button type="button" class="entity-context-menu-item location-image-menu-item" id="locationSummonThingButton">Summon Item/Scenery</button>
                                             <button type="button" class="entity-context-menu-item location-image-menu-item" id="locationImageRegenerateButton">Regenerate Image</button>
@@ -78,6 +80,7 @@
                                         <div class="location-details" id="locationDetails">
                                             <span class="location-level" id="locationLevel">Level: ?</span>
                                         </div>
+                                        <button type="button" class="location-npc-add-button location-modify-button" id="modifyLocationButton" disabled>🛠️ Modify Location</button>
                                         <div class="location-hint" id="locationHint">Hover over the location image for a description.</div>
                                         <details class="location-section location-exits" open>
                                             <summary>Exits</summary>
@@ -370,6 +373,8 @@
                 <div class="map-location-context-menu entity-context-menu location-image-menu" id="mapLocationContextMenu" hidden>
                     <button type="button" class="entity-context-menu-item location-image-menu-item" id="mapLocationMenuEditButton">Edit Location</button>
                     <button type="button" class="entity-context-menu-item location-image-menu-item" id="mapLocationMenuRegionButton">Edit Region</button>
+                    <button type="button" class="entity-context-menu-item location-image-menu-item" id="mapLocationMenuWeatherButton">Edit Weather</button>
+                    <button type="button" class="entity-context-menu-item location-image-menu-item" id="mapLocationMenuCalendarButton">Edit Calendar</button>
                     <button type="button" class="entity-context-menu-item location-image-menu-item" id="mapLocationMenuSummonNpcButton">Summon NPC</button>
                     <button type="button" class="entity-context-menu-item location-image-menu-item" id="mapLocationMenuSummonThingButton">Summon Item/Scenery</button>
                     <button type="button" class="entity-context-menu-item location-image-menu-item" id="mapLocationMenuRegenerateImageButton">Regenerate Image</button>
@@ -1972,6 +1977,15 @@
                     <label for="locationEditLevel">Level</label>
                     <input type="number" id="locationEditLevel" name="level" min="1" max="99" step="1" required>
                 </div>
+                <div class="location-edit-field" id="locationEditHasWeatherGroup">
+                    <label for="locationEditHasWeather">Local Weather</label>
+                    <select id="locationEditHasWeather" name="hasWeather">
+                        <option value="">Auto</option>
+                        <option value="yes">Weather exposed</option>
+                        <option value="outside">Weather visible outside</option>
+                        <option value="no">Sheltered</option>
+                    </select>
+                </div>
                 <div class="location-edit-field">
                     <label for="locationEditFaction">Controlling Faction</label>
                     <select id="locationEditFaction"></select>
@@ -2050,6 +2064,67 @@
                     <div class="location-edit-actions">
                         <button type="button" class="location-edit-cancel region-edit-cancel" id="regionEditCancelBtn">Cancel</button>
                         <button type="submit" class="location-edit-save region-edit-save" id="regionEditSaveBtn">Save Changes</button>
+                    </div>
+                </footer>
+            </form>
+        </div>
+    </div>
+
+    <div id="regionWeatherEditModal" class="modal region-weather-edit-modal" role="dialog" aria-modal="true" aria-hidden="true" hidden>
+        <div class="modal__dialog">
+            <header class="modal__header">
+                <h2 id="regionWeatherEditModalTitle">Edit Weather</h2>
+                <button type="button" class="modal__close" id="regionWeatherEditCloseBtn" aria-label="Close weather editor">
+                    <span aria-hidden="true">X</span>
+                </button>
+            </header>
+            <form id="regionWeatherEditForm" class="modal__body location-edit-form region-weather-edit-form" novalidate>
+                <div class="location-edit-field location-edit-field--static">
+                    <span class="location-edit-label">Region</span>
+                    <span id="regionWeatherEditRegionName" class="location-edit-value">Unknown Region</span>
+                </div>
+                <label class="modal-checkbox region-weather-edit-dynamic" for="regionWeatherDynamicWeather">
+                    <input type="checkbox" id="regionWeatherDynamicWeather" name="hasDynamicWeather">
+                    <span>Dynamic weather</span>
+                </label>
+                <p class="modal-checkbox-hint">Disabled regions report no active outdoor weather.</p>
+                <section class="npc-edit-section region-weather-seasons-section" id="regionWeatherSeasonsSection">
+                    <div class="npc-edit-section-header">
+                        <h3>Season Weather</h3>
+                        <button type="button" class="npc-edit-add-btn" id="regionWeatherAddSeasonBtn">Add Season</button>
+                    </div>
+                    <div id="regionWeatherSeasonList" class="region-weather-season-list"></div>
+                </section>
+                <footer class="location-edit-footer region-weather-edit-footer">
+                    <div class="location-edit-status region-weather-edit-status" id="regionWeatherEditStatus" role="status" aria-live="polite"></div>
+                    <div class="location-edit-actions region-weather-edit-actions">
+                        <button type="button" class="location-edit-cancel region-weather-edit-cancel" id="regionWeatherEditCancelBtn">Cancel</button>
+                        <button type="submit" class="location-edit-save region-weather-edit-save" id="regionWeatherEditSaveBtn">Save Weather</button>
+                    </div>
+                </footer>
+            </form>
+        </div>
+    </div>
+
+    <div id="calendarEditModal" class="modal calendar-edit-modal" role="dialog" aria-modal="true" aria-hidden="true" hidden>
+        <div class="modal__dialog">
+            <header class="modal__header">
+                <h2 id="calendarEditModalTitle">Edit Calendar</h2>
+                <button type="button" class="modal__close" id="calendarEditCloseBtn" aria-label="Close calendar editor">
+                    <span aria-hidden="true">X</span>
+                </button>
+            </header>
+            <form id="calendarEditForm" class="modal__body location-edit-form calendar-edit-form" novalidate>
+                <div class="location-edit-field calendar-edit-json-field">
+                    <label for="calendarEditJson">Calendar JSON</label>
+                    <textarea id="calendarEditJson" class="calendar-edit-json" spellcheck="false" rows="24" wrap="off"></textarea>
+                </div>
+                <footer class="location-edit-footer calendar-edit-footer">
+                    <div class="location-edit-status calendar-edit-status" id="calendarEditStatus" role="status" aria-live="polite"></div>
+                    <div class="location-edit-actions calendar-edit-actions">
+                        <button type="button" class="location-edit-cancel calendar-edit-cancel" id="calendarEditCancelBtn">Cancel</button>
+                        <button type="button" class="location-edit-cancel calendar-edit-format" id="calendarEditFormatBtn">Format JSON</button>
+                        <button type="submit" class="location-edit-save calendar-edit-save" id="calendarEditSaveBtn">Save Calendar</button>
                     </div>
                 </footer>
             </form>
@@ -2515,11 +2590,26 @@
             return `/api/images/${encodeURIComponent(normalizedImageId)}/file`;
         }
 
+        function shouldPreserveDisplayImageOverride({ displayImageUrl, requestedImageId, force = false, result = null } = {}) {
+            const resolvedDisplayImageUrl = typeof displayImageUrl === 'string' ? displayImageUrl.trim() : '';
+            const resolvedRequestedImageId = typeof requestedImageId === 'string' ? requestedImageId.trim() : '';
+            const resolvedResultImageId = typeof result?.imageId === 'string' ? result.imageId.trim() : '';
+            return Boolean(
+                resolvedDisplayImageUrl
+                && resolvedRequestedImageId
+                && resolvedResultImageId === resolvedRequestedImageId
+                && result?.skipped
+                && !force
+            );
+        }
+
         function renderEntityImage({
             element,
             entityType,
             entityId,
             imageId,
+            displayImageId = null,
+            displayImageUrl = null,
             altText,
             placeholderIcon = '🖼️',
             placeholderClass = 'image-placeholder',
@@ -2538,6 +2628,8 @@
             const computedPlaceholderMarkup = placeholderMarkup !== null
                 ? placeholderMarkup
                 : `<div class="${placeholderClass}">${placeholderIcon}</div>`;
+            const normalizedDisplayImageId = typeof displayImageId === 'string' ? displayImageId.trim() : '';
+            const normalizedDisplayImageUrl = typeof displayImageUrl === 'string' ? displayImageUrl.trim() : '';
 
             const normalizedBadges = Array.isArray(badges)
                 ? badges
@@ -2626,6 +2718,11 @@
             element.dataset.imageAlt = altText || '';
             element.dataset.imageLightbox = enableLightbox ? 'true' : 'false';
             element.dataset.imageAuto = 'true';
+            if (normalizedDisplayImageId) {
+                element.dataset.displayImageId = normalizedDisplayImageId;
+            } else {
+                delete element.dataset.displayImageId;
+            }
             if (force) {
                 element.dataset.imageForce = 'true';
             } else {
@@ -2636,7 +2733,7 @@
 
             if (imageId) {
                 element.dataset.imageId = imageId;
-                applyImageMarkup(getGeneratedImageUrl(imageId));
+                applyImageMarkup(normalizedDisplayImageUrl || getGeneratedImageUrl(imageId));
             } else {
                 delete element.dataset.imageId;
                 setPlaceholder();
@@ -2663,7 +2760,15 @@
                     element.dataset.imageId = result.imageId;
                 }
 
-                const imageUrl = result?.imageUrl || getGeneratedImageUrl(result?.imageId || null);
+                const preserveDisplayOverride = shouldPreserveDisplayImageOverride({
+                    displayImageUrl: normalizedDisplayImageUrl,
+                    requestedImageId: imageId || null,
+                    force: Boolean(force),
+                    result
+                });
+                const imageUrl = preserveDisplayOverride
+                    ? normalizedDisplayImageUrl
+                    : (result?.imageUrl || getGeneratedImageUrl(result?.imageId || null));
                 if (imageUrl) {
                     applyImageMarkup(imageUrl);
                 } else if (!result?.skipped) {
@@ -2734,6 +2839,8 @@
                 const force = options.force ?? false;
                 const hasImageIdOption = Object.prototype.hasOwnProperty.call(options, 'imageId');
                 const imageId = hasImageIdOption ? options.imageId : (dataset.imageId || null);
+                const displayImageId = options.displayImageId ?? null;
+                const displayImageUrl = options.displayImageUrl ?? null;
                 const countBadgeText = options.countBadgeText ?? dataset.imageCountBadge ?? '';
 
                 return renderEntityImage({
@@ -2741,6 +2848,8 @@
                     entityType,
                     entityId,
                     imageId: imageId || null,
+                    displayImageId: displayImageId || null,
+                    displayImageUrl: displayImageUrl || null,
                     altText,
                     placeholderIcon,
                     placeholderClass,
@@ -2753,6 +2862,79 @@
         }
 
         const adventureBackgroundElement = document.getElementById('adventureBackground');
+        const locationVariantDisplayCache = new Map();
+
+        function buildLocationVariantDisplayCacheKey(locationId, sourceImageId) {
+            const resolvedLocationId = typeof locationId === 'string' ? locationId.trim() : '';
+            const resolvedSourceImageId = typeof sourceImageId === 'string' ? sourceImageId.trim() : '';
+            if (!resolvedLocationId || !resolvedSourceImageId) {
+                return null;
+            }
+            return `${resolvedLocationId}::${resolvedSourceImageId}`;
+        }
+
+        function rememberLocationVariantDisplay(cache, entry = {}) {
+            if (!cache || typeof cache.set !== 'function') {
+                return null;
+            }
+            const locationId = typeof entry.locationId === 'string' ? entry.locationId.trim() : '';
+            const sourceImageId = typeof entry.sourceImageId === 'string' ? entry.sourceImageId.trim() : '';
+            const imageId = typeof entry.imageId === 'string' ? entry.imageId.trim() : '';
+            const imageUrl = typeof entry.imageUrl === 'string' ? entry.imageUrl.trim() : '';
+            if (!locationId || !sourceImageId || !imageId || !imageUrl) {
+                return null;
+            }
+            const key = buildLocationVariantDisplayCacheKey(locationId, sourceImageId);
+            if (!key) {
+                return null;
+            }
+            const normalizedEntry = {
+                locationId,
+                sourceImageId,
+                imageId,
+                imageUrl,
+                altText: typeof entry.altText === 'string' ? entry.altText.trim() : ''
+            };
+            cache.set(key, normalizedEntry);
+            return { ...normalizedEntry };
+        }
+
+        function getCachedLocationVariantDisplay(cache, locationId, sourceImageId) {
+            if (!cache || typeof cache.get !== 'function') {
+                return null;
+            }
+            const key = buildLocationVariantDisplayCacheKey(locationId, sourceImageId);
+            if (!key) {
+                return null;
+            }
+            const entry = cache.get(key);
+            return entry ? { ...entry } : null;
+        }
+
+        function forgetLocationVariantDisplay(cache, locationId, sourceImageId = null) {
+            if (!cache || typeof cache.delete !== 'function') {
+                return false;
+            }
+            const resolvedLocationId = typeof locationId === 'string' ? locationId.trim() : '';
+            const resolvedSourceImageId = typeof sourceImageId === 'string' ? sourceImageId.trim() : '';
+            if (!resolvedLocationId) {
+                return false;
+            }
+            if (resolvedSourceImageId) {
+                const key = buildLocationVariantDisplayCacheKey(resolvedLocationId, resolvedSourceImageId);
+                return key ? cache.delete(key) : false;
+            }
+
+            let removed = false;
+            for (const [key, entry] of cache.entries()) {
+                if (entry?.locationId === resolvedLocationId) {
+                    cache.delete(key);
+                    removed = true;
+                }
+            }
+            return removed;
+        }
+
         function updateAdventureBackground(imageUrl) {
             if (!adventureBackgroundElement) {
                 return;
@@ -2763,6 +2945,79 @@
             } else {
                 adventureBackgroundElement.style.removeProperty('--adventure-bg-image');
                 adventureBackgroundElement.classList.remove('has-image');
+            }
+        }
+
+        function applyLocationVariantImageIfCurrent({ locationId, sourceImageId, imageId, imageUrl, altText = '' } = {}) {
+            const resolvedLocationId = typeof locationId === 'string' ? locationId.trim() : '';
+            const resolvedSourceImageId = typeof sourceImageId === 'string' ? sourceImageId.trim() : '';
+            const resolvedImageId = typeof imageId === 'string' ? imageId.trim() : '';
+            const resolvedImageUrl = typeof imageUrl === 'string' && imageUrl.trim()
+                ? imageUrl.trim()
+                : getGeneratedImageUrl(resolvedImageId);
+            if (!resolvedLocationId || !resolvedSourceImageId || !resolvedImageId || !resolvedImageUrl) {
+                return false;
+            }
+            if (!lastRenderedLocation || lastRenderedLocation.id !== resolvedLocationId || lastRenderedLocation.imageId !== resolvedSourceImageId) {
+                return false;
+            }
+            const locationImageElement = document.getElementById('locationImage');
+            if (!locationImageElement) {
+                return false;
+            }
+            const img = locationImageElement.querySelector('img');
+            if (!img) {
+                return false;
+            }
+
+            img.src = resolvedImageUrl;
+            if (altText) {
+                img.alt = altText;
+                img.dataset.lightboxAlt = altText;
+                img.dataset.lightboxCaption = altText;
+            }
+            if (img.dataset.lightboxImage !== undefined) {
+                img.dataset.lightboxImage = resolvedImageUrl;
+            }
+            locationImageElement.dataset.displayVariantImageId = resolvedImageId;
+            locationImageElement.dataset.displayVariantSourceImageId = resolvedSourceImageId;
+            rememberLocationVariantDisplay(locationVariantDisplayCache, {
+                locationId: resolvedLocationId,
+                sourceImageId: resolvedSourceImageId,
+                imageId: resolvedImageId,
+                imageUrl: resolvedImageUrl,
+                altText
+            });
+            updateAdventureBackground(resolvedImageUrl);
+            return true;
+        }
+
+        async function requestLocationVariantForDisplay(location, sourceImageId, altText = '') {
+            const manager = window.AIRPG?.imageManager;
+            const locationId = typeof location?.id === 'string' ? location.id.trim() : '';
+            const resolvedSourceImageId = typeof sourceImageId === 'string' ? sourceImageId.trim() : '';
+            if (!manager || typeof manager.ensureLocationVariant !== 'function' || !locationImageGenerationEnabled || !locationId || !resolvedSourceImageId) {
+                return null;
+            }
+
+            try {
+                const variantResult = await manager.ensureLocationVariant({
+                    locationId,
+                    sourceImageId: resolvedSourceImageId
+                });
+                if (variantResult?.imageId) {
+                    applyLocationVariantImageIfCurrent({
+                        locationId,
+                        sourceImageId: resolvedSourceImageId,
+                        imageId: variantResult.imageId,
+                        imageUrl: variantResult.imageUrl,
+                        altText: altText || location?.name || 'Location image'
+                    });
+                }
+                return variantResult || null;
+            } catch (error) {
+                console.warn('Failed to request location weather image variant:', error?.message || error);
+                return null;
             }
         }
 
@@ -7710,6 +7965,8 @@
         const locationCache = {};
         const locationDetailsCache = {};
         let editingRegionId = null;
+        let editingWeatherRegionId = null;
+        let regionWeatherSnapshot = null;
         let editingExitContext = null;
         let locationEditMode = 'location';
         let stubEditContext = null;
@@ -7738,6 +7995,7 @@
         const addThingButton = document.getElementById('addThingButton');
         const craftSceneryButton = document.getElementById('craftSceneryButton');
         const craftItemButton = document.getElementById('craftItemButton');
+        const modifyLocationButton = document.getElementById('modifyLocationButton');
         const loadGameModal = document.getElementById('loadGameModal');
         const loadGameSelect = document.getElementById('loadGameSelect');
         const loadGameSourceRadios = Array.from(document.querySelectorAll('input[name="loadGameSource"]'));
@@ -7892,6 +8150,8 @@
         const locationImageMenu = document.getElementById('locationImageMenu');
         const locationImageEditButton = document.getElementById('locationImageEditButton');
         const locationRegionEditButton = document.getElementById('locationRegionEditButton');
+        const locationWeatherEditButton = document.getElementById('locationWeatherEditButton');
+        const locationCalendarEditButton = document.getElementById('locationCalendarEditButton');
         const locationSummonNpcButton = document.getElementById('locationSummonNpcButton');
         const locationSummonThingButton = document.getElementById('locationSummonThingButton');
         const locationImageRegenerateButton = document.getElementById('locationImageRegenerateButton');
@@ -7899,6 +8159,8 @@
         const worldMapReloadButton = document.getElementById('worldMapReloadButton');
         const mapLocationMenuEditButton = document.getElementById('mapLocationMenuEditButton');
         const mapLocationMenuRegionButton = document.getElementById('mapLocationMenuRegionButton');
+        const mapLocationMenuWeatherButton = document.getElementById('mapLocationMenuWeatherButton');
+        const mapLocationMenuCalendarButton = document.getElementById('mapLocationMenuCalendarButton');
         const mapLocationMenuSummonNpcButton = document.getElementById('mapLocationMenuSummonNpcButton');
         const mapLocationMenuSummonThingButton = document.getElementById('mapLocationMenuSummonThingButton');
         const mapLocationMenuRegenerateImageButton = document.getElementById('mapLocationMenuRegenerateImageButton');
@@ -7919,6 +8181,8 @@
         const locationEditRelativeLevelGroup = document.getElementById('locationEditRelativeLevelGroup');
         const locationEditRelativeLevelInput = document.getElementById('locationEditRelativeLevel');
         const locationEditLevelInput = document.getElementById('locationEditLevel');
+        const locationEditHasWeatherGroup = document.getElementById('locationEditHasWeatherGroup');
+        const locationEditHasWeatherSelect = document.getElementById('locationEditHasWeather');
         const locationEditFactionSelect = document.getElementById('locationEditFaction');
         const locationEditIsVehicleInput = document.getElementById('locationEditIsVehicle');
         const locationEditVehicleSection = document.getElementById('locationEditVehicleSection');
@@ -7973,6 +8237,26 @@
         const regionEditCancelBtn = document.getElementById('regionEditCancelBtn');
         const regionEditCloseBtn = document.getElementById('regionEditCloseBtn');
         const regionEditSaveBtn = document.getElementById('regionEditSaveBtn');
+        const regionWeatherEditModal = document.getElementById('regionWeatherEditModal');
+        const regionWeatherEditModalTitle = document.getElementById('regionWeatherEditModalTitle');
+        const regionWeatherEditForm = document.getElementById('regionWeatherEditForm');
+        const regionWeatherEditRegionName = document.getElementById('regionWeatherEditRegionName');
+        const regionWeatherDynamicWeatherInput = document.getElementById('regionWeatherDynamicWeather');
+        const regionWeatherSeasonsSection = document.getElementById('regionWeatherSeasonsSection');
+        const regionWeatherSeasonList = document.getElementById('regionWeatherSeasonList');
+        const regionWeatherAddSeasonBtn = document.getElementById('regionWeatherAddSeasonBtn');
+        const regionWeatherEditStatus = document.getElementById('regionWeatherEditStatus');
+        const regionWeatherEditCancelBtn = document.getElementById('regionWeatherEditCancelBtn');
+        const regionWeatherEditCloseBtn = document.getElementById('regionWeatherEditCloseBtn');
+        const regionWeatherEditSaveBtn = document.getElementById('regionWeatherEditSaveBtn');
+        const calendarEditModal = document.getElementById('calendarEditModal');
+        const calendarEditForm = document.getElementById('calendarEditForm');
+        const calendarEditJson = document.getElementById('calendarEditJson');
+        const calendarEditStatus = document.getElementById('calendarEditStatus');
+        const calendarEditCancelBtn = document.getElementById('calendarEditCancelBtn');
+        const calendarEditCloseBtn = document.getElementById('calendarEditCloseBtn');
+        const calendarEditFormatBtn = document.getElementById('calendarEditFormatBtn');
+        const calendarEditSaveBtn = document.getElementById('calendarEditSaveBtn');
         const locationVehicleEditor = {
             section: locationEditVehicleSection,
             isVehicleInput: locationEditIsVehicleInput,
@@ -14452,6 +14736,12 @@
             });
         }
 
+        if (modifyLocationButton) {
+            modifyLocationButton.addEventListener('click', () => {
+                openCraftingModal({ mode: 'modify-location', sourceThing: null, targetType: null });
+            });
+        }
+
         if (addNpcCancelBtn) {
             addNpcCancelBtn.addEventListener('click', () => {
                 closeAddNpcModal({ focusTrigger: true });
@@ -18246,7 +18536,9 @@
                 } catch (_) {}
             }
 
-            currentCraftingMode = mode === 'process' ? 'process' : 'craft';
+            currentCraftingMode = mode === 'process'
+                ? 'process'
+                : (mode === 'modify-location' ? 'modify-location' : 'craft');
             currentCraftingSlotCount = currentCraftingMode === 'process' ? 1 : 4;
             const normalizedTargetType = typeof targetType === 'string' ? targetType.trim().toLowerCase() : '';
             currentCraftingTargetType = (currentCraftingMode === 'craft' && normalizedTargetType === 'scenery')
@@ -18272,7 +18564,9 @@
             updateCraftingActionState();
 
             const stationName = craftingSourceThing?.name
-                || (currentCraftingMode === 'process' ? 'Processing Station' : 'Crafting Station');
+                || (currentCraftingMode === 'process'
+                    ? 'Processing Station'
+                    : (currentCraftingMode === 'modify-location' ? 'Modify Location' : 'Crafting Station'));
             const craftTargetLabel = currentCraftingTargetType === 'scenery' ? 'scenery' : 'item';
             const craftTargetLabelTitle = currentCraftingTargetType === 'scenery' ? 'Scenery' : 'Item';
             if (craftingModalTitle) {
@@ -18281,28 +18575,32 @@
             if (craftingWorkspaceTitle) {
                 craftingWorkspaceTitle.textContent = currentCraftingMode === 'process'
                     ? 'Processing Slot'
-                    : 'Crafting Slots';
+                    : (currentCraftingMode === 'modify-location' ? 'Modification Materials' : 'Crafting Slots');
             }
             if (craftingModalHint) {
                 craftingModalHint.textContent = currentCraftingMode === 'process'
                     ? 'Drag a single item into the slot to process it. Items remain in your inventory until you confirm.'
-                    : `Drag up to four items into the slots to craft ${craftTargetLabel}. Items remain in your inventory until you confirm.`;
+                    : (currentCraftingMode === 'modify-location'
+                        ? 'Drag up to four items or tools into the slots to modify this location. Items remain in your inventory until you confirm.'
+                        : `Drag up to four items into the slots to craft ${craftTargetLabel}. Items remain in your inventory until you confirm.`);
             }
             if (craftingActionButton) {
                 craftingActionButton.textContent = currentCraftingMode === 'process'
                     ? 'Process Item'
-                    : `Craft ${craftTargetLabelTitle}`;
+                    : (currentCraftingMode === 'modify-location' ? 'Modify Location' : `Craft ${craftTargetLabelTitle}`);
             }
             if (craftingNoProseButton) {
                 craftingNoProseButton.textContent = currentCraftingMode === 'process'
                     ? 'Process (no prose)'
-                    : `Craft ${craftTargetLabelTitle} (no prose)`;
+                    : (currentCraftingMode === 'modify-location' ? 'Modify Location (no prose)' : `Craft ${craftTargetLabelTitle} (no prose)`);
             }
             if (craftingNotesInput) {
                 craftingNotesInput.value = '';
                 craftingNotesInput.placeholder = currentCraftingMode === 'process'
                     ? 'Optionally, describe what you are trying to create via processing. Include <N> to force your roll.'
-                    : `Optionally, describe what you are trying to craft (${craftTargetLabel}). Include <N> to force your roll.`;
+                    : (currentCraftingMode === 'modify-location'
+                        ? 'Describe how you are trying to modify this location. Include <N> to force your roll.'
+                        : `Optionally, describe what you are trying to craft (${craftTargetLabel}). Include <N> to force your roll.`);
             }
             craftingModal.removeAttribute('hidden');
             craftingModal.setAttribute('aria-hidden', 'false');
@@ -18328,6 +18626,7 @@
             });
             craftingInventoryCardRefs = new Map();
             craftingSourceThing = null;
+            currentCraftingMode = 'craft';
             currentCraftingTargetType = 'item';
             clearModalInventoryDragState();
             cancelModalInventoryTouchDrag({ suppressClick: true });
@@ -18717,7 +19016,7 @@
                 }))
                 .filter(entry => entry.thingId);
 
-            return {
+            const payload = {
                 mode: currentCraftingMode,
                 notes: craftingNotesInput?.value?.trim() || '',
                 craftTargetType: currentCraftingMode === 'craft' ? currentCraftingTargetType : null,
@@ -18728,6 +19027,14 @@
                 itemIds: slots.map(entry => entry.thingId),
                 slots
             };
+            if (currentCraftingMode === 'modify-location') {
+                payload.locationId = lastRenderedLocation?.id || window.lastRenderedLocation?.id || null;
+                payload.stationName = 'current location';
+            }
+            if (window.AIRPG_CLIENT_ID) {
+                payload.clientId = window.AIRPG_CLIENT_ID;
+            }
+            return payload;
         }
 
         function buildCraftingRequestKey(payload) {
@@ -18737,11 +19044,12 @@
             const mode = payload.mode || 'craft';
             const craftTargetType = payload.craftTargetType || '';
             const stationThingId = payload.stationThingId || '';
+            const locationId = payload.locationId || '';
             const slotCount = Number.isFinite(payload.slotCount) ? payload.slotCount : 0;
             const noProse = payload.noProse === true;
             const notes = payload.notes || '';
             const itemIds = payload.itemIds.slice().sort();
-            return JSON.stringify({ mode, craftTargetType, stationThingId, slotCount, noProse, notes, itemIds });
+            return JSON.stringify({ mode, craftTargetType, stationThingId, locationId, slotCount, noProse, notes, itemIds });
         }
 
         async function refreshCraftingRelatedViews() {
@@ -18777,6 +19085,12 @@
             if (!payload.itemIds.length) {
                 return;
             }
+            const isLocationModification = payload.mode === 'modify-location';
+            const locationId = payload.locationId || lastRenderedLocation?.id || window.lastRenderedLocation?.id || null;
+            if (isLocationModification && !locationId) {
+                alert('No active location is available to modify.');
+                return;
+            }
 
             const requestKey = buildCraftingRequestKey(payload);
             if (requestKey && craftingRequestsInFlight.has(requestKey)) {
@@ -18788,20 +19102,27 @@
             closeCraftingModal();
 
             try {
-                const response = await fetch('/api/craft', {
+                const requestUrl = isLocationModification
+                    ? `/api/locations/${encodeURIComponent(locationId)}/modify`
+                    : '/api/craft';
+                const response = await fetch(requestUrl, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
                 });
                 const result = await response.json().catch(() => ({}));
                 if (!response.ok || !result?.success) {
-                    const errorMessage = result?.error || `Crafting failed (HTTP ${response.status})`;
+                    const errorMessage = result?.error || `${isLocationModification ? 'Location modification' : 'Crafting'} failed (HTTP ${response.status})`;
                     throw new Error(errorMessage);
+                }
+                if (isLocationModification && result.location && result.location.id) {
+                    lastRenderedLocation = JSON.parse(JSON.stringify(result.location));
+                    window.lastRenderedLocation = JSON.parse(JSON.stringify(result.location));
                 }
                 await refreshCraftingRelatedViews();
             } catch (error) {
-                console.warn('Crafting request failed:', error);
-                alert(`Crafting failed: ${error?.message || 'Unknown error'}`);
+                console.warn(isLocationModification ? 'Location modification request failed:' : 'Crafting request failed:', error);
+                alert(`${isLocationModification ? 'Location modification' : 'Crafting'} failed: ${error?.message || 'Unknown error'}`);
             } finally {
                 if (requestKey) {
                     craftingRequestsInFlight.delete(requestKey);
@@ -22353,6 +22674,72 @@
         const locationEditAbsoluteLevelField = locationEditAbsoluteLevel?.closest('.location-edit-field') || null;
         const locationEditStatusSection = locationStatusEffectsList?.closest('.location-edit-section') || null;
 
+        function resolveLocationHasWeatherHint(location) {
+            if (!location || typeof location !== 'object') {
+                return null;
+            }
+            const normalizeWeatherHint = (value) => {
+                if (value === null || value === undefined || value === '') {
+                    return null;
+                }
+                if (typeof value === 'boolean') {
+                    return value ? 'yes' : 'no';
+                }
+                if (typeof value === 'string') {
+                    const lowered = value.trim().toLowerCase();
+                    if (['true', '1', 'yes'].includes(lowered)) {
+                        return 'yes';
+                    }
+                    if (['false', '0', 'no'].includes(lowered)) {
+                        return 'no';
+                    }
+                    if (lowered === 'outside') {
+                        return 'outside';
+                    }
+                }
+                return null;
+            };
+            const directHint = normalizeWeatherHint(location.hasWeather);
+            if (directHint) {
+                return directHint;
+            }
+            const hints = location.generationHints && typeof location.generationHints === 'object'
+                ? location.generationHints
+                : null;
+            const generationHint = normalizeWeatherHint(hints?.hasWeather);
+            if (generationHint) {
+                return generationHint;
+            }
+            const metadata = location.stubMetadata && typeof location.stubMetadata === 'object'
+                ? location.stubMetadata
+                : null;
+            const metadataHint = normalizeWeatherHint(metadata?.hasWeather);
+            if (metadataHint) {
+                return metadataHint;
+            }
+            const locationMetadataHint = normalizeWeatherHint(metadata?.locationHasWeather);
+            if (locationMetadataHint) {
+                return locationMetadataHint;
+            }
+            return null;
+        }
+
+        function setLocationHasWeatherField(location) {
+            if (!locationEditHasWeatherSelect) {
+                return;
+            }
+            const hint = resolveLocationHasWeatherHint(location);
+            locationEditHasWeatherSelect.value = ['yes', 'no', 'outside'].includes(hint) ? hint : '';
+        }
+
+        function collectLocationHasWeatherValue() {
+            const raw = locationEditHasWeatherSelect?.value ?? '';
+            if (raw === 'yes' || raw === 'no' || raw === 'outside') {
+                return raw;
+            }
+            return null;
+        }
+
         function resolveStubDescription(location) {
             if (!location) {
                 return '';
@@ -22430,6 +22817,7 @@
             toggleLocationEditSection(locationEditStatusSection, !isStubMode);
             toggleLocationEditSection(locationEditShortDescriptionGroup, !isStubMode);
             toggleLocationEditSection(locationEditRelativeLevelGroup, isStubMode);
+            toggleLocationEditSection(locationEditHasWeatherGroup, !isStubMode);
             toggleLocationEditSection(locationVehicleEditor.section, true);
 
             if (locationEditLevelInput) {
@@ -22449,6 +22837,12 @@
                 locationEditShortDescriptionInput.disabled = isStubMode;
                 if (isStubMode) {
                     locationEditShortDescriptionInput.value = '';
+                }
+            }
+            if (locationEditHasWeatherSelect) {
+                locationEditHasWeatherSelect.disabled = isStubMode;
+                if (isStubMode) {
+                    locationEditHasWeatherSelect.value = '';
                 }
             }
             if (locationVehicleEditor.isVehicleInput) {
@@ -22506,6 +22900,9 @@
             }
             if (!stubContext && locationEditLevelInput) {
                 locationEditLevelInput.value = numericLevel ?? '';
+            }
+            if (!stubContext) {
+                setLocationHasWeatherField(targetLocation);
             }
             if (locationEditFactionSelect) {
                 populateFactionSelect(locationEditFactionSelect, {
@@ -22739,6 +23136,7 @@
                 return;
             }
             payload.level = Math.max(1, Math.round(levelValue));
+            payload.hasWeather = collectLocationHasWeatherValue();
 
             const statusEffectsValue = collectLocationStatusEffects();
             payload.statusEffects = statusEffectsValue;
@@ -22786,6 +23184,9 @@
                 closeLocationEditModal();
 
                 const updatedLocation = data.location;
+                if (data.worldTime && typeof window.AIRPG_CHAT?.updateWorldTimeIndicator === 'function') {
+                    window.AIRPG_CHAT.updateWorldTimeIndicator(data.worldTime, { emitTransitions: false });
+                }
                 if (updatedLocation) {
                     if (isCurrentLocationContext(targetLocation)) {
                         lastRenderedLocation = JSON.parse(JSON.stringify(updatedLocation));
@@ -23432,6 +23833,17 @@
             });
         }
 
+        function resolveRegionIdFromLocationRecord(location) {
+            if (!location || typeof location !== 'object') {
+                return null;
+            }
+            return location.regionId
+                || location.region?.id
+                || location.stubMetadata?.regionId
+                || location.stubMetadata?.targetRegionId
+                || null;
+        }
+
         function setRegionEditStatus(message = '', type = null) {
             if (!regionEditStatus) {
                 return;
@@ -23534,9 +23946,7 @@
                 clearLocationMenuContext();
                 return;
             }
-            const regionId = targetLocation.regionId
-                || targetLocation.stubMetadata?.regionId
-                || null;
+            const regionId = resolveRegionIdFromLocationRecord(targetLocation);
 
             if (!regionId) {
                 alert('No region is associated with the current location.');
@@ -23775,6 +24185,655 @@
             }
         }
 
+        function setRegionWeatherEditStatus(message = '', type = null) {
+            if (!regionWeatherEditStatus) {
+                return;
+            }
+            regionWeatherEditStatus.textContent = message || '';
+            regionWeatherEditStatus.classList.remove('is-error', 'is-success');
+            if (type === 'error') {
+                regionWeatherEditStatus.classList.add('is-error');
+            } else if (type === 'success') {
+                regionWeatherEditStatus.classList.add('is-success');
+            }
+        }
+
+        function updateRegionWeatherDynamicState() {
+            const enabled = Boolean(regionWeatherDynamicWeatherInput?.checked);
+            if (regionWeatherSeasonsSection) {
+                regionWeatherSeasonsSection.toggleAttribute('hidden', !enabled);
+            }
+            if (regionWeatherAddSeasonBtn) {
+                regionWeatherAddSeasonBtn.disabled = !enabled;
+            }
+        }
+
+        function formatWeatherDurationRangeForEditor(durationRange) {
+            if (typeof durationRange === 'string') {
+                return durationRange.trim();
+            }
+            if (!durationRange || typeof durationRange !== 'object' || Array.isArray(durationRange)) {
+                return '';
+            }
+            const minMinutes = Number(durationRange.minMinutes);
+            const maxMinutes = Number(durationRange.maxMinutes);
+            if (!Number.isFinite(minMinutes) || !Number.isFinite(maxMinutes)) {
+                return '';
+            }
+            if (minMinutes === maxMinutes) {
+                return `${minMinutes} minutes`;
+            }
+            return `${minMinutes} minutes - ${maxMinutes} minutes`;
+        }
+
+        function createWeatherEditorValidationError(message, focusTarget = null) {
+            const error = new Error(message);
+            error.focusTarget = focusTarget;
+            return error;
+        }
+
+        function createRegionWeatherTypeRow(typeList, weatherType = {}) {
+            if (!typeList) {
+                return null;
+            }
+
+            const row = document.createElement('div');
+            row.className = 'region-weather-type-row';
+
+            const nameField = document.createElement('div');
+            nameField.className = 'location-edit-field';
+            const nameLabel = document.createElement('label');
+            nameLabel.textContent = 'Weather Name';
+            const nameInput = document.createElement('input');
+            nameInput.type = 'text';
+            nameInput.className = 'region-weather-type-name';
+            nameInput.value = typeof weatherType.name === 'string' ? weatherType.name : '';
+            nameField.append(nameLabel, nameInput);
+
+            const frequencyField = document.createElement('div');
+            frequencyField.className = 'location-edit-field';
+            const frequencyLabel = document.createElement('label');
+            frequencyLabel.textContent = 'Frequency';
+            const frequencyInput = document.createElement('input');
+            frequencyInput.type = 'number';
+            frequencyInput.step = '0.1';
+            frequencyInput.min = '0.1';
+            frequencyInput.className = 'region-weather-type-frequency';
+            frequencyInput.value = Number.isFinite(Number(weatherType.relativeFrequency))
+                ? String(weatherType.relativeFrequency)
+                : '1';
+            frequencyField.append(frequencyLabel, frequencyInput);
+
+            const durationField = document.createElement('div');
+            durationField.className = 'location-edit-field';
+            const durationLabel = document.createElement('label');
+            durationLabel.textContent = 'Duration Range';
+            const durationInput = document.createElement('input');
+            durationInput.type = 'text';
+            durationInput.className = 'region-weather-type-duration';
+            durationInput.placeholder = '30 minutes - 2 hours';
+            durationInput.value = formatWeatherDurationRangeForEditor(weatherType.durationRange);
+            durationField.append(durationLabel, durationInput);
+
+            const descriptionField = document.createElement('div');
+            descriptionField.className = 'location-edit-field region-weather-type-description-field';
+            const descriptionLabel = document.createElement('label');
+            descriptionLabel.textContent = 'Description';
+            const descriptionInput = document.createElement('textarea');
+            descriptionInput.rows = 3;
+            descriptionInput.className = 'region-weather-type-description';
+            descriptionInput.value = typeof weatherType.description === 'string' ? weatherType.description : '';
+            descriptionField.append(descriptionLabel, descriptionInput);
+
+            const removeButton = document.createElement('button');
+            removeButton.type = 'button';
+            removeButton.className = 'npc-edit-remove-btn region-weather-type-remove';
+            removeButton.textContent = 'Remove';
+            removeButton.addEventListener('click', () => row.remove());
+
+            row.append(nameField, frequencyField, durationField, descriptionField, removeButton);
+            typeList.appendChild(row);
+            return row;
+        }
+
+        function createRegionWeatherSeasonBlock(season = {}) {
+            if (!regionWeatherSeasonList) {
+                return null;
+            }
+
+            const block = document.createElement('section');
+            block.className = 'region-weather-season';
+
+            const header = document.createElement('div');
+            header.className = 'region-weather-season-header';
+
+            const nameField = document.createElement('div');
+            nameField.className = 'location-edit-field region-weather-season-name-field';
+            const nameLabel = document.createElement('label');
+            nameLabel.textContent = 'Season Name';
+            const nameInput = document.createElement('input');
+            nameInput.type = 'text';
+            nameInput.className = 'region-weather-season-name';
+            nameInput.placeholder = 'Spring';
+            nameInput.value = typeof season.seasonName === 'string' ? season.seasonName : '';
+            nameField.append(nameLabel, nameInput);
+
+            const removeSeasonButton = document.createElement('button');
+            removeSeasonButton.type = 'button';
+            removeSeasonButton.className = 'npc-edit-remove-btn region-weather-season-remove';
+            removeSeasonButton.textContent = 'Remove Season';
+            removeSeasonButton.addEventListener('click', () => block.remove());
+            header.append(nameField, removeSeasonButton);
+
+            const typeHeader = document.createElement('div');
+            typeHeader.className = 'npc-edit-section-header region-weather-types-header';
+            const typeTitle = document.createElement('h4');
+            typeTitle.textContent = 'Weather Types';
+            const addTypeButton = document.createElement('button');
+            addTypeButton.type = 'button';
+            addTypeButton.className = 'npc-edit-add-btn region-weather-type-add';
+            addTypeButton.textContent = 'Add Weather Type';
+            typeHeader.append(typeTitle, addTypeButton);
+
+            const typeList = document.createElement('div');
+            typeList.className = 'region-weather-type-list';
+            addTypeButton.addEventListener('click', () => {
+                const row = createRegionWeatherTypeRow(typeList, {});
+                row?.querySelector('.region-weather-type-name')?.focus();
+            });
+
+            const weatherTypes = Array.isArray(season.weatherTypes) ? season.weatherTypes : [];
+            if (weatherTypes.length) {
+                weatherTypes.forEach(type => createRegionWeatherTypeRow(typeList, type));
+            } else {
+                createRegionWeatherTypeRow(typeList, {});
+            }
+
+            block.append(header, typeHeader, typeList);
+            regionWeatherSeasonList.appendChild(block);
+            return block;
+        }
+
+        function renderRegionWeatherEditor(weather = null) {
+            if (!regionWeatherSeasonList) {
+                return;
+            }
+            regionWeatherSeasonList.innerHTML = '';
+            const normalizedWeather = weather && typeof weather === 'object' && !Array.isArray(weather)
+                ? weather
+                : { hasDynamicWeather: false, seasonWeather: [] };
+            if (regionWeatherDynamicWeatherInput) {
+                regionWeatherDynamicWeatherInput.checked = normalizedWeather.hasDynamicWeather === true;
+            }
+            const seasons = Array.isArray(normalizedWeather.seasonWeather)
+                ? normalizedWeather.seasonWeather
+                : [];
+            if (seasons.length) {
+                seasons.forEach(season => createRegionWeatherSeasonBlock(season));
+            } else {
+                createRegionWeatherSeasonBlock({
+                    seasonName: '',
+                    weatherTypes: [{}]
+                });
+            }
+            updateRegionWeatherDynamicState();
+        }
+
+        function resetRegionWeatherEditor() {
+            if (regionWeatherEditForm) {
+                regionWeatherEditForm.reset();
+            }
+            if (regionWeatherEditRegionName) {
+                regionWeatherEditRegionName.textContent = 'Unknown Region';
+            }
+            if (regionWeatherSeasonList) {
+                regionWeatherSeasonList.innerHTML = '';
+            }
+            if (regionWeatherDynamicWeatherInput) {
+                regionWeatherDynamicWeatherInput.checked = false;
+            }
+            updateRegionWeatherDynamicState();
+            setRegionWeatherEditStatus('', null);
+        }
+
+        function collectRegionWeatherFromEditor() {
+            const hasDynamicWeather = Boolean(regionWeatherDynamicWeatherInput?.checked);
+            if (!hasDynamicWeather) {
+                return {
+                    hasDynamicWeather: false,
+                    seasonWeather: []
+                };
+            }
+            if (!regionWeatherSeasonList) {
+                throw createWeatherEditorValidationError('Weather season editor is unavailable.');
+            }
+
+            const seasonBlocks = Array.from(regionWeatherSeasonList.children)
+                .filter(child => child?.classList?.contains('region-weather-season'));
+            if (!seasonBlocks.length) {
+                throw createWeatherEditorValidationError('At least one season is required for dynamic weather.');
+            }
+
+            const seasonWeather = [];
+            for (let seasonIndex = 0; seasonIndex < seasonBlocks.length; seasonIndex += 1) {
+                const block = seasonBlocks[seasonIndex];
+                const seasonNameInput = block.querySelector('.region-weather-season-name');
+                const seasonName = (seasonNameInput?.value ?? '').trim();
+                if (!seasonName) {
+                    throw createWeatherEditorValidationError('Season name is required.', seasonNameInput);
+                }
+
+                const typeRows = Array.from(block.querySelectorAll('.region-weather-type-row'));
+                if (!typeRows.length) {
+                    throw createWeatherEditorValidationError(`At least one weather type is required for ${seasonName}.`, seasonNameInput);
+                }
+
+                const weatherTypes = [];
+                for (let typeIndex = 0; typeIndex < typeRows.length; typeIndex += 1) {
+                    const row = typeRows[typeIndex];
+                    const nameInput = row.querySelector('.region-weather-type-name');
+                    const descriptionInput = row.querySelector('.region-weather-type-description');
+                    const frequencyInput = row.querySelector('.region-weather-type-frequency');
+                    const durationInput = row.querySelector('.region-weather-type-duration');
+                    const name = (nameInput?.value ?? '').trim();
+                    const description = (descriptionInput?.value ?? '').trim();
+                    const frequencyRaw = (frequencyInput?.value ?? '').trim();
+                    const durationRange = (durationInput?.value ?? '').trim();
+
+                    if (!name) {
+                        throw createWeatherEditorValidationError(`Weather type name is required for ${seasonName}.`, nameInput);
+                    }
+                    if (!description) {
+                        throw createWeatherEditorValidationError(`Weather description is required for ${name}.`, descriptionInput);
+                    }
+                    const relativeFrequency = Number(frequencyRaw);
+                    if (!Number.isFinite(relativeFrequency) || relativeFrequency <= 0) {
+                        throw createWeatherEditorValidationError(`Weather frequency for ${name} must be greater than zero.`, frequencyInput);
+                    }
+                    if (!durationRange) {
+                        throw createWeatherEditorValidationError(`Duration range is required for ${name}.`, durationInput);
+                    }
+
+                    weatherTypes.push({
+                        name,
+                        description,
+                        relativeFrequency,
+                        durationRange
+                    });
+                }
+
+                seasonWeather.push({
+                    seasonName,
+                    weatherTypes
+                });
+            }
+
+            return {
+                hasDynamicWeather: true,
+                seasonWeather
+            };
+        }
+
+        async function openRegionWeatherEditModal() {
+            const targetLocation = getLocationMenuContext();
+            if (!regionWeatherEditModal || !targetLocation) {
+                alert('No location is currently available for weather editing.');
+                clearLocationMenuContext();
+                return;
+            }
+
+            const regionId = resolveRegionIdFromLocationRecord(targetLocation);
+            if (!regionId) {
+                alert('No region is associated with the current location.');
+                return;
+            }
+
+            editingWeatherRegionId = regionId;
+            regionWeatherSnapshot = null;
+            resetRegionWeatherEditor();
+            if (regionWeatherEditSaveBtn) {
+                regionWeatherEditSaveBtn.disabled = true;
+            }
+            setRegionWeatherEditStatus('Loading weather...', null);
+            regionWeatherEditModal.removeAttribute('hidden');
+            regionWeatherEditModal.setAttribute('aria-hidden', 'false');
+            regionWeatherEditModal.classList.add('is-open');
+
+            try {
+                const response = await fetch(`/api/regions/${encodeURIComponent(regionId)}`);
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok || !data?.success || !data.region) {
+                    throw new Error(data?.error || `HTTP ${response.status}`);
+                }
+
+                regionWeatherSnapshot = JSON.parse(JSON.stringify(data.region));
+                if (regionWeatherEditModalTitle) {
+                    regionWeatherEditModalTitle.textContent = `Edit Weather: ${data.region.name || regionId}`;
+                }
+                if (regionWeatherEditRegionName) {
+                    regionWeatherEditRegionName.textContent = data.region.name || regionId;
+                }
+                renderRegionWeatherEditor(data.region.weather);
+                setRegionWeatherEditStatus('', null);
+                if (regionWeatherEditSaveBtn) {
+                    regionWeatherEditSaveBtn.disabled = false;
+                }
+                setTimeout(() => {
+                    regionWeatherDynamicWeatherInput?.focus();
+                }, 50);
+            } catch (error) {
+                console.warn('Failed to load region weather for editing:', error);
+                setRegionWeatherEditStatus(`Failed to load weather: ${error?.message || 'Unknown error'}`, 'error');
+                if (regionWeatherEditSaveBtn) {
+                    regionWeatherEditSaveBtn.disabled = true;
+                }
+            }
+        }
+
+        function closeRegionWeatherEditModal() {
+            if (!regionWeatherEditModal) {
+                return;
+            }
+            regionWeatherEditModal.setAttribute('hidden', '');
+            regionWeatherEditModal.setAttribute('aria-hidden', 'true');
+            regionWeatherEditModal.classList.remove('is-open');
+            editingWeatherRegionId = null;
+            regionWeatherSnapshot = null;
+            resetRegionWeatherEditor();
+            if (regionWeatherEditSaveBtn) {
+                regionWeatherEditSaveBtn.disabled = false;
+            }
+            clearLocationMenuContext();
+        }
+
+        function buildRegionWeatherSavePayload(weather) {
+            if (!regionWeatherSnapshot) {
+                throw new Error('Region weather data has not finished loading.');
+            }
+            return {
+                name: regionWeatherSnapshot.name || '',
+                description: regionWeatherSnapshot.description || '',
+                shortDescription: regionWeatherSnapshot.shortDescription || '',
+                parentRegionId: regionWeatherSnapshot.parentRegionId || null,
+                averageLevel: Number.isFinite(Number(regionWeatherSnapshot.averageLevel))
+                    ? Number(regionWeatherSnapshot.averageLevel)
+                    : null,
+                controllingFactionId: regionWeatherSnapshot.controllingFactionId || null,
+                isVehicle: regionWeatherSnapshot.isVehicle === true,
+                vehicleInfo: regionWeatherSnapshot.isVehicle === true
+                    ? (regionWeatherSnapshot.vehicleInfo || {})
+                    : null,
+                secrets: Array.isArray(regionWeatherSnapshot.secrets) ? regionWeatherSnapshot.secrets : [],
+                weather
+            };
+        }
+
+        async function submitRegionWeatherEditForm(event) {
+            if (event) {
+                event.preventDefault();
+            }
+            if (!editingWeatherRegionId) {
+                setRegionWeatherEditStatus('No region is currently selected for weather editing.', 'error');
+                return;
+            }
+
+            let weather = null;
+            try {
+                weather = collectRegionWeatherFromEditor();
+            } catch (validationError) {
+                setRegionWeatherEditStatus(validationError?.message || 'Invalid weather definition.', 'error');
+                validationError?.focusTarget?.focus();
+                return;
+            }
+
+            let payload = null;
+            try {
+                payload = buildRegionWeatherSavePayload(weather);
+            } catch (payloadError) {
+                setRegionWeatherEditStatus(payloadError?.message || 'Failed to prepare weather update.', 'error');
+                return;
+            }
+
+            setRegionWeatherEditStatus('Saving weather...', null);
+            if (regionWeatherEditSaveBtn) {
+                regionWeatherEditSaveBtn.disabled = true;
+            }
+
+            try {
+                const response = await fetch(`/api/regions/${encodeURIComponent(editingWeatherRegionId)}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok || !data?.success || !data.region) {
+                    throw new Error(data?.error || `HTTP ${response.status}`);
+                }
+
+                const updatedRegionId = editingWeatherRegionId;
+                setRegionWeatherEditStatus('Weather updated successfully.', 'success');
+                if (data.worldTime && typeof window.AIRPG_CHAT?.updateWorldTimeIndicator === 'function') {
+                    window.AIRPG_CHAT.updateWorldTimeIndicator(data.worldTime, { emitTransitions: false });
+                }
+                if (lastRenderedLocation && resolveRegionIdFromLocationRecord(lastRenderedLocation) === updatedRegionId) {
+                    await window.loadCurrentLocation?.();
+                }
+
+                const mapTab = document.querySelector('[data-tab="map"]');
+                if (mapTab && mapTab.classList.contains('active')) {
+                    const mapContainer = document.getElementById('mapContainer');
+                    const activeRegionId = mapContainer?.dataset?.regionId || null;
+                    if (!activeRegionId || activeRegionId === updatedRegionId) {
+                        try {
+                            await window.loadRegionMap?.(activeRegionId || updatedRegionId || null);
+                        } catch (mapError) {
+                            console.warn('Failed to refresh map after weather edit:', mapError);
+                        }
+                    }
+                }
+
+                closeRegionWeatherEditModal();
+            } catch (error) {
+                console.warn('Failed to update region weather:', error);
+                setRegionWeatherEditStatus(`Failed to update weather: ${error?.message || 'Unknown error'}`, 'error');
+            } finally {
+                if (regionWeatherEditSaveBtn) {
+                    regionWeatherEditSaveBtn.disabled = false;
+                }
+            }
+        }
+
+        function setCalendarEditStatus(message = '', type = null) {
+            if (!calendarEditStatus) {
+                return;
+            }
+            calendarEditStatus.textContent = message || '';
+            calendarEditStatus.classList.remove('is-error', 'is-success');
+            if (type === 'error') {
+                calendarEditStatus.classList.add('is-error');
+            } else if (type === 'success') {
+                calendarEditStatus.classList.add('is-success');
+            }
+        }
+
+        function createCalendarEditorValidationError(message, focusTarget = null) {
+            const error = new Error(message);
+            error.focusTarget = focusTarget;
+            return error;
+        }
+
+        function formatCalendarDefinitionForEditor(calendarDefinition) {
+            return JSON.stringify(calendarDefinition || {}, null, 2);
+        }
+
+        function resetCalendarEditor() {
+            if (calendarEditForm) {
+                calendarEditForm.reset();
+            }
+            if (calendarEditJson) {
+                calendarEditJson.value = '';
+            }
+            setCalendarEditStatus('', null);
+        }
+
+        function parseCalendarEditorJson() {
+            const raw = (calendarEditJson?.value ?? '').trim();
+            if (!raw) {
+                throw createCalendarEditorValidationError('Calendar JSON is required.', calendarEditJson);
+            }
+            let parsed = null;
+            try {
+                parsed = JSON.parse(raw);
+            } catch (error) {
+                throw createCalendarEditorValidationError(`Invalid JSON: ${error?.message || 'Parse failed'}`, calendarEditJson);
+            }
+            if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+                throw createCalendarEditorValidationError('Calendar JSON must be an object.', calendarEditJson);
+            }
+            return parsed;
+        }
+
+        async function openCalendarEditModal() {
+            const targetLocation = getLocationMenuContext();
+            if (!calendarEditModal || !targetLocation) {
+                alert('No location is currently available for calendar editing.');
+                clearLocationMenuContext();
+                return;
+            }
+
+            resetCalendarEditor();
+            if (calendarEditSaveBtn) {
+                calendarEditSaveBtn.disabled = true;
+            }
+            if (calendarEditFormatBtn) {
+                calendarEditFormatBtn.disabled = true;
+            }
+            setCalendarEditStatus('Loading calendar...', null);
+            calendarEditModal.removeAttribute('hidden');
+            calendarEditModal.setAttribute('aria-hidden', 'false');
+            calendarEditModal.classList.add('is-open');
+
+            try {
+                const response = await fetch('/api/calendar', { cache: 'no-store' });
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok || !data?.success || !data.calendarDefinition) {
+                    throw new Error(data?.error || `HTTP ${response.status}`);
+                }
+
+                if (calendarEditJson) {
+                    calendarEditJson.value = formatCalendarDefinitionForEditor(data.calendarDefinition);
+                }
+                setCalendarEditStatus('', null);
+                if (calendarEditSaveBtn) {
+                    calendarEditSaveBtn.disabled = false;
+                }
+                if (calendarEditFormatBtn) {
+                    calendarEditFormatBtn.disabled = false;
+                }
+                setTimeout(() => {
+                    calendarEditJson?.focus();
+                }, 50);
+            } catch (error) {
+                console.warn('Failed to load calendar for editing:', error);
+                setCalendarEditStatus(`Failed to load calendar: ${error?.message || 'Unknown error'}`, 'error');
+                if (calendarEditSaveBtn) {
+                    calendarEditSaveBtn.disabled = true;
+                }
+                if (calendarEditFormatBtn) {
+                    calendarEditFormatBtn.disabled = true;
+                }
+            }
+        }
+
+        function closeCalendarEditModal() {
+            if (!calendarEditModal) {
+                return;
+            }
+            calendarEditModal.setAttribute('hidden', '');
+            calendarEditModal.setAttribute('aria-hidden', 'true');
+            calendarEditModal.classList.remove('is-open');
+            resetCalendarEditor();
+            if (calendarEditSaveBtn) {
+                calendarEditSaveBtn.disabled = false;
+            }
+            if (calendarEditFormatBtn) {
+                calendarEditFormatBtn.disabled = false;
+            }
+            clearLocationMenuContext();
+        }
+
+        function formatCalendarEditorJson() {
+            try {
+                const parsed = parseCalendarEditorJson();
+                if (calendarEditJson) {
+                    calendarEditJson.value = formatCalendarDefinitionForEditor(parsed);
+                }
+                setCalendarEditStatus('JSON formatted.', 'success');
+            } catch (validationError) {
+                setCalendarEditStatus(validationError?.message || 'Invalid calendar JSON.', 'error');
+                validationError?.focusTarget?.focus();
+            }
+        }
+
+        async function submitCalendarEditForm(event) {
+            if (event) {
+                event.preventDefault();
+            }
+
+            let calendarDefinition = null;
+            try {
+                calendarDefinition = parseCalendarEditorJson();
+            } catch (validationError) {
+                setCalendarEditStatus(validationError?.message || 'Invalid calendar JSON.', 'error');
+                validationError?.focusTarget?.focus();
+                return;
+            }
+
+            setCalendarEditStatus('Saving calendar...', null);
+            if (calendarEditSaveBtn) {
+                calendarEditSaveBtn.disabled = true;
+            }
+            if (calendarEditFormatBtn) {
+                calendarEditFormatBtn.disabled = true;
+            }
+
+            try {
+                const response = await fetch('/api/calendar', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ calendarDefinition })
+                });
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok || !data?.success || !data.calendarDefinition) {
+                    throw new Error(data?.error || `HTTP ${response.status}`);
+                }
+
+                if (calendarEditJson) {
+                    calendarEditJson.value = formatCalendarDefinitionForEditor(data.calendarDefinition);
+                }
+                if (data.worldTime && typeof window.AIRPG_CHAT?.updateWorldTimeIndicator === 'function') {
+                    window.AIRPG_CHAT.updateWorldTimeIndicator(data.worldTime, { emitTransitions: false });
+                }
+                try {
+                    await window.loadCurrentLocation?.();
+                } catch (refreshError) {
+                    console.warn('Failed to refresh current location after calendar edit:', refreshError);
+                }
+                setCalendarEditStatus('Calendar updated successfully.', 'success');
+                closeCalendarEditModal();
+            } catch (error) {
+                console.warn('Failed to update calendar:', error);
+                setCalendarEditStatus(`Failed to update calendar: ${error?.message || 'Unknown error'}`, 'error');
+            } finally {
+                if (calendarEditSaveBtn) {
+                    calendarEditSaveBtn.disabled = false;
+                }
+                if (calendarEditFormatBtn) {
+                    calendarEditFormatBtn.disabled = false;
+                }
+            }
+        }
+
         async function regenerateLocationImage() {
             const targetLocation = getLocationMenuContext();
             if (!targetLocation || !targetLocation.id) {
@@ -23964,6 +25023,22 @@
             });
         }
 
+        if (locationWeatherEditButton) {
+            locationWeatherEditButton.addEventListener('click', async (event) => {
+                event.stopPropagation();
+                closeLocationImageMenu({ preserveContext: true });
+                await openRegionWeatherEditModal();
+            });
+        }
+
+        if (locationCalendarEditButton) {
+            locationCalendarEditButton.addEventListener('click', async (event) => {
+                event.stopPropagation();
+                closeLocationImageMenu({ preserveContext: true });
+                await openCalendarEditModal();
+            });
+        }
+
         if (locationSummonNpcButton) {
             locationSummonNpcButton.addEventListener('click', async (event) => {
                 event.stopPropagation();
@@ -24001,6 +25076,22 @@
                 event.stopPropagation();
                 closeMapLocationContextMenu({ preserveContext: true });
                 await openRegionEditModal();
+            });
+        }
+
+        if (mapLocationMenuWeatherButton) {
+            mapLocationMenuWeatherButton.addEventListener('click', async (event) => {
+                event.stopPropagation();
+                closeMapLocationContextMenu({ preserveContext: true });
+                await openRegionWeatherEditModal();
+            });
+        }
+
+        if (mapLocationMenuCalendarButton) {
+            mapLocationMenuCalendarButton.addEventListener('click', async (event) => {
+                event.stopPropagation();
+                closeMapLocationContextMenu({ preserveContext: true });
+                await openCalendarEditModal();
             });
         }
 
@@ -24144,11 +25235,43 @@
                 }
             });
         }
+        if (regionWeatherEditCancelBtn) {
+            regionWeatherEditCancelBtn.addEventListener('click', () => closeRegionWeatherEditModal());
+        }
+        if (regionWeatherEditCloseBtn) {
+            regionWeatherEditCloseBtn.addEventListener('click', () => closeRegionWeatherEditModal());
+        }
+        if (regionWeatherEditForm) {
+            regionWeatherEditForm.addEventListener('submit', submitRegionWeatherEditForm);
+        }
+        if (regionWeatherDynamicWeatherInput) {
+            regionWeatherDynamicWeatherInput.addEventListener('change', updateRegionWeatherDynamicState);
+        }
+        if (regionWeatherAddSeasonBtn) {
+            regionWeatherAddSeasonBtn.addEventListener('click', () => {
+                const block = createRegionWeatherSeasonBlock({});
+                block?.querySelector('.region-weather-season-name')?.focus();
+            });
+        }
+        if (calendarEditCancelBtn) {
+            calendarEditCancelBtn.addEventListener('click', () => closeCalendarEditModal());
+        }
+        if (calendarEditCloseBtn) {
+            calendarEditCloseBtn.addEventListener('click', () => closeCalendarEditModal());
+        }
+        if (calendarEditFormatBtn) {
+            calendarEditFormatBtn.addEventListener('click', () => formatCalendarEditorJson());
+        }
+        if (calendarEditForm) {
+            calendarEditForm.addEventListener('submit', submitCalendarEditForm);
+        }
 
         window.addEventListener('keydown', (event) => {
             if (event.key === 'Escape') {
                 closeLocationEditModal();
                 closeRegionEditModal();
+                closeRegionWeatherEditModal();
+                closeCalendarEditModal();
             }
         });
 
@@ -24882,6 +26005,20 @@
                     
                     if (locationImage) {
                         const existingTooltip = locationImage.querySelector('.location-tooltip');
+                        const baseLocationImageId = typeof location.imageId === 'string' ? location.imageId.trim() : '';
+                        const cachedLocationVariant = baseLocationImageId
+                            ? getCachedLocationVariantDisplay(locationVariantDisplayCache, location.id, baseLocationImageId)
+                            : null;
+                        if (cachedLocationVariant) {
+                            locationImage.dataset.displayVariantImageId = cachedLocationVariant.imageId;
+                            locationImage.dataset.displayVariantSourceImageId = cachedLocationVariant.sourceImageId;
+                        } else {
+                            delete locationImage.dataset.displayVariantImageId;
+                            delete locationImage.dataset.displayVariantSourceImageId;
+                            if (!baseLocationImageId) {
+                                forgetLocationVariantDisplay(locationVariantDisplayCache, location.id);
+                            }
+                        }
                         const placeholderMarkup = locationImageGenerationEnabled
                             ? '<div class="location-placeholder"><div class="spinner" role="status" aria-hidden="true"></div></div>'
                             : '<div class="location-placeholder"></div>';
@@ -24897,6 +26034,8 @@
                             entityType: 'location',
                             entityId: location.id,
                             imageId: location.imageId || null,
+                            displayImageId: cachedLocationVariant?.imageId || null,
+                            displayImageUrl: cachedLocationVariant?.imageUrl || null,
                             altText: location.name || 'Location image',
                             placeholderIcon: '🏞️',
                             placeholderClass: 'location-placeholder',
@@ -24909,11 +26048,27 @@
                         if (renderPromise && typeof renderPromise.then === 'function') {
                             renderPromise.then(result => {
                                 finalizeTooltip();
+                                const resolvedBaseImageId = result?.imageId || location.imageId || null;
+                                if (resolvedBaseImageId && lastRenderedLocation?.id === location.id) {
+                                    lastRenderedLocation.imageId = resolvedBaseImageId;
+                                }
                                 if (result?.imageId && locationHint) {
                                     locationHint.textContent = location.description ? 'Hover over the location image for a description.' : 'No description available for this location yet.';
                                 }
-                                const imageUrl = result?.imageUrl || getGeneratedImageUrl(result?.imageId || null);
+                                const currentCachedLocationVariant = resolvedBaseImageId
+                                    ? getCachedLocationVariantDisplay(locationVariantDisplayCache, location.id, resolvedBaseImageId)
+                                    : null;
+                                if (currentCachedLocationVariant) {
+                                    locationImage.dataset.displayVariantImageId = currentCachedLocationVariant.imageId;
+                                    locationImage.dataset.displayVariantSourceImageId = currentCachedLocationVariant.sourceImageId;
+                                }
+                                const imageUrl = currentCachedLocationVariant?.imageUrl
+                                    || result?.imageUrl
+                                    || getGeneratedImageUrl(resolvedBaseImageId || null);
                                 updateAdventureBackground(imageUrl);
+                                if (resolvedBaseImageId) {
+                                    void requestLocationVariantForDisplay(location, resolvedBaseImageId, location.name || 'Location image');
+                                }
                             }).catch(() => {
                                 finalizeTooltip();
                                 if (locationHint) {
@@ -24922,8 +26077,14 @@
                                 updateAdventureBackground(null);
                             });
                         } else {
-                            const fallbackUrl = getGeneratedImageUrl(location.imageId || null);
+                            const currentCachedLocationVariant = location.imageId
+                                ? getCachedLocationVariantDisplay(locationVariantDisplayCache, location.id, location.imageId)
+                                : null;
+                            const fallbackUrl = currentCachedLocationVariant?.imageUrl || getGeneratedImageUrl(location.imageId || null);
                             updateAdventureBackground(fallbackUrl);
+                            if (location.imageId) {
+                                void requestLocationVariantForDisplay(location, location.imageId, location.name || 'Location image');
+                            }
                         }
 
                         if (locationDescriptionText) {
@@ -24964,8 +26125,8 @@
                     if (craftItemButton) {
                         craftItemButton.disabled = false;
                     }
-                    if (craftSceneryButton) {
-                        craftSceneryButton.disabled = false;
+                    if (modifyLocationButton) {
+                        modifyLocationButton.disabled = false;
                     }
                     if (locationExitsList) {
                         const rawExitEntries = Object.entries(location.exits || {});
@@ -25406,8 +26567,8 @@
                     if (craftItemButton) {
                         craftItemButton.disabled = true;
                     }
-                    if (craftSceneryButton) {
-                        craftSceneryButton.disabled = true;
+                    if (modifyLocationButton) {
+                        modifyLocationButton.disabled = true;
                     }
                     npcDataCache.clear();
                     closeNpcContextMenu();

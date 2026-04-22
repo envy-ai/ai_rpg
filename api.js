@@ -716,7 +716,7 @@ module.exports = function registerApiRoutes(scope) {
             return matchingSummary;
         };
 
-        const alterLocationByEvent = async ({ location, alteration } = {}) => {
+        const alterLocationByEvent = async ({ location, alteration, preserveBaseLevel = false } = {}) => {
             if (!location || typeof location !== 'object') {
                 throw new Error('alterLocationByEvent requires a Location object.');
             }
@@ -733,7 +733,10 @@ module.exports = function registerApiRoutes(scope) {
                 throw new Error('alterLocationByEvent requires Events alter_location handler.');
             }
 
-            const context = { location };
+            const context = {
+                location,
+                preserveBaseLevel: preserveBaseLevel === true
+            };
             if (typeof findRegionByLocationId === 'function') {
                 try {
                     const region = findRegionByLocationId(location.id);
@@ -3330,29 +3333,61 @@ module.exports = function registerApiRoutes(scope) {
 
         Globals.generateGameIntro = runGameIntroPrompt;
 
+        function normalizeLocationWeatherExposure(value, fieldName = 'location hasWeather') {
+            if (value === null || value === undefined || value === '') {
+                return null;
+            }
+            if (typeof value === 'boolean') {
+                return value ? 'yes' : 'no';
+            }
+            if (typeof value === 'string') {
+                const lowered = value.trim().toLowerCase();
+                if (!lowered) {
+                    return null;
+                }
+                if (['true', '1', 'yes'].includes(lowered)) {
+                    return 'yes';
+                }
+                if (['false', '0', 'no'].includes(lowered)) {
+                    return 'no';
+                }
+                if (lowered === 'outside') {
+                    return 'outside';
+                }
+            }
+            throw new Error(`${fieldName} must be "yes", "no", "outside", true, false, or null.`);
+        }
+
         function resolveLocationHasWeatherForWorldTime(location) {
             if (!location || typeof location !== 'object') {
                 return null;
             }
-            if (typeof location.hasWeather === 'boolean') {
-                return location.hasWeather;
+            const directScope = normalizeLocationWeatherExposure(location.hasWeather, `location "${location.id || location.name || 'unknown'}" hasWeather`);
+            if (directScope) {
+                return directScope;
             }
             const details = location.details;
-            if (details && typeof details === 'object' && typeof details.hasWeather === 'boolean') {
-                return details.hasWeather;
+            const detailsScope = normalizeLocationWeatherExposure(details?.hasWeather, `location "${location.id || location.name || 'unknown'}" details.hasWeather`);
+            if (detailsScope) {
+                return detailsScope;
             }
             const metadata = location.stubMetadata;
             if (metadata && typeof metadata === 'object') {
-                if (typeof metadata.hasWeather === 'boolean') {
-                    return metadata.hasWeather;
+                const metadataScope = normalizeLocationWeatherExposure(metadata.hasWeather, `location "${location.id || location.name || 'unknown'}" stubMetadata.hasWeather`);
+                if (metadataScope) {
+                    return metadataScope;
                 }
-                if (typeof metadata.locationHasWeather === 'boolean') {
-                    return metadata.locationHasWeather;
+                const locationMetadataScope = normalizeLocationWeatherExposure(metadata.locationHasWeather, `location "${location.id || location.name || 'unknown'}" stubMetadata.locationHasWeather`);
+                if (locationMetadataScope) {
+                    return locationMetadataScope;
                 }
             }
             const hints = location.generationHints;
-            if (hints && typeof hints === 'object' && typeof hints.hasWeather === 'boolean') {
-                return hints.hasWeather;
+            if (hints && typeof hints === 'object') {
+                const hintScope = normalizeLocationWeatherExposure(hints.hasWeather, `location "${location.id || location.name || 'unknown'}" generationHints.hasWeather`);
+                if (hintScope) {
+                    return hintScope;
+                }
             }
             return null;
         }
@@ -3372,9 +3407,11 @@ module.exports = function registerApiRoutes(scope) {
                 return null;
             }
 
-            const hasWeatherAtLocation = resolveLocationHasWeatherForWorldTime(location);
-            if (hasWeatherAtLocation === false) {
+            const weatherScope = normalizeLocationWeatherExposure(resolveLocationHasWeatherForWorldTime(location)) || 'yes';
+            if (weatherScope === 'no') {
                 return {
+                    hasLocalWeather: false,
+                    weatherScope,
                     weatherName: 'No local weather',
                     weatherDescription: 'This location is sheltered from outdoor weather.'
                 };
@@ -3416,6 +3453,8 @@ module.exports = function registerApiRoutes(scope) {
                 ? resolved.description.trim()
                 : 'Weather conditions are not currently available.';
             return {
+                hasLocalWeather: true,
+                weatherScope,
                 weatherName,
                 weatherDescription
             };
@@ -3426,11 +3465,72 @@ module.exports = function registerApiRoutes(scope) {
             const context = Globals.getWorldTimeContext({ transitions: normalizedTransitions });
             const weather = resolveWeatherForWorldTimePayload(context);
             if (weather && typeof weather === 'object') {
+                context.hasLocalWeather = weather.hasLocalWeather;
+                context.weatherScope = weather.weatherScope;
+                context.hasWeatherOutside = weather.weatherScope === 'outside';
                 context.weatherName = weather.weatherName;
                 context.weatherDescription = weather.weatherDescription;
             }
             return context;
         }
+
+        app.get('/api/calendar', (req, res) => {
+            try {
+                res.json({
+                    success: true,
+                    calendarDefinition: Globals.getSerializedCalendarDefinition(),
+                    worldTime: buildWorldTimePayload()
+                });
+            } catch (error) {
+                console.error('Failed to load calendar:', error);
+                res.status(500).json({
+                    success: false,
+                    error: error?.message || 'Failed to load calendar'
+                });
+            }
+        });
+
+        app.put('/api/calendar', (req, res) => {
+            try {
+                const body = req.body || {};
+                if (!Object.prototype.hasOwnProperty.call(body, 'calendarDefinition')) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'calendarDefinition is required'
+                    });
+                }
+                const calendarDefinitionInput = body.calendarDefinition;
+                if (!calendarDefinitionInput || typeof calendarDefinitionInput !== 'object' || Array.isArray(calendarDefinitionInput)) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'calendarDefinition must be an object'
+                    });
+                }
+
+                let calendarDefinition = null;
+                try {
+                    calendarDefinition = Globals.setCalendarDefinition(calendarDefinitionInput);
+                } catch (validationError) {
+                    return res.status(400).json({
+                        success: false,
+                        error: validationError?.message || 'Invalid calendar definition'
+                    });
+                }
+
+                res.json({
+                    success: true,
+                    message: 'Calendar updated successfully.',
+                    calendarDefinition,
+                    worldTime: buildWorldTimePayload()
+                });
+            } catch (error) {
+                console.error('Failed to update calendar:', error);
+                res.status(500).json({
+                    success: false,
+                    error: error?.message || 'Failed to update calendar'
+                });
+            }
+        });
 
         const resolveLocationByIdOrName = (value) => {
             const trimmed = typeof value === 'string' ? value.trim() : '';
@@ -4307,6 +4407,367 @@ module.exports = function registerApiRoutes(scope) {
                 throw new Error(`Failed to parse crafting results response: ${error?.message || error}`);
             }
             return results;
+        }
+
+        const LOCATION_MODIFICATION_RESULT_BASE_FIELD_EXCLUDES = new Set(['level']);
+
+        function getLocationModificationElementChildren(node) {
+            return Array.from(node?.childNodes || [])
+                .filter(child => child && child.nodeType === 1);
+        }
+
+        function getLocationModificationNodeNameKey(node) {
+            return String(node?.nodeName || '').trim().toLowerCase();
+        }
+
+        function findDirectLocationModificationChildren(node, tagNameKey) {
+            const normalizedTag = typeof tagNameKey === 'string'
+                ? tagNameKey.trim().toLowerCase()
+                : '';
+            if (!node || !normalizedTag) {
+                return [];
+            }
+            return getLocationModificationElementChildren(node)
+                .filter(child => getLocationModificationNodeNameKey(child) === normalizedTag);
+        }
+
+        function cloneLocationModificationNodeForTarget(node, targetNode) {
+            if (!node || !targetNode) {
+                return null;
+            }
+            const ownerDocument = targetNode.ownerDocument || null;
+            if (ownerDocument && typeof ownerDocument.importNode === 'function') {
+                return ownerDocument.importNode(node, true);
+            }
+            return typeof node.cloneNode === 'function' ? node.cloneNode(true) : null;
+        }
+
+        function appendMissingLocationModificationChildren(targetNode, fallbackNode) {
+            if (!targetNode || !fallbackNode) {
+                return;
+            }
+            getLocationModificationElementChildren(fallbackNode).forEach(fallbackChild => {
+                const tagNameKey = getLocationModificationNodeNameKey(fallbackChild);
+                if (!tagNameKey || LOCATION_MODIFICATION_RESULT_BASE_FIELD_EXCLUDES.has(tagNameKey)) {
+                    return;
+                }
+                if (findDirectLocationModificationChildren(targetNode, tagNameKey).length > 0) {
+                    return;
+                }
+                const clonedChild = cloneLocationModificationNodeForTarget(fallbackChild, targetNode);
+                if (clonedChild) {
+                    targetNode.appendChild(clonedChild);
+                }
+            });
+        }
+
+        function findLocationModificationResultParentNode(doc) {
+            return doc?.getElementsByTagName('locationModificationResults')[0] || null;
+        }
+
+        function getLocationModificationResultLevel(resultNode) {
+            const levelNode = resultNode?.getElementsByTagName('level')[0] || null;
+            return levelNode && typeof levelNode.textContent === 'string'
+                ? levelNode.textContent.trim().toLowerCase()
+                : '';
+        }
+
+        function buildLocationModificationResultFallbacks(baseOutcomeXml) {
+            if (!baseOutcomeXml || typeof baseOutcomeXml !== 'string' || !baseOutcomeXml.trim()) {
+                return null;
+            }
+
+            const doc = Utils.parseXmlDocument(sanitizeForXml(baseOutcomeXml), 'text/xml');
+            const parent = findLocationModificationResultParentNode(doc);
+            if (!parent) {
+                throw new Error('Base location modification outcome XML is missing a locationModificationResults parent node.');
+            }
+
+            const resultNodes = Array.from(parent.getElementsByTagName('result'));
+            if (!resultNodes.length) {
+                throw new Error('Base location modification outcome XML is missing <result> nodes.');
+            }
+
+            const byLevel = new Map();
+            resultNodes.forEach(resultNode => {
+                const level = getLocationModificationResultLevel(resultNode);
+                if (level) {
+                    byLevel.set(level, resultNode);
+                }
+            });
+
+            return {
+                byLevel,
+                success: byLevel.get('success') || null,
+                first: resultNodes[0] || null
+            };
+        }
+
+        function resolveLocationModificationFallbackNode(level, fallbackIndex) {
+            if (!fallbackIndex) {
+                return null;
+            }
+            return fallbackIndex.byLevel.get(level)
+                || fallbackIndex.success
+                || fallbackIndex.first
+                || null;
+        }
+
+        function parseLocationModificationBoolean(value) {
+            const normalized = typeof value === 'string' ? value.trim().toLowerCase() : '';
+            if (!normalized) {
+                return false;
+            }
+            return normalized === 'true'
+                || normalized === 'yes'
+                || normalized === '1'
+                || normalized === 'changed';
+        }
+
+        function parseLocationModificationResultTimeTakenMinutes(rawTimeTaken, { resultLevel = 'unknown' } = {}) {
+            const levelLabel = typeof resultLevel === 'string' && resultLevel.trim()
+                ? resultLevel.trim().toLowerCase()
+                : 'unknown';
+
+            if (typeof rawTimeTaken !== 'string' || !rawTimeTaken.trim()) {
+                throw new Error(`Location modification result "${levelLabel}" is missing <timeTaken>.`);
+            }
+
+            const trimmed = rawTimeTaken.trim();
+            const parsedMinutes = Utils.parseDurationToMinutes(trimmed, {
+                fieldName: `location modification result "${levelLabel}" <timeTaken>`
+            });
+            return parsedMinutes > 0 ? parsedMinutes : MIN_CRAFT_TIME_ADVANCE_MINUTES;
+        }
+
+        function extractInlineDieRollFromLocationModifyText(value, rollState = { value: null }) {
+            if (typeof value !== 'string' || !value.length) {
+                return '';
+            }
+            let parsedDieRoll = null;
+            const stripped = value.replace(/<(-?\d+)>/g, (_, rawValue) => {
+                if (parsedDieRoll === null) {
+                    parsedDieRoll = Number.parseInt(rawValue, 10);
+                }
+                return '';
+            });
+            if (rollState && rollState.value === null && Number.isInteger(parsedDieRoll)) {
+                rollState.value = parsedDieRoll;
+            }
+            return stripped
+                .replace(/[ \t]{2,}/g, ' ')
+                .replace(/ *\n */g, '\n')
+                .trim();
+        }
+
+        function getLocationModificationItemNames(resultNode, wrapperTagName) {
+            const wrapperName = typeof wrapperTagName === 'string' ? wrapperTagName.trim() : '';
+            if (!resultNode || !wrapperName) {
+                return [];
+            }
+            const wrapperNode = resultNode.getElementsByTagName(wrapperName)[0] || null;
+            if (!wrapperNode) {
+                return [];
+            }
+            return Array.from(wrapperNode.getElementsByTagName('itemName'))
+                .map(node => (node.textContent || '').trim())
+                .filter(name => !!name && name !== '...');
+        }
+
+        function validateLocationModificationReceivedItemNames({
+            receivedNames,
+            inputThings
+        } = {}) {
+            if (!Array.isArray(receivedNames)) {
+                throw new TypeError('validateLocationModificationReceivedItemNames requires a receivedNames array.');
+            }
+            if (!Array.isArray(inputThings)) {
+                throw new TypeError('validateLocationModificationReceivedItemNames requires an inputThings array.');
+            }
+
+            const selectedNameLookup = new Map();
+            inputThings.forEach(thing => {
+                const name = typeof thing?.name === 'string' ? thing.name.trim() : '';
+                if (!name) {
+                    return;
+                }
+                const key = name.toLowerCase();
+                if (!selectedNameLookup.has(key)) {
+                    selectedNameLookup.set(key, name);
+                }
+            });
+
+            const invalidNames = [];
+            receivedNames.forEach(name => {
+                const normalizedName = typeof name === 'string' ? name.trim() : '';
+                if (!normalizedName) {
+                    return;
+                }
+                if (selectedNameLookup.has(normalizedName.toLowerCase())) {
+                    invalidNames.push(selectedNameLookup.get(normalizedName.toLowerCase()) || normalizedName);
+                }
+            });
+
+            if (invalidNames.length) {
+                throw new Error(
+                    'Location modification result listed selected input items as received items: '
+                    + `${Array.from(new Set(invalidNames)).join(', ')}. `
+                    + 'Received items must be newly found or obtained portable items; tools/materials that were used but not consumed should be omitted from both item result lists.'
+                );
+            }
+        }
+
+        async function parseLocationModificationResultsResponse(xmlContent, { baseOutcomeXml = null } = {}) {
+            const results = new Map();
+            if (!xmlContent || typeof xmlContent !== 'string') {
+                return results;
+            }
+            try {
+                const doc = Utils.parseXmlDocument(sanitizeForXml(xmlContent), 'text/xml');
+                const fallbackIndex = buildLocationModificationResultFallbacks(baseOutcomeXml);
+                const parent = findLocationModificationResultParentNode(doc);
+                if (!parent) {
+                    console.warn('No locationModificationResults parent node found.');
+                    return results;
+                }
+                const resultNodes = Array.from(parent.getElementsByTagName('result'));
+                if (!resultNodes.length) {
+                    console.warn('No <result> nodes found in location modification results parsing.');
+                }
+
+                const abilities = typeof parseAbilityEffects === 'function'
+                    ? parseAbilityEffects(xmlContent)
+                    : [];
+
+                for (const resultNode of resultNodes) {
+                    if (!resultNode) {
+                        console.warn('Skipping null result node in location modification results parsing.');
+                        continue;
+                    }
+                    const level = getLocationModificationResultLevel(resultNode);
+                    if (!level) {
+                        console.warn('Skipping location modification result node with empty level.');
+                        continue;
+                    }
+
+                    appendMissingLocationModificationChildren(
+                        resultNode,
+                        resolveLocationModificationFallbackNode(level, fallbackIndex)
+                    );
+
+                    const getText = (tagName) => {
+                        const node = resultNode.getElementsByTagName(tagName)[0] || null;
+                        return node && typeof node.textContent === 'string'
+                            ? node.textContent.trim()
+                            : '';
+                    };
+
+                    const locationChanged = parseLocationModificationBoolean(getText('locationChanged'));
+                    const alteration = getText('alteration');
+                    const consumedNames = getLocationModificationItemNames(resultNode, 'itemsConsumed');
+                    const receivedNames = getLocationModificationItemNames(resultNode, 'itemsReceived');
+
+                    const otherNode = resultNode.getElementsByTagName('other')[0] || null;
+                    const other = otherNode && typeof otherNode.textContent === 'string'
+                        ? otherNode.textContent.trim()
+                        : null;
+
+                    const timeTakenNode = resultNode.getElementsByTagName('timeTaken')[0] || null;
+                    const timeTakenRaw = timeTakenNode && typeof timeTakenNode.textContent === 'string'
+                        ? timeTakenNode.textContent.trim()
+                        : null;
+                    let timeTakenMinutes = null;
+                    try {
+                        timeTakenMinutes = parseLocationModificationResultTimeTakenMinutes(timeTakenRaw, { resultLevel: level });
+                    } catch (error) {
+                        console.warn(
+                            `Skipping location modification result "${level}" due to invalid <timeTaken>:`,
+                            error?.message || error
+                        );
+                        continue;
+                    }
+
+                    const serializedResult = typeof serializeXmlNode === 'function'
+                        ? serializeXmlNode(resultNode)
+                        : new XMLSerializer().serializeToString(resultNode);
+
+                    results.set(level, {
+                        rawXml: serializedResult || null,
+                        locationChanged,
+                        alteration,
+                        itemsConsumed: consumedNames,
+                        itemsReceived: receivedNames,
+                        other: other && other.toLowerCase() !== 'n/a' ? other : null,
+                        abilities,
+                        timeTakenRaw,
+                        timeTakenMinutes
+                    });
+                }
+            } catch (error) {
+                throw new Error(`Failed to parse location modification results response: ${error?.message || error}`);
+            }
+            return results;
+        }
+
+        async function renderLocationModificationOutcomeForDegree({
+            baseContext,
+            baseOutcomeXml,
+            successOrFailure,
+            location,
+            modificationNotes = null,
+            inputItems = []
+        } = {}) {
+            if (!baseOutcomeXml || typeof baseOutcomeXml !== 'string' || !baseOutcomeXml.trim()) {
+                throw new Error('location-modify-success-degree requires a non-empty base outcome XML payload.');
+            }
+
+            const renderedTemplate = promptEnv.render('base-context.xml.njk', {
+                ...baseContext,
+                promptType: 'location-modify-success-degree',
+                location_modification_outcome_xml: baseOutcomeXml,
+                success_or_failure: successOrFailure,
+                modifiedLocation: location,
+                modificationNotes,
+                inputItems
+            });
+
+            const parsedTemplate = parseXMLTemplate(renderedTemplate);
+            if (!parsedTemplate?.systemPrompt || !parsedTemplate?.generationPrompt) {
+                throw new Error('Location modification success-degree template did not produce prompts.');
+            }
+
+            const requestOptions = {
+                messages: [
+                    { role: 'system', content: parsedTemplate.systemPrompt },
+                    { role: 'user', content: parsedTemplate.generationPrompt }
+                ],
+                metadataLabel: 'location_modify_success_degree',
+                requiredRegex: /<response>[\s\S]*<\/response>/i
+            };
+
+            if (typeof parsedTemplate.temperature === 'number') {
+                requestOptions.temperature = parsedTemplate.temperature;
+            }
+
+            const response = await LLMClient.chatCompletion(requestOptions);
+
+            LLMClient.logPrompt({
+                metadataLabel: requestOptions.metadataLabel,
+                systemPrompt: parsedTemplate.systemPrompt,
+                generationPrompt: parsedTemplate.generationPrompt,
+                response
+            });
+
+            if (!response || !response.trim()) {
+                throw new Error('Location modification success-degree returned no response.');
+            }
+
+            const results = await parseLocationModificationResultsResponse(response, { baseOutcomeXml });
+            if (!results.size) {
+                throw new Error('Location modification success-degree response did not include any results.');
+            }
+
+            return { raw: response, results };
         }
 
         async function renderCraftOutcomeForDegree({
@@ -12312,8 +12773,9 @@ module.exports = function registerApiRoutes(scope) {
             isNonEventTravel = true,
             entryCollector = null
         } = {}) {
+            let dispositionSummaryRecorded = false;
             if (!player) {
-                return;
+                return { dispositionSummaryRecorded };
             }
 
             const partyMemberIds = typeof player.getPartyMembers === 'function'
@@ -12332,14 +12794,14 @@ module.exports = function registerApiRoutes(scope) {
                 if (typeof player.clearPartyMembershipChangeTracking === 'function') {
                     player.clearPartyMembershipChangeTracking();
                 }
-                return;
+                return { dispositionSummaryRecorded };
             }
 
             if (!partyInterval) {
                 if (typeof player.clearPartyMembershipChangeTracking === 'function') {
                     player.clearPartyMembershipChangeTracking();
                 }
-                return;
+                return { dispositionSummaryRecorded };
             }
 
             const historyList = Array.isArray(historyEntries) ? historyEntries : [];
@@ -12454,11 +12916,14 @@ module.exports = function registerApiRoutes(scope) {
 
                             if (Array.isArray(result?.dispositions) && result.dispositions.length) {
                                 const dispositionChanges = applyDispositionChanges(result.dispositions);
-                                recordDispositionPromptSummary({
+                                const summary = recordDispositionPromptSummary({
                                     actorName: member.name || member.id || 'NPC',
                                     dispositionChanges,
                                     locationId: locationOverride?.id || player?.currentLocation
                                 }, entryCollector);
+                                if (summary) {
+                                    dispositionSummaryRecorded = true;
+                                }
                             }
                         } catch (error) {
                             console.warn(`Error while generating party memories for ${memberName}:`, error.message);
@@ -12521,11 +12986,14 @@ module.exports = function registerApiRoutes(scope) {
 
                             if (Array.isArray(result?.dispositions) && result.dispositions.length) {
                                 const dispositionChanges = applyDispositionChanges(result.dispositions);
-                                recordDispositionPromptSummary({
+                                const summary = recordDispositionPromptSummary({
                                     actorName: member.name || member.id || 'NPC',
                                     dispositionChanges,
                                     locationId: locationOverride?.id || player?.currentLocation
                                 }, entryCollector);
+                                if (summary) {
+                                    dispositionSummaryRecorded = true;
+                                }
                             }
                         } catch (error) {
                             console.warn(`Error while generating memories for departed party member ${memberName}:`, error.message);
@@ -12545,6 +13013,40 @@ module.exports = function registerApiRoutes(scope) {
             if (typeof player.clearPartyMembershipChangeTracking === 'function') {
                 player.clearPartyMembershipChangeTracking();
             }
+
+            return { dispositionSummaryRecorded };
+        }
+
+        function schedulePartyMemoriesForCurrentTurn({
+            player,
+            historyEntries,
+            locationOverride = null,
+            isNonEventTravel = true,
+            entryCollector = null,
+            clientId = null
+        } = {}) {
+            const task = new Promise(resolve => setImmediate(resolve))
+                .then(() => processPartyMemoriesForCurrentTurn({
+                    player,
+                    historyEntries,
+                    locationOverride,
+                    isNonEventTravel,
+                    entryCollector
+                }))
+                .then(result => {
+                    if (result?.dispositionSummaryRecorded && clientId) {
+                        Globals.emitToClient(clientId, 'chat_history_updated', {
+                            reason: 'disposition_check'
+                        });
+                    }
+                    return result;
+                })
+                .catch(error => {
+                    console.warn('Failed during party memory interval processing:', error.message || error);
+                    console.debug(error);
+                    return null;
+                });
+            return task;
         }
 
         async function runActionNarrativeForActor({
@@ -13401,18 +13903,14 @@ module.exports = function registerApiRoutes(scope) {
 
                 const isNonEventTravel = currentActionIsTravel && !travelMetadataIsEventDriven;
 
-                try {
-                    await processPartyMemoriesForCurrentTurn({
-                        player: currentPlayer,
-                        historyEntries: newChatEntries,
-                        locationOverride: location,
-                        isNonEventTravel,
-                        entryCollector: newChatEntries
-                    });
-                } catch (error) {
-                    console.warn('Failed during party memory interval processing:', error.message || error);
-                    console.debug(error);
-                }
+                schedulePartyMemoriesForCurrentTurn({
+                    player: currentPlayer,
+                    historyEntries: newChatEntries,
+                    locationOverride: location,
+                    isNonEventTravel,
+                    entryCollector: newChatEntries,
+                    clientId: stream?.clientId || null
+                });
 
 
                 if (currentPlayer) {
@@ -17935,6 +18433,33 @@ module.exports = function registerApiRoutes(scope) {
             };
         }
 
+        function buildRegionApiPayload(region) {
+            if (!region) {
+                return null;
+            }
+
+            const payload = {
+                id: region.id,
+                name: region.name,
+                description: region.description,
+                shortDescription: region.shortDescription || null,
+                parentRegionId: region.parentRegionId || null,
+                averageLevel: Number.isFinite(region.averageLevel) ? region.averageLevel : null,
+                controllingFactionId: region.controllingFactionId || null,
+                isVehicle: region.isVehicle,
+                vehicleInfo: region.vehicleInfo,
+                secrets: Array.isArray(region.secrets) ? [...region.secrets] : [],
+                weather: region.weather,
+                weatherState: region.weatherState
+            };
+
+            if (payload.parentRegionId && regions.has(payload.parentRegionId)) {
+                payload.parentRegionName = regions.get(payload.parentRegionId).name || null;
+            }
+
+            return payload;
+        }
+
         function buildRegionParentOptions({ excludeId = null } = {}) {
             const options = [];
             for (const region of regions.values()) {
@@ -17976,30 +18501,11 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 const parentOptions = buildRegionParentOptions({ excludeId: regionId });
-                const payload = {
-                    id: region.id,
-                    name: region.name,
-                    description: region.description,
-                    shortDescription: region.shortDescription || null,
-                    parentRegionId: region.parentRegionId || null,
-                    averageLevel: Number.isFinite(region.averageLevel) ? region.averageLevel : null,
-                    controllingFactionId: region.controllingFactionId || null,
-                    isVehicle: region.isVehicle,
-                    vehicleInfo: region.vehicleInfo,
-                    secrets: Array.isArray(region.secrets) ? [...region.secrets] : []
-                };
-
-                let parentRegionName = null;
-                if (payload.parentRegionId && regions.has(payload.parentRegionId)) {
-                    parentRegionName = regions.get(payload.parentRegionId).name || null;
-                }
+                const payload = buildRegionApiPayload(region);
 
                 res.json({
                     success: true,
-                    region: {
-                        ...payload,
-                        parentRegionName
-                    },
+                    region: payload,
                     parentOptions
                 });
             } catch (error) {
@@ -18038,7 +18544,8 @@ module.exports = function registerApiRoutes(scope) {
                     parentRegionId: parentRegionIdRaw,
                     averageLevel: averageLevelRaw,
                     controllingFactionId: controllingFactionIdRaw,
-                    secrets: secretsRaw
+                    secrets: secretsRaw,
+                    weather: weatherRaw
                 } = body;
 
                 if (typeof name !== 'string') {
@@ -18091,6 +18598,7 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 const hasControllingFaction = Object.prototype.hasOwnProperty.call(body, 'controllingFactionId');
+                const hasWeather = Object.prototype.hasOwnProperty.call(body, 'weather');
                 let resolvedControllingFactionId = null;
                 if (hasControllingFaction) {
                     try {
@@ -18230,33 +18738,27 @@ module.exports = function registerApiRoutes(scope) {
                     }
                 }
 
-                const parentOptions = buildRegionParentOptions({ excludeId: regionId });
-                const payload = {
-                    id: region.id,
-                    name: region.name,
-                    description: region.description,
-                    shortDescription: region.shortDescription || null,
-                    parentRegionId: region.parentRegionId || null,
-                    averageLevel: Number.isFinite(region.averageLevel) ? region.averageLevel : null,
-                    controllingFactionId: region.controllingFactionId || null,
-                    isVehicle: region.isVehicle,
-                    vehicleInfo: region.vehicleInfo,
-                    secrets: Array.isArray(region.secrets) ? [...region.secrets] : []
-                };
-
-                let parentRegionName = null;
-                if (payload.parentRegionId && regions.has(payload.parentRegionId)) {
-                    parentRegionName = regions.get(payload.parentRegionId).name || null;
+                if (hasWeather) {
+                    try {
+                        region.weather = weatherRaw;
+                    } catch (validationError) {
+                        return res.status(400).json({
+                            success: false,
+                            error: validationError?.message || 'Invalid region weather value'
+                        });
+                    }
                 }
+
+                const worldTime = hasWeather ? buildWorldTimePayload() : null;
+                const parentOptions = buildRegionParentOptions({ excludeId: regionId });
+                const payload = buildRegionApiPayload(region);
 
                 res.json({
                     success: true,
                     message: 'Region updated successfully.',
-                    region: {
-                        ...payload,
-                        parentRegionName
-                    },
-                    parentOptions
+                    region: payload,
+                    parentOptions,
+                    worldTime
                 });
             } catch (error) {
                 console.error('Failed to update region:', error);
@@ -20290,32 +20792,13 @@ module.exports = function registerApiRoutes(scope) {
                     const regionId = currentRegion.id;
                     const canonicalRegion = regionId && regions instanceof Map ? regions.get(regionId) || currentRegion : currentRegion;
 
-                    const payload = {
-                        id: canonicalRegion.id,
-                        name: canonicalRegion.name,
-                        description: canonicalRegion.description,
-                        shortDescription: canonicalRegion.shortDescription || null,
-                        parentRegionId: canonicalRegion.parentRegionId || null,
-                        averageLevel: Number.isFinite(canonicalRegion.averageLevel) ? canonicalRegion.averageLevel : null,
-                        controllingFactionId: canonicalRegion.controllingFactionId || null,
-                        isVehicle: canonicalRegion.isVehicle,
-                        vehicleInfo: canonicalRegion.vehicleInfo,
-                        secrets: Array.isArray(canonicalRegion.secrets) ? [...canonicalRegion.secrets] : []
-                    };
-
-                    let parentRegionName = null;
-                    if (payload.parentRegionId && regions instanceof Map && regions.has(payload.parentRegionId)) {
-                        parentRegionName = regions.get(payload.parentRegionId).name || null;
-                    }
+                    const payload = buildRegionApiPayload(canonicalRegion);
 
                     const parentOptions = buildRegionParentOptions({ excludeId: canonicalRegion.id });
 
                     return res.json({
                         success: true,
-                        region: {
-                            ...payload,
-                            parentRegionName
-                        },
+                        region: payload,
                         parentOptions
                     });
                 }
@@ -22035,6 +22518,7 @@ module.exports = function registerApiRoutes(scope) {
                 const hasLevel = hasOwn.call(body, 'level');
                 const hasStatusEffects = hasOwn.call(body, 'statusEffects');
                 const hasControllingFaction = hasOwn.call(body, 'controllingFactionId');
+                const hasWeatherHint = hasOwn.call(body, 'hasWeather');
                 let resolvedControllingFactionId = null;
                 if (hasControllingFaction) {
                     try {
@@ -22061,6 +22545,22 @@ module.exports = function registerApiRoutes(scope) {
                         success: false,
                         error: validationError?.message || 'Invalid location vehicle fields'
                     });
+                }
+
+                let resolvedHasWeatherHint = null;
+                if (hasWeatherHint) {
+                    if (body.hasWeather === null || body.hasWeather === undefined || body.hasWeather === '') {
+                        resolvedHasWeatherHint = null;
+                    } else {
+                        try {
+                            resolvedHasWeatherHint = normalizeLocationWeatherExposure(body.hasWeather, 'hasWeather');
+                        } catch (validationError) {
+                            return res.status(400).json({
+                                success: false,
+                                error: validationError?.message || 'hasWeather must be "yes", "no", "outside", a boolean, or null'
+                            });
+                        }
+                    }
                 }
 
                 if (!hasDescription) {
@@ -22143,6 +22643,8 @@ module.exports = function registerApiRoutes(scope) {
                 const previousLevel = location.baseLevel;
                 const previousImageId = location.imageId;
                 const previousVehicleInfo = JSON.stringify(location.vehicleInfo ?? null);
+                const previousGenerationHints = location.generationHints || {};
+                const previousHasWeatherHint = previousGenerationHints.hasWeather ?? null;
 
                 let nameChanged = false;
                 if (hasName && resolvedName !== previousName) {
@@ -22181,7 +22683,27 @@ module.exports = function registerApiRoutes(scope) {
                     vehicleChanged = JSON.stringify(location.vehicleInfo ?? null) !== previousVehicleInfo;
                 }
 
+                let hasWeatherChanged = false;
+                if (hasWeatherHint) {
+                    try {
+                        location.generationHints = {
+                            ...previousGenerationHints,
+                            hasWeather: resolvedHasWeatherHint
+                        };
+                    } catch (validationError) {
+                        return res.status(400).json({
+                            success: false,
+                            error: validationError?.message || 'Invalid hasWeather value'
+                        });
+                    }
+                    hasWeatherChanged = (location.generationHints?.hasWeather ?? null) !== previousHasWeatherHint;
+                }
+
                 const shouldClearImage = (nameChanged || descriptionChanged) && previousImageId;
+                const shouldClearImageVariants = nameChanged || descriptionChanged || shortDescriptionChanged || vehicleChanged || hasWeatherChanged;
+                if (shouldClearImageVariants && typeof clearLocationImageVariants === 'function') {
+                    clearLocationImageVariants(location);
+                }
                 if (shouldClearImage) {
                     location.imageId = null;
 
@@ -22203,12 +22725,14 @@ module.exports = function registerApiRoutes(scope) {
                     message: 'Location updated successfully',
                     location: locationPayload,
                     imageCleared: Boolean(shouldClearImage),
+                    worldTime: hasWeatherChanged ? buildWorldTimePayload() : null,
                     changes: {
                         name: nameChanged,
                         description: descriptionChanged,
                         shortDescription: shortDescriptionChanged,
                         level: levelChanged,
-                        vehicle: vehicleChanged
+                        vehicle: vehicleChanged,
+                        hasWeather: hasWeatherChanged
                     }
                 });
             } catch (error) {
@@ -22362,6 +22886,9 @@ module.exports = function registerApiRoutes(scope) {
 
                 if (pendingLocationImages && typeof pendingLocationImages.delete === 'function') {
                     pendingLocationImages.delete(locationId);
+                }
+                if (typeof clearLocationImageVariants === 'function') {
+                    clearLocationImageVariants(location);
                 }
                 if (location.imageId && generatedImages && typeof generatedImages.delete === 'function') {
                     generatedImages.delete(location.imageId);
@@ -25967,6 +26494,733 @@ module.exports = function registerApiRoutes(scope) {
                 res.status(500).json({
                     success: false,
                     error: error?.message || 'Failed to process crafting request.'
+                });
+            }
+        });
+
+        app.post('/api/locations/:id/modify', async (req, res) => {
+            let corpseProcessingRan = false;
+
+            res.on('finish', () => {
+                if (corpseProcessingRan) {
+                    return;
+                }
+                try {
+                    processNpcCorpses({ reason: 'location-modify:finish' });
+                } catch (error) {
+                    console.warn('Failed to process NPC corpses after location modification response:', error?.message || error);
+                }
+            });
+
+            try {
+                if (!currentPlayer) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'No active player available for location modification.'
+                    });
+                }
+
+                const locationId = typeof req.params.id === 'string' ? req.params.id.trim() : '';
+                if (!locationId) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Location ID is required.'
+                    });
+                }
+
+                const locationRecord = gameLocations.get(locationId) || (typeof Location.get === 'function' ? Location.get(locationId) : null);
+                if (!locationRecord) {
+                    return res.status(404).json({
+                        success: false,
+                        error: `Location with ID '${locationId}' not found.`
+                    });
+                }
+
+                const currentLocationId = typeof currentPlayer.currentLocation === 'string'
+                    ? currentPlayer.currentLocation.trim()
+                    : '';
+                if (!currentLocationId || currentLocationId !== locationRecord.id) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Location modification can only target the current location.'
+                    });
+                }
+
+                try {
+                    await runAutosaveIfEnabled();
+                } catch (autosaveError) {
+                    console.warn('Autosave before location modification failed:', autosaveError?.message || autosaveError);
+                }
+
+                const payload = req.body && typeof req.body === 'object' ? req.body : {};
+                const parseNoProseFlag = (value) => {
+                    if (value === undefined || value === null || value === '') {
+                        return false;
+                    }
+                    if (typeof value === 'boolean') {
+                        return value;
+                    }
+                    if (typeof value === 'number') {
+                        if (value === 1) {
+                            return true;
+                        }
+                        if (value === 0) {
+                            return false;
+                        }
+                        throw new Error('Invalid numeric noProse value. Use 1 or 0.');
+                    }
+                    if (typeof value === 'string') {
+                        const normalized = value.trim().toLowerCase();
+                        if (!normalized) {
+                            return false;
+                        }
+                        if (normalized === 'true' || normalized === '1' || normalized === 'yes' || normalized === 'y' || normalized === 'on') {
+                            return true;
+                        }
+                        if (normalized === 'false' || normalized === '0' || normalized === 'no' || normalized === 'n' || normalized === 'off') {
+                            return false;
+                        }
+                        throw new Error(`Invalid noProse value "${value}".`);
+                    }
+                    throw new Error(`Unsupported noProse value type: ${typeof value}`);
+                };
+                const isNoProseRequest = parseNoProseFlag(payload.noProse);
+                const slotEntries = Array.isArray(payload.slots) ? payload.slots : [];
+                const slotItems = slotEntries
+                    .map(entry => {
+                        if (!entry || typeof entry !== 'object') {
+                            return null;
+                        }
+                        const thingId = typeof entry.thingId === 'string' ? entry.thingId.trim() : '';
+                        if (!thingId) {
+                            return null;
+                        }
+                        const thing = things.get(thingId) || (typeof Thing.getById === 'function' ? Thing.getById(thingId) : null);
+                        if (!thing) {
+                            throw new Error(`Selected item '${thingId}' was not found.`);
+                        }
+                        if (typeof currentPlayer.hasInventoryItem !== 'function' || !currentPlayer.hasInventoryItem(thing)) {
+                            throw new Error(`${thing.name || thing.id} is not in the current player's inventory.`);
+                        }
+                        if (Boolean(thing?.isEquipped || thing?.equippedSlot)) {
+                            throw new Error(`${thing.name || thing.id} must be unequipped before it can be used to modify a location.`);
+                        }
+                        const slotIndex = Number.isFinite(Number(entry.slotIndex))
+                            ? Number(entry.slotIndex)
+                            : 0;
+                        return { slotIndex, thing };
+                    })
+                    .filter(Boolean);
+
+                if (!slotItems.length) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Select at least one material or tool before modifying a location.'
+                    });
+                }
+
+                const modificationRollState = { value: null };
+                const modificationNotes = extractInlineDieRollFromLocationModifyText(
+                    typeof payload.notes === 'string' ? payload.notes.trim() : '',
+                    modificationRollState
+                );
+
+                const resolvedLocationId = requireLocationId(locationRecord.id, 'location modification');
+                const resolvedRegion = locationRecord?.regionId && regions instanceof Map
+                    ? regions.get(locationRecord.regionId) || null
+                    : (Globals.region || null);
+                const modificationItemsForPrompt = slotItems.map(({ thing }) => ({
+                    name: thing.name,
+                    description: thing.description,
+                    rarity: thing.rarity,
+                    thingType: thing.thingType,
+                    level: thing.level
+                }));
+                const modifiedLocationForPrompt = {
+                    id: locationRecord.id,
+                    name: locationRecord.name || null,
+                    description: locationRecord.description || null,
+                    shortDescription: locationRecord.shortDescription || null,
+                    baseLevel: Number.isFinite(locationRecord.baseLevel) ? locationRecord.baseLevel : null
+                };
+
+                const baseContext = await prepareBasePromptContext({
+                    locationOverride: locationRecord,
+                    omitCraftHistory: true
+                });
+
+                const plausibilityRendered = promptEnv.render('base-context.xml.njk', {
+                    ...baseContext,
+                    promptType: 'plausibility-check-modify-location',
+                    modifiedLocation: modifiedLocationForPrompt,
+                    modificationNotes,
+                    inputItems: modificationItemsForPrompt,
+                    omitGameHistory: true
+                });
+
+                const plausibilityTemplate = parseXMLTemplate(plausibilityRendered);
+                if (!plausibilityTemplate?.systemPrompt || !plausibilityTemplate?.generationPrompt) {
+                    throw new Error('Location modification plausibility template did not produce prompts.');
+                }
+
+                const plausibilityResponse = await LLMClient.chatCompletion({
+                    messages: [
+                        { role: 'system', content: plausibilityTemplate.systemPrompt },
+                        { role: 'user', content: plausibilityTemplate.generationPrompt }
+                    ],
+                    metadataLabel: 'location_modify_plausibility'
+                });
+
+                LLMClient.logPrompt({
+                    metadataLabel: 'location_modify_plausibility',
+                    systemPrompt: plausibilityTemplate.systemPrompt,
+                    generationPrompt: plausibilityTemplate.generationPrompt,
+                    response: plausibilityResponse
+                });
+
+                if (!plausibilityResponse || !plausibilityResponse.trim()) {
+                    throw new Error('Location modification plausibility analysis returned no response.');
+                }
+
+                const plausibility = parsePlausibilityOutcome(plausibilityResponse);
+                if (!plausibility) {
+                    throw new Error('Unable to parse location modification plausibility response.');
+                }
+
+                const actionOutcome = resolveActionOutcome({
+                    plausibility,
+                    player: currentPlayer,
+                    dieRollOverride: modificationRollState.value
+                });
+                if (!actionOutcome) {
+                    throw new Error('Failed to resolve location modification outcome.');
+                }
+
+                const mappedLevel = mapOutcomeDegreeToCraftLevel(
+                    actionOutcome.degree,
+                    Number.isFinite(actionOutcome.roll?.die) ? actionOutcome.roll.die : null,
+                    actionOutcome.difficulty?.label || null
+                );
+                if (mappedLevel === 'implausible') {
+                    return res.status(400).json({
+                        success: false,
+                        error: plausibility.reason || 'That location modification attempt is implausible.'
+                    });
+                }
+
+                let effectiveResults = await parseLocationModificationResultsResponse(plausibilityResponse);
+                if (!effectiveResults.has('success')) {
+                    throw new Error('Location modification plausibility response missing a standard success result.');
+                }
+
+                if (mappedLevel && mappedLevel !== 'success') {
+                    const degreeResult = await renderLocationModificationOutcomeForDegree({
+                        baseContext,
+                        baseOutcomeXml: plausibilityResponse,
+                        successOrFailure: mappedLevel,
+                        location: modifiedLocationForPrompt,
+                        modificationNotes,
+                        inputItems: modificationItemsForPrompt
+                    });
+                    effectiveResults = degreeResult.results;
+                    if (!effectiveResults.has(mappedLevel)) {
+                        throw new Error(`Location modification success-degree response missing result for level '${mappedLevel}'.`);
+                    }
+                }
+
+                let selectedResult = mappedLevel ? effectiveResults.get(mappedLevel) : null;
+                if (!selectedResult) {
+                    selectedResult = effectiveResults.get('success') || null;
+                }
+                if (!selectedResult && effectiveResults.size) {
+                    selectedResult = effectiveResults.values().next().value;
+                }
+                if (!selectedResult) {
+                    throw new Error('AI response did not include location modification results.');
+                }
+
+                const consumedNameList = Array.isArray(selectedResult.itemsConsumed)
+                    ? selectedResult.itemsConsumed.filter(name => typeof name === 'string' && name.trim())
+                    : [];
+                const receivedNameList = Array.isArray(selectedResult.itemsReceived)
+                    ? Array.from(new Set(
+                        selectedResult.itemsReceived
+                            .map(name => (typeof name === 'string' ? name.trim() : ''))
+                            .filter(Boolean)
+                    ))
+                    : [];
+                const availableThings = slotItems.map(entry => entry.thing);
+                validateLocationModificationReceivedItemNames({
+                    receivedNames: receivedNameList,
+                    inputThings: availableThings
+                });
+                const {
+                    consumedThings,
+                    unmatchedConsumedNames
+                } = resolveCraftConsumedThings({
+                    inputThings: availableThings,
+                    consumedNames: consumedNameList,
+                    mode: 'location modification',
+                    allowFallbackConsumeFirst: false
+                });
+
+                for (const thing of consumedThings) {
+                    if (thing?.isContainer && typeof thing.getInventoryItems === 'function' && thing.getInventoryItems().length > 0) {
+                        throw new Error(`Cannot consume non-empty container "${thing.name || thing.id}" while modifying a location.`);
+                    }
+                }
+
+                const actorName = currentPlayer.name || 'The player';
+                const locationNameBefore = locationRecord.name || 'the location';
+                const alterationText = typeof selectedResult.alteration === 'string' ? selectedResult.alteration.trim() : '';
+                let alterationSummary = null;
+                const previousImageId = typeof locationRecord.imageId === 'string' ? locationRecord.imageId : null;
+
+                if (selectedResult.locationChanged) {
+                    if (!alterationText) {
+                        throw new Error('Location modification result changed the location but did not include an alteration description.');
+                    }
+                    alterationSummary = await alterLocationByEvent({
+                        location: locationRecord,
+                        alteration: alterationText,
+                        preserveBaseLevel: true
+                    });
+                    if (alterationSummary?.changed && pendingLocationImages && typeof pendingLocationImages.delete === 'function') {
+                        pendingLocationImages.delete(locationRecord.id);
+                    }
+                }
+
+                const consumedThingIds = [];
+                const consumedThingNames = [];
+                consumedThings.forEach(thing => {
+                    const consumption = consumeThingById(thing.id);
+                    consumedThingIds.push(consumption.consumedThingId);
+                    consumedThingNames.push(consumption.consumedThingName);
+                });
+
+                const receivedThingIds = [];
+                const receivedThingNames = [];
+                if (receivedNameList.length) {
+                    const generatedReceivedItems = await generateItemsByNames({
+                        itemNames: receivedNameList,
+                        owner: currentPlayer
+                    });
+                    if (!Array.isArray(generatedReceivedItems) || generatedReceivedItems.length !== receivedNameList.length) {
+                        const generatedLabel = Array.isArray(generatedReceivedItems) && generatedReceivedItems.length
+                            ? generatedReceivedItems.map(item => item?.name || item?.id || 'unnamed item').join(', ')
+                            : '(none)';
+                        throw new Error(
+                            'Location modification failed to generate all received items. '
+                            + `Requested: ${receivedNameList.join(', ')}. Generated: ${generatedLabel}.`
+                        );
+                    }
+                    generatedReceivedItems.forEach(item => {
+                        if (!item || typeof item.id !== 'string' || !item.id.trim()) {
+                            throw new Error('Location modification generated a received item without an id.');
+                        }
+                        receivedThingIds.push(item.id);
+                        receivedThingNames.push(item.name || item.id);
+                    });
+                }
+
+                const consumedNamesForPrompt = consumedThingNames.length
+                    ? consumedThingNames
+                    : consumedNameList;
+                const receivedNamesForPrompt = receivedThingNames.length
+                    ? receivedThingNames
+                    : receivedNameList;
+                const primaryActionSummaryText = selectedResult.locationChanged
+                    ? `${actorName} modified ${locationNameBefore}: ${alterationText}`
+                    : `${actorName} attempted to modify ${locationNameBefore}, but the location did not change.`;
+                const selectedTimeTakenMinutes = Number(selectedResult.timeTakenMinutes);
+                const appliedTimeTakenMinutes = Number.isFinite(selectedTimeTakenMinutes) && selectedTimeTakenMinutes > 0
+                    ? Math.round(selectedTimeTakenMinutes)
+                    : MIN_CRAFT_TIME_ADVANCE_MINUTES;
+                let playerActionDescription = '';
+                let playerOtherEffect = selectedResult.other || '';
+                let chatEntry = null;
+
+                if (isNoProseRequest) {
+                    playerActionDescription = primaryActionSummaryText;
+                    playerOtherEffect = '';
+                } else {
+                    let playerActionResponse = '';
+                    try {
+                        const playerActionRendered = promptEnv.render('base-context.xml.njk', {
+                            ...baseContext,
+                            promptType: 'player-action-modify-location',
+                            characterName: actorName,
+                            modifiedLocation: modifiedLocationForPrompt,
+                            modificationNotes,
+                            alteration: alterationText,
+                            consumedItems: consumedNamesForPrompt.map(name => ({ name })),
+                            receivedItems: receivedNamesForPrompt.map(name => ({ name })),
+                            otherEffect: selectedResult.other || null,
+                            success_or_failure: actionOutcome.label || actionOutcome.degree || ''
+                        });
+
+                        const playerActionTemplate = parseXMLTemplate(playerActionRendered);
+                        if (!playerActionTemplate?.systemPrompt || !playerActionTemplate?.generationPrompt) {
+                            throw new Error('Player action location modification template missing prompts.');
+                        }
+
+                        playerActionResponse = await LLMClient.chatCompletion({
+                            messages: [
+                                { role: 'system', content: playerActionTemplate.systemPrompt },
+                                { role: 'user', content: playerActionTemplate.generationPrompt }
+                            ],
+                            metadataLabel: 'location_modify_player_action',
+                            metadata: {
+                                clientId: typeof payload.clientId === 'string' ? payload.clientId.trim() || null : null,
+                                __codexQuotaCountAsTurn: true,
+                                __codexQuotaTurnKey: (typeof payload.requestId === 'string' && payload.requestId.trim())
+                                    ? payload.requestId.trim()
+                                    : `location_modify_turn_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`
+                            }
+                        });
+
+                        LLMClient.logPrompt({
+                            metadataLabel: 'location_modify_player_action',
+                            systemPrompt: playerActionTemplate.systemPrompt,
+                            generationPrompt: playerActionTemplate.generationPrompt,
+                            response: playerActionResponse
+                        });
+
+                        const narrative = parseCraftingNarrativeResponse(playerActionResponse);
+                        if (narrative?.description) {
+                            playerActionDescription = narrative.description;
+                        }
+                        if (narrative?.otherEffectDescription && narrative.otherEffectDescription.toLowerCase() !== 'n/a') {
+                            playerOtherEffect = narrative.otherEffectDescription;
+                        }
+                    } catch (actionError) {
+                        console.warn('Failed to generate location modification narrative:', actionError?.message || actionError);
+                    }
+
+                    if (!playerActionDescription) {
+                        playerActionDescription = primaryActionSummaryText;
+                    }
+                    if (!playerOtherEffect && selectedResult.other) {
+                        playerOtherEffect = selectedResult.other;
+                    }
+
+                    let narrativeContent = playerActionDescription || '';
+                    let slopRemovalInfo = null;
+                    if (Globals.config?.slop_buster === true && narrativeContent.trim()) {
+                        const slopResult = await applySlopRemoval(narrativeContent, { returnDiagnostics: true });
+                        narrativeContent = slopResult.text;
+                        if (slopResult.ran) {
+                            slopRemovalInfo = {
+                                slopWords: slopResult.slopWords || [],
+                                slopRegexes: slopResult.slopRegexes || [],
+                                slopNgrams: slopResult.slopNgrams || []
+                            };
+                        }
+                    }
+
+                    chatEntry = pushChatEntry({
+                        role: 'assistant',
+                        type: 'player-action',
+                        content: narrativeContent,
+                        metadata: {
+                            actionType: 'modify_location',
+                            locationId: resolvedLocationId,
+                            locationName: locationNameBefore,
+                            modificationNotes: modificationNotes || null,
+                            alteration: alterationText || null,
+                            receivedItems: receivedNamesForPrompt
+                        }
+                    }, null, resolvedLocationId);
+
+                    if (chatEntry) {
+                        recordPlausibilityEntry({
+                            data: {
+                                raw: plausibilityResponse,
+                                structured: plausibility
+                            },
+                            parentId: chatEntry.id,
+                            locationId: resolvedLocationId
+                        });
+
+                        recordSkillCheckEntry({
+                            resolution: actionOutcome,
+                            parentId: chatEntry.id,
+                            locationId: resolvedLocationId
+                        });
+
+                        if (slopRemovalInfo) {
+                            recordSlopRemovalEntry({
+                                data: slopRemovalInfo,
+                                parentId: chatEntry.id,
+                                locationId: resolvedLocationId
+                            });
+                        }
+                    }
+                }
+
+                if (!isNoProseRequest) {
+                    const eventItems = [{
+                        icon: '🛠️',
+                        description: primaryActionSummaryText
+                    }];
+                    consumedNamesForPrompt.forEach(name => {
+                        eventItems.push({
+                            icon: '♻️',
+                            description: `Consumed ${name}.`
+                        });
+                    });
+                    receivedNamesForPrompt.forEach(name => {
+                        eventItems.push({
+                            icon: '🎁',
+                            description: `Received ${name}.`
+                        });
+                    });
+                    if (slotItems.length > 0 && consumedNamesForPrompt.length === 0 && actionOutcome.success) {
+                        eventItems.push({
+                            icon: '✨',
+                            description: 'The selected materials and tools were preserved.'
+                        });
+                    }
+                    if (actionOutcome.success && Array.isArray(selectedResult.abilities)) {
+                        selectedResult.abilities
+                            .filter(ability => ability && ability.name && (ability.effect || ability.description))
+                            .forEach(ability => {
+                                eventItems.push({
+                                    icon: '✨',
+                                    description: `${ability.name}: ${ability.effect || ability.description}`
+                                });
+                            });
+                    }
+
+                    recordEventSummaryEntry({
+                        label: '🛠️ Location Modification Results',
+                        events: eventItems,
+                        timeProgress: { advancedMinutes: appliedTimeTakenMinutes },
+                        parentId: chatEntry ? chatEntry.id : null,
+                        locationId: resolvedLocationId
+                    });
+
+                    let additionalEffectEntry = null;
+                    if (playerOtherEffect && playerOtherEffect.trim()) {
+                        const trimmedEffect = playerOtherEffect.trim();
+                        additionalEffectEntry = pushChatEntry({
+                            role: 'assistant',
+                            type: 'player-action',
+                            content: trimmedEffect,
+                            parentId: chatEntry ? chatEntry.id : null
+                        }, null, resolvedLocationId);
+
+                        try {
+                            const additionalEvents = await Events.runEventChecks({ textToCheck: trimmedEffect });
+                            const hasAdditionalEvents = additionalEvents
+                                && (
+                                    (Array.isArray(additionalEvents.events) && additionalEvents.events.length)
+                                    || (Array.isArray(additionalEvents.experienceAwards) && additionalEvents.experienceAwards.length)
+                                    || (Array.isArray(additionalEvents.currencyChanges) && additionalEvents.currencyChanges.length)
+                                    || (Array.isArray(additionalEvents.environmentalDamageEvents) && additionalEvents.environmentalDamageEvents.length)
+                                    || (Array.isArray(additionalEvents.needBarChanges) && additionalEvents.needBarChanges.length)
+                                    || (Array.isArray(additionalEvents.dispositionChanges) && additionalEvents.dispositionChanges.length)
+                                    || (Array.isArray(additionalEvents.factionReputationChanges) && additionalEvents.factionReputationChanges.length)
+                                );
+                            if (hasAdditionalEvents) {
+                                recordEventSummaryEntry({
+                                    label: '✨ Additional Effects',
+                                    events: additionalEvents.events || null,
+                                    experienceAwards: additionalEvents.experienceAwards || null,
+                                    currencyChanges: additionalEvents.currencyChanges || null,
+                                    environmentalDamageEvents: additionalEvents.environmentalDamageEvents || null,
+                                    needBarChanges: additionalEvents.needBarChanges || null,
+                                    dispositionChanges: additionalEvents.dispositionChanges || null,
+                                    factionReputationChanges: additionalEvents.factionReputationChanges || null,
+                                    parentId: (additionalEffectEntry && additionalEffectEntry.id) || (chatEntry ? chatEntry.id : null),
+                                    locationId: resolvedLocationId
+                                });
+                            }
+                        } catch (extraEventError) {
+                            console.warn('Failed to process additional location modification effects:', extraEventError?.message || extraEventError);
+                        }
+                    }
+                }
+
+                let questResult = null;
+                try {
+                    questResult = await Events.runQuestChecks({
+                        allowWithoutEventChecks: true,
+                        recentTextOverride: isNoProseRequest ? primaryActionSummaryText : null
+                    });
+                } catch (questError) {
+                    console.warn('Failed to run quest checks after location modification:', questError?.message || questError);
+                }
+
+                if (questResult) {
+                    try {
+                        const questCompletionEntries = Events.parseQuestObjectiveStatusXml(questResult);
+                        if (Array.isArray(questCompletionEntries) && questCompletionEntries.length) {
+                            const questProcessingContext = {
+                                player: currentPlayer,
+                                location: locationRecord || null,
+                                region: resolvedRegion || null,
+                                stream: null,
+                                experienceAwards: [],
+                                currencyChanges: [],
+                                environmentalDamageEvents: [],
+                                needBarChanges: [],
+                                dispositionChanges: [],
+                                factionReputationChanges: [],
+                                questCompletionRewards: [],
+                                completedQuestObjectives: [],
+                                followupResults: [],
+                                allowEnvironmentalEffects: false,
+                                isNpcTurn: false
+                            };
+
+                            await Events.processQuestObjectiveCompletionEntries(
+                                questCompletionEntries,
+                                questProcessingContext
+                            );
+
+                            if (Array.isArray(questProcessingContext.questCompletionRewards)
+                                && questProcessingContext.questCompletionRewards.length) {
+                                for (const rewardEntry of questProcessingContext.questCompletionRewards) {
+                                    if (!rewardEntry || typeof rewardEntry.message !== 'string') {
+                                        continue;
+                                    }
+
+                                    const parsedReward = parseQuestRewardMessage(rewardEntry.message);
+                                    if (parsedReward?.rewards?.length) {
+                                        const summaryLabel = rewardEntry.questName
+                                            ? `🏆 Quest Completed – ${rewardEntry.questName}`
+                                            : '🏆 Quest Completed';
+                                        const summaryItems = parsedReward.rewards.map(line => ({
+                                            description: line,
+                                            icon: '🎁'
+                                        }));
+                                        recordEventSummaryEntry({
+                                            label: summaryLabel,
+                                            events: summaryItems,
+                                            timestamp: chatEntry?.timestamp || new Date().toISOString(),
+                                            parentId: chatEntry?.id || null,
+                                            locationId: resolvedLocationId
+                                        });
+                                    }
+
+                                    pushChatEntry({
+                                        role: 'assistant',
+                                        content: rewardEntry.message,
+                                        type: 'quest-reward',
+                                        locationId: resolvedLocationId,
+                                        metadata: {
+                                            questId: rewardEntry.questId || null,
+                                            questName: rewardEntry.questName || null
+                                        }
+                                    }, null, resolvedLocationId);
+                                }
+                            }
+
+                            if (Array.isArray(questProcessingContext.completedQuestObjectives)
+                                && questProcessingContext.completedQuestObjectives.length) {
+                                const groupedObjectives = new Map();
+                                for (const objective of questProcessingContext.completedQuestObjectives) {
+                                    if (!objective) {
+                                        continue;
+                                    }
+                                    const questLabel = objective.questName || objective.questId || 'Quest';
+                                    if (!groupedObjectives.has(questLabel)) {
+                                        groupedObjectives.set(questLabel, []);
+                                    }
+                                    groupedObjectives.get(questLabel).push(objective);
+                                }
+
+                                for (const [questLabel, objectives] of groupedObjectives.entries()) {
+                                    const summaryItems = objectives.map(item => {
+                                        const hasIndex = Number.isFinite(item.objectiveIndex);
+                                        const displayNumber = hasIndex ? item.objectiveIndex + 1 : null;
+                                        const description = item.objectiveDescription || (displayNumber !== null ? `Objective ${displayNumber}` : 'Objective completed');
+                                        let label = displayNumber !== null ? `Objective ${displayNumber}: ${description}` : description;
+                                        const reason = typeof item.reason === 'string' ? item.reason.trim() : '';
+                                        if (reason) {
+                                            label = `${label} - ${reason}`;
+                                        }
+                                        if (item.questJustCompleted || (!item.questJustCompleted && item.questCompleted)) {
+                                            label = `${label} (Quest complete!)`;
+                                        }
+                                        return {
+                                            description: label,
+                                            icon: '✅'
+                                        };
+                                    });
+
+                                    recordEventSummaryEntry({
+                                        label: `✅ Quest Update – ${questLabel}`,
+                                        events: summaryItems,
+                                        timestamp: chatEntry?.timestamp || new Date().toISOString(),
+                                        parentId: chatEntry?.id || null,
+                                        locationId: resolvedLocationId
+                                    });
+                                }
+                            }
+                        }
+                    } catch (questProcessingError) {
+                        console.warn('Failed to process quest checks after location modification:', questProcessingError?.message || questProcessingError);
+                    }
+                }
+
+                const modificationTimeProgress = Globals.advanceTime(appliedTimeTakenMinutes, { source: 'location_modify_action' });
+                try {
+                    Player.applyStatusEffectNeedBarsToAll();
+                } catch (timeEffectError) {
+                    console.warn('Failed to apply time-based need/health changes after location modification:', timeEffectError?.message || timeEffectError);
+                }
+                await processDueVehicleArrivals();
+
+                const locationPayload = buildLocationResponse(locationRecord);
+                if (!locationPayload) {
+                    throw new Error('Failed to serialize location after modification.');
+                }
+
+                const imageCleared = Boolean(alterationSummary?.changed && previousImageId && !locationRecord.imageId);
+
+                res.json({
+                    success: true,
+                    location: locationPayload,
+                    outcome: actionOutcome,
+                    resultLevel: mappedLevel,
+                    plausibility: {
+                        type: plausibility.type,
+                        reason: plausibility.reason || null
+                    },
+                    modification: {
+                        locationChanged: Boolean(selectedResult.locationChanged),
+                        alteration: alterationText || null,
+                        alterationSummary
+                    },
+                    consumedThingIds,
+                    consumedThingNames,
+                    receivedThingIds,
+                    receivedThingNames,
+                    narrative: {
+                        description: playerActionDescription,
+                        otherEffect: playerOtherEffect || null
+                    },
+                    unmatchedConsumedNames,
+                    timeTakenMinutes: appliedTimeTakenMinutes,
+                    timeProgress: modificationTimeProgress,
+                    worldTime: buildWorldTimePayload({
+                        transitions: Array.isArray(modificationTimeProgress?.transitions)
+                            ? modificationTimeProgress.transitions
+                            : []
+                    }),
+                    imageCleared
+                });
+            } catch (error) {
+                console.error('Error processing location modification request:', error);
+                const message = error?.message || 'Failed to process location modification request.';
+                const status = /not found/i.test(message)
+                    ? 404
+                    : (/inventory|equipped|Select at least|current location|Location ID|required/i.test(message) ? 400 : 500);
+                res.status(status).json({
+                    success: false,
+                    error: message
                 });
             }
         });
@@ -32537,6 +33791,80 @@ module.exports = function registerApiRoutes(scope) {
                 } else {
                     res.status(500).json({ error: `Test failed: ${error.message}` });
                 }
+            }
+        });
+
+        app.post('/api/images/location-variant/request', async (req, res) => {
+            try {
+                const { locationId, force = false, clientId = null } = req.body || {};
+                const normalizedLocationId = typeof locationId === 'string' ? locationId.trim() : '';
+                if (!normalizedLocationId) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'locationId is required'
+                    });
+                }
+
+                const location = gameLocations.get(normalizedLocationId);
+                if (!location) {
+                    return res.status(404).json({
+                        success: false,
+                        error: `Location with ID '${normalizedLocationId}' not found`
+                    });
+                }
+
+                if (typeof generateLocationWeatherVariant !== 'function') {
+                    return res.status(500).json({
+                        success: false,
+                        error: 'Location weather image variant generator is not available'
+                    });
+                }
+
+                const generationResult = await generateLocationWeatherVariant(location, {
+                    force: Boolean(force),
+                    clientId
+                });
+                if (!generationResult) {
+                    return res.status(500).json({
+                        success: false,
+                        error: 'Location weather image variant generation did not return a result'
+                    });
+                }
+
+                const responsePayload = {
+                    success: Boolean(generationResult.success),
+                    locationId: normalizedLocationId,
+                    sourceImageId: generationResult.sourceImageId || location.imageId || null,
+                    variantKey: generationResult.variantKey || null,
+                    conditions: generationResult.conditions || null,
+                    skipped: Boolean(generationResult.skipped),
+                    reason: generationResult.reason || null,
+                    message: generationResult.message || null,
+                    existingJob: Boolean(generationResult.existingJob)
+                };
+
+                if (generationResult.imageId) {
+                    responsePayload.imageId = generationResult.imageId;
+                }
+                if (generationResult.jobId) {
+                    responsePayload.jobId = generationResult.jobId;
+                    responsePayload.job = generationResult.job || getJobSnapshot(generationResult.jobId);
+                }
+
+                if (!generationResult.success && generationResult.skipped) {
+                    return res.status(202).json(responsePayload);
+                }
+                if (!generationResult.success && !generationResult.existingJob) {
+                    return res.status(409).json(responsePayload);
+                }
+
+                return res.json(responsePayload);
+            } catch (error) {
+                console.error('Location weather image variant request error:', error);
+                res.status(500).json({
+                    success: false,
+                    error: error.message
+                });
             }
         });
 

@@ -135,6 +135,84 @@ class ComfyUIClient {
   }
 
   /**
+   * Upload an existing image into ComfyUI's input directory for img2img workflows.
+   * @param {string} filePath - Local source image path
+   * @param {Object} options - Upload options
+   * @param {string} [options.filename] - Uploaded filename
+   * @param {string} [options.subfolder] - ComfyUI input subfolder
+   * @param {string} [options.type] - ComfyUI folder type
+   * @param {boolean} [options.overwrite] - Whether to overwrite an existing input image
+   * @returns {Promise<Object>} Upload metadata including imageReference for LoadImage nodes
+   */
+  async uploadInputImage(filePath, options = {}) {
+    if (!filePath || typeof filePath !== 'string') {
+      throw new Error('ComfyUI uploadInputImage requires a source file path.');
+    }
+    if (!fs.existsSync(filePath)) {
+      throw new Error(`ComfyUI input image does not exist: ${filePath}`);
+    }
+    if (typeof FormData === 'undefined' || typeof Blob === 'undefined') {
+      throw new Error('ComfyUI image uploads require a Node runtime with FormData and Blob support.');
+    }
+
+    const {
+      filename = path.basename(filePath),
+      subfolder = '',
+      type = 'input',
+      overwrite = true
+    } = options || {};
+    const resolvedFilename = typeof filename === 'string' && filename.trim()
+      ? filename.trim()
+      : path.basename(filePath);
+    const resolvedSubfolder = typeof subfolder === 'string' ? subfolder.trim() : '';
+    const resolvedType = typeof type === 'string' && type.trim() ? type.trim() : 'input';
+    const ext = path.extname(resolvedFilename).toLowerCase();
+    const mimeType = ext === '.jpg' || ext === '.jpeg'
+      ? 'image/jpeg'
+      : (ext === '.webp' ? 'image/webp' : (ext === '.gif' ? 'image/gif' : 'image/png'));
+
+    const imageBuffer = fs.readFileSync(filePath);
+    const form = new FormData();
+    form.append('image', new Blob([imageBuffer], { type: mimeType }), resolvedFilename);
+    form.append('overwrite', overwrite ? 'true' : 'false');
+    form.append('type', resolvedType);
+    if (resolvedSubfolder) {
+      form.append('subfolder', resolvedSubfolder);
+    }
+
+    try {
+      console.log(`📤 Uploading ComfyUI input image: ${resolvedFilename}`);
+      const response = await axios.post(`${this.baseURL}/upload/image`, form, {
+        timeout: this.timeout,
+        headers: typeof form.getHeaders === 'function' ? form.getHeaders() : undefined
+      });
+
+      const name = typeof response.data?.name === 'string' && response.data.name.trim()
+        ? response.data.name.trim()
+        : resolvedFilename;
+      const returnedSubfolder = typeof response.data?.subfolder === 'string'
+        ? response.data.subfolder.trim()
+        : resolvedSubfolder;
+      const returnedType = typeof response.data?.type === 'string' && response.data.type.trim()
+        ? response.data.type.trim()
+        : resolvedType;
+      const imageReference = returnedSubfolder ? `${returnedSubfolder}/${name}` : name;
+
+      return {
+        success: true,
+        name,
+        subfolder: returnedSubfolder,
+        type: returnedType,
+        imageReference,
+        data: response.data
+      };
+    } catch (error) {
+      console.error(`❌ Failed to upload ComfyUI input image ${resolvedFilename}:`, error.message);
+      throw error;
+    }
+  }
+
+  /**
    * Wait for prompt completion and get results
    * @param {string} promptId - Prompt ID to wait for
    * @param {number} maxWaitTime - Maximum time to wait in milliseconds

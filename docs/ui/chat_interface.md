@@ -27,7 +27,13 @@ The main UI is rendered by `views/index.njk` and powered by `public/js/chat.js` 
   - When in a vehicle context and the vehicle is underway, that header block instead renders `Enroute to <destination>`, a smaller `X days, Y hours, Z minutes to arrival` countdown line (omitting zero-value units), and a black/red progress bar with the vehicle icon positioned at the current trip progress point.
   - When in a vehicle context and the outside location has an image, a lower-right picture-in-picture overlay (`#locationVehiclePip`) renders over the main location image at 30% size, `16:9` aspect ratio, with 3% right/bottom margin.
   - When the containing region is a vehicle, the header name is rendered as `<vehicle region>: <location>` (example: `Starship Enterprise: Captain's Quarters`).
-  - Image + context menu for edit/summon/regenerate.
+  - Image + context menu for edit/summon/regenerate, plus `Edit Weather` for the containing region and `Edit Calendar` for the active game calendar.
+  - The main location edit modal includes a `Local Weather` selector that writes `generationHints.hasWeather` as automatic, weather-exposed, weather-visible-outside, or sheltered/no local weather. Changing this hint clears cached weather/lighting display variants while leaving the base location image intact.
+  - `Edit Weather` opens a region-weather modal that loads `/api/regions/:id`, edits the region's dynamic weather definition, and saves through `PUT /api/regions/:id`. The modal can disable dynamic weather or edit per-season weather types with name, description, relative frequency, and duration range fields.
+  - `Edit Calendar` opens a JSON editor modal backed by `GET /api/calendar` and `PUT /api/calendar`. Saving validates and normalizes the full calendar object server-side, refreshes the world-time chip, and reloads the current location so date/season/light-level effects are visible.
+  - When image generation is enabled and the current location has a base `imageId`, the renderer requests `/api/images/location-variant/request` for the current lighting/weather display variant. During ordinary UI refreshes, a session display cache keyed by `locationId + sourceImageId` keeps the last valid variant on the visible location image and Adventure background while the server confirms the current condition key, avoiding a base-image flash. Cached variants or completed realtime jobs replace only the visible location image and Adventure background; `lastRenderedLocation.imageId` remains the base image id so edit/regenerate actions keep targeting the authoritative location image.
+  - `Modify Location` appears directly under the location image/level area and uses the same current-location enable/disable lifecycle as `Craft Item` and `Craft Scenery`.
+  - `Modify Location` opens the shared crafting modal in `modify-location` mode, with four player-inventory material/tool slots, notes for the attempted location change, inline `<N>` roll override support, and `Modify Location` / `Modify Location (no prose)` submits. Server outcomes may consume selected inputs and may grant newly uncovered portable byproduct items, but preserved tools/materials are not re-granted as received items.
   - On mobile (`max-width: 768px`), item/NPC/location tooltips are constrained to `80vw` for readability.
   - Equippable item tooltips include stacked comparison cards for currently equipped compatible-slot items (using the active actor context).
   - On touch/coarse-pointer devices, tapping any entity `•••` context-menu button temporarily suppresses floating tooltips so the menu remains reachable.
@@ -168,7 +174,9 @@ Not exhaustive, but the core UI calls include:
 - `/api/player/thing-list-view-preferences` (persist shared location/inventory/crafting panel view selections on the current player).
 - `/api/player/ability-selection` + `/api/player/ability-selection/submit` (player level-up ability draft flow).
 - `/api/player/move` (direct travel fallback path; sends `destinationId` plus `expectedOriginLocationId` for server-side origin verification).
+- `/api/images/location-variant/request` (on-demand current-location weather/lighting image variant; server resolves conditions and returns a cached image id or realtime image job).
 - `/api/player/update-stats` (player-view modal point allocation submit; unspent pools are server-derived from submitted level/attributes/skills, and the in-modal skill pool preview tracks formula deltas from provisional stat changes such as Intelligence bonus adjustments).
+- `/api/locations/:id/modify` (current-location modification crafting flow; selected player-inventory slots and notes run dedicated modification checks, may consume selected items, may grant newly uncovered portable byproduct items, may mutate the location through `alter_location`, and preserve the base location level).
 - `/api/locations/:id` and `/api/locations/:id/exits` (location details + exit edits).
 - `/api/things/:id` (thing updates; location drag/drop uses this to convert item/scenery type).
 - `/api/things/:id/separate` (item separation prompt action from thing-card context menus).
@@ -184,10 +192,11 @@ LLM-backed modal submits close immediately (no visible waiting state); errors su
 - `#addNpcModal` (adds an NPC via `/api/locations/:id/npcs`; supports concurrent submissions when the modal is reopened during an in-flight request).
 - `#thingEditModal` create mode (adds item/scenery via `/api/locations/:id/things`; name is optional and can be generated; submit closes immediately and allows additional create prompts while prior item/scenery creation is still running).
 - `#newExitModal` (creates/edits exits via `/api/locations/:id/exits`, including a travel-time field that accepts the shared duration syntax such as `1m`, `1h10m`, or `2 hours`).
-- `#craftingModal` (crafting/processing via `/api/craft`, including a no-prose submit path for craft/process, with notes placeholders that mention `<N>` roll override support).
+- `#craftingModal` (crafting/processing via `/api/craft`, plus `modify-location` mode via `/api/locations/:id/modify`, including no-prose submit paths and notes placeholders that mention `<N>` roll override support).
   - The left-side player inventory list in this modal now uses the same shared thing-list renderer as the main inventory and location panels, including per-panel `Classic`/`Table`/`Grid` views, search/slot/equipment filters, and the shared stable sort popup, with narrow panels collapsing the filter controls behind the shared icon-only filter toggle.
   - The player-inventory section header now renders the `Player Inventory` title/count row with the crafting hint directly beneath it, while the icon-only filter toggle remains a separate control on the right.
   - Equipped items in the crafting inventory are highlighted with a red outline and are rejected from slot assignment across drag/drop, double-click, and keyboard assignment with a `must be unequipped first` alert.
+  - In `modify-location` mode, the modal title is `Modify Location`, the workspace label is `Modification Materials`, and submit refreshes chat history, inventory, party/sidebar state, and the current location when the endpoint returns.
 - `#salvageIntentModal` (salvage/harvest via `/api/craft`, including `Harvest (no prose)` / `Salvage (no prose)` submits, with intent placeholders that mention `<N>` roll override support).
 
 ## Insights and attachments

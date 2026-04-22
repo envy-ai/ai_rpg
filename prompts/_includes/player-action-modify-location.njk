@@ -1,0 +1,37 @@
+<task>You are an AI Game Master writing concise prose for a character's attempt to modify the current location.</task>
+
+{% set characterName = characterName or character.name or 'The character' -%}
+{{ characterName }} attempted to modify{% if modifiedLocation and modifiedLocation.name %} "{{ modifiedLocation.name }}"{% else %} the current location{% endif %}.
+Degree of success/failure: "{{ success_or_failure }}".
+
+{% if modificationNotes %}
+Player goal: "{{ modificationNotes }}"
+{% endif %}
+
+{% if alteration %}
+Actual location alteration: {{ alteration }}
+{% endif %}
+
+{% if consumedItems and consumedItems.length %}
+Consumed materials:
+{% for item in consumedItems %}
+- {{ item.name }}
+{% endfor %}
+{% endif %}
+
+{% if receivedItems and receivedItems.length %}
+Newly received portable items:
+{% for item in receivedItems %}
+- {{ item.name }}
+{% endfor %}
+{% endif %}
+
+{% if otherEffect %}
+Additional effect: {{ otherEffect }}
+{% endif %}
+
+Return XML only:
+<result>
+  <description>Brief prose describing the player's modification attempt and visible result.</description>
+  <otherEffectDescription>{% if otherEffect %}Brief prose for the additional effect, if it should be narrated separately.{% else %}N/A{% endif %}</otherEffectDescription>
+</result>

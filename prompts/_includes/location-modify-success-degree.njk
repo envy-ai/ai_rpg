@@ -1,0 +1,41 @@
+<task>You are an AI Game Master responding to a character's attempt to modify the current location.</task>
+
+{% set characterName = character.name or 'The character' -%}
+{{ characterName }} attempted to modify{% if modifiedLocation and modifiedLocation.name %} "{{ modifiedLocation.name }}"{% else %} the current location{% endif %}.
+They had this degree of success/failure: "{{ success_or_failure }}".
+
+{% if modificationNotes %}
+Modification goal: "{{ modificationNotes }}"
+{% endif %}
+
+Selected materials/tools:
+{% for item in inputItems %}
+- {{ item.name }}{% if item.description %}: {{ item.description }}{% endif %}
+{% endfor %}
+
+The following is an XML representation of the location modification outcome if it were a standard success. Adjust the alteration, consumed materials, newly received portable items, time taken, and any additional effect to accurately reflect this level of success or failure: {{ success_or_failure }}.
+
+{{ location_modification_outcome_xml }}
+
+{% if success_or_failure == 'critical_success' %}
+A critical success should produce a better, cleaner, more durable, more elegant, or more complete version of the intended location change. It may preserve some materials or produce an additional beneficial effect.
+{% elif success_or_failure == 'major_success' %}
+A major success should produce a better or more complete version of the intended location change. It may preserve some materials.
+{% elif success_or_failure == 'barely_succeeded' %}
+A barely succeeded result should mostly accomplish the intended location change, but with imperfections, limitations, or rough workmanship.
+{% elif success_or_failure == 'barely_failed' %}
+A barely failed result may still change the location, but the change should be incomplete, fragile, ugly, inconvenient, or only partly useful.
+{% elif success_or_failure == 'failure' %}
+A failure may leave the location unchanged or changed in a useless, messy, or counterproductive way. Some materials may be consumed.
+{% elif success_or_failure == 'major_failure' %}
+A major failure should usually damage, worsen, or complicate the location in a meaningful way. Most or all relevant materials are likely consumed.
+{% elif success_or_failure == 'critical_failure' %}
+A critical failure should be catastrophic, dangerous, or deeply counterproductive. It may include an additional negative effect beyond the location alteration. Include an <other> field inside <result> if there is an additional effect.
+{% endif %}
+
+Received item rules:
+- Use <itemsReceived> only for portable items the player newly finds, uncovers, extracts, or obtains as a byproduct of the modification attempt.
+- Do not use <itemsReceived> for repaired or improved parts of the location such as floorboards, walls, windows, doors, fixtures, lighting, atmosphere, or scenery that remains part of the place.
+- Do not list selected tools or materials in <itemsReceived> merely because they were used but not consumed. Preserved inputs should be omitted from both <itemsConsumed> and <itemsReceived>.
+
+Output the response in the same XML format as the input. Preserve the outer <response> wrapper, the <locationModificationResults> wrapper, and every direct <result> field from the input unless you are intentionally changing that field. Always include <locationChanged>, <alteration>, <itemsConsumed>, <itemsReceived>, and <timeTaken> inside <result>. If the location does not change, set <locationChanged>false</locationChanged> and keep <alteration> concise. Remember to change the contents of the <level> tag to "{{ success_or_failure }}" to reflect the actual degree of success or failure.

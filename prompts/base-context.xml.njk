@@ -513,7 +513,13 @@ The below context is an account of the current game state, including the setting
     {% endif %}
     <lighting>{{ worldTime.lighting }}</lighting>
   </worldTime>
-  {% if worldTime.hasLocalWeather %}
+  {% if worldTime.hasLocalWeather and worldTime.weatherScope == 'outside' %}
+  <weatherOutside>
+    <name>{{ worldTime.weatherName | default('Unspecified weather', true) }}</name>
+    <description>{{ worldTime.weatherDescription | default('', true) }}</description>
+  </weatherOutside>
+  <lightLevel>{{ worldTime.lightLevelDescription | default(worldTime.lighting, true) }}</lightLevel>
+  {% elseif worldTime.hasLocalWeather %}
   <weather>
     <name>{{ worldTime.weatherName | default('Unspecified weather', true) }}</name>
     <description>{{ worldTime.weatherDescription | default('', true) }}</description>

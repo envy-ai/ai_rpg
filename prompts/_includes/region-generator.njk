@@ -90,7 +90,7 @@ Very important: follow the instructions in &lt;writingStyleNotes&gt; and any ton
     <seasonWeather>      
       <seasonName><!-- name of season --></seasonName>
       <weatherType>
-        <name><!-- e.g., "Sunny", "Rainy", "Foggy", "Snowy", "Windy", "Overcast", etc. --></name>
+        <name><!-- e.g., "Clear", "Rainy", "Foggy", "Snowy", "Windy", "Overcast", etc. (make sure the weather doesn't infer a time of day; avoid things like "sunny" and use "clear" instead, because it probably can't be sunny at night)--></name>
         <description><!-- Brief (10 words or less) description of this weather type as it appears in this region --></description>
         <relativeFrequency><!-- Integer from 1 to 10 indicating how common this weather type is in this region --></relativeFrequency>
         <durationRange><!-- duration range using explicit durations on both sides, e.g. "30 minutes-2 hours", "01:00-03:30", or "2 hours-1 day" --></durationRange>
@@ -110,7 +110,7 @@ Very important: follow the instructions in &lt;writingStyleNotes&gt; and any ton
       <name>Concise, evocative location name</name>
       <description>Two-paragraph description emphasising sensory detail and interactive elements.</description>
       <shortDescription>IMPORTANT: One sentence summary of the location (do not repeat the name).</shortDescription>
-      <hasWeather>Boolean true/false indicating whether dynamic weather effects occur here; generally true for outdoors and false for indoors</hasWeather>
+      <hasWeather>yes/no/outside - Answer "yes" if dynamic weather effects occur here, "no" if they do not, or "outside" if the location is indoors but the weather is visible (such as through windows or the mouth of a cave, etc). Answer "no" if no outside weather effects are visible (no windows, deep in a cave, etc).</hasWeather>
       <controllingFaction><!-- Full faction name from the list or "None" --></controllingFaction>
       <relativeLevel>Integer from +0 to +3 relative to the region average</relativeLevel>
       <notesAboutExits>Brief explanation of which neighbouring locations this place connects to and why it makes sense.</notesAboutExits>

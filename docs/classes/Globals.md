@@ -28,6 +28,7 @@ Centralized static state and helpers used across the server. Provides access to 
   - `ensureWorldTimeInitialized({ settingName })`
   - `resetWorldTime({ settingName, calendarDefinition })`
   - `hydrateWorldTime({ worldTime, calendarDefinition, settingName })`
+  - `setCalendarDefinition(calendarDefinition)`
   - `getTotalWorldMinutes()`
   - `advanceTime(minutes, { source })`
   - `getTimeSegment(worldTime?)` / `getSeason(worldTime?)`
@@ -52,6 +53,9 @@ Centralized static state and helpers used across the server. Provides access to 
   so `ensureWorldTimeInitialized()` can safely return full time context.
 - Built-in calendar generation is Gregorian (no leap-year/day handling) and acts as
   fallback when LLM calendar generation fails.
+- `setCalendarDefinition(calendarDefinition)` validates and normalizes a replacement
+  calendar before assigning it, preserves the current minute-based `worldTime`, and
+  throws without mutating state when the calendar is invalid.
 - `getCalendarDate()` / `getWorldTimeContext()` include season descriptions and
   holiday context (name/description/month/day) when the current date matches a
   configured holiday.

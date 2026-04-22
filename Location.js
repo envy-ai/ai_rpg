@@ -50,6 +50,51 @@ class Location {
     return `location_${timestamp}_${random}`;
   }
 
+  static #normalizeWeatherExposure(value, fieldName = 'Location generationHints.hasWeather') {
+    if (value === null || value === undefined || value === '') {
+      return null;
+    }
+    if (typeof value === 'boolean') {
+      return value ? 'yes' : 'no';
+    }
+    if (typeof value === 'string') {
+      const lowered = value.trim().toLowerCase();
+      if (!lowered) {
+        return null;
+      }
+      if (['true', '1', 'yes'].includes(lowered)) {
+        return 'yes';
+      }
+      if (['false', '0', 'no'].includes(lowered)) {
+        return 'no';
+      }
+      if (lowered === 'outside') {
+        return 'outside';
+      }
+    }
+    throw new Error(`${fieldName} must be "yes", "no", "outside", true, false, or null.`);
+  }
+
+  static #normalizeStubMetadata(metadata = null) {
+    if (metadata === null || metadata === undefined) {
+      return null;
+    }
+    if (typeof metadata !== 'object' || Array.isArray(metadata)) {
+      throw new Error('Location stubMetadata must be an object or null.');
+    }
+
+    const normalized = { ...metadata };
+    for (const fieldName of ['hasWeather', 'locationHasWeather']) {
+      if (Object.prototype.hasOwnProperty.call(normalized, fieldName)) {
+        normalized[fieldName] = Location.#normalizeWeatherExposure(
+          normalized[fieldName],
+          `Location stubMetadata.${fieldName}`
+        );
+      }
+    }
+    return normalized;
+  }
+
   static #normalizeImageVariantEntry(entry, fallbackKey = null) {
     if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
       throw new Error('Location image variant entries must be objects.');
@@ -269,7 +314,9 @@ class Location {
     this.#id = id || Location.#generateId();
     this.#description = typeof description === 'string' ? description.trim() : null;
     const normalizedShortDescription = typeof shortDescription === 'string' ? shortDescription.trim() : null;
-    let resolvedStubMetadata = creatingStub && stubMetadata ? { ...stubMetadata } : creatingStub ? {} : null;
+    let resolvedStubMetadata = creatingStub && stubMetadata
+      ? Location.#normalizeStubMetadata(stubMetadata)
+      : creatingStub ? {} : null;
     let resolvedShortDescription = normalizedShortDescription;
     if (creatingStub && !resolvedShortDescription) {
       const stubShort = typeof resolvedStubMetadata?.stubShortDescription === 'string'
@@ -369,20 +416,6 @@ class Location {
 
     // Populate locationData with the text content of each child element
     const childNodes = Array.from(locationElem.childNodes);
-    const parseBooleanText = (rawValue, fieldName) => {
-      const lowered = String(rawValue || '').trim().toLowerCase();
-      if (!lowered) {
-        return null;
-      }
-      if (['true', '1', 'yes'].includes(lowered)) {
-        return true;
-      }
-      if (['false', '0', 'no'].includes(lowered)) {
-        return false;
-      }
-      throw new Error(`Invalid boolean value for ${fieldName}: "${rawValue}"`);
-    };
-
     for (const child of childNodes) {
       // Only process element nodes (nodeType 1)
       // <description> can contain HTML, so we take the full inner XML
@@ -400,7 +433,7 @@ class Location {
         } else if (child.tagName === 'numItems' || child.tagName === 'numScenery' || child.tagName === 'numNpcs' || child.tagName === 'numHostiles') {
           locationData[child.tagName] = parseInt(value, 0);
         } else if (child.tagName === 'hasWeather') {
-          locationData[child.tagName] = parseBooleanText(value, 'location.hasWeather');
+          locationData[child.tagName] = Location.#normalizeWeatherExposure(value, 'location.hasWeather');
         } else {
           locationData[child.tagName] = value;
         }
@@ -577,19 +610,11 @@ class Location {
         }
         return resolveHint(parsedValue);
       };
-      const resolveBooleanHint = (...values) => {
+      const resolveWeatherExposureHint = (...values) => {
         for (const value of values) {
-          if (typeof value === 'boolean') {
-            return value;
-          }
-          if (typeof value === 'string') {
-            const lowered = value.trim().toLowerCase();
-            if (['true', '1', 'yes'].includes(lowered)) {
-              return true;
-            }
-            if (['false', '0', 'no'].includes(lowered)) {
-              return false;
-            }
+          const normalized = Location.#normalizeWeatherExposure(value, 'location.hasWeather');
+          if (normalized !== null) {
+            return normalized;
           }
         }
         return null;
@@ -604,7 +629,7 @@ class Location {
           numScenery: resolveHint(locationData.numScenery, existingHints.numScenery, stubHints.numScenery),
           numNpcs: resolveHintPreserveExisting(locationData.numNpcs, existingHints.numNpcs, stubHints.numNpcs),
           numHostiles: resolveHintPreserveExisting(locationData.numHostiles, existingHints.numHostiles, stubHints.numHostiles),
-          hasWeather: resolveBooleanHint(locationData.hasWeather, existingHints.hasWeather, stubHints.hasWeather, stubHints.locationHasWeather)
+          hasWeather: resolveWeatherExposureHint(locationData.hasWeather, existingHints.hasWeather, stubHints.hasWeather, stubHints.locationHasWeather)
         },
         randomEvents: randomEventsProvided ? randomEvents : undefined,
         npcIds: existingLocation.npcIds,
@@ -673,7 +698,7 @@ class Location {
         numScenery: locationData.numScenery,
         numNpcs: locationData.numNpcs,
         numHostiles: locationData.numHostiles,
-        hasWeather: typeof locationData.hasWeather === 'boolean' ? locationData.hasWeather : null
+        hasWeather: locationData.hasWeather || null
       },
       randomEvents
     });
@@ -1125,7 +1150,7 @@ class Location {
   }
 
   set stubMetadata(metadata) {
-    this.#stubMetadata = metadata ? { ...metadata } : null;
+    this.#stubMetadata = metadata ? Location.#normalizeStubMetadata(metadata) : null;
     this.#lastUpdated = new Date();
   }
 
@@ -1284,6 +1309,7 @@ class Location {
       visited: this.#visited,
       lastVisitedTime: this.#lastVisitedTime,
       imageId: this.#imageId,
+      imageVariants: this.imageVariants,
       regionId: this.#regionId,
       controllingFactionId: this.#controllingFactionId,
       isVehicle: this.isVehicle,
@@ -1333,6 +1359,7 @@ class Location {
       shortDescription: this.#shortDescription,
       baseLevel: this.#baseLevel,
       imageId: this.#imageId,
+      imageVariants: this.imageVariants,
       visited: this.#visited,
       lastVisitedTime: this.#lastVisitedTime,
       exits: exits,
@@ -1345,6 +1372,7 @@ class Location {
       isStub: this.#isStub,
       hasGeneratedStubs: this.#hasGeneratedStubs,
       stubMetadata: this.#stubMetadata ? { ...this.#stubMetadata } : null,
+      generationHints: this.generationHints,
       npcIds: [...this.#npcIds],
       thingIds: [...this.#thingIds],
       randomEvents: this.randomEvents,
@@ -1728,31 +1756,12 @@ class Location {
       return Math.max(0, Math.min(20, Math.round(numeric)));
     };
 
-    const normalizeBoolean = (value) => {
-      if (value === null || value === undefined || value === '') {
-        return null;
-      }
-      if (typeof value === 'boolean') {
-        return value;
-      }
-      if (typeof value === 'string') {
-        const lowered = value.trim().toLowerCase();
-        if (['true', '1', 'yes'].includes(lowered)) {
-          return true;
-        }
-        if (['false', '0', 'no'].includes(lowered)) {
-          return false;
-        }
-      }
-      throw new Error('Location generationHints.hasWeather must be a boolean when provided.');
-    };
-
     return {
       numItems: normalize(hints.numItems),
       numScenery: normalize(hints.numScenery),
       numNpcs: normalize(hints.numNpcs),
       numHostiles: normalize(hints.numHostiles),
-      hasWeather: normalizeBoolean(hints.hasWeather)
+      hasWeather: Location.#normalizeWeatherExposure(hints.hasWeather)
     };
   }
 

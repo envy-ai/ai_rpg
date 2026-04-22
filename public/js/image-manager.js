@@ -68,6 +68,28 @@
       return requestPromise;
     }
 
+    ensureLocationVariant({ locationId, sourceImageId = null, force = false } = {}) {
+      if (!locationId || !sourceImageId) {
+        return Promise.resolve(null);
+      }
+
+      const key = this._buildKey('location-variant', `${locationId}:${sourceImageId}:${force ? 'force' : 'normal'}`);
+      if (this.pending.has(key)) {
+        return this.pending.get(key);
+      }
+
+      const requestPromise = this._requestLocationVariant({
+        locationId,
+        sourceImageId,
+        force
+      }).finally(() => {
+        this.pending.delete(key);
+      });
+
+      this.pending.set(key, requestPromise);
+      return requestPromise;
+    }
+
     async _requestImage({ entityType, entityId, existingImageId, force }) {
       const clientId = window.AIRPG_CLIENT_ID || null;
       const payload = {
@@ -142,6 +164,77 @@
         });
       }
 
+      return baseResult;
+    }
+
+    async _requestLocationVariant({ locationId, sourceImageId, force }) {
+      const clientId = window.AIRPG_CLIENT_ID || null;
+      const payload = {
+        locationId,
+        force: Boolean(force),
+        clientId
+      };
+
+      const response = await fetch('/api/images/location-variant/request', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok && response.status !== 202) {
+        const error = data?.error || `Location image variant request failed (${response.status})`;
+        this._dispatch('image:error', {
+          entityType: 'location-variant',
+          entityId: locationId,
+          error
+        });
+        throw new Error(error);
+      }
+
+      const baseResult = {
+        entityType: 'location-variant',
+        entityId: locationId,
+        locationId,
+        sourceImageId: data.sourceImageId || sourceImageId || null,
+        variantKey: data.variantKey || null,
+        conditions: data.conditions || null,
+        imageId: data.imageId || null,
+        imageUrl: data.imageId ? this._buildImageUrl(data.imageId) : null,
+        jobId: data.jobId || data.job?.jobId || null,
+        job: data.job || null,
+        skipped: Boolean(data.skipped),
+        existingJob: Boolean(data.existingJob),
+        reason: data.reason || null,
+        message: data.message || null
+      };
+
+      if (baseResult.imageId && !baseResult.jobId) {
+        const metadata = await this._fetchImageMetadata(baseResult.imageId).catch(() => null);
+        if (metadata?.metadata?.images?.[0]?.url) {
+          baseResult.imageUrl = metadata.metadata.images[0].url;
+        }
+        this._dispatch('image:updated', baseResult);
+        return baseResult;
+      }
+
+      if (baseResult.jobId) {
+        return this._trackJob(baseResult.jobId, {
+          entityType: 'location-variant',
+          entityId: locationId,
+          locationId,
+          sourceImageId: baseResult.sourceImageId,
+          variantKey: baseResult.variantKey,
+          conditions: baseResult.conditions
+        });
+      }
+
+      if (baseResult.skipped) {
+        this._dispatch('image:skipped', baseResult);
+      }
       return baseResult;
     }
 
@@ -278,6 +371,10 @@
       return {
         entityType,
         entityId,
+        locationId: payload.locationId || detail.locationId || (entityType === 'location-variant' ? entityId : null),
+        sourceImageId: payload.sourceImageId || detail.sourceImageId || result.metadata?.sourceImageId || null,
+        variantKey: payload.variantKey || detail.variantKey || result.metadata?.variantKey || null,
+        conditions: payload.conditions || detail.conditions || result.metadata?.conditions || null,
         imageId,
         imageUrl,
         jobId: detail.jobId,

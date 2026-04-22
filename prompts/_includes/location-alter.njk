@@ -28,8 +28,12 @@ A location (see existingLocation above) was permanently altered in the following
 
 Guidelines:
 - Update the description to reflect environmental, structural, or narrative changes resulting from the alteration.
+{% if preserveBaseLevel %}
+- Preserve the location's base level exactly. Return <baseLevel>{{ locationSeed.baseLevel }}</baseLevel> even if the alteration changes mood, cleanliness, or condition.
+{% else %}
 - Adjust the location's base level (1-20) if the danger, difficulty, or tone shifted.
-- Rename the location only when the alteration meaningfully changes its identity; otherwise keep the original name.
+{% endif %}
+- Location renaming is optional. Rename the location only when the alteration meaningfully changes its identity; otherwise keep the original name.
 - Preserve continuity with the surrounding region, existing lore, and prior player knowledge while making the change feel significant.
 
 Return the location in the following format:

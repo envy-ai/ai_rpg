@@ -5,7 +5,7 @@ Centralized client for LLM chat completions with concurrency limits, streaming p
 
 ## Internal Class: Semaphore
 - `constructor(maxConcurrent)`: sets concurrency limit.
-- `acquire()` / `release()`: manage async access.
+- `acquire({ background? })` / `release(permit)`: manage async access. Background acquisitions are lower priority than foreground acquisitions.
 - `setLimit(newLimit)` / `dispatch()`: adjust and drain queued acquisitions.
 
 ## Key State (Static)
@@ -26,6 +26,7 @@ Centralized client for LLM chat completions with concurrency limits, streaming p
 - `getConfigurationErrors(aiConfigOverride)`: returns backend-aware config validation errors.
 - `isConfigured(aiConfigOverride)`: true when the selected backend has the required config.
 - `getMaxConcurrent(aiConfigOverride)`: reads `max_concurrent_requests`.
+- Background requests marked with `runInBackground: true` use the same per-backend semaphore, but queued foreground requests are dispatched first. When `max_concurrent_requests > 1`, background requests reserve one configured slot for foreground work instead of filling every slot.
 - `resetForcedOutputState()`: clears cached forced-output fixture data/counters.
 - `writeLogFile({ prefix, metadataLabel, payload, serializeJson, onFailureMessage, error, append })`: writes error logs.
 - `formatMessagesForErrorLog(messages)`: formats messages into a readable log.
@@ -58,6 +59,7 @@ Centralized client for LLM chat completions with concurrency limits, streaming p
 - `chatCompletion(...)` is now backend-aware: the default `openai_compatible` path still POSTs to `/chat/completions`, while `codex_cli_bridge` delegates transport to `CodexBridgeClient` and then reuses the same response normalization, retry, prompt logging, and XML/regex validation flow.
 - Streaming/progress updates are broadcast through `Globals.realtimeHub` when available, including per-prompt `promptText` content for the request payload and `previewText` content for the currently streamed textual response or backend status text. High-frequency streamed received-count/preview broadcasts are coalesced so active `prompt_progress` client updates are sent at most once every 500 ms, with final/clear events still emitted immediately. OpenAI-compatible streams count received bytes; Codex bridge streams count decoded assistant characters manually from each preview delta or final replacement rather than trusting raw Codex/stdout counts.
 - Prompt-progress tracking no longer depends on an interactive TTY alone; it stays active whenever the realtime hub is available, so the browser prompt-progress popup can still work when the server process is running non-interactively.
+- `runInBackground: true` still allows a request to run through normal retry/logging/progress handling, but it is labeled as background for progress display and receives lower semaphore priority so gameplay foreground prompts can start ahead of queued background work.
 - Streamed tool calls are allowed: empty textual content is accepted when valid tool calls are present, and regex/XML output validation is skipped for those tool-call turns.
 - Retries are built in; stream timeouts are incrementally increased on retry.
 - Manual retries from prompt-progress UI do not consume configured automatic retry attempts for the prompt call.

@@ -424,6 +424,32 @@ imagegen:
 - When provided, override values must be between `64` and `4096`.
 - If neither the per-type override nor `default_settings.image` provides a usable width/height, startup validation fails instead of silently hardcoding a fallback size.
 
+## Location weather/lighting image variants
+
+`imagegen.location_variant_settings` controls ComfyUI-only image-to-image variants of existing location images for the current world-time lighting and local weather.
+
+```yaml
+imagegen:
+  location_variant_settings:
+    api_template: flux2_klein_edit.json.njk
+    image:
+      width: null
+      height: null
+    sampling:
+      steps: 20
+      denoise: 0.45
+      cfg: 6
+      sampler: dpmpp_2m
+      scheduler: karras
+```
+
+- `api_template` is required when the ComfyUI engine is active. The default img2img template is `flux2_klein_edit.json.njk`. The template must exist under `imagegen/`; missing templates fail configuration validation and location-variant requests return an explicit skipped reason.
+- The default `flux2_klein_edit.json.njk` workflow detects width and height from the source image and does not use configured dimensions, so edited variants should return at the original resolution. It also routes the rendered edit prompt through a `Text to Console` node labeled `Final Prompt`, matching the current non-edit Qwen workflows' ComfyUI-console prompt visibility.
+- `image.width` / `height` are optional for custom variant workflows that reference `{{ image.width }}` or `{{ image.height }}`. `null` or omission falls back to the source image metadata, then `location_settings.image`, then `default_settings.image`.
+- `sampling.steps` falls back to `location_settings.sampling.steps`, then `default_settings.sampling.steps`.
+- `denoise`, `cfg`, `sampler`, and `scheduler` are passed to the variant workflow template.
+- V1 does not support OpenAI or NanoGPT editing. Non-ComfyUI engines skip `/api/images/location-variant/request` with `unsupported-engine`.
+
 ## Slop remover base attempts
 
 `slop_remover_base_attempts` controls the starting number of rewrite attempts for the slop-remover pass.

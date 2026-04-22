@@ -197,6 +197,19 @@ imagegen:
     image:
       width: 1280
       height: 720
+  location_variant_settings:
+    # ComfyUI-only image-to-image workflow used for visible weather/lighting variants.
+    api_template: flux2_klein_edit.json.njk
+    image:
+      # Falls back to the source image metadata, location image settings, then defaults.
+      width: null
+      height: null
+    sampling:
+      steps: 20
+      denoise: 0.45
+      cfg: 6
+      sampler: dpmpp_2m
+      scheduler: karras
 
   #Additional user instructions to include in the image prompt generation
   image_prompt_instructions:

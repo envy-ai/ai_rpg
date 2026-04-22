@@ -4,7 +4,7 @@
 Represents a game location, including description, exits, NPCs, items/scenery, and status effects. Supports stub locations that can be promoted to fully generated locations.
 
 ## Key State
-- Core fields: `#id`, `#name`, `#description`, `#shortDescription`, `#baseLevel`, `#imageId`.
+- Core fields: `#id`, `#name`, `#description`, `#shortDescription`, `#baseLevel`, `#imageId`, `#imageVariants`.
 - Region linkage: `#regionId`, `#controllingFactionId`.
 - Vehicle state: `#vehicleInfo` (`VehicleInfo` or `null`).
 - Exits: `#exits` (Map of direction -> LocationExit).
@@ -31,7 +31,7 @@ Represents a game location, including description, exits, NPCs, items/scenery, a
 ## Accessors
 - `regionId` (get/set) and `region` (get). Reassigning `regionId` now keeps region membership indexes in sync by removing the location from the old region, adding it to the new region, and repairing the old region's `entranceLocationId` if it pointed at the moved location. If the previous `regionId` is already stale/missing, reassignment logs a warning and still repairs the location into the new live region instead of failing.
 - `controllingFactionId` (get/set).
-- Basic fields: `id`, `name`, `description`, `shortDescription`, `baseLevel`, `imageId`, `createdAt`, `lastUpdated`.
+- Basic fields: `id`, `name`, `description`, `shortDescription`, `baseLevel`, `imageId`, `imageVariants`, `createdAt`, `lastUpdated`.
 - Visit tracking: `visited` (get/set), `lastVisitedTime` (get/set, minutes), `hoursSinceLastVisit()` (legacy name; returns elapsed minutes).
 - Stub metadata: `isStub`, `stubMetadata` (get/set), `hasGeneratedStubs` (get/set).
 - Vehicle metadata: `isVehicle` (derived get), `vehicleInfo` (get/set; serialized object or `null`).
@@ -43,8 +43,9 @@ Represents a game location, including description, exits, NPCs, items/scenery, a
 ## Instance API
 - Stub lifecycle: `promoteFromStub(...)`, `markStubsGenerated()`, `resetStubGeneration()`.
 - Visit tracking: `markVisited(visitedAt?)` marks the location visited and, when a minute timestamp is available, updates `lastVisitedTime`.
+- Image variants: `getImageVariant(variantKey)`, `setImageVariant(variantKey, entry)`, `removeImageVariant(variantKey)`, and `clearImageVariants({ sourceImageId? })` manage persisted display-only image variants such as weather/lighting renders.
 - Exit management: `addExit(direction, exit)`, `removeExit(direction)`, `getExit(direction)`, `getAvailableDirections()`, `hasExit(direction)`, `clearExits()`.
-- Summaries: `getSummary()`, `getDetails()`, `toJSON()` now include both `visited` and `lastVisitedTime`.
+- Summaries: `getSummary()`, `getDetails()`, `toJSON()` now include `visited`, `lastVisitedTime`, serialized `imageVariants`, and `generationHints`.
 - Random events: `addRandomEvent(event)`, `removeRandomEvent(event)`.
 - NPC helpers: `getNPCIds()`, `getNPCs()`, `getNPCNames()`, `addNpcId(id)`, `removeNpcId(id)`, `setNpcIds(ids)`, `clearNpcIds()`.
 - Thing helpers: `addThingId(id)`, `removeThingId(id)`, `setThingIds(ids)`, `clearThingIds()`.
@@ -54,6 +55,7 @@ Represents a game location, including description, exits, NPCs, items/scenery, a
 ## Private/Static Helpers
 - `#generateId()`.
 - `#normalizeStatusEffects(effects)`.
+- `#normalizeImageVariantEntry(entry, fallbackKey)` / `#normalizeImageVariants(imageVariants)` / `#serializeImageVariants(variants)`.
 - `#normalizeRandomEvents(events)`.
 - `#normalizeGenerationHints(hints)`.
 - `#normalizeVehicleInfo(vehicleInfo)`.
@@ -70,5 +72,6 @@ Represents a game location, including description, exits, NPCs, items/scenery, a
 - Status effects are stored as `StatusEffect` instances; getters return JSON snapshots.
 - Movement/integrity repair paths can safely reapply the same `regionId` to restore missing region membership, and can also recover a location from a stale missing previous region during explicit reconciliation.
 - Stub expansion prompts include authoritative stub fields (description/shortDescription, relative/base level, controlling faction, numNpcs/numHostiles). When present, these fields are omitted from the LLM output and filled from the stub during parsing; if the LLM provides a different value, the server warns and overrides with the stub values. For description/shortDescription, if the LLM output starts with the stub text (after whitespace normalization), the expanded text is accepted instead of being overridden.
-- `generationHints` now optionally carries `hasWeather` (boolean/null) so outdoor/indoor weather applicability can persist through stub promotion and save/load.
+- `generationHints` now optionally carries `hasWeather` as `yes`, `no`, `outside`, or `null` so outdoor/indoor weather applicability can persist through stub promotion, API responses, and save/load. Stub metadata fields `hasWeather` and `locationHasWeather` use the same normalization, so legacy saved stub booleans load as `yes`/`no`. Legacy boolean values are accepted on hydration/prompt parsing and normalized to `yes`/`no`. `outside` means the location is sheltered but exterior weather remains visible, such as through windows or an open view. The main location edit modal can set this hint to exposed, outside-visible, sheltered, or automatic.
 - Locations can now act as vehicles by setting `vehicleInfo`; `isVehicle` is derived from `vehicleInfo !== null`. `getSummary()`/`getDetails()`/`toJSON()` include both `isVehicle` and serialized `vehicleInfo`.
+- `imageVariants` stores cached presentation-layer image ids keyed by source base image plus normalized lighting/weather. These variants never replace `imageId`; callers clear them when a visual location edit or base image regeneration changes the authoritative location image.

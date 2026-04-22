@@ -65,7 +65,9 @@ Represents a region containing multiple locations, with metadata like average le
 - Region stub-location parsing in `server.js` uses the same exit shape and preserves the first parsed travel time for both directions when reverse exits are synthesized.
 - `parentHierarchy` throws on circular references to surface data errors early.
 - Location blueprints now include both a two-paragraph `<description>` and one-sentence `<shortDescription>`; these are carried into stub metadata as `stubDescription`/`stubShortDescription`, including region stub expansions.
-- Region XML weather definitions (`<weather>`, `<seasonWeather>`, `<weatherType>`) are persisted and can drive dynamic per-season weather selection over elapsed world time.
+- Location blueprints can include `<hasWeather>yes</hasWeather>`, `<hasWeather>no</hasWeather>`, or `<hasWeather>outside</hasWeather>`; legacy `true`/`false` values are accepted and normalized to `yes`/`no`. `outside` keeps current regional weather visible in prompts without treating the location as directly weather-exposed.
+- Region XML weather definitions (`<weather>`, `<seasonWeather>`, `<weatherType>`) are persisted and can drive dynamic per-season weather selection over elapsed world time. If a region has no dynamic weather, `resolveCurrentWeather(...)` inherits weather from the nearest parent region with dynamic weather before returning the sheltered/no-active-weather fallback.
 - Weather duration data is minute-canonical (`minMinutes`/`maxMinutes`, `durationMinutes`, `nextChangeMinutes`) with legacy hour fields accepted during load normalization.
 - If a weather type has an invalid duration string, Region logs a warning, skips that weather-type entry, and continues parsing remaining entries.
+- Region API payloads include `weather` and `weatherState`, and the location context menu's weather editor updates `Region.weather`. Setting `weather` resets `weatherState`, so the next weather resolution starts from the new definition.
 - Regions can now be flagged as vehicles by storing `vehicleInfo`; `isVehicle` is derived from `vehicleInfo !== null`, and `toJSON()` includes both fields for persistence/API responses.

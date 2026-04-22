@@ -59,19 +59,54 @@ Request:
   - `name` (string or null, optional)
   - `shortDescription` (string or null, optional)
   - `controllingFactionId` (string or null, optional)
+  - `hasWeather` (`"yes"`, `"no"`, `"outside"`, boolean, or null, optional; stored as normalized `generationHints.hasWeather`)
   - `isVehicle` (boolean, optional)
   - `vehicleInfo` (object or null, optional)
   - `statusEffects` (array or null, optional)
 
 Responses:
-- 200: `{ success: true, message, location: LocationResponse, imageCleared: boolean, changes: { name, description, shortDescription, level, vehicle } }`
+- 200: `{ success: true, message, location: LocationResponse, imageCleared: boolean, worldTime?, changes: { name, description, shortDescription, level, vehicle, hasWeather } }`
 - 400/404/500: `{ success: false, error }`
 
 Notes:
 - `controllingFactionId` must reference an existing faction id or be `null` to clear.
+- `hasWeather="yes"` marks the location as weather-exposed, `"no"` marks it as sheltered/no local weather, `"outside"` means exterior weather is visible from a sheltered location, and `null` returns to automatic region/weather behavior. Legacy booleans are accepted and normalized to `yes`/`no`. Changing this hint clears cached weather/lighting image variants but does not replace the base `location.imageId`.
 - Vehicle edits use `isVehicle` + `vehicleInfo` together:
   - `isVehicle=false` clears vehicle info.
   - `isVehicle=true` requires valid vehicle data (`vehicleInfo` object or existing values when omitted, including optional `icon`).
+
+## POST /api/locations/:id/modify
+
+Runs the current-location `Modify Location` crafting flow. The endpoint uses selected player-inventory materials/tools and freeform notes to run dedicated plausibility and success-degree prompts, then applies any accepted physical/environmental change through the existing `alter_location` event path with location level preservation enabled. Outcomes may also grant newly uncovered portable items to the player when those items are byproducts of the alteration, such as a coin found under repaired flooring.
+
+Request:
+- Path: `id` must be the active player's current location id.
+- Body: `{ slots: Array<{ thingId, slotIndex? }>, notes?, noProse?, clientId? }`
+  - At least one selected slot item is required.
+  - Each selected item must be in the active player's inventory and must not be equipped.
+  - `notes` may include an inline `<N>` die-roll override; the token is stripped before prompt rendering.
+  - `noProse=true` skips player-action prose and event-summary chat entries, but still applies mutation, material consumption, received-item grants, time advancement, need/status ticking, vehicle-arrival processing, and quest checks.
+
+Responses:
+- 200: `{ success: true, location, outcome, resultLevel, plausibility, modification, consumedThingIds, consumedThingNames, receivedThingIds, receivedThingNames, narrative, unmatchedConsumedNames, timeTakenMinutes, timeProgress, worldTime, imageCleared }`
+  - `modification`: `{ locationChanged, alteration, alterationSummary }`.
+  - `receivedThingIds` / `receivedThingNames` list generated inventory items granted to the player by the modification outcome.
+  - `narrative`: `{ description, otherEffect }`.
+- 400: `{ success: false, error }`
+  - No active player.
+  - Target location is not the player's current location.
+  - No selected slots.
+  - Selected item is missing, not in player inventory, equipped, or an attempted consumed container is not empty.
+  - The plausibility prompt resolves to an implausible action.
+- 404: `{ success: false, error }` (location not found)
+- 500: `{ success: false, error }` for prompt rendering/parsing failures, unmatched consumed item names, failed `alter_location` mutation, or other server errors.
+
+Notes:
+- The base location level is preserved for this UI flow, even if the alteration prompt rewrites the name, description, or short description.
+- If the selected outcome sets `locationChanged=true`, the endpoint clears the location's base image, weather/lighting image variants, and pending base-image job tracking so stale images do not reattach after the text change.
+- Failed and critical-failure outcomes may still alter the location when the resolved result describes a botched, incomplete, damaging, or otherwise real environmental change.
+- Consumed materials are matched exactly against selected slot item names; unknown consumed names fail loudly rather than being ignored.
+- Received items must be newly found or obtained portable items. They are generated into the active player's inventory and must not exactly match selected input names; selected tools/materials that survive use should simply be omitted from `itemsConsumed` rather than listed as received.
 
 ## DELETE /api/locations/:id
 
