@@ -22,6 +22,7 @@ class Location {
   #exits;
   #visited;
   #imageId;
+  #imageVariants;
   #createdAt;
   #lastUpdated;
   #isStub;
@@ -47,6 +48,97 @@ class Location {
     const timestamp = Date.now();
     const random = crypto.randomBytes(6).toString('hex');
     return `location_${timestamp}_${random}`;
+  }
+
+  static #normalizeImageVariantEntry(entry, fallbackKey = null) {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+      throw new Error('Location image variant entries must be objects.');
+    }
+
+    const variantKey = typeof entry.variantKey === 'string' && entry.variantKey.trim()
+      ? entry.variantKey.trim()
+      : (typeof fallbackKey === 'string' && fallbackKey.trim() ? fallbackKey.trim() : '');
+    if (!variantKey) {
+      throw new Error('Location image variant entry is missing variantKey.');
+    }
+
+    const sourceImageId = typeof entry.sourceImageId === 'string' && entry.sourceImageId.trim()
+      ? entry.sourceImageId.trim()
+      : '';
+    if (!sourceImageId) {
+      throw new Error(`Location image variant "${variantKey}" is missing sourceImageId.`);
+    }
+
+    const normalizeOptionalString = (value, fieldName) => {
+      if (value === null || value === undefined) {
+        return null;
+      }
+      if (typeof value !== 'string') {
+        throw new Error(`Location image variant "${variantKey}" ${fieldName} must be a string or null.`);
+      }
+      const trimmed = value.trim();
+      return trimmed || null;
+    };
+
+    const conditions = entry.conditions === null || entry.conditions === undefined
+      ? null
+      : (typeof entry.conditions === 'object' && !Array.isArray(entry.conditions)
+        ? JSON.parse(JSON.stringify(entry.conditions))
+        : null);
+    if (entry.conditions !== null && entry.conditions !== undefined && !conditions) {
+      throw new Error(`Location image variant "${variantKey}" conditions must be an object or null.`);
+    }
+
+    const createdAt = normalizeOptionalString(entry.createdAt, 'createdAt') || new Date().toISOString();
+    const updatedAt = normalizeOptionalString(entry.updatedAt, 'updatedAt') || createdAt;
+
+    return {
+      variantKey,
+      sourceImageId,
+      imageId: normalizeOptionalString(entry.imageId, 'imageId'),
+      jobId: normalizeOptionalString(entry.jobId, 'jobId'),
+      conditions,
+      prompt: normalizeOptionalString(entry.prompt, 'prompt'),
+      createdAt,
+      updatedAt,
+      completedAt: normalizeOptionalString(entry.completedAt, 'completedAt')
+    };
+  }
+
+  static #normalizeImageVariants(imageVariants = null) {
+    const variants = new Map();
+    if (imageVariants === null || imageVariants === undefined) {
+      return variants;
+    }
+
+    const entries = imageVariants instanceof Map
+      ? Array.from(imageVariants.entries())
+      : (typeof imageVariants === 'object' && !Array.isArray(imageVariants)
+        ? Object.entries(imageVariants)
+        : null);
+    if (!entries) {
+      throw new Error('Location imageVariants must be an object, Map, or null.');
+    }
+
+    for (const [key, entry] of entries) {
+      const normalized = Location.#normalizeImageVariantEntry(entry, key);
+      variants.set(normalized.variantKey, normalized);
+    }
+    return variants;
+  }
+
+  static #serializeImageVariants(variants) {
+    const serialized = {};
+    if (!(variants instanceof Map)) {
+      return serialized;
+    }
+    for (const [key, entry] of variants.entries()) {
+      if (!entry || typeof entry !== 'object') {
+        continue;
+      }
+      serialized[key] = JSON.parse(JSON.stringify(entry));
+    }
+    return serialized;
   }
 
   static #resolveLocationReference(locationOrId, { fieldName = 'location' } = {}) {
@@ -139,7 +231,7 @@ class Location {
    * @param {string} [options.id] - Custom ID (if not provided, one will be generated)
    * @param {string} [options.imageId] - Image ID for generated location scene (defaults to null)
    */
-  constructor({ description, shortDescription = null, baseLevel = 1, id = null, imageId = null, name = null, isStub = false, stubMetadata = null, hasGeneratedStubs = false, statusEffects = [], npcIds = [], thingIds = [], generationHints = null, randomEvents = [], regionId = null, controllingFactionId = null, vehicleInfo = null, checkRegionId = true, visited = false, lastVisitedTime = null, characterConcepts = [], enemyConcepts = [] } = {}) {
+  constructor({ description, shortDescription = null, baseLevel = 1, id = null, imageId = null, imageVariants = null, name = null, isStub = false, stubMetadata = null, hasGeneratedStubs = false, statusEffects = [], npcIds = [], thingIds = [], generationHints = null, randomEvents = [], regionId = null, controllingFactionId = null, vehicleInfo = null, checkRegionId = true, visited = false, lastVisitedTime = null, characterConcepts = [], enemyConcepts = [] } = {}) {
     const creatingStub = Boolean(isStub);
 
     if (!creatingStub) {
@@ -204,6 +296,7 @@ class Location {
     this.#baseLevel = creatingStub ? (typeof baseLevel === 'number' ? Math.floor(baseLevel) : null) : Math.floor(baseLevel);
     this.#exits = new Map(); // Map of direction -> LocationExit
     this.#imageId = imageId;
+    this.#imageVariants = Location.#normalizeImageVariants(imageVariants);
     this.#createdAt = new Date();
     this.#lastUpdated = this.#createdAt;
     this.#isStub = creatingStub;
@@ -866,6 +959,68 @@ class Location {
 
   get imageId() {
     return this.#imageId;
+  }
+
+  get imageVariants() {
+    return Location.#serializeImageVariants(this.#imageVariants);
+  }
+
+  getImageVariant(variantKey) {
+    const normalizedKey = typeof variantKey === 'string' ? variantKey.trim() : '';
+    if (!normalizedKey) {
+      return null;
+    }
+    const entry = this.#imageVariants.get(normalizedKey) || null;
+    return entry ? JSON.parse(JSON.stringify(entry)) : null;
+  }
+
+  setImageVariant(variantKey, entry) {
+    const normalizedKey = typeof variantKey === 'string' ? variantKey.trim() : '';
+    if (!normalizedKey) {
+      throw new Error('Location image variant key must be a non-empty string.');
+    }
+    const normalizedEntry = Location.#normalizeImageVariantEntry({
+      ...(entry || {}),
+      variantKey: entry?.variantKey || normalizedKey
+    }, normalizedKey);
+    if (normalizedEntry.variantKey !== normalizedKey) {
+      throw new Error(`Location image variant key mismatch: expected "${normalizedKey}", got "${normalizedEntry.variantKey}".`);
+    }
+    this.#imageVariants.set(normalizedKey, normalizedEntry);
+    this.#lastUpdated = new Date();
+    return JSON.parse(JSON.stringify(normalizedEntry));
+  }
+
+  removeImageVariant(variantKey) {
+    const normalizedKey = typeof variantKey === 'string' ? variantKey.trim() : '';
+    if (!normalizedKey) {
+      return null;
+    }
+    const existing = this.#imageVariants.get(normalizedKey) || null;
+    if (!existing) {
+      return null;
+    }
+    this.#imageVariants.delete(normalizedKey);
+    this.#lastUpdated = new Date();
+    return JSON.parse(JSON.stringify(existing));
+  }
+
+  clearImageVariants({ sourceImageId = null } = {}) {
+    const sourceFilter = typeof sourceImageId === 'string' && sourceImageId.trim()
+      ? sourceImageId.trim()
+      : null;
+    const removed = [];
+    for (const [key, entry] of this.#imageVariants.entries()) {
+      if (sourceFilter && entry?.sourceImageId !== sourceFilter) {
+        continue;
+      }
+      removed.push(JSON.parse(JSON.stringify(entry)));
+      this.#imageVariants.delete(key);
+    }
+    if (removed.length) {
+      this.#lastUpdated = new Date();
+    }
+    return removed;
   }
 
   get lastUpdated() {

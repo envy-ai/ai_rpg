@@ -138,7 +138,7 @@ const EVENT_PROMPT_ORDER = [
         },
         {
             key: "npc_arrival_departure",
-            prompt: `Did any animate entities (NPCs, animals, monsters, robots, or anything else capable of moving on its own) arrive at this location from elsewhere? If so, list the full names of those entities as seen in the location context (capitalized as Proper Nouns) separated by vertical bars. Use the format: "[name] → arrived". Otherwise, answer N/A.`,
+            prompt: `Did any animate entities (NPCs, animals, monsters, robots, or anything else capable of moving on its own) arrive at this location from elsewhere or otherwise newly appear on the scene (summoned, etc)? If so, list the full names of those entities as seen in the location context (capitalized as Proper Nouns) separated by vertical bars. Use the format: "[name] → arrived". Otherwise, answer N/A.`,
             postProcess: (entry) => ({
                 ...entry,
                 action: entry?.action || "arrived",

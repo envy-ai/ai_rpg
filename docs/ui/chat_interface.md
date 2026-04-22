@@ -179,10 +179,10 @@ History window note:
 
 ## LLM prompt modals (immediate close)
 
-LLM-backed modal submits close immediately (no visible waiting state); errors surface via `alert()` after the modal closes. Most listed flows keep an internal in-flight guard, while Add NPC intentionally allows concurrent submits.
+LLM-backed modal submits close immediately (no visible waiting state); errors surface via `alert()` after the modal closes. Most listed flows keep an internal in-flight guard, while Add NPC and Create Item/Create Scenery intentionally allow concurrent submits.
 
 - `#addNpcModal` (adds an NPC via `/api/locations/:id/npcs`; supports concurrent submissions when the modal is reopened during an in-flight request).
-- `#thingEditModal` create mode (adds item/scenery via `/api/locations/:id/things`; name is optional and can be generated).
+- `#thingEditModal` create mode (adds item/scenery via `/api/locations/:id/things`; name is optional and can be generated; submit closes immediately and allows additional create prompts while prior item/scenery creation is still running).
 - `#newExitModal` (creates/edits exits via `/api/locations/:id/exits`, including a travel-time field that accepts the shared duration syntax such as `1m`, `1h10m`, or `2 hours`).
 - `#craftingModal` (crafting/processing via `/api/craft`, including a no-prose submit path for craft/process, with notes placeholders that mention `<N>` roll override support).
   - The left-side player inventory list in this modal now uses the same shared thing-list renderer as the main inventory and location panels, including per-panel `Classic`/`Table`/`Grid` views, search/slot/equipment filters, and the shared stable sort popup, with narrow panels collapsing the filter controls behind the shared icon-only filter toggle.

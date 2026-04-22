@@ -4029,17 +4029,157 @@ module.exports = function registerApiRoutes(scope) {
             return parsedMinutes > 0 ? parsedMinutes : MIN_CRAFT_TIME_ADVANCE_MINUTES;
         }
 
-        async function parseCraftingResultsResponse(xmlContent) {
+        const CRAFT_RESULT_BASE_FIELD_EXCLUDES = new Set(['level']);
+        const CRAFT_RESULT_OUTPUT_WRAPPERS = new Set(['itemscrafted', 'itemsrecovered']);
+
+        function getXmlElementChildren(node) {
+            return Array.from(node?.childNodes || [])
+                .filter(child => child && child.nodeType === 1);
+        }
+
+        function getXmlNodeNameKey(node) {
+            return String(node?.nodeName || '').trim().toLowerCase();
+        }
+
+        function findDirectXmlChildren(node, tagNameKey) {
+            const normalizedTag = typeof tagNameKey === 'string'
+                ? tagNameKey.trim().toLowerCase()
+                : '';
+            if (!node || !normalizedTag) {
+                return [];
+            }
+            return getXmlElementChildren(node)
+                .filter(child => getXmlNodeNameKey(child) === normalizedTag);
+        }
+
+        function cloneXmlNodeForTarget(node, targetNode) {
+            if (!node || !targetNode) {
+                return null;
+            }
+            const ownerDocument = targetNode.ownerDocument || null;
+            if (ownerDocument && typeof ownerDocument.importNode === 'function') {
+                return ownerDocument.importNode(node, true);
+            }
+            return typeof node.cloneNode === 'function' ? node.cloneNode(true) : null;
+        }
+
+        function appendMissingDirectXmlChildren(targetNode, fallbackNode, {
+            excludedTags = null,
+            skipMissingChild = null
+        } = {}) {
+            if (!targetNode || !fallbackNode) {
+                return;
+            }
+            getXmlElementChildren(fallbackNode).forEach(fallbackChild => {
+                const tagNameKey = getXmlNodeNameKey(fallbackChild);
+                if (!tagNameKey || excludedTags?.has(tagNameKey)) {
+                    return;
+                }
+                if (findDirectXmlChildren(targetNode, tagNameKey).length > 0) {
+                    return;
+                }
+                if (typeof skipMissingChild === 'function' && skipMissingChild(fallbackChild)) {
+                    return;
+                }
+                const clonedChild = cloneXmlNodeForTarget(fallbackChild, targetNode);
+                if (clonedChild) {
+                    targetNode.appendChild(clonedChild);
+                }
+            });
+        }
+
+        function findCraftResultParentNode(doc) {
+            return doc?.getElementsByTagName('craftingResults')[0]
+                || doc?.getElementsByTagName('salvageResults')[0]
+                || doc?.getElementsByTagName('harvestResults')[0]
+                || null;
+        }
+
+        function getCraftResultLevel(resultNode) {
+            const levelNode = resultNode?.getElementsByTagName('level')[0] || null;
+            return levelNode && typeof levelNode.textContent === 'string'
+                ? levelNode.textContent.trim().toLowerCase()
+                : '';
+        }
+
+        function buildCraftResultFallbacks(baseOutcomeXml) {
+            if (!baseOutcomeXml || typeof baseOutcomeXml !== 'string' || !baseOutcomeXml.trim()) {
+                return null;
+            }
+
+            const doc = Utils.parseXmlDocument(sanitizeForXml(baseOutcomeXml), 'text/xml');
+            const parent = findCraftResultParentNode(doc);
+            if (!parent) {
+                throw new Error('Base crafting outcome XML is missing a craftingResults, salvageResults, or harvestResults parent node.');
+            }
+
+            const resultNodes = Array.from(parent.getElementsByTagName('result'));
+            if (!resultNodes.length) {
+                throw new Error('Base crafting outcome XML is missing <result> nodes.');
+            }
+
+            const byLevel = new Map();
+            resultNodes.forEach(resultNode => {
+                const level = getCraftResultLevel(resultNode);
+                if (level) {
+                    byLevel.set(level, resultNode);
+                }
+            });
+
+            return {
+                byLevel,
+                success: byLevel.get('success') || null,
+                first: resultNodes[0] || null
+            };
+        }
+
+        function resolveCraftResultFallbackNode(level, fallbackIndex) {
+            if (!fallbackIndex) {
+                return null;
+            }
+            return fallbackIndex.byLevel.get(level)
+                || fallbackIndex.success
+                || fallbackIndex.first
+                || null;
+        }
+
+        function mergeMissingCraftItemFields(resultNode, fallbackResultNode) {
+            const fallbackItems = Array.from(fallbackResultNode?.getElementsByTagName('item') || []);
+            if (!fallbackItems.length) {
+                return;
+            }
+
+            Array.from(resultNode?.getElementsByTagName('item') || []).forEach((itemNode, index) => {
+                const fallbackItem = fallbackItems[index] || fallbackItems[0] || null;
+                appendMissingDirectXmlChildren(itemNode, fallbackItem);
+            });
+        }
+
+        function mergeMissingCraftResultFields(resultNode, fallbackResultNode) {
+            if (!resultNode || !fallbackResultNode) {
+                return;
+            }
+
+            const resultAlreadyIncludesItem = resultNode.getElementsByTagName('item').length > 0;
+            appendMissingDirectXmlChildren(resultNode, fallbackResultNode, {
+                excludedTags: CRAFT_RESULT_BASE_FIELD_EXCLUDES,
+                skipMissingChild: (fallbackChild) => {
+                    const tagNameKey = getXmlNodeNameKey(fallbackChild);
+                    return resultAlreadyIncludesItem && CRAFT_RESULT_OUTPUT_WRAPPERS.has(tagNameKey);
+                }
+            });
+            mergeMissingCraftItemFields(resultNode, fallbackResultNode);
+        }
+
+        async function parseCraftingResultsResponse(xmlContent, { baseOutcomeXml = null } = {}) {
             const results = new Map();
             if (!xmlContent || typeof xmlContent !== 'string') {
                 return results;
             }
             try {
                 const doc = Utils.parseXmlDocument(sanitizeForXml(xmlContent), 'text/xml');
-                const parent = doc.getElementsByTagName('craftingResults')[0]
-                    || doc.getElementsByTagName('salvageResults')[0]
-                    || doc.getElementsByTagName('harvestResults')[0]
-                    || null;
+                const fallbackIndex = buildCraftResultFallbacks(baseOutcomeXml);
+                const parent = findCraftResultParentNode(doc);
                 if (!parent) {
                     console.warn('No craftingResults, salvageResults, or harvestResults parent node found.');
                     return results;
@@ -4057,14 +4197,15 @@ module.exports = function registerApiRoutes(scope) {
                         console.warn('Skipping null result node in crafting results parsing.');
                         continue;
                     }
-                    const levelNode = resultNode.getElementsByTagName('level')[0] || null;
-                    const level = levelNode && typeof levelNode.textContent === 'string'
-                        ? levelNode.textContent.trim().toLowerCase()
-                        : '';
+                    const level = getCraftResultLevel(resultNode);
                     if (!level) {
                         console.warn('Skipping result node with empty level in crafting results parsing.');
                         continue;
                     }
+                    mergeMissingCraftResultFields(
+                        resultNode,
+                        resolveCraftResultFallbackNode(level, fallbackIndex)
+                    );
                     const includeOther = level === 'critical_success' || level === 'critical_failure';
 
                     const itemsConsumedNode = resultNode.getElementsByTagName('itemsConsumed')[0] || null;
@@ -4227,7 +4368,7 @@ module.exports = function registerApiRoutes(scope) {
                 throw new Error('Craft success-degree returned no response.');
             }
 
-            const results = await parseCraftingResultsResponse(response);
+            const results = await parseCraftingResultsResponse(response, { baseOutcomeXml });
             if (!results.size) {
                 throw new Error('Craft success-degree response did not include any results.');
             }

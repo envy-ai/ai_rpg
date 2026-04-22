@@ -119,4 +119,4 @@ Most modals live in `views/index.njk` and are wired up by the inline script or `
 - Most modals are toggled via `hidden` + `aria-hidden`.
 - The inline script in `views/index.njk` contains the open/close logic and field wiring.
 - `public/js/chat.js` owns the runtime-only quest confirmation modal and the shared slash upload modal flow.
-- LLM prompt modals (`#addNpcModal`, `#newExitModal`, `#craftingModal`, `#salvageIntentModal`) close immediately on submit; no visible waiting state is shown, and errors surface via `alert()` after closing.
+- LLM prompt modals (`#addNpcModal`, `#thingEditModal` create mode, `#newExitModal`, `#craftingModal`, `#salvageIntentModal`) close immediately on submit; no visible waiting state is shown, and errors surface via `alert()` after closing. Add NPC and Create Item/Create Scenery allow additional submissions while earlier prompts are still running.

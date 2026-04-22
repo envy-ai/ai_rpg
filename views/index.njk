@@ -15268,12 +15268,8 @@
                         return;
                     }
 
+                    const creationLocationId = currentThingCreationLocation.id;
                     const trimmedName = thingEditNameInput?.value?.trim();
-
-                    updateThingEditStatus('Generating item...');
-                    if (thingEditSaveBtn) {
-                        thingEditSaveBtn.disabled = true;
-                    }
 
                     const typeSelection = (thingEditTypeSelect?.value || '').toLowerCase() === 'scenery'
                         ? 'scenery'
@@ -15342,44 +15338,37 @@
                         }
                     }
 
-                    let overlayShown = false;
-                    try {
-                        showLocationOverlay('Forging a new item...');
-                        overlayShown = true;
+                    const creationLabel = typeSelection === 'scenery' ? 'scenery' : 'item';
+                    closeThingEditModal();
 
-                        const response = await fetch(`/api/locations/${encodeURIComponent(currentThingCreationLocation.id)}/things`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify(payload)
-                        });
+                    void (async () => {
+                        try {
+                            const response = await fetch(`/api/locations/${encodeURIComponent(creationLocationId)}/things`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify(payload)
+                            });
 
-                        const result = await response.json().catch(() => ({}));
-                        if (!response.ok || !result?.success) {
-                            throw new Error(result?.error || `Request failed with status ${response.status}`);
+                            const result = await response.json().catch(() => ({}));
+                            if (!response.ok || !result?.success) {
+                                throw new Error(result?.error || `Request failed with status ${response.status}`);
+                            }
+
+                            const locationStillVisible = lastRenderedLocation?.id === creationLocationId;
+                            if (locationStillVisible && result.location) {
+                                lastRenderedLocation = JSON.parse(JSON.stringify(result.location));
+                                await window.updateLocationDisplay(result.location);
+                            } else if (locationStillVisible && typeof window.loadCurrentLocation === 'function') {
+                                await window.loadCurrentLocation();
+                            }
+
+                            window.refreshInventory?.();
+                            window.refreshParty?.();
+                        } catch (error) {
+                            console.warn(`Failed to create ${creationLabel}:`, error);
+                            alert(`Failed to create ${creationLabel}: ${error?.message || 'Unknown error'}`);
                         }
-
-                        closeThingEditModal();
-
-                        if (result.location) {
-                            lastRenderedLocation = JSON.parse(JSON.stringify(result.location));
-                            await window.updateLocationDisplay(result.location);
-                        } else if (typeof window.loadCurrentLocation === 'function') {
-                            await window.loadCurrentLocation();
-                        }
-
-                        window.refreshInventory?.();
-                        window.refreshParty?.();
-                    } catch (error) {
-                        console.warn('Failed to create item:', error);
-                        updateThingEditStatus(error?.message || 'Failed to create item.', 'error');
-                    } finally {
-                        if (overlayShown) {
-                            hideLocationOverlay();
-                        }
-                        if (thingEditSaveBtn) {
-                            thingEditSaveBtn.disabled = false;
-                        }
-                    }
+                    })();
 
                     return;
                 }
