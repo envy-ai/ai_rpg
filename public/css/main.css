@@ -8896,30 +8896,204 @@ body.modal-open {
   gap: 16px;
 }
 
-.calendar-edit-json-field {
-  min-height: 0;
+.calendar-edit-year-field {
+  max-width: 360px;
 }
 
-.calendar-edit-json {
-  width: 100%;
-  min-height: min(60vh, 640px);
-  border-radius: 10px;
-  border: 1px solid rgba(148, 163, 184, 0.25);
-  background: rgba(15, 23, 42, 0.72);
-  color: #f8fafc;
-  padding: 12px;
-  font-family: "SFMono-Regular", "Consolas", "Liberation Mono", monospace;
+.calendar-edit-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.25);
+  padding-bottom: 8px;
+}
+
+.calendar-edit-tab,
+.calendar-edit-season-tab,
+.calendar-edit-move-up,
+.calendar-edit-move-down,
+.calendar-edit-remove {
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
   font-size: 0.88rem;
-  line-height: 1.45;
-  resize: vertical;
-  overflow: auto;
-  tab-size: 2;
+  transition: background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
 }
 
-.calendar-edit-json:focus {
+.calendar-edit-tab,
+.calendar-edit-season-tab {
+  background: rgba(15, 23, 42, 0.72);
+  color: #cbd5e1;
+  padding: 8px 12px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+}
+
+.calendar-edit-tab:hover,
+.calendar-edit-tab:focus,
+.calendar-edit-season-tab:hover,
+.calendar-edit-season-tab:focus {
   outline: none;
-  border-color: rgba(96, 165, 250, 0.65);
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.35);
+  background: rgba(59, 130, 246, 0.22);
+  color: #ffffff;
+}
+
+.calendar-edit-tab.is-active,
+.calendar-edit-season-tab.is-active {
+  background: rgba(59, 130, 246, 0.34);
+  border-color: rgba(96, 165, 250, 0.55);
+  color: #ffffff;
+  box-shadow: 0 0 0 1px rgba(96, 165, 250, 0.18);
+}
+
+.calendar-edit-panel[hidden],
+.calendar-edit-season-panel[hidden] {
+  display: none;
+}
+
+.calendar-edit-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.calendar-edit-section-header h3,
+.calendar-edit-section-header h5 {
+  margin: 0;
+}
+
+.calendar-edit-list,
+.calendar-edit-season-panels {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.calendar-edit-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)) auto;
+  gap: 10px;
+  align-items: end;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 10px;
+  background: rgba(2, 6, 23, 0.2);
+  padding: 10px;
+}
+
+.calendar-edit-holiday-row {
+  grid-template-columns: minmax(150px, 0.8fr) minmax(220px, 1.4fr) minmax(140px, 0.7fr) minmax(100px, 0.45fr) auto;
+}
+
+.calendar-edit-time-row {
+  grid-template-columns: minmax(120px, 0.35fr) minmax(240px, 1fr) auto;
+}
+
+.calendar-edit-row-actions,
+.calendar-edit-season-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.calendar-edit-row-actions {
+  align-self: stretch;
+  align-content: end;
+}
+
+.calendar-edit-move-up,
+.calendar-edit-move-down,
+.calendar-edit-remove {
+  padding: 8px 10px;
+}
+
+.calendar-edit-move-up,
+.calendar-edit-move-down {
+  background: rgba(148, 163, 184, 0.18);
+  color: #e2e8f0;
+}
+
+.calendar-edit-remove {
+  background: rgba(239, 68, 68, 0.15);
+  color: #fecaca;
+}
+
+.calendar-edit-move-up:hover,
+.calendar-edit-move-up:focus,
+.calendar-edit-move-down:hover,
+.calendar-edit-move-down:focus {
+  outline: none;
+  background: rgba(148, 163, 184, 0.35);
+  color: #ffffff;
+}
+
+.calendar-edit-remove:hover,
+.calendar-edit-remove:focus {
+  outline: none;
+  background: rgba(220, 38, 38, 0.3);
+  color: #ffffff;
+}
+
+.calendar-edit-seasons-layout {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.28fr) minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.calendar-edit-season-tabs {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  position: sticky;
+  top: 8px;
+}
+
+.calendar-edit-season-tab {
+  text-align: left;
+  width: 100%;
+}
+
+.calendar-edit-season-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.48);
+  padding: 12px;
+}
+
+.calendar-edit-season-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.calendar-edit-season-panel-header h4 {
+  margin: 0;
+  color: #f8fafc;
+}
+
+.calendar-edit-season-basics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+}
+
+.calendar-edit-field-wide {
+  grid-column: span 2;
+}
+
+.calendar-edit-time-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.calendar-edit-time-description-field textarea {
+  min-height: 68px;
+  resize: vertical;
 }
 
 .vehicle-edit-section {
@@ -9104,6 +9278,24 @@ body.modal-open {
   .region-weather-season-header,
   .region-weather-type-row {
     grid-template-columns: minmax(0, 1fr);
+  }
+  .calendar-edit-row,
+  .calendar-edit-holiday-row,
+  .calendar-edit-time-row,
+  .calendar-edit-seasons-layout,
+  .calendar-edit-season-basics {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .calendar-edit-field-wide {
+    grid-column: span 1;
+  }
+  .calendar-edit-season-tabs {
+    position: static;
+  }
+  .calendar-edit-row-actions,
+  .calendar-edit-season-panel-header,
+  .calendar-edit-season-actions {
+    justify-content: flex-start;
   }
   .vehicle-destination-row {
     flex-direction: column;

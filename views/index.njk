@@ -2115,15 +2115,51 @@
                 </button>
             </header>
             <form id="calendarEditForm" class="modal__body location-edit-form calendar-edit-form" novalidate>
-                <div class="location-edit-field calendar-edit-json-field">
-                    <label for="calendarEditJson">Calendar JSON</label>
-                    <textarea id="calendarEditJson" class="calendar-edit-json" spellcheck="false" rows="24" wrap="off"></textarea>
+                <div class="location-edit-field calendar-edit-year-field">
+                    <label for="calendarEditYearName">Year Name</label>
+                    <input type="text" id="calendarEditYearName" class="calendar-edit-year-name" autocomplete="off">
                 </div>
+                <div class="calendar-edit-tabs" role="tablist" aria-label="Calendar editor sections">
+                    <button type="button" class="calendar-edit-tab is-active" id="calendarEditTabMonths" data-calendar-tab="months" role="tab" aria-selected="true" aria-controls="calendarEditPanelMonths">Months</button>
+                    <button type="button" class="calendar-edit-tab" id="calendarEditTabWeekdays" data-calendar-tab="weekdays" role="tab" aria-selected="false" aria-controls="calendarEditPanelWeekdays">Weekdays</button>
+                    <button type="button" class="calendar-edit-tab" id="calendarEditTabSeasons" data-calendar-tab="seasons" role="tab" aria-selected="false" aria-controls="calendarEditPanelSeasons">Seasons</button>
+                    <button type="button" class="calendar-edit-tab" id="calendarEditTabHolidays" data-calendar-tab="holidays" role="tab" aria-selected="false" aria-controls="calendarEditPanelHolidays">Holidays</button>
+                </div>
+                <section class="calendar-edit-panel is-active" id="calendarEditPanelMonths" data-calendar-panel="months" role="tabpanel" aria-labelledby="calendarEditTabMonths">
+                    <div class="npc-edit-section-header calendar-edit-section-header">
+                        <h3>Months</h3>
+                        <button type="button" class="npc-edit-add-btn" id="calendarEditAddMonthBtn">Add Month</button>
+                    </div>
+                    <div id="calendarEditMonthsList" class="calendar-edit-list calendar-edit-months-list"></div>
+                </section>
+                <section class="calendar-edit-panel" id="calendarEditPanelWeekdays" data-calendar-panel="weekdays" role="tabpanel" aria-labelledby="calendarEditTabWeekdays" hidden>
+                    <div class="npc-edit-section-header calendar-edit-section-header">
+                        <h3>Weekdays</h3>
+                        <button type="button" class="npc-edit-add-btn" id="calendarEditAddWeekdayBtn">Add Weekday</button>
+                    </div>
+                    <div id="calendarEditWeekdaysList" class="calendar-edit-list calendar-edit-weekdays-list"></div>
+                </section>
+                <section class="calendar-edit-panel" id="calendarEditPanelSeasons" data-calendar-panel="seasons" role="tabpanel" aria-labelledby="calendarEditTabSeasons" hidden>
+                    <div class="npc-edit-section-header calendar-edit-section-header">
+                        <h3>Seasons</h3>
+                        <button type="button" class="npc-edit-add-btn" id="calendarEditAddSeasonBtn">Add Season</button>
+                    </div>
+                    <div class="calendar-edit-seasons-layout">
+                        <div id="calendarEditSeasonTabs" class="calendar-edit-season-tabs" role="tablist" aria-label="Calendar seasons"></div>
+                        <div id="calendarEditSeasonPanels" class="calendar-edit-season-panels"></div>
+                    </div>
+                </section>
+                <section class="calendar-edit-panel" id="calendarEditPanelHolidays" data-calendar-panel="holidays" role="tabpanel" aria-labelledby="calendarEditTabHolidays" hidden>
+                    <div class="npc-edit-section-header calendar-edit-section-header">
+                        <h3>Holidays</h3>
+                        <button type="button" class="npc-edit-add-btn" id="calendarEditAddHolidayBtn">Add Holiday</button>
+                    </div>
+                    <div id="calendarEditHolidaysList" class="calendar-edit-list calendar-edit-holidays-list"></div>
+                </section>
                 <footer class="location-edit-footer calendar-edit-footer">
                     <div class="location-edit-status calendar-edit-status" id="calendarEditStatus" role="status" aria-live="polite"></div>
                     <div class="location-edit-actions calendar-edit-actions">
                         <button type="button" class="location-edit-cancel calendar-edit-cancel" id="calendarEditCancelBtn">Cancel</button>
-                        <button type="button" class="location-edit-cancel calendar-edit-format" id="calendarEditFormatBtn">Format JSON</button>
                         <button type="submit" class="location-edit-save calendar-edit-save" id="calendarEditSaveBtn">Save Calendar</button>
                     </div>
                 </footer>
@@ -8251,11 +8287,21 @@
         const regionWeatherEditSaveBtn = document.getElementById('regionWeatherEditSaveBtn');
         const calendarEditModal = document.getElementById('calendarEditModal');
         const calendarEditForm = document.getElementById('calendarEditForm');
-        const calendarEditJson = document.getElementById('calendarEditJson');
+        const calendarEditYearName = document.getElementById('calendarEditYearName');
+        const calendarEditTabButtons = Array.from(document.querySelectorAll('[data-calendar-tab]'));
+        const calendarEditPanels = Array.from(document.querySelectorAll('[data-calendar-panel]'));
+        const calendarEditMonthsList = document.getElementById('calendarEditMonthsList');
+        const calendarEditWeekdaysList = document.getElementById('calendarEditWeekdaysList');
+        const calendarEditSeasonTabs = document.getElementById('calendarEditSeasonTabs');
+        const calendarEditSeasonPanels = document.getElementById('calendarEditSeasonPanels');
+        const calendarEditHolidaysList = document.getElementById('calendarEditHolidaysList');
+        const calendarEditAddMonthBtn = document.getElementById('calendarEditAddMonthBtn');
+        const calendarEditAddWeekdayBtn = document.getElementById('calendarEditAddWeekdayBtn');
+        const calendarEditAddSeasonBtn = document.getElementById('calendarEditAddSeasonBtn');
+        const calendarEditAddHolidayBtn = document.getElementById('calendarEditAddHolidayBtn');
         const calendarEditStatus = document.getElementById('calendarEditStatus');
         const calendarEditCancelBtn = document.getElementById('calendarEditCancelBtn');
         const calendarEditCloseBtn = document.getElementById('calendarEditCloseBtn');
-        const calendarEditFormatBtn = document.getElementById('calendarEditFormatBtn');
         const calendarEditSaveBtn = document.getElementById('calendarEditSaveBtn');
         const locationVehicleEditor = {
             section: locationEditVehicleSection,
@@ -24662,35 +24708,431 @@
             return error;
         }
 
-        function formatCalendarDefinitionForEditor(calendarDefinition) {
-            return JSON.stringify(calendarDefinition || {}, null, 2);
+        function setCalendarEditorControlsEnabled(enabled) {
+            const disabled = !enabled;
+            [
+                calendarEditSaveBtn,
+                calendarEditAddMonthBtn,
+                calendarEditAddWeekdayBtn,
+                calendarEditAddSeasonBtn,
+                calendarEditAddHolidayBtn
+            ].forEach((button) => {
+                if (button) {
+                    button.disabled = disabled;
+                }
+            });
+        }
+
+        function setCalendarEditTab(targetTab = 'months') {
+            const normalizedTab = typeof targetTab === 'string' && targetTab.trim()
+                ? targetTab.trim()
+                : 'months';
+            calendarEditTabButtons.forEach((button) => {
+                const isActive = button?.dataset?.calendarTab === normalizedTab;
+                button.classList.toggle('is-active', isActive);
+                button.setAttribute('aria-selected', isActive ? 'true' : 'false');
+            });
+            calendarEditPanels.forEach((panel) => {
+                const isActive = panel?.dataset?.calendarPanel === normalizedTab;
+                panel.classList.toggle('is-active', isActive);
+                panel.toggleAttribute('hidden', !isActive);
+            });
+        }
+
+        function setCalendarSeasonTab(targetIndex = 0) {
+            const normalizedIndex = Number.isFinite(Number(targetIndex)) ? Number(targetIndex) : 0;
+            const tabs = calendarEditSeasonTabs
+                ? Array.from(calendarEditSeasonTabs.querySelectorAll('.calendar-edit-season-tab'))
+                : [];
+            const panels = calendarEditSeasonPanels
+                ? Array.from(calendarEditSeasonPanels.querySelectorAll('.calendar-edit-season-panel'))
+                : [];
+            tabs.forEach((tab) => {
+                const isActive = Number(tab.dataset.seasonIndex) === normalizedIndex;
+                tab.classList.toggle('is-active', isActive);
+                tab.setAttribute('aria-selected', isActive ? 'true' : 'false');
+            });
+            panels.forEach((panel) => {
+                const isActive = Number(panel.dataset.seasonIndex) === normalizedIndex;
+                panel.classList.toggle('is-active', isActive);
+                panel.toggleAttribute('hidden', !isActive);
+            });
+        }
+
+        function moveCalendarRow(row, direction) {
+            if (!row || !row.parentElement) {
+                return;
+            }
+            if (direction < 0 && row.previousElementSibling) {
+                row.parentElement.insertBefore(row, row.previousElementSibling);
+            } else if (direction > 0 && row.nextElementSibling) {
+                row.parentElement.insertBefore(row.nextElementSibling, row);
+            }
+        }
+
+        function appendCalendarRowActions(row, { removeLabel = 'Remove' } = {}) {
+            const actions = document.createElement('div');
+            actions.className = 'calendar-edit-row-actions';
+
+            const moveUp = document.createElement('button');
+            moveUp.type = 'button';
+            moveUp.className = 'calendar-edit-move-up';
+            moveUp.textContent = 'Move Up';
+            moveUp.addEventListener('click', () => moveCalendarRow(row, -1));
+
+            const moveDown = document.createElement('button');
+            moveDown.type = 'button';
+            moveDown.className = 'calendar-edit-move-down';
+            moveDown.textContent = 'Move Down';
+            moveDown.addEventListener('click', () => moveCalendarRow(row, 1));
+
+            const remove = document.createElement('button');
+            remove.type = 'button';
+            remove.className = 'calendar-edit-remove';
+            remove.textContent = removeLabel;
+            remove.addEventListener('click', () => row.remove());
+
+            actions.append(moveUp, moveDown, remove);
+            row.appendChild(actions);
+            return actions;
+        }
+
+        function createCalendarTextField(labelText, className, value = '', options = {}) {
+            const field = document.createElement('div');
+            field.className = `location-edit-field ${options.fieldClass || ''}`.trim();
+            const label = document.createElement('label');
+            label.textContent = labelText;
+            const input = options.textarea ? document.createElement('textarea') : document.createElement('input');
+            input.className = className;
+            if (options.textarea) {
+                input.rows = options.rows || 3;
+            } else {
+                input.type = options.type || 'text';
+                if (options.step) {
+                    input.step = options.step;
+                }
+                if (options.placeholder) {
+                    input.placeholder = options.placeholder;
+                }
+            }
+            input.value = value === null || value === undefined ? '' : String(value);
+            field.append(label, input);
+            return { field, input };
+        }
+
+        function parseCalendarNumberInput(input, { optional = false } = {}) {
+            const raw = (input?.value ?? '').trim();
+            if (!raw) {
+                return optional ? null : raw;
+            }
+            const parsed = Number(raw);
+            return Number.isFinite(parsed) ? parsed : raw;
+        }
+
+        function createCalendarMonthRow(month = {}) {
+            const row = document.createElement('div');
+            row.className = 'calendar-edit-row calendar-edit-month-row';
+
+            const name = createCalendarTextField('Name', 'calendar-edit-month-name', month.name || '');
+            const lengthDays = createCalendarTextField('Length Days', 'calendar-edit-month-length', month.lengthDays ?? '', {
+                type: 'number'
+            });
+            const seasonName = createCalendarTextField('Season Name', 'calendar-edit-month-season', month.seasonName || '');
+
+            row.append(name.field, lengthDays.field, seasonName.field);
+            appendCalendarRowActions(row, { removeLabel: 'Remove Month' });
+            calendarEditMonthsList?.appendChild(row);
+            return row;
+        }
+
+        function createCalendarWeekdayRow(weekday = '') {
+            const row = document.createElement('div');
+            row.className = 'calendar-edit-row calendar-edit-weekday-row';
+
+            const name = createCalendarTextField('Weekday', 'calendar-edit-weekday-name', weekday || '');
+
+            row.append(name.field);
+            appendCalendarRowActions(row, { removeLabel: 'Remove Weekday' });
+            calendarEditWeekdaysList?.appendChild(row);
+            return row;
+        }
+
+        function createCalendarTimeDescriptionRow(timeList, timeDescription = {}) {
+            const row = document.createElement('div');
+            row.className = 'calendar-edit-row calendar-edit-time-row';
+
+            const timeOfDay = createCalendarTextField('Time Of Day', 'calendar-edit-time-of-day', timeDescription.timeOfDay ?? '', {
+                type: 'number',
+                step: '0.25',
+                placeholder: '6'
+            });
+            const description = createCalendarTextField('Light Description', 'calendar-edit-time-description', timeDescription.description || '', {
+                textarea: true,
+                rows: 2,
+                fieldClass: 'calendar-edit-time-description-field'
+            });
+
+            row.append(timeOfDay.field, description.field);
+            appendCalendarRowActions(row, { removeLabel: 'Remove Time' });
+            timeList?.appendChild(row);
+            return row;
+        }
+
+        function collectCalendarTimeDescriptions(panel) {
+            return Array.from(panel.querySelectorAll('.calendar-edit-time-row')).map((row) => ({
+                timeOfDay: parseCalendarNumberInput(row.querySelector('.calendar-edit-time-of-day')),
+                description: (row.querySelector('.calendar-edit-time-description')?.value ?? '').trim()
+            }));
+        }
+
+        function collectCalendarSeasonsFromEditor() {
+            return Array.from(calendarEditSeasonPanels?.querySelectorAll('.calendar-edit-season-panel') || []).map((panel) => ({
+                name: (panel.querySelector('.calendar-edit-season-name')?.value ?? '').trim(),
+                description: (panel.querySelector('.calendar-edit-season-description')?.value ?? '').trim() || null,
+                startMonth: (panel.querySelector('.calendar-edit-season-start-month')?.value ?? '').trim() || null,
+                startDay: parseCalendarNumberInput(panel.querySelector('.calendar-edit-season-start-day')),
+                dayLengthMinutes: parseCalendarNumberInput(panel.querySelector('.calendar-edit-season-day-length'), { optional: true }),
+                timeDescriptions: collectCalendarTimeDescriptions(panel)
+            }));
+        }
+
+        function renderCalendarSeasons(seasons = [], activeIndex = 0) {
+            if (!calendarEditSeasonTabs || !calendarEditSeasonPanels) {
+                return;
+            }
+            calendarEditSeasonTabs.innerHTML = '';
+            calendarEditSeasonPanels.innerHTML = '';
+            const sourceSeasons = Array.isArray(seasons) && seasons.length
+                ? seasons
+                : [{
+                    name: '',
+                    description: '',
+                    startMonth: '',
+                    startDay: 1,
+                    dayLengthMinutes: null,
+                    timeDescriptions: [{ timeOfDay: 0, description: '' }]
+                }];
+            sourceSeasons.forEach((season, index) => createCalendarSeasonEditor(season, index));
+            const boundedActiveIndex = Math.min(Math.max(0, activeIndex), sourceSeasons.length - 1);
+            setCalendarSeasonTab(boundedActiveIndex);
+        }
+
+        function rerenderCalendarSeasonsFromEditor(activeIndex = 0) {
+            renderCalendarSeasons(collectCalendarSeasonsFromEditor(), activeIndex);
+        }
+
+        function createCalendarSeasonEditor(season = {}, index = 0) {
+            const tab = document.createElement('button');
+            tab.type = 'button';
+            tab.className = 'calendar-edit-season-tab';
+            tab.id = `calendarEditSeasonTab${index}`;
+            tab.dataset.seasonIndex = String(index);
+            tab.setAttribute('role', 'tab');
+            tab.setAttribute('aria-selected', 'false');
+            tab.setAttribute('aria-controls', `calendarEditSeasonPanel${index}`);
+            tab.textContent = season.name || `Season ${index + 1}`;
+            tab.addEventListener('click', () => setCalendarSeasonTab(index));
+            calendarEditSeasonTabs?.appendChild(tab);
+
+            const panel = document.createElement('section');
+            panel.className = 'calendar-edit-season-panel';
+            panel.id = `calendarEditSeasonPanel${index}`;
+            panel.dataset.seasonIndex = String(index);
+            panel.setAttribute('role', 'tabpanel');
+            panel.setAttribute('aria-labelledby', tab.id);
+            panel.hidden = true;
+
+            const header = document.createElement('div');
+            header.className = 'calendar-edit-season-panel-header';
+            const title = document.createElement('h4');
+            title.textContent = season.name || `Season ${index + 1}`;
+            const seasonActions = document.createElement('div');
+            seasonActions.className = 'calendar-edit-season-actions';
+
+            const moveUp = document.createElement('button');
+            moveUp.type = 'button';
+            moveUp.className = 'calendar-edit-move-up';
+            moveUp.textContent = 'Move Up';
+            moveUp.addEventListener('click', () => {
+                const seasons = collectCalendarSeasonsFromEditor();
+                if (index > 0) {
+                    [seasons[index - 1], seasons[index]] = [seasons[index], seasons[index - 1]];
+                    renderCalendarSeasons(seasons, index - 1);
+                }
+            });
+
+            const moveDown = document.createElement('button');
+            moveDown.type = 'button';
+            moveDown.className = 'calendar-edit-move-down';
+            moveDown.textContent = 'Move Down';
+            moveDown.addEventListener('click', () => {
+                const seasons = collectCalendarSeasonsFromEditor();
+                if (index < seasons.length - 1) {
+                    [seasons[index + 1], seasons[index]] = [seasons[index], seasons[index + 1]];
+                    renderCalendarSeasons(seasons, index + 1);
+                }
+            });
+
+            const remove = document.createElement('button');
+            remove.type = 'button';
+            remove.className = 'calendar-edit-remove';
+            remove.textContent = 'Remove Season';
+            remove.addEventListener('click', () => {
+                const seasons = collectCalendarSeasonsFromEditor();
+                seasons.splice(index, 1);
+                renderCalendarSeasons(seasons, Math.max(0, index - 1));
+            });
+
+            seasonActions.append(moveUp, moveDown, remove);
+            header.append(title, seasonActions);
+
+            const basics = document.createElement('div');
+            basics.className = 'calendar-edit-season-basics';
+            const name = createCalendarTextField('Name', 'calendar-edit-season-name', season.name || '');
+            name.input.addEventListener('input', () => {
+                const label = name.input.value.trim() || `Season ${index + 1}`;
+                tab.textContent = label;
+                title.textContent = label;
+            });
+            const description = createCalendarTextField('Description', 'calendar-edit-season-description', season.description || '', {
+                textarea: true,
+                rows: 3,
+                fieldClass: 'calendar-edit-field-wide'
+            });
+            const startMonth = createCalendarTextField('Start Month', 'calendar-edit-season-start-month', season.startMonth || '');
+            const startDay = createCalendarTextField('Start Day', 'calendar-edit-season-start-day', season.startDay ?? 1, {
+                type: 'number'
+            });
+            const dayLength = createCalendarTextField('Day Length Minutes', 'calendar-edit-season-day-length', season.dayLengthMinutes ?? '', {
+                type: 'number',
+                placeholder: 'Optional'
+            });
+            basics.append(name.field, description.field, startMonth.field, startDay.field, dayLength.field);
+
+            const timeSection = document.createElement('section');
+            timeSection.className = 'calendar-edit-time-section';
+            const timeHeader = document.createElement('div');
+            timeHeader.className = 'npc-edit-section-header calendar-edit-section-header';
+            const timeTitle = document.createElement('h5');
+            timeTitle.textContent = 'Light-Level Time Descriptions';
+            const addTimeButton = document.createElement('button');
+            addTimeButton.type = 'button';
+            addTimeButton.className = 'npc-edit-add-btn calendar-edit-time-add';
+            addTimeButton.textContent = 'Add Time';
+            timeHeader.append(timeTitle, addTimeButton);
+            const timeList = document.createElement('div');
+            timeList.className = 'calendar-edit-list calendar-edit-time-list';
+            addTimeButton.addEventListener('click', () => {
+                const row = createCalendarTimeDescriptionRow(timeList, { timeOfDay: 0, description: '' });
+                row?.querySelector('.calendar-edit-time-of-day')?.focus();
+            });
+            const timeDescriptions = Array.isArray(season.timeDescriptions) ? season.timeDescriptions : [];
+            if (timeDescriptions.length) {
+                timeDescriptions.forEach(entry => createCalendarTimeDescriptionRow(timeList, entry));
+            } else {
+                createCalendarTimeDescriptionRow(timeList, { timeOfDay: 0, description: '' });
+            }
+            timeSection.append(timeHeader, timeList);
+
+            panel.append(header, basics, timeSection);
+            calendarEditSeasonPanels?.appendChild(panel);
+            return { tab, panel };
+        }
+
+        function createCalendarHolidayRow(holiday = {}) {
+            const row = document.createElement('div');
+            row.className = 'calendar-edit-row calendar-edit-holiday-row';
+
+            const name = createCalendarTextField('Name', 'calendar-edit-holiday-name', holiday.name || '');
+            const description = createCalendarTextField('Description', 'calendar-edit-holiday-description', holiday.description || '', {
+                textarea: true,
+                rows: 2,
+                fieldClass: 'calendar-edit-field-wide'
+            });
+            const month = createCalendarTextField('Month', 'calendar-edit-holiday-month', holiday.month || '');
+            const day = createCalendarTextField('Day', 'calendar-edit-holiday-day', holiday.day ?? '', {
+                type: 'number',
+                placeholder: 'Optional'
+            });
+
+            row.append(name.field, description.field, month.field, day.field);
+            appendCalendarRowActions(row, { removeLabel: 'Remove Holiday' });
+            calendarEditHolidaysList?.appendChild(row);
+            return row;
         }
 
         function resetCalendarEditor() {
             if (calendarEditForm) {
                 calendarEditForm.reset();
             }
-            if (calendarEditJson) {
-                calendarEditJson.value = '';
+            if (calendarEditYearName) {
+                calendarEditYearName.value = '';
             }
+            if (calendarEditMonthsList) {
+                calendarEditMonthsList.innerHTML = '';
+            }
+            if (calendarEditWeekdaysList) {
+                calendarEditWeekdaysList.innerHTML = '';
+            }
+            if (calendarEditSeasonTabs) {
+                calendarEditSeasonTabs.innerHTML = '';
+            }
+            if (calendarEditSeasonPanels) {
+                calendarEditSeasonPanels.innerHTML = '';
+            }
+            if (calendarEditHolidaysList) {
+                calendarEditHolidaysList.innerHTML = '';
+            }
+            setCalendarEditTab('months');
             setCalendarEditStatus('', null);
         }
 
-        function parseCalendarEditorJson() {
-            const raw = (calendarEditJson?.value ?? '').trim();
-            if (!raw) {
-                throw createCalendarEditorValidationError('Calendar JSON is required.', calendarEditJson);
+        function renderCalendarEditorFromDefinition(calendarDefinition = {}) {
+            if (calendarEditYearName) {
+                calendarEditYearName.value = calendarDefinition.yearName || '';
             }
-            let parsed = null;
-            try {
-                parsed = JSON.parse(raw);
-            } catch (error) {
-                throw createCalendarEditorValidationError(`Invalid JSON: ${error?.message || 'Parse failed'}`, calendarEditJson);
+
+            if (calendarEditMonthsList) {
+                calendarEditMonthsList.innerHTML = '';
+                const months = Array.isArray(calendarDefinition.months) ? calendarDefinition.months : [];
+                months.forEach(month => createCalendarMonthRow(month));
             }
-            if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-                throw createCalendarEditorValidationError('Calendar JSON must be an object.', calendarEditJson);
+
+            if (calendarEditWeekdaysList) {
+                calendarEditWeekdaysList.innerHTML = '';
+                const weekdays = Array.isArray(calendarDefinition.weekdays) ? calendarDefinition.weekdays : [];
+                weekdays.forEach(weekday => createCalendarWeekdayRow(weekday));
             }
-            return parsed;
+
+            renderCalendarSeasons(Array.isArray(calendarDefinition.seasons) ? calendarDefinition.seasons : []);
+
+            if (calendarEditHolidaysList) {
+                calendarEditHolidaysList.innerHTML = '';
+                const holidays = Array.isArray(calendarDefinition.holidays) ? calendarDefinition.holidays : [];
+                holidays.forEach(holiday => createCalendarHolidayRow(holiday));
+            }
+
+            setCalendarEditTab('months');
+        }
+
+        function collectCalendarDefinitionFromEditor() {
+            return {
+                yearName: (calendarEditYearName?.value ?? '').trim(),
+                months: Array.from(calendarEditMonthsList?.querySelectorAll('.calendar-edit-month-row') || []).map((row) => ({
+                    name: (row.querySelector('.calendar-edit-month-name')?.value ?? '').trim(),
+                    lengthDays: parseCalendarNumberInput(row.querySelector('.calendar-edit-month-length')),
+                    seasonName: (row.querySelector('.calendar-edit-month-season')?.value ?? '').trim()
+                })),
+                weekdays: Array.from(calendarEditWeekdaysList?.querySelectorAll('.calendar-edit-weekday-row') || [])
+                    .map(row => (row.querySelector('.calendar-edit-weekday-name')?.value ?? '').trim()),
+                seasons: collectCalendarSeasonsFromEditor(),
+                holidays: Array.from(calendarEditHolidaysList?.querySelectorAll('.calendar-edit-holiday-row') || []).map((row) => ({
+                    name: (row.querySelector('.calendar-edit-holiday-name')?.value ?? '').trim(),
+                    description: (row.querySelector('.calendar-edit-holiday-description')?.value ?? '').trim() || null,
+                    month: (row.querySelector('.calendar-edit-holiday-month')?.value ?? '').trim() || null,
+                    day: parseCalendarNumberInput(row.querySelector('.calendar-edit-holiday-day'), { optional: true })
+                }))
+            };
         }
 
         async function openCalendarEditModal() {
@@ -24702,12 +25144,7 @@
             }
 
             resetCalendarEditor();
-            if (calendarEditSaveBtn) {
-                calendarEditSaveBtn.disabled = true;
-            }
-            if (calendarEditFormatBtn) {
-                calendarEditFormatBtn.disabled = true;
-            }
+            setCalendarEditorControlsEnabled(false);
             setCalendarEditStatus('Loading calendar...', null);
             calendarEditModal.removeAttribute('hidden');
             calendarEditModal.setAttribute('aria-hidden', 'false');
@@ -24720,28 +25157,16 @@
                     throw new Error(data?.error || `HTTP ${response.status}`);
                 }
 
-                if (calendarEditJson) {
-                    calendarEditJson.value = formatCalendarDefinitionForEditor(data.calendarDefinition);
-                }
+                renderCalendarEditorFromDefinition(data.calendarDefinition);
                 setCalendarEditStatus('', null);
-                if (calendarEditSaveBtn) {
-                    calendarEditSaveBtn.disabled = false;
-                }
-                if (calendarEditFormatBtn) {
-                    calendarEditFormatBtn.disabled = false;
-                }
+                setCalendarEditorControlsEnabled(true);
                 setTimeout(() => {
-                    calendarEditJson?.focus();
+                    calendarEditYearName?.focus();
                 }, 50);
             } catch (error) {
                 console.warn('Failed to load calendar for editing:', error);
                 setCalendarEditStatus(`Failed to load calendar: ${error?.message || 'Unknown error'}`, 'error');
-                if (calendarEditSaveBtn) {
-                    calendarEditSaveBtn.disabled = true;
-                }
-                if (calendarEditFormatBtn) {
-                    calendarEditFormatBtn.disabled = true;
-                }
+                setCalendarEditorControlsEnabled(false);
             }
         }
 
@@ -24753,26 +25178,8 @@
             calendarEditModal.setAttribute('aria-hidden', 'true');
             calendarEditModal.classList.remove('is-open');
             resetCalendarEditor();
-            if (calendarEditSaveBtn) {
-                calendarEditSaveBtn.disabled = false;
-            }
-            if (calendarEditFormatBtn) {
-                calendarEditFormatBtn.disabled = false;
-            }
+            setCalendarEditorControlsEnabled(true);
             clearLocationMenuContext();
-        }
-
-        function formatCalendarEditorJson() {
-            try {
-                const parsed = parseCalendarEditorJson();
-                if (calendarEditJson) {
-                    calendarEditJson.value = formatCalendarDefinitionForEditor(parsed);
-                }
-                setCalendarEditStatus('JSON formatted.', 'success');
-            } catch (validationError) {
-                setCalendarEditStatus(validationError?.message || 'Invalid calendar JSON.', 'error');
-                validationError?.focusTarget?.focus();
-            }
         }
 
         async function submitCalendarEditForm(event) {
@@ -24782,20 +25189,15 @@
 
             let calendarDefinition = null;
             try {
-                calendarDefinition = parseCalendarEditorJson();
+                calendarDefinition = collectCalendarDefinitionFromEditor();
             } catch (validationError) {
-                setCalendarEditStatus(validationError?.message || 'Invalid calendar JSON.', 'error');
+                setCalendarEditStatus(validationError?.message || 'Invalid calendar fields.', 'error');
                 validationError?.focusTarget?.focus();
                 return;
             }
 
             setCalendarEditStatus('Saving calendar...', null);
-            if (calendarEditSaveBtn) {
-                calendarEditSaveBtn.disabled = true;
-            }
-            if (calendarEditFormatBtn) {
-                calendarEditFormatBtn.disabled = true;
-            }
+            setCalendarEditorControlsEnabled(false);
 
             try {
                 const response = await fetch('/api/calendar', {
@@ -24808,9 +25210,7 @@
                     throw new Error(data?.error || `HTTP ${response.status}`);
                 }
 
-                if (calendarEditJson) {
-                    calendarEditJson.value = formatCalendarDefinitionForEditor(data.calendarDefinition);
-                }
+                renderCalendarEditorFromDefinition(data.calendarDefinition);
                 if (data.worldTime && typeof window.AIRPG_CHAT?.updateWorldTimeIndicator === 'function') {
                     window.AIRPG_CHAT.updateWorldTimeIndicator(data.worldTime, { emitTransitions: false });
                 }
@@ -24825,12 +25225,7 @@
                 console.warn('Failed to update calendar:', error);
                 setCalendarEditStatus(`Failed to update calendar: ${error?.message || 'Unknown error'}`, 'error');
             } finally {
-                if (calendarEditSaveBtn) {
-                    calendarEditSaveBtn.disabled = false;
-                }
-                if (calendarEditFormatBtn) {
-                    calendarEditFormatBtn.disabled = false;
-                }
+                setCalendarEditorControlsEnabled(true);
             }
         }
 
@@ -25259,11 +25654,44 @@
         if (calendarEditCloseBtn) {
             calendarEditCloseBtn.addEventListener('click', () => closeCalendarEditModal());
         }
-        if (calendarEditFormatBtn) {
-            calendarEditFormatBtn.addEventListener('click', () => formatCalendarEditorJson());
-        }
         if (calendarEditForm) {
             calendarEditForm.addEventListener('submit', submitCalendarEditForm);
+        }
+        calendarEditTabButtons.forEach((button) => {
+            button.addEventListener('click', () => setCalendarEditTab(button.dataset.calendarTab || 'months'));
+        });
+        if (calendarEditAddMonthBtn) {
+            calendarEditAddMonthBtn.addEventListener('click', () => {
+                const row = createCalendarMonthRow({ name: '', lengthDays: '', seasonName: '' });
+                row?.querySelector('.calendar-edit-month-name')?.focus();
+            });
+        }
+        if (calendarEditAddWeekdayBtn) {
+            calendarEditAddWeekdayBtn.addEventListener('click', () => {
+                const row = createCalendarWeekdayRow('');
+                row?.querySelector('.calendar-edit-weekday-name')?.focus();
+            });
+        }
+        if (calendarEditAddSeasonBtn) {
+            calendarEditAddSeasonBtn.addEventListener('click', () => {
+                const seasons = collectCalendarSeasonsFromEditor();
+                seasons.push({
+                    name: '',
+                    description: '',
+                    startMonth: '',
+                    startDay: 1,
+                    dayLengthMinutes: null,
+                    timeDescriptions: [{ timeOfDay: 0, description: '' }]
+                });
+                renderCalendarSeasons(seasons, seasons.length - 1);
+                calendarEditSeasonPanels?.querySelector('.calendar-edit-season-panel.is-active .calendar-edit-season-name')?.focus();
+            });
+        }
+        if (calendarEditAddHolidayBtn) {
+            calendarEditAddHolidayBtn.addEventListener('click', () => {
+                const row = createCalendarHolidayRow({});
+                row?.querySelector('.calendar-edit-holiday-name')?.focus();
+            });
         }
 
         window.addEventListener('keydown', (event) => {

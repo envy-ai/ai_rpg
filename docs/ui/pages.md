@@ -20,7 +20,7 @@ This page maps routes to templates and the client scripts/styles they load.
   - Location display, edit modals, crafting/salvage modals.
   - Region edit modal field handling (name/description/short description, parent region, average level, controlling faction dropdown sourced from `/api/factions`, shared vehicle-info editor fields, and a collapsed-by-default `Region Secrets` editor with add/remove rows); scrolling is handled by the modal overlay and the region dialog has no max-height cap so expanded sections remain usable.
   - Region weather edit modal handling from the location/map context menus; it edits `Region.weather` through `/api/regions/:id` with dynamic-weather toggle, per-season weather groups, and weather-type name/description/frequency/duration fields.
-  - Calendar edit modal handling from the location/map context menus; it loads `/api/calendar`, edits the full `calendarDefinition` in a JSON textarea, formats JSON client-side, saves through `PUT /api/calendar`, and refreshes the world-time chip/current location after a successful save.
+  - Calendar edit modal handling from the location/map context menus; it loads `/api/calendar`, renders the full `calendarDefinition` as tabbed fields for year name, ordered months, weekdays, seasons/time descriptions, and holidays, saves through `PUT /api/calendar`, and refreshes the world-time chip/current location after a successful save.
   - Image rendering helpers (`renderEntityImage`) and tooltip helpers.
 - Data injected by `server.js`:
   - `chatHistory`, `player`, `availableSkills`, `currentSetting`.
