@@ -10,9 +10,12 @@ mode: {{ mode }}
 {% elif mode == 'repair' or mode == 'upgrade' %}
 {{ characterName }} attempted to {{ mode }} "{{ targetName }}". They had this degree of success/failure: "{{ success_or_failure }}".
 {% else %}
-{{ characterName }} attempted to craft "{{ intendedItemName }}" using the crafting/processing station "{{ stationName }}" out of the following items:
+{% set hasInputItems = inputItems and inputItems.length > 0 %}
+{{ characterName }} attempted to craft "{{ intendedItemName }}" using the crafting/processing station "{{ stationName }}"{% if hasInputItems %} out of the following items:{% else %} with no selected inventory items.{% endif %}
+{% if hasInputItems %}
 {% for item in inputItems %}- {{ item.name }}
 {% endfor %}
+{% endif %}
 They had this degree of success/failure: "{{ success_or_failure }}".
 {% endif %}
 
@@ -42,4 +45,4 @@ A major failure results in a broken item that is not only useless for its intend
 A critical failure results in a catastrophic failure that may have additional negative effects beyond just the outputted item, such as injury, damage to the work area, bad status effects, etc. All materials are consumed in the process, and no output is produced. Adjust the description and other fields to reflect this. Add an &lt;other&gt; field inside &lt;result&gt; if there are any additional negative effects beyond the failure to produce an item.
 {% endif %}
 
-Output the response in the same XML format as the input, modifying the description and other fields as needed to accurately reflect the crafting attempt's outcome. Preserve the outer &lt;response&gt; wrapper, the crafting/salvage/harvest results wrapper, and every direct &lt;result&gt; field from the input unless you are intentionally changing that field. Always include &lt;timeTaken&gt; inside &lt;result&gt;. Keep crafted output items inside &lt;itemsCrafted&gt; and recovered output items inside &lt;itemsRecovered&gt;; do not place &lt;item&gt; directly under &lt;result&gt; or inside &lt;itemsConsumed&gt;. If no items are consumed, crafted, or recovered, include the appropriate explicit empty wrapper instead of omitting it. {% if success_or_failure == 'critical_success' or success_or_failure == 'critical_failure' %}Include an &lt;other&gt; field inside &lt;result&gt; if there are any additional effects.{% endif %} Remember to change the contents of the &lt;level&gt; tag to "{{ success_or_failure }}" to reflect the actual degree of success or failure.
+Output the response in the same XML format as the input, modifying the description and other fields as needed to accurately reflect the crafting attempt's outcome. Preserve the outer &lt;response&gt; wrapper, the crafting/salvage/harvest results wrapper, and every direct &lt;result&gt; field from the input unless you are intentionally changing that field. Always include &lt;timeTaken&gt; inside &lt;result&gt;. Keep crafted output items inside &lt;itemsCrafted&gt; and recovered output items inside &lt;itemsRecovered&gt;; do not place &lt;item&gt; directly under &lt;result&gt; or inside &lt;itemsConsumed&gt;. If no input items were selected, keep &lt;itemsConsumed&gt; empty. If no items are consumed, crafted, or recovered, include the appropriate explicit empty wrapper instead of omitting it. {% if success_or_failure == 'critical_success' or success_or_failure == 'critical_failure' %}Include an &lt;other&gt; field inside &lt;result&gt; if there are any additional effects.{% endif %} Remember to change the contents of the &lt;level&gt; tag to "{{ success_or_failure }}" to reflect the actual degree of success or failure.

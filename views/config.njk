@@ -1,17 +1,15 @@
 <!DOCTYPE html>
 <html lang="en">
-{% set pageTitleValue = title | default("AI RPG Configuration") %}
+{% set pageTitleValue = title | default("System Configuration") %}
 <head>
     {% include "_includes/head-common.njk" %}
     <link rel="stylesheet" href="/css/config.css">
 </head>
 <body>
     <div class="container">
-        <div class="header">
-            <h1>⚙️ AI RPG Configuration</h1>
-            <p>Configure server settings and AI parameters</p>
-            {% include "_navigation.njk" %}
-        </div>
+        {% set appHeaderTitle = 'System Configuration' %}
+        {% set appHeaderSubtitle = 'Configure server settings and AI parameters' %}
+        {% include "_includes/app-header.njk" %}
         
         <div class="config-content">
             {% if savedMessage %}

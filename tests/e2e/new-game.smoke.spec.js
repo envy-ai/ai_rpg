@@ -4,7 +4,7 @@ test('new game page renders core form controls', async ({ page }) => {
     const response = await page.goto('/new-game');
     expect(response && response.ok()).toBeTruthy();
 
-    await expect(page.locator('h1')).toContainText('Start a New Game');
+    await expect(page.locator('.app-header__page-title')).toContainText('New Game');
     await expect(page.locator('#newGameForm')).toBeVisible();
     await expect(page.locator('#playerName')).toBeVisible();
     await expect(page.locator('#playerLevel')).toBeVisible();

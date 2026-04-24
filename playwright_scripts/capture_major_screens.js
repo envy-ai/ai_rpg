@@ -2,12 +2,15 @@ const fs = require('fs');
 const path = require('path');
 const { chromium } = require('playwright');
 
-const BASE_URL = 'http://127.0.0.1:7777';
+const BASE_URL = process.env.MAJOR_SCREENS_BASE_URL
+  || process.env.PLAYWRIGHT_BASE_URL
+  || 'http://127.0.0.1:7777';
 
 const topLevelScreens = [
   { name: 'chat_interface', url: `${BASE_URL}/` },
-  { name: 'configuration', url: `${BASE_URL}/config` },
-  { name: 'game_settings', url: `${BASE_URL}/settings` },
+  { name: 'new_game', url: `${BASE_URL}/new-game` },
+  { name: 'system_configuration', url: `${BASE_URL}/config` },
+  { name: 'world_profiles', url: `${BASE_URL}/settings` },
   { name: 'lorebooks', url: `${BASE_URL}/lorebooks` },
   { name: 'debug', url: `${BASE_URL}/debug` }
 ];

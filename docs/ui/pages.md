@@ -6,6 +6,7 @@ This page maps routes to templates and the client scripts/styles they load.
 - Shared head tags now live in `views/_includes/head-common.njk`.
 - All top-level page templates (`index`, `new-game`, `config`, `settings`, `lorebooks`, `debug`, `player-stats`) include that partial for shared `meta`, `title`, favicon, and `main.css` tags.
 - The shared favicon target is `/assets/fluentui-emoji/crossed_swords_color_classic.svg`.
+- Top-level pages also include `views/_includes/app-header.njk` for the shared app header. The legacy `views/_navigation.njk` now delegates to that partial.
 
 ## Main chat interface
 - Route: `/`
@@ -21,6 +22,7 @@ This page maps routes to templates and the client scripts/styles they load.
   - Region edit modal field handling (name/description/short description, parent region, average level, controlling faction dropdown sourced from `/api/factions`, shared vehicle-info editor fields, and a collapsed-by-default `Region Secrets` editor with add/remove rows); scrolling is handled by the modal overlay and the region dialog has no max-height cap so expanded sections remain usable.
   - Region weather edit modal handling from the location/map context menus; it edits `Region.weather` through `/api/regions/:id` with dynamic-weather toggle, per-season weather groups, and weather-type name/description/frequency/duration fields.
   - Calendar edit modal handling from the location/map context menus; it loads `/api/calendar`, renders the full `calendarDefinition` as tabbed fields for year name, ordered months, weekdays, seasons/time descriptions, and holidays, saves through `PUT /api/calendar`, and refreshes the world-time chip/current location after a successful save.
+  - Set-last-seen modal handling from the main-location and map context menus; it collects the same `H AM/PM`, `H:MM AM/PM`, or `duration ago` text accepted by `/set_last_seen` and dispatches through the shared slash-command client path.
   - Image rendering helpers (`renderEntityImage`) and tooltip helpers.
 - Data injected by `server.js`:
   - `chatHistory`, `player`, `availableSkills`, `currentSetting`.
@@ -52,25 +54,27 @@ This page maps routes to templates and the client scripts/styles they load.
 - Notes: loading applies attributes/skills on a best-effort name match; any current attribute/skill without a matching loaded entry resets to its default value (attribute default stat, skill rank 1).
 - Notes: attribute matching also checks definition label/abbreviation aliases; blank aliases are ignored so saved-form loading does not fail when optional alias fields are empty.
 
-## Server configuration
+## System configuration
 - Route: `/config`
 - Template: `views/config.njk`
 - Styles: `public/css/main.css`, `public/css/config.css`.
 - Script: `public/js/config.js` + inline helper script.
 - Data injected by `server.js`:
   - `config`, `modConfigs`, `modelOptions`, `savedMessage`, `errorMessage`, `gameConfigOverrideYaml`, `gameLoaded`.
+- Notes: the global nav labels this route as `System`, while the page title is `System Configuration`.
 - Notes: the page is split into `Server Configuration` and `Game Configuration` tabs.
 - Notes: the AI section includes a backend selector. `openai_compatible` shows endpoint/API-key inputs, while `codex_cli_bridge` shows Codex command/home/session settings plus conditional session-id validation for `resume_id`.
 - Notes: the `Game Configuration` tab exposes a fixed-width YAML textarea for the currently loaded game's runtime config override. It saves through `PUT /api/game-config-override`, reloads config immediately on change, persists to the save as `gameConfigOverride.yaml`, and stays disabled when no game is loaded.
 
-## Game settings manager
+## World profiles manager
 - Route: `/settings`
 - Template: `views/settings.njk`
 - Styles: `public/css/main.css`, `public/css/settings.css`.
 - Script: inline (settings CRUD is embedded in the template).
 - Data injected by `server.js`:
   - `currentPage` only. Data is loaded via `/api/settings` calls.
-- Notes: uses a master-detail layout with a left settings library and a right editor panel.
+- Notes: the global nav labels this route as `Worlds`, while the page title is `World Profiles`. The underlying API and internal ids still use `settings`.
+- Notes: uses a master-detail layout with a left world-profile library and a right editor panel.
 - Notes: the left panel includes search (`name/theme/genre/tone/difficulty`), sort controls, and selection-scoped actions (`Edit`, `Apply`, `Clone`, `Delete`), instead of per-row action buttons.
 - Notes: editor fields are grouped into tabbed sections (`Basics`, `New Game Defaults`, `Factions`, `Character Options`, `Prompt Guidance`, `Image Prefixes`) and a sticky action bar keeps `Clear`, `Create/Update`, and `Auto-Fill Blank Fields` visible while scrolling.
 - Notes: the `Factions` tab includes:
@@ -112,5 +116,7 @@ This page maps routes to templates and the client scripts/styles they load.
   - `player`, `availableSkills`.
 
 ## Shared navigation
-- Template partial: `views/_navigation.njk`
-- Appears on all pages; includes Save/Load buttons only on the chat page.
+- Template partials: `views/_includes/app-header.njk` and `views/_includes/app-header-nav.njk`.
+- Legacy shim: `views/_navigation.njk`.
+- Primary nav order is `Play`, `New Game`, `Worlds`, `Lorebooks`, `System`, and a native `Tools` disclosure containing `Debug` and `Player Stats`.
+- The chat page action cluster includes `Save` and `Load` buttons with stable ids `saveGameBtn` and `loadGameBtn`; `New Game` is primary navigation, not a chat action button.

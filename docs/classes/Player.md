@@ -14,7 +14,7 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
 - Factions: `#factionId`, `#factionStandings` (map of `factionId -> number`).
 - UI state: `#thingListViewPreferences` (per-panel shared thing-list view modes for location/inventory/crafting panels).
 - Party/quests: `#partyMembers`, `#quests`, `#goals`, `#characterArc`.
-- Movement/turns: `#currentLocation`, `#previousLocationId`, `#elapsedTime` (minutes), `#lastVisitedTime` (minutes), `#inCombat`, `#lastActionWasTravel`, `#consecutiveTravelActions`.
+- Movement/turns: `#currentLocation`, `#previousLocationId`, `#lastSeenTime` (`last_seen_time` absolute world minutes), `#lastSeenLocation` (`last_seen_location` id), `#wasInPlayerLocationPreviousRound`, `#elapsedTime` (minutes), `#lastVisitedTime` (minutes), `#inCombat`, `#lastActionWasTravel`, `#consecutiveTravelActions`.
 - Lifecycle: `#isDead`, `#persistWhenDead`, `#corpseCountdown`.
 - Static indexes: `#indexById`, `#indexByName`.
 
@@ -38,6 +38,8 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
 - Global behaviors:
   - `applyStatusEffectNeedBarsToAll()` (uses canonical world minutes, initializes missing actor/effect/health-regeneration minute stamps without backfilling, applies configured health regeneration, baseline `change_per_minute` need-bar drift, plus status-effect need-bar deltas once per elapsed minute, and decrements finite status-effect durations by elapsed minutes capped to remaining time).
   - `updatePreviousLocationsForAll()`.
+  - `getNpcIdsSharingPlayerLocation(...)` snapshots which NPCs share the player's location or party context at turn start.
+  - `recordNpcSightingsForCurrentPlayer(...)` updates NPC `last_seen_time` / `last_seen_location` for NPCs sharing the current player's location at the end of a turn and uses the turn-start snapshot to record whether each NPC was with the player continuously from the previous round.
   - `setExperienceRolloverMultiplier(value)`.
 - Handlers:
   - `setNpcInventoryChangeHandler(handler)`, `setLevelUpHandler(handler)`.
@@ -46,7 +48,7 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
 - Identity and descriptors: `id`, `name`, `aliases`, `description`, `shortDescription`, `imageId`, `class`, `race`, `gender`, `personalityType`, `personalityTraits`, `personalityNotes`, `resistances`, `vulnerabilities`.
 - Factions: `factionId`.
 - State: `level`, `experience`, `health`, `maxHealth`, `healthAttribute`, `isDead`, `persistWhenDead`, `isDisabled`, `inCombat`, `isHostile`, `corpseCountdown`, `elapsedTime`, `createdAt`, `lastUpdated`.
-- Locations: `currentLocation`, `location`, `currentVehicle`, `previousLocationId`, `previousLocation`, `currentLocationObject`, `lastVisitedTime`.
+- Locations: `currentLocation`, `location`, `currentVehicle`, `previousLocationId`, `previousLocation`, `currentLocationObject`, `lastVisitedTime`, `last_seen_time`, `last_seen_location`, `was_in_player_location_previous_round` (plus camelCase aliases).
 - Social/party: `partyMembers`, `isInPlayerParty`, `wasEverInPlayerParty`, `partyMembershipChangedThisTurn`, `partyMembersAddedThisTurn`, `partyMembersRemovedThisTurn`.
 - Quests/goals: `goals`, `characterArc`, `currentQuests`, `completedQuests`.
 - Need bars/memory: `turnsSincePartyMemoryGeneration`, `importantMemories`.
@@ -114,6 +116,7 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
   - `setLocationByName(name)`, `setLocation(location)`, `moveToLocation(direction, locationMap)`.
   - `getCurrentLocationName()`, `getCurrentLocationInfo(locationMap)`, `getAvailableExits(locationMap)`.
   - `updatePreviousLocation()`.
+  - `recordLastSeenByPlayer({ time, locationId, wasInPlayerLocationPreviousRound })`.
 - Serialization:
   - `getStatus()`, `toJSON()`, `static fromJSON(data)`.
 - Misc:
@@ -160,3 +163,4 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
 - `unregister(target)` now rebuilds indexes after removals to prevent stale id/name registry entries.
 - Direct unspent-point mutators (`setUnspent*`/`adjustUnspent*`) now throw by design.
 - `setLocation(locationId)` now warns with a stack trace and leaves `currentLocation` unchanged when the provided string id cannot be resolved.
+- NPC last-seen state is persisted as snake_case save fields: `last_seen_time` stores an absolute world-minute timestamp, `last_seen_location` stores the location id, and `was_in_player_location_previous_round` records whether the NPC was with the player continuously from the previous round. Chat, direct movement, crafting/processing, and location-modification actions snapshot same-location NPCs at turn start, then update sightings after successful turn resolution so base-context can mention absent NPCs and expose newly present NPCs without implying continuously present NPCs have recently vanished.

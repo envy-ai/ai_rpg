@@ -144,13 +144,14 @@
 <body>
     <script defer src="https://unpkg.com/pretty-json-custom-element/index.js"></script>
     <div class="container">
-        <div class="header">
-            <h1>🔧 Debug: Player Information</h1>
-            <p>Current player status and detailed information</p>
-            {% include "_navigation.njk" %}
-        </div>
+        {% set appHeaderTitle = 'Debug' %}
+        {% set appHeaderSubtitle = 'Current player status and detailed information' %}
+        {% include "_includes/app-header.njk" %}
 
         <div class="debug-container">
+            <div class="debug-section">
+                <a href="/debug" class="btn btn-primary">Refresh Debug Data</a>
+            </div>
 
             {% if player %}
                 <!-- Quick Stats Summary -->
@@ -352,31 +353,31 @@
                 </div>
             </div>
 
-            <!-- Current Setting Info -->
+            <!-- Current World Profile Info -->
             <div class="debug-section">
-                <h2>🌍 Current Setting Information</h2>
+                <h2>🌍 Current World Profile</h2>
                 {% if currentSetting %}
                     <pretty-json>{{ currentSetting | dump(2) }}</pretty-json>
                 {% else %}
                     <div class="no-player">
-                        <p>No current setting defined</p>
+                        <p>No current world profile defined</p>
                     </div>
                 {% endif %}
             </div>
 
-            <!-- All Settings Data -->
+            <!-- All World Profile Data -->
             <div class="debug-section">
-                <h2>⚙️ All Settings</h2>
+                <h2>⚙️ All World Profiles</h2>
                 {% if allSettings and (allSettings | length) > 0 %}
                     <details>
                         <summary style="cursor: pointer; color: #ffffff; font-weight: bold; margin-bottom: 15px;">
-                            Click to expand all settings data
+                            Click to expand all world profile data
                         </summary>
                         <pretty-json>{{ allSettings | dump(2) }}</pretty-json>
                     </details>
                 {% else %}
                     <div class="no-player">
-                        <p>No settings defined</p>
+                        <p>No world profiles defined</p>
                     </div>
                 {% endif %}
             </div>

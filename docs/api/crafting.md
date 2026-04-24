@@ -7,7 +7,7 @@ Resolve crafting/processing/salvage/harvest actions.
 
 Request:
 - Body:
-  - `slots` (required): array of `{ thingId: string, slotIndex?: number }`
+  - `slots` (optional): array of `{ thingId: string, slotIndex?: number }`; may be empty for `craft`/`process`
   - `mode`: `craft` | `process` | `salvage` | `harvest` (default `craft`)
   - `actionType`: optional alias for `mode`
   - `noProse` (optional boolean): when true, skips the player-action prose generation path
@@ -31,10 +31,11 @@ Response:
   - `timeTakenMinutes`: number (minutes applied to world-time advancement for this craft action)
   - `timeProgress`: object (world-time advancement result; shape mirrors chat/event time progression)
   - `worldTime`: object (updated serialized world-time payload)
-- 400: `{ success: false, error }` (invalid payload, implausible crafting, missing slots)
+- 400: `{ success: false, error }` (invalid payload, implausible crafting, or wrong slot count for salvage/harvest)
 - 500: `{ success: false, error }`
 
 Notes:
+- Craft/process can run with no selected slot items; the prompts judge the attempt from the station, current scene, player abilities, and notes.
 - Salvage/harvest require exactly one slot item.
 - When `actionType` is supplied, it overrides `mode` in some cases.
 - Inline die-roll override is supported in crafting description fields: `notes`, `salvageNotes`, and `harvestNotes`. Tokens matching `<-?\d+>` are stripped from those fields before prompt processing, and the first parsed value is used as the player d20 roll for crafting plausibility/skill-check resolution (no clamping).
@@ -48,7 +49,7 @@ Notes:
 - Craft success-degree rerolls now require the model response to include a full outer `<response>...</response>` wrapper via `requiredRegex` before the response is accepted by `LLMClient`. When parsing the rerolled result, omitted direct `<result>` fields are filled from the standard-success outcome sent to the success-degree prompt. Explicit empty wrappers are preserved, and returned `<item>` nodes keep their model-authored fields while missing nested item fields are backfilled from the base item.
 - Player-action prose generation uses `_includes/player-action-craft.njk` via `promptType=player-action-craft` and expects XML in `<result><description>...</description></result>` (with optional `<otherEffectDescription>`).
 - `timeTaken` is parsed from each crafting/salvage/harvest `<result>` using the shared duration parser (`HH:MM`, minute values, or explicit day/hour/minute/round units). Unit-bearing quantities may be decimal (`2.5 hours`), and the final value is rounded to the nearest minute. If a result has an invalid `timeTaken`, the server logs a warning, skips that result entry, and continues parsing the others. A minimum of 1 minute is always advanced (including `timeTaken = 0`).
-- Craft/process consumption now follows the model output literally: only input items explicitly listed under `<itemsConsumed>` are consumed. If the model names consumed inputs that do not exactly match the provided slot items, the request fails loudly instead of falling back to consuming every remaining input. Salvage still falls back to consuming the sole target item when the model omits `<itemsConsumed>`.
+- Craft/process consumption now follows the model output literally: only input items explicitly listed under `<itemsConsumed>` are consumed. If no inputs were selected, `<itemsConsumed>` must remain empty; if the model names consumed inputs that do not exactly match the provided slot items, the request fails loudly instead of falling back to consuming every remaining input. Salvage still falls back to consuming the sole target item when the model omits `<itemsConsumed>`.
 - Crafted item instantiation preserves `causeStatusEffectOnTarget` and `causeStatusEffectOnEquipper` as distinct effect entries when both are present, instead of collapsing the target effect onto both application paths.
 - Successful harvest actions now update the harvested source node itself: harvestable `Thing` instances keep a deduped `previouslyHarvestedItems` list plus `lastHarvested` as absolute world minutes at the successful completion time.
 - When a consumed input `Thing` has `count > 1`, crafting/salvage/harvest now decrements the stack by `1` instead of deleting the whole `Thing`; only stacks at `1` or `0` are fully removed.

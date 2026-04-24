@@ -879,6 +879,13 @@ async function movePlayerToDestination(
     }
 
     const destinationId = destinationObject.id;
+    const originLocation = resolveEventMoveOriginLocation({
+        Location,
+        player,
+        context,
+        label,
+    });
+
     player.setLocation(destinationObject.id);
     // setLocation may refuse unresolved ids; treat that as move failure so we do not emit
     // downstream "move happened" effects for a move that never actually applied.
@@ -892,10 +899,129 @@ async function movePlayerToDestination(
     if (trackingName) {
         eventsInstance.movedLocations.add(trackingName);
     }
+    applyEventMoveTravelTime({
+        eventsInstance,
+        Location,
+        player,
+        context,
+        originLocation,
+        destinationObject,
+        label,
+    });
     // Mark processedMove only after success so turn systems stay consistent.
     if (!player.isNPC) {
         Globals.processedMove = true;
     }
+}
+
+function resolveEventMoveOriginLocation({ Location, player, context = {}, label = "move_location" } = {}) {
+    if (context.location && typeof context.location === "object") {
+        return context.location;
+    }
+
+    const currentLocationId = typeof player?.currentLocation === "string"
+        ? player.currentLocation.trim()
+        : "";
+    if (!currentLocationId) {
+        return null;
+    }
+
+    if (!Location || typeof Location.get !== "function") {
+        throw new Error(`[${label}] Cannot resolve movement origin without Location.get.`);
+    }
+
+    return Location.get(currentLocationId) || null;
+}
+
+function eventLocationContextRepresentsVehicle(eventsInstance, location) {
+    if (!location || typeof location !== "object") {
+        return false;
+    }
+
+    if (
+        location.isVehicle === true ||
+        (location.vehicleInfo && typeof location.vehicleInfo === "object" && !Array.isArray(location.vehicleInfo))
+    ) {
+        return true;
+    }
+
+    const findRegionByLocationId = eventsInstance?._deps?.findRegionByLocationId;
+    if (typeof findRegionByLocationId !== "function" || !location.id) {
+        return false;
+    }
+
+    const region = findRegionByLocationId(location.id);
+    return Boolean(
+        region &&
+        (
+            region.isVehicle === true ||
+            (region.vehicleInfo && typeof region.vehicleInfo === "object" && !Array.isArray(region.vehicleInfo))
+        )
+    );
+}
+
+function resolveEventMoveTravelTimeMinutes({ Location, originLocation, destinationLocation, label = "move_location" } = {}) {
+    if (!originLocation || !destinationLocation) {
+        return 0;
+    }
+    if (originLocation.id && destinationLocation.id && originLocation.id === destinationLocation.id) {
+        return 0;
+    }
+    if (!Location || typeof Location.findShortestTravelTimeMinutes !== "function") {
+        throw new Error(`[${label}] Cannot calculate event movement travel time without Location.findShortestTravelTimeMinutes.`);
+    }
+
+    const originReference =
+        typeof originLocation.id === "string" && originLocation.id.trim()
+            ? originLocation.id
+            : originLocation;
+    const destinationReference =
+        typeof destinationLocation.id === "string" && destinationLocation.id.trim()
+            ? destinationLocation.id
+            : destinationLocation;
+
+    const shortestTravelTimeMinutes = Location.findShortestTravelTimeMinutes(originReference, destinationReference);
+    if (shortestTravelTimeMinutes === null) {
+        return 1;
+    }
+    if (
+        !Number.isFinite(shortestTravelTimeMinutes) ||
+        !Number.isInteger(shortestTravelTimeMinutes) ||
+        shortestTravelTimeMinutes < 0
+    ) {
+        throw new Error(`[${label}] Event movement travel-time helper returned an invalid minute value.`);
+    }
+    return shortestTravelTimeMinutes;
+}
+
+function applyEventMoveTravelTime({
+    eventsInstance,
+    Location,
+    player,
+    context = {},
+    originLocation,
+    destinationObject,
+    label = "move_location",
+} = {}) {
+    if (!player || player.isNPC || context.suppressTimeAdvance) {
+        return;
+    }
+    if (eventLocationContextRepresentsVehicle(eventsInstance, originLocation)) {
+        return;
+    }
+
+    const travelTimeMinutes = resolveEventMoveTravelTimeMinutes({
+        Location,
+        originLocation,
+        destinationLocation: destinationObject,
+        label,
+    });
+    if (travelTimeMinutes <= 0) {
+        return;
+    }
+
+    context.timeProgress = Globals.advanceTime(travelTimeMinutes, { source: "event_move_travel" });
+    context.suppressTimeAdvance = true;
 }
 
 function extractInteger(raw) {

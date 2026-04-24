@@ -1,0 +1,10 @@
+{% macro appNavLink(href, pageKey, label, iconClass, currentPage, variant) %}
+<a href="{{ href }}"
+   class="app-nav__link {{ 'app-nav__link--' ~ variant if variant else '' }} {{ 'is-active' if currentPage == pageKey else '' }}"
+   {% if currentPage == pageKey %}aria-current="page"{% endif %}
+   title="{{ label }}">
+    <span class="app-header-icon {{ iconClass }}" aria-hidden="true"></span>
+    <span class="app-nav__label">{{ label }}</span>
+</a>
+{% endmacro %}
+

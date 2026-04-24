@@ -72,6 +72,9 @@ class Player {
     #corpseCountdown;
     #importantMemories = [];
     #previousLocationId = null; // For tracking location changes. This is the location at the beginning of the turn.
+    #lastSeenTime = null;
+    #lastSeenLocation = null;
+    #wasInPlayerLocationPreviousRound = false;
     #lastActionWasTravel = false;
     #consecutiveTravelActions = 0;
     #turnsSincePartyMemoryGeneration = 0;
@@ -296,6 +299,28 @@ class Player {
             normalized[panelKey] = viewMode;
         }
         return normalized;
+    }
+
+    static #normalizeLastSeenTime(value) {
+        if (value === null || value === undefined || value === '') {
+            return null;
+        }
+        const numeric = Number(value);
+        if (!Number.isFinite(numeric) || !Number.isInteger(numeric) || numeric < 0) {
+            throw new Error('last_seen_time must be a non-negative integer minute timestamp or null.');
+        }
+        return numeric;
+    }
+
+    static #normalizeLastSeenLocation(value) {
+        if (value === null || value === undefined || value === '') {
+            return null;
+        }
+        if (typeof value !== 'string') {
+            throw new Error('last_seen_location must be a string location id or null.');
+        }
+        const trimmed = value.trim();
+        return trimmed || null;
     }
 
     static #normalizeNeedMagnitudeKey(value) {
@@ -1941,6 +1966,12 @@ class Player {
 
         // Location (can be Location ID string or Location object)
         this.#currentLocation = options.location ?? null;
+        this.#lastSeenTime = Player.#normalizeLastSeenTime(options.last_seen_time ?? options.lastSeenTime);
+        this.#lastSeenLocation = Player.#normalizeLastSeenLocation(options.last_seen_location ?? options.lastSeenLocation);
+        this.#wasInPlayerLocationPreviousRound = Boolean(
+            options.was_in_player_location_previous_round
+            ?? options.wasInPlayerLocationPreviousRound
+        );
 
         // Player image ID for generated portrait
         this.#imageId = options.imageId ?? null;
@@ -3134,6 +3165,79 @@ class Player {
         this.#lastUpdated = new Date().toISOString();
     }
 
+    get last_seen_time() {
+        return this.#lastSeenTime;
+    }
+
+    get lastSeenTime() {
+        return this.#lastSeenTime;
+    }
+
+    set last_seen_time(value) {
+        this.#lastSeenTime = Player.#normalizeLastSeenTime(value);
+        this.#lastUpdated = new Date().toISOString();
+    }
+
+    set lastSeenTime(value) {
+        this.last_seen_time = value;
+    }
+
+    get last_seen_location() {
+        return this.#lastSeenLocation;
+    }
+
+    get lastSeenLocation() {
+        return this.#lastSeenLocation;
+    }
+
+    set last_seen_location(value) {
+        this.#lastSeenLocation = Player.#normalizeLastSeenLocation(value);
+        this.#lastUpdated = new Date().toISOString();
+    }
+
+    set lastSeenLocation(value) {
+        this.last_seen_location = value;
+    }
+
+    get was_in_player_location_previous_round() {
+        return this.#wasInPlayerLocationPreviousRound;
+    }
+
+    get wasInPlayerLocationPreviousRound() {
+        return this.#wasInPlayerLocationPreviousRound;
+    }
+
+    set was_in_player_location_previous_round(value) {
+        this.#wasInPlayerLocationPreviousRound = Boolean(value);
+        this.#lastUpdated = new Date().toISOString();
+    }
+
+    set wasInPlayerLocationPreviousRound(value) {
+        this.was_in_player_location_previous_round = value;
+    }
+
+    recordLastSeenByPlayer({ time, locationId, wasInPlayerLocationPreviousRound = true } = {}) {
+        const normalizedTime = Player.#normalizeLastSeenTime(time);
+        if (normalizedTime === null) {
+            throw new Error('recordLastSeenByPlayer requires a last_seen_time value.');
+        }
+        const normalizedLocation = Player.#normalizeLastSeenLocation(locationId);
+        if (!normalizedLocation) {
+            throw new Error('recordLastSeenByPlayer requires a last_seen_location value.');
+        }
+        const normalizedPreviousRound = Boolean(wasInPlayerLocationPreviousRound);
+        const changed = this.#lastSeenTime !== normalizedTime
+            || this.#lastSeenLocation !== normalizedLocation
+            || this.#wasInPlayerLocationPreviousRound !== normalizedPreviousRound;
+        this.#lastSeenTime = normalizedTime;
+        this.#lastSeenLocation = normalizedLocation;
+        this.#wasInPlayerLocationPreviousRound = normalizedPreviousRound;
+        if (changed) {
+            this.#lastUpdated = new Date().toISOString();
+        }
+        return changed;
+    }
+
     get gender() {
         return this.#gender;
     }
@@ -3190,6 +3294,108 @@ class Player {
                 player.updatePreviousLocation();
             }
         }
+    }
+
+    static getNpcIdsSharingPlayerLocation({ player = Globals.currentPlayer, locationId = null } = {}) {
+        if (!(player instanceof Player)) {
+            return [];
+        }
+
+        const playerLocationId = Player.#normalizeLastSeenLocation(locationId ?? player.currentLocation);
+        if (!playerLocationId) {
+            return [];
+        }
+
+        const partyMemberIds = typeof player.getPartyMembers === 'function'
+            ? player.getPartyMembers()
+            : [];
+        const partyMemberIdSet = new Set(
+            (Array.isArray(partyMemberIds) ? partyMemberIds : [])
+                .map(id => (typeof id === 'string' ? id.trim() : ''))
+                .filter(Boolean)
+        );
+
+        const sharingIds = [];
+        for (const npc of Player.#instances) {
+            if (!(npc instanceof Player) || !npc.isNPC || npc.id === player.id) {
+                continue;
+            }
+
+            const npcLocationId = Player.#normalizeLastSeenLocation(npc.currentLocation);
+            const sharesPlayerLocation = partyMemberIdSet.has(npc.id)
+                || (npcLocationId !== null && npcLocationId === playerLocationId);
+
+            if (sharesPlayerLocation) {
+                sharingIds.push(npc.id);
+            }
+        }
+
+        return sharingIds;
+    }
+
+    static recordNpcSightingsForCurrentPlayer({
+        player = Globals.currentPlayer,
+        worldTimeMinutes = null,
+        locationId = null,
+        previouslySharedNpcIds = null
+    } = {}) {
+        if (!(player instanceof Player)) {
+            return [];
+        }
+
+        const playerLocationId = Player.#normalizeLastSeenLocation(locationId ?? player.currentLocation);
+        if (!playerLocationId) {
+            return [];
+        }
+
+        const timestamp = Player.#normalizeLastSeenTime(
+            worldTimeMinutes ?? (typeof Globals.getTotalWorldMinutes === 'function'
+                ? Globals.getTotalWorldMinutes()
+                : null)
+        );
+        if (timestamp === null) {
+            throw new Error('Unable to record NPC sightings without a valid world-time minute timestamp.');
+        }
+
+        const previousSharedNpcIdSet = previouslySharedNpcIds == null
+            ? null
+            : new Set(
+                (Array.isArray(previouslySharedNpcIds) ? previouslySharedNpcIds : Array.from(previouslySharedNpcIds))
+                    .map(id => (typeof id === 'string' ? id.trim() : ''))
+                    .filter(Boolean)
+            );
+
+        const currentSharedNpcIds = new Set(Player.getNpcIdsSharingPlayerLocation({ player, locationId: playerLocationId }));
+        const updated = [];
+        for (const npc of Player.#instances) {
+            if (!(npc instanceof Player) || !npc.isNPC || npc.id === player.id) {
+                continue;
+            }
+
+            const sharesPlayerLocation = currentSharedNpcIds.has(npc.id);
+            const sharedAtTurnStart = previousSharedNpcIdSet
+                ? previousSharedNpcIdSet.has(npc.id)
+                : sharesPlayerLocation;
+            const sharedContinuouslyFromPreviousRound = sharesPlayerLocation && sharedAtTurnStart;
+
+            if (npc.#wasInPlayerLocationPreviousRound !== sharedContinuouslyFromPreviousRound) {
+                npc.#wasInPlayerLocationPreviousRound = sharedContinuouslyFromPreviousRound;
+                npc.#lastUpdated = new Date().toISOString();
+            }
+
+            if (!sharesPlayerLocation) {
+                continue;
+            }
+
+            npc.recordLastSeenByPlayer({
+                time: timestamp,
+                locationId: playerLocationId,
+                wasInPlayerLocationPreviousRound: sharedContinuouslyFromPreviousRound
+            });
+            updated.push(npc);
+        }
+
+        return updated;
     }
 
     // Public getters for private fields
@@ -5592,6 +5798,9 @@ class Player {
             isDead: this.#isDead,
             persistWhenDead: this.#persistWhenDead,
             currentLocation: this.#currentLocation,
+            last_seen_time: this.#lastSeenTime,
+            last_seen_location: this.#lastSeenLocation,
+            was_in_player_location_previous_round: this.#wasInPlayerLocationPreviousRound,
             imageId: this.#imageId,
             isNPC: this.#isNPC,
             isHostile: this.#isHostile,
@@ -5663,6 +5872,9 @@ class Player {
             maxHealth: this.maxHealth,
             healthAttribute: this.#healthAttribute,
             currentLocation: this.#currentLocation,
+            last_seen_time: this.#lastSeenTime,
+            last_seen_location: this.#lastSeenLocation,
+            was_in_player_location_previous_round: this.#wasInPlayerLocationPreviousRound,
             imageId: this.#imageId,
             attributes: this.#attributes,
             isNPC: this.#isNPC,
@@ -5743,6 +5955,10 @@ class Player {
             id: data.id,
             description: data.description,
             location: data.currentLocation,
+            last_seen_time: data.last_seen_time ?? data.lastSeenTime,
+            last_seen_location: data.last_seen_location ?? data.lastSeenLocation,
+            was_in_player_location_previous_round: data.was_in_player_location_previous_round
+                ?? data.wasInPlayerLocationPreviousRound,
             isNPC: data.isNPC,
             isHostile: data.isHostile,
             shortDescription: data.shortDescription,

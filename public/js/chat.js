@@ -1378,7 +1378,7 @@ class AIRPGChat {
             placeholder.innerHTML = `
                 <div class="message-sender">🤖 AI Game Master</div>
                 <div class="message-actions" hidden></div>
-                <div>Welcome to the AI RPG! I\'m your Game Master. Configure your AI settings above, then click Game Settings to set up your world, and finally click New Game.</div>
+                <div>Welcome to the AI RPG! I\'m your Game Master. Use System for operational configuration, Worlds for world profiles, then New Game to begin.</div>
             `;
             this.chatLog.appendChild(placeholder);
         } else {
@@ -2910,7 +2910,7 @@ class AIRPGChat {
         const SAFE_MARGIN = 12;
         let maxBottom = SAFE_MARGIN;
         const candidates = [
-            document.querySelector('.header'),
+            document.querySelector('.app-header') || document.querySelector('.header'),
             document.querySelector('.tab-bar')
         ];
 

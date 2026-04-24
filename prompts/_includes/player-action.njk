@@ -104,6 +104,7 @@ Vehicle update:
 The vehicle the player is onboard, "{{ currentVehicle.name }}" has arrived at "{{ currentVehicle.destination }}", and is no longer enroute. Your prose should reflect this.
 {% endif -%}
 
+{% include "_includes/last-seen-npcs.njk" %}
 
 These characters are present and aware of the action. This is not necessary an exhaustive list, but it contains no false positives:
 - {{ characterName }}

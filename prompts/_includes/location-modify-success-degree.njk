@@ -8,10 +8,15 @@ They had this degree of success/failure: "{{ success_or_failure }}".
 Modification goal: "{{ modificationNotes }}"
 {% endif %}
 
+{% set hasInputItems = inputItems and inputItems.length > 0 %}
+{% if hasInputItems %}
 Selected materials/tools:
 {% for item in inputItems %}
 - {{ item.name }}{% if item.description %}: {{ item.description }}{% endif %}
 {% endfor %}
+{% else %}
+No inventory materials or tools were selected.
+{% endif %}
 
 The following is an XML representation of the location modification outcome if it were a standard success. Adjust the alteration, consumed materials, newly received portable items, time taken, and any additional effect to accurately reflect this level of success or failure: {{ success_or_failure }}.
 
@@ -37,5 +42,6 @@ Received item rules:
 - Use <itemsReceived> only for portable items the player newly finds, uncovers, extracts, or obtains as a byproduct of the modification attempt.
 - Do not use <itemsReceived> for repaired or improved parts of the location such as floorboards, walls, windows, doors, fixtures, lighting, atmosphere, or scenery that remains part of the place.
 - Do not list selected tools or materials in <itemsReceived> merely because they were used but not consumed. Preserved inputs should be omitted from both <itemsConsumed> and <itemsReceived>.
+- If no inventory items were selected, keep <itemsConsumed> empty.
 
 Output the response in the same XML format as the input. Preserve the outer <response> wrapper, the <locationModificationResults> wrapper, and every direct <result> field from the input unless you are intentionally changing that field. Always include <locationChanged>, <alteration>, <itemsConsumed>, <itemsReceived>, and <timeTaken> inside <result>. If the location does not change, set <locationChanged>false</locationChanged> and keep <alteration> concise. Remember to change the contents of the <level> tag to "{{ success_or_failure }}" to reflect the actual degree of success or failure.

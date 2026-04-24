@@ -7,11 +7,9 @@
 </head>
 <body>
     <div class="container">
-        <div class="header">
-            <h1>Lorebook Manager</h1>
-            <p>Manage world info lorebooks for AI-assisted world building</p>
-            {% include "_navigation.njk" %}
-        </div>
+        {% set appHeaderTitle = 'Lorebooks' %}
+        {% set appHeaderSubtitle = 'Manage world info for AI-assisted world building' %}
+        {% include "_includes/app-header.njk" %}
 
         <div id="statusMessage" class="status-message"></div>
 

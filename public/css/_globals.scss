@@ -20,6 +20,24 @@ $error-border: #ff6b6b;
 $scrollbar-track: rgba(255, 255, 255, 0.12);
 $scrollbar-thumb-base: rgba(102, 126, 234, 0.88);
 $scrollbar-thumb-hover: rgba(118, 75, 162, 0.9);
+$app-header-surface: linear-gradient(
+  135deg,
+  rgba(10, 16, 30, 0.94) 0%,
+  rgba(22, 34, 56, 0.91) 50%,
+  rgba(46, 32, 68, 0.89) 100%
+);
+$app-header-border: rgba(125, 211, 252, 0.28);
+$app-header-hover-surface: rgba(255, 255, 255, 0.12);
+$app-header-action-surface: rgba(255, 255, 255, 0.1);
+$app-header-active-surface: rgba(56, 189, 248, 0.2);
+$app-header-active-border: rgba(125, 211, 252, 0.68);
+$app-header-accent-surface: rgba(250, 204, 21, 0.16);
+$app-header-accent-border: rgba(250, 204, 21, 0.62);
+$app-header-focus-ring: rgba(56, 189, 248, 0.48);
+$app-header-muted-text: rgba(226, 232, 240, 0.72);
+$app-header-control-height: 38px;
+$app-header-control-radius: 8px;
+$app-header-gap: 10px;
 $border-radius: 8px;
 $border-radius-lg: 15px;
 $border-radius-md: 12px;

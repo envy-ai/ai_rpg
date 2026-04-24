@@ -36,6 +36,7 @@ const HIDDEN_CHAT_ENTRY_TYPES = new Set([
     'supplemental-story-info',
     'offscreen-npc-activity-daily',
     'offscreen-npc-activity-weekly',
+    'while-you-were-away',
     'plot-summary',
     'plot-expander'
 ]);
@@ -2287,6 +2288,12 @@ async function validateConfiguration() {
     if (config.prompt_uses_caching !== undefined && typeof config.prompt_uses_caching !== 'boolean') {
         validationErrors.push('prompt_uses_caching must be a boolean when provided');
     }
+    if (config.while_you_were_away_threshold_minutes !== undefined) {
+        const threshold = Number(config.while_you_were_away_threshold_minutes);
+        if (!Number.isInteger(threshold) || threshold < 0) {
+            validationErrors.push('while_you_were_away_threshold_minutes must be an integer greater than or equal to 0 when provided');
+        }
+    }
 
     // Report validation results
     if (validationErrors.length > 0) {
@@ -3793,6 +3800,9 @@ function serializeNpcForClient(npc, options = {}) {
         wasEverInPlayerParty: Boolean(npc.wasEverInPlayerParty),
         isHostileToPlayer: hostileToPlayer,
         locationId: npc.currentLocation,
+        last_seen_time: npc.last_seen_time ?? null,
+        last_seen_location: npc.last_seen_location ?? null,
+        was_in_player_location_previous_round: Boolean(npc.was_in_player_location_previous_round),
         corpseCountdown: Number.isFinite(npc.corpseCountdown) ? npc.corpseCountdown : (npc.corpseCountdown ?? null),
         persistWhenDead: Boolean(npc.persistWhenDead),
         attributes,
@@ -5603,7 +5613,10 @@ function buildBasePromptContext({
                 needBars,
                 needs,
                 importantMemories,
-                selectedImportantMemories: []
+                selectedImportantMemories: [],
+                last_seen_time: npc.last_seen_time,
+                last_seen_location: npc.last_seen_location,
+                was_in_player_location_previous_round: Boolean(npc.was_in_player_location_previous_round)
             });
         }
     }
@@ -5656,6 +5669,130 @@ function buildBasePromptContext({
             });
         }
     }
+
+    const normalizePromptLocationId = (value) => {
+        if (typeof value !== 'string') {
+            return null;
+        }
+        const trimmed = value.trim();
+        return trimmed || null;
+    };
+    const resolvePromptLocationName = (locationId) => {
+        const normalizedId = normalizePromptLocationId(locationId);
+        if (!normalizedId) {
+            return null;
+        }
+        const locationRecord = gameLocations.get(normalizedId) || Location.get(normalizedId) || null;
+        return locationRecord?.name || locationRecord?.getDetails?.()?.name || normalizedId;
+    };
+    const currentLocationIdForLastSeen = normalizePromptLocationId(location?.id || currentPlayer?.currentLocation);
+    const currentTotalWorldMinutes = (() => {
+        try {
+            return typeof Globals.getTotalWorldMinutes === 'function' ? Globals.getTotalWorldMinutes() : null;
+        } catch (_) {
+            return null;
+        }
+    })();
+    const currentLocationLastSeenNpcs = [];
+    for (const npc of npcs) {
+        if (!npc || npc.was_in_player_location_previous_round) {
+            continue;
+        }
+        const lastSeenTime = npc.last_seen_time;
+        const lastSeenLocationId = normalizePromptLocationId(npc.last_seen_location);
+        if (!Number.isInteger(lastSeenTime) || lastSeenTime < 0 || !lastSeenLocationId) {
+            continue;
+        }
+
+        let lastSeenTimeAgo = null;
+        let lastSeenAgeMinutes = null;
+        if (Number.isInteger(currentTotalWorldMinutes) && currentTotalWorldMinutes >= lastSeenTime) {
+            try {
+                lastSeenAgeMinutes = currentTotalWorldMinutes - lastSeenTime;
+                lastSeenTimeAgo = Utils.formatAbsoluteWorldMinutesAgo(lastSeenTime, {
+                    currentTotalMinutes: currentTotalWorldMinutes
+                });
+            } catch (_) {
+                lastSeenAgeMinutes = null;
+                lastSeenTimeAgo = null;
+            }
+        }
+        if (!lastSeenTimeAgo) {
+            continue;
+        }
+
+        currentLocationLastSeenNpcs.push({
+            id: npc.id,
+            name: npc.name || 'Unknown NPC',
+            last_seen_time: lastSeenTime,
+            lastSeenAgeMinutes,
+            lastSeenTimeAgo,
+            last_seen_location: lastSeenLocationId,
+            lastSeenLocationName: resolvePromptLocationName(lastSeenLocationId)
+        });
+    }
+    currentLocationLastSeenNpcs.sort((a, b) => {
+        const timeDelta = b.last_seen_time - a.last_seen_time;
+        if (timeDelta !== 0) {
+            return timeDelta;
+        }
+        return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+    });
+    const whileYouWereAwayNpcs = currentLocationLastSeenNpcs.slice();
+
+    const lastSeenNpcs = [];
+    for (const actor of players.values()) {
+        if (!actor || !actor.isNPC || actor.id === currentPlayer?.id) {
+            continue;
+        }
+        const lastSeenTime = actor.last_seen_time;
+        const lastSeenLocationId = normalizePromptLocationId(actor.last_seen_location);
+        if (!Number.isInteger(lastSeenTime) || lastSeenTime < 0 || !lastSeenLocationId) {
+            continue;
+        }
+        const actorLocationId = normalizePromptLocationId(actor.currentLocation);
+        const sharesCurrentLocation = partyMemberIdSet.has(actor.id)
+            || (
+                currentLocationIdForLastSeen
+                && actorLocationId
+                && actorLocationId === currentLocationIdForLastSeen
+            );
+        if (sharesCurrentLocation) {
+            continue;
+        }
+
+        let lastSeenTimeAgo = null;
+        if (Number.isInteger(currentTotalWorldMinutes) && currentTotalWorldMinutes >= lastSeenTime) {
+            try {
+                lastSeenTimeAgo = Utils.formatAbsoluteWorldMinutesAgo(lastSeenTime, {
+                    currentTotalMinutes: currentTotalWorldMinutes
+                });
+            } catch (_) {
+                lastSeenTimeAgo = null;
+            }
+        }
+
+        lastSeenNpcs.push({
+            id: actor.id,
+            name: actor.name || 'Unknown NPC',
+            shortDescription: actor.shortDescription || '',
+            class: actor.class || null,
+            race: actor.race || null,
+            last_seen_time: lastSeenTime,
+            lastSeenTimeAgo,
+            last_seen_location: lastSeenLocationId,
+            lastSeenLocationName: resolvePromptLocationName(lastSeenLocationId),
+            currentKnownLocationName: resolvePromptLocationName(actorLocationId),
+            was_in_player_location_previous_round: Boolean(actor.was_in_player_location_previous_round)
+        });
+    }
+    lastSeenNpcs.sort((a, b) => {
+        const timeDelta = b.last_seen_time - a.last_seen_time;
+        if (timeDelta !== 0) {
+            return timeDelta;
+        }
+        return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+    });
 
     if (!npcs.length && party.length) {
         npcs.push(...party.map(member => ({ ...member })));
@@ -6386,6 +6523,9 @@ function buildBasePromptContext({
         omitAbilities: shouldOmitAbilities,
         npcs,
         party,
+        lastSeenNpcs,
+        currentLocationLastSeenNpcs,
+        whileYouWereAwayNpcs,
         itemsInScene,
         dispositionTypes: dispositionTypesForPrompt,
         dispositionRange: dispositionDefinitions?.range || {},

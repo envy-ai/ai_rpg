@@ -97,11 +97,9 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
 </head>
 <body class="new-game-page">
     <div class="container">
-        <div class="header">
-            <h1>{{ headingIcon }} Start a New Game</h1>
-            <p>{{ pageDescription }}</p>
-            {% include "_navigation.njk" %}
-        </div>
+        {% set appHeaderTitle = 'New Game' %}
+        {% set appHeaderSubtitle = pageDescription %}
+        {% include "_includes/app-header.njk" %}
 
         <div class="main-content">
             <div class="page-section" style="width:100%; max-width: 760px; margin: 20px auto;">

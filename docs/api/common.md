@@ -18,7 +18,7 @@ Fields:
 - `timestamp`: ISO string (generated if missing)
 - `parentId`: string | null
 - `locationId`: string (required; enforced by `pushChatEntry`)
-- `type`: string | null (examples: `player-action`, `user-question`, `storyteller-answer`, `user-generic-prompt`, `generic-prompt-response`, `event-summary`, `quest-reward`, `status-summary`, hidden server-only story-note attachments such as `supplemental-story-info`, `plot-summary`, `plot-expander`, `offscreen-npc-activity-daily`, `offscreen-npc-activity-weekly`)
+- `type`: string | null (examples: `player-action`, `user-question`, `storyteller-answer`, `user-generic-prompt`, `generic-prompt-response`, `event-summary`, `quest-reward`, `status-summary`, visible assistant prose such as `while-you-were-away-player`, and hidden server-only story-note attachments such as `supplemental-story-info`, `while-you-were-away`, `plot-summary`, `plot-expander`, `offscreen-npc-activity-daily`, `offscreen-npc-activity-weekly`)
 - `summary`: string | null
 - `summaryTitle`: string | null (event summaries)
 - `summaryItems`: array | null (event summaries)
@@ -108,6 +108,7 @@ Fields:
 - `persistWhenDead`
 - `isInPlayerParty`, `wasEverInPlayerParty`, `isHostileToPlayer`
 - `locationId`
+- `last_seen_time` (absolute world-minute timestamp | null), `last_seen_location` (location id | null), `was_in_player_location_previous_round` (boolean)
 - `corpseCountdown`
 - `attributes` (object)
 - `skills` (object)
@@ -146,7 +147,7 @@ Highlights beyond `Player.toJSON()`:
 - `skills`, `abilities`, `unspentSkillPoints`, `unspentAttributePoints`
 - `statusEffects` (active effects), `intrinsicStatusEffects` may be added by the route
 - `gear`, `gearSlotsByType`, `gearSlotDefinitions`
-- `needBars`, `needBarApplicability`, `corpseCountdown`, `persistWhenDead`, `wasEverInPlayerParty`, `importantMemories`
+- `needBars`, `needBarApplicability`, `corpseCountdown`, `persistWhenDead`, `wasEverInPlayerParty`, `last_seen_time`, `last_seen_location`, `was_in_player_location_previous_round`, `importantMemories`
 - `resistances`, `vulnerabilities`
 - `quests`, `personality`, `goals`, `characterArc`
 

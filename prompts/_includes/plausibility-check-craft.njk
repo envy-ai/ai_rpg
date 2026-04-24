@@ -6,6 +6,7 @@ Guidelines:
 - Do not consider whether an action is illegal, unethical, or immoral, only whether it is trivial, plausible, or implausible.
 - It's generally okay to assume that the tools necessary for using a crafting or processing station are present at the station, unless indicated otherwise. A carpentry workbench would have woodworking tools, a cooking station would have cooking utensils, etc.
 - Crafting with uncommon or better quality ingredients should result in a circumstance modifiert that scales with the quality and rarity of the ingredients. Crafting with poor quality or inappropriate ingredients should result in a negative circumstance modifier that scales with how poor the quality is and how inappropriate the ingredients are.
+- If no inventory items are selected, judge plausibility from the station, current location, player abilities, and stated intent. Do not invent consumed input items; <itemsConsumed> should remain empty unless an exact selected input item exists.
 - Check the player's abilities and account for any that might change the outcome of the crafting attempt.
 {% if craftTargetType == 'scenery' %}
 - The player is explicitly crafting scenery (a non-portable fixture). Every crafted output must set <itemOrScenery>scenery</itemOrScenery>. It should not be equippable or consumable, should not grant attribute bonuses, and should not apply status effects. Slot should be N/A.
@@ -13,25 +14,30 @@ Guidelines:
 - The player is explicitly crafting a portable item. Every crafted output must set <itemOrScenery>item</itemOrScenery>.
 {% endif %}
 
+{% set hasCraftingItems = craftingItems and craftingItems.length > 0 %}
 Current Situation:
 {% if intendedItemName %}
 {% if craftTargetType == 'scenery' %}
-The player is attempting to craft scenery called "{{ intendedItemName }}" {% if stationName == 'no workstation' %}with the resources currently available to them {% else %}using the crafting/processing station "{{ stationName }}"{% endif %} out of the following items:
+The player is attempting to craft scenery called "{{ intendedItemName }}" {% if stationName == 'no workstation' %}with the resources currently available to them{% else %}using the crafting/processing station "{{ stationName }}"{% endif %}{% if hasCraftingItems %} out of the following items:{% else %} with no selected inventory items.{% endif %}
 {% else %}
-The player is attempting to craft an item called "{{ intendedItemName }}" {% if stationName == 'no workstation' %}with the resources currently available to them {% else %}using the crafting/processing station "{{ stationName }}"{% endif %} out of the following items:
+The player is attempting to craft an item called "{{ intendedItemName }}" {% if stationName == 'no workstation' %}with the resources currently available to them{% else %}using the crafting/processing station "{{ stationName }}"{% endif %}{% if hasCraftingItems %} out of the following items:{% else %} with no selected inventory items.{% endif %}
 {% endif %}
+{% if hasCraftingItems %}
 {%- for item in craftingItems %}
     - {{ item.name }}
 {% endfor %}
+{% endif %}
 {% else %}
 {% if craftTargetType == 'scenery' %}
-The player is attempting to craft scenery {% if stationName == 'no workstation' %}with the resources currently available to them {% else %}using the crafting/processing station "{{ stationName }}"{% endif %}  out of the following items:
+The player is attempting to craft scenery {% if stationName == 'no workstation' %}with the resources currently available to them{% else %}using the crafting/processing station "{{ stationName }}"{% endif %}{% if hasCraftingItems %} out of the following items:{% else %} with no selected inventory items.{% endif %}
 {% else %}
-The player is attempting to craft an item {% if stationName == 'no workstation' %}with the resources currently available to them {% else %}using the crafting/processing station "{{ stationName }}"{% endif %}  out of the following items:
+The player is attempting to craft an item {% if stationName == 'no workstation' %}with the resources currently available to them{% else %}using the crafting/processing station "{{ stationName }}"{% endif %}{% if hasCraftingItems %} out of the following items:{% else %} with no selected inventory items.{% endif %}
 {% endif %}
+{% if hasCraftingItems %}
 {%- for item in craftingItems %}
     - {{ item.name }}
 {% endfor %}
+{% endif %}
 {% endif %}
 
 {% if craftingNotes %}
@@ -47,7 +53,7 @@ Step 1: Determine whether the crafting/processing action is plausible or implaus
     <reason>Brief explanation of why this skill/attribute and difficulty level are appropriate for the crafting attempt</reason>
     <skill>One of the following skills: {{ setting.skills | join(', ') }} (Or, if none are relevant, respond with N/A.)</skill>
     <attribute>Relevant attribute</attribute>
-    <difficulty>Difficulty level (Trivial, Easy, Medium, Hard, Very Hard, Legendary). Do not account for the player's current state, because that's accounted for in the circumstance modifiers. What you should account for is the appropriateness and quality of the ingredients. If the character is attempting to craft a woodsman's axe out of a rusty shovel head, an old stick, and a piece of twine, it should be a higher difficulty level and the possible outcomes should reflect the ingredients. Note that ingredient quality should *not* be reflected in circumstance modifiers, as it's already being accounted for here.</difficulty>
+    <difficulty>Difficulty level (Trivial, Easy, Medium, Hard, Very Hard, Legendary). Do not account for the player's current state, because that's accounted for in the circumstance modifiers. What you should account for is the appropriateness, quality, and possible absence of selected ingredients. If the character is attempting to craft a woodsman's axe out of a rusty shovel head, an old stick, and a piece of twine, it should be a higher difficulty level and the possible outcomes should reflect the ingredients. If no inventory items were selected, account for whether the station, environment, and stated intent provide enough resources. Note that ingredient quality should *not* be reflected in circumstance modifiers, as it's already being accounted for here.</difficulty>
     <curcumstanceModifiers>
       <circumstanceModifier>
         <amount>integer from -10 (worst possible circumstances) to 10 (extremely ideal circumstances)</amount>
@@ -81,7 +87,7 @@ Step 3: If the action is plausible, determine the outputted item(s) for a normal
   <result>
     <level>success</level>
     <itemsConsumed>
-      <!-- In this section, list all of the items consumed in the crafting attempt. Crafting may consume some, all, or none of the input items depending on the recipe and the level of success. Generally, crafting tools used in the process are not consumed, as well as items where only a portion is used, or things that the crafting station specifies are not consumed. -->
+      <!-- In this section, list all of the items consumed in the crafting attempt. Crafting may consume some, all, or none of the input items depending on the recipe and the level of success. Generally, crafting tools used in the process are not consumed, as well as items where only a portion is used, or things that the crafting station specifies are not consumed. If no input items were selected, leave this wrapper empty. -->
       <itemName><!-- exact name of consumed item --></itemName>
       ... more itemName tags as needed ...
     </itemsConsumed>

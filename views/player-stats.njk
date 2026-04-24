@@ -6,11 +6,9 @@
 </head>
 <body>
     <div class="container">
-        <div class="header">
-            <h1>🎲 Player Stats Configuration</h1>
-            <p>Configure your character's attributes and details</p>
-            {% include "_navigation.njk" %}
-        </div>
+        {% set appHeaderTitle = 'Player Stats' %}
+        {% set appHeaderSubtitle = 'Configure character attributes and details' %}
+        {% include "_includes/app-header.njk" %}
 
         <div class="config-content">
             <!-- Player Basic Info Section -->

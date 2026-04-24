@@ -23,7 +23,7 @@ Routing is registered in `server.js` (most pages) and `api.js` (debug + player s
 ## Directory map
 - `views/` server-rendered templates.
   - `index.njk` main UI (tabs, chat, panels, modals).
-  - `_navigation.njk` shared nav buttons.
+  - `_includes/app-header.njk` shared app header, `_includes/app-header-nav.njk` nav macro, and `_navigation.njk` legacy shim.
   - `new-game.njk`, `config.njk`, `settings.njk`, `lorebooks.njk`, `debug.njk`, `player-stats.njk`.
   - `views/popups/plausibility.njk` server-side copy of plausibility tooltip markup.
 - `public/js/` client scripts (chat, maps, lorebooks, settings logic, etc).
@@ -43,7 +43,7 @@ From `views/index.njk`:
 
 ## Files in this folder
 - `docs/ui/pages.md` routes, templates, scripts, and injected data.
-- `docs/ui/chat_interface.md` main chat UI layout, behaviors, data flow.
+- `docs/ui/chat_interface.md` main Play interface layout, behaviors, data flow.
 - `docs/ui/modals_overlays.md` modal inventory (chat page).
 - `docs/ui/maps.md` region map and world map implementation.
 - `docs/ui/assets_styles.md` styling, assets, and vendor libraries.

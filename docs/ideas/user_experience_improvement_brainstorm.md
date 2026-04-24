@@ -107,7 +107,7 @@ Risks:
 
 ### 6. Model/config health panel
 
-Add a clearer runtime health view for text backend, image backend, config validation, active mods, current setting, force-output state, and prompt concurrency. This can be a developer-facing debug/config improvement.
+Add a clearer runtime health view for text backend, image backend, config validation, active mods, active world profile, force-output state, and prompt concurrency. This can be a developer-facing debug/config improvement.
 
 Benefits:
 - Shortens setup and debugging loops.
@@ -130,20 +130,23 @@ Risks:
 
 Redesign the top menu/header into a consistent shared navigation system across pages. The current main menu behaves and looks inconsistent between pages; a unified header could give the app a stronger visual identity, make page switching predictable, and reduce the sense that different sections belong to different tools.
 
+Expanded brainstorm: [header_revamp_brainstorm.md](header_revamp_brainstorm.md).
+
 The revamp could include:
 
 - One shared page-header partial used by all top-level pages.
 - Consistent page ordering, labels, icons, active-state styling, and disabled/hidden states.
-- Clear grouping for play, world/setup, configuration, tools, and developer/debug pages.
+- Clear grouping for play, world/setup, system configuration, tools, and developer/debug pages.
+- Less ambiguous navigation wording, such as `Worlds` for RPG setting/world profiles and `System` for operational configuration.
 - A responsive mobile layout that does not collapse into cramped or inconsistent buttons.
-- A compact status area for current save/setting/backend state where useful.
+- A compact status area for current save, active world/profile, and backend state where useful.
 - A clearer visual hierarchy between global navigation, page-specific tabs, and in-page actions.
 - Consistent treatment of destructive or developer-only actions so they do not look like ordinary navigation.
 
 Benefits:
 - Makes the app feel more cohesive and polished.
-- Reduces orientation cost when moving between chat, settings, config, lorebooks, debug, and new-game pages.
-- Creates a shared place for future UX ideas like command palette access, save status, backend health, or current setting.
+- Reduces orientation cost when moving between Play, New Game, Worlds, Lorebooks, System, and Tools pages.
+- Creates a shared place for future UX ideas like command palette access, save status, backend health, or active world profile.
 - Makes responsive and keyboard navigation easier to handle once instead of per page.
 
 Likely anchors:
@@ -330,12 +333,12 @@ Risks:
 
 ### 17. Setting creation studio
 
-Turn setting creation into a structured studio: genre, tone, rules modules, default skills, factions, slop words, image style, calendars, start conditions, and preview prompts. Provide validation and sample generated output before starting a game. See `docs/ideas/setting_creation_studio_brainstorm.md` for an expanded brainstorm.
+Turn world/setting creation into a structured studio: genre, tone, rules modules, default skills, factions, slop words, image style, calendars, start conditions, and preview prompts. Provide validation and sample generated output before starting a game. See `docs/ideas/setting_creation_studio_brainstorm.md` for an expanded brainstorm.
 
 Benefits:
-- Makes settings easier to author and reuse.
+- Makes world profiles easier to author and reuse.
 - Reduces broken new-game runs from incomplete settings.
-- Gives mods/settings a clearer authoring surface.
+- Gives mods and world profiles a clearer authoring surface.
 
 Likely anchors:
 - `SettingInfo`

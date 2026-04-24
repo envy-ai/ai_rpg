@@ -1,0 +1,5 @@
+{% if currentLocationLastSeenNpcs and currentLocationLastSeenNpcs | length -%}
+{% for npc in currentLocationLastSeenNpcs -%}
+- {{ npc.name }} (last seen {{ npc.lastSeenTimeAgo }} at {{ npc.lastSeenLocationName | default(npc.last_seen_location, true) }})
+{% endfor -%}
+{% endif -%}

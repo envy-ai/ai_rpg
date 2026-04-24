@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
-{% set pageTitleValue = title | default("Game Settings Manager") %}
+{% set pageTitleValue = title | default("World Profiles") %}
 <head>
     {% include "_includes/head-common.njk" %}
     <link rel="stylesheet" href="/css/settings.css">
@@ -15,11 +15,9 @@ Rooms/Locations: [comma-separated list of rooms]
 Region exits: [comma-separated list of connected regions]{%- endset %}
     {% set baseContextPreamblePlaceholder = '[Title: The Verdant Metropolis; Tags: heroic, dark, edgy; Genre: sci-fi, adventure, dystopian]' %}
     <div class="container">
-        <div class="header">
-            <h1>⚙️ Game Settings Manager</h1>
-            <p>Create and manage custom game world settings</p>
-            {% include "_navigation.njk" %}
-        </div>
+        {% set appHeaderTitle = 'World Profiles' %}
+        {% set appHeaderSubtitle = 'Create and manage reusable RPG world profiles' %}
+        {% include "_includes/app-header.njk" %}
 
         <div id="statusMessage" class="status-message"></div>
 
@@ -27,8 +25,8 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
             <aside class="settings-library-panel">
                 <div class="library-header">
                     <div>
-                        <h2>📋 Saved Settings</h2>
-                        <p id="appliedSettingLabel" class="applied-setting-label">No setting currently applied.</p>
+                        <h2>📋 Saved World Profiles</h2>
+                        <p id="appliedSettingLabel" class="applied-setting-label">No world profile currently applied.</p>
                     </div>
                     <button type="button" id="newSettingBtn" class="btn btn-secondary btn-small-action">+ New</button>
                 </div>
@@ -51,8 +49,8 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
 
                 <div id="selectedSettingPanel" class="selected-setting-panel is-empty">
                     <div class="selected-setting-info">
-                        <h3 id="selectedSettingTitle">No setting selected</h3>
-                        <p id="selectedSettingMeta">Select a setting from the library to edit or apply it.</p>
+                        <h3 id="selectedSettingTitle">No world profile selected</h3>
+                        <p id="selectedSettingMeta">Select a world profile from the library to edit or apply it.</p>
                     </div>
                     <div class="selected-setting-actions">
                         <button type="button" id="selectedEditBtn" class="btn btn-secondary">Edit</button>
@@ -65,14 +63,14 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
 
                 <div id="settingsList" class="settings-list-items">
                     <div class="empty-state">
-                        <p>No settings created yet.<br>Create your first setting using the editor.</p>
+                        <p>No world profiles created yet.<br>Create your first profile using the editor.</p>
                     </div>
                 </div>
             </aside>
 
             <section class="settings-editor-panel">
                 <h2 id="formTitle">✨ Create New Setting</h2>
-                <p class="editor-intro">Use tabs to focus on one slice of the setting at a time. All fields still save together.</p>
+                <p class="editor-intro">Use tabs to focus on one slice of the world profile at a time. All fields still save together.</p>
 
                 <div class="editor-tabs" role="tablist" aria-label="Setting editor sections">
                     <button type="button" class="editor-tab-btn is-active" data-editor-tab="basics" aria-selected="true">Basics</button>
@@ -92,18 +90,18 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                             <div class="form-group">
                                 <label for="name">Setting Name *</label>
                                 <input type="text" id="name" name="name" required>
-                                <div class="help-text">Unique name for this setting configuration.</div>
+                                <div class="help-text">Unique name for this world profile.</div>
                             </div>
 
                             <div class="form-group full-width">
                                 <label for="description">Description</label>
-                                <textarea id="description" name="description" rows="12" placeholder="Describe this setting and what makes it unique..."></textarea>
+                                <textarea id="description" name="description" rows="12" placeholder="Describe this world profile and what makes it unique..."></textarea>
                             </div>
 
                             <div class="form-group">
                                 <label for="theme">World Theme *</label>
                                 <input type="text" id="theme" name="theme" required placeholder="e.g., Fantasy, Sci-Fi, Modern, Horror, Cyberpunk...">
-                                <div class="help-text">The overarching setting of the game world.</div>
+                                <div class="help-text">The overarching environment, genre, and premise of the game world.</div>
                             </div>
 
                             <div class="form-group">
@@ -201,7 +199,7 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                             <div class="form-group">
                                 <label for="defaultFactionCount">Number of Factions</label>
                                 <input type="number" id="defaultFactionCount" name="defaultFactionCount" min="0" step="1" value="{{ defaultFactionCountFallback | default(5) }}">
-                                <div class="help-text">Used when generating factions for a new game from this setting.</div>
+                                <div class="help-text">Used when generating factions for a new game from this world profile.</div>
                             </div>
 
                             <div class="form-group full-width">
@@ -212,12 +210,12 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                                     <button type="button" class="btn btn-secondary small" id="settingsFactionApplyBtn">Apply Edits</button>
                                     <button type="button" class="btn btn-accent small" id="settingsFactionAutofillBtn">✨ Auto-Fill Selected</button>
                                 </div>
-                                <div class="help-text">Use pre-generation to create a baseline list, then edit each faction before saving the setting.</div>
+                                <div class="help-text">Use pre-generation to create a baseline list, then edit each faction before saving the profile.</div>
                             </div>
 
                             <div class="form-group full-width">
                                 <label for="settingsFactionGenerationNotes">Faction Generation Notes (AI Guidance)</label>
-                                <textarea id="settingsFactionGenerationNotes" rows="3" placeholder="Optional guidance for faction generation/autofill in this setting..."></textarea>
+                                <textarea id="settingsFactionGenerationNotes" rows="3" placeholder="Optional guidance for faction generation/autofill in this world profile..."></textarea>
                             </div>
 
                             <div class="form-group full-width">
@@ -329,7 +327,7 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                             <div class="form-group full-width">
                                 <label for="characterGenInstructions">Character Generation Instructions</label>
                                 <textarea id="characterGenInstructions" name="characterGenInstructions" rows="5" placeholder="Optional extra guidance for NPC and character concept generation..."></textarea>
-                                <div class="help-text">Applied when generating NPCs and character concepts for this setting.</div>
+                                <div class="help-text">Applied when generating NPCs and character concepts for this world profile.</div>
                             </div>
 
                             <div class="form-group full-width">
@@ -394,7 +392,7 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                 </button>
             </header>
             <div class="modal__body">
-                <p class="help-text" style="margin-bottom: 0.75rem;">Optional notes for the AI when generating missing setting details. Leave blank to continue without extra guidance.</p>
+                <p class="help-text" style="margin-bottom: 0.75rem;">Optional notes for the AI when generating missing world profile details. Leave blank to continue without extra guidance.</p>
                 <textarea id="autofillInstructionsInput" rows="5" placeholder="E.g., focus on coastal cities and political intrigue..."></textarea>
                 <div class="autofill-image-field">
                     <label for="autofillImageInput">Reference Image (optional)</label>
@@ -678,7 +676,7 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
             if (appliedSetting && typeof appliedSetting.name === 'string' && appliedSetting.name.trim()) {
                 appliedLabel.textContent = `Currently applied: ${appliedSetting.name.trim()}`;
             } else {
-                appliedLabel.textContent = 'No setting currently applied.';
+                appliedLabel.textContent = 'No world profile currently applied.';
             }
         }
 
@@ -699,8 +697,8 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
             const selected = getSelectedSetting();
             if (!selected) {
                 panel.classList.add('is-empty');
-                title.textContent = 'No setting selected';
-                meta.textContent = 'Select a setting from the library to edit or apply it.';
+                title.textContent = 'No world profile selected';
+                meta.textContent = 'Select a world profile from the library to edit or apply it.';
                 description.textContent = '';
                 editBtn.disabled = true;
                 applyBtn.disabled = true;
@@ -735,7 +733,7 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
             if (currentSettings.length === 0) {
                 container.innerHTML = `
                     <div class="empty-state">
-                        <p>No settings created yet.<br>Create your first setting using the editor.</p>
+                        <p>No world profiles created yet.<br>Create your first profile using the editor.</p>
                     </div>
                 `;
                 return;
@@ -745,7 +743,7 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
             if (visibleSettings.length === 0) {
                 container.innerHTML = `
                     <div class="empty-state">
-                        <p>No settings matched your search.</p>
+                        <p>No world profiles matched your search.</p>
                     </div>
                 `;
                 return;
@@ -768,7 +766,7 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                         <button type="button" class="setting-item ${isSelected ? 'selected' : ''}" data-setting-id="${escapeHtml(setting.id || '')}">
                             <span class="setting-item-main">
                                 <span class="setting-item-header">
-                                    <span class="setting-name">${escapeHtml(setting.name || 'Unnamed Setting')}</span>
+                                    <span class="setting-name">${escapeHtml(setting.name || 'Unnamed World Profile')}</span>
                                     <span class="setting-badges">${badges.join('')}</span>
                                 </span>
                                 <span class="setting-meta">${escapeHtml(getSettingMetaText(setting))}</span>
@@ -920,7 +918,7 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
 
         async function cloneSetting(settingId) {
             try {
-                const newName = prompt('Enter name for cloned setting:');
+                const newName = prompt('Enter name for cloned world profile:');
                 if (!newName) return;
 
                 const response = await fetch(`/api/settings/${settingId}/clone`, {
@@ -948,15 +946,15 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                     showMessage('Setting cloned successfully!', 'success');
                     await refreshSettingsList();
                 } else {
-                    showMessage('Error cloning setting: ' + data.error, 'error');
+                    showMessage('Error cloning world profile: ' + data.error, 'error');
                 }
             } catch (error) {
-                showMessage('Error cloning setting: ' + error.message, 'error');
+                showMessage('Error cloning world profile: ' + error.message, 'error');
             }
         }
 
         async function deleteSetting(settingId) {
-            if (!confirm('Are you sure you want to delete this setting?')) return;
+            if (!confirm('Are you sure you want to delete this world profile?')) return;
 
             try {
                 const response = await fetch(`/api/settings/${settingId}`, {
@@ -976,10 +974,10 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                     await refreshSettingsList();
                     await loadCurrentSetting();
                 } else {
-                    showMessage('Error deleting setting: ' + data.error, 'error');
+                    showMessage('Error deleting world profile: ' + data.error, 'error');
                 }
             } catch (error) {
-                showMessage('Error deleting setting: ' + error.message, 'error');
+                showMessage('Error deleting world profile: ' + error.message, 'error');
             }
         }
 
@@ -992,7 +990,7 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                 const data = await response.json();
                 
                 if (data.success) {
-                    showMessage('Setting applied successfully! Game Master will now use this setting.', 'success');
+                    showMessage('World profile applied successfully! Game Master will now use this profile.', 'success');
                     appliedSetting = data.setting;
                     console.log('Applied Setting:', appliedSetting);
                     updateCurrentSettingDisplay();
@@ -1001,7 +999,7 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                     }
                     renderSettingsList();
                 } else {
-                    showMessage('Error applying setting: ' + data.error, 'error');
+                    showMessage('Error applying world profile: ' + data.error, 'error');
                 }
 
                 // Get /api/settings/current to confirm
@@ -1009,13 +1007,13 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                 const data2 = await response2.json();
 
                 // Log current setting to console
-                console.log('Current Setting after apply:', data2);
+                console.log('Current world profile after apply:', data2);
                 if (!data2.success) {
                     console.error('Failed to confirm current setting:', data2.error);
-                    showMessage('Failed to confirm current setting: ' + (data2.error || 'unknown error'), 'error');
+                    showMessage('Failed to confirm active world profile: ' + (data2.error || 'unknown error'), 'error');
                 }
             } catch (error) {
-                showMessage('Error applying setting: ' + error.message, 'error');
+                showMessage('Error applying world profile: ' + error.message, 'error');
             }
         }
 
@@ -1125,7 +1123,7 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
             
             content.innerHTML = `
                 <strong>${escapeHtml(name)}</strong><br>
-                <small>${escapeHtml(theme)}/${escapeHtml(genre)} setting with ${escapeHtml(tone)} tone and ${escapeHtml(difficulty)} difficulty</small><br>
+                <small>${escapeHtml(theme)}/${escapeHtml(genre)} world profile with ${escapeHtml(tone)} tone and ${escapeHtml(difficulty)} difficulty</small><br>
                 Magic: ${escapeHtml(magicLevel)} • Tech: ${escapeHtml(techLevel)}${extraLines.length ? `<br>${escapeHtml(extraLines.join(' • '))}` : ''}
             `;
         }

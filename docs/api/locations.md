@@ -77,12 +77,12 @@ Notes:
 
 ## POST /api/locations/:id/modify
 
-Runs the current-location `Modify Location` crafting flow. The endpoint uses selected player-inventory materials/tools and freeform notes to run dedicated plausibility and success-degree prompts, then applies any accepted physical/environmental change through the existing `alter_location` event path with location level preservation enabled. Outcomes may also grant newly uncovered portable items to the player when those items are byproducts of the alteration, such as a coin found under repaired flooring.
+Runs the current-location `Modify Location` crafting flow. The endpoint uses optional selected player-inventory materials/tools plus freeform notes to run dedicated plausibility and success-degree prompts, then applies any accepted physical/environmental change through the existing `alter_location` event path with location level preservation enabled. Outcomes may also grant newly uncovered portable items to the player when those items are byproducts of the alteration, such as a coin found under repaired flooring.
 
 Request:
 - Path: `id` must be the active player's current location id.
 - Body: `{ slots: Array<{ thingId, slotIndex? }>, notes?, noProse?, clientId? }`
-  - At least one selected slot item is required.
+  - `slots` may be empty; no-material attempts are judged from the location, player abilities, and notes.
   - Each selected item must be in the active player's inventory and must not be equipped.
   - `notes` may include an inline `<N>` die-roll override; the token is stripped before prompt rendering.
   - `noProse=true` skips player-action prose and event-summary chat entries, but still applies mutation, material consumption, received-item grants, time advancement, need/status ticking, vehicle-arrival processing, and quest checks.
@@ -95,7 +95,6 @@ Responses:
 - 400: `{ success: false, error }`
   - No active player.
   - Target location is not the player's current location.
-  - No selected slots.
   - Selected item is missing, not in player inventory, equipped, or an attempted consumed container is not empty.
   - The plausibility prompt resolves to an implausible action.
 - 404: `{ success: false, error }` (location not found)
@@ -105,7 +104,7 @@ Notes:
 - The base location level is preserved for this UI flow, even if the alteration prompt rewrites the name, description, or short description.
 - If the selected outcome sets `locationChanged=true`, the endpoint clears the location's base image, weather/lighting image variants, and pending base-image job tracking so stale images do not reattach after the text change.
 - Failed and critical-failure outcomes may still alter the location when the resolved result describes a botched, incomplete, damaging, or otherwise real environmental change.
-- Consumed materials are matched exactly against selected slot item names; unknown consumed names fail loudly rather than being ignored.
+- Consumed materials are matched exactly against selected slot item names; unknown consumed names fail loudly rather than being ignored. If no materials/tools were selected, `itemsConsumed` must remain empty.
 - Received items must be newly found or obtained portable items. They are generated into the active player's inventory and must not exactly match selected input names; selected tools/materials that survive use should simply be omitted from `itemsConsumed` rather than listed as received.
 
 ## DELETE /api/locations/:id

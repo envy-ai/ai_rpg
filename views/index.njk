@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
-{% set pageTitleValue = title | default("AI RPG Chat") %}
+{% set pageTitleValue = title | default("AI RPG Play") %}
 {% from "_includes/thing-list-filter-toggle.njk" import thingListFiltersToggle, thingListSortToggle, thingListSortShell, thingListViewToggle, thingListViewShell %}
 <head>
     {% include "_includes/head-common.njk" %}
@@ -11,10 +11,9 @@
 </head>
 <body>
     <div class="container">
-        <div class="header">
-            <h1>🎮 AI RPG Chat Interface 🤖</h1>
-            {% include "_navigation.njk" %}
-        </div>
+        {% set appHeaderTitle = 'Play' %}
+        {% set appHeaderSubtitle = 'Adventure interface' %}
+        {% include "_includes/app-header.njk" %}
         
         <div class="main-content">
             <div class="tab-bar" role="tablist">
@@ -71,6 +70,7 @@
                                             <button type="button" class="entity-context-menu-item location-image-menu-item" id="locationRegionEditButton">Edit Region</button>
                                             <button type="button" class="entity-context-menu-item location-image-menu-item" id="locationWeatherEditButton">Edit Weather</button>
                                             <button type="button" class="entity-context-menu-item location-image-menu-item" id="locationCalendarEditButton">Edit Calendar</button>
+                                            <button type="button" class="entity-context-menu-item location-image-menu-item" id="locationSetLastSeenButton">Set Last Seen</button>
                                             <button type="button" class="entity-context-menu-item location-image-menu-item" id="locationSummonNpcButton">Summon NPC</button>
                                             <button type="button" class="entity-context-menu-item location-image-menu-item" id="locationSummonThingButton">Summon Item/Scenery</button>
                                             <button type="button" class="entity-context-menu-item location-image-menu-item" id="locationImageRegenerateButton">Regenerate Image</button>
@@ -375,10 +375,38 @@
                     <button type="button" class="entity-context-menu-item location-image-menu-item" id="mapLocationMenuRegionButton">Edit Region</button>
                     <button type="button" class="entity-context-menu-item location-image-menu-item" id="mapLocationMenuWeatherButton">Edit Weather</button>
                     <button type="button" class="entity-context-menu-item location-image-menu-item" id="mapLocationMenuCalendarButton">Edit Calendar</button>
+                    <button type="button" class="entity-context-menu-item location-image-menu-item" id="mapLocationMenuSetLastSeenButton">Set Last Seen</button>
                     <button type="button" class="entity-context-menu-item location-image-menu-item" id="mapLocationMenuSummonNpcButton">Summon NPC</button>
                     <button type="button" class="entity-context-menu-item location-image-menu-item" id="mapLocationMenuSummonThingButton">Summon Item/Scenery</button>
                     <button type="button" class="entity-context-menu-item location-image-menu-item" id="mapLocationMenuRegenerateImageButton">Regenerate Image</button>
                     <button type="button" class="entity-context-menu-item location-image-menu-item" id="mapLocationMenuDeleteButton">Delete Location</button>
+                </div>
+                <div id="setLastSeenModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="setLastSeenModalTitle" aria-hidden="true" hidden>
+                    <div class="modal__dialog">
+                        <header class="modal__header">
+                            <h2 id="setLastSeenModalTitle">Set Last Seen</h2>
+                            <button type="button" class="modal__close" id="setLastSeenCloseBtn" aria-label="Close set last seen dialog">
+                                <span aria-hidden="true">X</span>
+                            </button>
+                        </header>
+                        <form id="setLastSeenForm" class="modal__body" novalidate>
+                            <p class="modal__instruction">Enter an exact time like <code>3 PM</code> or <code>3:15 PM</code>, or a relative duration like <code>2 hours ago</code>.</p>
+                            <div class="location-edit-field location-edit-field--static">
+                                <span class="location-edit-label">Location</span>
+                                <span id="setLastSeenLocationName" class="location-edit-value">Unknown Location</span>
+                            </div>
+                            <div class="form-group">
+                                <label for="setLastSeenTimeInput">Time</label>
+                                <input type="text" id="setLastSeenTimeInput" name="time" placeholder="3 PM, 3:15 PM, or 2 hours ago" autocomplete="off" required>
+                                <span class="help-text">Uses the same format as the <code>/set_last_seen</code> slash command.</span>
+                            </div>
+                            <div class="location-edit-status" id="setLastSeenStatus" role="status" aria-live="polite"></div>
+                        </form>
+                        <footer class="modal__footer">
+                            <button type="button" class="btn btn-secondary" id="setLastSeenCancelBtn">Cancel</button>
+                            <button type="submit" form="setLastSeenForm" class="btn btn-primary" id="setLastSeenSubmitBtn">Set Last Seen</button>
+                        </footer>
+                    </div>
                 </div>
                 <section class="tab-panel" id="tab-character" role="tabpanel" aria-labelledby="tab-character-tab" hidden>
                     <div class="config-content character-panel">
@@ -725,6 +753,26 @@
                             <h2>Story Tools</h2>
                             <span class="story-tools-count" id="storyToolsCount">0 entries</span>
                         </header>
+                        <div class="story-tools-search" role="search" aria-label="Search story entries">
+                            <div class="story-tools-search-row">
+                                <label class="sr-only" for="storyToolsSearchInput">Search story entries</label>
+                                <input type="search" id="storyToolsSearchInput" class="story-tools-search-input" placeholder="Search entries" aria-label="Search story entries" autocomplete="off">
+                                <button type="button" class="story-tools-search-clear" id="storyToolsSearchClear" aria-label="Clear story search" title="Clear search" hidden>&times;</button>
+                            </div>
+                            <div class="story-tools-search-options">
+                                <label class="sr-only" for="storyToolsSearchMode">Story search mode</label>
+                                <select id="storyToolsSearchMode" class="story-tools-search-mode" aria-label="Story search mode">
+                                    <option value="allWords" selected>All words</option>
+                                    <option value="substring">Substring</option>
+                                    <option value="regex">Regex</option>
+                                </select>
+                                <label class="story-tools-search-case-toggle" for="storyToolsSearchCaseSensitive" title="Case-sensitive search">
+                                    <input type="checkbox" id="storyToolsSearchCaseSensitive" aria-label="Case-sensitive story search">
+                                    <span aria-hidden="true">Aa</span>
+                                </label>
+                            </div>
+                            <span class="story-tools-search-status" id="storyToolsSearchStatus" aria-live="polite">0 entries</span>
+                        </div>
                         <div class="story-tools-layout">
                             <aside class="story-tools-page-nav" aria-label="Story entry pages">
                                 <div class="story-tools-page-list" id="storyToolsPageList"></div>
@@ -3918,7 +3966,7 @@
             const SAFE_MARGIN = 12;
             let maxBottom = 0;
             const topControls = [
-                document.querySelector('.header'),
+                document.querySelector('.app-header') || document.querySelector('.header'),
                 document.querySelector('.tab-bar')
             ];
             for (const control of topControls) {
@@ -6581,6 +6629,16 @@
                         console.warn('Failed to load current location after teleporting player:', error);
                     }
                 }
+                try {
+                    await window.AIRPG_CHAT?.refreshChatHistory?.();
+                } catch (error) {
+                    console.warn('Failed to refresh chat history after teleporting player:', error);
+                }
+                try {
+                    await window.refreshStoryTools?.({ preserveSelection: true });
+                } catch (error) {
+                    console.warn('Failed to refresh Story Tools after teleporting player:', error);
+                }
             }
 
             invalidateTeleportLocationCache();
@@ -8188,6 +8246,7 @@
         const locationRegionEditButton = document.getElementById('locationRegionEditButton');
         const locationWeatherEditButton = document.getElementById('locationWeatherEditButton');
         const locationCalendarEditButton = document.getElementById('locationCalendarEditButton');
+        const locationSetLastSeenButton = document.getElementById('locationSetLastSeenButton');
         const locationSummonNpcButton = document.getElementById('locationSummonNpcButton');
         const locationSummonThingButton = document.getElementById('locationSummonThingButton');
         const locationImageRegenerateButton = document.getElementById('locationImageRegenerateButton');
@@ -8197,10 +8256,19 @@
         const mapLocationMenuRegionButton = document.getElementById('mapLocationMenuRegionButton');
         const mapLocationMenuWeatherButton = document.getElementById('mapLocationMenuWeatherButton');
         const mapLocationMenuCalendarButton = document.getElementById('mapLocationMenuCalendarButton');
+        const mapLocationMenuSetLastSeenButton = document.getElementById('mapLocationMenuSetLastSeenButton');
         const mapLocationMenuSummonNpcButton = document.getElementById('mapLocationMenuSummonNpcButton');
         const mapLocationMenuSummonThingButton = document.getElementById('mapLocationMenuSummonThingButton');
         const mapLocationMenuRegenerateImageButton = document.getElementById('mapLocationMenuRegenerateImageButton');
         const mapLocationMenuDeleteButton = document.getElementById('mapLocationMenuDeleteButton');
+        const setLastSeenModal = document.getElementById('setLastSeenModal');
+        const setLastSeenForm = document.getElementById('setLastSeenForm');
+        const setLastSeenLocationName = document.getElementById('setLastSeenLocationName');
+        const setLastSeenTimeInput = document.getElementById('setLastSeenTimeInput');
+        const setLastSeenStatus = document.getElementById('setLastSeenStatus');
+        const setLastSeenCancelBtn = document.getElementById('setLastSeenCancelBtn');
+        const setLastSeenCloseBtn = document.getElementById('setLastSeenCloseBtn');
+        const setLastSeenSubmitBtn = document.getElementById('setLastSeenSubmitBtn');
         const locationSceneryShowAllRadio = document.getElementById('locationSceneryShowAll');
         const locationSceneryEquippableOnlyRadio = document.getElementById('locationSceneryEquippableOnly');
         const locationSceneryNonEquippableOnlyRadio = document.getElementById('locationSceneryNonEquippableOnly');
@@ -8628,6 +8696,11 @@
         const salvageRequestsInFlight = new Set();
 
         let locationMenuContextOverride = null;
+        const setLastSeenModalState = {
+            locationId: null,
+            locationLabel: ''
+        };
+        let setLastSeenSubmitting = false;
 
         function clearLocationMenuContext() {
             locationMenuContextOverride = null;
@@ -8658,6 +8731,182 @@
                 return false;
             }
             return target.id === lastRenderedLocation.id;
+        }
+
+        function formatLocationContextLabel(targetLocation) {
+            if (!targetLocation || typeof targetLocation !== 'object') {
+                return 'Unknown Location';
+            }
+            const locationName = typeof targetLocation.name === 'string' ? targetLocation.name.trim() : '';
+            const locationId = typeof targetLocation.id === 'string' ? targetLocation.id.trim() : '';
+            if (locationName && locationId && locationName !== locationId) {
+                return `${locationName} (${locationId})`;
+            }
+            return locationName || locationId || 'Unknown Location';
+        }
+
+        function quoteSlashCommandArgument(value) {
+            if (typeof value !== 'string') {
+                return '';
+            }
+            const trimmed = value.trim();
+            if (!trimmed) {
+                return '';
+            }
+            if (!/\s/.test(trimmed)) {
+                return trimmed;
+            }
+            if (!trimmed.includes('"')) {
+                return `"${trimmed}"`;
+            }
+            if (!trimmed.includes('\'')) {
+                return `'${trimmed}'`;
+            }
+            throw new Error('Location name contains both quote types and cannot be safely formatted for the slash command.');
+        }
+
+        function buildSetLastSeenLocationArg(targetLocation) {
+            const candidateValues = [
+                typeof targetLocation?.id === 'string' ? targetLocation.id : '',
+                typeof targetLocation?.name === 'string' ? targetLocation.name : ''
+            ];
+            for (const candidate of candidateValues) {
+                const formatted = quoteSlashCommandArgument(candidate);
+                if (formatted) {
+                    return formatted;
+                }
+            }
+            throw new Error('The selected location is missing both an id and a name.');
+        }
+
+        function setSetLastSeenModalStatus(message = '', type = null) {
+            if (!setLastSeenStatus) {
+                return;
+            }
+            setLastSeenStatus.textContent = message || '';
+            setLastSeenStatus.classList.remove('is-error', 'is-success');
+            if (type === 'error') {
+                setLastSeenStatus.classList.add('is-error');
+            } else if (type === 'success') {
+                setLastSeenStatus.classList.add('is-success');
+            }
+        }
+
+        function setSetLastSeenModalSubmitting(isSubmitting) {
+            setLastSeenSubmitting = Boolean(isSubmitting);
+            if (setLastSeenTimeInput) {
+                setLastSeenTimeInput.disabled = setLastSeenSubmitting;
+            }
+            if (setLastSeenCancelBtn) {
+                setLastSeenCancelBtn.disabled = setLastSeenSubmitting;
+            }
+            if (setLastSeenCloseBtn) {
+                setLastSeenCloseBtn.disabled = setLastSeenSubmitting;
+            }
+            if (setLastSeenSubmitBtn) {
+                setLastSeenSubmitBtn.disabled = setLastSeenSubmitting;
+                setLastSeenSubmitBtn.textContent = setLastSeenSubmitting ? 'Setting...' : 'Set Last Seen';
+            }
+        }
+
+        function resetSetLastSeenModal() {
+            setLastSeenModalState.locationId = null;
+            setLastSeenModalState.locationLabel = '';
+            if (setLastSeenForm) {
+                setLastSeenForm.reset();
+            }
+            if (setLastSeenLocationName) {
+                setLastSeenLocationName.textContent = 'Unknown Location';
+            }
+            setSetLastSeenModalStatus('', null);
+            setSetLastSeenModalSubmitting(false);
+        }
+
+        function closeSetLastSeenModal() {
+            if (!setLastSeenModal) {
+                return;
+            }
+            if (setLastSeenModal.hasAttribute('hidden')) {
+                return;
+            }
+            if (setLastSeenSubmitting) {
+                return;
+            }
+            setLastSeenModal.setAttribute('hidden', '');
+            setLastSeenModal.setAttribute('aria-hidden', 'true');
+            setLastSeenModal.classList.remove('is-open');
+            resetSetLastSeenModal();
+            clearLocationMenuContext();
+        }
+
+        function openSetLastSeenModal() {
+            const targetLocation = getLocationMenuContext();
+            if (!setLastSeenModal || !targetLocation || !targetLocation.id) {
+                alert('No location is currently available for setting last-seen data.');
+                clearLocationMenuContext();
+                return;
+            }
+
+            resetSetLastSeenModal();
+            setLastSeenModalState.locationId = targetLocation.id;
+            setLastSeenModalState.locationLabel = formatLocationContextLabel(targetLocation);
+            if (setLastSeenLocationName) {
+                setLastSeenLocationName.textContent = setLastSeenModalState.locationLabel;
+            }
+            setLastSeenModal.removeAttribute('hidden');
+            setLastSeenModal.setAttribute('aria-hidden', 'false');
+            setLastSeenModal.classList.add('is-open');
+            window.setTimeout(() => {
+                setLastSeenTimeInput?.focus();
+            }, 50);
+        }
+
+        async function submitSetLastSeenForm(event) {
+            event?.preventDefault?.();
+            if (setLastSeenSubmitting) {
+                return;
+            }
+
+            const targetLocation = getLocationMenuContext();
+            if (!targetLocation || !targetLocation.id || targetLocation.id !== setLastSeenModalState.locationId) {
+                setSetLastSeenModalStatus('The selected location is no longer available.', 'error');
+                return;
+            }
+
+            const rawTimeValue = typeof setLastSeenTimeInput?.value === 'string'
+                ? setLastSeenTimeInput.value.trim()
+                : '';
+            if (!rawTimeValue) {
+                setSetLastSeenModalStatus('Time is required.', 'error');
+                setLastSeenTimeInput?.focus();
+                return;
+            }
+
+            const chatClient = window.AIRPG_CHAT;
+            if (!chatClient || typeof chatClient.executeSlashCommand !== 'function') {
+                setSetLastSeenModalStatus('Slash command execution is unavailable right now.', 'error');
+                return;
+            }
+
+            let locationArg = '';
+            try {
+                locationArg = buildSetLastSeenLocationArg(targetLocation);
+            } catch (formatError) {
+                setSetLastSeenModalStatus(formatError?.message || 'Failed to format the selected location.', 'error');
+                return;
+            }
+
+            setSetLastSeenModalStatus('Setting last-seen data...', null);
+            setSetLastSeenModalSubmitting(true);
+            try {
+                await chatClient.executeSlashCommand(`/set_last_seen ${locationArg} ${rawTimeValue}`);
+                closeSetLastSeenModal();
+            } catch (error) {
+                console.warn('Failed to set location last-seen data:', error);
+                setSetLastSeenModalStatus(error?.message || 'Failed to set last-seen data.', 'error');
+                setSetLastSeenModalSubmitting(false);
+                setLastSeenTimeInput?.focus();
+            }
         }
 
         let locationImageMenuOpen = false;
@@ -18983,13 +19232,11 @@
             if (!craftingActionButton && !craftingNoProseButton) {
                 return;
             }
-            const filledSlots = Array.from(craftingSlotAssignments.values()).filter(Boolean).length;
-            const shouldDisable = filledSlots === 0;
             if (craftingActionButton) {
-                craftingActionButton.disabled = shouldDisable;
+                craftingActionButton.disabled = false;
             }
             if (craftingNoProseButton) {
-                craftingNoProseButton.disabled = shouldDisable;
+                craftingNoProseButton.disabled = false;
             }
         }
 
@@ -19084,7 +19331,7 @@
         }
 
         function buildCraftingRequestKey(payload) {
-            if (!payload || !Array.isArray(payload.itemIds) || payload.itemIds.length === 0) {
+            if (!payload || !Array.isArray(payload.itemIds)) {
                 return '';
             }
             const mode = payload.mode || 'craft';
@@ -19128,9 +19375,6 @@
 
         async function submitCraftingRequest({ noProse = false } = {}) {
             const payload = buildCraftingPayload({ noProse: Boolean(noProse) });
-            if (!payload.itemIds.length) {
-                return;
-            }
             const isLocationModification = payload.mode === 'modify-location';
             const locationId = payload.locationId || lastRenderedLocation?.id || window.lastRenderedLocation?.id || null;
             if (isLocationModification && !locationId) {
@@ -25434,6 +25678,14 @@
             });
         }
 
+        if (locationSetLastSeenButton) {
+            locationSetLastSeenButton.addEventListener('click', (event) => {
+                event.stopPropagation();
+                closeLocationImageMenu({ preserveContext: true });
+                openSetLastSeenModal();
+            });
+        }
+
         if (locationSummonNpcButton) {
             locationSummonNpcButton.addEventListener('click', async (event) => {
                 event.stopPropagation();
@@ -25490,6 +25742,14 @@
             });
         }
 
+        if (mapLocationMenuSetLastSeenButton) {
+            mapLocationMenuSetLastSeenButton.addEventListener('click', (event) => {
+                event.stopPropagation();
+                closeMapLocationContextMenu({ preserveContext: true });
+                openSetLastSeenModal();
+            });
+        }
+
         if (mapLocationMenuSummonNpcButton) {
             mapLocationMenuSummonNpcButton.addEventListener('click', async (event) => {
                 event.stopPropagation();
@@ -25519,6 +25779,30 @@
                 event.stopPropagation();
                 closeMapLocationContextMenu({ preserveContext: true });
                 await deleteHydratedLocation();
+            });
+        }
+
+        if (setLastSeenCancelBtn) {
+            setLastSeenCancelBtn.addEventListener('click', () => {
+                closeSetLastSeenModal();
+            });
+        }
+
+        if (setLastSeenCloseBtn) {
+            setLastSeenCloseBtn.addEventListener('click', () => {
+                closeSetLastSeenModal();
+            });
+        }
+
+        if (setLastSeenForm) {
+            setLastSeenForm.addEventListener('submit', submitSetLastSeenForm);
+        }
+
+        if (setLastSeenModal) {
+            setLastSeenModal.addEventListener('click', (event) => {
+                if (event.target === setLastSeenModal) {
+                    closeSetLastSeenModal();
+                }
             });
         }
 
@@ -25696,6 +25980,7 @@
 
         window.addEventListener('keydown', (event) => {
             if (event.key === 'Escape') {
+                closeSetLastSeenModal();
                 closeLocationEditModal();
                 closeRegionEditModal();
                 closeRegionWeatherEditModal();
@@ -27181,6 +27466,16 @@
                             });
                         }
                         await window.updateLocationDisplay(result.location);
+                        try {
+                            await window.AIRPG_CHAT?.refreshChatHistory?.();
+                        } catch (error) {
+                            console.warn('Failed to refresh chat history after direct move:', error);
+                        }
+                        try {
+                            await window.refreshStoryTools?.({ preserveSelection: true });
+                        } catch (error) {
+                            console.warn('Failed to refresh Story Tools after direct move:', error);
+                        }
                         moveSucceeded = true;
                         if (document.querySelector('[data-tab="map"]').classList.contains('active')) {
                             window.loadRegionMap?.();
@@ -29136,26 +29431,42 @@
         function initStoryToolsPanel() {
             const pageSize = 250;
             const countLabel = document.getElementById('storyToolsCount');
+            const searchInput = document.getElementById('storyToolsSearchInput');
+            const searchClearButton = document.getElementById('storyToolsSearchClear');
+            const searchModeSelect = document.getElementById('storyToolsSearchMode');
+            const searchCaseSensitiveInput = document.getElementById('storyToolsSearchCaseSensitive');
+            const searchStatus = document.getElementById('storyToolsSearchStatus');
             const pageList = document.getElementById('storyToolsPageList');
             const entriesContainer = document.getElementById('storyToolsEntries');
             const emptyState = document.getElementById('storyToolsEmpty');
 
-            if (!countLabel || !pageList || !entriesContainer || !emptyState) {
+            if (!countLabel || !searchInput || !searchClearButton || !searchModeSelect || !searchCaseSensitiveInput || !searchStatus || !pageList || !entriesContainer || !emptyState) {
                 return;
             }
+
+            const storyToolsSearchDebounceMs = 1000;
+            let storyToolsSearchDebounceTimer = null;
 
             const hiddenEntryTypes = new Set([
                 'supplemental-story-info',
                 'offscreen-npc-activity-daily',
                 'offscreen-npc-activity-weekly',
+                'while-you-were-away',
                 'plot-summary',
                 'plot-expander'
             ]);
 
             const state = {
                 entries: [],
+                filteredEntries: [],
                 pageSize,
-                selectedPageIndex: 0
+                selectedPageIndex: 0,
+                searchTerms: [],
+                searchQuery: '',
+                searchMode: 'allWords',
+                caseSensitive: false,
+                searchRegex: null,
+                searchError: null
             };
 
             const formatTimestamp = (timestamp) => {
@@ -29169,11 +29480,11 @@
                 return String(timestamp).replace('T', ' ').replace('Z', '');
             };
 
-            const getPageCount = () => Math.ceil(state.entries.length / state.pageSize);
+            const getPageCount = () => Math.ceil(state.filteredEntries.length / state.pageSize);
 
             const buildPageLabel = (pageIndex) => {
                 const start = pageIndex * state.pageSize + 1;
-                const end = Math.min(state.entries.length, start + state.pageSize - 1);
+                const end = Math.min(state.filteredEntries.length, start + state.pageSize - 1);
                 return `${start}-${end}`;
             };
 
@@ -29220,13 +29531,231 @@
                 return '';
             };
 
+            const normalizeStoryToolsSearchText = (value) => {
+                if (typeof value !== 'string') {
+                    return '';
+                }
+                return value.replace(/\s+/g, ' ').trim();
+            };
+
+            const normalizeStoryToolsComparableText = (value, caseSensitive = state.caseSensitive) => {
+                const normalized = normalizeStoryToolsSearchText(value);
+                return caseSensitive ? normalized : normalized.toLowerCase();
+            };
+
+            const getStoryToolsSearchMode = () => {
+                return ['allWords', 'substring', 'regex'].includes(searchModeSelect.value)
+                    ? searchModeSelect.value
+                    : 'allWords';
+            };
+
+            const hasActiveStoryToolsSearch = () => Boolean(state.searchQuery);
+
+            const getStoryToolsSearchTerms = () => {
+                return normalizeStoryToolsComparableText(state.searchQuery)
+                    .split(' ')
+                    .map(term => term.trim())
+                    .filter(Boolean);
+            };
+
+            const buildStoryToolsSearchText = (entry) => {
+                const parts = [
+                    getRoleLabel(entry),
+                    getTypeLabel(entry),
+                    isHiddenEntry(entry) ? 'Hidden' : 'Visible',
+                    formatTimestamp(entry?.timestamp),
+                    typeof entry?.locationId === 'string' ? entry.locationId : '',
+                    typeof entry?.parentId === 'string' ? entry.parentId : '',
+                    getEntryContentForDisplay(entry)
+                ];
+                return normalizeStoryToolsSearchText(parts.filter(Boolean).join(' '));
+            };
+
+            const createStoryToolsRegex = (pattern, { caseSensitive = false, global = false } = {}) => {
+                const flags = `${global ? 'g' : ''}${caseSensitive ? '' : 'i'}`;
+                try {
+                    return {
+                        regex: new RegExp(pattern, flags),
+                        error: null
+                    };
+                } catch (error) {
+                    return {
+                        regex: null,
+                        error: `Invalid regular expression: ${error?.message || error}`
+                    };
+                }
+            };
+
+            const cloneStoryToolsRegexForHighlight = (regex) => {
+                if (!(regex instanceof RegExp)) {
+                    return null;
+                }
+                const created = createStoryToolsRegex(regex.source, {
+                    caseSensitive: state.caseSensitive,
+                    global: true
+                });
+                return created.regex;
+            };
+
+            const updateStoryToolsSearchStatus = () => {
+                const total = state.entries.length;
+                const filtered = state.filteredEntries.length;
+                const totalLabel = total === 1 ? 'entry' : 'entries';
+                searchClearButton.hidden = !searchInput.value;
+                searchInput.classList.toggle('story-tools-search-invalid', Boolean(state.searchError));
+                searchStatus.classList.toggle('story-tools-search-error', Boolean(state.searchError));
+                if (state.searchError) {
+                    searchStatus.textContent = state.searchError;
+                    return;
+                }
+                if (hasActiveStoryToolsSearch()) {
+                    searchStatus.textContent = `${filtered} of ${total} ${totalLabel} match`;
+                    return;
+                }
+                searchStatus.textContent = `${total} ${totalLabel}`;
+            };
+
+            const getStoryToolsSearchMatcher = () => {
+                if (!hasActiveStoryToolsSearch()) {
+                    return () => true;
+                }
+
+                if (state.searchMode === 'substring') {
+                    const phrase = normalizeStoryToolsComparableText(state.searchQuery);
+                    state.searchTerms = phrase ? [phrase] : [];
+                    return (text) => normalizeStoryToolsComparableText(text).includes(phrase);
+                }
+
+                if (state.searchMode === 'regex') {
+                    const created = createStoryToolsRegex(state.searchQuery, {
+                        caseSensitive: state.caseSensitive
+                    });
+                    if (created.error) {
+                        state.searchError = created.error;
+                        state.searchRegex = null;
+                        return () => false;
+                    }
+                    state.searchRegex = created.regex;
+                    return (text) => {
+                        state.searchRegex.lastIndex = 0;
+                        return state.searchRegex.test(text);
+                    };
+                }
+
+                state.searchTerms = getStoryToolsSearchTerms();
+                return (text) => {
+                    const haystack = normalizeStoryToolsComparableText(text);
+                    return state.searchTerms.every(term => haystack.includes(term));
+                };
+            };
+
+            const applyStoryToolsSearch = () => {
+                state.searchQuery = normalizeStoryToolsSearchText(searchInput.value);
+                state.searchMode = getStoryToolsSearchMode();
+                state.caseSensitive = Boolean(searchCaseSensitiveInput.checked);
+                state.searchTerms = [];
+                state.searchRegex = null;
+                state.searchError = null;
+                const indexedEntries = state.entries.map((entry, originalIndex) => ({ entry, originalIndex }));
+
+                if (!hasActiveStoryToolsSearch()) {
+                    state.filteredEntries = indexedEntries;
+                    updateStoryToolsSearchStatus();
+                    return;
+                }
+
+                const matchesSearch = getStoryToolsSearchMatcher();
+                if (state.searchError) {
+                    state.filteredEntries = [];
+                    updateStoryToolsSearchStatus();
+                    return;
+                }
+
+                state.filteredEntries = indexedEntries.filter(({ entry }) => {
+                    return matchesSearch(buildStoryToolsSearchText(entry));
+                });
+                updateStoryToolsSearchStatus();
+            };
+
+            const findNextStoryToolsSearchMatch = (text, startIndex) => {
+                if (state.searchMode === 'regex') {
+                    const regex = cloneStoryToolsRegexForHighlight(state.searchRegex);
+                    if (!regex) {
+                        return null;
+                    }
+
+                    let cursor = startIndex;
+                    while (cursor <= text.length) {
+                        regex.lastIndex = cursor;
+                        const match = regex.exec(text);
+                        if (!match) {
+                            return null;
+                        }
+                        const matchedText = match[0] || '';
+                        if (matchedText.length > 0) {
+                            return {
+                                index: match.index,
+                                length: matchedText.length
+                            };
+                        }
+                        cursor = match.index + 1;
+                    }
+                    return null;
+                }
+
+                const comparableText = normalizeStoryToolsComparableText(text);
+                let bestMatch = null;
+                state.searchTerms.forEach(term => {
+                    const index = comparableText.indexOf(term, startIndex);
+                    if (index === -1) {
+                        return;
+                    }
+                    if (
+                        !bestMatch
+                        || index < bestMatch.index
+                        || (index === bestMatch.index && term.length > bestMatch.length)
+                    ) {
+                        bestMatch = { index, length: term.length };
+                    }
+                });
+                return bestMatch;
+            };
+
+            const renderHighlightedText = (target, text) => {
+                target.replaceChildren();
+                const value = typeof text === 'string' ? text : '';
+                if (!value || !hasActiveStoryToolsSearch() || state.searchError) {
+                    target.appendChild(document.createTextNode(value));
+                    return;
+                }
+
+                let cursor = 0;
+                while (cursor < value.length) {
+                    const match = findNextStoryToolsSearchMatch(value, cursor);
+                    if (!match) {
+                        target.appendChild(document.createTextNode(value.slice(cursor)));
+                        break;
+                    }
+                    if (match.index > cursor) {
+                        target.appendChild(document.createTextNode(value.slice(cursor, match.index)));
+                    }
+
+                    const matchEnd = match.index + match.length;
+                    const mark = document.createElement('mark');
+                    mark.className = 'story-tools-search-mark';
+                    mark.textContent = value.slice(match.index, matchEnd);
+                    target.appendChild(mark);
+                    cursor = Math.max(matchEnd, cursor + 1);
+                }
+            };
+
             const setCountLabel = () => {
                 const count = state.entries.length;
                 countLabel.textContent = `${count} ${count === 1 ? 'entry' : 'entries'}`;
             };
 
             const renderPageList = () => {
-                pageList.innerHTML = '';
+                pageList.replaceChildren();
                 const pageCount = getPageCount();
                 if (!pageCount) {
                     return;
@@ -29251,7 +29780,7 @@
             };
 
             const renderEntryPage = ({ scrollToBottom = false } = {}) => {
-                entriesContainer.innerHTML = '';
+                entriesContainer.replaceChildren();
 
                 if (!state.entries.length) {
                     emptyState.textContent = 'No story entries found.';
@@ -29261,10 +29790,14 @@
                 }
 
                 const pageStart = state.selectedPageIndex * state.pageSize;
-                const pageEntries = state.entries.slice(pageStart, pageStart + state.pageSize);
+                const pageEntries = state.filteredEntries.slice(pageStart, pageStart + state.pageSize);
 
                 if (!pageEntries.length) {
-                    emptyState.textContent = 'No entries on this page.';
+                    emptyState.textContent = state.searchError
+                        ? state.searchError
+                        : (hasActiveStoryToolsSearch()
+                            ? `No story entries match "${state.searchQuery}".`
+                            : 'No entries on this page.');
                     emptyState.hidden = false;
                     entriesContainer.hidden = true;
                     return;
@@ -29273,7 +29806,7 @@
                 emptyState.hidden = true;
                 entriesContainer.hidden = false;
 
-                pageEntries.forEach((entry, entryIndex) => {
+                pageEntries.forEach(({ entry, originalIndex }) => {
                     const article = document.createElement('article');
                     article.className = 'story-tools-entry';
 
@@ -29282,7 +29815,7 @@
 
                     const title = document.createElement('h3');
                     title.className = 'story-tools-entry-title';
-                    title.textContent = `Entry #${pageStart + entryIndex + 1}`;
+                    renderHighlightedText(title, `Entry #${originalIndex + 1}`);
 
                     const controls = document.createElement('div');
                     controls.className = 'story-tools-entry-controls';
@@ -29321,35 +29854,35 @@
 
                     const roleTag = document.createElement('span');
                     roleTag.className = 'story-tools-tag';
-                    roleTag.textContent = `Role: ${getRoleLabel(entry)}`;
+                    renderHighlightedText(roleTag, `Role: ${getRoleLabel(entry)}`);
                     meta.appendChild(roleTag);
 
                     const typeTag = document.createElement('span');
                     typeTag.className = 'story-tools-tag';
-                    typeTag.textContent = `Type: ${getTypeLabel(entry)}`;
+                    renderHighlightedText(typeTag, `Type: ${getTypeLabel(entry)}`);
                     meta.appendChild(typeTag);
 
                     const visibilityTag = document.createElement('span');
                     visibilityTag.className = `story-tools-tag ${isHiddenEntry(entry) ? 'is-hidden' : 'is-visible'}`;
-                    visibilityTag.textContent = isHiddenEntry(entry) ? 'Hidden' : 'Visible';
+                    renderHighlightedText(visibilityTag, isHiddenEntry(entry) ? 'Hidden' : 'Visible');
                     meta.appendChild(visibilityTag);
 
                     const timeTag = document.createElement('span');
                     timeTag.className = 'story-tools-tag';
-                    timeTag.textContent = `Time: ${formatTimestamp(entry?.timestamp)}`;
+                    renderHighlightedText(timeTag, `Time: ${formatTimestamp(entry?.timestamp)}`);
                     meta.appendChild(timeTag);
 
                     if (typeof entry?.locationId === 'string' && entry.locationId.trim()) {
                         const locationTag = document.createElement('span');
                         locationTag.className = 'story-tools-tag';
-                        locationTag.textContent = `Location: ${entry.locationId.trim()}`;
+                        renderHighlightedText(locationTag, `Location: ${entry.locationId.trim()}`);
                         meta.appendChild(locationTag);
                     }
 
                     if (typeof entry?.parentId === 'string' && entry.parentId.trim()) {
                         const parentTag = document.createElement('span');
                         parentTag.className = 'story-tools-tag';
-                        parentTag.textContent = `Parent: ${entry.parentId.trim()}`;
+                        renderHighlightedText(parentTag, `Parent: ${entry.parentId.trim()}`);
                         meta.appendChild(parentTag);
                     }
 
@@ -29357,7 +29890,7 @@
 
                     const contentBlock = document.createElement('pre');
                     contentBlock.className = 'story-tools-entry-content';
-                    contentBlock.textContent = getEntryContentForDisplay(entry);
+                    renderHighlightedText(contentBlock, getEntryContentForDisplay(entry));
                     article.appendChild(contentBlock);
 
                     entriesContainer.appendChild(article);
@@ -29373,6 +29906,51 @@
                 entriesContainer.scrollTop = 0;
             };
 
+            const handleStoryToolsSearchControlsChanged = () => {
+                applyStoryToolsSearch();
+                const pageCount = getPageCount();
+                if (!pageCount) {
+                    state.selectedPageIndex = 0;
+                } else if (hasActiveStoryToolsSearch()) {
+                    state.selectedPageIndex = 0;
+                } else {
+                    state.selectedPageIndex = pageCount - 1;
+                }
+                renderPageList();
+                renderEntryPage({ scrollToBottom: !hasActiveStoryToolsSearch() && pageCount > 0 });
+            };
+
+            const cancelStoryToolsSearchDebounce = () => {
+                if (storyToolsSearchDebounceTimer !== null) {
+                    clearTimeout(storyToolsSearchDebounceTimer);
+                    storyToolsSearchDebounceTimer = null;
+                }
+            };
+
+            const handleStoryToolsSearchControlsChangedNow = () => {
+                cancelStoryToolsSearchDebounce();
+                handleStoryToolsSearchControlsChanged();
+            };
+
+            const scheduleStoryToolsSearchInput = () => {
+                searchClearButton.hidden = !searchInput.value;
+                cancelStoryToolsSearchDebounce();
+                storyToolsSearchDebounceTimer = window.setTimeout(() => {
+                    storyToolsSearchDebounceTimer = null;
+                    handleStoryToolsSearchControlsChanged();
+                }, storyToolsSearchDebounceMs);
+            };
+
+            searchInput.addEventListener('input', scheduleStoryToolsSearchInput);
+            searchModeSelect.addEventListener('change', handleStoryToolsSearchControlsChangedNow);
+            searchCaseSensitiveInput.addEventListener('change', handleStoryToolsSearchControlsChangedNow);
+
+            searchClearButton.addEventListener('click', () => {
+                searchInput.value = '';
+                handleStoryToolsSearchControlsChangedNow();
+                searchInput.focus();
+            });
+
             const refreshStoryTools = async ({ preserveSelection = false, scrollToLatest = false } = {}) => {
                 const previousPageIndex = state.selectedPageIndex;
 
@@ -29385,25 +29963,31 @@
 
                     state.entries = Array.isArray(data.history) ? data.history : [];
                     setCountLabel();
+                    applyStoryToolsSearch();
 
                     const pageCount = getPageCount();
                     if (!pageCount) {
                         state.selectedPageIndex = 0;
-                    } else if (preserveSelection) {
+                    } else if (preserveSelection || hasActiveStoryToolsSearch()) {
                         state.selectedPageIndex = Math.min(Math.max(previousPageIndex, 0), pageCount - 1);
                     } else {
                         state.selectedPageIndex = pageCount - 1;
                     }
 
                     renderPageList();
-                    const shouldScrollToBottom = Boolean(scrollToLatest || (!preserveSelection && pageCount > 0));
+                    const shouldScrollToBottom = Boolean(
+                        !hasActiveStoryToolsSearch()
+                        && (scrollToLatest || (!preserveSelection && pageCount > 0))
+                    );
                     renderEntryPage({ scrollToBottom: shouldScrollToBottom });
                 } catch (error) {
                     console.warn('Failed to refresh Story Tools entries:', error);
                     state.entries = [];
+                    state.filteredEntries = [];
                     setCountLabel();
+                    updateStoryToolsSearchStatus();
                     renderPageList();
-                    entriesContainer.innerHTML = '';
+                    entriesContainer.replaceChildren();
                     entriesContainer.hidden = true;
                     emptyState.textContent = `Failed to load story entries: ${error?.message || error}`;
                     emptyState.hidden = false;
@@ -29463,11 +30047,21 @@
             const saveGameBtn = document.getElementById('saveGameBtn');
             const loadGameBtn = document.getElementById('loadGameBtn');
             const newGameBtn = document.getElementById('newGameBtn');
+            const setHeaderActionLabel = (button, label) => {
+                const labelEl = button ? button.querySelector('.app-header-action__label') : null;
+                if (labelEl) {
+                    labelEl.textContent = label;
+                    return;
+                }
+                if (button) {
+                    button.textContent = label;
+                }
+            };
             
             saveGameBtn.addEventListener('click', async function() {
                 try {
                     this.disabled = true;
-                    this.innerHTML = '<span>⏳</span> Saving...';
+                    setHeaderActionLabel(this, 'Saving...');
                     
                     const response = await fetch('/api/save', {
                         method: 'POST',
@@ -29477,26 +30071,26 @@
                     const result = await response.json();
                     
                     if (result.success) {
-                        this.innerHTML = '<span>✅</span> Saved!';
+                        setHeaderActionLabel(this, 'Saved!');
                         alert(`Game saved successfully!\n\nSave: ${result.saveName}`);
                     } else {
-                        this.innerHTML = '<span>❌</span> Save Failed';
+                        setHeaderActionLabel(this, 'Save Failed');
                         alert(`Save failed: ${result.error}`);
                     }
                 } catch (error) {
-                    this.innerHTML = '<span>❌</span> Save Failed';
+                    setHeaderActionLabel(this, 'Save Failed');
                     alert(`Save failed: ${error.message}`);
                 } finally {
                     setTimeout(() => {
                         this.disabled = false;
-                        this.innerHTML = '<span>💾</span> Save Game';
+                        setHeaderActionLabel(this, 'Save');
                     }, 2000);
                 }
             });
 
             loadGameBtn.addEventListener('click', async function() {
                 this.disabled = true;
-                this.innerHTML = '<span>⏳</span> Loading...';
+                setHeaderActionLabel(this, 'Loading...');
                 loadGameTriggerButton = this;
                 try {
                     openLoadGameModal({ initialSource: 'saves' });
@@ -29505,7 +30099,7 @@
                     setLoadGameStatus(`Failed to load ${getLoadGameSourceLabel({ source: 'saves', plural: true })}: ${error.message}`, 'error');
                 } finally {
                     this.disabled = false;
-                    this.innerHTML = '<span>📂</span> Load Game';
+                    setHeaderActionLabel(this, 'Load');
                 }
             });
 

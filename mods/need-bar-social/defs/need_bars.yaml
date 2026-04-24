@@ -1,6 +1,9 @@
 need_bars:
   social:
     name: Social
+    aliases:
+      - companionship
+      - interaction
     description: Represents the character's need for companionship and interaction. If this reaches 0, the character becomes lonely and may suffer penalties to morale.
     related_attribute: charisma
     player: true

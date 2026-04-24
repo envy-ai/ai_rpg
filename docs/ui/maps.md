@@ -23,8 +23,10 @@ Rendered inside `#mapContainer` in the Map tab.
 ### Interactions
 - Context menu on nodes and edges for edit/delete actions.
 - Tapping a location node fast-travels the player there through the existing player-teleport flow, but now also advances world time by the shortest directed route cost computed from stored exit `travelTimeMinutes`; when minutes advance, the chat history gets an event-summary entry reading `Traveled from X to Y. Z passed.`. When no route exists, the map fast travel still completes with `0` minutes elapsed.
+- After a successful direct move or map fast-travel arrival, the client also refreshes chat history and Story Tools so any visible `while-you-were-away-player` reunion prose generated during arrival is shown immediately.
 - Stub node `Edit stub` opens the shared location-stub editor, including vehicle metadata controls (`isVehicle` + `vehicleInfo`) for both location stubs and region-entry stubs; the vehicle-exit field is a select labeled `inside -> outside`.
-- Hydrated location node context menu includes `Delete Location`, which confirms a destructive warning and then calls location cascade deletion (items/NPCs, exits to/from, then location).
+- Hydrated location node context menu includes `Set Last Seen`, which opens the shared chat-page modal and submits the same `H AM/PM`, `H:MM AM/PM`, or `duration ago` formats accepted by `/set_last_seen` for that location's NPCs.
+- Hydrated location node context menu also includes `Delete Location`, which confirms a destructive warning and then calls location cascade deletion (items/NPCs, exits to/from, then location).
 - Link mode for creating new exits (ghost node + edge).
 - New exits call `POST /api/locations/:id/exits` with payload:
   - region/location target, optional relative level, optional image data.
@@ -48,6 +50,7 @@ Rendered inside `#worldMapContainer` in the World Map tab.
   - region group nodes,
   - location nodes,
   - region exit nodes.
+- World-map location nodes reuse the same floating location context menu as the region map, so `Set Last Seen` is available there too.
 - Vehicle-capable location nodes and vehicle region labels get centered emoji overlays from vehicle icon metadata.
 - Convex hull overlays are drawn around region groupings using
   `public/js/cytoscape-convex-hull.js`.

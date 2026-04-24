@@ -566,3 +566,18 @@ plot_expander_prompt_frequency: 10
 - Value must be an integer `>= 0`; invalid values raise runtime errors when scheduling.
 - Runs use the base-context `plot-expander` include and store hidden `plot-expander` entries.
 - The latest `plot-expander` output is injected into base-context as `<plotExpander>` immediately after `<plotSummary>`.
+
+## While-you-were-away reunion threshold
+
+`while_you_were_away_threshold_minutes` controls when the blocking `while-you-were-away` reunion prompt runs after the player arrives at a location containing NPCs they have not been with continuously.
+
+```yaml
+while_you_were_away_threshold_minutes: 240
+```
+
+Rules:
+- Must be an integer `>= 0` when present.
+- Default is `240` (`4` hours).
+- The prompt input includes current-location NPCs that have persisted `last_seen_time` / `last_seen_location` and were not in the same location as the player on the previous round, so already-present reunion NPCs stay in the candidate list instead of being misclassified as arrivals.
+- The threshold only controls whether the prompt runs at all: it runs when at least one such NPC has been away at least this many in-game minutes.
+- When it runs, it blocks the arrival flow long enough to apply returned need-bar percentage deltas, optional NPC travel destinations, store the hidden `while-you-were-away` internal history entry, and optionally append a visible `while-you-were-away-player` assistant chat entry when the prompt returns non-empty `<proseForPlayer>`.

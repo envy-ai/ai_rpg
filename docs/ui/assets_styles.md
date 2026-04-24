@@ -4,8 +4,11 @@
 - `public/css/_globals.scss`
   - Color palette, gradient, font family, and mixins.
   - Primary UI palette is defined here (glass background, primary blue, etc).
+  - Shared app-header theme tokens live here, including the header surface, border, hover/action/active/accent colors, focus ring, muted text, control height/radius, and compact spacing.
 - `public/css/main.scss`
   - Base layout and the bulk of component styling for the chat UI.
+  - The shared `.app-header` uses SCSS placeholder inheritance (`%app-header-control-base`, `%app-header-control-interactive`, `%app-header-link-surface`, `%app-header-action-surface`, `%app-header-accent-surface`) plus CSS custom properties on `.app-header` so future themes can override colors without rewriting component selectors. Header controls are namespaced and do not depend on generic `.btn` styles.
+  - The app header renders a dark glass band with a crossed-swords brand crest, primary nav labels `Play`, `New Game`, `Worlds`, `Lorebooks`, `System`, a native `Tools` disclosure, and chat-only `Save` / `Load` actions. Tablet-width viewports move nav to a horizontally scrollable second row; phone-width viewports switch nav to a wrapping flex layout and render the open Tools menu as an embedded two-column panel so it stays inside the viewport.
   - The chat tab bar uses icon-only `.tab-button` controls with shared `.tab-button__icon` sizing, transparent button chrome, and a flush `.tab-bar` layout with no gap or bottom margin plus a subtle inset shadow.
   - The Adventure-tab location panel keeps the shared glass `.container` styling but overrides the nested `.location-block .container` shape so only the bottom-right corner remains rounded.
   - The main Adventure layout uses a flush `.chat-wrapper` with no inter-column gap.
@@ -19,7 +22,7 @@
   - Character view ability cards use `.npc-view-ability-*` classes and visually mirror the player level-up ability selector cards without inheriting the selector's clickable/selected behavior. Shared `.ability-type-*` classes color-code active/passive/triggered ability names, uppercase type labels, and NPC editor ability type controls.
   - Compiled output: `public/css/main.css`.
 - `public/css/settings.scss`
-  - Settings page layout and field styling.
+  - World Profiles page layout and field styling.
   - Compiled output: `public/css/settings.css`.
 - `public/css/lorebooks.css`
   - Lorebooks page styling (no SCSS source in repo).
@@ -29,6 +32,7 @@
 ## Images
 - `public/generated-images/` is the image output directory for entity images; persisted image IDs are displayed through `/api/images/:imageId/file` so PNG/JPEG/WebP/GIF files do not require extension-specific client URLs.
 - `public/icons/` stores static UI icon assets (for example, `sword-shield.svg`).
+- `assets/material-icons/app-nav-icons/` stores mask-friendly app-header icons for New Game, System, Tools, Save, Load, Debug, and Player Stats. App-header masks also reuse existing game-tab icons for Play, Worlds, and Lorebooks.
 - `public/js/image-manager.js` coordinates image job requests and updates.
 - `public/js/lightbox.js` provides the full-screen lightbox viewer.
 
@@ -73,7 +77,9 @@ Loaded on the chat page:
   above the bar, using white text with a black outline plus a subtle drop shadow; size is tuned
   per bar variant through CSS custom properties on `.health-bar`, `.chat-health-bar`, and
   `.npc-health-bar`. Readout text displays current/max health as upward-rounded integers even
-  though the underlying health values may be fractional.
+  though the underlying health values may be fractional. Floating `.health-change-float`
+  change numbers drift and fade over five seconds before the client removes them on the
+  CSS animation end event.
 - Portrait cards also share `.character-level-badge` for the top-left bare `L.<level>` text on player
   and NPC portraits, using a `3px` black stroke for readability. The player portrait adds `.chat-player-level-badge`, while the unspent-points
   warning triangle is anchored from the shared chat-health-bar geometry instead of the portrait's

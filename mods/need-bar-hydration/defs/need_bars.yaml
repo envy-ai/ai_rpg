@@ -1,6 +1,9 @@
 need_bars:
   hydration:
     name: Hydration
+    aliases:
+      - thirst
+      - water
     description: Represents the character's fluid levels. If this reaches 0, the character suffers severe health penalties. Dehydration happens faster than starvation.
     related_attribute: constitution
     player: true

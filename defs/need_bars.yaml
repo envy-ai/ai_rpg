@@ -10,6 +10,9 @@ need_values:
 need_bars:
   food:
     name: Food
+    aliases:
+      - hunger
+      - nutrition
     description: Represents how well-fed the character is. If this reaches 0, the character may suffer penalties to health and attributes. Normal travel does not reduce this need.
     player: true
     party: false
@@ -121,6 +124,9 @@ need_bars:
         effect: Good mood, slight bonuses
   rest:
     name: Rest
+    aliases:
+      - sleep
+      - fatigue
     description: Represents how well-rested the character is. If this reaches 0, the character may suffer penalties to health and attributes. Normal travel does not reduce this need.
     related_attribute: constitution
     player: true
@@ -183,6 +189,8 @@ need_bars:
         effect: Good mood, slight bonuses
   mana:
     name: Mana
+    aliases:
+      - magic
     description: Represents the character's magical energy. Used for casting spells and magical abilities.
     related_attribute: intelligence
     player: true

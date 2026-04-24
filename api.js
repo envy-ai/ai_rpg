@@ -2532,6 +2532,706 @@ module.exports = function registerApiRoutes(scope) {
             return regionName || null;
         }
 
+        function resolveRegionForLocationObject(location) {
+            if (!location || typeof location !== 'object') {
+                return null;
+            }
+            if (location.region && typeof location.region === 'object') {
+                return location.region;
+            }
+            const regionId = typeof location.regionId === 'string' ? location.regionId.trim() : '';
+            if (regionId) {
+                if (typeof Region?.get === 'function') {
+                    const regionFromId = Region.get(regionId);
+                    if (regionFromId) {
+                        return regionFromId;
+                    }
+                }
+                if (regions instanceof Map && regions.has(regionId)) {
+                    return regions.get(regionId) || null;
+                }
+            }
+            const locationId = typeof location.id === 'string' ? location.id.trim() : '';
+            if (locationId && typeof findRegionByLocationId === 'function') {
+                return findRegionByLocationId(locationId) || null;
+            }
+            return null;
+        }
+
+        function resolveWhileYouWereAwayRegionEntrance(region, regionNameLabel = 'Unknown Region') {
+            if (!region || typeof region !== 'object') {
+                throw new Error(`While-you-were-away destination region "${regionNameLabel}" is unavailable.`);
+            }
+
+            const entranceLocationId = typeof region.entranceLocationId === 'string'
+                ? region.entranceLocationId.trim()
+                : '';
+            if (entranceLocationId) {
+                const entranceLocation = resolveLocationByIdOrName(entranceLocationId);
+                if (entranceLocation) {
+                    return entranceLocation;
+                }
+            }
+
+            const regionLocationIds = Array.isArray(region.locationIds) ? region.locationIds : [];
+            for (const locationId of regionLocationIds) {
+                if (typeof locationId !== 'string' || !locationId.trim()) {
+                    continue;
+                }
+                const candidate = resolveLocationByIdOrName(locationId);
+                if (candidate) {
+                    return candidate;
+                }
+            }
+
+            throw new Error(
+                `While-you-were-away destination region "${regionNameLabel}" is missing a resolvable entrance location.`
+            );
+        }
+
+        function normalizeWhileYouWereAwayNeedBarDeltaPercent(value, fieldLabel = 'while-you-were-away need bar delta') {
+            const raw = typeof value === 'number'
+                ? String(value)
+                : (typeof value === 'string' ? value.trim() : '');
+            if (!raw) {
+                throw new Error(`${fieldLabel} is missing.`);
+            }
+
+            const normalized = raw.endsWith('%')
+                ? raw.slice(0, -1).trim()
+                : raw;
+            const numeric = Number(normalized);
+            if (!Number.isFinite(numeric)) {
+                throw new Error(`${fieldLabel} "${raw}" is not a finite number.`);
+            }
+            return numeric;
+        }
+
+        function normalizeWhileYouWereAwayRelativeTimeText(value) {
+            if (typeof value !== 'string') {
+                return 'some time';
+            }
+            const trimmed = value.trim();
+            if (!trimmed) {
+                return 'some time';
+            }
+            return trimmed.replace(/\s+ago\s*$/i, '').trim() || trimmed;
+        }
+
+        function normalizeWhileYouWereAwayPlayerProse(value) {
+            if (typeof value !== 'string') {
+                return '';
+            }
+
+            return value
+                .split('\n')
+                .map(line => line.replace(/^[ \t]+/u, ''))
+                .join('\n')
+                .trim();
+        }
+
+        function resolveWhileYouWereAwayDestination(destinationText, { currentRegion = null } = {}) {
+            const raw = normalizeTravelProseDestinationField(destinationText);
+            if (!raw) {
+                return null;
+            }
+
+            if (!raw.includes('|')) {
+                if (currentRegion) {
+                    const currentRegionMatch = resolveLocationInRegionByName(currentRegion, raw);
+                    if (currentRegionMatch) {
+                        return {
+                            location: currentRegionMatch,
+                            region: currentRegion
+                        };
+                    }
+                }
+
+                const location = resolveLocationByIdOrName(raw);
+                if (!location) {
+                    throw new Error(`While-you-were-away destination location "${raw}" was not found.`);
+                }
+                return {
+                    location,
+                    region: resolveRegionForLocationObject(location)
+                };
+            }
+
+            const parts = raw.split('|');
+            if (parts.length !== 2) {
+                throw new Error(
+                    `While-you-were-away destination "${raw}" must be "location", "region|location", or "region|".`
+                );
+            }
+
+            const regionName = parts[0].trim();
+            const locationName = parts[1].trim();
+            if (!regionName && !locationName) {
+                return null;
+            }
+            if (!regionName) {
+                return resolveWhileYouWereAwayDestination(locationName, { currentRegion });
+            }
+
+            const region = typeof Region?.getByName === 'function'
+                ? Region.getByName(regionName)
+                : null;
+            if (!region) {
+                throw new Error(`While-you-were-away destination region "${regionName}" was not found.`);
+            }
+
+            if (!locationName) {
+                return {
+                    location: resolveWhileYouWereAwayRegionEntrance(region, regionName),
+                    region
+                };
+            }
+
+            const location = resolveLocationInRegionByName(region, locationName);
+            if (!location) {
+                throw new Error(
+                    `While-you-were-away destination location "${locationName}" was not found in region "${regionName}".`
+                );
+            }
+            return { location, region };
+        }
+
+        function parseWhileYouWereAwayResponse(rawResponse, { expectedNameKeys = null } = {}) {
+            if (typeof rawResponse !== 'string') {
+                throw new TypeError('While-you-were-away response must be a string.');
+            }
+
+            const xmlPayload = stripToXmlPayload(rawResponse);
+            if (!xmlPayload) {
+                throw new Error('While-you-were-away response missing XML content.');
+            }
+
+            const doc = Utils.parseXmlDocument(sanitizeForXml(xmlPayload), 'text/xml');
+            const errorNode = doc.getElementsByTagName('parsererror')[0];
+            if (errorNode) {
+                throw new Error(`While-you-were-away XML parse error: ${errorNode.textContent || 'Unknown parse error'}`);
+            }
+
+            const responseNode = doc.getElementsByTagName('response')[0] || null;
+            const responseContainer = responseNode || doc.documentElement || null;
+            const proseForPlayer = responseNode
+                ? normalizeWhileYouWereAwayPlayerProse(getDirectChildTextByTagName(responseNode, 'proseForPlayer'))
+                : '';
+
+            const characterUpdatesNode = responseNode
+                ? getDirectChildElementByTagName(responseNode, 'characterUpdates')
+                : (doc.getElementsByTagName('characterUpdates')[0] || null);
+            if (!characterUpdatesNode) {
+                throw new Error('While-you-were-away response missing <characterUpdates>.');
+            }
+
+            const updateNodes = Array.from(characterUpdatesNode.childNodes || []).filter(node => (
+                node
+                && node.nodeType === 1
+                && typeof node.nodeName === 'string'
+                && node.nodeName.toLowerCase() === 'characterupdate'
+            ));
+            if (!updateNodes.length) {
+                throw new Error('While-you-were-away response contains no <characterUpdate> entries.');
+            }
+
+            const updates = [];
+            const seenNameKeys = new Set();
+            for (const [index, updateNode] of updateNodes.entries()) {
+                const name = getDirectChildTextByTagName(updateNode, 'name').trim();
+                if (!name) {
+                    throw new Error(`While-you-were-away entry #${index + 1} is missing <name>.`);
+                }
+                const nameKey = normalizeNpcNameKey(name);
+                if (!nameKey) {
+                    throw new Error(`While-you-were-away entry #${index + 1} has an invalid <name>.`);
+                }
+                if (seenNameKeys.has(nameKey)) {
+                    throw new Error(`While-you-were-away response contains duplicate character "${name}".`);
+                }
+                seenNameKeys.add(nameKey);
+
+                const updateText = getDirectChildTextByTagName(updateNode, 'update').trim();
+                if (!updateText) {
+                    throw new Error(`While-you-were-away entry "${name}" is missing <update>.`);
+                }
+
+                const needBarChanges = [];
+                const needBarChangesNode = getDirectChildElementByTagName(updateNode, 'needBarChanges');
+                if (needBarChangesNode) {
+                    const effectNodes = Array.from(needBarChangesNode.childNodes || []).filter(node => (
+                        node
+                        && node.nodeType === 1
+                        && typeof node.nodeName === 'string'
+                        && node.nodeName.toLowerCase() === 'needbareffect'
+                    ));
+                    for (const [effectIndex, effectNode] of effectNodes.entries()) {
+                        const needBarId = getDirectChildTextByTagName(effectNode, 'needBarId').trim();
+                        if (!needBarId) {
+                            throw new Error(
+                                `While-you-were-away entry "${name}" needBarEffect #${effectIndex + 1} is missing <needBarId>.`
+                            );
+                        }
+                        const deltaRaw = getDirectChildTextByTagName(effectNode, 'delta').trim();
+                        const deltaPercent = normalizeWhileYouWereAwayNeedBarDeltaPercent(
+                            deltaRaw,
+                            `While-you-were-away delta for "${name}" need bar "${needBarId}"`
+                        );
+                        needBarChanges.push({
+                            needBarId,
+                            deltaPercent
+                        });
+                    }
+                }
+
+                const travelDestinationNode = getDirectChildElementByTagName(updateNode, 'travelDestination');
+                const parsedTravelDestination = parseWhileYouWereAwayTravelDestination(travelDestinationNode, {
+                    fieldLabel: `while-you-were-away travelDestination for "${name}"`
+                });
+
+                updates.push({
+                    name,
+                    nameKey,
+                    updateText,
+                    needBarChanges,
+                    travelDestination: parsedTravelDestination.travelDestination,
+                    arrivedHere: parsedTravelDestination.arrivedHere
+                });
+            }
+
+            if (expectedNameKeys instanceof Set && expectedNameKeys.size) {
+                for (const update of updates) {
+                    if (!expectedNameKeys.has(update.nameKey) && update.arrivedHere !== true) {
+                        throw new Error(`While-you-were-away response included unexpected character "${update.name}".`);
+                    }
+                }
+
+                const missingNames = [];
+                for (const expectedNameKey of expectedNameKeys) {
+                    if (!seenNameKeys.has(expectedNameKey)) {
+                        missingNames.push(expectedNameKey);
+                    }
+                }
+                if (missingNames.length) {
+                    throw new Error(
+                        `While-you-were-away response is missing updates for: ${missingNames.join(', ')}.`
+                    );
+                }
+            }
+
+            return {
+                updates,
+                proseForPlayer: proseForPlayer || null,
+                usedResponseWrapper: Boolean(responseNode),
+                responseContainerName: typeof responseContainer?.nodeName === 'string'
+                    ? responseContainer.nodeName
+                    : null
+            };
+        }
+
+        function parseWhileYouWereAwayTravelDestination(destinationNode, { fieldLabel = 'while-you-were-away travel destination' } = {}) {
+            if (!destinationNode) {
+                return {
+                    travelDestination: null,
+                    arrivedHere: false
+                };
+            }
+
+            const rawText = normalizeTravelProseDestinationField(destinationNode.textContent || '');
+            const normalizedRawText = typeof rawText === 'string'
+                ? rawText.trim().toLowerCase()
+                : '';
+            if (normalizedRawText === 'here') {
+                return {
+                    travelDestination: null,
+                    arrivedHere: true
+                };
+            }
+
+            return {
+                travelDestination: parseStructuredTravelProseDestination(destinationNode, { fieldLabel }),
+                arrivedHere: false
+            };
+        }
+
+        function findWhileYouWereAwayNeedBarByIdentifier(bars, identifier) {
+            if (!Array.isArray(bars)) {
+                return null;
+            }
+
+            const normalizedIdentifier = typeof identifier === 'string'
+                ? identifier.trim().toLowerCase()
+                : '';
+            if (!normalizedIdentifier) {
+                return null;
+            }
+
+            return bars.find(candidateBar => {
+                const candidateId = typeof candidateBar?.id === 'string'
+                    ? candidateBar.id.trim().toLowerCase()
+                    : '';
+                const candidateName = typeof candidateBar?.name === 'string'
+                    ? candidateBar.name.trim().toLowerCase()
+                    : '';
+                return candidateId === normalizedIdentifier || candidateName === normalizedIdentifier;
+            }) || null;
+        }
+
+        function moveNpcForWhileYouWereAway(npc, destination) {
+            if (!npc || !npc.isNPC) {
+                throw new Error('While-you-were-away NPC relocation requires an NPC.');
+            }
+            if (!destination || typeof destination !== 'object') {
+                throw new Error(`While-you-were-away relocation for "${npc.name}" is missing a destination.`);
+            }
+
+            const originLocationId = typeof npc.currentLocation === 'string'
+                ? npc.currentLocation.trim()
+                : '';
+            if (originLocationId && originLocationId === destination.id) {
+                return {
+                    moved: false,
+                    originLocation: originLocationId
+                        ? (gameLocations.get(originLocationId) || Location.get(originLocationId) || null)
+                        : null
+                };
+            }
+
+            const originLocation = originLocationId
+                ? (gameLocations.get(originLocationId) || Location.get(originLocationId) || null)
+                : null;
+            if (originLocation) {
+                if (typeof originLocation.removeNpcId === 'function') {
+                    originLocation.removeNpcId(npc.id);
+                } else if (Array.isArray(originLocation.npcIds)) {
+                    originLocation.npcIds = originLocation.npcIds.filter(id => id !== npc.id);
+                } else {
+                    throw new Error(
+                        `Unable to remove NPC "${npc.name}" from origin location "${originLocation.id}".`
+                    );
+                }
+            }
+
+            if (typeof destination.addNpcId === 'function') {
+                destination.addNpcId(npc.id);
+            } else if (Array.isArray(destination.npcIds)) {
+                if (!destination.npcIds.includes(npc.id)) {
+                    destination.npcIds.push(npc.id);
+                }
+            } else {
+                throw new Error(
+                    `Unable to add NPC "${npc.name}" to destination location "${destination.id}".`
+                );
+            }
+
+            npc.setLocation(destination.id);
+
+            if (players instanceof Map) {
+                players.set(npc.id, npc);
+            }
+            if (gameLocations instanceof Map) {
+                if (originLocation?.id) {
+                    gameLocations.set(originLocation.id, originLocation);
+                }
+                if (destination.id) {
+                    gameLocations.set(destination.id, destination);
+                }
+            }
+
+            return {
+                moved: true,
+                originLocation
+            };
+        }
+
+        function buildWhileYouWereAwayHistoryContent(plannedUpdates, playerName) {
+            if (!Array.isArray(plannedUpdates) || !plannedUpdates.length) {
+                throw new Error('While-you-were-away history content requires at least one update.');
+            }
+
+            const resolvedPlayerName = typeof playerName === 'string' && playerName.trim()
+                ? playerName.trim()
+                : 'Player';
+            const blocks = plannedUpdates.map(plan => {
+                const npcName = plan?.npc?.name || plan?.candidate?.name || 'Unknown NPC';
+                const relativeTime = normalizeWhileYouWereAwayRelativeTimeText(plan?.candidate?.lastSeenTimeAgo);
+                const updateText = typeof plan?.updateText === 'string' ? plan.updateText.trim() : '';
+                if (!updateText) {
+                    throw new Error(`While-you-were-away history block for "${npcName}" is missing update text.`);
+                }
+
+                const currentLocationId = typeof plan?.npc?.currentLocation === 'string'
+                    ? plan.npc.currentLocation.trim()
+                    : '';
+                const currentLocation = currentLocationId
+                    ? (gameLocations.get(currentLocationId) || Location.get(currentLocationId) || null)
+                    : null;
+                const currentLocationName = typeof currentLocation?.name === 'string' && currentLocation.name.trim()
+                    ? currentLocation.name.trim()
+                    : '';
+                const currentRegionName = resolveRegionNameForLocationId(currentLocationId)
+                    || (typeof plan?.resolvedDestination?.region?.name === 'string'
+                        ? plan.resolvedDestination.region.name.trim()
+                        : '')
+                    || 'Unknown Region';
+                const destinationLine = currentLocationName
+                    ? `${npcName} went to ${currentLocationName} in ${currentRegionName}`
+                    : `${npcName} went to ${currentRegionName}`;
+
+                return [
+                    `Update on ${npcName} since ${resolvedPlayerName} last saw them ${relativeTime} ago:`,
+                    updateText,
+                    destinationLine
+                ].join('\n');
+            });
+
+            return blocks.join('\n\n');
+        }
+
+        async function runWhileYouWereAwayPrompt({
+            locationOverride = null,
+            locationId = null,
+            entryCollector = null,
+            parentEntryId = null
+        } = {}) {
+            const resolvedLocation = locationOverride
+                || (typeof currentPlayer?.currentLocation === 'string' && currentPlayer.currentLocation.trim()
+                    ? (gameLocations.get(currentPlayer.currentLocation.trim()) || Location.get(currentPlayer.currentLocation.trim()) || null)
+                    : null);
+            if (!resolvedLocation) {
+                throw new Error('While-you-were-away prompt requires a resolved current location.');
+            }
+
+            const baseContext = await prepareBasePromptContext({ locationOverride: resolvedLocation });
+            const candidates = Array.isArray(baseContext?.whileYouWereAwayNpcs)
+                ? baseContext.whileYouWereAwayNpcs
+                : [];
+            if (!candidates.length) {
+                return null;
+            }
+            const rawThreshold = Number(config?.while_you_were_away_threshold_minutes);
+            const whileYouWereAwayThresholdMinutes = Number.isInteger(rawThreshold) && rawThreshold >= 0
+                ? rawThreshold
+                : (4 * 60);
+            const hasEligibleCandidate = candidates.some(candidate => (
+                Number.isInteger(candidate?.lastSeenAgeMinutes)
+                && candidate.lastSeenAgeMinutes >= whileYouWereAwayThresholdMinutes
+            ));
+            if (!hasEligibleCandidate) {
+                return null;
+            }
+
+            if (!config?.ai) {
+                throw new Error('AI configuration missing; unable to run while-you-were-away prompt.');
+            }
+
+            const candidateByNameKey = new Map();
+            for (const candidate of candidates) {
+                const nameKey = normalizeNpcNameKey(candidate?.name);
+                if (!nameKey) {
+                    throw new Error('While-you-were-away candidate is missing a valid name.');
+                }
+                if (candidateByNameKey.has(nameKey)) {
+                    throw new Error(`While-you-were-away candidates contain duplicate name "${candidate.name}".`);
+                }
+                candidateByNameKey.set(nameKey, candidate);
+            }
+
+            const renderedTemplate = promptEnv.render('base-context.xml.njk', {
+                ...baseContext,
+                promptType: 'while-you-were-away'
+            });
+            const parsedTemplate = parseXMLTemplate(renderedTemplate);
+            if (!parsedTemplate?.systemPrompt || !parsedTemplate?.generationPrompt) {
+                throw new Error('While-you-were-away prompt template is missing prompts.');
+            }
+
+            const requestOptions = {
+                messages: [
+                    { role: 'system', content: parsedTemplate.systemPrompt },
+                    { role: 'user', content: parsedTemplate.generationPrompt }
+                ],
+                metadataLabel: 'while_you_were_away',
+                validateXML: false
+            };
+            if (typeof parsedTemplate.temperature === 'number') {
+                requestOptions.temperature = parsedTemplate.temperature;
+            }
+
+            const rawResponse = await LLMClient.chatCompletion(requestOptions);
+            LLMClient.logPrompt({
+                prefix: 'while_you_were_away',
+                metadataLabel: 'while_you_were_away',
+                systemPrompt: parsedTemplate.systemPrompt || '',
+                generationPrompt: parsedTemplate.generationPrompt || '',
+                response: rawResponse || '',
+                model: requestOptions.model,
+                endpoint: requestOptions.endpoint
+            });
+
+            const parsedResponse = parseWhileYouWereAwayResponse(rawResponse, {
+                expectedNameKeys: new Set(candidateByNameKey.keys())
+            });
+            const parsedUpdates = Array.isArray(parsedResponse?.updates)
+                ? parsedResponse.updates
+                : [];
+            const currentRegion = resolveRegionForLocationObject(resolvedLocation);
+            const currentLocationId = typeof resolvedLocation?.id === 'string'
+                ? resolvedLocation.id.trim()
+                : '';
+            const plannedUpdates = [];
+            for (const parsedUpdate of parsedUpdates) {
+                const candidate = candidateByNameKey.get(parsedUpdate.nameKey) || null;
+                let npc = players instanceof Map && candidate?.id
+                    ? (players.get(candidate.id) || null)
+                    : null;
+                if (!npc && parsedUpdate.arrivedHere === true && players instanceof Map) {
+                    const arrivalMatches = [];
+                    for (const actor of players.values()) {
+                        if (!actor || actor.isNPC !== true) {
+                            continue;
+                        }
+                        if (normalizeNpcNameKey(actor.name) !== parsedUpdate.nameKey) {
+                            continue;
+                        }
+                        const actorLocationId = typeof actor.currentLocation === 'string'
+                            ? actor.currentLocation.trim()
+                            : '';
+                        if (!currentLocationId || actorLocationId !== currentLocationId) {
+                            continue;
+                        }
+                        arrivalMatches.push(actor);
+                    }
+                    if (arrivalMatches.length > 1) {
+                        throw new Error(
+                            `While-you-were-away arrival update "${parsedUpdate.name}" matched multiple NPCs at "${resolvedLocation.name || currentLocationId}".`
+                        );
+                    }
+                    npc = arrivalMatches[0] || null;
+                }
+                if (!npc || !npc.isNPC) {
+                    if (!candidate && parsedUpdate.arrivedHere === true) {
+                        console.warn(
+                            `Ignoring while-you-were-away arrival update "${parsedUpdate.name}" because no matching NPC is currently at "${resolvedLocation.name || currentLocationId}".`
+                        );
+                        continue;
+                    }
+                    throw new Error(`While-you-were-away candidate "${parsedUpdate.name}" could not be resolved to an NPC.`);
+                }
+
+                const activeNeedBars = typeof npc.getNeedBars === 'function'
+                    ? (npc.getNeedBars({ scope: 'active' }) || [])
+                    : [];
+                const storedNeedBars = typeof npc.getNeedBars === 'function'
+                    ? (npc.getNeedBars({ scope: 'stored' }) || [])
+                    : [];
+                const definedNeedBars = typeof Player !== 'undefined'
+                    && Player
+                    && Player.needBarDefinitions
+                    && typeof Player.needBarDefinitions === 'object'
+                    ? Object.values(Player.needBarDefinitions)
+                    : [];
+                const needBarPlans = parsedUpdate.needBarChanges.flatMap(change => {
+                    const bar = findWhileYouWereAwayNeedBarByIdentifier(activeNeedBars, change.needBarId);
+                    if (!bar) {
+                        const storedBar = findWhileYouWereAwayNeedBarByIdentifier(storedNeedBars, change.needBarId);
+                        if (storedBar) {
+                            return [];
+                        }
+
+                        const definedBar = findWhileYouWereAwayNeedBarByIdentifier(definedNeedBars, change.needBarId);
+                        if (definedBar) {
+                            return [];
+                        }
+
+                        console.warn(
+                            `Ignoring unknown while-you-were-away need bar "${change.needBarId}" for "${npc.name}".`
+                        );
+                        return [];
+                    }
+
+                    const currentValue = Number(bar.value);
+                    if (!Number.isFinite(currentValue)) {
+                        throw new Error(`While-you-were-away need bar "${bar.id}" for "${npc.name}" is missing a numeric value.`);
+                    }
+                    const min = Number(bar.min);
+                    const max = Number(bar.max);
+                    const total = Number.isFinite(max) && Number.isFinite(min)
+                        ? (max - min)
+                        : (Number.isFinite(max) ? max : 100);
+                    return {
+                        identifier: bar.id || change.needBarId,
+                        nextValue: currentValue + ((total * change.deltaPercent) / 100)
+                    };
+                });
+
+                const resolvedDestination = parsedUpdate.arrivedHere === true
+                    ? {
+                        location: resolvedLocation,
+                        region: currentRegion
+                    }
+                    : (
+                        parsedUpdate.travelDestination
+                            ? resolveWhileYouWereAwayDestination(parsedUpdate.travelDestination, { currentRegion })
+                            : null
+                    );
+                plannedUpdates.push({
+                    candidate,
+                    npc,
+                    updateText: parsedUpdate.updateText,
+                    needBarPlans,
+                    resolvedDestination
+                });
+            }
+
+            for (const plan of plannedUpdates) {
+                for (const needBarPlan of plan.needBarPlans) {
+                    plan.npc.setNeedBarValue(needBarPlan.identifier, needBarPlan.nextValue, {
+                        allowPlayerOnly: false
+                    });
+                }
+                if (plan.resolvedDestination?.location) {
+                    moveNpcForWhileYouWereAway(plan.npc, plan.resolvedDestination.location);
+                }
+            }
+
+            const historyContent = buildWhileYouWereAwayHistoryContent(plannedUpdates, currentPlayer?.name || 'Player');
+            const resolvedLocationId = requireLocationId(
+                locationId || resolvedLocation.id || currentPlayer?.currentLocation,
+                'while-you-were-away entry'
+            );
+            const entry = {
+                role: 'assistant',
+                content: historyContent,
+                summary: historyContent,
+                type: 'while-you-were-away',
+                locationId: resolvedLocationId
+            };
+            if (parentEntryId) {
+                entry.parentId = parentEntryId;
+            }
+            const hiddenEntry = pushChatEntry(entry, entryCollector, resolvedLocationId);
+
+            const playerFacingProse = typeof parsedResponse?.proseForPlayer === 'string'
+                ? parsedResponse.proseForPlayer.trim()
+                : '';
+            if (playerFacingProse) {
+                const visibleEntry = {
+                    role: 'assistant',
+                    content: playerFacingProse,
+                    summary: playerFacingProse,
+                    type: 'while-you-were-away-player',
+                    locationId: resolvedLocationId
+                };
+                if (parentEntryId) {
+                    visibleEntry.parentId = parentEntryId;
+                }
+                pushChatEntry(visibleEntry, entryCollector, resolvedLocationId);
+            }
+
+            return hiddenEntry;
+        }
+
         function collectNpcLastMention(name) {
             if (typeof name !== 'string' || !name.trim()) {
                 return null;
@@ -13876,6 +14576,34 @@ module.exports = function registerApiRoutes(scope) {
                 });
             };
 
+            let whileYouWereAwayProcessed = false;
+            const runWhileYouWereAwayOnArrivalIfNeeded = async () => {
+                if (whileYouWereAwayProcessed) {
+                    return null;
+                }
+
+                const currentLocationId = typeof currentPlayer?.currentLocation === 'string'
+                    ? currentPlayer.currentLocation.trim()
+                    : '';
+                if (!currentLocationId || !initialPlayerLocationId || currentLocationId === initialPlayerLocationId) {
+                    return null;
+                }
+
+                const arrivalLocation = gameLocations.get(currentLocationId) || Location.get(currentLocationId) || null;
+                if (!arrivalLocation) {
+                    throw new Error(`While-you-were-away arrival location "${currentLocationId}" could not be resolved.`);
+                }
+
+                whileYouWereAwayProcessed = true;
+                location = arrivalLocation;
+                return runWhileYouWereAwayPrompt({
+                    locationOverride: arrivalLocation,
+                    locationId: arrivalLocation.id,
+                    entryCollector: newChatEntries,
+                    parentEntryId: aiResponseEntry?.id || null
+                });
+            };
+
             const respond = async (payload, statusCode = 200) => {
                 if (statusCode === 200) {
                     await processDueVehicleArrivals();
@@ -14054,6 +14782,9 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 vehicleArrivalsThisTurn = await processDueVehicleArrivals();
+                const npcIdsSharingPlayerLocationAtTurnStart = Player.getNpcIdsSharingPlayerLocation({
+                    player: currentPlayer
+                });
 
                 if (location) {
                     try {
@@ -16125,6 +16856,8 @@ module.exports = function registerApiRoutes(scope) {
                         }, newChatEntries);
                     }
 
+                    await runWhileYouWereAwayOnArrivalIfNeeded();
+
                     if (stream.isEnabled && !playerActionStreamSent) {
                         const playerActionPreview = { ...responseData };
                         delete playerActionPreview.npcTurns;
@@ -16371,6 +17104,10 @@ module.exports = function registerApiRoutes(scope) {
                     }
 
                     console.log(`Finalizing turns for all players (count: ${Globals.playersById.size})`);
+                    Player.recordNpcSightingsForCurrentPlayer({
+                        player: currentPlayer,
+                        previouslySharedNpcIds: npcIdsSharingPlayerLocationAtTurnStart
+                    });
                     const playersById = Globals.playersById;
                     for (const player of playersById.values()) {
                         //console.log(` - Finalizing turn for player ${player.name} (${player.id})`);
@@ -19814,6 +20551,12 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 const originLocation = resolveLocationById(originLocationId);
+                const npcIdsSharingPlayerLocationAtTurnStart = !isNpc
+                    ? Player.getNpcIdsSharingPlayerLocation({
+                        player: npc,
+                        locationId: originLocationId
+                    })
+                    : [];
                 let fastTravelTimeAdjustment = null;
                 const fastTravelTimeMinutes = accountTravelTime
                     ? resolveFastTravelTimeForTraversal({
@@ -19876,6 +20619,19 @@ module.exports = function registerApiRoutes(scope) {
 
                 if (gameLocations instanceof Map) {
                     gameLocations.set(destinationLocation.id, destinationLocation);
+                }
+
+                if (!isNpc) {
+                    await runWhileYouWereAwayPrompt({
+                        locationOverride: destinationLocation,
+                        locationId: destinationLocation.id
+                    });
+
+                    Player.recordNpcSightingsForCurrentPlayer({
+                        player: npc,
+                        locationId: destinationLocation.id,
+                        previouslySharedNpcIds: npcIdsSharingPlayerLocationAtTurnStart
+                    });
                 }
 
                 let previousLocationPayload = null;
@@ -24619,6 +25375,10 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 const vehicleArrivalsThisTurn = await processDueVehicleArrivals();
+                const npcIdsSharingPlayerLocationAtTurnStart = Player.getNpcIdsSharingPlayerLocation({
+                    player: currentPlayer,
+                    locationId: currentLocationId
+                });
 
                 const directions = currentLocation.getAvailableDirections();
                 let matchedExit = null;
@@ -24834,6 +25594,11 @@ module.exports = function registerApiRoutes(scope) {
                     console.warn('Failed to ensure region secrets after move:', secretError?.message || secretError);
                 }
 
+                await runWhileYouWereAwayPrompt({
+                    locationOverride: destinationLocation,
+                    locationId: destinationLocation.id
+                });
+
                 const lastActionWasTravel = Boolean(currentPlayer?.lastActionWasTravel);
                 const consecutiveTravelActions = Number(currentPlayer?.consecutiveTravelActions) || 0;
 
@@ -24858,6 +25623,12 @@ module.exports = function registerApiRoutes(scope) {
                         error: 'Failed to serialize destination location.'
                     });
                 }
+
+                Player.recordNpcSightingsForCurrentPlayer({
+                    player: currentPlayer,
+                    locationId: destinationLocation.id,
+                    previouslySharedNpcIds: npcIdsSharingPlayerLocationAtTurnStart
+                });
 
                 res.json({
                     success: true,
@@ -25359,31 +26130,26 @@ module.exports = function registerApiRoutes(scope) {
                 const isNoProseRequest = parseNoProseFlag(payload.noProse);
                 const slotEntries = Array.isArray(payload.slots) ? payload.slots : [];
 
-                const slotItems = slotEntries
-                    .map(entry => {
-                        if (!entry || typeof entry !== 'object') {
-                            return null;
-                        }
-                        const thingId = typeof entry.thingId === 'string' ? entry.thingId.trim() : '';
-                        if (!thingId) {
-                            return null;
-                        }
-                        const thing = things.get(thingId) || (typeof Thing.getById === 'function' ? Thing.getById(thingId) : null);
-                        if (!thing) {
-                            return null;
-                        }
-                        const slotIndex = Number.isFinite(Number(entry.slotIndex))
-                            ? Number(entry.slotIndex)
-                            : 0;
-                        return { slotIndex, thing };
-                    })
-                    .filter(Boolean);
-
-                if (!slotItems.length) {
-                    return res.status(400).json({
-                        success: false,
-                        error: 'Select at least one ingredient before crafting.'
-                    });
+                const slotItems = [];
+                for (const entry of slotEntries) {
+                    if (!entry || typeof entry !== 'object') {
+                        continue;
+                    }
+                    const thingId = typeof entry.thingId === 'string' ? entry.thingId.trim() : '';
+                    if (!thingId) {
+                        continue;
+                    }
+                    const thing = things.get(thingId) || (typeof Thing.getById === 'function' ? Thing.getById(thingId) : null);
+                    if (!thing) {
+                        return res.status(400).json({
+                            success: false,
+                            error: `Selected item '${thingId}' was not found.`
+                        });
+                    }
+                    const slotIndex = Number.isFinite(Number(entry.slotIndex))
+                        ? Number(entry.slotIndex)
+                        : 0;
+                    slotItems.push({ slotIndex, thing });
                 }
 
                 const locationId = currentPlayer.currentLocation || null;
@@ -25394,6 +26160,10 @@ module.exports = function registerApiRoutes(scope) {
                 const resolvedRegion = locationRecord?.regionId && regions instanceof Map
                     ? regions.get(locationRecord.regionId) || null
                     : (Globals.region || null);
+                const npcIdsSharingPlayerLocationAtTurnStart = Player.getNpcIdsSharingPlayerLocation({
+                    player: currentPlayer,
+                    locationId: resolvedLocationId
+                });
 
                 const intendedItemName = typeof payload.intendedItemName === 'string'
                     ? payload.intendedItemName.trim()
@@ -26464,6 +27234,12 @@ module.exports = function registerApiRoutes(scope) {
                 }
                 await processDueVehicleArrivals();
 
+                Player.recordNpcSightingsForCurrentPlayer({
+                    player: currentPlayer,
+                    locationId: resolvedLocationId,
+                    previouslySharedNpcIds: npcIdsSharingPlayerLocationAtTurnStart
+                });
+
                 res.json({
                     success: true,
                     outcome: actionOutcome,
@@ -26612,13 +27388,6 @@ module.exports = function registerApiRoutes(scope) {
                     })
                     .filter(Boolean);
 
-                if (!slotItems.length) {
-                    return res.status(400).json({
-                        success: false,
-                        error: 'Select at least one material or tool before modifying a location.'
-                    });
-                }
-
                 const modificationRollState = { value: null };
                 const modificationNotes = extractInlineDieRollFromLocationModifyText(
                     typeof payload.notes === 'string' ? payload.notes.trim() : '',
@@ -26629,6 +27398,10 @@ module.exports = function registerApiRoutes(scope) {
                 const resolvedRegion = locationRecord?.regionId && regions instanceof Map
                     ? regions.get(locationRecord.regionId) || null
                     : (Globals.region || null);
+                const npcIdsSharingPlayerLocationAtTurnStart = Player.getNpcIdsSharingPlayerLocation({
+                    player: currentPlayer,
+                    locationId: resolvedLocationId
+                });
                 const modificationItemsForPrompt = slotItems.map(({ thing }) => ({
                     name: thing.name,
                     description: thing.description,
@@ -27172,6 +27945,12 @@ module.exports = function registerApiRoutes(scope) {
                     console.warn('Failed to apply time-based need/health changes after location modification:', timeEffectError?.message || timeEffectError);
                 }
                 await processDueVehicleArrivals();
+
+                Player.recordNpcSightingsForCurrentPlayer({
+                    player: currentPlayer,
+                    locationId: resolvedLocationId,
+                    previouslySharedNpcIds: npcIdsSharingPlayerLocationAtTurnStart
+                });
 
                 const locationPayload = buildLocationResponse(locationRecord);
                 if (!locationPayload) {
@@ -34481,8 +35260,6 @@ module.exports = function registerApiRoutes(scope) {
                 });
             }
 
-            console.log('Retrieved image metadata for:', imageId);
-            console.log(metadata);
             res.json({
                 success: true,
                 metadata: metadata

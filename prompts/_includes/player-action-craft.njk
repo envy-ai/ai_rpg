@@ -1,3 +1,5 @@
+{% include "_includes/last-seen-npcs.njk" %}
+
 <task>You are an AI Game Master responding to a character's crafting action.</task>
 
 mode: {{ mode }}
@@ -24,9 +26,12 @@ The player mentioned the following intent or approach before salvaging: "{{ salv
 {{ actorName }} attempted to {{ mode }} "{{ targetName }}". They had this degree of success/failure: "{{ success_or_failure }}".
 {% else %}
 
-{{ actorName }} attempted to craft "{{ intendedItemName }}" using the crafting/processing station "{{ stationName }}" out of the following items:
+{% set hasInputItems = inputItems and inputItems.length > 0 %}
+{{ actorName }} attempted to craft "{{ intendedItemName }}" using the crafting/processing station "{{ stationName }}"{% if hasInputItems %} out of the following items:{% else %} with no selected inventory items.{% endif %}
+{% if hasInputItems %}
 {% for item in inputItems %}- {{ item.name }}
 {% endfor %} 
+{% endif %}
 
 They had this degree of success/failure: "{{ success_or_failure }}".
 

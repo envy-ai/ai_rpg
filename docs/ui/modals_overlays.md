@@ -83,6 +83,7 @@ Most modals live in `views/index.njk` and are wired up by the inline script or `
   - Both include a shared vehicle editor partial with an `Is Vehicle` checkbox that enables/disables fields, a single-select destination picker, a `Vehicle Exit` select rendered as `inside -> outside`, and a fixed-route destinations picker (add/remove list with live substring suggestions, capped at 10 matches). The destination picker edits the active trip target: `currentDestination` for resolved trips and `pendingDestination` while the vehicle is underway. Unresolved named pending targets still render in the picker even before they resolve to a concrete `locationId`, and region-only pending targets remain intact unless the user explicitly clears or replaces them. Both destination areas also include `New Region` buttons: the active destination button creates a region-only unresolved `pendingDestination`, while the fixed-route button adds a `pending-region:<region name>` route entry that continues to point at that not-yet-generated region name until a timed arrival resolves it. Region edit vehicle-exit options are limited to exits that leave the region.
 - `#regionWeatherEditModal`: edit the current location's containing region weather definition from the location context menu.
 - `#calendarEditModal`: tabbed field editor for the active `calendarDefinition`, opened from the location/map context menus. It loads `/api/calendar`, edits year name plus ordered months, weekdays, seasons/time descriptions, and holidays, saves through `PUT /api/calendar`, and displays validation failures from the server without mutating the calendar.
+- `#setLastSeenModal`: opened from the main-location and map location context menus. It prompts for the same exact-time (`H AM/PM` or `H:MM AM/PM`) or relative (`duration ago`) input supported by `/set_last_seen`, displays the selected location label, and submits by calling the existing slash-command execution path instead of duplicating client-side parsing.
 - `#newExitModal`: create or edit exits (new region/location, editable travel time, optional image).
 - Summon NPC/item now reuse the shared searchable chooser modal (`.npc-selection-modal`) instead of dedicated `<select>`-based forms.
   - `Summon NPC` filters existing NPCs by name/location and executes immediately on row click.
@@ -91,8 +92,8 @@ Most modals live in `views/index.njk` and are wired up by the inline script or `
 
 ## Crafting / processing
 
-- `#craftingModal`: drag-and-drop crafting UI.
-- `#salvageIntentModal`: optional prompt before salvage.
+- `#craftingModal`: drag-and-drop crafting UI for craft/process and `Modify Location`; craft, process, and location modification submits may run with no selected slot items when the player is relying on the station, location, abilities, or notes.
+- `#salvageIntentModal`: optional prompt before salvage; salvage and harvest still require exactly one target item.
 
 ## Save/load
 

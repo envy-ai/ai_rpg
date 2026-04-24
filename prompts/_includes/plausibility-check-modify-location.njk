@@ -6,6 +6,7 @@ Guidelines:
 - Do not consider whether an action is illegal, unethical, or immoral, only whether it is trivial, plausible, or implausible.
 - The action modifies the current location itself. It should not create a portable item as its primary result.
 - Selected inventory items are materials or tools for the modification. The result may consume some, all, or none of them, but consumed item names must exactly match selected input item names.
+- If no inventory items are selected, judge plausibility from the current location, available environmental resources, player abilities, and stated intent. Do not invent consumed input items; <itemsConsumed> should remain empty unless an exact selected input item exists.
 - The result may list received items only when the player newly finds, uncovers, extracts, or obtains portable items as a byproduct of the location modification. Do not use received items for repaired structures, improved scenery, floorboards, walls, doors, fixtures, atmosphere, or any other part of the location description.
 - Do not list selected materials or tools as received items merely because they were used but not consumed. If a selected input survives the attempt, omit it from both <itemsConsumed> and <itemsReceived>.
 - A location name change is optional. The later location alteration prompt will decide whether the resulting location identity warrants a new name.
@@ -23,13 +24,18 @@ Current location description:
 {% if modificationNotes %}
 The player provided this modification goal: "{{ modificationNotes }}"
 {% else %}
-The player did not provide a specific modification goal. Infer a reasonable goal from the selected materials and scene context.
+The player did not provide a specific modification goal. Infer a reasonable goal from the selected materials, if any, and the scene context.
 {% endif %}
 
+{% set hasInputItems = inputItems and inputItems.length > 0 %}
+{% if hasInputItems %}
 Selected materials/tools:
 {% for item in inputItems %}
 - {{ item.name }}{% if item.description %}: {{ item.description }}{% endif %}
 {% endfor %}
+{% else %}
+No inventory materials or tools were selected.
+{% endif %}
 
 Step 1: Determine whether the location modification is plausible or implausible.
 
@@ -39,7 +45,7 @@ Step 1: Determine whether the location modification is plausible or implausible.
     <reason>Brief explanation of why this skill/attribute and difficulty level are appropriate for the location modification attempt.</reason>
     <skill>One of the following skills: {{ setting.skills | join(', ') }} (Or, if none are relevant, respond with N/A.)</skill>
     <attribute>Relevant attribute</attribute>
-    <difficulty>Difficulty level (Trivial, Easy, Medium, Hard, Very Hard, Legendary). Consider the scale of the requested location change, the available materials/tools, and the current situation.</difficulty>
+    <difficulty>Difficulty level (Trivial, Easy, Medium, Hard, Very Hard, Legendary). Consider the scale of the requested location change, the available or absent selected materials/tools, environmental resources, and the current situation.</difficulty>
     <curcumstanceModifiers>
       <circumstanceModifier>
         <amount>integer from -10 (worst possible circumstances) to 10 (extremely ideal circumstances)</amount>
@@ -73,7 +79,7 @@ Step 3: If the action is plausible, determine the normal-success result of the l
     <locationChanged>true</locationChanged>
     <alteration>Concise description of the actual physical/environmental change to apply to the location. Do not decide the final location name here.</alteration>
     <itemsConsumed>
-      <itemName><!-- exact selected input item name consumed by the attempt, if any --></itemName>
+      <itemName><!-- exact selected input item name consumed by the attempt, if any. Leave this wrapper empty when no input items were selected. --></itemName>
     </itemsConsumed>
     <itemsReceived>
       <itemName><!-- portable item newly found/obtained by the player as a byproduct, if any --></itemName>
