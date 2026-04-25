@@ -15,22 +15,23 @@
 
 {% include "_includes/item-output.njk" %}
 
-<task>Separate the item above and return the updated item definition(s).</task>
+<task>Separate the item or scenery above and return the updated thing definition(s).</task>
 
 Guidelines: 
 
-- Determine if the item is made of multiple *different* items, or if it's a stack of identical items.
-- If it's made of multiple different items, separate it into those items. For instance, a basket of skin care products would be separated into the individual skin care products, plus the empty basket. This does *not* disassemble an item into its component materials. A Table would not be separated into wood planks and nails, but a Basket of Apples would be separated into the Basket and the Apples (if the apples are identical, they can be a stack with a count; if not, separate them into different items).
+- Determine if the source thing is made of multiple *different* things, or if it's a stack of identical items.
+- If it's made of multiple different things, separate it into those things. For instance, a basket of skin care products would be separated into the individual skin care products, plus the empty basket. This does *not* disassemble a thing into its component materials. A Table would not be separated into wood planks and nails, but a Basket of Apples would be separated into the Basket and the Apples (if the apples are identical, they can be a stack with a count; if not, separate them into different items).
+- If a returned thing is a container that should hold the separated item outputs, mark it with `isContainer` true. The server will put the other returned item-type things inside the first returned container.
 - If it's a stack of items with a count of one and a number specified in the description (e.g., "A bundle of 5 arrows"), separate it into a stack of identical items with the appropriate count (e.g., 5 arrows with count 5). Keep all stats except description, name, and short description the same.
-- If it's just one item that can't be separated as above, return an empty items list.
+- If it's just one thing that can't be separated as above, return an empty items list.
 
-Respond in the following format if it's separated into multiple items:
+Respond in the following format if it's separated into multiple things:
 <items>
 {% include "_includes/item.njk" %}
-... more items as needed ...
+... more things as needed ...
 </items>
 
-- Be sure to consider both the item name and description when determining if and how it can be separated.
+- Be sure to consider both the source name and description when determining if and how it can be separated.
 
 Respond in the following format if it's a stack of identical items:
 <stack>

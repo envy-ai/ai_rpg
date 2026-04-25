@@ -1,3 +1,19 @@
+const TURN_DIFF_CATEGORIES = new Set([
+    'time',
+    'travel',
+    'character',
+    'needs',
+    'inventory',
+    'npc_party',
+    'quest_reward',
+    'disposition',
+    'faction_relationship',
+    'location_world',
+    'status',
+    'other'
+]);
+const TURN_DIFF_SEVERITIES = new Set(['normal', 'important', 'critical']);
+
 class AIRPGChat {
     constructor() {
         this.chatLog = document.getElementById('chatLog');
@@ -960,10 +976,10 @@ class AIRPGChat {
                 && previousState.lightLevel
                 && lightLevel !== previousState.lightLevel
             ) {
-                this.addEventSummary('💡', `Light level changed from ${previousState.lightLevel} to ${lightLevel}.`);
+                this.addEventSummary('💡', `Light level changed from ${previousState.lightLevel} to ${lightLevel}.`, 'time');
             }
             if (weatherName && previousState.weatherName && weatherName !== previousState.weatherName) {
-                this.addEventSummary('🌦️', `Weather changed from ${previousState.weatherName} to ${weatherName}.`);
+                this.addEventSummary('🌦️', `Weather changed from ${previousState.weatherName} to ${weatherName}.`, 'time');
             }
         }
 
@@ -1043,13 +1059,13 @@ class AIRPGChat {
 
             if (type === 'segment') {
                 const fromText = from ? `from ${from} ` : '';
-                this.addEventSummary('🕒', `Time shifted ${fromText}to ${to}.`);
+                this.addEventSummary('🕒', `Time shifted ${fromText}to ${to}.`, 'time');
                 return;
             }
 
             if (type === 'season') {
                 const fromText = from ? `from ${from} ` : '';
-                this.addEventSummary('🍂', `Season changed ${fromText}to ${to}.`);
+                this.addEventSummary('🍂', `Season changed ${fromText}to ${to}.`, 'time');
             }
         });
     }
@@ -1210,6 +1226,10 @@ class AIRPGChat {
         return new Set(['skill-check', 'attack-check', 'plausibility', 'slop-remover', 'supplemental-story-info']);
     }
 
+    getTurnDiffEntryTypes() {
+        return new Set(['event-summary', 'status-summary']);
+    }
+
     getClientMessageHistoryConfig() {
         const config = window.AIRPG_CONFIG?.clientMessageHistory;
         if (!config || typeof config !== 'object') {
@@ -1353,12 +1373,22 @@ class AIRPGChat {
         const aggregatedEntries = [];
         const recordsById = new Map();
         const pendingAttachments = new Map();
+        const pendingTurnDiffEntries = new Map();
         let lastAttachable = null;
         const attachmentTypes = this.getAttachmentTypes();
+        const turnDiffEntryTypes = this.getTurnDiffEntryTypes();
 
         const attachToRecord = (record, attachment) => {
             if (record && attachment) {
                 record.attachments.push(attachment);
+                return true;
+            }
+            return false;
+        };
+
+        const attachTurnDiffToRecord = (record, entry) => {
+            if (record && entry) {
+                record.turnDiffEntries.push(entry);
                 return true;
             }
             return false;
@@ -1372,7 +1402,20 @@ class AIRPGChat {
 
             const entryType = entry.type || null;
             const isAttachmentType = attachmentTypes.has(entryType);
+            const isTurnDiffType = turnDiffEntryTypes.has(entryType);
             const parentId = entry.parentId || null;
+
+            if (isTurnDiffType && parentId) {
+                const parentRecord = recordsById.get(parentId);
+                if (attachTurnDiffToRecord(parentRecord, entry)) {
+                    return;
+                }
+                if (!pendingTurnDiffEntries.has(parentId)) {
+                    pendingTurnDiffEntries.set(parentId, []);
+                }
+                pendingTurnDiffEntries.get(parentId).push(entry);
+                return;
+            }
 
             if (isAttachmentType) {
                 if (parentId) {
@@ -1391,7 +1434,7 @@ class AIRPGChat {
                     return;
                 }
 
-                const orphanRecord = { entry, attachments: [] };
+                const orphanRecord = { entry, attachments: [], turnDiffEntries: [] };
                 aggregatedEntries.push(orphanRecord);
                 if (entry.id) {
                     recordsById.set(entry.id, orphanRecord);
@@ -1400,7 +1443,7 @@ class AIRPGChat {
                 return;
             }
 
-            const record = { entry, attachments: [] };
+            const record = { entry, attachments: [], turnDiffEntries: [] };
             aggregatedEntries.push(record);
 
             if (entry.id) {
@@ -1409,6 +1452,11 @@ class AIRPGChat {
                     const pendingList = pendingAttachments.get(entry.id);
                     pendingList.forEach(pendingEntry => record.attachments.push(pendingEntry));
                     pendingAttachments.delete(entry.id);
+                }
+                if (pendingTurnDiffEntries.has(entry.id)) {
+                    const pendingList = pendingTurnDiffEntries.get(entry.id);
+                    pendingList.forEach(pendingEntry => record.turnDiffEntries.push(pendingEntry));
+                    pendingTurnDiffEntries.delete(entry.id);
                 }
             }
 
@@ -1422,13 +1470,21 @@ class AIRPGChat {
         if (pendingAttachments.size) {
             for (const pendingList of pendingAttachments.values()) {
                 pendingList.forEach(entry => {
-                    aggregatedEntries.push({ entry, attachments: [] });
+                    aggregatedEntries.push({ entry, attachments: [], turnDiffEntries: [] });
                 });
             }
         }
 
-        aggregatedEntries.forEach(({ entry, attachments }) => {
-            const element = this.createChatMessageElement(entry, attachments);
+        if (pendingTurnDiffEntries.size) {
+            for (const pendingList of pendingTurnDiffEntries.values()) {
+                pendingList.forEach(entry => {
+                    aggregatedEntries.push({ entry, attachments: [], turnDiffEntries: [] });
+                });
+            }
+        }
+
+        aggregatedEntries.forEach(({ entry, attachments, turnDiffEntries }) => {
+            const element = this.createChatMessageElement(entry, attachments, turnDiffEntries);
             if (element) {
                 fragment.appendChild(element);
                 if (entry.timestamp) {
@@ -1454,7 +1510,7 @@ class AIRPGChat {
         this.scrollToBottom();
     }
 
-    createChatMessageElement(entry, attachments = []) {
+    createChatMessageElement(entry, attachments = [], turnDiffEntries = []) {
         if (!entry) {
             return null;
         }
@@ -1524,6 +1580,10 @@ class AIRPGChat {
         messageDiv.appendChild(contentDiv);
         messageDiv.appendChild(timestampDiv);
 
+        if (Array.isArray(turnDiffEntries) && turnDiffEntries.length) {
+            this.appendTurnDiffDrawer(messageDiv, turnDiffEntries);
+        }
+
         const insights = this.prepareAttachmentInsights(attachments);
 
         const actions = this.createMessageActions(entry);
@@ -1540,6 +1600,19 @@ class AIRPGChat {
         }
 
         return messageDiv;
+    }
+
+    appendTurnDiffDrawer(parentElement, turnDiffEntries = []) {
+        if (!parentElement || !Array.isArray(turnDiffEntries) || !turnDiffEntries.length) {
+            return null;
+        }
+        if (!window.TurnStateDiffDrawer || typeof window.TurnStateDiffDrawer.appendDrawer !== 'function') {
+            throw new Error('TurnStateDiffDrawer script is required before chat.js can render turn diff drawers.');
+        }
+
+        return window.TurnStateDiffDrawer.appendDrawer(parentElement, turnDiffEntries, {
+            renderText: (target, text) => this.setMessageContent(target, text, { allowMarkdown: true })
+        });
     }
 
     prepareAttachmentInsights(attachments = []) {
@@ -4043,6 +4116,7 @@ class AIRPGChat {
         this.chatLog.appendChild(messageDiv);
 
         this.scrollToBottom();
+        return messageDiv;
     }
 
     addNpcMessage(npcName, content) {
@@ -4075,24 +4149,65 @@ class AIRPGChat {
     }
 
 
-    addEventSummary(icon, summaryText) {
+    normalizeTurnDiffCategory(category, fallback = 'other') {
+        const candidate = typeof category === 'string' ? category.trim() : '';
+        if (candidate && TURN_DIFF_CATEGORIES.has(candidate)) {
+            return candidate;
+        }
+        return TURN_DIFF_CATEGORIES.has(fallback) ? fallback : 'other';
+    }
+
+    normalizeTurnDiffSeverity(severity, fallback = 'normal') {
+        const candidate = typeof severity === 'string' ? severity.trim().toLowerCase() : '';
+        if (candidate && TURN_DIFF_SEVERITIES.has(candidate)) {
+            return candidate;
+        }
+        return TURN_DIFF_SEVERITIES.has(fallback) ? fallback : 'normal';
+    }
+
+    normalizeTurnDiffSourceType(sourceType) {
+        const candidate = typeof sourceType === 'string' ? sourceType.trim() : '';
+        return candidate || null;
+    }
+
+    normalizeTurnDiffEntityRefs(entityRefs) {
+        if (!Array.isArray(entityRefs)) {
+            return [];
+        }
+        return entityRefs
+            .map(ref => {
+                if (!ref || typeof ref !== 'object') {
+                    return null;
+                }
+                const type = typeof ref.type === 'string' ? ref.type.trim().toLowerCase() : '';
+                const id = typeof ref.id === 'string' ? ref.id.trim() : '';
+                const name = typeof ref.name === 'string' ? ref.name.trim() : '';
+                if (!type || (!id && !name)) {
+                    return null;
+                }
+                return { type, id: id || null, name: name || null };
+            })
+            .filter(Boolean);
+    }
+
+    addEventSummary(icon, summaryText, category = 'other', metadata = {}) {
         if (!summaryText) {
             return;
         }
 
-        if (this.pushEventBundleItem(icon || '📣', summaryText)) {
+        if (this.pushEventBundleItem(icon || '📣', summaryText, category, metadata)) {
             return;
         }
 
         this.renderStandaloneEventSummary(icon, summaryText);
     }
 
-    addStatusSummary(icon, summaryText) {
+    addStatusSummary(icon, summaryText, category = 'status', metadata = {}) {
         if (!summaryText) {
             return;
         }
 
-        if (this.pushStatusBundleItem(icon || '🌀', summaryText)) {
+        if (this.pushStatusBundleItem(icon || '🌀', summaryText, category, metadata)) {
             return;
         }
 
@@ -4108,7 +4223,7 @@ class AIRPGChat {
         const reasonText = reason && String(reason).trim();
         const summaryText = `+${numeric} XP${reasonText ? ` (${reasonText})` : ''}`;
 
-        if (this.pushEventBundleItem('✨', summaryText)) {
+        if (this.pushEventBundleItem('✨', summaryText, 'quest_reward')) {
             return;
         }
 
@@ -4175,7 +4290,7 @@ class AIRPGChat {
         const label = this.getCurrencyLabel(absolute);
         const summaryText = `${sign}${absolute} ${label}`;
 
-        if (this.pushEventBundleItem('💰', summaryText)) {
+        if (this.pushEventBundleItem('💰', summaryText, 'quest_reward')) {
             return;
         }
 
@@ -4289,7 +4404,7 @@ class AIRPGChat {
                     segments.push(`→ ${threshold.name}${effect}`);
                 }
 
-                this.addEventSummary(resolveNeedBarIcon(change), segments.join(' '));
+                this.addEventSummary(resolveNeedBarIcon(change), segments.join(' '), 'needs');
             });
 
             this.markEventBundleRefresh();
@@ -4420,7 +4535,7 @@ class AIRPGChat {
         const reason = event && typeof event === 'object' && event.reason ? String(event.reason).trim() : '';
         const summaryMessage = this.buildEnvironmentalSummary({ name, damageAmount, severityRaw, reason, isHealing });
 
-        if (this.pushEventBundleItem(isHealing ? '🌿' : '☠️', summaryMessage)) {
+        if (this.pushEventBundleItem(isHealing ? '🌿' : '☠️', summaryMessage, 'character')) {
             return;
         }
 
@@ -4490,21 +4605,25 @@ class AIRPGChat {
             items.forEach(change => {
                 const summary = toSummaryText(change);
                 if (summary) {
-                    this.addEventSummary('💞', summary);
+                    this.addEventSummary('💞', summary, 'disposition');
                 }
             });
             this.markEventBundleRefresh();
             return;
         }
 
-        const lines = items
+        const summaryItems = items
             .map(toSummaryText)
             .filter(Boolean)
-            .join('\n');
-        if (!lines) {
+            .map(text => ({
+                icon: '💞',
+                text,
+                category: 'disposition'
+            }));
+        if (!summaryItems.length) {
             return;
         }
-        this.renderStandaloneEventSummary('💞', lines);
+        this.renderDispositionSummaryBatch(summaryItems);
     }
 
     addFactionReputationChanges(changes) {
@@ -4547,7 +4666,7 @@ class AIRPGChat {
             items.forEach(change => {
                 const summary = toSummaryText(change);
                 if (summary) {
-                    this.addEventSummary('🏳️', summary);
+                    this.addEventSummary('🏳️', summary, 'faction_relationship');
                 }
             });
             this.markEventBundleRefresh();
@@ -4647,7 +4766,7 @@ class AIRPGChat {
                 const destination = safeItem(location, 'a new location');
 
                 if (!travelledTo.has(destination)) {
-                    this.addEventSummary('🚶', `Travelled to ${destination}.`);
+                    this.addEventSummary('🚶', `Travelled to ${destination}.`, 'travel');
                 }
                 travelledTo.add(destination);
             });
@@ -4658,7 +4777,7 @@ class AIRPGChat {
                 entries.forEach((entry) => {
                     const attacker = safeName(entry?.attacker);
                     const target = safeName(entry?.target || 'their target');
-                    this.addEventSummary('⚔️', `${attacker} attacked ${target}.`);
+                    this.addEventSummary('⚔️', `${attacker} attacked ${target}.`, 'character');
                 });
             },
             consume_item: (entries) => {
@@ -4686,13 +4805,13 @@ class AIRPGChat {
                         });
                         const detailText = extraDetails.length ? ` (${extraDetails.join('; ')})` : '';
                         if (consumer) {
-                            this.addEventSummary('🧪', `${consumer} consumed ${itemName}.${detailText}`);
+                            this.addEventSummary('🧪', `${consumer} consumed ${itemName}.${detailText}`, 'inventory');
                         } else {
-                            this.addEventSummary('🧪', `${itemName} was consumed or destroyed.${detailText}`);
+                            this.addEventSummary('🧪', `${itemName} was consumed or destroyed.${detailText}`, 'inventory');
                         }
                     } else {
                         const itemName = safeItem(entry, 'An item');
-                        this.addEventSummary('🧪', `${itemName} was consumed or destroyed.`);
+                        this.addEventSummary('🧪', `${itemName} was consumed or destroyed.`, 'inventory');
                     }
                 });
             },
@@ -4701,9 +4820,9 @@ class AIRPGChat {
                     const status = typeof entry?.status === 'string' ? entry.status.trim().toLowerCase() : null;
                     const target = safeName(entry?.name ?? entry);
                     if (status === 'dead') {
-                        this.addEventSummary('☠️', `${target} was killed.`);
+                        this.addEventSummary('☠️', `${target} was killed.`, 'character');
                     } else {
-                        this.addEventSummary('☠️', `${target} was incapacitated.`);
+                        this.addEventSummary('☠️', `${target} was incapacitated.`, 'character');
                     }
                 });
             },
@@ -4711,7 +4830,7 @@ class AIRPGChat {
                 entries.forEach((entry) => {
                     const character = safeName(entry?.character);
                     const item = safeItem(entry?.item);
-                    this.addEventSummary('📦', `${character} dropped ${item}.`);
+                    this.addEventSummary('📦', `${character} dropped ${item}.`, 'inventory');
                 });
             },
             heal_recover: (entries) => {
@@ -4748,19 +4867,19 @@ class AIRPGChat {
                         summary += '.';
                     }
 
-                    this.addEventSummary('💖', summary);
+                    this.addEventSummary('💖', summary, 'character');
                 });
             },
             scenery_appear: (entries) => {
                 entries.forEach((item) => {
                     const itemName = safeItem(item);
-                    this.addEventSummary('✨', `${itemName} appeared in the scene.`);
+                    this.addEventSummary('✨', `${itemName} appeared in the scene.`, 'location_world');
                 });
             },
             item_appear: (entries) => {
                 entries.forEach((item) => {
                     const itemName = safeItem(item);
-                    this.addEventSummary('✨', `${itemName} appeared in the scene.`);
+                    this.addEventSummary('✨', `${itemName} appeared in the scene.`, 'location_world');
                 });
             },
             move_location: handleMoveLocation,
@@ -4778,7 +4897,7 @@ class AIRPGChat {
             new_exit_discovered: (entries) => {
                 entries.forEach((description) => {
                     const detail = safeItem(description, 'a new path');
-                    this.addEventSummary('🚪', `New exit discovered: ${detail}.`);
+                    this.addEventSummary('🚪', `New exit discovered: ${detail}.`, 'travel');
                     console.log("[Debug] New exit discovered event:", detail)
                 });
             },
@@ -4789,12 +4908,12 @@ class AIRPGChat {
                     const destination = entry?.destination || entry?.location;
                     const destinationText = destination ? safeItem(destination, 'another location') : null;
                     if (action === 'arrived') {
-                        this.addEventSummary('🙋', `${name} arrived at the location.`);
+                        this.addEventSummary('🙋', `${name} arrived at the location.`, 'npc_party');
                     } else if (action === 'left') {
                         const detail = destinationText ? ` for ${destinationText}` : '';
-                        this.addEventSummary('🏃', `${name} left the area${detail}.`);
+                        this.addEventSummary('🏃', `${name} left the area${detail}.`, 'npc_party');
                     } else {
-                        this.addEventSummary('📍', `${name} ${entry?.action || 'moved'}.`);
+                        this.addEventSummary('📍', `${name} ${entry?.action || 'moved'}.`, 'npc_party');
                     }
                 });
             },
@@ -4803,11 +4922,11 @@ class AIRPGChat {
                     const name = safeName(entry?.name);
                     const action = (entry?.action || '').trim().toLowerCase();
                     if (action === 'joined') {
-                        this.addEventSummary('🤝', `${name} joined the party.`);
+                        this.addEventSummary('🤝', `${name} joined the party.`, 'npc_party');
                     } else if (action === 'left') {
-                        this.addEventSummary('👋', `${name} left the party.`);
+                        this.addEventSummary('👋', `${name} left the party.`, 'npc_party');
                     } else {
-                        this.addEventSummary('📣', `${name} ${entry?.action || 'changed party status'}.`);
+                        this.addEventSummary('📣', `${name} ${entry?.action || 'changed party status'}.`, 'npc_party');
                     }
                 });
             },
@@ -4817,14 +4936,14 @@ class AIRPGChat {
                     const itemName = safeItem(entry?.item);
                     const sourceName = safeItem(entry?.source, '');
                     const fromClause = sourceName ? ` from ${sourceName}` : '';
-                    this.addEventSummary('🌾', `${actor} harvested ${itemName}${fromClause}.`);
+                    this.addEventSummary('🌾', `${actor} harvested ${itemName}${fromClause}.`, 'inventory');
                 });
             },
             pick_up_item: (entries) => {
                 entries.forEach((entry) => {
                     const actor = safeName(entry?.name);
                     const itemName = safeItem(entry?.item);
-                    this.addEventSummary('🎒', `${actor} picked up ${itemName}.`);
+                    this.addEventSummary('🎒', `${actor} picked up ${itemName}.`, 'inventory');
                 });
             },
             status_effect_change: (entries) => {
@@ -4848,7 +4967,7 @@ class AIRPGChat {
                     const giver = safeName(entry?.giver);
                     const item = safeItem(entry?.item);
                     const receiver = safeName(entry?.receiver);
-                    this.addEventSummary('🔄', `${giver} gave ${item} to ${receiver}.`);
+                    this.addEventSummary('🔄', `${giver} gave ${item} to ${receiver}.`, 'inventory');
                 });
             },
             alter_item: (entries) => {
@@ -4874,7 +4993,7 @@ class AIRPGChat {
                         text += ` (${changeDescription})`;
                     }
                     text += '.';
-                    this.addEventSummary('🛠️', text);
+                    this.addEventSummary('🛠️', text, 'inventory');
                 });
             },
             alter_location: (entries) => {
@@ -4887,7 +5006,7 @@ class AIRPGChat {
                     const summaryText = changeDescription
                         ? `${locationName} changed: ${changeDescription}.`
                         : `${locationName} was altered.`;
-                    this.addEventSummary('🏙️', summaryText);
+                    this.addEventSummary('🏙️', summaryText, 'location_world');
                 });
             },
             alter_npc: (entries) => {
@@ -4907,7 +5026,7 @@ class AIRPGChat {
                     if (!text.endsWith('.')) {
                         text += '.';
                     }
-                    this.addEventSummary('🧬', text);
+                    this.addEventSummary('🧬', text, 'character');
                 });
             },
             needbar_change: () => {
@@ -4969,6 +5088,58 @@ class AIRPGChat {
         this.scrollToBottom();
     }
 
+    renderDispositionSummaryBatch(items) {
+        if (!Array.isArray(items) || !items.length) {
+            return;
+        }
+
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'message event-summary-batch disposition-summary-batch';
+
+        const senderDiv = document.createElement('div');
+        senderDiv.className = 'message-sender';
+        senderDiv.textContent = '💞 Disposition Changes';
+
+        const contentDiv = document.createElement('div');
+        const list = document.createElement('ul');
+        list.className = 'event-summary-list';
+
+        items.forEach(item => {
+            if (!item || !item.text) {
+                return;
+            }
+            const li = document.createElement('li');
+            const iconSpan = document.createElement('span');
+            iconSpan.className = 'event-summary-icon';
+            iconSpan.textContent = item.icon || '💞';
+            li.appendChild(iconSpan);
+            li.appendChild(document.createTextNode(' '));
+            const textSpan = document.createElement('span');
+            textSpan.className = 'event-summary-text';
+            this.setMessageContent(textSpan, item.text, { allowMarkdown: true });
+            li.appendChild(textSpan);
+            list.appendChild(li);
+        });
+
+        if (!list.childElementCount) {
+            return;
+        }
+
+        contentDiv.appendChild(list);
+
+        const timestampDiv = document.createElement('div');
+        timestampDiv.className = 'message-timestamp';
+        const timestamp = new Date().toISOString().replace('T', ' ').replace('Z', '');
+        timestampDiv.textContent = timestamp;
+
+        messageDiv.appendChild(senderDiv);
+        messageDiv.appendChild(contentDiv);
+        messageDiv.appendChild(timestampDiv);
+
+        this.chatLog.appendChild(messageDiv);
+        this.scrollToBottom();
+    }
+
     renderStandaloneStatusSummary(icon, summaryText) {
         const messageDiv = document.createElement('div');
         messageDiv.className = 'message status-summary';
@@ -4993,30 +5164,44 @@ class AIRPGChat {
         this.scrollToBottom();
     }
 
-    pushEventBundleItem(icon, text) {
+    pushEventBundleItem(icon, text, category = 'other', metadata = {}) {
         if (!this.activeEventBundle) {
             return false;
         }
-        if (!text) {
+        const item = icon && typeof icon === 'object' && !Array.isArray(icon)
+            ? icon
+            : { icon, text, category, ...metadata };
+        if (!item.text) {
             return true;
         }
         this.activeEventBundle.items.push({
-            icon: icon || '•',
-            text: text
+            icon: item.icon || '•',
+            text: item.text,
+            category: this.normalizeTurnDiffCategory(item.category),
+            severity: this.normalizeTurnDiffSeverity(item.severity),
+            sourceType: this.normalizeTurnDiffSourceType(item.sourceType),
+            entityRefs: this.normalizeTurnDiffEntityRefs(item.entityRefs)
         });
         return true;
     }
 
-    pushStatusBundleItem(icon, text) {
+    pushStatusBundleItem(icon, text, category = 'status', metadata = {}) {
         if (!this.activeStatusBundle) {
             return false;
         }
-        if (!text) {
+        const item = icon && typeof icon === 'object' && !Array.isArray(icon)
+            ? icon
+            : { icon, text, category, ...metadata };
+        if (!item.text) {
             return true;
         }
         this.activeStatusBundle.items.push({
-            icon: icon || '•',
-            text
+            icon: item.icon || '•',
+            text: item.text,
+            category: this.normalizeTurnDiffCategory(item.category, 'status'),
+            severity: this.normalizeTurnDiffSeverity(item.severity),
+            sourceType: this.normalizeTurnDiffSourceType(item.sourceType || 'status_effect_change'),
+            entityRefs: this.normalizeTurnDiffEntityRefs(item.entityRefs)
         });
         return true;
     }
@@ -5029,25 +5214,33 @@ class AIRPGChat {
         }
     }
 
-    startEventBundle() {
+    startEventBundle(parentElement = null) {
         if (this.activeEventBundle) {
+            if (parentElement && !this.activeEventBundle.parentElement) {
+                this.activeEventBundle.parentElement = parentElement;
+            }
             return this.activeEventBundle;
         }
         this.activeEventBundle = {
             items: [],
             refresh: false,
-            timestamp: new Date().toISOString()
+            timestamp: new Date().toISOString(),
+            parentElement
         };
         return this.activeEventBundle;
     }
 
-    startStatusBundle() {
+    startStatusBundle(parentElement = null) {
         if (this.activeStatusBundle) {
+            if (parentElement && !this.activeStatusBundle.parentElement) {
+                this.activeStatusBundle.parentElement = parentElement;
+            }
             return this.activeStatusBundle;
         }
         this.activeStatusBundle = {
             items: [],
-            timestamp: new Date().toISOString()
+            timestamp: new Date().toISOString(),
+            parentElement
         };
         return this.activeStatusBundle;
     }
@@ -5060,6 +5253,27 @@ class AIRPGChat {
         }
 
         if (!bundle.items.length) {
+            if (bundle.refresh) {
+                this.scheduleLocationRefresh();
+            }
+            return { shouldRefresh: bundle.refresh };
+        }
+
+        if (bundle.parentElement) {
+            this.appendTurnDiffDrawer(bundle.parentElement, [{
+                type: 'event-summary',
+                summaryTitle: '📋 Events',
+                summaryItems: bundle.items.map(item => ({
+                    icon: item.icon || '•',
+                    text: item.text || '',
+                    category: this.normalizeTurnDiffCategory(item.category),
+                    severity: this.normalizeTurnDiffSeverity(item.severity),
+                    sourceType: this.normalizeTurnDiffSourceType(item.sourceType),
+                    entityRefs: this.normalizeTurnDiffEntityRefs(item.entityRefs)
+                })),
+                timestamp: bundle.timestamp || new Date().toISOString()
+            }]);
+            this.scrollToBottom();
             if (bundle.refresh) {
                 this.scheduleLocationRefresh();
             }
@@ -5120,6 +5334,24 @@ class AIRPGChat {
         }
 
         if (!bundle.items.length) {
+            return;
+        }
+
+        if (bundle.parentElement) {
+            this.appendTurnDiffDrawer(bundle.parentElement, [{
+                type: 'status-summary',
+                summaryTitle: '🌀 Status Changes',
+                summaryItems: bundle.items.map(item => ({
+                    icon: item.icon || '•',
+                    text: item.text || '',
+                    category: this.normalizeTurnDiffCategory(item.category, 'status'),
+                    severity: this.normalizeTurnDiffSeverity(item.severity),
+                    sourceType: this.normalizeTurnDiffSourceType(item.sourceType || 'status_effect_change'),
+                    entityRefs: this.normalizeTurnDiffEntityRefs(item.entityRefs)
+                })),
+                timestamp: bundle.timestamp || new Date().toISOString()
+            }]);
+            this.scrollToBottom();
             return;
         }
 
@@ -6330,8 +6562,9 @@ class AIRPGChat {
 
         this.flushEventBundle();
         this.flushStatusBundle();
-        this.startEventBundle();
-        this.startStatusBundle();
+        const existingPlayerActionElement = context?.playerActionElement || null;
+        this.startEventBundle(existingPlayerActionElement);
+        this.startStatusBundle(existingPlayerActionElement);
 
         if (payload.streamMeta && context) {
             context.streamMeta = payload.streamMeta;
@@ -6356,9 +6589,16 @@ class AIRPGChat {
 
         if (payload.response && (!context || !context.playerActionRendered)) {
             this.hideLoading(requestId);
-            this.addMessage('ai', payload.response, false, payload.debug);
+            const playerActionElement = this.addMessage('ai', payload.response, false, payload.debug);
             shouldRefreshLocation = true;
             if (context) {
+                context.playerActionElement = playerActionElement;
+                if (this.activeEventBundle) {
+                    this.activeEventBundle.parentElement = playerActionElement;
+                }
+                if (this.activeStatusBundle) {
+                    this.activeStatusBundle.parentElement = playerActionElement;
+                }
                 context.playerActionRendered = true;
                 if (context.streamed) {
                     context.streamed.playerAction = context.streamed.playerAction || fromStream;
@@ -6726,7 +6966,7 @@ class AIRPGChat {
             const summary = payload.created?.type === 'region'
                 ? `New region pathway discovered: ${exitName}`
                 : `New exit discovered: ${exitName}`;
-            if (!this.pushEventBundleItem('🚪', summary)) {
+            if (!this.pushEventBundleItem('🚪', summary, 'travel')) {
                 this.addMessage('ai', `🚪 ${summary}`, false);
             }
         }
@@ -6783,7 +7023,7 @@ class AIRPGChat {
                 ? `Exit removed: ${deletedStubName}`
                 : (destinationId ? `Exit removed to ${destinationId}` : 'An exit was removed.');
 
-            if (!this.pushEventBundleItem('🚪', summary)) {
+            if (!this.pushEventBundleItem('🚪', summary, 'travel')) {
                 this.addMessage('ai', `🚪 ${summary}`, false);
             }
         }

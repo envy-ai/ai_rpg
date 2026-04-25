@@ -776,7 +776,8 @@ class LLMClient {
             .filter(line => typeof line === 'string' && line.trim())
             .map(line => ({
                 icon: '•',
-                text: line.trim()
+                text: line.trim(),
+                category: 'status'
             }));
         if (!summaryItems.length) {
             return null;

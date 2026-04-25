@@ -12409,7 +12409,7 @@ async function separateThingByPrompt({
     const originalState = thing.toJSON();
 
     if (!hasConfiguredAiBackend()) {
-        throw new Error('AI configuration missing; cannot separate item.');
+        throw new Error('AI configuration missing; cannot separate thing.');
     }
 
     let renderedTemplate;
@@ -12435,7 +12435,7 @@ async function separateThingByPrompt({
             };
             fs.writeFileSync(debugPath, JSON.stringify(debugPayload, null, 2), 'utf8');
         } catch (logError) {
-            console.warn('Failed to log item separation render error:', logError.message);
+            console.warn('Failed to log thing separation render error:', logError.message);
         }
         throw renderError;
     }
@@ -12486,11 +12486,11 @@ async function separateThingByPrompt({
                 content: formatDurationLine(apiDurationSeconds)
             },
             {
-                title: 'Original Item State',
+                title: 'Original Thing State',
                 content: JSON.stringify(originalState, null, 2)
             },
             {
-                title: 'Separated Item Definitions',
+                title: 'Separated Thing Definitions',
                 content: JSON.stringify(separatedItems, null, 2)
             }
         ]
@@ -19416,6 +19416,10 @@ async function parseThingSeparateResponse(xmlContent, options = {}) {
         const metadata = thing.metadata && typeof thing.metadata === 'object'
             ? thing.metadata
             : {};
+        const sourceThingType = typeof thing.thingType === 'string'
+            ? thing.thingType.trim().toLowerCase()
+            : '';
+        const stackThingType = sourceThingType === 'scenery' ? 'scenery' : 'item';
         const rawSlot = typeof thing.slot === 'string'
             ? thing.slot
             : (typeof metadata.slot === 'string' ? metadata.slot : '');
@@ -19427,12 +19431,12 @@ async function parseThingSeparateResponse(xmlContent, options = {}) {
             description: stackDescription,
             shortDescription: stackShortDescription,
             count: parsedCount,
-            itemOrScenery: thing.thingType === 'scenery' ? 'scenery' : 'item',
-            thingType: thing.thingType === 'scenery' ? 'scenery' : 'item',
+            itemOrScenery: stackThingType,
+            thingType: stackThingType,
             type: thing.itemTypeDetail
                 || metadata.itemTypeDetail
                 || metadata.itemType
-                || (thing.thingType === 'scenery' ? 'scenery' : 'item'),
+                || stackThingType,
             slot: rawSlot || '',
             rarity: thing.rarity || metadata.rarity || getDefaultRarityLabel(),
             value: metadata.value ?? '',

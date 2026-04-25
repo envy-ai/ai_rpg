@@ -2258,6 +2258,7 @@
     <script src="/js/attribute-skill-allocator.js"></script>
     <script src="/vendor/nunjucks.js"></script>
     <script src="/vendor/markdown-it.min.js"></script>
+    <script src="/js/turn-state-diff-drawer.js"></script>
     <script src="/js/chat.js"></script>
     <script defer src="/js/map.js"></script>
     <script defer src="/js/world-map.js"></script>
@@ -6785,12 +6786,14 @@
                 menu.appendChild(openContainerButton);
             }
 
-            const isItemThing = (thing.thingType || '').trim().toLowerCase() === 'item';
+            const normalizedThingType = (thing.thingType || '').trim().toLowerCase();
+            const isItemThing = normalizedThingType === 'item';
+            const isSceneryThing = normalizedThingType === 'scenery';
             const parsedThingCount = Number(thing.count);
             const thingCount = Number.isInteger(parsedThingCount) && parsedThingCount > 0
                 ? parsedThingCount
                 : 1;
-            const canSeparate = isItemThing;
+            const canSeparate = isItemThing || isSceneryThing;
             let separateButton = null;
             if (canSeparate) {
                 separateButton = document.createElement('button');
@@ -6925,11 +6928,11 @@
                     try {
                         const result = await separateThing(thingDataCache.get(thing.id) || thing, options);
                         if (result?.noChanges) {
-                            alert(result?.message || 'This item could not be separated further.');
+                            alert(result?.message || 'This thing could not be separated further.');
                         }
                     } catch (error) {
-                        console.warn('Failed to separate item:', error);
-                        alert(`Failed to separate item: ${error?.message || error}`);
+                        console.warn('Failed to separate thing:', error);
+                        alert(`Failed to separate thing: ${error?.message || error}`);
                     } finally {
                         separateButton.disabled = false;
                     }

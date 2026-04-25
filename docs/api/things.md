@@ -46,7 +46,7 @@ Notes:
 - `causeStatusEffect` is treated as a legacy payload and mapped internally when provided.
 
 ## POST /api/things/:id/separate
-Run the `thing-separate` prompt against an item and replace it with the parsed output items.
+Run the `thing-separate` prompt against an item or scenery thing and replace it with the parsed output things.
 
 Request:
 - No body required.
@@ -57,12 +57,13 @@ Response:
 - 400/404/500 with `{ success: false, error }`
 
 Notes:
-- Only item-type things can be separated.
-- Inventory-bound source items reject prompt output that contains scenery entries.
-- Prompt output must use a positive integer `count` for every returned item; invalid prompt output fails the request instead of silently no-oping.
-- Prompt output may be either a normal `<items>` list or a top-level `<stack>` node. `<stack>` updates only `name`, `description`, `shortDescription`, and `count`; all other stats are preserved directly from the source item without attribute-bonus rescaling.
-- When the source item already has `count > 1`, the route skips the prompt entirely and splits it into that many identical `count: 1` items, reusing the original `imageId`, copying the source item's current `statusEffects` onto every split item without re-enrichment, and leaving the source `value` unchanged on each copied stack item.
-- Source items inside containers preserve their source container. Non-empty container items cannot be separated.
+- Only item or scenery things can be separated.
+- Inventory-bound source things reject prompt output that contains scenery entries.
+- When separated output contains one or more containers, the first returned container receives the rest of the returned item-type things. Returned scenery remains at the source destination because container inventories only hold items.
+- Prompt output must use a positive integer `count` for every returned thing; invalid prompt output fails the request instead of silently no-oping.
+- Prompt output may be either a normal `<items>` list or a top-level `<stack>` node. `<stack>` updates only `name`, `description`, `shortDescription`, and `count`; all other stats are preserved directly from the source thing without attribute-bonus rescaling.
+- When the source thing already has `count > 1`, the route skips the prompt entirely and splits it into that many identical `count: 1` things, reusing the original `imageId`, copying the source thing's current `statusEffects` onto every split thing without re-enrichment, and leaving the source `value` unchanged on each copied stack entry.
+- Source things inside containers preserve their source container. Non-empty container things cannot be separated.
 
 ## POST /api/things/:id/split-stack
 Split an item stack into a second stack with an exact requested quantity.

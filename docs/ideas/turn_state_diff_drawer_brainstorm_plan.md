@@ -345,9 +345,9 @@ node --test tests/turn_state_diff_drawer_ui.test.js
 npm run scss:build:main
 ```
 
-### Phase 2: Server-side item enrichment
+### Phase 2: Server-side summary metadata
 
-Goal: improve grouping and severity without relying on text/icon inference.
+Goal: make drawer rows trustworthy data, not text/icon guesses. This phase now assumes Phase 1 already ships exact `summaryItems[].category` values from server and live client paths.
 
 Files:
 
@@ -365,7 +365,8 @@ add({
     text: 'Travelled to the Old Chapel.',
     category: 'travel',
     severity: 'important',
-    sourceType: 'move_location'
+    sourceType: 'move_location',
+    entityRefs: [{ type: 'location', id: '...', name: 'Old Chapel' }]
 });
 ```
 
@@ -375,14 +376,14 @@ add({
 add('*', 'Travelled to the Old Chapel.');
 ```
 
-3. Include optional metadata in `summaryItems`:
+3. Include metadata in `summaryItems`:
 
 ```js
 summaryItems: bundle.items.map(item => ({
     icon: item?.icon || '*',
     text: item?.text || '',
     category: item?.category || null,
-    severity: item?.severity || null,
+    severity: item?.severity || 'normal',
     sourceType: item?.sourceType || null,
     entityRefs: Array.isArray(item?.entityRefs) ? item.entityRefs : []
 }))
@@ -404,7 +405,9 @@ summaryItems: bundle.items.map(item => ({
    - `important`: travel, quest completion, party changes, reputation loss, new quest.
    - `normal`: ordinary inventory/time/need/status changes.
 
-6. Update the drawer helper to prefer explicit `category` and `severity`, falling back to inference for old entries.
+6. Update the drawer helper to preserve `entityRefs`, prefer explicit `category` and `severity`, and fall back only for old entries.
+
+7. Keep entity refs data-only in Phase 2. Clickable chips and modal navigation belong in Phase 3.
 
 Verification commands:
 
@@ -412,6 +415,11 @@ Verification commands:
 node --test tests/events.time_passed.test.js tests/events.move_travel_time.test.js tests/events.need_bar_prompt.test.js
 node --test tests/turn_state_diff_drawer_ui.test.js
 ```
+
+Current implementation note:
+- `api.js` normalizes `category`, `severity`, `sourceType`, and `entityRefs` for persisted `event-summary` and `status-summary` entries.
+- `public/js/chat.js` preserves the same fields for live bundled drawer rows.
+- `public/js/turn-state-diff-drawer.js` carries `entityRefs` through row normalization but does not render clickable links yet.
 
 ### Phase 3: Entity links and richer inspection
 
@@ -547,4 +555,3 @@ After Phase 1 has been used for a few sessions, decide whether Phase 2 is needed
 - Add a compact "turn outcome" severity badge to the assistant message header.
 - Merge skill-check, attack-check, plausibility, and slop-remover insight buttons into a sibling "Why" drawer while keeping mechanical state changes in "What changed".
 - Add a turn inspector side panel only after the drawer pattern is stable.
-

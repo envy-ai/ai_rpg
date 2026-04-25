@@ -7467,6 +7467,68 @@ module.exports = function registerApiRoutes(scope) {
             return description;
         };
 
+        const EVENT_SUMMARY_CATEGORIES = new Set([
+            'time',
+            'travel',
+            'character',
+            'needs',
+            'inventory',
+            'npc_party',
+            'quest_reward',
+            'disposition',
+            'faction_relationship',
+            'location_world',
+            'status',
+            'other'
+        ]);
+
+        const normalizeSummaryCategory = (value, fallback = 'other') => {
+            const candidate = typeof value === 'string' ? value.trim() : '';
+            if (candidate && EVENT_SUMMARY_CATEGORIES.has(candidate)) {
+                return candidate;
+            }
+            return EVENT_SUMMARY_CATEGORIES.has(fallback) ? fallback : 'other';
+        };
+
+        const EVENT_SUMMARY_SEVERITIES = new Set(['normal', 'important', 'critical']);
+
+        function normalizeSummarySeverity(value, fallback = 'normal') {
+            const candidate = typeof value === 'string' ? value.trim().toLowerCase() : '';
+            if (candidate && EVENT_SUMMARY_SEVERITIES.has(candidate)) {
+                return candidate;
+            }
+            return EVENT_SUMMARY_SEVERITIES.has(fallback) ? fallback : 'normal';
+        }
+
+        function normalizeSummarySourceType(value) {
+            const candidate = typeof value === 'string' ? value.trim() : '';
+            return candidate || null;
+        }
+
+        function normalizeSummaryEntityRefs(refs) {
+            if (!Array.isArray(refs)) {
+                return [];
+            }
+            return refs
+                .map(ref => {
+                    if (!ref || typeof ref !== 'object') {
+                        return null;
+                    }
+                    const type = typeof ref.type === 'string' ? ref.type.trim().toLowerCase() : '';
+                    const id = typeof ref.id === 'string' ? ref.id.trim() : '';
+                    const name = typeof ref.name === 'string' ? ref.name.trim() : '';
+                    if (!type || (!id && !name)) {
+                        return null;
+                    }
+                    return { type, id: id || null, name: name || null };
+                })
+                .filter(Boolean);
+        }
+
+        function summaryEntityRef(type, { id = null, name = null } = {}) {
+            return normalizeSummaryEntityRefs([{ type, id, name }]);
+        }
+
         function buildEventSummaryBundle({
             events = null,
             experienceAwards = [],
@@ -7480,12 +7542,22 @@ module.exports = function registerApiRoutes(scope) {
             const bundle = [];
             let shouldRefresh = false;
 
-            const add = (icon, text) => {
-                const normalizedText = text && String(text).trim();
+            const add = (iconOrItem, text = '', category = 'other', metadata = {}) => {
+                const item = iconOrItem && typeof iconOrItem === 'object' && !Array.isArray(iconOrItem)
+                    ? iconOrItem
+                    : { icon: iconOrItem, text, category, ...metadata };
+                const normalizedText = item.text && String(item.text).trim();
                 if (!normalizedText) {
                     return;
                 }
-                bundle.push({ icon: icon || '•', text: normalizedText });
+                bundle.push({
+                    icon: item.icon || '•',
+                    text: normalizedText,
+                    category: normalizeSummaryCategory(item.category),
+                    severity: normalizeSummarySeverity(item.severity),
+                    sourceType: normalizeSummarySourceType(item.sourceType),
+                    entityRefs: normalizeSummaryEntityRefs(item.entityRefs)
+                });
             };
 
             const parseSummaryQuantity = (rawQuantity) => {
@@ -7517,11 +7589,18 @@ module.exports = function registerApiRoutes(scope) {
                         return;
                     }
                     if (typeof entry === 'string') {
-                        add('•', entry);
+                        add({ icon: '•', text: entry, category: 'other', sourceType: 'event_summary_text' });
                         return;
                     }
                     if (typeof entry.description === 'string' && entry.description.trim()) {
-                        add(entry.icon || '•', entry.description);
+                        add({
+                            icon: entry.icon || '•',
+                            text: entry.description,
+                            category: entry.category || 'other',
+                            severity: entry.severity,
+                            sourceType: entry.sourceType || entry.eventType || entry.type,
+                            entityRefs: entry.entityRefs
+                        });
                     }
                 });
             }
@@ -7544,7 +7623,17 @@ module.exports = function registerApiRoutes(scope) {
                             entries.forEach(entry => {
                                 const attacker = safeSummaryName(entry?.attacker);
                                 const target = safeSummaryName(entry?.target || 'their target');
-                                add('⚔️', `${attacker} attacked ${target}.`);
+                                add({
+                                    icon: '⚔️',
+                                    text: `${attacker} attacked ${target}.`,
+                                    category: 'character',
+                                    severity: 'important',
+                                    sourceType: 'attack_damage',
+                                    entityRefs: [
+                                        ...summaryEntityRef('npc', { name: attacker }),
+                                        ...summaryEntityRef('npc', { name: target })
+                                    ]
+                                });
                             });
                             break;
                         case 'consume_item':
@@ -7554,7 +7643,13 @@ module.exports = function registerApiRoutes(scope) {
                                     entry?.item,
                                     entry?.quantity,
                                 );
-                                add('🧪', `${item} was consumed or destroyed.`);
+                                add({
+                                    icon: '🧪',
+                                    text: `${item} was consumed or destroyed.`,
+                                    category: 'inventory',
+                                    sourceType: 'consume_item',
+                                    entityRefs: summaryEntityRef('thing', { name: item })
+                                });
                             });
                             break;
                         case 'death_incapacitation':
@@ -7562,9 +7657,23 @@ module.exports = function registerApiRoutes(scope) {
                                 const status = typeof entry?.status === 'string' ? entry.status.trim().toLowerCase() : null;
                                 const label = safeSummaryName(entry?.name ?? entry);
                                 if (status === 'dead') {
-                                    add('☠️', `${label} was killed.`);
+                                    add({
+                                        icon: '☠️',
+                                        text: `${label} was killed.`,
+                                        category: 'character',
+                                        severity: 'critical',
+                                        sourceType: 'death_incapacitation',
+                                        entityRefs: summaryEntityRef('npc', { name: label })
+                                    });
                                 } else {
-                                    add('☠️', `${label} was incapacitated.`);
+                                    add({
+                                        icon: '☠️',
+                                        text: `${label} was incapacitated.`,
+                                        category: 'character',
+                                        severity: 'critical',
+                                        sourceType: 'death_incapacitation',
+                                        entityRefs: summaryEntityRef('npc', { name: label })
+                                    });
                                 }
                             });
                             break;
@@ -7575,7 +7684,16 @@ module.exports = function registerApiRoutes(scope) {
                                     entry?.item,
                                     entry?.quantity,
                                 );
-                                add('📦', `${character} dropped ${item}.`);
+                                add({
+                                    icon: '📦',
+                                    text: `${character} dropped ${item}.`,
+                                    category: 'inventory',
+                                    sourceType: 'drop_item',
+                                    entityRefs: [
+                                        ...summaryEntityRef('npc', { name: character }),
+                                        ...summaryEntityRef('thing', { name: item })
+                                    ]
+                                });
                             });
                             break;
                         case 'heal_recover':
@@ -7614,7 +7732,13 @@ module.exports = function registerApiRoutes(scope) {
                                     summary += '.';
                                 }
 
-                                add('💖', summary);
+                                add({
+                                    icon: '💖',
+                                    text: summary,
+                                    category: 'character',
+                                    sourceType: 'heal_recover',
+                                    entityRefs: summaryEntityRef('npc', { name: recipient })
+                                });
                             });
                             break;
                         case 'scenery_appear':
@@ -7629,7 +7753,13 @@ module.exports = function registerApiRoutes(scope) {
                                     && bundle.some(entry => entry && entry.icon === '🎒' && entry.text && entry.text.includes(itemLabel));
 
                                 if (!isAlsoPickedUp) {
-                                    add('✨', `${itemLabel} appeared in the scene.`);
+                                    add({
+                                        icon: '✨',
+                                        text: `${itemLabel} appeared in the scene.`,
+                                        category: 'location_world',
+                                        sourceType: eventType,
+                                        entityRefs: summaryEntityRef(eventType === 'scenery_appear' ? 'scenery' : 'thing', { name: itemLabel })
+                                    });
                                 }
                             });
                             break;
@@ -7652,7 +7782,15 @@ module.exports = function registerApiRoutes(scope) {
 
                             destinations.forEach(location => {
                                 if (!movedTo.has(location)) {
-                                    add('🚶', `Travelled to ${safeSummaryItem(location, 'a new location')}.`);
+                                    const locationLabel = safeSummaryItem(location, 'a new location');
+                                    add({
+                                        icon: '🚶',
+                                        text: `Travelled to ${locationLabel}.`,
+                                        category: 'travel',
+                                        severity: 'important',
+                                        sourceType: eventType,
+                                        entityRefs: summaryEntityRef('location', { name: locationLabel })
+                                    });
                                     console.log(`🚶 Travelled to ${safeSummaryItem(location, 'a new location')}.`)
                                 }
                                 movedTo.add(location);
@@ -7662,7 +7800,13 @@ module.exports = function registerApiRoutes(scope) {
                         }
                         case 'new_exit_discovered':
                             entries.forEach(description => {
-                                add('🚪', `New exit discovered: ${safeSummaryItem(description, 'a new path')}.`);
+                                add({
+                                    icon: '🚪',
+                                    text: `New exit discovered: ${safeSummaryItem(description, 'a new path')}.`,
+                                    category: 'travel',
+                                    severity: 'important',
+                                    sourceType: 'new_exit_discovered'
+                                });
                                 console.log("[Debug] New exit discovered event:", description);
                             });
                             break;
@@ -7681,13 +7825,31 @@ module.exports = function registerApiRoutes(scope) {
                                     console.log(entry);
                                     console.log(`Destination text: ${destinationText} | Current location: ${currentLocation}`);
                                     if (destinationText != currentLocation) { // Avoid redundant "arrived" messages if player is already there
-                                        add('🙋', `${name} arrived`);
+                                        add({
+                                            icon: '🙋',
+                                            text: `${name} arrived`,
+                                            category: 'npc_party',
+                                            sourceType: 'npc_arrival_departure',
+                                            entityRefs: summaryEntityRef('npc', { name })
+                                        });
                                     }
                                 } else if (action === 'left') {
                                     const detail = destinationText ? ` for ${destinationText}` : '';
-                                    add('🏃', `${name} left the area${detail}.`);
+                                    add({
+                                        icon: '🏃',
+                                        text: `${name} left the area${detail}.`,
+                                        category: 'npc_party',
+                                        sourceType: 'npc_arrival_departure',
+                                        entityRefs: summaryEntityRef('npc', { name })
+                                    });
                                 } else {
-                                    add('📍', `${name} ${entry?.action || 'moved'}.`);
+                                    add({
+                                        icon: '📍',
+                                        text: `${name} ${entry?.action || 'moved'}.`,
+                                        category: 'npc_party',
+                                        sourceType: 'npc_arrival_departure',
+                                        entityRefs: summaryEntityRef('npc', { name })
+                                    });
                                 }
                             });
                             break;
@@ -7696,11 +7858,31 @@ module.exports = function registerApiRoutes(scope) {
                                 const name = safeSummaryName(entry?.name);
                                 const action = (entry?.action || '').trim().toLowerCase();
                                 if (action === 'joined') {
-                                    add('🤝', `${name} joined the party.`);
+                                    add({
+                                        icon: '🤝',
+                                        text: `${name} joined the party.`,
+                                        category: 'npc_party',
+                                        severity: 'important',
+                                        sourceType: 'party_change',
+                                        entityRefs: summaryEntityRef('npc', { name })
+                                    });
                                 } else if (action === 'left') {
-                                    add('👋', `${name} left the party.`);
+                                    add({
+                                        icon: '👋',
+                                        text: `${name} left the party.`,
+                                        category: 'npc_party',
+                                        severity: 'important',
+                                        sourceType: 'party_change',
+                                        entityRefs: summaryEntityRef('npc', { name })
+                                    });
                                 } else {
-                                    add('📣', `${name} ${entry?.action || 'changed party status'}.`);
+                                    add({
+                                        icon: '📣',
+                                        text: `${name} ${entry?.action || 'changed party status'}.`,
+                                        category: 'npc_party',
+                                        sourceType: 'party_change',
+                                        entityRefs: summaryEntityRef('npc', { name })
+                                    });
                                 }
                             });
                             break;
@@ -7722,7 +7904,14 @@ module.exports = function registerApiRoutes(scope) {
                                 if (!text.endsWith('.')) {
                                     text += '.';
                                 }
-                                add('🕊️', text);
+                                add({
+                                    icon: '🕊️',
+                                    text,
+                                    category: 'disposition',
+                                    severity: 'important',
+                                    sourceType: 'hostile_to_friendly',
+                                    entityRefs: summaryEntityRef('npc', { name })
+                                });
                             });
                             break;
                         case 'quest_received':
@@ -7731,13 +7920,26 @@ module.exports = function registerApiRoutes(scope) {
                                     return;
                                 }
                                 if (typeof entry === 'string') {
-                                    add('🗒️', entry);
+                                    add({
+                                        icon: '🗒️',
+                                        text: entry,
+                                        category: 'quest_reward',
+                                        severity: 'important',
+                                        sourceType: 'quest_received'
+                                    });
                                     return;
                                 }
                                 const summary = entry.summary || entry.description || entry.name || 'New quest received.';
                                 const giver = entry.giver ? safeSummaryName(entry.giver) : null;
                                 const text = giver ? `${summary} (from ${giver})` : summary;
-                                add('🗒️', text);
+                                add({
+                                    icon: '🗒️',
+                                    text,
+                                    category: 'quest_reward',
+                                    severity: 'important',
+                                    sourceType: 'quest_received',
+                                    entityRefs: summaryEntityRef('quest', { id: entry.questId || entry.id || null, name: entry.name || summary })
+                                });
                             });
                             shouldRefresh = true;
                             break;
@@ -7757,9 +7959,23 @@ module.exports = function registerApiRoutes(scope) {
                                 const summaryText = reason
                                     ? `Quest objective complete: **${questLabel}** - *${description}* - ${reason}`
                                     : `Quest objective complete: **${questLabel}** - *${description}*`;
-                                add('✅', summaryText);
+                                add({
+                                    icon: '✅',
+                                    text: summaryText,
+                                    category: 'quest_reward',
+                                    severity: 'important',
+                                    sourceType: 'completed_quest_objective',
+                                    entityRefs: summaryEntityRef('quest', { id: entry.questId || null, name: questLabel })
+                                });
                                 if (entry.questJustCompleted) {
-                                    add('🏆', `Finished quest ${questLabel}!`);
+                                    add({
+                                        icon: '🏆',
+                                        text: `Finished quest ${questLabel}!`,
+                                        category: 'quest_reward',
+                                        severity: 'important',
+                                        sourceType: 'completed_quest_objective',
+                                        entityRefs: summaryEntityRef('quest', { id: entry.questId || null, name: questLabel })
+                                    });
                                 }
                             });
                             shouldRefresh = true;
@@ -7774,7 +7990,17 @@ module.exports = function registerApiRoutes(scope) {
                                 );
                                 const sourceName = safeSummaryItem(entry?.source, '');
                                 const fromClause = sourceName ? ` from ${sourceName}` : '';
-                                add('🌾', `${actor} harvested ${itemName}${fromClause}.`);
+                                add({
+                                    icon: '🌾',
+                                    text: `${actor} harvested ${itemName}${fromClause}.`,
+                                    category: 'inventory',
+                                    sourceType: 'harvest_gather',
+                                    entityRefs: [
+                                        ...summaryEntityRef('npc', { name: actor }),
+                                        ...summaryEntityRef('thing', { name: itemName }),
+                                        ...summaryEntityRef('thing', { name: sourceName })
+                                    ]
+                                });
                             });
                             break;
                         case 'pick_up_item':
@@ -7784,7 +8010,16 @@ module.exports = function registerApiRoutes(scope) {
                                     entry?.item,
                                     entry?.quantity,
                                 );
-                                add('🎒', `${actor} picked up ${itemName}.`);
+                                add({
+                                    icon: '🎒',
+                                    text: `${actor} picked up ${itemName}.`,
+                                    category: 'inventory',
+                                    sourceType: 'pick_up_item',
+                                    entityRefs: [
+                                        ...summaryEntityRef('npc', { name: actor }),
+                                        ...summaryEntityRef('thing', { name: itemName })
+                                    ]
+                                });
                             });
                             break;
                         case 'alter_item':
@@ -7810,7 +8045,13 @@ module.exports = function registerApiRoutes(scope) {
                                     text += ` (${changeDescription})`;
                                 }
                                 text += '.';
-                                add('🛠️', text);
+                                add({
+                                    icon: '🛠️',
+                                    text,
+                                    category: 'inventory',
+                                    sourceType: 'alter_item',
+                                    entityRefs: summaryEntityRef('thing', { name: renamed || original })
+                                });
                             });
                             shouldRefresh = true;
                             break;
@@ -7824,7 +8065,14 @@ module.exports = function registerApiRoutes(scope) {
                                 const text = changeDescription
                                     ? `${locationName} changed: ${changeDescription}.`
                                     : `${locationName} was altered.`;
-                                add('🏙️', text);
+                                add({
+                                    icon: '🏙️',
+                                    text,
+                                    category: 'location_world',
+                                    severity: 'important',
+                                    sourceType: 'alter_location',
+                                    entityRefs: summaryEntityRef('location', { name: locationName })
+                                });
                             });
                             shouldRefresh = true;
                             break;
@@ -7842,7 +8090,13 @@ module.exports = function registerApiRoutes(scope) {
                                     const droppedList = entry.droppedItems.map(item => safeSummaryItem(item, 'an item')).join(', ');
                                     text += ` Dropped ${droppedList}.`;
                                 }
-                                add('🧬', text.endsWith('.') ? text : `${text}.`);
+                                add({
+                                    icon: '🧬',
+                                    text: text.endsWith('.') ? text : `${text}.`,
+                                    category: 'character',
+                                    sourceType: 'alter_npc',
+                                    entityRefs: summaryEntityRef('npc', { name: npcName })
+                                });
                             });
                             shouldRefresh = true;
                             break;
@@ -7854,7 +8108,17 @@ module.exports = function registerApiRoutes(scope) {
                                     entry?.item,
                                     entry?.quantity,
                                 );
-                                add('🔄', `${giver} gave ${item} to ${receiver}.`);
+                                add({
+                                    icon: '🔄',
+                                    text: `${giver} gave ${item} to ${receiver}.`,
+                                    category: 'inventory',
+                                    sourceType: 'transfer_item',
+                                    entityRefs: [
+                                        ...summaryEntityRef('npc', { name: giver }),
+                                        ...summaryEntityRef('npc', { name: receiver }),
+                                        ...summaryEntityRef('thing', { name: item })
+                                    ]
+                                });
                             });
                             break;
                         default:
@@ -7878,7 +8142,12 @@ module.exports = function registerApiRoutes(scope) {
                     }
                     const reason = entry.reason && String(entry.reason).trim();
                     const text = `+${Math.round(amount)} XP${reason ? ` (${reason})` : ''}`;
-                    add('✨', text);
+                    add({
+                        icon: '✨',
+                        text,
+                        category: 'quest_reward',
+                        sourceType: 'experience_award'
+                    });
                 });
             }
 
@@ -7894,7 +8163,12 @@ module.exports = function registerApiRoutes(scope) {
                     const sign = amount > 0 ? '+' : '-';
                     const absolute = Math.abs(Math.round(amount));
                     const label = getCurrencyLabel(absolute, { setting: currentSetting || null });
-                    add('💰', `${sign}${absolute} ${label}`);
+                    add({
+                        icon: '💰',
+                        text: `${sign}${absolute} ${label}`,
+                        category: 'quest_reward',
+                        sourceType: 'currency_change'
+                    });
                 });
             }
 
@@ -7911,15 +8185,24 @@ module.exports = function registerApiRoutes(scope) {
                     const reason = entry.reason ? String(entry.reason).trim() : '';
                     const effectType = entry.type ? String(entry.type).trim().toLowerCase() : 'damage';
                     const isHealing = effectType === 'healing' || effectType === 'heal';
+                    const normalizedDamageSeverity = severity.trim().toLowerCase();
                     add(
-                        isHealing ? '🌿' : '☠️',
-                        buildEnvironmentalSummaryText({
+                        {
+                            icon: isHealing ? '🌿' : '☠️',
+                            text: buildEnvironmentalSummaryText({
                             name: entry.name ? String(entry.name).trim() : '',
                             amount: Math.abs(Math.round(amount)),
                             severity,
                             reason,
                             isHealing
-                        })
+                            }),
+                            category: 'character',
+                            severity: !isHealing && (normalizedDamageSeverity === 'severe' || normalizedDamageSeverity === 'critical')
+                                ? 'critical'
+                                : (!isHealing ? 'important' : 'normal'),
+                            sourceType: 'environmental_damage',
+                            entityRefs: summaryEntityRef('npc', { name: entry.name ? String(entry.name).trim() : '' })
+                        }
                     );
                 });
             }
@@ -7964,7 +8247,13 @@ module.exports = function registerApiRoutes(scope) {
                     const icon = typeof entry.needBarIcon === 'string' && entry.needBarIcon.trim()
                         ? entry.needBarIcon.trim()
                         : '🧪';
-                    add(icon, segments.join(' '));
+                    add({
+                        icon,
+                        text: segments.join(' '),
+                        category: 'needs',
+                        sourceType: 'need_bar_change',
+                        entityRefs: summaryEntityRef('npc', { id: entry.actorId || null, name: actorName })
+                    });
                 });
                 shouldRefresh = true;
             }
@@ -7999,7 +8288,13 @@ module.exports = function registerApiRoutes(scope) {
                     if (reason) {
                         text += ` - ${reason}`;
                     }
-                    add('💞', text);
+                    add({
+                        icon: '💞',
+                        text,
+                        category: 'disposition',
+                        sourceType: 'disposition_change',
+                        entityRefs: summaryEntityRef('npc', { id: entry.npcId || null, name: npcName })
+                    });
                 });
                 shouldRefresh = true;
             }
@@ -8031,7 +8326,14 @@ module.exports = function registerApiRoutes(scope) {
                     if (reason) {
                         text += ` - ${reason}`;
                     }
-                    add('🏳️', text);
+                    add({
+                        icon: '🏳️',
+                        text,
+                        category: 'faction_relationship',
+                        severity: resolvedAmount < 0 ? 'important' : 'normal',
+                        sourceType: 'faction_reputation_change',
+                        entityRefs: summaryEntityRef('faction', { id: entry.factionId || null, name: factionName })
+                    });
                 });
                 shouldRefresh = true;
             }
@@ -8040,7 +8342,12 @@ module.exports = function registerApiRoutes(scope) {
             if (Number.isFinite(advancedMinutes) && advancedMinutes > 0) {
                 const durationText = Utils.formatMinutesAsNaturalDuration(Math.round(advancedMinutes));
                 if (durationText) {
-                    add('⏳', `${durationText} passed.`);
+                    add({
+                        icon: '⏳',
+                        text: `${durationText} passed.`,
+                        category: 'time',
+                        sourceType: 'time_passed'
+                    });
                 }
             }
 
@@ -8054,7 +8361,7 @@ module.exports = function registerApiRoutes(scope) {
             const bundle = [];
             const seenSummaries = new Set();
 
-            const add = (icon, text) => {
+            const add = (icon, text, metadata = {}) => {
                 const normalizedText = text && String(text).trim();
                 if (!normalizedText) {
                     return;
@@ -8064,7 +8371,14 @@ module.exports = function registerApiRoutes(scope) {
                     return;
                 }
                 seenSummaries.add(key);
-                bundle.push({ icon: icon || '🌀', text: normalizedText });
+                bundle.push({
+                    icon: icon || '🌀',
+                    text: normalizedText,
+                    category: 'status',
+                    severity: normalizeSummarySeverity(metadata.severity),
+                    sourceType: normalizeSummarySourceType(metadata.sourceType || 'status_effect_change'),
+                    entityRefs: normalizeSummaryEntityRefs(metadata.entityRefs)
+                });
             };
 
             const appendStatusEntry = (entry) => {
@@ -8081,13 +8395,13 @@ module.exports = function registerApiRoutes(scope) {
                 const action = actionSource ? actionSource.trim().toLowerCase() : '';
 
                 if (action === 'gained' || action === 'added' || action === 'applied') {
-                    add('🌀', `${entity} gained status: "${description}".`);
+                    add('🌀', `${entity} gained status: "${description}".`, { sourceType: 'status_effect_change' });
                 } else if (action === 'lost' || action === 'removed') {
-                    add('🌀', `${entity} lost status: "${description}".`);
+                    add('🌀', `${entity} lost status: "${description}".`, { sourceType: 'status_effect_change' });
                 } else if (action) {
-                    add('🌀', `${entity} ${action} status: "${description}".`);
+                    add('🌀', `${entity} ${action} status: "${description}".`, { sourceType: 'status_effect_change' });
                 } else {
-                    add('🌀', `${entity} changed status: "${description}".`);
+                    add('🌀', `${entity} changed status: "${description}".`, { sourceType: 'status_effect_change' });
                 }
             };
 
@@ -8179,7 +8493,11 @@ module.exports = function registerApiRoutes(scope) {
                 summaryTitle: label,
                 summaryItems: bundle.items.map(item => ({
                     icon: item?.icon || '•',
-                    text: item?.text || ''
+                    text: item?.text || '',
+                    category: normalizeSummaryCategory(item?.category),
+                    severity: normalizeSummarySeverity(item?.severity),
+                    sourceType: normalizeSummarySourceType(item?.sourceType),
+                    entityRefs: normalizeSummaryEntityRefs(item?.entityRefs)
                 })),
                 locationId: resolvedLocationId
             };
@@ -8223,7 +8541,11 @@ module.exports = function registerApiRoutes(scope) {
                 summaryTitle: label,
                 summaryItems: bundle.items.map(item => ({
                     icon: item?.icon || '•',
-                    text: item?.text || ''
+                    text: item?.text || '',
+                    category: normalizeSummaryCategory(item?.category, 'status'),
+                    severity: normalizeSummarySeverity(item?.severity),
+                    sourceType: normalizeSummarySourceType(item?.sourceType),
+                    entityRefs: normalizeSummaryEntityRefs(item?.entityRefs)
                 })),
                 locationId: resolvedLocationId
             };
@@ -8262,7 +8584,7 @@ module.exports = function registerApiRoutes(scope) {
 
             return recordEventSummaryEntry({
                 label: '📋 Events – Vehicle Movement',
-                events: [{ description: movementText, icon }],
+                events: [{ description: movementText, icon, category: 'travel' }],
                 timestamp,
                 parentId,
                 locationId
@@ -16693,7 +17015,7 @@ module.exports = function registerApiRoutes(scope) {
                             }
                             recordEventSummaryEntry({
                                 label: questLogLabel,
-                                events: [{ description: descriptionParts.join(' – '), icon: '🗒️' }],
+                                events: [{ description: descriptionParts.join(' – '), icon: '🗒️', category: 'quest_reward' }],
                                 timestamp: aiResponseEntry?.timestamp || new Date().toISOString(),
                                 parentId: aiResponseEntry?.id || null,
                                 locationId: aiResponseLocationId
@@ -16725,7 +17047,8 @@ module.exports = function registerApiRoutes(scope) {
                                     : '🏆 Quest Completed';
                                 const summaryItems = parsedReward.rewards.map(line => ({
                                     description: line,
-                                    icon: '🎁'
+                                    icon: '🎁',
+                                    category: 'quest_reward'
                                 }));
                                 recordEventSummaryEntry({
                                     label: summaryLabel,
@@ -16779,7 +17102,8 @@ module.exports = function registerApiRoutes(scope) {
                                 }
                                 return {
                                     description: label,
-                                    icon: '✅'
+                                    icon: '✅',
+                                    category: 'quest_reward'
                                 };
                             });
 
@@ -27111,7 +27435,8 @@ module.exports = function registerApiRoutes(scope) {
                                             : '🏆 Quest Completed';
                                         const summaryItems = parsedReward.rewards.map(line => ({
                                             description: line,
-                                            icon: '🎁'
+                                            icon: '🎁',
+                                            category: 'quest_reward'
                                         }));
                                         recordEventSummaryEntry({
                                             label: summaryLabel,
@@ -27164,7 +27489,8 @@ module.exports = function registerApiRoutes(scope) {
                                         }
                                         return {
                                             description: label,
-                                            icon: '✅'
+                                            icon: '✅',
+                                            category: 'quest_reward'
                                         };
                                     });
 
@@ -27697,24 +28023,28 @@ module.exports = function registerApiRoutes(scope) {
                 if (!isNoProseRequest) {
                     const eventItems = [{
                         icon: '🛠️',
-                        description: primaryActionSummaryText
+                        description: primaryActionSummaryText,
+                        category: 'location_world'
                     }];
                     consumedNamesForPrompt.forEach(name => {
                         eventItems.push({
                             icon: '♻️',
-                            description: `Consumed ${name}.`
+                            description: `Consumed ${name}.`,
+                            category: 'inventory'
                         });
                     });
                     receivedNamesForPrompt.forEach(name => {
                         eventItems.push({
                             icon: '🎁',
-                            description: `Received ${name}.`
+                            description: `Received ${name}.`,
+                            category: 'inventory'
                         });
                     });
                     if (slotItems.length > 0 && consumedNamesForPrompt.length === 0 && actionOutcome.success) {
                         eventItems.push({
                             icon: '✨',
-                            description: 'The selected materials and tools were preserved.'
+                            description: 'The selected materials and tools were preserved.',
+                            category: 'inventory'
                         });
                     }
                     if (actionOutcome.success && Array.isArray(selectedResult.abilities)) {
@@ -27723,7 +28053,8 @@ module.exports = function registerApiRoutes(scope) {
                             .forEach(ability => {
                                 eventItems.push({
                                     icon: '✨',
-                                    description: `${ability.name}: ${ability.effect || ability.description}`
+                                    description: `${ability.name}: ${ability.effect || ability.description}`,
+                                    category: 'location_world'
                                 });
                             });
                     }
@@ -27829,7 +28160,8 @@ module.exports = function registerApiRoutes(scope) {
                                             : '🏆 Quest Completed';
                                         const summaryItems = parsedReward.rewards.map(line => ({
                                             description: line,
-                                            icon: '🎁'
+                                            icon: '🎁',
+                                            category: 'quest_reward'
                                         }));
                                         recordEventSummaryEntry({
                                             label: summaryLabel,
@@ -27882,7 +28214,8 @@ module.exports = function registerApiRoutes(scope) {
                                         }
                                         return {
                                             description: label,
-                                            icon: '✅'
+                                            icon: '✅',
+                                            category: 'quest_reward'
                                         };
                                     });
 
@@ -28624,10 +28957,14 @@ module.exports = function registerApiRoutes(scope) {
                     });
                 }
 
-                if (sourceThing.thingType !== 'item') {
+                const sourceThingType = typeof sourceThing.thingType === 'string'
+                    ? sourceThing.thingType.trim().toLowerCase()
+                    : '';
+                const canSeparateSource = sourceThingType === 'item' || sourceThingType === 'scenery';
+                if (!canSeparateSource) {
                     return res.status(400).json({
                         success: false,
-                        error: 'Only item-type things can be separated.'
+                        error: 'Only item or scenery things can be separated.'
                     });
                 }
                 if (sourceThing.isContainer && typeof sourceThing.getInventoryItems === 'function' && sourceThing.getInventoryItems().length > 0) {
@@ -28644,7 +28981,7 @@ module.exports = function registerApiRoutes(scope) {
                 const isStackSplitShortcut = Number.isInteger(sourceThing.count) && sourceThing.count > 1;
                 const separatedItems = await separateThingByPrompt({ thing: sourceThing });
                 if (!Array.isArray(separatedItems)) {
-                    throw new Error('Thing separation did not return an item list.');
+                    throw new Error('Thing separation did not return a thing list.');
                 }
 
                 if (separatedItems.length === 0) {
@@ -28652,7 +28989,7 @@ module.exports = function registerApiRoutes(scope) {
                         success: true,
                         noChanges: true,
                         things: [],
-                        message: `${sourceThing.name || 'Item'} could not be separated further.`
+                        message: `${sourceThing.name || 'Thing'} could not be separated further.`
                     });
                 }
 
@@ -28699,10 +29036,10 @@ module.exports = function registerApiRoutes(scope) {
 
                 for (const itemData of separatedItems) {
                     if (!itemData || typeof itemData !== 'object') {
-                        throw new Error('Thing separation returned an invalid item entry.');
+                        throw new Error('Thing separation returned an invalid thing entry.');
                     }
                     if (typeof itemData.name !== 'string' || !itemData.name.trim()) {
-                        throw new Error('Thing separation returned an item without a valid name.');
+                        throw new Error('Thing separation returned a thing without a valid name.');
                     }
 
                     const preserveOriginalStats = Boolean(itemData.__preserveOriginalStats);
@@ -28710,11 +29047,11 @@ module.exports = function registerApiRoutes(scope) {
                         ? 'scenery'
                         : 'item';
                     const effectiveThingType = preserveOriginalStats
-                        ? (sourceThing.thingType === 'scenery' ? 'scenery' : 'item')
+                        ? (sourceThingType === 'scenery' ? 'scenery' : 'item')
                         : normalizedType;
 
                     if ((sourceOwner || sourceContainer) && effectiveThingType !== 'item') {
-                        throw new Error(`Thing separation returned scenery "${itemData.name}" for an inventory-bound item.`);
+                        throw new Error(`Thing separation returned scenery "${itemData.name}" for an inventory-bound source thing.`);
                     }
 
                     const count = itemData.count ?? 1;
@@ -28847,14 +29184,14 @@ module.exports = function registerApiRoutes(scope) {
                     const stagedThing = (preserveOriginalStats || isStackSplitShortcut)
                         ? sourceThing.copy({
                             name: itemData.name,
-                            description: itemData.description || `A separated item recovered from ${sourceThing.name}.`,
+                            description: itemData.description || `A separated thing recovered from ${sourceThing.name}.`,
                             shortDescription: itemData.shortDescription ?? sourceThing.shortDescription ?? null,
                             count,
                             metadataOverrides: metadata,
                         })
                         : new Thing({
                             name: itemData.name,
-                            description: itemData.description || `A separated item recovered from ${sourceThing.name}.`,
+                            description: itemData.description || `A separated thing recovered from ${sourceThing.name}.`,
                             shortDescription: itemData.shortDescription ?? null,
                             thingType: effectiveThingType,
                             imageId: null,
@@ -28887,6 +29224,15 @@ module.exports = function registerApiRoutes(scope) {
                     region: sourceRegion || null
                 });
 
+                const separatedOutputContainer = stagedThings.find(entry => Boolean(entry?.isContainer)) || null;
+                const canNestSeparatedThing = (thing) => thing && thing !== separatedOutputContainer && thing.thingType === 'item';
+                const nestedSeparatedThings = separatedOutputContainer
+                    ? stagedThings.filter(canNestSeparatedThing)
+                    : [];
+                const destinationSeparatedThings = separatedOutputContainer
+                    ? stagedThings.filter(entry => entry === separatedOutputContainer || !canNestSeparatedThing(entry))
+                    : stagedThings;
+
                 const deleteResult = deleteThingById(sourceThing.id);
                 if (!deleteResult?.success) {
                     throw new Error(deleteResult?.error || `Failed to remove original thing "${sourceThing.name}".`);
@@ -28894,17 +29240,26 @@ module.exports = function registerApiRoutes(scope) {
 
                 for (const stagedThing of stagedThings) {
                     things.set(stagedThing.id, stagedThing);
+                }
+
+                if (separatedOutputContainer) {
+                    for (const nestedThing of nestedSeparatedThings) {
+                        separatedOutputContainer.addInventoryItem(nestedThing);
+                    }
+                }
+
+                for (const stagedThing of destinationSeparatedThings) {
                     if (sourceOwner) {
                         const added = sourceOwner.addInventoryItem(stagedThing, { suppressNpcEquip: true });
                         if (!added) {
-                            throw new Error(`Failed to add separated item "${stagedThing.name}" to ${sourceOwner.name || sourceOwner.id}.`);
+                            throw new Error(`Failed to add separated thing "${stagedThing.name}" to ${sourceOwner.name || sourceOwner.id}.`);
                         }
                     } else if (sourceContainer) {
                         sourceContainer.addInventoryItem(stagedThing);
                     } else if (sourceLocation) {
                         sourceLocation.addThingId(stagedThing.id);
                     } else {
-                        throw new Error(`No destination available for separated item "${stagedThing.name}".`);
+                        throw new Error(`No destination available for separated thing "${stagedThing.name}".`);
                     }
                 }
 
@@ -28913,7 +29268,7 @@ module.exports = function registerApiRoutes(scope) {
                     noChanges: false,
                     sourceThingId: sourceThing.id,
                     things: stagedThings.map(entry => entry.toJSON()),
-                    message: `${sourceThing.name || 'Item'} separated successfully.`
+                    message: `${sourceThing.name || 'Thing'} separated successfully.`
                 };
 
                 if (sourceLocation && typeof buildLocationResponse === 'function') {
@@ -34155,7 +34510,8 @@ module.exports = function registerApiRoutes(scope) {
 
             return {
                 icon: '🚶',
-                description: `Traveled from ${originName} to ${destinationName}. ${durationText} passed.`
+                description: `Traveled from ${originName} to ${destinationName}. ${durationText} passed.`,
+                category: 'travel'
             };
         }
 

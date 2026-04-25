@@ -21,11 +21,24 @@ Fields:
 - `type`: string | null (examples: `player-action`, `user-question`, `storyteller-answer`, `user-generic-prompt`, `generic-prompt-response`, `event-summary`, `quest-reward`, `status-summary`, visible assistant prose such as `while-you-were-away-player`, and hidden server-only story-note attachments such as `supplemental-story-info`, `while-you-were-away`, `plot-summary`, `plot-expander`, `offscreen-npc-activity-daily`, `offscreen-npc-activity-weekly`)
 - `summary`: string | null
 - `summaryTitle`: string | null (event summaries)
-- `summaryItems`: array | null (event summaries)
+- `summaryItems`: array | null (event/status summary rows; new rows use the SummaryItem shape below)
 - `travel`: boolean | undefined
 - `lastEditedAt`: ISO string | undefined (edited messages)
 - `ephemeral`: boolean | undefined (system-only entries)
 - `metadata`: object (always includes `locationId`; may include `requestId`, `npcNames`, `traveledToLocationId` for travel turns, quest metadata, etc.)
+
+## SummaryItem
+Rows inside `ChatEntry.summaryItems` for `event-summary` and `status-summary` entries.
+
+Fields:
+- `icon`: string
+- `text`: string
+- `category`: string (exact drawer grouping value: `inventory`, `needs`, `quest_reward`, `time`, `travel`, `disposition`, `faction_relationship`, `location_world`, `character`, `npc_party`, `status`, or `other`)
+- `severity`: string (`normal`, `important`, or `critical`)
+- `sourceType`: string | null (server/live event source such as `pick_up_item`, `harvest_gather`, `time_passed`, `need_bar_change`, `disposition_change`, `quest_received`, `completed_quest_objective`, `status_effect_change`, or `environmental_damage`)
+- `entityRefs`: array of `{ type, id, name }` references. `type` is a lowercase domain label such as `npc`, `thing`, `scenery`, `location`, `quest`, or `faction`; `id` and `name` may be null when unknown, but at least one is present.
+
+Legacy summaries may omit `severity`, `sourceType`, and `entityRefs`; the client treats them as normal-severity uncited rows and keeps legacy uncategorized event rows under `Other`.
 
 ## ActionResolution (resolveActionOutcome)
 Used by `/api/chat` (`actionResolution`) and `/api/craft` (`outcome`).
