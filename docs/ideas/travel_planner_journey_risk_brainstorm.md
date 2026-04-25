@@ -94,11 +94,13 @@ If a travel encounter, hazard, failed skill check, vehicle issue, or story event
 Use known settlements, stations, inns, hostels, faction outposts, temples, docks, vehicle berths, or other setting-appropriate stops. This mode spends currency or favors to reduce exhaustion and improve recovery.
 
 Strengths:
+
 - Best recovery.
 - Lower encounter risk in civilized or protected areas.
 - Good for social hooks and rumors.
 
 Costs:
+
 - Currency, faction standing, or obligations.
 - Not always available.
 - May expose the party to local laws, enemies, debt, theft, or social complications.
@@ -108,11 +110,13 @@ Costs:
 Use carried supplies and make camp when travel time exceeds a rest threshold.
 
 Strengths:
+
 - Reliable when no lodging exists.
 - Moderate recovery.
 - Works in wilderness or ruins if conditions allow.
 
 Costs:
+
 - Consumes supplies.
 - Encounter risk depends on danger, concealment, weather, watch quality, fire/light, and party tactics.
 - Recovery may be reduced in harsh conditions.
@@ -122,11 +126,13 @@ Costs:
 Spend time and make checks to reduce supply cost or find better food/water.
 
 Strengths:
+
 - Can offset limited supplies.
 - Creates skill-based travel gameplay.
 - Can discover tracks, landmarks, resources, clues, or hazards.
 
 Costs:
+
 - Takes time away from travel and rest.
 - Failure can increase exhaustion, risk, or wasted time.
 - Noise, scent, tracks, or separation can attract danger.
@@ -137,10 +143,12 @@ Costs:
 Minimize travel time and skip or shorten rest.
 
 Strengths:
+
 - Fastest arrival.
 - Useful for urgent quests, pursuit, escape, clocks, or vehicle departures.
 
 Costs:
+
 - Increased exhaustion and need pressure.
 - Higher injury, morale, mistake, and encounter risk.
 - Lower foraging success because the party is moving quickly.
@@ -150,11 +158,13 @@ Costs:
 Move slower, scout ahead, avoid roads when needed, choose safer camps, keep watches, and reduce surprise.
 
 Strengths:
+
 - Lower ambush and hazard risk.
 - Better chance to notice tracks, patrols, weather shifts, and hidden paths.
 - Useful in hostile regions.
 
 Costs:
+
 - More elapsed time.
 - More meals/supplies consumed unless offset by foraging.
 - May miss time-sensitive opportunities.
@@ -164,11 +174,13 @@ Costs:
 Pay for a caravan, boat, train, shuttle, mount, guide, escort, or local route expert.
 
 Strengths:
+
 - Can reduce risk or travel time.
 - Can bypass difficult terrain.
 - Creates social hooks and faction interactions.
 
 Costs:
+
 - Currency or favors.
 - Availability depends on location and setting.
 - Guide/transport quality can vary.
@@ -179,11 +191,13 @@ Costs:
 Use an existing vehicle location or region.
 
 Strengths:
+
 - Leverages `VehicleInfo` routes and ETA state.
 - Supports long trips, fixed routes, timed arrivals, and onboard scenes.
 - Can combine travel with rest, crafting, social interaction, or tactical encounters.
 
 Costs:
+
 - Vehicle route constraints.
 - Possible fuel, repair, crew, docking, or navigation issues depending on setting.
 - Vehicle may be intercepted, delayed, damaged, or rerouted.
@@ -680,10 +694,12 @@ Fixtures:
 Show route time, expected need impact, current party risk, and warning if the journey is long enough to cause exhaustion/starvation. No new mechanics yet.
 
 Pros:
+
 - Low risk.
 - Immediately explains the current problem.
 
 Cons:
+
 - Does not solve long-travel hardship yet.
 
 ### Slice 2: Lodging and camp policy
@@ -691,10 +707,12 @@ Cons:
 Add safe lodging and normal camping options for long trips. Apply currency/supply/rest outcomes and journey summaries.
 
 Pros:
+
 - Directly addresses the starvation/exhaustion issue.
 - Mechanically bounded.
 
 Cons:
+
 - Requires cost/recovery rules.
 
 ### Slice 3: Foraging and hunting checks
@@ -702,10 +720,12 @@ Cons:
 Add skill-checked food/water/resource gathering during travel, with time/rest/risk tradeoffs.
 
 Pros:
+
 - Adds meaningful survival gameplay.
 - Makes skills matter.
 
 Cons:
+
 - Needs setting-aware skill mapping and structured outcomes.
 
 ### Slice 4: Travel encounters and interruptions
@@ -713,10 +733,12 @@ Cons:
 Add danger-weighted travel encounters, avoided encounters, and interrupted journey state.
 
 Pros:
+
 - Makes dangerous travel exciting.
 - Connects travel to random events and world state.
 
 Cons:
+
 - Requires careful duplicate movement/time prevention.
 
 ### Slice 5: Full route planner
@@ -724,9 +746,11 @@ Cons:
 Add route alternatives, known stops, guide/transport options, vehicle trips, faction checkpoints, and map integration.
 
 Pros:
+
 - Turns travel into a major strategic system.
 
 Cons:
+
 - Larger UI and state-management scope.
 
 ## Strong first implementation candidate
@@ -755,4 +779,3 @@ This slice would fix the immediate exhaustion/starvation problem while creating 
 8. Should player-selected travel policies persist as defaults?
 9. Should vehicles allow better rest by default, or should that depend on vehicle metadata?
 10. Should harsh travel create durable status effects, need changes, or both?
-

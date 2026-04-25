@@ -19,10 +19,8 @@ const FormulaEvaluator = require('./public/js/formula-evaluator.js');
 const { resolvePointPoolFormulas } = require('./utils/point-pool-formulas.js');
 const { CHAT_TOOL_DEFINITIONS, createChatToolRuntime } = require('./chat_tool_calls.js');
 const {
-    filterChatHistoryEntries,
-    normalizeEntryText,
-    resolveEntryRecordId
-} = require('./chat_history_utils.js');
+    countSceneSummaryIndexEntries
+} = require('./scene_summary_index.js');
 const e = require('express');
 const { getLorebookManager } = require('./lorebook.js');
 const console = require('console');
@@ -7001,48 +6999,7 @@ module.exports = function registerApiRoutes(scope) {
         };
 
         const countSceneSummaryEntries = (entries) => {
-            if (!Array.isArray(entries)) {
-                throw new Error('Chat history is unavailable for scene summary counting.');
-            }
-            const filteredEntries = filterChatHistoryEntries(entries, { excludeSummaries: true });
-            if (!filteredEntries.length) {
-                return 0;
-            }
-            const requiresPlayerName = filteredEntries.some(entry => {
-                const rawRole = typeof entry?.role === 'string' ? entry.role.trim().toLowerCase() : '';
-                return rawRole === 'user';
-            });
-            const playerName = typeof currentPlayer?.name === 'string' ? currentPlayer.name.trim() : '';
-            if (requiresPlayerName && !playerName) {
-                throw new Error('Unable to resolve the current player name for user entries.');
-            }
-
-            let count = 0;
-            for (const entry of filteredEntries) {
-                if (!entry || typeof entry !== 'object') {
-                    continue;
-                }
-                const metadata = entry.metadata && typeof entry.metadata === 'object'
-                    ? entry.metadata
-                    : null;
-                if (metadata?.excludeFromBaseContextHistory === true) {
-                    continue;
-                }
-                const entryType = typeof entry.type === 'string' ? entry.type.trim().toLowerCase() : '';
-                if (entryType === 'plot-summary') {
-                    continue;
-                }
-                const content = typeof entry.content === 'string' ? entry.content.trim() : '';
-                const summary = typeof entry.summary === 'string' ? entry.summary.trim() : '';
-                const rawText = content || summary;
-                const text = normalizeEntryText(rawText);
-                if (!text) {
-                    continue;
-                }
-                resolveEntryRecordId(entry);
-                count += 1;
-            }
-            return count;
+            return countSceneSummaryIndexEntries(entries);
         };
 
         const parseBatchSummaryResponse = (xmlContent, expectedCount) => {
@@ -15112,6 +15069,12 @@ module.exports = function registerApiRoutes(scope) {
                 let debugInfo = null;
                 let playerActionLogPayload = null;
                 const isPromptOnlyAction = isQuestionAction || isGenericPromptAction;
+                const isEmptyPlayerAction = !isPromptOnlyAction
+                    && !isForcedEventAction
+                    && !isCreativeModeAction
+                    && typeof sanitizedUserContent === 'string'
+                    && sanitizedUserContent.trim().length === 0;
+                baseDebugInfo.emptyPlayerAction = Boolean(isEmptyPlayerAction);
                 const shouldRunPlotSummaryForThisTurn = (
                     userMessage
                     && userMessage.role === 'user'
@@ -15146,7 +15109,7 @@ module.exports = function registerApiRoutes(scope) {
                         console.warn('Failed to update status effects before action:', tickError.message);
                     }
 
-                    if (!isCreativeModeAction && !isForcedEventAction && plausibilityChecksEnabled) {
+                    if (!isEmptyPlayerAction && !isCreativeModeAction && !isForcedEventAction && plausibilityChecksEnabled) {
                         try {
                             stream.status('player_action:attack_check', 'Checking for potential attacks.');
                             const attackActionText = typeof sanitizedUserContent === 'string'
@@ -15231,7 +15194,7 @@ module.exports = function registerApiRoutes(scope) {
                             console.warn('Failed to execute plausibility check:', plausibilityError.message);
                             console.debug(plausibilityError);
                         }
-                    } else if (!plausibilityChecksEnabled) {
+                    } else if (!isEmptyPlayerAction && !plausibilityChecksEnabled) {
                         plausibilityInfo = {
                             raw: '',
                             structured: {

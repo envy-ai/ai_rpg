@@ -6,6 +6,10 @@ class AIRPGChat {
         this.prefixHelpLink = document.getElementById('prefixHelpLink');
         this.prefixHelpModal = document.getElementById('prefixHelpModal');
         this.prefixHelpCloseButton = document.getElementById('prefixHelpCloseBtn');
+        this.emptyActionConfirmModal = document.getElementById('emptyActionConfirmModal');
+        this.emptyActionConfirmCloseButton = document.getElementById('emptyActionConfirmCloseBtn');
+        this.emptyActionConfirmCancelButton = document.getElementById('emptyActionConfirmCancelBtn');
+        this.emptyActionConfirmSubmitButton = document.getElementById('emptyActionConfirmSubmitBtn');
         this.slashUploadModal = document.getElementById('slashUploadModal');
         this.slashUploadTitle = document.getElementById('slashUploadTitle');
         this.slashUploadCloseButton = document.getElementById('slashUploadCloseBtn');
@@ -86,6 +90,7 @@ class AIRPGChat {
         this.setupEditModal();
         this.setupQuestConfirmationModal();
         this.setupPrefixHelpModal();
+        this.setupEmptyActionConfirmModal();
         this.setupSlashUploadModal();
         this.loadExistingHistory();
 
@@ -200,6 +205,39 @@ class AIRPGChat {
         });
     }
 
+    setupEmptyActionConfirmModal() {
+        if (!this.emptyActionConfirmModal) {
+            return;
+        }
+
+        const cancel = () => this.closeEmptyActionConfirmModal({ refocusInput: true });
+        if (this.emptyActionConfirmCloseButton) {
+            this.emptyActionConfirmCloseButton.addEventListener('click', cancel);
+        }
+        if (this.emptyActionConfirmCancelButton) {
+            this.emptyActionConfirmCancelButton.addEventListener('click', cancel);
+        }
+        if (this.emptyActionConfirmSubmitButton) {
+            this.emptyActionConfirmSubmitButton.addEventListener('click', () => {
+                this.closeEmptyActionConfirmModal({ refocusInput: false });
+                this.sendMessage({ allowEmptyAction: true });
+            });
+        }
+
+        this.emptyActionConfirmModal.addEventListener('click', (event) => {
+            if (event.target === this.emptyActionConfirmModal) {
+                cancel();
+            }
+        });
+
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape' && this.isEmptyActionConfirmModalOpen()) {
+                event.preventDefault();
+                cancel();
+            }
+        });
+    }
+
     setupSlashUploadModal() {
         if (!this.slashUploadModal) {
             return;
@@ -245,6 +283,10 @@ class AIRPGChat {
         return Boolean(this.prefixHelpModal && !this.prefixHelpModal.hasAttribute('hidden'));
     }
 
+    isEmptyActionConfirmModalOpen() {
+        return Boolean(this.emptyActionConfirmModal && !this.emptyActionConfirmModal.hasAttribute('hidden'));
+    }
+
     isSlashUploadModalOpen() {
         return Boolean(this.slashUploadModal && !this.slashUploadModal.hasAttribute('hidden'));
     }
@@ -285,6 +327,30 @@ class AIRPGChat {
         this.syncBodyModalOpenClass();
         if (this.prefixHelpLink) {
             this.prefixHelpLink.focus();
+        }
+    }
+
+    openEmptyActionConfirmModal() {
+        if (!this.emptyActionConfirmModal) {
+            return;
+        }
+        this.emptyActionConfirmModal.removeAttribute('hidden');
+        this.emptyActionConfirmModal.setAttribute('aria-hidden', 'false');
+        document.body.classList.add('modal-open');
+        window.setTimeout(() => {
+            this.emptyActionConfirmSubmitButton?.focus();
+        }, 0);
+    }
+
+    closeEmptyActionConfirmModal({ refocusInput = false } = {}) {
+        if (!this.emptyActionConfirmModal) {
+            return;
+        }
+        this.emptyActionConfirmModal.setAttribute('hidden', '');
+        this.emptyActionConfirmModal.setAttribute('aria-hidden', 'true');
+        this.syncBodyModalOpenClass();
+        if (refocusInput) {
+            this.messageInput?.focus();
         }
     }
 
@@ -6761,10 +6827,10 @@ class AIRPGChat {
         }
     }
 
-    async submitChatMessage(rawContent, { setButtonLoading = false, travel = false, travelMetadata = null, suppressTravelCompletionSound = false } = {}) {
+    async submitChatMessage(rawContent, { setButtonLoading = false, travel = false, travelMetadata = null, suppressTravelCompletionSound = false, allowEmptyAction = false } = {}) {
         const content = typeof rawContent === 'string' ? rawContent : '';
         const trimmed = content.trim();
-        if (!trimmed) {
+        if (!trimmed && !allowEmptyAction) {
             return;
         }
         if (typeof window.isPlayerAbilitySelectionBlockingGameplay === 'function'
@@ -6949,9 +7015,11 @@ class AIRPGChat {
         }
     }
 
-    async sendMessage() {
+    async sendMessage({ allowEmptyAction = false } = {}) {
         const rawInput = this.messageInput.value;
-        if (!rawInput || !rawInput.trim()) {
+        const hasInputText = typeof rawInput === 'string' && rawInput.trim().length > 0;
+        if (!hasInputText && !allowEmptyAction) {
+            this.openEmptyActionConfirmModal();
             return;
         }
         if (typeof window.isPlayerAbilitySelectionBlockingGameplay === 'function'
@@ -6967,9 +7035,12 @@ class AIRPGChat {
             return;
         }
 
-        this.recordInputHistoryEntry(rawInput);
+        if (hasInputText) {
+            this.recordInputHistoryEntry(rawInput);
+        }
         this.messageInput.value = '';
-        const trimmed = rawInput.trim();
+        this.messageInput.style.height = 'auto';
+        const trimmed = hasInputText ? rawInput.trim() : '';
         if (trimmed.startsWith('/')) {
             try {
                 await this.executeSlashCommand(trimmed);
@@ -6980,7 +7051,12 @@ class AIRPGChat {
             return;
         }
 
-        await this.submitChatMessage(rawInput, { setButtonLoading: true, travel: false });
+        const messageToSubmit = hasInputText ? rawInput : '';
+        await this.submitChatMessage(messageToSubmit, {
+            setButtonLoading: true,
+            travel: false,
+            allowEmptyAction: !hasInputText
+        });
     }
 
     async dispatchAutomatedMessage(message, { travel = false, travelMetadata = null, suppressTravelCompletionSound = false } = {}) {

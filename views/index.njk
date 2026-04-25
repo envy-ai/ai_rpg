@@ -856,6 +856,26 @@
         </div>
     </div>
 
+    <div id="emptyActionConfirmModal" class="modal empty-action-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="emptyActionConfirmTitle" aria-describedby="emptyActionConfirmDescription" aria-hidden="true" hidden>
+        <div class="modal__dialog">
+            <header class="modal__header">
+                <h2 id="emptyActionConfirmTitle">Continue scene without input?</h2>
+                <button type="button" class="modal__close" id="emptyActionConfirmCloseBtn" aria-label="Close empty input confirmation">
+                    <span aria-hidden="true">X</span>
+                </button>
+            </header>
+            <div class="modal__body">
+                <p id="emptyActionConfirmDescription" class="modal__instruction">The Game Master will continue the current scene without a player action.</p>
+            </div>
+            <footer class="modal__footer">
+                <div class="button-group">
+                    <button type="button" class="btn btn-secondary" id="emptyActionConfirmCancelBtn">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="emptyActionConfirmSubmitBtn">Continue</button>
+                </div>
+            </footer>
+        </div>
+    </div>
+
     <div id="slashUploadModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="slashUploadTitle" aria-hidden="true" hidden>
         <div class="modal__dialog">
             <header class="modal__header">

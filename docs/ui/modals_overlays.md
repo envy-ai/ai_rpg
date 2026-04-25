@@ -28,6 +28,12 @@ Most modals live in `views/index.njk` and are wired up by the inline script or `
 - Implemented in `public/js/chat.js`; the modal reads selected file text client-side and posts it to `/api/slash-command/upload`.
 - Intended for slash commands that need user-supplied files without hardcoding per-command upload UI.
 
+## Empty action confirmation
+
+- `#emptyActionConfirmModal`: opened when the user submits the chat input with no text.
+- Confirming resubmits through the normal chat send path with an explicit empty-action flag; cancel/close returns focus to `#messageInput`.
+- The matching `/api/chat` request is a normal player-action continuation, but skips the attack precheck, attack check, and plausibility check before prompt rendering.
+
 ## Quest editing
 
 - `#questEditModal` + `#questEditBackdrop`

@@ -19,11 +19,22 @@ const Globals = require('./Globals.js');
 const SceneSummaries = require('./SceneSummaies.js');
 const {
     containsOmittedMarker,
-    normalizeEntryText,
     shouldExcludeSummaryEntry,
     resolveRoleLabel,
     resolveEntryRecordId
 } = require('./chat_history_utils.js');
+const {
+    formatSceneSummaryRangeError
+} = require('./scene_summary_diagnostics.js');
+const {
+    getSceneSummaryIndexText,
+    shouldIncludeEntryInSceneSummaryIndex
+} = require('./scene_summary_index.js');
+const {
+    formatHistoryEntrySpeakerPrefix,
+    formatSceneStartWorldTimeLabel,
+    getCurrentWorldTimeSnapshotForHistoryEntry
+} = require('./history_time_labels.js');
 const { getCurrencyLabel } = require('./public/js/currency-utils.js');
 const SanitizedStringSet = require('./SanitizedStringSet.js');
 const StatusEffect = require('./StatusEffect.js');
@@ -2855,6 +2866,16 @@ function pushChatEntry(entry, collector = null, locationId = null) {
         ...existingMetadata,
         locationId: resolvedLocationId
     };
+
+    if (!Object.prototype.hasOwnProperty.call(normalized.metadata, 'worldTime')) {
+        const worldTime = getCurrentWorldTimeSnapshotForHistoryEntry();
+        if (worldTime) {
+            normalized.metadata = {
+                ...normalized.metadata,
+                worldTime
+            };
+        }
+    }
 
     if (!normalized.travel) {
         const npcNames = collectNpcNamesForContext(normalized);
@@ -6156,6 +6177,14 @@ function buildBasePromptContext({
             return null;
         }
         const entryIdToIndex = new Map(entryIndexMap.map(entry => [entry.entryId, entry.index]));
+        const entryIdByIndex = new Map(entryIndexMap.map(entry => [entry.index, entry.entryId]));
+        const entryById = new Map();
+        for (const historyEntry of effectiveHistoryEntries) {
+            const historyEntryId = typeof historyEntry?.id === 'string' ? historyEntry.id.trim() : '';
+            if (historyEntryId) {
+                entryById.set(historyEntryId, historyEntry);
+            }
+        }
 
         if (typeof sceneSummaries.ingestNpcNamesFromEntries === 'function') {
             sceneSummaries.ingestNpcNamesFromEntries(entries);
@@ -6195,6 +6224,14 @@ function buildBasePromptContext({
         const formatSceneBlock = (scene, sceneNumber) => {
             const lines = [];
             lines.push(`Scene ${sceneNumber}:`);
+            const sceneStartEntryId = typeof scene.startEntryId === 'string' && scene.startEntryId.trim()
+                ? scene.startEntryId.trim()
+                : entryIdByIndex.get(scene.startIndex);
+            const sceneStartEntry = sceneStartEntryId ? entryById.get(sceneStartEntryId) : null;
+            const sceneStartWorldTimeLabel = formatSceneStartWorldTimeLabel(sceneStartEntry);
+            if (sceneStartWorldTimeLabel) {
+                lines.push(sceneStartWorldTimeLabel);
+            }
             const absent = absentByScene.get(scene.startIndex) || [];
             const absentLabel = absent.length ? absent.join(', ') : 'none';
             lines.push(`[absent characters: ${absentLabel}]`);
@@ -6324,7 +6361,8 @@ function buildBasePromptContext({
             ? entry.role.trim()
             : 'system';
         const roleLabel = resolveRoleLabelForHistory(entry, roleRaw);
-        historySegments.push({ entry, line: `[${roleLabel}] ${resolvedContent}` });
+        const speakerPrefix = formatHistoryEntrySpeakerPrefix(entry, { roleLabel, roleRaw });
+        historySegments.push({ entry, line: `${speakerPrefix} ${resolvedContent}` });
     }
 
     const buildHistoryLines = (segments) => {
@@ -6882,46 +6920,7 @@ function buildSceneSummaryIndex(chatHistory, { excludeSummaries = true } = {}) {
         throw new Error('Chat history is unavailable for scene summaries.');
     }
 
-    const shouldIncludeEntry = (entry) => {
-        if (!entry || typeof entry !== 'object') {
-            return false;
-        }
-
-        const role = typeof entry.role === 'string' ? entry.role.trim().toLowerCase() : '';
-        if (role === 'system') {
-            return false;
-        }
-
-        const entryType = typeof entry.type === 'string' ? entry.type.trim().toLowerCase() : '';
-        const metadata = entry.metadata && typeof entry.metadata === 'object'
-            ? entry.metadata
-            : null;
-        if (metadata?.excludeFromBaseContextHistory === true) {
-            return false;
-        }
-        if (entryType === 'plot-summary' || entryType === 'plot-expander') {
-            return false;
-        }
-        if (entryType === 'event-summary' || entryType === 'status-summary') {
-            return false;
-        }
-
-        if (excludeSummaries && shouldExcludeSummaryEntry(entry)) {
-            return false;
-        }
-
-        if (isHiddenChatEntry(entry)) {
-            return true;
-        }
-
-        const content = typeof entry.content === 'string' ? entry.content : '';
-        const summary = typeof entry.summary === 'string' ? entry.summary : '';
-        if (containsOmittedMarker(content) || containsOmittedMarker(summary)) {
-            return false;
-        }
-
-        return true;
-    };
+    const shouldIncludeEntry = (entry) => shouldIncludeEntryInSceneSummaryIndex(entry, { excludeSummaries });
 
     const filteredEntries = chatHistory.filter(shouldIncludeEntry);
     if (!filteredEntries.length) {
@@ -6947,10 +6946,7 @@ function buildSceneSummaryIndex(chatHistory, { excludeSummaries = true } = {}) {
         if (!entry || typeof entry !== 'object') {
             continue;
         }
-        const content = typeof entry.content === 'string' ? entry.content.trim() : '';
-        const summary = typeof entry.summary === 'string' ? entry.summary.trim() : '';
-        const rawText = content || summary;
-        const text = normalizeEntryText(rawText);
+        const text = getSceneSummaryIndexText(entry);
         if (!text) {
             continue;
         }
@@ -7132,7 +7128,14 @@ async function summarizeScenesForHistoryRange({ chatHistory, startIndex, endInde
         throw new Error('Scene summary end index must be greater than or equal to the start index.');
     }
     if (parsedStart > totalEntries || parsedEnd > totalEntries) {
-        throw new Error(`Scene summary range must be within 1-${totalEntries}.`);
+        throw new Error(formatSceneSummaryRangeError({
+            totalEntries,
+            startIndex,
+            endIndex,
+            redo,
+            parsedStart,
+            parsedEnd
+        }));
     }
 
     if (redo) {
@@ -7147,7 +7150,14 @@ async function summarizeScenesForHistoryRange({ chatHistory, startIndex, endInde
     }
 
     if (parsedStart > totalEntries || parsedEnd > totalEntries) {
-        throw new Error(`Scene summary range must be within 1-${totalEntries}.`);
+        throw new Error(formatSceneSummaryRangeError({
+            totalEntries,
+            startIndex,
+            endIndex,
+            redo,
+            parsedStart,
+            parsedEnd
+        }));
     }
     if (parsedEnd < parsedStart) {
         throw new Error('Scene summary end index must be greater than or equal to the start index.');

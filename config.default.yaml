@@ -366,7 +366,7 @@ plot_expander_prompt_frequency: 10
 
 # Minimum in-game time separation, in minutes, before the blocking while-you-were-away
 # reunion prompt runs when the player arrives at an NPC's location.
-while_you_were_away_threshold_minutes: 240
+while_you_were_away_threshold_minutes: 0
 
 base_context:
   # When true, omit inventory items from the base-context prompt.

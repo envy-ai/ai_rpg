@@ -75,6 +75,7 @@ Response (200):
   - `commentLogged`: boolean (comment-only actions)
 
 Variants:
+- Empty player action: an empty final user message is accepted as a normal player-action continuation. The server skips the attack precheck, attack check, and plausibility check, then renders the player-action prompt with empty `actionText` so `prompts/_includes/player-action.njk` uses its "continue the previous scene" branch.
 - Comment-only action: if the user message begins with `#`, the response is `{ response: '', commentLogged: true, messages: [...] }` (no turn resolution).
 - Forced-event action: user message begins with `!!`; creative action begins with `!`. These alter processing but do not change the base response shape.
 - Question action: if the user message begins with `?`, the server routes through the `question` prompt template (`prompts/_includes/question.njk`) using the stripped question text (leading `?` and spaces removed for prompt rendering). It records chat entries as `type: user-question` (user) and `type: storyteller-answer` (assistant), skips event/random/NPC turn resolution for that request, bypasses slop-remover processing for that response, and returns a normal chat payload with the answer in `response`.

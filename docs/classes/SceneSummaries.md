@@ -22,6 +22,10 @@ Stores and manages scene summaries extracted from chat history. Tracks scene ran
 - `serialize()`: returns a stable JSON-friendly payload including entry index map and NPC names.
 - `load(data)`: clears and loads from serialized data, validating completeness.
 
+## Diagnostics
+- `/scene_summaries` lists stored scene summaries by display number and covered 1-based entry range, and reports coverage gaps against the current scene-summary-eligible chat history.
+- Scene-summary entry counts come from `scene_summary_index.js`, shared by `/summarize`, `/summarize check`, `/scene_summaries`, automatic threshold summarization, and the actual server-side scene summarizer. The shared index excludes event/status summary entries and plot-summary/plot-expander entries while preserving hidden supplemental/offscreen story entries.
+
 ## Private Helpers
 - `#ingestEntryIndexMap(entryIndexMap)`: validates and populates entry id/index and NPC name maps.
 - `#normalizeScene(scene)`: validates and normalizes scene shape.
@@ -29,3 +33,4 @@ Stores and manages scene summaries extracted from chat history. Tracks scene ran
 
 ## Notes
 - All validation is strict; missing fields throw explicit errors to avoid silent corruption.
+- Scene records store entry ranges and entry ids, not formatted dates. Base-context rendering looks up the scene start entry and, when that chat entry has `metadata.worldTime`, prints the scene's start time relative to the current in-game day plus the calendar date immediately after `Scene N:`.

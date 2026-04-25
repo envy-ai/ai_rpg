@@ -3,9 +3,8 @@ const path = require('path');
 const SlashCommandBase = require('../SlashCommandBase.js');
 const Globals = require('../Globals.js');
 const {
-    filterChatHistoryEntries,
-    normalizeEntryText
-} = require('../chat_history_utils.js');
+    countSceneSummaryIndexEntries
+} = require('../scene_summary_index.js');
 
 function parseIndexRange(rawRange) {
     if (typeof rawRange !== 'string') {
@@ -69,31 +68,7 @@ function formatSceneSummaryText(summaryResult) {
 }
 
 function countUnsummarizedEntries(chatHistory) {
-    const filteredEntries = filterChatHistoryEntries(chatHistory, { excludeSummaries: true });
-    let totalEntries = 0;
-    for (const entry of filteredEntries) {
-        if (!entry || typeof entry !== 'object') {
-            continue;
-        }
-        const metadata = entry.metadata && typeof entry.metadata === 'object'
-            ? entry.metadata
-            : null;
-        if (metadata?.excludeFromBaseContextHistory === true) {
-            continue;
-        }
-        const entryType = typeof entry.type === 'string' ? entry.type.trim().toLowerCase() : '';
-        if (entryType === 'plot-summary') {
-            continue;
-        }
-        const content = typeof entry.content === 'string' ? entry.content.trim() : '';
-        const summary = typeof entry.summary === 'string' ? entry.summary.trim() : '';
-        const rawText = content || summary;
-        const text = normalizeEntryText(rawText);
-        if (!text) {
-            continue;
-        }
-        totalEntries += 1;
-    }
+    const totalEntries = countSceneSummaryIndexEntries(chatHistory);
 
     if (totalEntries === 0) {
         return { total: 0, summarized: 0, unsummarized: 0 };

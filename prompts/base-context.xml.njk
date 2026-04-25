@@ -39,6 +39,13 @@ The below context is an account of the current game state, including the setting
 {{ contained.name }}{% if contained.count and contained.count > 1 %} x{{ contained.count }}{% endif %}{% if contained.isContainer %} ({% if contained.containerContents and contained.containerContents.length %}contains {{ containerContentsSummary(contained.containerContents) }}{% else %}empty{% endif %}){% endif %}{% if not loop.last %}, {% endif %}
 {%- endfor -%}
   {%- endmacro %}
+  {% macro itemValueSummary(item) -%}
+{%- set amount = item.value | default(0, true) -%}
+{%- set singularCurrency = setting.currencyName | default('coin', true) | lower -%}
+{%- set pluralCurrency = setting.currencyNamePlural | default('', true) | lower -%}
+{%- if not pluralCurrency -%}{%- set pluralCurrency = singularCurrency ~ 's' -%}{%- endif -%}
+({{ amount }} {% if amount == 1 %}{{ singularCurrency }}{% else %}{{ pluralCurrency }}{% endif %})
+  {%- endmacro %}
   {% macro renderContainerContentsXml(contents) -%}
         <containerContents>
           {% for contained in contents %}
@@ -156,7 +163,7 @@ The below context is an account of the current game state, including the setting
     </exits>
     <items>{% if useShortDescriptions -%}
 {%- for item in currentLocation.items -%}
-{{ item.name }}{% if item.count and item.count > 1 %} x{{ item.count }}{% endif %}: {{ item.rarity | default('common', true) }} level {{ item.level | default(1, true) }} - {{ item.shortDescription | default(item.description, true) }}{% if item.equippedSlot %} (Equipped to {{ item.equippedSlot }}){% endif %}{% if item.isContainer %} (Container{% if item.containerContents and item.containerContents.length %}: contains {{ containerContentsSummary(item.containerContents) }}{% else %}: empty{% endif %}){% endif %}{% if not loop.last %}{{ "\n" }}{% endif %}
+{{ item.name }}{% if item.count and item.count > 1 %} x{{ item.count }}{% endif %}: {{ item.rarity | default('common', true) }} level {{ item.level | default(1, true) }} {{ itemValueSummary(item) }} - {{ item.shortDescription | default(item.description, true) }}{% if item.equippedSlot %} (Equipped to {{ item.equippedSlot }}){% endif %}{% if item.isContainer %} (Container{% if item.containerContents and item.containerContents.length %}: contains {{ containerContentsSummary(item.containerContents) }}{% else %}: empty{% endif %}){% endif %}{% if not loop.last %}{{ "\n" }}{% endif %}
 {%- endfor -%}
 {%- else %}
       {% for item in currentLocation.items %}
@@ -220,7 +227,7 @@ The below context is an account of the current game state, including the setting
         {% if not omitInventoryItems %}
         <inventory>{% if useShortDescriptions -%}
 {%- for item in npc.inventory -%}
-{{ item.name }}{% if item.count and item.count > 1 %} x{{ item.count }}{% endif %}: {{ item.rarity | default('common', true) }} level {{ item.level | default(1, true) }} - {{ item.shortDescription | default(item.description, true) }}{% if item.equippedSlot %} (Equipped to {{ item.equippedSlot }}){% endif %}{% if item.isContainer %} (Container{% if item.containerContents and item.containerContents.length %}: contains {{ containerContentsSummary(item.containerContents) }}{% else %}: empty{% endif %}){% endif %}{% if not loop.last %}{{ "\n" }}{% endif %}
+{{ item.name }}{% if item.count and item.count > 1 %} x{{ item.count }}{% endif %}: {{ item.rarity | default('common', true) }} level {{ item.level | default(1, true) }} {{ itemValueSummary(item) }} - {{ item.shortDescription | default(item.description, true) }}{% if item.equippedSlot %} (Equipped to {{ item.equippedSlot }}){% endif %}{% if item.isContainer %} (Container{% if item.containerContents and item.containerContents.length %}: contains {{ containerContentsSummary(item.containerContents) }}{% else %}: empty{% endif %}){% endif %}{% if not loop.last %}{{ "\n" }}{% endif %}
 {%- endfor -%}
 {%- else %}
           {% for item in npc.inventory %}<item>
@@ -264,7 +271,7 @@ The below context is an account of the current game state, including the setting
     </npcs>
     <itemsInScene>{% if useShortDescriptions -%}
 {%- for item in itemsInScene %}{% if not item.isScenery -%}
-{{ item.name }}: {{ item.rarity | default('common', true) }} level {{ item.level | default(1, true) }} - {{ item.shortDescription | default(item.description, true) }}{% if item.equippedSlot %} (Equipped to {{ item.equippedSlot }}){% endif %}{% if not loop.last %}{{ "\n" }}{% endif %}
+{{ item.name }}: {{ item.rarity | default('common', true) }} level {{ item.level | default(1, true) }} {{ itemValueSummary(item) }} - {{ item.shortDescription | default(item.description, true) }}{% if item.equippedSlot %} (Equipped to {{ item.equippedSlot }}){% endif %}{% if not loop.last %}{{ "\n" }}{% endif %}
 {%- endif %}{%- endfor -%}
 {%- else %}
       {% for item in itemsInScene %}{% if not item.isScenery %}
@@ -292,7 +299,7 @@ The below context is an account of the current game state, including the setting
     {% endif %}</itemsInScene>
     <sceneryList>{% if useShortDescriptions -%}
 {%- for item in itemsInScene %}{% if item.isScenery -%}
-{{ item.name }}{% if item.count and item.count > 1 %} x{{ item.count }}{% endif %}: {{ item.rarity | default('common', true) }} level {{ item.level | default(1, true) }} - {{ item.shortDescription | default(item.description, true) }}{% if item.equippedSlot %} (Equipped to {{ item.equippedSlot }}){% endif %}{% if item.isContainer %} (Container{% if item.containerContents and item.containerContents.length %}: contains {{ containerContentsSummary(item.containerContents) }}{% else %}: empty{% endif %}){% endif %}{% if not loop.last %}{{ "\n" }}{% endif %}
+{{ item.name }}{% if item.count and item.count > 1 %} x{{ item.count }}{% endif %}: {{ item.rarity | default('common', true) }} level {{ item.level | default(1, true) }} {{ itemValueSummary(item) }} - {{ item.shortDescription | default(item.description, true) }}{% if item.equippedSlot %} (Equipped to {{ item.equippedSlot }}){% endif %}{% if item.isContainer %} (Container{% if item.containerContents and item.containerContents.length %}: contains {{ containerContentsSummary(item.containerContents) }}{% else %}: empty{% endif %}){% endif %}{% if not loop.last %}{{ "\n" }}{% endif %}
 {%- endif %}{%- endfor -%}
 {%- else %}
       {% for item in itemsInScene %}{% if item.isScenery %}
@@ -358,7 +365,7 @@ The below context is an account of the current game state, including the setting
     {% if not omitInventoryItems %}
     <inventory>{% if useShortDescriptions -%}
 {%- for item in currentPlayer.inventory -%}
-{{ item.name }}: {{ item.rarity | default('common', true) }} level {{ item.level | default(1, true) }} - {{ item.shortDescription | default(item.description, true) }}{% if item.equippedSlot %} (Equipped to {{ item.equippedSlot }}){% endif %}{% if not loop.last %}{{ "\n" }}{% endif %}
+{{ item.name }}: {{ item.rarity | default('common', true) }} level {{ item.level | default(1, true) }} {{ itemValueSummary(item) }} - {{ item.shortDescription | default(item.description, true) }}{% if item.equippedSlot %} (Equipped to {{ item.equippedSlot }}){% endif %}{% if not loop.last %}{{ "\n" }}{% endif %}
 {%- endfor -%}
 {%- else %}
       {% for item in currentPlayer.inventory %}
@@ -437,7 +444,7 @@ The below context is an account of the current game state, including the setting
       {% if not omitInventoryItems %}
       <inventory>{% if useShortDescriptions -%}
 {%- for item in member.inventory -%}
-{{ item.name }}: {{ item.rarity | default('common', true) }} level {{ item.level | default(1, true) }} - {{ item.shortDescription | default(item.description, true) }}{% if item.equippedSlot %} (Equipped to {{ item.equippedSlot }}){% endif %}{% if not loop.last %}{{ "\n" }}{% endif %}
+{{ item.name }}: {{ item.rarity | default('common', true) }} level {{ item.level | default(1, true) }} {{ itemValueSummary(item) }} - {{ item.shortDescription | default(item.description, true) }}{% if item.equippedSlot %} (Equipped to {{ item.equippedSlot }}){% endif %}{% if not loop.last %}{{ "\n" }}{% endif %}
 {%- endfor -%}
 {%- else %}
         {% for item in member.inventory %}<item>

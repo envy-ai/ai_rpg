@@ -82,6 +82,7 @@ The main UI is rendered by `views/index.njk` and powered by `public/js/chat.js` 
   - Message list (`#chatLog`) with user/AI messages and event-summary batches.
   - Direct arrival paths that bypass `/api/chat` still refresh chat history after success, so visible reunion prose such as `while-you-were-away-player` entries appears immediately after direct moves and player teleports.
   - Input area (`#messageInput`, `#sendButton`) with slash command support.
+  - Empty input opens `#emptyActionConfirmModal`; confirming sends an intentional empty player action so the Game Master continues the scene without player text.
   - Slash commands can now return typed UI actions; `request_file_upload` opens the shared `#slashUploadModal`, reads one or more selected text files, and forwards them to `/api/slash-command/upload`.
   - `/api/slash-command` also returns `executionOptions.showExecutionOverlay`; when a command disables it, the client cancels the pending `Executing command...` overlay before running reply actions. `/import_item` uses this so the upload modal and browser file picker are not blocked by the execution overlay.
   - `?` prefix-help modal includes an explicit roll-override note: include `<N>` anywhere in action/crafting text to force the die roll to integer `N`.
