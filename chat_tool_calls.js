@@ -485,6 +485,112 @@ const CHAT_TOOL_DEFINITIONS = Object.freeze([
     {
         type: 'function',
         function: {
+            name: 'resolveAttack',
+            description: 'Resolve an attack using the same fields produced by the attack-check prompt. Returns the damage amount as a string, or "miss" if the attack misses. This does not apply damage to character health.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    attacker: {
+                        type: 'string',
+                        description: 'Full exact name of the attacker as seen in location context, or "player".'
+                    },
+                    defender: {
+                        type: 'string',
+                        description: 'Full exact name of the defender as seen in location context, or "player".'
+                    },
+                    attackerInfo: {
+                        type: 'object',
+                        properties: {
+                            attackSkill: {
+                                type: 'string',
+                                description: 'Exact skill name used to hit.'
+                            },
+                            damageAttribute: {
+                                type: 'string',
+                                description: 'Exact attribute name used for damage.'
+                            }
+                        },
+                        required: ['attackSkill', 'damageAttribute'],
+                        additionalProperties: false
+                    },
+                    defenderInfo: {
+                        type: 'object',
+                        properties: {
+                            evadeSkill: {
+                                type: 'string',
+                                description: 'N/A or exact skill name used to dodge or evade.'
+                            },
+                            deflectSkill: {
+                                type: 'string',
+                                description: 'N/A or exact skill name used to parry, deflect, or block.'
+                            }
+                        },
+                        required: ['evadeSkill', 'deflectSkill'],
+                        additionalProperties: false
+                    },
+                    ability: {
+                        type: 'string',
+                        description: 'N/A or exact name of the ability used.'
+                    },
+                    weapon: {
+                        type: 'string',
+                        description: 'N/A, barehanded, or exact name of the weapon used.'
+                    },
+                    circumstanceModifiers: {
+                        type: 'object',
+                        properties: {
+                            attackerCircumstanceModifier: {
+                                type: 'array',
+                                description: 'Attack-roll circumstance modifiers from attacker circumstances. Use an empty array when none apply.',
+                                items: {
+                                    type: 'object',
+                                    properties: {
+                                        amount: { type: 'integer' },
+                                        reason: { type: 'string' }
+                                    },
+                                    required: ['amount', 'reason'],
+                                    additionalProperties: false
+                                }
+                            },
+                            defenderCircumstanceModifier: {
+                                type: 'array',
+                                description: 'Defender-DC circumstance modifiers from defender circumstances. Use an empty array when none apply.',
+                                items: {
+                                    type: 'object',
+                                    properties: {
+                                        amount: { type: 'integer' },
+                                        reason: { type: 'string' }
+                                    },
+                                    required: ['amount', 'reason'],
+                                    additionalProperties: false
+                                }
+                            }
+                        },
+                        required: ['attackerCircumstanceModifier', 'defenderCircumstanceModifier'],
+                        additionalProperties: false
+                    },
+                    damageEffectiveness: {
+                        type: 'integer',
+                        description: 'Integer from 1 to 5, where 3 is typical effectiveness.'
+                    }
+                },
+                required: [
+                    'attacker',
+                    'defender',
+                    'attackerInfo',
+                    'defenderInfo',
+                    'ability',
+                    'weapon',
+                    'circumstanceModifiers',
+                    'damageEffectiveness'
+                ],
+                additionalProperties: false
+            }
+        }
+    },
+    {
+        type: 'function',
+        function: {
             name: 'locateNpcs',
             description: 'Locate NPCs by full name or alias. Returns all matching NPCs with full name, location, and region.',
             parameters: {
@@ -793,6 +899,7 @@ const createChatToolRuntime = ({
     alterThingByPrompt = null,
     alterNpcByEvent = null,
     alterLocationByEvent = null,
+    resolveAttack = null,
     LLMClient,
     Player,
     Thing,
@@ -3187,6 +3294,210 @@ const createChatToolRuntime = ({
         };
     };
 
+    const normalizeRequiredObject = (value, { functionName, fieldName } = {}) => {
+        if (!value || typeof value !== 'object' || Array.isArray(value)) {
+            throw new ToolVisibleError(
+                `${functionName} requires "${fieldName}" to be an object.`,
+                { code: 'invalid_arguments' }
+            );
+        }
+        return value;
+    };
+
+    const normalizeAttackModifierArray = (value, {
+        functionName,
+        fieldName,
+        invertAmount = false
+    } = {}) => {
+        const entries = (() => {
+            if (value === null || value === undefined) {
+                return [];
+            }
+            if (Array.isArray(value)) {
+                return value;
+            }
+            if (typeof value === 'object') {
+                return [value];
+            }
+            throw new ToolVisibleError(
+                `${functionName} "${fieldName}" must be an array of modifier objects.`,
+                { code: 'invalid_arguments' }
+            );
+        })();
+
+        return entries.map((entry, index) => {
+            if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+                throw new ToolVisibleError(
+                    `${functionName} "${fieldName}[${index}]" must be an object.`,
+                    { code: 'invalid_arguments' }
+                );
+            }
+            const amount = normalizeOptionalInteger(entry.amount, {
+                functionName,
+                fieldName: `${fieldName}[${index}].amount`
+            });
+            if (amount === null) {
+                throw new ToolVisibleError(
+                    `${functionName} "${fieldName}[${index}].amount" is required.`,
+                    { code: 'invalid_arguments' }
+                );
+            }
+            if (amount < -10 || amount > 10) {
+                throw new ToolVisibleError(
+                    `${functionName} "${fieldName}[${index}].amount" must be between -10 and 10.`,
+                    { code: 'invalid_arguments' }
+                );
+            }
+            const reason = normalizeOptionalString(entry.reason);
+            return {
+                amount: invertAmount ? -amount : amount,
+                reason: reason && reason.toLowerCase() !== 'n/a' ? reason : null
+            };
+        });
+    };
+
+    const executeResolveAttackTool = async ({
+        attacker,
+        defender,
+        attackerInfo,
+        defenderInfo,
+        ability,
+        weapon,
+        circumstanceModifiers,
+        damageEffectiveness
+    } = {}) => {
+        const functionName = 'resolveAttack';
+        if (typeof resolveAttack !== 'function') {
+            throw new ToolVisibleError(
+                'resolveAttack is unavailable because the attack resolver was not configured.',
+                { code: 'missing_dependency' }
+            );
+        }
+
+        const attackerName = normalizeRequiredString(attacker, { functionName, fieldName: 'attacker' });
+        const defenderName = normalizeRequiredString(defender, { functionName, fieldName: 'defender' });
+        const attackerInfoObject = normalizeRequiredObject(attackerInfo, { functionName, fieldName: 'attackerInfo' });
+        const defenderInfoObject = normalizeRequiredObject(defenderInfo, { functionName, fieldName: 'defenderInfo' });
+        const circumstanceModifierObject = normalizeRequiredObject(circumstanceModifiers, {
+            functionName,
+            fieldName: 'circumstanceModifiers'
+        });
+
+        const attackSkill = normalizeRequiredString(attackerInfoObject.attackSkill, {
+            functionName,
+            fieldName: 'attackerInfo.attackSkill'
+        });
+        const damageAttribute = normalizeRequiredString(attackerInfoObject.damageAttribute, {
+            functionName,
+            fieldName: 'attackerInfo.damageAttribute'
+        });
+        const evadeSkill = normalizeRequiredString(defenderInfoObject.evadeSkill, {
+            functionName,
+            fieldName: 'defenderInfo.evadeSkill'
+        });
+        const deflectSkill = normalizeRequiredString(defenderInfoObject.deflectSkill, {
+            functionName,
+            fieldName: 'defenderInfo.deflectSkill'
+        });
+        const abilityName = normalizeRequiredString(ability, { functionName, fieldName: 'ability' });
+        const weaponName = normalizeRequiredString(weapon, { functionName, fieldName: 'weapon' });
+        const damageEffectivenessValue = normalizeOptionalInteger(damageEffectiveness, {
+            functionName,
+            fieldName: 'damageEffectiveness'
+        });
+        if (damageEffectivenessValue === null) {
+            throw new ToolVisibleError(
+                'resolveAttack "damageEffectiveness" is required.',
+                { code: 'invalid_arguments' }
+            );
+        }
+        if (damageEffectivenessValue < 1 || damageEffectivenessValue > 5) {
+            throw new ToolVisibleError(
+                'resolveAttack "damageEffectiveness" must be an integer from 1 to 5.',
+                { code: 'invalid_arguments' }
+            );
+        }
+
+        const attackerModifiers = normalizeAttackModifierArray(
+            circumstanceModifierObject.attackerCircumstanceModifier
+                ?? circumstanceModifierObject.attackerCircumstanceModifiers,
+            {
+                functionName,
+                fieldName: 'circumstanceModifiers.attackerCircumstanceModifier'
+            }
+        );
+        const defenderModifiers = normalizeAttackModifierArray(
+            circumstanceModifierObject.defenderCircumstanceModifier
+                ?? circumstanceModifierObject.defenderCircumstanceModifiers,
+            {
+                functionName,
+                fieldName: 'circumstanceModifiers.defenderCircumstanceModifier',
+                invertAmount: true
+            }
+        );
+
+        const attackEntry = {
+            attacker: attackerName,
+            defender: defenderName,
+            attackerInfo: {
+                attackSkill,
+                damageAttribute
+            },
+            defenderInfo: {
+                evadeSkill,
+                deflectSkill
+            },
+            ability: abilityName,
+            weapon: weaponName,
+            damageEffectiveness: damageEffectivenessValue,
+            circumstanceModifiers: attackerModifiers.concat(defenderModifiers)
+        };
+
+        const resolved = await resolveAttack({ attackEntry });
+        if (!resolved || typeof resolved !== 'object') {
+            throw new ToolVisibleError(
+                'resolveAttack completed without returning an attack result.',
+                { code: 'attack_resolution_failed' }
+            );
+        }
+
+        if (!resolved.hit) {
+            return {
+                content: 'miss',
+                metadata: {
+                    result: 'miss',
+                    hit: false,
+                    attacker: attackerName,
+                    defender: defenderName
+                }
+            };
+        }
+
+        const rawDamage = resolved.damage
+            ?? resolved.damageDone
+            ?? resolved.damageAmount
+            ?? resolved.attackOutcome?.damage?.total
+            ?? resolved.outcome?.damage?.total;
+        const damage = Number(rawDamage);
+        if (!Number.isFinite(damage)) {
+            throw new ToolVisibleError(
+                'resolveAttack hit, but no finite damage amount was returned.',
+                { code: 'attack_resolution_failed' }
+            );
+        }
+
+        return {
+            content: String(damage),
+            metadata: {
+                result: 'damage',
+                hit: true,
+                damage,
+                attacker: attackerName,
+                defender: defenderName
+            }
+        };
+    };
+
     const findThingContainerLocation = (thingId) => {
         const normalizedThingId = toTrimmedString(thingId);
         if (!normalizedThingId) {
@@ -3628,6 +3939,7 @@ const createChatToolRuntime = ({
         'alterThing',
         'alterNpc',
         'alterLocation',
+        'resolveAttack',
         'locateNpcs',
         'locateThings'
     ]);
@@ -3665,6 +3977,8 @@ const createChatToolRuntime = ({
                 toolResult = executeAlterNpcTool(argumentsObject);
             } else if (toolCall.functionName === 'alterLocation') {
                 toolResult = executeAlterLocationTool(argumentsObject);
+            } else if (toolCall.functionName === 'resolveAttack') {
+                toolResult = executeResolveAttackTool(argumentsObject);
             } else if (toolCall.functionName === 'locateNpcs') {
                 toolResult = executeLocateNpcsTool(argumentsObject);
             } else if (toolCall.functionName === 'locateThings') {

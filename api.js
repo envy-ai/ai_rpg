@@ -33,6 +33,7 @@ const INFORMATION_GATHERING_CHAT_TOOL_NAMES = new Set([
     'moreInfo',
     'getHistory',
     'listLocationEntities',
+    'resolveAttack',
     'locateNpcs',
     'locateThings'
 ]);
@@ -1127,6 +1128,7 @@ module.exports = function registerApiRoutes(scope) {
             alterThingByPrompt: typeof alterThingByPrompt === 'function' ? alterThingByPrompt : null,
             alterNpcByEvent,
             alterLocationByEvent,
+            resolveAttack: resolveAttackToolCall,
             LLMClient,
             Player,
             Thing,
@@ -12505,6 +12507,97 @@ module.exports = function registerApiRoutes(scope) {
             };
         }
 
+        function resolveAttackToolCall({ attackEntry } = {}) {
+            if (!attackEntry || typeof attackEntry !== 'object') {
+                throw new Error('resolveAttack requires an attackEntry object.');
+            }
+
+            const resolveActor = (rawName, label) => {
+                const name = sanitizeNamedValue(rawName);
+                if (!name) {
+                    throw new Error(`resolveAttack requires a valid ${label} name.`);
+                }
+
+                const normalized = name.toLowerCase();
+                if (normalized === 'player' || normalized === 'the player' || normalized === 'you') {
+                    if (!currentPlayer) {
+                        throw new Error(`resolveAttack could not resolve ${label} "player" because no current player is active.`);
+                    }
+                    return currentPlayer;
+                }
+
+                if (currentPlayer && typeof currentPlayer.name === 'string'
+                    && currentPlayer.name.trim().toLowerCase() === normalized) {
+                    return currentPlayer;
+                }
+
+                const direct = (typeof findActorByName === 'function' ? findActorByName(name) : null)
+                    || (typeof Player.getByName === 'function' ? Player.getByName(name) : null)
+                    || null;
+                if (direct) {
+                    return direct;
+                }
+
+                if (typeof Player.getAll === 'function') {
+                    const allActors = Player.getAll();
+                    if (Array.isArray(allActors)) {
+                        const exact = allActors.find(actor => (
+                            actor
+                            && typeof actor.name === 'string'
+                            && actor.name.trim().toLowerCase() === normalized
+                        ));
+                        if (exact) {
+                            return exact;
+                        }
+                    }
+                }
+
+                throw new Error(`resolveAttack could not resolve ${label} "${name}".`);
+            };
+
+            const attacker = resolveActor(attackEntry.attacker, 'attacker');
+            const defender = resolveActor(attackEntry.defender, 'defender');
+            if (defender?.id) {
+                attackEntry.targetActorId = defender.id;
+            }
+
+            const attackerLocationId = attacker.currentLocation || attacker.locationId || currentPlayer?.currentLocation || null;
+            const attackerLocation = attackerLocationId ? Location.get(attackerLocationId) : null;
+            const attackCheckInfo = {
+                structured: {
+                    attacks: [attackEntry]
+                }
+            };
+
+            const attackContext = buildAttackContextForActor({
+                attackCheckInfo,
+                actor: attacker,
+                location: attackerLocation || null
+            });
+
+            if (!attackContext?.isAttack) {
+                throw new Error(`resolveAttack could not match attacker "${attackEntry.attacker}" to the resolved actor.`);
+            }
+
+            const attackOutcome = attackContext.outcome || null;
+            if (!attackOutcome) {
+                throw new Error('resolveAttack did not produce an attack outcome.');
+            }
+
+            const hit = Boolean(attackOutcome.hit);
+            const damage = hit ? Number(attackOutcome.damage?.total) : null;
+            if (hit && !Number.isFinite(damage)) {
+                throw new Error('resolveAttack produced a hit without a finite damage total.');
+            }
+
+            return {
+                hit,
+                damage,
+                attackContext,
+                attackOutcome
+            };
+        }
+
         function applyAttackDamageToTarget({ attackContext, attackOutcome, attacker }) {
             if (!attackContext?.isAttack || !attackOutcome?.hit) {
                 return { application: null, targetActor: null, appliedStatusEffects: [] };
@@ -16763,11 +16856,7 @@ module.exports = function registerApiRoutes(scope) {
                     }
 
                     if (attackCheckInfo) {
-                        console.log("Attached attack check info");
-                        console.log(attackCheckInfo.summary);
                         responseData.attackCheck = attackCheckInfo;
-                    } else {
-                        console.log("No attack check info to attach")
                     }
 
                     if (stream.isEnabled && !playerActionStreamSent) {

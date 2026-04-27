@@ -5,6 +5,8 @@ Reference for the non-dummy event types recognized around `Events.js`. This excl
 
 Most rows come from the numbered grouped event checks in `EVENT_PROMPT_ORDER`. A few rows are pipeline-only: they are parsed and handled by `Events.js`, but are injected by another prompt or helper rather than by an active numbered event-check question.
 
+For the planned single-prompt XML event pipeline, see [EventsXmlEventSchema.md](EventsXmlEventSchema.md).
+
 ## Event Type Table
 
 | Event type | Primary source | Parsed payload | Meaning and application |

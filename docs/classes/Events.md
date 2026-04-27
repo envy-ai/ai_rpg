@@ -3,7 +3,7 @@
 ## Purpose
 Runs LLM-based event checks on narrative text, parses structured outcomes, and applies those outcomes to the game world (locations, items, NPCs, quests, and status effects). Tracks discovered/altered entities to avoid duplicates.
 
-For a full reference of non-dummy event type keys, payloads, and application behavior, see [EventsEventTypes.md](EventsEventTypes.md).
+For a full reference of non-dummy event type keys, payloads, and application behavior, see [EventsEventTypes.md](EventsEventTypes.md). For the planned single-prompt XML event format, see [EventsXmlEventSchema.md](EventsXmlEventSchema.md).
 
 ## Key State (Static)
 - Dependency container: `_deps` (promptEnv, parseXMLTemplate, prepareBasePromptContext, Location, players, things, findRegionByLocationId, config accessors, etc).

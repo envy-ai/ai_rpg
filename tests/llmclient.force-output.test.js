@@ -50,6 +50,92 @@ test('LLMClient.chatCompletion uses forceOutput string without network call', as
     }
 });
 
+test('LLMClient.chatCompletion logs AI override profile summary without dumping override details', { concurrency: false }, async () => {
+    const originalAxiosPost = axios.post;
+    const originalConfig = Globals.config;
+    const originalStdoutWrite = process.stdout.write;
+    let stdoutOutput = '';
+    let capturedPayload = null;
+
+    process.stdout.write = function writeCapturedStdout(chunk, encoding, callback) {
+        stdoutOutput += Buffer.isBuffer(chunk) ? chunk.toString('utf8') : String(chunk);
+        if (typeof encoding === 'function') {
+            encoding();
+        } else if (typeof callback === 'function') {
+            callback();
+        }
+        return true;
+    };
+    axios.post = async (_endpoint, payload) => {
+        capturedPayload = payload;
+        return {
+            status: 200,
+            data: {
+                choices: [
+                    {
+                        message: {
+                            content: '<final>Override response</final>'
+                        },
+                        finish_reason: 'stop'
+                    }
+                ]
+            }
+        };
+    };
+    Globals.config = {
+        ai: {
+            endpoint: 'http://example.test/v1',
+            apiKey: 'test-key',
+            model: 'base-model',
+            stream: false,
+            supress_seed: true,
+            max_concurrent_requests: 1
+        },
+        ai_model_overrides: {
+            prose: {
+                prompts: ['player_action'],
+                model: 'override-model',
+                temperature: 0.4,
+                custom_args: {
+                    provider_options: {
+                        proseMode: true
+                    }
+                },
+                headers: {
+                    'X-Test-Override': 'yes'
+                }
+            }
+        }
+    };
+
+    try {
+        const result = await LLMClient.chatCompletion({
+            messages: [{ role: 'user', content: 'Test override logging.' }],
+            metadataLabel: 'player_action',
+            validateXML: false,
+            stream: false,
+            retryAttempts: 0
+        });
+
+        assert.equal(result, '<final>Override response</final>');
+        assert.equal(capturedPayload?.model, 'override-model');
+        assert.equal(capturedPayload?.temperature, 0.4);
+
+        const overrideSummaryLine = stdoutOutput
+            .split(/\r?\n/)
+            .find(line => line.includes('Applying AI model overrides for player_action'));
+        assert.equal(
+            overrideSummaryLine,
+            'Applying AI model overrides for player_action (profiles: prose)'
+        );
+        assert.equal(stdoutOutput.includes('Applying AI config override for player_action'), false);
+    } finally {
+        process.stdout.write = originalStdoutWrite;
+        axios.post = originalAxiosPost;
+        Globals.config = originalConfig;
+    }
+});
+
 test('LLMClient.chatCompletion resolves forced outputs from fixture by metadataLabel', async () => {
     const originalAxiosPost = axios.post;
     const originalConfig = Globals.config;

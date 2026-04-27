@@ -2715,7 +2715,7 @@ class LLMClient {
                 let overrideHeaders = undefined;
                 if (overrides) {
                     const profileSummary = overrideProfiles.length ? ` (profiles: ${overrideProfiles.join(', ')})` : '';
-                    log(`Applying AI model overrides for ${metadataLabel}${profileSummary}:`, overrides);
+                    log(`Applying AI model overrides for ${metadataLabel}${profileSummary}`);
                     for (const [key, value] of Object.entries(overrides)) {
                         if (key === 'custom_args') {
                             overrideCustomArgs = value;
@@ -2725,7 +2725,6 @@ class LLMClient {
                             overrideHeaders = value;
                             continue;
                         }
-                        log(`Applying AI config override for ${metadataLabel}: setting ${key} to ${value}`);
                         aiConfig[key] = value;
                     }
                 }
