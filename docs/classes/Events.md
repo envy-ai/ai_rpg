@@ -3,6 +3,8 @@
 ## Purpose
 Runs LLM-based event checks on narrative text, parses structured outcomes, and applies those outcomes to the game world (locations, items, NPCs, quests, and status effects). Tracks discovered/altered entities to avoid duplicates.
 
+For a full reference of non-dummy event type keys, payloads, and application behavior, see [EventsEventTypes.md](EventsEventTypes.md).
+
 ## Key State (Static)
 - Dependency container: `_deps` (promptEnv, parseXMLTemplate, prepareBasePromptContext, Location, players, things, findRegionByLocationId, config accessors, etc).
 - Parsers/aggregators/handlers: `_parsers`, `_aggregators`, `_handlers`.
@@ -51,6 +53,7 @@ Runs LLM-based event checks on narrative text, parses structured outcomes, and a
 - `LLMClient.logPrompt` is always used for event-check logging; failures should surface loudly.
 - Many helpers are defensive and throw on missing dependencies to avoid silent corruption.
 - Item alteration updates `Thing.shortDescription` when provided by the alteration prompt, otherwise preserving the existing value.
+- Item alteration treats optional list/effect fields in the returned item XML as authoritative. Missing or empty attribute bonuses and `causeStatusEffectOnTarget`/`causeStatusEffectOnEquipper` tags remove the corresponding previous data; populated tags replace it. Populated target/equipper status effects are synchronously expanded through status-effect generation before the altered item is persisted or logged, so normal `alter_item` events and chat-tool alterations get the same mechanical stats.
 - `item_inflict` events ignore the prompt-provided status effect text and always apply the item's configured target inflict effect (`causeStatusEffectOnTarget`) to the target when available.
 - `item_ingest` events now parse as `[item] → [target]` and infer the applied status effect from the ingested item's configured target effect instead of requiring the prompt to name the effect.
 - Quantity-aware item events now require explicit positive-integer quantities for `consume_item`, `transfer_item`, `pick_up_item`, `drop_item`, `harvest_gather`, and `item_appear`; `alter_item` requires a positive integer or `all`; legacy quantity-less forms are rejected during parsing.
@@ -58,7 +61,7 @@ Runs LLM-based event checks on narrative text, parses structured outcomes, and a
 - If the same turn reports both `item_ingest` and `item_inflict` for the same item-target pair, the `item_inflict` entry is ignored so the effect is only applied once.
 - When `item_inflict` or `item_ingest` applies a status, Events emits a synthesized `status_effect_change` entry so status summaries are delivered to the client even if no separate NPC-group status entry is present.
 - `status_effect_change` de-duplicates gained effects against same-turn item-triggered status applications for the same entity; duplicate gain entries are skipped when names match exactly or when the status-change name starts with the already-applied item-triggered effect name.
-- `death_incapacitation` skips `dead` outcomes for NPCs already marked dead, preventing duplicate death application.
+- `death_incapacitation` skips `dead` outcomes for NPCs already marked dead, preventing duplicate death application. New dead outcomes zero current health with a finite delta before setting `isDead`, then apply the `Deceased` status effect; incapacitated outcomes still zero health and apply `Incapacitated` without setting `isDead`.
 - `alter_npc` requests now require an `<npc>...</npc>` block from the model and always log prompt/response payloads through `LLMClient.logPrompt` before parse/apply.
 - `alter_location` can be invoked from event checks, the chat `alterLocation` tool, or API helpers such as current-location modification; when a caller supplies `context.location`, the handler matches that location instead of only the global current location.
 - `alter_location` accepts `context.preserveBaseLevel=true` or an entry-level `preserveBaseLevel=true` for flows that may rewrite the location name, short description, and description while keeping the existing `baseLevel` unchanged. The location-modification UI endpoint uses this option so player-made scenery/environment changes do not silently retune encounter difficulty.

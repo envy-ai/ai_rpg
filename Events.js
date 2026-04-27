@@ -7561,7 +7561,10 @@ class Events {
                         if (actor.isNPC && actor.isDead) {
                             continue;
                         }
-                        actor.modifyHealth(-Infinity, "Killed");
+                        const currentHealth = Number(actor.health);
+                        if (Number.isFinite(currentHealth) && currentHealth > 0) {
+                            actor.modifyHealth(-currentHealth, "Killed");
+                        }
                         actor.isDead = true;
                         if (typeof actor.addStatusEffect === "function") {
                             actor.addStatusEffect(makeStatusEffect("Deceased", null));

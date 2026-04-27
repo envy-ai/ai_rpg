@@ -255,6 +255,8 @@ Trigger portrait generation for a player.
 Request:
 - Path: `id`
 
+Duplicate requests while the portrait prompt or image job is already in progress join the existing work instead of starting another render.
+
 Response:
 - 200: `{ success: true, player: { id, name, imageId }, imageGeneration, message }`
 - 202: `{ success: false, player: { ... }, imageGeneration, message: 'Portrait job already in progress' }`

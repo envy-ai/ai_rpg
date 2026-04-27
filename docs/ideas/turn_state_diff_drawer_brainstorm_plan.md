@@ -216,7 +216,7 @@ Optional future enrichment:
     severity: "important",
     sourceType: "move_location",
     entityRefs: [
-        { type: "location", id: "old-chapel-id", label: "Old Chapel" }
+        { type: "location", id: "old-chapel-id", name: "Old Chapel" }
     ]
 }
 ```
@@ -434,7 +434,7 @@ Files:
 
 Steps:
 
-1. Add `entityRefs` where the server knows stable ids.
+1. Add or improve `entityRefs` where the server knows stable ids.
    - NPC changes should include NPC id/name when available.
    - Thing changes should include thing id/name when available.
    - Location/travel changes should include location id/name when available.
@@ -443,11 +443,19 @@ Steps:
 
 2. Render row labels as entity chips when `entityRefs` exist.
 
-3. Clicking an entity chip should open the existing modal/tooltip/focus behavior for that type.
+3. Id-backed entity chips should be keyboard-focusable buttons that emit an exact selection event for the host UI to handle.
 
-4. Ambiguous or name-only references should stay plain text in v1 of this phase.
+4. Ambiguous or name-only references should stay visible but non-clickable in v1 of this phase.
 
-Verification should include at least one browser test for NPC and item row links.
+5. Route exact id-backed selection events into existing NPC, item/container, location, quest, and faction modal/focus flows where a reliable target path exists.
+
+Verification should include a drawer test for chip rendering and event details, plus at least one browser test once modal/focus routing is wired.
+
+Current implementation note:
+- `public/js/turn-state-diff-drawer.js` sorts rows by `severity` within their categories.
+- Rows keep `sourceType` in `data-source-type`.
+- `entityRefs` render as compact chips. Refs with ids render as buttons that emit `airpg:turn-diff-entity-selected` with exact row/ref detail; name-only refs render as non-clickable chips.
+- `views/index.njk` handles exact id-backed selections by opening character views, opening location context menus, focusing/highlighting visible thing cards, opening containers when possible, or switching to quest/faction panels.
 
 ## Detailed UI behavior
 

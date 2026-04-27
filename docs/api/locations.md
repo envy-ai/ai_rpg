@@ -153,9 +153,11 @@ Responses:
     - Existing location: `{ type: 'location', destinationId, name, isStub, existing: true, isVehicle, vehicleType }`
     - New location stub: `{ type: 'location', destinationId, name, isStub, isVehicle, vehicleType }`
 - 400/404/500: `{ success: false, error }`
+  - New user-named location/region stubs can return `400` with `code: "invalid_world_entity_name"` and `nameRejection` when the requested name conflicts with an existing location, existing region, pending region stub, banned name fragment, or slop word.
 
 Notes:
 - When neither `travelTime` nor `travelTimeMinutes` is supplied, the exit defaults to `1` minute.
+- Name validation happens before any new location/region stub is created, so rejected modal submissions do not mutate the world or add an exit.
 
 ## DELETE /api/locations/:id/exits/:exitId
 

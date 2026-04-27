@@ -44,6 +44,7 @@ Notes:
   - Harvest/salvage lines use `from <source>`.
   - Craft/process lines use `using <inputs>`.
 - Prose-mode craft/process/salvage/harvest result summaries now append the same `⏳ <natural duration> passed.` line used by normal turn event-summary bundles, sourced from the action's applied `timeTakenMinutes`.
+- Craft/process/salvage/harvest requests attempt the standard autosave before the action starts, then attempt another autosave after a successful action has applied inventory/scenery changes, time advancement, harvest history, vehicle arrivals, and NPC sighting updates.
 - Crafting/harvest prompts omit prior craft/harvest/process entries from base-context history to reduce duplicate actions.
 - Harvest plausibility prompts now receive `lastHarvestTime` as human-readable `... ago` text plus `harvestTarget.pastHarvests` from the source node's persisted harvest history.
 - Craft success-degree rerolls now require the model response to include a full outer `<response>...</response>` wrapper via `requiredRegex` before the response is accepted by `LLMClient`. When parsing the rerolled result, omitted direct `<result>` fields are filled from the standard-success outcome sent to the success-degree prompt. Explicit empty wrappers are preserved, and returned `<item>` nodes keep their model-authored fields while missing nested item fields are backfilled from the base item.

@@ -17,6 +17,10 @@ const Quest = require('./Quest.js');
 const Faction = require('./Faction.js');
 const FormulaEvaluator = require('./public/js/formula-evaluator.js');
 const { resolvePointPoolFormulas } = require('./utils/point-pool-formulas.js');
+const {
+    resolveCriticalThresholdFormulas,
+    validateCriticalThresholdValues
+} = require('./utils/critical-threshold-formulas.js');
 const { CHAT_TOOL_DEFINITIONS, createChatToolRuntime } = require('./chat_tool_calls.js');
 const {
     countSceneSummaryIndexEntries
@@ -32,6 +36,343 @@ const INFORMATION_GATHERING_CHAT_TOOL_NAMES = new Set([
     'locateNpcs',
     'locateThings'
 ]);
+
+let cachedCriticalThresholdFormulaRuntime = null;
+
+function normalizeWorldEntityNameForConflict(value) {
+    if (typeof value !== 'string') {
+        return '';
+    }
+    const trimmed = value.trim().replace(/\s+/g, ' ');
+    return trimmed ? trimmed.toLowerCase() : '';
+}
+
+function getWorldEntityDisplayName(entity) {
+    if (!entity || typeof entity !== 'object') {
+        return '';
+    }
+    return typeof entity.name === 'string' ? entity.name.trim() : '';
+}
+
+function getWorldEntityId(entity) {
+    if (!entity || typeof entity !== 'object') {
+        return '';
+    }
+    return typeof entity.id === 'string' ? entity.id.trim() : '';
+}
+
+function getCollectionValues(collection) {
+    if (!collection) {
+        return [];
+    }
+    if (collection instanceof Map) {
+        return Array.from(collection.values());
+    }
+    if (Array.isArray(collection)) {
+        return collection;
+    }
+    if (typeof collection.values === 'function') {
+        return Array.from(collection.values());
+    }
+    if (typeof collection === 'object') {
+        return Object.values(collection);
+    }
+    return [];
+}
+
+function getCollectionEntry(collection, key) {
+    if (!collection || !key) {
+        return null;
+    }
+    if (collection instanceof Map || typeof collection.get === 'function') {
+        return collection.get(key) || null;
+    }
+    if (typeof collection === 'object') {
+        return collection[key] || null;
+    }
+    return null;
+}
+
+function buildIdSuffix(id) {
+    return id ? ` (id: ${id})` : '';
+}
+
+function resolveLocationConflictRegionName(location, {
+    regions = null,
+    pendingRegionStubs = null,
+    findRegionByLocationId = null
+} = {}) {
+    if (!location || typeof location !== 'object') {
+        return '';
+    }
+
+    const regionId = typeof location.regionId === 'string' && location.regionId.trim()
+        ? location.regionId.trim()
+        : (typeof location.stubMetadata?.regionId === 'string' && location.stubMetadata.regionId.trim()
+            ? location.stubMetadata.regionId.trim()
+            : (typeof location.stubMetadata?.targetRegionId === 'string' && location.stubMetadata.targetRegionId.trim()
+                ? location.stubMetadata.targetRegionId.trim()
+                : ''));
+
+    const region = regionId ? getCollectionEntry(regions, regionId) : null;
+    if (region && typeof region.name === 'string' && region.name.trim()) {
+        return region.name.trim();
+    }
+
+    const pendingRegion = regionId ? getCollectionEntry(pendingRegionStubs, regionId) : null;
+    if (pendingRegion && typeof pendingRegion.name === 'string' && pendingRegion.name.trim()) {
+        return pendingRegion.name.trim();
+    }
+
+    if (typeof findRegionByLocationId === 'function' && typeof location.id === 'string' && location.id.trim()) {
+        const resolvedRegion = findRegionByLocationId(location.id.trim()) || null;
+        if (resolvedRegion && typeof resolvedRegion.name === 'string' && resolvedRegion.name.trim()) {
+            return resolvedRegion.name.trim();
+        }
+    }
+
+    if (typeof location.regionName === 'string' && location.regionName.trim()) {
+        return location.regionName.trim();
+    }
+    if (typeof location.stubMetadata?.regionName === 'string' && location.stubMetadata.regionName.trim()) {
+        return location.stubMetadata.regionName.trim();
+    }
+
+    return '';
+}
+
+function findNewExitLocationNameConflict(name, {
+    gameLocations = null,
+    regions = null,
+    pendingRegionStubs = null,
+    findRegionByLocationId = null
+} = {}) {
+    const normalizedName = normalizeWorldEntityNameForConflict(name);
+    if (!normalizedName) {
+        return null;
+    }
+
+    for (const location of getCollectionValues(gameLocations)) {
+        if (!location || typeof location !== 'object') {
+            continue;
+        }
+        const candidateNames = [
+            location.name,
+            location.stubMetadata?.targetRegionName,
+            location.stubMetadata?.originalName
+        ];
+        if (!candidateNames.some(candidate => normalizeWorldEntityNameForConflict(candidate) === normalizedName)) {
+            continue;
+        }
+
+        const displayName = getWorldEntityDisplayName(location) || name.trim();
+        const regionName = resolveLocationConflictRegionName(location, {
+            regions,
+            pendingRegionStubs,
+            findRegionByLocationId
+        });
+        const regionPhrase = regionName ? ` in region "${regionName}"` : '';
+        const id = getWorldEntityId(location);
+        return {
+            reason: 'duplicate_location',
+            conflictType: 'location',
+            conflictName: displayName,
+            conflictId: id || null,
+            messagePart: `existing location "${displayName}"${regionPhrase}${buildIdSuffix(id)}`
+        };
+    }
+
+    return null;
+}
+
+function findNewExitRegionNameConflict(name, {
+    regions = null,
+    pendingRegionStubs = null
+} = {}) {
+    const normalizedName = normalizeWorldEntityNameForConflict(name);
+    if (!normalizedName) {
+        return null;
+    }
+
+    for (const region of getCollectionValues(regions)) {
+        if (!region || typeof region !== 'object') {
+            continue;
+        }
+        if (normalizeWorldEntityNameForConflict(region.name) !== normalizedName) {
+            continue;
+        }
+
+        const displayName = getWorldEntityDisplayName(region) || name.trim();
+        const id = getWorldEntityId(region);
+        return {
+            reason: 'duplicate_region',
+            conflictType: 'region',
+            conflictName: displayName,
+            conflictId: id || null,
+            messagePart: `existing region "${displayName}"${buildIdSuffix(id)}`
+        };
+    }
+
+    for (const pendingRegion of getCollectionValues(pendingRegionStubs)) {
+        if (!pendingRegion || typeof pendingRegion !== 'object') {
+            continue;
+        }
+        const candidateNames = [
+            pendingRegion.name,
+            pendingRegion.originalName,
+            pendingRegion.targetRegionName
+        ];
+        if (!candidateNames.some(candidate => normalizeWorldEntityNameForConflict(candidate) === normalizedName)) {
+            continue;
+        }
+
+        const displayName = typeof pendingRegion.name === 'string' && pendingRegion.name.trim()
+            ? pendingRegion.name.trim()
+            : (typeof pendingRegion.originalName === 'string' && pendingRegion.originalName.trim()
+                ? pendingRegion.originalName.trim()
+                : name.trim());
+        const id = getWorldEntityId(pendingRegion);
+        return {
+            reason: 'duplicate_pending_region',
+            conflictType: 'pending_region',
+            conflictName: displayName,
+            conflictId: id || null,
+            messagePart: `pending region "${displayName}"${buildIdSuffix(id)}`
+        };
+    }
+
+    return null;
+}
+
+function findNewExitNameConflict({ type, name, gameLocations, regions, pendingRegionStubs, findRegionByLocationId } = {}) {
+    const normalizedType = type === 'region' ? 'region' : 'location';
+    const locationConflict = () => findNewExitLocationNameConflict(name, {
+        gameLocations,
+        regions,
+        pendingRegionStubs,
+        findRegionByLocationId
+    });
+    const regionConflict = () => findNewExitRegionNameConflict(name, {
+        regions,
+        pendingRegionStubs
+    });
+
+    return normalizedType === 'region'
+        ? (regionConflict() || locationConflict())
+        : (locationConflict() || regionConflict());
+}
+
+function normalizeNameValidationTermList(values) {
+    if (values instanceof Set) {
+        return Array.from(values);
+    }
+    if (Array.isArray(values)) {
+        return values;
+    }
+    throw new Error('World entity name validation requires a loaded banned-name or slop-word list.');
+}
+
+function findBlockedNewExitNameTerm(name, { bannedLocationNames, slopWords } = {}) {
+    const normalizedName = normalizeWorldEntityNameForConflict(name);
+    if (!normalizedName) {
+        return null;
+    }
+
+    const bannedTerms = normalizeNameValidationTermList(bannedLocationNames)
+        .map(term => (typeof term === 'string' ? term.trim().toLowerCase() : ''))
+        .filter(Boolean)
+        .sort((a, b) => b.length - a.length);
+    for (const term of bannedTerms) {
+        if (normalizedName.includes(term)) {
+            return {
+                reason: 'banned_name',
+                term
+            };
+        }
+    }
+
+    const tokens = normalizedName
+        .split(/[^a-z0-9']+/)
+        .filter(Boolean);
+    if (!tokens.length) {
+        return null;
+    }
+    const tokenSet = new Set(tokens);
+    const slopTerms = normalizeNameValidationTermList(slopWords)
+        .map(term => (typeof term === 'string' ? term.trim().toLowerCase() : ''))
+        .filter(Boolean);
+    for (const term of slopTerms) {
+        if (tokenSet.has(term)) {
+            return {
+                reason: 'slop_word',
+                term
+            };
+        }
+    }
+
+    return null;
+}
+
+function validateNewExitWorldEntityName({
+    type,
+    name,
+    gameLocations,
+    regions,
+    pendingRegionStubs,
+    bannedLocationNames,
+    slopWords,
+    findRegionByLocationId = null
+} = {}) {
+    const normalizedType = type === 'region' ? 'region' : (type === 'location' ? 'location' : '');
+    if (!normalizedType) {
+        throw new Error('World entity name validation requires type "location" or "region".');
+    }
+
+    const trimmedName = typeof name === 'string' ? name.trim().replace(/\s+/g, ' ') : '';
+    if (!trimmedName) {
+        return null;
+    }
+
+    const displayType = normalizedType === 'region' ? 'Region' : 'Location';
+    const conflict = findNewExitNameConflict({
+        type: normalizedType,
+        name: trimmedName,
+        gameLocations,
+        regions,
+        pendingRegionStubs,
+        findRegionByLocationId
+    });
+    if (conflict) {
+        return {
+            reason: conflict.reason,
+            entityType: normalizedType,
+            name: trimmedName,
+            conflictType: conflict.conflictType,
+            conflictName: conflict.conflictName,
+            conflictId: conflict.conflictId,
+            message: `${displayType} name "${trimmedName}" conflicts with ${conflict.messagePart}. Choose a different name.`
+        };
+    }
+
+    const blockedTerm = findBlockedNewExitNameTerm(trimmedName, {
+        bannedLocationNames,
+        slopWords
+    });
+    if (blockedTerm) {
+        const termLabel = blockedTerm.reason === 'banned_name'
+            ? `banned name fragment "${blockedTerm.term}"`
+            : `slop word "${blockedTerm.term}"`;
+        return {
+            reason: blockedTerm.reason,
+            entityType: normalizedType,
+            name: trimmedName,
+            blockedTerm: blockedTerm.term,
+            message: `${displayType} name "${trimmedName}" is not allowed because it contains ${termLabel}. Choose a different name.`
+        };
+    }
+
+    return null;
+}
 
 let eventsProcessedThisTurn = false;
 function markEventsProcessed() {
@@ -5561,7 +5902,53 @@ module.exports = function registerApiRoutes(scope) {
             }
         }
 
-        function mapOutcomeDegreeToCraftLevel(degree, d20Roll = null, difficulty = null) {
+        function getCriticalThresholdFormulaRuntime() {
+            const formulas = resolveCriticalThresholdFormulas(Globals.config || {});
+            const cacheKey = JSON.stringify(formulas);
+            if (!cachedCriticalThresholdFormulaRuntime || cachedCriticalThresholdFormulaRuntime.cacheKey !== cacheKey) {
+                if (!FormulaEvaluator || typeof FormulaEvaluator.compile !== 'function') {
+                    throw new Error('FormulaEvaluator.compile is required to evaluate critical threshold formulas.');
+                }
+                const evaluators = {};
+                for (const [mode, modeFormulas] of Object.entries(formulas)) {
+                    evaluators[mode] = {};
+                    for (const [direction, formula] of Object.entries(modeFormulas)) {
+                        evaluators[mode][direction] = FormulaEvaluator.compile(formula);
+                    }
+                }
+                cachedCriticalThresholdFormulaRuntime = {
+                    cacheKey,
+                    formulas,
+                    evaluators
+                };
+            }
+            return cachedCriticalThresholdFormulaRuntime;
+        }
+
+        function evaluateCriticalThresholds(mode, { level = null } = {}) {
+            const normalizedMode = typeof mode === 'string' && mode.trim() ? mode.trim().toLowerCase() : '';
+            const locationLevel = Number(level);
+            if (!Number.isFinite(locationLevel)) {
+                throw new Error(`Cannot evaluate critical threshold formulas for "${normalizedMode || 'unknown'}" without a finite location level.`);
+            }
+
+            const runtime = getCriticalThresholdFormulaRuntime();
+            const evaluators = runtime.evaluators[normalizedMode];
+            if (!evaluators || typeof evaluators !== 'object') {
+                throw new Error(`No critical threshold evaluators are available for formulas.critical_thresholds.${normalizedMode}.`);
+            }
+
+            const thresholds = {};
+            for (const [direction, evaluator] of Object.entries(evaluators)) {
+                if (typeof evaluator !== 'function') {
+                    throw new Error(`No evaluator is available for formulas.critical_thresholds.${normalizedMode}.${direction}.`);
+                }
+                thresholds[direction] = evaluator({ level: locationLevel });
+            }
+            return validateCriticalThresholdValues(thresholds, { label: `Critical threshold formulas.${normalizedMode}` });
+        }
+
+        function mapOutcomeDegreeToCraftLevel(degree, d20Roll = null, difficulty = null, { level = null } = {}) {
             if (!degree || typeof degree !== 'string') {
                 return null;
             }
@@ -5579,14 +5966,14 @@ module.exports = function registerApiRoutes(scope) {
                     resolved = 'implausible';
                     break;
                 case 'critical_success':
-                    if (Number.isFinite(d20Roll) && d20Roll <= 18) {
+                    if (Number.isFinite(d20Roll) && d20Roll < evaluateCriticalThresholds('crafting', { level }).success) {
                         resolved = 'major_success';
                         break;
                     }
                     resolved = 'critical_success';
                     break;
                 case 'critical_failure':
-                    if (Number.isFinite(d20Roll) && d20Roll >= 3) {
+                    if (Number.isFinite(d20Roll) && d20Roll > evaluateCriticalThresholds('crafting', { level }).failure) {
                         resolved = 'major_failure';
                         break;
                     }
@@ -12968,8 +13355,10 @@ module.exports = function registerApiRoutes(scope) {
                 'recordDispositionPromptSummary'
             );
 
-            const safeActorName = safeSummaryName(actorName || 'NPC');
-            const label = `📋 Events – Disposition Check (${safeActorName})`;
+            const safeActorName = actorName ? safeSummaryName(actorName) : '';
+            const label = safeActorName
+                ? `📋 Events – Disposition Check (${safeActorName})`
+                : '📋 Events – Disposition Check';
 
             return recordEventSummaryEntry({
                 label,
@@ -12978,6 +13367,16 @@ module.exports = function registerApiRoutes(scope) {
                 parentId: parentId || null,
                 locationId: resolvedLocationId
             }, collector);
+        }
+
+        function appendAppliedDispositionChanges(target, changes) {
+            if (!Array.isArray(target)) {
+                throw new Error('appendAppliedDispositionChanges requires an array target.');
+            }
+            if (!Array.isArray(changes) || !changes.length) {
+                return;
+            }
+            target.push(...changes.filter(Boolean));
         }
 
         function mapNpcActionPlanToPlausibility(actionPlan) {
@@ -13434,6 +13833,7 @@ module.exports = function registerApiRoutes(scope) {
             }
 
             const historyEntries = Array.isArray(chatHistory) ? chatHistory : [];
+            const aggregatedDispositionChanges = [];
 
             let recentHistoryEntries = historyEntries;
             if (historyEntries.length) {
@@ -13537,14 +13937,7 @@ module.exports = function registerApiRoutes(scope) {
 
                         if (Array.isArray(result?.dispositions) && result.dispositions.length) {
                             const dispositionChanges = applyDispositionChanges(result.dispositions);
-                            const summary = recordDispositionPromptSummary({
-                                actorName: actor.name || actor.id || 'NPC',
-                                dispositionChanges,
-                                locationId: previousLocation.id
-                            }, entryCollector);
-                            if (summary) {
-                                dispositionSummaryRecorded = true;
-                            }
+                            appendAppliedDispositionChanges(aggregatedDispositionChanges, dispositionChanges);
                         }
                     } catch (error) {
                         console.warn(`Error while generating memories for ${actor.name}:`, error.message);
@@ -13630,14 +14023,7 @@ module.exports = function registerApiRoutes(scope) {
 
                             if (Array.isArray(result?.dispositions) && result.dispositions.length) {
                                 const dispositionChanges = applyDispositionChanges(result.dispositions);
-                                const summary = recordDispositionPromptSummary({
-                                    actorName: member.name || member.id || 'NPC',
-                                    dispositionChanges,
-                                    locationId: previousLocation.id
-                                }, entryCollector);
-                                if (summary) {
-                                    dispositionSummaryRecorded = true;
-                                }
+                                appendAppliedDispositionChanges(aggregatedDispositionChanges, dispositionChanges);
                             }
                         } catch (error) {
                             console.warn(`Error while generating party memories for ${member.name}:`, error.message);
@@ -13703,14 +14089,7 @@ module.exports = function registerApiRoutes(scope) {
 
                             if (Array.isArray(result?.dispositions) && result.dispositions.length) {
                                 const dispositionChanges = applyDispositionChanges(result.dispositions);
-                                const summary = recordDispositionPromptSummary({
-                                    actorName: member.name || member.id || 'NPC',
-                                    dispositionChanges,
-                                    locationId: previousLocation.id
-                                }, entryCollector);
-                                if (summary) {
-                                    dispositionSummaryRecorded = true;
-                                }
+                                appendAppliedDispositionChanges(aggregatedDispositionChanges, dispositionChanges);
                             }
                         } catch (error) {
                             console.warn(`Error while generating memories for departed party member ${member.name}:`, error.message);
@@ -13728,6 +14107,14 @@ module.exports = function registerApiRoutes(scope) {
 
             if (memoryTasks.length) {
                 await Promise.allSettled(memoryTasks);
+            }
+
+            if (aggregatedDispositionChanges.length) {
+                const summary = recordDispositionPromptSummary({
+                    dispositionChanges: aggregatedDispositionChanges,
+                    locationId: previousLocation.id
+                }, entryCollector);
+                dispositionSummaryRecorded = Boolean(summary);
             }
 
             if (dispositionSummaryRecorded && clientId) {
@@ -13788,6 +14175,7 @@ module.exports = function registerApiRoutes(scope) {
 
             const totalCandidates = (Array.isArray(partyMemberIds) ? partyMemberIds.length : 0) + removedPartyMemberIds.length;
             const memoryTasks = [];
+            const aggregatedDispositionChanges = [];
 
             const buildTurnHistory = (actorLower) => {
                 const filtered = [];
@@ -13895,14 +14283,7 @@ module.exports = function registerApiRoutes(scope) {
 
                             if (Array.isArray(result?.dispositions) && result.dispositions.length) {
                                 const dispositionChanges = applyDispositionChanges(result.dispositions);
-                                const summary = recordDispositionPromptSummary({
-                                    actorName: member.name || member.id || 'NPC',
-                                    dispositionChanges,
-                                    locationId: locationOverride?.id || player?.currentLocation
-                                }, entryCollector);
-                                if (summary) {
-                                    dispositionSummaryRecorded = true;
-                                }
+                                appendAppliedDispositionChanges(aggregatedDispositionChanges, dispositionChanges);
                             }
                         } catch (error) {
                             console.warn(`Error while generating party memories for ${memberName}:`, error.message);
@@ -13965,14 +14346,7 @@ module.exports = function registerApiRoutes(scope) {
 
                             if (Array.isArray(result?.dispositions) && result.dispositions.length) {
                                 const dispositionChanges = applyDispositionChanges(result.dispositions);
-                                const summary = recordDispositionPromptSummary({
-                                    actorName: member.name || member.id || 'NPC',
-                                    dispositionChanges,
-                                    locationId: locationOverride?.id || player?.currentLocation
-                                }, entryCollector);
-                                if (summary) {
-                                    dispositionSummaryRecorded = true;
-                                }
+                                appendAppliedDispositionChanges(aggregatedDispositionChanges, dispositionChanges);
                             }
                         } catch (error) {
                             console.warn(`Error while generating memories for departed party member ${memberName}:`, error.message);
@@ -13987,6 +14361,14 @@ module.exports = function registerApiRoutes(scope) {
 
             if (memoryTasks.length) {
                 await Promise.allSettled(memoryTasks);
+            }
+
+            if (aggregatedDispositionChanges.length) {
+                const summary = recordDispositionPromptSummary({
+                    dispositionChanges: aggregatedDispositionChanges,
+                    locationId: locationOverride?.id || player?.currentLocation
+                }, entryCollector);
+                dispositionSummaryRecorded = Boolean(summary);
             }
 
             if (typeof player.clearPartyMembershipChangeTracking === 'function') {
@@ -21671,19 +22053,6 @@ module.exports = function registerApiRoutes(scope) {
                 // Generate the portrait
                 const imageResult = await generatePlayerImage(player, { force: true });
 
-                if (imageResult.success) {
-                    return res.json({
-                        success: true,
-                        player: {
-                            id: player.id,
-                            name: player.name,
-                            imageId: player.imageId
-                        },
-                        imageGeneration: imageResult,
-                        message: `Portrait regeneration initiated for ${player.name}`
-                    });
-                }
-
                 if (imageResult.existingJob) {
                     return res.status(202).json({
                         success: false,
@@ -21694,6 +22063,19 @@ module.exports = function registerApiRoutes(scope) {
                         },
                         imageGeneration: imageResult,
                         message: 'Portrait job already in progress'
+                    });
+                }
+
+                if (imageResult.success) {
+                    return res.json({
+                        success: true,
+                        player: {
+                            id: player.id,
+                            name: player.name,
+                            imageId: player.imageId
+                        },
+                        imageGeneration: imageResult,
+                        message: `Portrait regeneration initiated for ${player.name}`
                     });
                 }
 
@@ -21763,19 +22145,6 @@ module.exports = function registerApiRoutes(scope) {
 
                 const imageResult = await generatePlayerImage(npc, { force: true, clientId });
 
-                if (imageResult.success) {
-                    return res.json({
-                        success: true,
-                        npc: {
-                            id: npc.id,
-                            name: npc.name,
-                            imageId: npc.imageId
-                        },
-                        imageGeneration: imageResult,
-                        message: `Portrait regeneration initiated for ${npc.name}`
-                    });
-                }
-
                 if (imageResult.existingJob) {
                     return res.status(202).json({
                         success: false,
@@ -21786,6 +22155,19 @@ module.exports = function registerApiRoutes(scope) {
                         },
                         imageGeneration: imageResult,
                         message: 'Portrait job already in progress'
+                    });
+                }
+
+                if (imageResult.success) {
+                    return res.json({
+                        success: true,
+                        npc: {
+                            id: npc.id,
+                            name: npc.name,
+                            imageId: npc.imageId
+                        },
+                        imageGeneration: imageResult,
+                        message: `Portrait regeneration initiated for ${npc.name}`
                     });
                 }
 
@@ -24477,6 +24859,33 @@ module.exports = function registerApiRoutes(scope) {
                     });
                 }
 
+                if ((creatingNewRegion || creatingNewLocation) && resolvedName) {
+                    if (typeof scope.getBannedLocationNameSet !== 'function') {
+                        throw new Error('Banned location name list is unavailable for new exit validation.');
+                    }
+                    if (typeof scope.getSlopWordList !== 'function') {
+                        throw new Error('Slopword list is unavailable for new exit validation.');
+                    }
+                    const nameRejection = validateNewExitWorldEntityName({
+                        type: creatingNewRegion ? 'region' : 'location',
+                        name: resolvedName,
+                        gameLocations,
+                        regions,
+                        pendingRegionStubs,
+                        bannedLocationNames: scope.getBannedLocationNameSet(),
+                        slopWords: scope.getSlopWordList(),
+                        findRegionByLocationId
+                    });
+                    if (nameRejection) {
+                        return res.status(400).json({
+                            success: false,
+                            error: nameRejection.message,
+                            code: 'invalid_world_entity_name',
+                            nameRejection
+                        });
+                    }
+                }
+
                 let createdInfo = null;
 
                 if (normalizedType === 'region') {
@@ -26661,7 +27070,8 @@ module.exports = function registerApiRoutes(scope) {
                 const mappedLevel = mapOutcomeDegreeToCraftLevel(
                     actionOutcome.degree,
                     Number.isFinite(actionOutcome.roll?.die) ? actionOutcome.roll.die : null,
-                    actionOutcome.difficulty?.label || null
+                    actionOutcome.difficulty?.label || null,
+                    { level: actionOutcome.locationLevel }
                 );
                 if (mappedLevel === 'implausible') {
                     return res.status(400).json({
@@ -27529,6 +27939,12 @@ module.exports = function registerApiRoutes(scope) {
                     previouslySharedNpcIds: npcIdsSharingPlayerLocationAtTurnStart
                 });
 
+                try {
+                    await runAutosaveIfEnabled();
+                } catch (autosaveError) {
+                    console.warn('Autosave after crafting failed:', autosaveError?.message || autosaveError);
+                }
+
                 res.json({
                     success: true,
                     outcome: actionOutcome,
@@ -27761,7 +28177,8 @@ module.exports = function registerApiRoutes(scope) {
                 const mappedLevel = mapOutcomeDegreeToCraftLevel(
                     actionOutcome.degree,
                     Number.isFinite(actionOutcome.roll?.die) ? actionOutcome.roll.die : null,
-                    actionOutcome.difficulty?.label || null
+                    actionOutcome.difficulty?.label || null,
+                    { level: actionOutcome.locationLevel }
                 );
                 if (mappedLevel === 'implausible') {
                     return res.status(400).json({

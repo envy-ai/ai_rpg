@@ -33,6 +33,12 @@
         'other'
     ];
 
+    const SEVERITY_RANK = {
+        critical: 0,
+        important: 1,
+        normal: 2
+    };
+
     function isObject(value) {
         return value !== null && typeof value === 'object';
     }
@@ -138,11 +144,17 @@
 
         return entries
             .filter(isTurnDiffEntry)
-            .flatMap(entry => normalizeEntryItems(entry).map(item => ({
+            .flatMap((entry, entryIndex) => normalizeEntryItems(entry).map((item, itemIndex) => ({
                 ...item,
                 category: categorizeTurnDiffItem(item, entry),
-                severity: inferSeverity(item, entry)
-            })));
+                severity: inferSeverity(item, entry),
+                originalOrder: (entryIndex * 10000) + itemIndex
+            })))
+            .sort(compareTurnDiffRows)
+            .map(row => {
+                const { originalOrder, ...publicRow } = row;
+                return publicRow;
+            });
     }
 
     function includesAny(text, terms) {
@@ -193,6 +205,15 @@
         }
 
         return 'normal';
+    }
+
+    function compareTurnDiffRows(a, b) {
+        const aRank = SEVERITY_RANK[a && a.severity] ?? SEVERITY_RANK.normal;
+        const bRank = SEVERITY_RANK[b && b.severity] ?? SEVERITY_RANK.normal;
+        if (aRank !== bRank) {
+            return aRank - bRank;
+        }
+        return (a && a.originalOrder ? a.originalOrder : 0) - (b && b.originalOrder ? b.originalOrder : 0);
     }
 
     function summarizeTurnDiff(entries) {
@@ -275,6 +296,80 @@
         return chip;
     }
 
+    function safeClassToken(value) {
+        return normalizeString(value)
+            .toLowerCase()
+            .replace(/[^a-z0-9_-]+/g, '-')
+            .replace(/^-+|-+$/g, '') || 'entity';
+    }
+
+    function dispatchEntitySelectedEvent(target, ref, row) {
+        if (!target || !ref || !ref.id) {
+            return;
+        }
+        if (typeof global.CustomEvent !== 'function') {
+            throw new Error('CustomEvent is required for turn diff entity selection.');
+        }
+
+        target.dispatchEvent(new global.CustomEvent('airpg:turn-diff-entity-selected', {
+            bubbles: true,
+            detail: {
+                type: ref.type,
+                id: ref.id,
+                name: ref.name,
+                category: row.category,
+                severity: row.severity,
+                sourceType: row.sourceType || null,
+                text: row.text
+            }
+        }));
+    }
+
+    function createEntityChip(ref, row) {
+        const isClickable = Boolean(ref && ref.id);
+        const chip = document.createElement(isClickable ? 'button' : 'span');
+        const typeToken = safeClassToken(ref && ref.type);
+        chip.className = [
+            'turn-diff-drawer__entity-chip',
+            `turn-diff-drawer__entity-chip--${typeToken}`,
+            isClickable ? 'turn-diff-drawer__entity-chip--clickable' : ''
+        ].filter(Boolean).join(' ');
+        chip.dataset.entityType = ref.type;
+        if (ref.id) {
+            chip.dataset.entityId = ref.id;
+        }
+        if (ref.name) {
+            chip.dataset.entityName = ref.name;
+        }
+        chip.textContent = ref.name || ref.id;
+
+        if (isClickable) {
+            chip.type = 'button';
+            chip.setAttribute('aria-label', `Select ${ref.type} ${ref.name || ref.id}`);
+            chip.addEventListener('click', event => {
+                event.preventDefault();
+                event.stopPropagation();
+                dispatchEntitySelectedEvent(chip, ref, row);
+            });
+        }
+
+        return chip;
+    }
+
+    function createEntityList(row) {
+        const refs = normalizeEntityRefs(row && row.entityRefs);
+        if (!refs.length) {
+            return null;
+        }
+
+        const list = document.createElement('span');
+        list.className = 'turn-diff-drawer__entity-list';
+        refs.forEach(ref => {
+            list.appendChild(createEntityChip(ref, row));
+        });
+        return list;
+    }
+
     function createDrawer(entries, options = {}) {
         const summary = summarizeTurnDiff(entries);
         if (!summary.total) {
@@ -348,6 +443,11 @@
             groupRows.forEach(row => {
                 const item = document.createElement('li');
                 item.className = `turn-diff-drawer__row turn-diff-drawer__row--${row.severity}`;
+                item.dataset.category = row.category;
+                item.dataset.severity = row.severity;
+                if (row.sourceType) {
+                    item.dataset.sourceType = row.sourceType;
+                }
 
                 const icon = document.createElement('span');
                 icon.className = 'turn-diff-drawer__icon';
@@ -355,10 +455,20 @@
                 icon.textContent = row.icon || '*';
                 item.appendChild(icon);
 
+                const main = document.createElement('span');
+                main.className = 'turn-diff-drawer__row-main';
+
                 const text = document.createElement('span');
                 text.className = 'turn-diff-drawer__text';
                 appendText(text, row.text, options);
-                item.appendChild(text);
+                main.appendChild(text);
+
+                const entityList = createEntityList(row);
+                if (entityList) {
+                    main.appendChild(entityList);
+                }
+
+                item.appendChild(main);
 
                 list.appendChild(item);
             });
@@ -419,6 +529,7 @@
         categorizeTurnDiffItem,
         summarizeTurnDiff,
         createDrawer,
-        appendDrawer
+        appendDrawer,
+        createEntityList
     };
 })(window);

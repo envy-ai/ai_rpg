@@ -138,6 +138,8 @@ Request:
 - Path: `id`
 - Body: `{ clientId?: string }`
 
+Duplicate requests while the portrait prompt or image job is already in progress join the existing work instead of starting another render.
+
 Response:
 - 200: `{ success: true, npc: { id, name, imageId }, imageGeneration, message }`
 - 202: `{ success: false, npc: { ... }, imageGeneration, message }` (existing job)

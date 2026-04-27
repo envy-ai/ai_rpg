@@ -14,6 +14,21 @@ const { XMLSerializer } = require('@xmldom/xmldom');
 const Utils = require('./Utils.js');
 const { loadMergedConfig } = require('./ConfigLoader.js');
 const { resolvePointPoolFormulas } = require('./utils/point-pool-formulas.js');
+const {
+    normalizeDifficultyKey,
+    resolveDifficultyDcFormulas,
+    validateDifficultyDcFormulas
+} = require('./utils/dc-formulas.js');
+const {
+    resolveOutcomeMarginFormulas,
+    validateOutcomeMarginFormulas,
+    validateOutcomeMarginValues
+} = require('./utils/outcome-margin-formulas.js');
+const {
+    resolveCriticalThresholdFormulas,
+    validateCriticalThresholdFormulas,
+    validateCriticalThresholdValues
+} = require('./utils/critical-threshold-formulas.js');
 const FormulaEvaluator = require('./public/js/formula-evaluator.js');
 const Globals = require('./Globals.js');
 const SceneSummaries = require('./SceneSummaies.js');
@@ -105,6 +120,9 @@ let cachedSlopWordList = null;
 let cachedNpcNameBlockedWords = null;
 let cachedSystemPromptPrefixByPrompt = null;
 let cachedPointPoolFormulaRuntime = null;
+let cachedDifficultyDcFormulaRuntime = null;
+let cachedOutcomeMarginFormulaRuntime = null;
+let cachedCriticalThresholdFormulaRuntime = null;
 
 function hasConfiguredAiBackend(aiConfig = config?.ai) {
     return LLMClient.isConfigured(aiConfig);
@@ -612,6 +630,9 @@ function reloadConfigAndDefs({
     const merged = loadMergedConfig(__dirname, cliConfigOverridePath, {
         runtimeOverrideYaml: nextGameConfigOverrideYaml
     });
+    validateDifficultyDcFormulas(merged, { formulaEvaluator: FormulaEvaluator });
+    validateOutcomeMarginFormulas(merged, { formulaEvaluator: FormulaEvaluator });
+    validateCriticalThresholdFormulas(merged, { formulaEvaluator: FormulaEvaluator });
     const modEnableDiff = diffFrozenEnabledModDirectoryNames(Globals.baseDir || __dirname, { config: merged });
     validateDefinitionOverlays({ baseDir: Globals.baseDir || __dirname });
     const needBarSentenceWarnings = Player.validateNeedBarPromptSentences({
@@ -636,6 +657,9 @@ function reloadConfigAndDefs({
     cachedExperiencePointValues = null;
     cachedSlopWordList = null;
     cachedNpcNameBlockedWords = null;
+    cachedDifficultyDcFormulaRuntime = null;
+    cachedOutcomeMarginFormulaRuntime = null;
+    cachedCriticalThresholdFormulaRuntime = null;
 
     const invalidateCache = (env) => {
         if (env && typeof env.invalidateCache === 'function') {
@@ -2305,6 +2329,21 @@ async function validateConfiguration() {
             validationErrors.push('while_you_were_away_threshold_minutes must be an integer greater than or equal to 0 when provided');
         }
     }
+    try {
+        validateDifficultyDcFormulas(config, { formulaEvaluator: FormulaEvaluator });
+    } catch (error) {
+        validationErrors.push(`DC formulas: ${error.message}`);
+    }
+    try {
+        validateOutcomeMarginFormulas(config, { formulaEvaluator: FormulaEvaluator });
+    } catch (error) {
+        validationErrors.push(`Outcome margin formulas: ${error.message}`);
+    }
+    try {
+        validateCriticalThresholdFormulas(config, { formulaEvaluator: FormulaEvaluator });
+    } catch (error) {
+        validationErrors.push(`Critical threshold formulas: ${error.message}`);
+    }
 
     // Report validation results
     if (validationErrors.length > 0) {
@@ -2689,6 +2728,7 @@ const gameLocationExits = new Map(); // Store LocationExit instances by ID
 const regions = new Map(); // Store Region instances by ID
 const pendingRegionStubs = new Map(); // Store region definitions awaiting full generation
 const pendingLocationImages = new Map(); // Store active image job IDs per location
+const playerImageGenerationPromises = new Map(); // Store pre-job portrait generation promises per character
 const locationImageGenerationPromises = new Map(); // Store pre-job location image generation promises per location
 const npcGenerationPromises = new Map(); // Track in-flight NPC generations by normalized explicit name
 const levelUpAbilityPromises = new Map(); // Track in-flight level-up ability generations per character
@@ -7638,56 +7678,174 @@ function parsePlausibilityOutcome(xmlSnippet) {
     }
 }
 
-function difficultyToDC(label) {
-    if (!label || typeof label !== 'string') {
+function getDifficultyDcFormulaRuntime() {
+    const formulas = resolveDifficultyDcFormulas(config || {});
+    const cacheKey = JSON.stringify(formulas);
+    if (!cachedDifficultyDcFormulaRuntime || cachedDifficultyDcFormulaRuntime.cacheKey !== cacheKey) {
+        if (!FormulaEvaluator || typeof FormulaEvaluator.compile !== 'function') {
+            throw new Error('FormulaEvaluator.compile is required to evaluate DC formulas.');
+        }
+        const evaluators = {};
+        for (const [key, formula] of Object.entries(formulas)) {
+            evaluators[key] = FormulaEvaluator.compile(formula);
+        }
+        cachedDifficultyDcFormulaRuntime = {
+            cacheKey,
+            formulas,
+            evaluators
+        };
+    }
+    return cachedDifficultyDcFormulaRuntime;
+}
+
+function resolveActionLocationLevel(player) {
+    const locationId = typeof player?.currentLocation === 'string' && player.currentLocation.trim()
+        ? player.currentLocation.trim()
+        : (typeof currentPlayer?.currentLocation === 'string' && currentPlayer.currentLocation.trim()
+            ? currentPlayer.currentLocation.trim()
+            : '');
+    const location = locationId ? Location.get(locationId) : null;
+    const level = Number(location?.baseLevel);
+    if (!Number.isFinite(level)) {
+        throw new Error('Cannot evaluate DC formula without a finite current location level.');
+    }
+    return level;
+}
+
+function difficultyToDC(label, { level = null } = {}) {
+    const key = normalizeDifficultyKey(label);
+    if (!key) {
         return null;
     }
 
-    const normalized = label.trim().toLowerCase();
-    switch (normalized) {
-        case 'trivial':
-            return 0;
-        case 'easy':
-            return 10;
-        case 'medium':
-            return 15;
-        case 'hard':
-            return 20;
-        case 'very hard':
-            return 25;
-        case 'legendary':
-            return 30;
-        default:
-            return null;
+    const locationLevel = Number(level);
+    if (!Number.isFinite(locationLevel)) {
+        throw new Error(`Cannot evaluate formulas.dc.${key} without a finite location level.`);
     }
+
+    const runtime = getDifficultyDcFormulaRuntime();
+    const evaluator = runtime.evaluators[key];
+    if (typeof evaluator !== 'function') {
+        throw new Error(`No evaluator is available for formulas.dc.${key}.`);
+    }
+    const dc = evaluator({ level: locationLevel });
+    if (!Number.isFinite(dc)) {
+        throw new Error(`Config formulas.dc.${key} must evaluate to a finite number.`);
+    }
+    return dc;
 }
 
-function classifyOutcomeMargin(margin, dieRoll = null, difficultyLabel = null) {
-    const qualifiesForCriticalSuccess = Number.isFinite(dieRoll) ? dieRoll >= 16 : true;
-    const qualifiesForCriticalFailure = Number.isFinite(dieRoll) ? dieRoll <= 4 : true;
+function getOutcomeMarginFormulaRuntime() {
+    const formulas = resolveOutcomeMarginFormulas(config || {});
+    const cacheKey = JSON.stringify(formulas);
+    if (!cachedOutcomeMarginFormulaRuntime || cachedOutcomeMarginFormulaRuntime.cacheKey !== cacheKey) {
+        if (!FormulaEvaluator || typeof FormulaEvaluator.compile !== 'function') {
+            throw new Error('FormulaEvaluator.compile is required to evaluate outcome margin formulas.');
+        }
+        const evaluators = {};
+        for (const [key, formula] of Object.entries(formulas)) {
+            evaluators[key] = FormulaEvaluator.compile(formula);
+        }
+        cachedOutcomeMarginFormulaRuntime = {
+            cacheKey,
+            formulas,
+            evaluators
+        };
+    }
+    return cachedOutcomeMarginFormulaRuntime;
+}
+
+function evaluateOutcomeMarginThresholds({ level = null } = {}) {
+    const locationLevel = Number(level);
+    if (!Number.isFinite(locationLevel)) {
+        throw new Error('Cannot evaluate outcome margin formulas without a finite location level.');
+    }
+
+    const runtime = getOutcomeMarginFormulaRuntime();
+    const thresholds = {};
+    for (const [key, evaluator] of Object.entries(runtime.evaluators)) {
+        if (typeof evaluator !== 'function') {
+            throw new Error(`No evaluator is available for formulas.outcome_margins.${key}.`);
+        }
+        thresholds[key] = evaluator({ level: locationLevel });
+    }
+    return validateOutcomeMarginValues(thresholds, { label: 'Outcome margin formulas' });
+}
+
+function getCriticalThresholdFormulaRuntime() {
+    const formulas = resolveCriticalThresholdFormulas(config || {});
+    const cacheKey = JSON.stringify(formulas);
+    if (!cachedCriticalThresholdFormulaRuntime || cachedCriticalThresholdFormulaRuntime.cacheKey !== cacheKey) {
+        if (!FormulaEvaluator || typeof FormulaEvaluator.compile !== 'function') {
+            throw new Error('FormulaEvaluator.compile is required to evaluate critical threshold formulas.');
+        }
+        const evaluators = {};
+        for (const [mode, modeFormulas] of Object.entries(formulas)) {
+            evaluators[mode] = {};
+            for (const [direction, formula] of Object.entries(modeFormulas)) {
+                evaluators[mode][direction] = FormulaEvaluator.compile(formula);
+            }
+        }
+        cachedCriticalThresholdFormulaRuntime = {
+            cacheKey,
+            formulas,
+            evaluators
+        };
+    }
+    return cachedCriticalThresholdFormulaRuntime;
+}
+
+function evaluateCriticalThresholds(mode, { level = null } = {}) {
+    const normalizedMode = typeof mode === 'string' && mode.trim() ? mode.trim().toLowerCase() : '';
+    const locationLevel = Number(level);
+    if (!Number.isFinite(locationLevel)) {
+        throw new Error(`Cannot evaluate critical threshold formulas for "${normalizedMode || 'unknown'}" without a finite location level.`);
+    }
+
+    const runtime = getCriticalThresholdFormulaRuntime();
+    const evaluators = runtime.evaluators[normalizedMode];
+    if (!evaluators || typeof evaluators !== 'object') {
+        throw new Error(`No critical threshold evaluators are available for formulas.critical_thresholds.${normalizedMode}.`);
+    }
+
+    const thresholds = {};
+    for (const [direction, evaluator] of Object.entries(evaluators)) {
+        if (typeof evaluator !== 'function') {
+            throw new Error(`No evaluator is available for formulas.critical_thresholds.${normalizedMode}.${direction}.`);
+        }
+        thresholds[direction] = evaluator({ level: locationLevel });
+    }
+    return validateCriticalThresholdValues(thresholds, { label: `Critical threshold formulas.${normalizedMode}` });
+}
+
+function classifyOutcomeMargin(margin, dieRoll = null, difficultyLabel = null, { level = null } = {}) {
+    const thresholds = evaluateOutcomeMarginThresholds({ level });
+    const criticalThresholds = evaluateCriticalThresholds('normal', { level });
+    const qualifiesForCriticalSuccess = Number.isFinite(dieRoll) ? dieRoll >= criticalThresholds.success : true;
+    const qualifiesForCriticalFailure = Number.isFinite(dieRoll) ? dieRoll <= criticalThresholds.failure : true;
 
     let outcome;
-    if (margin >= 10) {
+    if (margin >= thresholds.critical_success) {
         if (qualifiesForCriticalSuccess) {
             outcome = { label: 'critical success', degree: 'critical_success', success: true };
         } else {
             outcome = { label: 'major success', degree: 'major_success', success: true };
         }
-    } else if (margin >= 6) {
+    } else if (margin >= thresholds.major_success) {
         outcome = { label: 'major success', degree: 'major_success', success: true };
-    } else if (margin >= 3) {
+    } else if (margin >= thresholds.success) {
         outcome = { label: 'success', degree: 'success', success: true };
-    } else if (margin >= 0) {
+    } else if (margin >= thresholds.barely_succeeded) {
         outcome = { label: 'barely succeeded', degree: 'barely_succeeded', success: true };
-    } else if (margin <= -10) {
+    } else if (margin <= thresholds.critical_failure) {
         if (qualifiesForCriticalFailure) {
             outcome = { label: 'critical failure', degree: 'critical_failure', success: false };
         } else {
             outcome = { label: 'major failure', degree: 'major_failure', success: false };
         }
-    } else if (margin <= -6) {
+    } else if (margin <= thresholds.major_failure) {
         outcome = { label: 'major failure', degree: 'major_failure', success: false };
-    } else if (margin <= -3) {
+    } else if (margin <= thresholds.failure) {
         outcome = { label: 'failure', degree: 'failure', success: false };
     } else {
         outcome = { label: 'barely failed', degree: 'barely_failed', success: false };
@@ -8003,7 +8161,8 @@ function resolveActionOutcome({ plausibility, player, dieRollOverride = null }) 
         const opponentTotal = opponentDieRoll + opponentSkillValue + opponentAttributeBonus;
 
         const margin = total - opponentTotal;
-        const outcome = classifyOutcomeMargin(margin, dieRoll, null);
+        const actionLocationLevel = resolveActionLocationLevel(player);
+        const outcome = classifyOutcomeMargin(margin, dieRoll, null, { level: actionLocationLevel });
         const opponentDisplayName = opponentActor?.name || opponentName || 'Opponent';
 
         console.log(`🎲 Opposed skill check result: ${player?.name || 'Actor'} d20(${dieRoll}) + skill(${skillValue}) + attribute(${attributeBonus}) + circumstances(${circumstanceModifier}) = ${total} vs ${opponentDisplayName} d20(${opponentDieRoll}) + skill(${opponentSkillValue}) + attribute(${opponentAttributeBonus}) = ${opponentTotal}. Outcome: ${outcome.label}`);
@@ -8043,14 +8202,20 @@ function resolveActionOutcome({ plausibility, player, dieRollOverride = null }) 
                 skill: opponentSkillInfo.key,
                 attribute: opponentAttributeKey
             },
+            locationLevel: actionLocationLevel,
             circumstanceModifier,
             circumstanceModifiers,
             circumstanceReason: circumstanceModifierReason
         };
     }
 
-    const dc = difficultyToDC(resolvedDifficulty);
-    if (!dc) {
+    const actionLocationLevel = normalizeDifficultyKey(resolvedDifficulty)
+        ? resolveActionLocationLevel(player)
+        : null;
+    const dc = actionLocationLevel !== null
+        ? difficultyToDC(resolvedDifficulty, { level: actionLocationLevel })
+        : null;
+    if (dc === null) {
         return {
             label: 'success',
             degree: 'success',
@@ -8076,7 +8241,7 @@ function resolveActionOutcome({ plausibility, player, dieRollOverride = null }) 
     const dieRoll = hasInjectedDieRoll ? dieRollOverride : rollResult.total;
     const total = dieRoll + skillValue + attributeBonus + circumstanceModifier;
     const margin = total - dc;
-    const outcome = classifyOutcomeMargin(margin, dieRoll, resolvedDifficulty);
+    const outcome = classifyOutcomeMargin(margin, dieRoll, resolvedDifficulty, { level: actionLocationLevel });
 
     console.log(`🎲 Skill check result: d20(${dieRoll}) + skill(${skillValue}) + attribute(${attributeBonus}) + circumstances(${circumstanceModifier}) = ${total} vs DC ${dc} (${resolvedDifficulty || 'Unknown'}). Outcome: ${outcome.label}`);
 
@@ -8104,6 +8269,7 @@ function resolveActionOutcome({ plausibility, player, dieRollOverride = null }) 
         attribute: attributeKey,
         margin,
         checkType: 'unopposed',
+        locationLevel: actionLocationLevel,
         circumstanceModifier,
         circumstanceModifiers,
         circumstanceReason: circumstanceModifierReason
@@ -11357,6 +11523,9 @@ function renderPlayerPortraitPrompt(player) {
         if (!player) {
             throw new Error('Player object is required');
         }
+        if (!player.id) {
+            throw new Error('Player id is required for portrait generation');
+        }
 
         const settingDescription = describeSettingForPrompt(activeSetting);
         const attributeLines = player.getAttributeNames().map(name => {
@@ -12499,6 +12668,94 @@ async function separateThingByPrompt({
     return separatedItems;
 }
 
+async function enrichAlteredThingStatusEffects({ target = null, equipper = null, level = null } = {}) {
+    const seeds = [];
+    const seenDescriptions = new Set();
+    const effectiveLevel = Number.isFinite(level) ? level : null;
+
+    const getSourceDescription = (effect, scopeName) => {
+        if (!effect) {
+            return null;
+        }
+        const description = typeof effect.description === 'string' ? effect.description.trim() : '';
+        if (description) {
+            return description;
+        }
+        const name = typeof effect.name === 'string' ? effect.name.trim() : '';
+        if (name) {
+            return name;
+        }
+        throw new Error(`Altered ${scopeName} status effect must include a name or description.`);
+    };
+
+    const addSeed = (effect, scopeName) => {
+        const description = getSourceDescription(effect, scopeName);
+        if (!description) {
+            return;
+        }
+        const dedupeKey = description.toLowerCase();
+        if (seenDescriptions.has(dedupeKey)) {
+            return;
+        }
+        seenDescriptions.add(dedupeKey);
+        const name = typeof effect.name === 'string' && effect.name.trim()
+            ? effect.name.trim()
+            : null;
+        seeds.push({ name, description, level: effectiveLevel });
+    };
+
+    addSeed(target, 'target');
+    addSeed(equipper, 'equipper');
+
+    if (!seeds.length) {
+        return { target: null, equipper: null };
+    }
+
+    const generatedMap = await StatusEffect.generateFromDescriptions(seeds, {
+        promptEnv,
+        parseXMLTemplate,
+        prepareBasePromptContext
+    });
+
+    if (!(generatedMap instanceof Map)) {
+        throw new Error('Status effect generation did not return a result map for altered item effects.');
+    }
+
+    const applyGenerated = (effect, scopeName) => {
+        if (!effect) {
+            return null;
+        }
+        const sourceDescription = getSourceDescription(effect, scopeName);
+        const generated = generatedMap.get(sourceDescription);
+        if (!generated) {
+            throw new Error(`Status effect generation did not return mechanics for altered ${scopeName} effect "${sourceDescription}".`);
+        }
+        const generatedJson = typeof generated.toJSON === 'function'
+            ? generated.toJSON()
+            : generated;
+        const duration = effect.duration !== undefined && effect.duration !== null
+            ? effect.duration
+            : generatedJson.duration;
+        const appliedAt = effect.appliedAt !== undefined && effect.appliedAt !== null
+            ? effect.appliedAt
+            : generatedJson.appliedAt;
+        return new StatusEffect({
+            name: generatedJson.name || effect.name || null,
+            description: generatedJson.description || effect.description || effect.name,
+            attributes: Array.isArray(generatedJson.attributes) ? generatedJson.attributes : [],
+            skills: Array.isArray(generatedJson.skills) ? generatedJson.skills : [],
+            needBars: Array.isArray(generatedJson.needBars) ? generatedJson.needBars : [],
+            duration,
+            appliedAt
+        }).toJSON();
+    };
+
+    return {
+        target: applyGenerated(target, 'target'),
+        equipper: applyGenerated(equipper, 'equipper')
+    };
+}
+
 async function alterThingByPrompt({
     thing,
     changeDescription = '',
@@ -12716,6 +12973,18 @@ async function alterThingByPrompt({
         })
         : [];
 
+    let effectiveTargetStatusEffect = null;
+    let effectiveEquipperStatusEffect = null;
+    if (normalizedType === 'item') {
+        const enrichedEffects = await enrichAlteredThingStatusEffects({
+            target: updatedItem.causeStatusEffectOnTarget || null,
+            equipper: updatedItem.causeStatusEffectOnEquipper || null,
+            level: computedLevel
+        });
+        effectiveTargetStatusEffect = enrichedEffects.target;
+        effectiveEquipperStatusEffect = enrichedEffects.equipper;
+    }
+
     const updatedMetadata = {
         ...previousMetadata,
         rarity,
@@ -12724,7 +12993,9 @@ async function alterThingByPrompt({
         value: updatedItem.value ?? previousMetadata.value,
         weight: updatedItem.weight ?? previousMetadata.weight,
         properties: updatedItem.properties ?? previousMetadata.properties,
-        causeStatusEffect: normalizedType === 'item' ? updatedItem.causeStatusEffect || null : null,
+        causeStatusEffect: null,
+        causeStatusEffectOnTarget: effectiveTargetStatusEffect,
+        causeStatusEffectOnEquipper: effectiveEquipperStatusEffect,
         attributeBonuses: normalizedType === 'item' ? scaledAttributeBonuses : undefined,
         unscaledAttributeBonuses: normalizedType === 'item' && rawAttributeBonuses.length ? rawAttributeBonuses : undefined,
         relativeLevel,
@@ -12815,13 +13086,19 @@ async function alterThingByPrompt({
     thing.rarity = rarity;
     thing.slot = slotValue;
     thing.attributeBonuses = normalizedType === 'item' ? scaledAttributeBonuses : [];
-    thing.causeStatusEffect = normalizedType === 'item' ? updatedItem.causeStatusEffect || null : null;
     if (updatedItem.count !== undefined) {
         thing.count = updatedItem.count;
     }
     thing.level = computedLevel;
     thing.relativeLevel = Number.isFinite(relativeLevel) ? relativeLevel : null;
     thing.metadata = sanitizedMetadata;
+    if (typeof thing.setCauseStatusEffects !== 'function') {
+        throw new Error('Thing alteration requires setCauseStatusEffects support.');
+    }
+    thing.setCauseStatusEffects({
+        target: normalizedType === 'item' ? effectiveTargetStatusEffect : null,
+        equipper: normalizedType === 'item' ? effectiveEquipperStatusEffect : null
+    });
     if (resolvedShortDescription) {
         thing.shortDescription = resolvedShortDescription;
     }
@@ -12829,7 +13106,7 @@ async function alterThingByPrompt({
     if (normalizedType === 'scenery') {
         thing.slot = null;
         thing.attributeBonuses = [];
-        thing.causeStatusEffect = null;
+        thing.setCauseStatusEffects();
     }
 
     if (thing.imageId) {
@@ -17675,34 +17952,50 @@ function getBannedLocationNameSet() {
     return cachedBannedLocationNames;
 }
 
-function isLocationNameBanned(name, bannedSet = getBannedLocationNameSet()) {
-    if (!name || typeof name !== 'string' || !(bannedSet instanceof Set) || bannedSet.size === 0) {
-        return Boolean(locationNameContainsSlopWord(name));
+function getLocationNameValidationSlopWords() {
+    const slopWords = getSlopWordList();
+    const combined = new Set(Array.isArray(slopWords) ? slopWords : []);
+    const { customWords } = collectActiveSettingCustomSlopEntries();
+    if (Array.isArray(customWords)) {
+        customWords.forEach(word => {
+            if (typeof word === 'string' && word.trim()) {
+                combined.add(word.trim().toLowerCase());
+            }
+        });
     }
+    return Array.from(combined);
+}
 
+function isLocationNameBanned(name, bannedSet = getBannedLocationNameSet(), slopWords = getLocationNameValidationSlopWords()) {
+    if (!name || typeof name !== 'string') {
+        return false;
+    }
     const normalizedName = name.trim().toLowerCase();
     if (!normalizedName) {
         return false;
     }
 
-    for (const banned of bannedSet) {
-        if (!banned) {
-            continue;
-        }
-        if (normalizedName.includes(banned)) {
-            return true;
+    if (bannedSet instanceof Set && bannedSet.size > 0) {
+        for (const banned of bannedSet) {
+            if (!banned) {
+                continue;
+            }
+            if (normalizedName.includes(banned)) {
+                return true;
+            }
         }
     }
 
-    if (locationNameContainsSlopWord(normalizedName)) {
+    if (locationNameContainsSlopWord(normalizedName, slopWords)) {
         return true;
     }
 
     return false;
 }
 
-function locationNameContainsSlopWord(name, slopWords = getSlopWordList()) {
-    if (!name || typeof name !== 'string' || !slopWords.length) {
+function locationNameContainsSlopWord(name, slopWords = getLocationNameValidationSlopWords()) {
+    const resolvedSlopWords = Array.isArray(slopWords) ? slopWords : [];
+    if (!name || typeof name !== 'string' || !resolvedSlopWords.length) {
         return false;
     }
 
@@ -17716,13 +18009,58 @@ function locationNameContainsSlopWord(name, slopWords = getSlopWordList()) {
     }
 
     const tokenSet = new Set(tokens);
-    for (const word of slopWords) {
+    for (const word of resolvedSlopWords) {
         if (tokenSet.has(word)) {
             return true;
         }
     }
 
     return false;
+}
+
+function filterAllowedLocationNameCandidates(candidateNames, {
+    bannedSet = getBannedLocationNameSet(),
+    slopWords = getLocationNameValidationSlopWords(),
+    originalName = '',
+    usedNames = null
+} = {}) {
+    if (!Array.isArray(candidateNames) || candidateNames.length === 0) {
+        return [];
+    }
+
+    const originalLower = typeof originalName === 'string' && originalName.trim()
+        ? originalName.trim().toLowerCase()
+        : '';
+    const usedNameSet = usedNames instanceof Set ? usedNames : null;
+    const seen = new Set();
+    const allowed = [];
+
+    for (const candidate of candidateNames) {
+        if (typeof candidate !== 'string') {
+            continue;
+        }
+        const trimmed = candidate.trim();
+        if (!trimmed) {
+            continue;
+        }
+        const normalized = trimmed.toLowerCase();
+        if (normalized === originalLower) {
+            continue;
+        }
+        if (seen.has(normalized)) {
+            continue;
+        }
+        seen.add(normalized);
+        if (usedNameSet && usedNameSet.has(normalized)) {
+            continue;
+        }
+        if (isLocationNameBanned(trimmed, bannedSet, slopWords)) {
+            continue;
+        }
+        allowed.push(trimmed);
+    }
+
+    return allowed;
 }
 
 function getSlopWordsFromName(name, slopWordSet) {
@@ -19192,8 +19530,21 @@ async function parseThingsXml(xmlContent, { isInventory = false, promptEnv = nul
                     .filter(Boolean)
                 : [];
 
+            const getDirectChildElement = (parentNode, tagName) => {
+                if (!parentNode || !parentNode.childNodes) {
+                    return null;
+                }
+                return Array.from(parentNode.childNodes).find(child => {
+                    if (!child || child.nodeType !== 1) {
+                        return false;
+                    }
+                    const childName = child.tagName || child.nodeName || child.localName || '';
+                    return childName === tagName;
+                }) || null;
+            };
+
             const parseStatusEffectTag = (tagName) => {
-                const nodeRef = node.getElementsByTagName(tagName)[0];
+                const nodeRef = getDirectChildElement(node, tagName);
                 if (!nodeRef) {
                     // Empty nodes are fine.
                     return null;
@@ -20801,6 +21152,7 @@ async function regenerateLocationName(location) {
     }
 
     const bannedSet = getBannedLocationNameSet();
+    const slopWords = getLocationNameValidationSlopWords();
     const originalName = typeof location.name === 'string' ? location.name.trim() : '';
     const originalLower = originalName ? originalName.toLowerCase() : '';
 
@@ -20831,22 +21183,15 @@ async function regenerateLocationName(location) {
         usedNames.add(originalLower);
     }
 
+    const safeCandidateNames = filterAllowedLocationNameCandidates(candidateNames, {
+        bannedSet,
+        slopWords,
+        originalName
+    });
+
     const selectUniqueName = () => {
-        for (const candidate of candidateNames) {
-            if (!candidate || typeof candidate !== 'string') {
-                continue;
-            }
-            const trimmed = candidate.trim();
-            if (!trimmed) {
-                continue;
-            }
+        for (const trimmed of safeCandidateNames) {
             const normalized = trimmed.toLowerCase();
-            if (normalized === originalLower) {
-                continue;
-            }
-            if (isLocationNameBanned(trimmed, bannedSet)) {
-                continue;
-            }
             if (!usedNames.has(normalized)) {
                 return trimmed;
             }
@@ -20857,23 +21202,11 @@ async function regenerateLocationName(location) {
     let selectedName = selectUniqueName();
 
     if (!selectedName) {
-        const baseCandidate = candidateNames.find(candidate => {
-            if (!candidate || typeof candidate !== 'string') {
-                return false;
-            }
-            const trimmed = candidate.trim();
-            if (!trimmed) {
-                return false;
-            }
-            if (trimmed.toLowerCase() === originalLower) {
-                return false;
-            }
-            return !isLocationNameBanned(trimmed, bannedSet);
-        });
+        const baseCandidate = safeCandidateNames[0] || null;
         if (baseCandidate) {
             for (let suffix = 2; suffix <= 100; suffix += 1) {
                 const attempt = `${baseCandidate} ${suffix}`;
-                if (!usedNames.has(attempt.toLowerCase()) && !isLocationNameBanned(attempt, bannedSet)) {
+                if (!usedNames.has(attempt.toLowerCase()) && !isLocationNameBanned(attempt, bannedSet, slopWords)) {
                     selectedName = attempt;
                     break;
                 }
@@ -20895,7 +21228,7 @@ async function regenerateLocationName(location) {
 
     return {
         name: selectedName,
-        candidates: candidateNames
+        candidates: safeCandidateNames
     };
 }
 
@@ -20971,7 +21304,8 @@ function chooseRegionName({
     candidateNames,
     bannedSet,
     usedNames,
-    regionLabel
+    regionLabel,
+    slopWords = getLocationNameValidationSlopWords()
 }) {
     if (!region || typeof region !== 'object') {
         throw new Error('chooseRegionName requires a region object.');
@@ -20993,26 +21327,20 @@ function chooseRegionName({
         sharedUsedNames.add(originalLower);
     }
 
-    for (const candidate of candidateNames) {
-        if (!candidate || typeof candidate !== 'string') {
-            continue;
-        }
-        const trimmed = candidate.trim();
-        if (!trimmed) {
-            continue;
-        }
+    const safeCandidateNames = filterAllowedLocationNameCandidates(candidateNames, {
+        bannedSet,
+        slopWords,
+        originalName: region.name,
+        usedNames: sharedUsedNames
+    });
+
+    for (const trimmed of safeCandidateNames) {
         const lower = trimmed.toLowerCase();
-        if (tried.has(lower) || (sharedUsedNames && sharedUsedNames.has(lower))) {
+        if (tried.has(lower)) {
             continue;
         }
         tried.add(lower);
 
-        if (lower === originalLower) {
-            continue;
-        }
-        if (isLocationNameBanned(trimmed, bannedSet)) {
-            continue;
-        }
         if (typeof Region.getByName === 'function') {
             const existing = Region.getByName(trimmed);
             if (existing && existing !== region) {
@@ -21034,7 +21362,7 @@ function chooseRegionName({
         region.name = trimmed;
         return {
             selectedName: trimmed,
-            candidates: candidateNames.slice()
+            candidates: safeCandidateNames.slice()
         };
     }
 
@@ -21080,6 +21408,7 @@ async function regenerateRegionNames(regions) {
     });
 
     const bannedSet = getBannedLocationNameSet();
+    const slopWords = getLocationNameValidationSlopWords();
     const usedNames = new Set();
     const results = [];
 
@@ -21166,6 +21495,7 @@ async function regenerateRegionNames(regions) {
             region: entry.region,
             candidateNames: group.names,
             bannedSet,
+            slopWords,
             usedNames,
             regionLabel: entry.contextName
         });
@@ -23144,6 +23474,9 @@ async function generatePlayerImage(player, options = {}) {
         if (!player) {
             throw new Error('Player object is required');
         }
+        if (!player.id) {
+            throw new Error('Player id is required for portrait generation');
+        }
 
         if (player.isNPC && !force && !shouldGenerateNpcImage(player)) {
             //console.log(`🎭 Skipping NPC portrait for ${player.name} (${player.id}) - outside player context`);
@@ -23164,6 +23497,28 @@ async function generatePlayerImage(player, options = {}) {
                 existingJob: true,
                 jobId: activeJobId,
                 job: snapshot
+            };
+        }
+
+        const existingGenerationPromise = playerImageGenerationPromises.get(player.id);
+        if (existingGenerationPromise) {
+            console.log(`🎨 Portrait prompt generation already in progress for ${player.name}, joining existing request`);
+            const existingResult = await existingGenerationPromise;
+            const existingJobId = existingResult?.jobId || getEntityJob('player', player.id) || player.pendingImageJobId || null;
+            const existingJob = existingJobId ? imageJobs.get(existingJobId) : null;
+            if (existingJob) {
+                addJobSubscriber(existingJob, clientId, { emitSnapshot: true });
+                return {
+                    ...existingResult,
+                    success: true,
+                    existingJob: true,
+                    jobId: existingJobId,
+                    job: getJobSnapshot(existingJobId)
+                };
+            }
+            return {
+                ...existingResult,
+                existingJob: true
             };
         }
 
@@ -23200,50 +23555,61 @@ async function generatePlayerImage(player, options = {}) {
             player.imageId = null;
         }
 
-        // Generate the portrait prompt
-        const portraitPrompt = renderPlayerPortraitPrompt(player);
-        const { prompt: finalImagePrompt } = await generateImagePromptFromTemplate(portraitPrompt, { prefixType: 'character' });
+        const generationPromise = Promise.resolve().then(async () => {
+            // Generate the portrait prompt
+            const portraitPrompt = renderPlayerPortraitPrompt(player);
+            const { prompt: finalImagePrompt } = await generateImagePromptFromTemplate(portraitPrompt, { prefixType: 'character' });
 
-        // Create image generation job with player-specific settings
-        const jobId = generateImageId();
-        const portraitNegative = buildNegativePrompt('blurry, low quality, distorted, multiple faces, deformed, ugly, bad anatomy, bad proportions');
-        const payload = {
-            prompt: finalImagePrompt,
-            width: config.imagegen.character_settings?.image?.width,
-            height: config.imagegen.character_settings?.image?.height,
-            steps: config.imagegen.character_settings?.sampling?.steps,
-            seed: Math.floor(Math.random() * 1000000),
-            negative_prompt: portraitNegative,
-            megapixels: getDefaultMegapixels(),
-            // Track which player this image is for
-            playerId: player.id,
-            isPlayerPortrait: true,
-            force,
-            entityType: player.isNPC ? 'npc' : 'player',
-            entityId: player.id,
-            clientId
-        };
+            // Create image generation job with player-specific settings
+            const jobId = generateImageId();
+            const portraitNegative = buildNegativePrompt('blurry, low quality, distorted, multiple faces, deformed, ugly, bad anatomy, bad proportions');
+            const payload = {
+                prompt: finalImagePrompt,
+                width: config.imagegen.character_settings?.image?.width,
+                height: config.imagegen.character_settings?.image?.height,
+                steps: config.imagegen.character_settings?.sampling?.steps,
+                seed: Math.floor(Math.random() * 1000000),
+                negative_prompt: portraitNegative,
+                megapixels: getDefaultMegapixels(),
+                // Track which player this image is for
+                playerId: player.id,
+                isPlayerPortrait: true,
+                force,
+                entityType: player.isNPC ? 'npc' : 'player',
+                entityId: player.id,
+                clientId
+            };
 
-        console.log(`🎨 Generating portrait for player ${player.name} with job ID: ${jobId}`);
+            console.log(`🎨 Generating portrait for player ${player.name} with job ID: ${jobId}`);
 
-        // Create and queue the job
-        const job = createImageJob(jobId, payload);
-        jobQueue.push(jobId);
+            // Create and queue the job
+            const job = createImageJob(jobId, payload);
+            setEntityJob('player', player.id, jobId);
+            player.pendingImageJobId = jobId;
+            jobQueue.push(jobId);
 
-        // Start processing if not already running
-        setTimeout(() => processJobQueue(), 0);
+            // Start processing if not already running
+            setTimeout(() => processJobQueue(), 0);
 
-        setEntityJob('player', player.id, jobId);
-        player.pendingImageJobId = jobId;
-        console.log(`🎨 Queued portrait generation for player ${player.name}, tracking with job ID: ${jobId}`);
+            console.log(`🎨 Queued portrait generation for player ${player.name}, tracking with job ID: ${jobId}`);
 
-        return {
-            success: true,
-            jobId: jobId,
-            status: job.status,
-            message: 'Player portrait generation job queued',
-            estimatedTime: '30-90 seconds'
-        };
+            return {
+                success: true,
+                jobId: jobId,
+                status: job.status,
+                message: 'Player portrait generation job queued',
+                estimatedTime: '30-90 seconds'
+            };
+        });
+
+        playerImageGenerationPromises.set(player.id, generationPromise);
+        try {
+            return await generationPromise;
+        } finally {
+            if (playerImageGenerationPromises.get(player.id) === generationPromise) {
+                playerImageGenerationPromises.delete(player.id);
+            }
+        }
 
     } catch (error) {
         console.error('Error generating player image:', error);
@@ -27533,6 +27899,8 @@ const apiScope = {
     tickStatusEffectsForAction,
     buildLocationShortDescription,
     buildLocationPurpose,
+    getBannedLocationNameSet,
+    getSlopWordList,
     buildNpcProfiles,
     serializeNpcForClient,
     buildThingProfiles,

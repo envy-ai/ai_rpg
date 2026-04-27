@@ -73,6 +73,7 @@ Represents items and scenery in the game world. Supports rarity metadata, attrib
 
 ## Notes
 - Status effect enrichment calls `StatusEffect.generateFromDescriptions` using `Globals` prompt hooks.
+- Loaded `Thing` records disable background status-effect enrichment during hydration to avoid save/load side effects. Prompt-backed item alteration therefore enriches returned target/equipper cause effects in the server alteration helper before writing them back to the `Thing`.
 - Name lookups are location-aware: `getByName` prefers current location/region contexts.
 - Harvest history is persisted in both top-level `Thing` JSON and mirrored metadata so save/load and metadata-based paths stay in sync.
 - Container state persists as top-level `containedThingIds`; contained items keep `metadata.containerId` and have owner/player/location placement metadata cleared.

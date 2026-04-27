@@ -285,6 +285,58 @@ Attribute/skill names are normalized to lowercase with non-alphanumeric characte
 - When the Player Stats page loads without a player, the skill formula is used to set the default unspent points.
 - Invalid formulas throw errors and block the allocator until corrected.
 
+## Difficulty DC formulas
+
+`config.formulas.dc` controls the DC used for unopposed plausible action checks. The formulas are evaluated with `level` set to the current location's `baseLevel`.
+
+```yaml
+formulas:
+  dc:
+    trivial: "0"
+    easy: "10"
+    medium: "15"
+    hard: "20"
+    very_hard: "25"
+    legendary: "30"
+```
+
+The default formulas preserve the previous hardcoded DCs. Invalid or missing DC formulas fail configuration validation, and a recognized difficulty cannot be rolled unless its formula evaluates to a finite number.
+
+## Outcome margin formulas
+
+`config.formulas.outcome_margins` controls how far above or below the DC/opposed total a roll must land to produce each outcome tier. Like DC formulas, `level` is the current location's `baseLevel`.
+
+```yaml
+formulas:
+  outcome_margins:
+    critical_success: "10"
+    major_success: "6"
+    success: "3"
+    barely_succeeded: "0"
+    critical_failure: "-10"
+    major_failure: "-6"
+    failure: "-3"
+```
+
+`barely_failed` is the implicit band between `failure` and `barely_succeeded`. The evaluated formulas must remain ordered (`critical_success >= major_success >= success >= barely_succeeded` and `critical_failure <= major_failure <= failure < barely_succeeded`) or config validation fails.
+
+## Critical roll threshold formulas
+
+`config.formulas.critical_thresholds` controls the d20 roll gates that must be met before a critical outcome remains critical. The thresholds are inclusive. For example, `normal.success: 16` means a normal action needs a d20 roll of `16` or higher to keep `critical_success`, while `normal.failure: 4` means it needs a d20 roll of `4` or lower to keep `critical_failure`.
+
+```yaml
+formulas:
+  critical_thresholds:
+    normal:
+      success: 16
+      failure: 4
+    crafting:
+      success: 19
+      failure: 2
+```
+
+`normal` applies to ordinary action outcome classification. `crafting` applies to the craft/salvage/harvest and Modify Location success-degree remap that can downgrade critical outcomes to major outcomes. Values may be numeric literals or formula strings, and formula strings receive the same `level` variable as DC and outcome-margin formulas.
+
 ## Player level-up ability selection
 
 Two config keys control player-only level-up ability drafting:

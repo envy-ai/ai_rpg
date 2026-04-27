@@ -3246,9 +3246,95 @@ p:not(:last-child) {
   box-shadow: 0 0 0 $thing-grid-equipped-outline-width rgba(56, 189, 248, 0.45);
 }
 
+.thing-grid-equipment-pill {
+  position: absolute;
+  top: 4px;
+  left: 50%;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  max-width: calc(100% - 12px);
+  min-width: 34px;
+  height: 18px;
+  padding: 0 7px;
+  overflow: hidden;
+  border: 1px solid rgba(56, 189, 248, 0.82);
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.82);
+  color: #bae6fd;
+  cursor: pointer;
+  font-size: 0.62rem;
+  font-weight: 700;
+  line-height: 1;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  transform: translateX(-50%);
+  transition:
+    background 0.16s ease,
+    border-color 0.16s ease,
+    color 0.16s ease,
+    opacity 0.16s ease,
+    transform 0.16s ease;
+  white-space: nowrap;
+}
+
+.thing-grid-equipment-pill:hover,
+.thing-grid-equipment-pill:focus-visible {
+  transform: translateX(-50%) translateY(-1px);
+}
+
+.thing-grid-equipment-pill:focus-visible {
+  outline: 2px solid rgba(125, 211, 252, 0.9);
+  outline-offset: 2px;
+}
+
+.thing-grid-equipment-pill:disabled {
+  cursor: progress;
+  opacity: 0.68;
+}
+
+.thing-grid-equipment-pill--equipped {
+  border-color: rgba(125, 211, 252, 0.95);
+  background: #0284c7;
+  color: #ffffff;
+  box-shadow: 0 4px 12px rgba(2, 132, 199, 0.32);
+}
+
+.thing-grid-equipment-pill--available {
+  border-color: rgba(56, 189, 248, 0.86);
+  background: rgba(15, 23, 42, 0.84);
+  color: #bae6fd;
+}
+
+.thing-grid-equipment-feedback {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 5;
+  padding: 5px 9px;
+  border-radius: 6px;
+  background: rgba(15, 23, 42, 0.9);
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.45);
+  color: #ffffff;
+  font-size: 0.78rem;
+  font-weight: 800;
+  opacity: 0;
+  pointer-events: none;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.65);
+  transform: translate(-50%, -50%);
+  transition: opacity 0.2s ease;
+  white-space: nowrap;
+}
+
+.thing-grid-equipment-feedback.is-visible {
+  opacity: 1;
+}
+
 .thing-grid-tile .entity-context-menu-button {
   top: $thing-grid-context-menu-inset;
   right: $thing-grid-context-menu-inset;
+  z-index: 4;
 }
 
 .inventory-grid.thing-collection-view--small-grid,
@@ -3264,6 +3350,21 @@ p:not(:last-child) {
   min-height: $thing-small-grid-icon-size;
   border-width: $thing-small-grid-icon-border-width;
   font-size: $thing-small-grid-icon-font-size;
+}
+
+.thing-collection-view--small-grid .thing-grid-equipment-pill {
+  top: 2px;
+  max-width: calc(100% - 6px);
+  min-width: 24px;
+  height: 14px;
+  padding: 0 4px;
+  font-size: 0.48rem;
+}
+
+.thing-collection-view--small-grid .thing-grid-equipment-feedback {
+  padding: 4px 6px;
+  border-radius: 5px;
+  font-size: 0.58rem;
 }
 
 .thing-collection-view--small-grid
@@ -10772,6 +10873,12 @@ body.modal-open {
   text-align: center;
 }
 
+.turn-diff-drawer__row-main {
+  display: grid;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
 .turn-diff-drawer__text {
   min-width: 0;
   overflow-wrap: anywhere;
@@ -10783,6 +10890,55 @@ body.modal-open {
   > :last-child {
     margin-bottom: 0;
   }
+}
+
+.turn-diff-drawer__entity-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.turn-diff-drawer__entity-chip {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  border: 1px solid rgba(125, 211, 252, 0.28);
+  border-radius: 999px;
+  background: rgba(14, 116, 144, 0.18);
+  color: rgba(224, 242, 254, 0.96);
+  font: inherit;
+  font-size: 0.74rem;
+  font-weight: 650;
+  line-height: 1.1;
+  min-height: 1.35rem;
+  overflow-wrap: anywhere;
+  padding: 0.18rem 0.42rem;
+}
+
+button.turn-diff-drawer__entity-chip {
+  cursor: pointer;
+  transition:
+    background 140ms ease,
+    border-color 140ms ease,
+    box-shadow 140ms ease;
+}
+
+.turn-diff-drawer__entity-chip--clickable:hover {
+  background: rgba(14, 116, 144, 0.3);
+  border-color: rgba(125, 211, 252, 0.48);
+}
+
+.turn-diff-drawer__entity-chip--clickable:focus-visible {
+  outline: none;
+  border-color: rgba(125, 211, 252, 0.75);
+  box-shadow: 0 0 0 2px rgba(14, 165, 233, 0.34);
+}
+
+.turn-diff-drawer__entity-target-highlight {
+  outline: 2px solid rgba(125, 211, 252, 0.9);
+  outline-offset: 3px;
+  box-shadow: 0 0 0 6px rgba(14, 165, 233, 0.22);
 }
 
 @media (max-width: 640px) {

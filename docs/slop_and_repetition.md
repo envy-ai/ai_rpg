@@ -7,6 +7,7 @@ Quick refresher on where these systems live and how they're wired.
 ### What it does
 - Default is ON (`config.default.yaml` sets `repetition_buster: true`), but it can be toggled in config.
 - When `config.repetition_buster` is enabled, the player-action prompt runs a multi-step self-correction flow and outputs either `<finalProse>...</finalProse>` or `<travelProse>...</travelProse>`. The server enforces a `requiredRegex` and extracts the prose for player-action prompts (used for player actions and NPC narratives).
+- The normal non-attack player-action branch includes the `<travelProse>` scaffold for both explicit actions and empty "continue the scene" actions. The attack branch remains final-prose only so combat narration cannot accidentally trigger split travel handling.
 - If `config.repetition_buster` is **disabled**, the server still checks for repetition against recent prose. When overlap is detected, it re-renders the player-action prompt with repetition_buster forced on and re-asks the model.
 
 ### Full step list (current prompt)

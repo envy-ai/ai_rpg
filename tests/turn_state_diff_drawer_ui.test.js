@@ -10,11 +10,140 @@ const apiSource = fs.readFileSync(path.join(rootDir, 'api.js'), 'utf8');
 const chatSource = fs.readFileSync(path.join(rootDir, 'public', 'js', 'chat.js'), 'utf8');
 const scssSource = fs.readFileSync(path.join(rootDir, 'public', 'css', 'main.scss'), 'utf8');
 const commonDocSource = fs.readFileSync(path.join(rootDir, 'docs', 'api', 'common.md'), 'utf8');
+const chatDocSource = fs.readFileSync(path.join(rootDir, 'docs', 'ui', 'chat_interface.md'), 'utf8');
 const drawerPath = path.join(rootDir, 'public', 'js', 'turn-state-diff-drawer.js');
 const drawerSource = fs.existsSync(drawerPath) ? fs.readFileSync(drawerPath, 'utf8') : '';
 
-function loadDrawerApi() {
-    const context = { window: {} };
+class FakeCustomEvent {
+    constructor(type, options = {}) {
+        this.type = type;
+        this.detail = options.detail;
+        this.bubbles = Boolean(options.bubbles);
+        this.cancelable = Boolean(options.cancelable);
+        this.defaultPrevented = false;
+        this.propagationStopped = false;
+    }
+
+    preventDefault() {
+        if (this.cancelable) {
+            this.defaultPrevented = true;
+        }
+    }
+
+    stopPropagation() {
+        this.propagationStopped = true;
+    }
+}
+
+class FakeElement {
+    constructor(tagName) {
+        this.tagName = String(tagName || '').toUpperCase();
+        this.children = [];
+        this.parentNode = null;
+        this.attributes = new Map();
+        this.dataset = {};
+        this.listeners = new Map();
+        this.className = '';
+        this.id = '';
+        this.hidden = false;
+        this.type = '';
+        this._textContent = '';
+    }
+
+    appendChild(child) {
+        child.parentNode = this;
+        this.children.push(child);
+        return child;
+    }
+
+    setAttribute(name, value) {
+        this.attributes.set(name, String(value));
+        if (name === 'id') {
+            this.id = String(value);
+        }
+    }
+
+    getAttribute(name) {
+        return this.attributes.has(name) ? this.attributes.get(name) : null;
+    }
+
+    addEventListener(type, listener) {
+        if (!this.listeners.has(type)) {
+            this.listeners.set(type, []);
+        }
+        this.listeners.get(type).push(listener);
+    }
+
+    dispatchEvent(event) {
+        if (!event || !event.type) {
+            return true;
+        }
+        if (typeof event.preventDefault !== 'function') {
+            event.preventDefault = () => {
+                event.defaultPrevented = true;
+            };
+        }
+        if (typeof event.stopPropagation !== 'function') {
+            event.stopPropagation = () => {
+                event.propagationStopped = true;
+            };
+        }
+        const listeners = this.listeners.get(event.type) || [];
+        listeners.forEach(listener => listener.call(this, event));
+        if (event.bubbles && !event.propagationStopped && this.parentNode) {
+            this.parentNode.dispatchEvent(event);
+        }
+        return !event.defaultPrevented;
+    }
+
+    get textContent() {
+        return this._textContent + this.children.map(child => child.textContent || '').join('');
+    }
+
+    set textContent(value) {
+        this._textContent = String(value ?? '');
+        this.children = [];
+    }
+
+    get classList() {
+        const element = this;
+        return {
+            contains(className) {
+                return element.className.split(/\s+/).includes(className);
+            }
+        };
+    }
+}
+
+function createFakeDocument() {
+    return {
+        createElement(tagName) {
+            return new FakeElement(tagName);
+        }
+    };
+}
+
+function collectByClass(element, className, results = []) {
+    if (!element) {
+        return results;
+    }
+    if (element.className && element.className.split(/\s+/).includes(className)) {
+        results.push(element);
+    }
+    (element.children || []).forEach(child => collectByClass(child, className, results));
+    return results;
+}
+
+function loadDrawerApi(extraContext = {}) {
+    const window = extraContext.window || {};
+    const context = {
+        window,
+        document: extraContext.document,
+        CustomEvent: extraContext.CustomEvent
+    };
+    if (typeof context.CustomEvent === 'function' && !window.CustomEvent) {
+        window.CustomEvent = context.CustomEvent;
+    }
     vm.createContext(context);
     vm.runInContext(drawerSource, context, { filename: drawerPath });
     return context.window.TurnStateDiffDrawer;
@@ -61,7 +190,10 @@ test('turn state diff drawer styles are scoped and keyboard-visible', () => {
     assert.match(scssSource, /\.turn-diff-drawer__toggle/);
     assert.match(scssSource, /\.turn-diff-drawer__category-chip/);
     assert.match(scssSource, /\.turn-diff-drawer__group/);
+    assert.match(scssSource, /\.turn-diff-drawer__entity-chip/);
+    assert.match(scssSource, /\.turn-diff-drawer__entity-chip--clickable/);
     assert.match(scssSource, /\.turn-diff-drawer__toggle:focus-visible/);
+    assert.match(scssSource, /\.turn-diff-drawer__entity-chip--clickable:focus-visible/);
     assert.match(scssSource, /content:\s*"▶"/);
     assert.doesNotMatch(scssSource, /content:\s*">"/);
 });
@@ -172,6 +304,107 @@ test('phase 2 summary metadata is preserved for server and live drawer rows', ()
     assert.match(chatSource, /entityRefs:\s*this\.normalizeTurnDiffEntityRefs\(item\.entityRefs\)/);
 
     assert.match(drawerSource, /entityRefs:\s*normalizeEntityRefs\(item\.entityRefs\)/);
+});
+
+test('turn diff rows are ordered by severity inside drawer categories', () => {
+    const drawer = loadDrawerApi();
+    const summary = drawer.summarizeTurnDiff([{
+        type: 'event-summary',
+        summaryTitle: '📋 Events',
+        summaryItems: [
+            { icon: '•', category: 'character', severity: 'normal', text: 'Minor scratch.' },
+            { icon: '☠', category: 'character', severity: 'critical', text: 'Mara died.' },
+            { icon: '!', category: 'character', severity: 'important', text: 'Mara took damage.' }
+        ]
+    }]);
+
+    assert.deepEqual(summary.rows.map(row => row.text), [
+        'Mara died.',
+        'Mara took damage.',
+        'Minor scratch.'
+    ]);
+});
+
+test('drawer renders exact entity chips and dispatches id-backed selection events', () => {
+    const drawer = loadDrawerApi({
+        document: createFakeDocument(),
+        CustomEvent: FakeCustomEvent
+    });
+
+    const element = drawer.createDrawer([{
+        type: 'event-summary',
+        summaryTitle: '📋 Events',
+        summaryItems: [{
+            icon: '✅',
+            text: 'Quest objective complete: Speak with Mara.',
+            category: 'quest_reward',
+            severity: 'important',
+            sourceType: 'completed_quest_objective',
+            entityRefs: [
+                { type: 'npc', id: 'npc-mara', name: 'Mara' },
+                { type: 'quest', name: 'The Lost Bell' }
+            ]
+        }]
+    }], { open: true });
+
+    const row = collectByClass(element, 'turn-diff-drawer__row')[0];
+    assert.equal(row.dataset.sourceType, 'completed_quest_objective');
+    assert.equal(row.dataset.severity, 'important');
+
+    const chips = collectByClass(element, 'turn-diff-drawer__entity-chip');
+    assert.equal(chips.length, 2);
+    assert.equal(chips[0].tagName, 'BUTTON');
+    assert.equal(chips[0].dataset.entityType, 'npc');
+    assert.equal(chips[0].dataset.entityId, 'npc-mara');
+    assert.equal(chips[0].dataset.entityName, 'Mara');
+    assert.equal(chips[0].classList.contains('turn-diff-drawer__entity-chip--clickable'), true);
+    assert.equal(chips[1].tagName, 'SPAN');
+    assert.equal(chips[1].dataset.entityType, 'quest');
+    assert.equal(chips[1].dataset.entityName, 'The Lost Bell');
+    assert.equal(chips[1].classList.contains('turn-diff-drawer__entity-chip--clickable'), false);
+
+    let selectedDetail = null;
+    element.addEventListener('airpg:turn-diff-entity-selected', event => {
+        selectedDetail = event.detail;
+    });
+
+    chips[0].dispatchEvent({
+        type: 'click',
+        bubbles: true,
+        cancelable: true
+    });
+
+    assert.equal(selectedDetail.type, 'npc');
+    assert.equal(selectedDetail.id, 'npc-mara');
+    assert.equal(selectedDetail.name, 'Mara');
+    assert.equal(selectedDetail.sourceType, 'completed_quest_objective');
+
+    selectedDetail = null;
+    chips[1].dispatchEvent({
+        type: 'click',
+        bubbles: true,
+        cancelable: true
+    });
+    assert.equal(selectedDetail, null);
+});
+
+test('phase 3 drawer docs describe entity chips and severity ordering', () => {
+    assert.match(chatDocSource, /entity chips/i);
+    assert.match(chatDocSource, /id-backed/i);
+    assert.match(chatDocSource, /name-only/i);
+    assert.match(chatDocSource, /severity/i);
+});
+
+test('chat page routes exact turn diff entity selection events to existing UI targets', () => {
+    assert.match(viewSource, /airpg:turn-diff-entity-selected/);
+    assert.match(viewSource, /handleTurnDiffEntitySelected/);
+    assert.match(viewSource, /showNpcViewModal\(\{ id,/);
+    assert.match(viewSource, /openLocationContextMenuForLocationId\(id\)/);
+    assert.match(viewSource, /fetchThingDetails\(id\)/);
+    assert.match(viewSource, /openThingContainerModal\(thing/);
+    assert.match(viewSource, /activateTurnDiffEntityPanel\('quests'\)/);
+    assert.match(viewSource, /activateTurnDiffEntityPanel\('factions'\)/);
+    assert.match(scssSource, /\.turn-diff-drawer__entity-target-highlight/);
 });
 
 test('common API docs describe phase 2 summary item metadata', () => {

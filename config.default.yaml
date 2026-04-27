@@ -298,19 +298,42 @@ baseWeaponDamage: 5
 player_ability_options_per_level: 6
 player_abilities_per_level: 3
 
-# Point pool formulas (character creation).
+# Formula configuration (character creation point pools, DCs, and outcome margins).
 # Variables: level, number_of_skills, number_of_attributes,
 #   attribute.<name>.value, attribute.<name>.bonus (base values),
 #   attribute_modified.<name>.value, attribute_modified.<name>.bonus (modified values),
 #   skill.<name> (lowercased with non-alphanumerics as underscores), infinity (constant = 1e100)
 # Functions: abs, round, floor, ceil, min, max, clamp(value, min, max)
 # Defaults below preserve the previous formulas.
+# DC, outcome margin, and critical threshold formulas use level as the current location's base level.
 formulas:
   character_creation:
     attribute_pool_formula: "ceil(level * (number_of_attributes / 2))"
     skill_pool_formula: "level * ceil(number_of_skills / 5)"
     max_attribute: "infinity"
     max_skill: "infinity"
+  dc:
+    trivial: "0"
+    easy: "10 + level"
+    medium: "floor(15 + level * 1.1)"
+    hard: "floor(10 + level * 1.2)"
+    very_hard: "floor(25 + level * 1.3)"
+    legendary: "floor(30 + level * 1.4)"
+  outcome_margins:
+    critical_success: "20"
+    major_success: "10"
+    success: "3"
+    barely_succeeded: "0"
+    failure: "-3"
+    major_failure: "-10"
+    critical_failure: "-20"
+  critical_thresholds:
+    normal:
+      success: 16
+      failure: 4
+    crafting:
+      success: 19
+      failure: 2
 baseHealthPerLevel: 15
 # Percent of max health regenerated per minute; 0.01736111111 works out to about 25% per day.
 healthRegenPercentPerMinute: 0.01736111111

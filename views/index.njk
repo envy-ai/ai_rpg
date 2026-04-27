@@ -9227,6 +9227,104 @@
 
         window.openLocationContextMenuForLocationId = openLocationContextMenuForLocationId;
 
+        function normalizeTurnDiffEntityDetail(detail) {
+            if (!detail || typeof detail !== 'object') {
+                return { type: '', id: '', name: '' };
+            }
+            return {
+                type: typeof detail.type === 'string' ? detail.type.trim().toLowerCase() : '',
+                id: typeof detail.id === 'string' ? detail.id.trim() : '',
+                name: typeof detail.name === 'string' ? detail.name.trim() : ''
+            };
+        }
+
+        function activateTurnDiffEntityPanel(tabName) {
+            if (!tabName) {
+                return;
+            }
+            if (typeof window.activateTab === 'function') {
+                window.activateTab(tabName);
+                return;
+            }
+            document.querySelector(`[data-tab="${escapeForSelector(tabName)}"]`)?.click();
+        }
+
+        function focusTurnDiffThingElement(id) {
+            const selector = `[data-thing-id="${escapeForSelector(id)}"]`;
+            const target = document.querySelector(selector);
+            if (!target) {
+                return false;
+            }
+
+            activateTurnDiffEntityPanel('adventure');
+            target.classList.add('turn-diff-drawer__entity-target-highlight');
+            target.scrollIntoView({ block: 'center', behavior: 'smooth' });
+
+            const focusTarget = target.matches('button, [href], input, select, textarea, [tabindex]')
+                ? target
+                : target.querySelector('button, [href], input, select, textarea, [tabindex]');
+            if (focusTarget && typeof focusTarget.focus === 'function') {
+                focusTarget.focus({ preventScroll: true });
+            }
+
+            window.setTimeout(() => {
+                target.classList.remove('turn-diff-drawer__entity-target-highlight');
+            }, 1800);
+            return true;
+        }
+
+        async function handleTurnDiffEntitySelected(event) {
+            const { type, id, name } = normalizeTurnDiffEntityDetail(event?.detail);
+            if (!type || !id) {
+                return;
+            }
+
+            try {
+                if (type === 'npc' || type === 'player' || type === 'character') {
+                    await showNpcViewModal({ id, name });
+                    return;
+                }
+
+                if (type === 'location') {
+                    await openLocationContextMenuForLocationId(id);
+                    return;
+                }
+
+                if (type === 'thing' || type === 'item' || type === 'scenery') {
+                    if (focusTurnDiffThingElement(id)) {
+                        return;
+                    }
+
+                    const thing = await fetchThingDetails(id);
+                    if (thing?.isContainer) {
+                        await openThingContainerModal(thing, {
+                            resetHistory: false,
+                            pushHistory: false
+                        });
+                    }
+                    return;
+                }
+
+                if (type === 'quest') {
+                    activateTurnDiffEntityPanel('quests');
+                    await window.refreshQuestPanel?.();
+                    return;
+                }
+
+                if (type === 'faction') {
+                    activateTurnDiffEntityPanel('factions');
+                    await window.refreshFactions?.();
+                }
+            } catch (error) {
+                console.error('Failed to open turn diff entity target:', error);
+                alert(`Failed to open ${name || id}: ${error?.message || error}`);
+            }
+        }
+
+        document.addEventListener('airpg:turn-diff-entity-selected', event => {
+            void handleTurnDiffEntitySelected(event);
+        });
+
         function safeJsonStringify(value, fallback = '') {
             try {
                 return JSON.stringify(value, null, 2);
@@ -16622,6 +16720,62 @@
             return slotInfo.equippedSlot || slotInfo.slotLabel || slotInfo.rawSlot || 'Equippable';
         }
 
+        function isThingGridEquipmentPillViewMode(viewMode) {
+            return viewMode === 'grid' || viewMode === 'small-grid';
+        }
+
+        function getThingGridEquipmentPillText(thing = {}, slotInfo = getThingSlotInfo(thing)) {
+            return slotInfo?.slotLabel
+                || slotInfo?.rawSlot
+                || slotInfo?.equippedSlot
+                || normalizeThingSlotLabel(thing?.slot)
+                || normalizeThingSlotLabel(thing?.metadata?.slot)
+                || 'Equip';
+        }
+
+        function resolveThingGridEquipmentFeedbackHost({ card = null, container = null, thingId = '' } = {}) {
+            if (card instanceof HTMLElement && card.classList.contains('thing-grid-tile') && card.isConnected) {
+                return card;
+            }
+            if (!(container instanceof HTMLElement) || !thingId) {
+                return null;
+            }
+            return Array.from(container.querySelectorAll('.thing-grid-tile'))
+                .find(tile => tile?.dataset?.thingId === thingId) || null;
+        }
+
+        function showThingGridEquipmentFeedback({
+            card = null,
+            container = null,
+            thingId = '',
+            equipped = false
+        } = {}) {
+            const host = resolveThingGridEquipmentFeedbackHost({ card, container, thingId });
+            if (!(host instanceof HTMLElement)) {
+                return;
+            }
+
+            host.querySelectorAll('.thing-grid-equipment-feedback').forEach(element => {
+                element.remove();
+            });
+
+            const feedback = document.createElement('div');
+            feedback.className = 'thing-grid-equipment-feedback';
+            feedback.textContent = equipped ? 'Equipped' : 'Unequipped';
+            feedback.setAttribute('aria-hidden', 'true');
+            host.appendChild(feedback);
+
+            requestAnimationFrame(() => {
+                feedback.classList.add('is-visible');
+                setTimeout(() => {
+                    feedback.classList.remove('is-visible');
+                }, 650);
+                setTimeout(() => {
+                    feedback.remove();
+                }, 1050);
+            });
+        }
+
         function syncThingSlotFilterOptions(selectEl, items, { wrapper = null, allLabel = 'All slots' } = {}) {
             if (!selectEl) {
                 if (wrapper) {
@@ -17495,9 +17649,11 @@
                 }
 
                 window.refreshParty?.();
+                return updatedCharacter;
             } catch (error) {
                 console.warn('Failed to update NPC equipment:', error);
                 alert(`Failed to update equipment: ${error.message || error}`);
+                throw error;
             }
         }
 
@@ -17508,27 +17664,58 @@
             actorId = null,
             activeViewMode = 'classic'
         } = {}) {
-            if (!(host instanceof HTMLElement) || !thing?.id || !actorId || !slotInfo?.canModifyEquipment) {
+            const canToggleEquipment = Boolean(slotInfo?.equippedSlot || isEquippableThing(thing));
+            if (!(host instanceof HTMLElement) || !thing?.id || !actorId || !canToggleEquipment) {
                 return null;
             }
 
             const equipped = Boolean(thing?.isEquipped || thing?.equippedSlot);
+            const shouldEquip = !equipped;
+            const isGridPill = isThingGridEquipmentPillViewMode(activeViewMode);
+            const card = host.closest?.('.thing-collection-entry') || host;
+            const feedbackContainer = isGridPill ? resolveThingCollectionContainer(card) : null;
             const equipToggle = document.createElement('button');
             equipToggle.type = 'button';
-            equipToggle.className = 'inventory-equip-toggle';
-            if (activeViewMode === 'table') {
-                equipToggle.classList.add('small');
+            if (isGridPill) {
+                const pillText = getThingGridEquipmentPillText(thing, slotInfo);
+                const actionLabel = equipped ? 'Unequip' : 'Equip';
+                equipToggle.className = 'thing-grid-equipment-pill';
+                equipToggle.classList.add(equipped
+                    ? 'thing-grid-equipment-pill--equipped'
+                    : 'thing-grid-equipment-pill--available');
+                equipToggle.textContent = getThingGridEquipmentPillText(thing, slotInfo);
+                equipToggle.setAttribute('aria-label', `${actionLabel} ${thing?.name || 'item'} (${pillText})`);
+                equipToggle.setAttribute('aria-pressed', equipped ? 'true' : 'false');
+                equipToggle.title = `${actionLabel} ${pillText}`;
+            } else {
+                equipToggle.className = 'inventory-equip-toggle';
+                if (activeViewMode === 'table') {
+                    equipToggle.classList.add('small');
+                }
+                equipToggle.textContent = equipped ? 'Unequip' : 'Equip';
             }
-            equipToggle.textContent = equipped ? 'Unequip' : 'Equip';
             equipToggle.addEventListener('click', (event) => {
                 event.stopPropagation();
                 event.preventDefault();
                 equipToggle.disabled = true;
-                setNpcItemEquipped(actorId, thing, !equipped, {
+                setNpcItemEquipped(actorId, thing, shouldEquip, {
                     slotName: slotInfo.equippedSlot || null,
                     slotType: slotInfo.slotTypeValueRaw || null
+                }).then(() => {
+                    if (isGridPill) {
+                        showThingGridEquipmentFeedback({
+                            card,
+                            container: feedbackContainer,
+                            thingId: thing.id,
+                            equipped: shouldEquip
+                        });
+                    }
+                }).catch(() => {
+                    // setNpcItemEquipped already surfaced the failure to the player.
                 }).finally(() => {
-                    equipToggle.disabled = false;
+                    if (equipToggle.isConnected) {
+                        equipToggle.disabled = false;
+                    }
                 });
             });
             host.appendChild(equipToggle);
@@ -17612,7 +17799,14 @@
                                 npcId: currentNpcInventoryNpcId
                             });
                         }
-                        if (activeViewMode === 'grid' || activeViewMode === 'small-grid') {
+                        if (isThingGridEquipmentPillViewMode(activeViewMode)) {
+                            appendThingEquipToggle({
+                                host: controlsHost || card,
+                                thing,
+                                slotInfo,
+                                actorId: currentNpcInventoryNpcId,
+                                activeViewMode
+                            });
                             return;
                         }
                         appendThingEquipToggle({
@@ -19025,7 +19219,7 @@
                         tableConfig,
                         extraClasses: ['crafting-inventory-card'],
                         focusable: true,
-                        decorateCard: ({ card, icon, thing, slotInfo, equipmentControlsHost, viewMode: activeViewMode }) => {
+                        decorateCard: ({ card, icon, thing, slotInfo, controlsHost, equipmentControlsHost, viewMode: activeViewMode }) => {
                             if (!thing?.id) {
                                 return;
                             }
@@ -19077,9 +19271,9 @@
                                 }
                             });
 
-                            if (activeViewMode === 'table') {
+                            if (activeViewMode === 'table' || isThingGridEquipmentPillViewMode(activeViewMode)) {
                                 appendThingEquipToggle({
-                                    host: equipmentControlsHost,
+                                    host: (activeViewMode === 'table' && equipmentControlsHost) ? equipmentControlsHost : (controlsHost || card),
                                     thing,
                                     slotInfo,
                                     actorId: typeof window.currentPlayerData?.id === 'string'

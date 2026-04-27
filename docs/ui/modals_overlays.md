@@ -90,7 +90,7 @@ Most modals live in `views/index.njk` and are wired up by the inline script or `
 - `#regionWeatherEditModal`: edit the current location's containing region weather definition from the location context menu.
 - `#calendarEditModal`: tabbed field editor for the active `calendarDefinition`, opened from the location/map context menus. It loads `/api/calendar`, edits year name plus ordered months, weekdays, seasons/time descriptions, and holidays, saves through `PUT /api/calendar`, and displays validation failures from the server without mutating the calendar.
 - `#setLastSeenModal`: opened from the main-location and map location context menus. It prompts for the same exact-time (`H AM/PM` or `H:MM AM/PM`) or relative (`duration ago`) input supported by `/set_last_seen`, displays the selected location label, and submits by calling the existing slash-command execution path instead of duplicating client-side parsing.
-- `#newExitModal`: create or edit exits (new region/location, editable travel time, optional image).
+- `#newExitModal`: create or edit exits (new region/location, editable travel time, optional image). User-entered names for new locations/regions are validated server-side before creation; duplicate existing/pending world names, banned name fragments, and slop words return an alert and do not create a stub or exit.
 - Summon NPC/item now reuse the shared searchable chooser modal (`.npc-selection-modal`) instead of dedicated `<select>`-based forms.
   - `Summon NPC` filters existing NPCs by name/location and executes immediately on row click.
   - `Summon Item or Scenery` filters existing thing records by name/type/origin label (including inventory origins like `Bob's inventory`) and executes immediately on row click.

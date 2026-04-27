@@ -114,10 +114,11 @@ Loaded on the chat page:
   `.thing-table-row__content`, `.thing-table-row__utilities`,
   `.thing-collection-view--grid`, `.thing-collection-view--small-grid`,
   `.thing-table-row__icon`,
-  `.thing-action-icon-list`, `.thing-grid-tile`, and `.thing-grid-tile__icon`; grid modes use a `1px` tile gap and a `2px`
-  rarity-colored border on the image/icon itself. `Small Grid` now overrides those shared
+  `.thing-action-icon-list`, `.thing-grid-tile`, `.thing-grid-tile__icon`,
+  `.thing-grid-equipment-pill`, and `.thing-grid-equipment-feedback`; grid modes use a `1px` tile gap and a `2px`
+  rarity-colored border on the image/icon itself. Inventory-style grid views that already allow equipment actions render the slot label as a top-center pill, with a solid equipped state, an outlined available state, and centered `Equipped`/`Unequipped` fade feedback after toggles. `Small Grid` now overrides those shared
   sizing tokens to `0.7x` with SCSS math so the tile, image, count badge, overlay badge bar,
-  and context-menu button all shrink together without transform scaling. Table mode now uses a real
+  grid equipment pill, and context-menu button all shrink together without transform scaling. Table mode now uses a real
   HTML table (`<table>/<tbody>/<tr>/<td>`) with collapsed borders; its image cell and row height use
   a shared `0.5x` scale derived from the base icon size, the title cell is explicitly left-aligned and vertically centered, and its `•••` context-menu button/menu are absolutely anchored from `.thing-table-row__content` instead of the utilities cell.
   Inventory-style tables additionally opt into `.thing-table__head` / `.thing-table__head-cell`
