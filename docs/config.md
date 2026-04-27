@@ -601,7 +601,7 @@ Rules:
 - Default is `false`.
 - When `true`, prompt-level omissions inside `prompts/base-context.xml.njk` are ignored so the prompt shape stays more stable for cache reuse experiments.
 - Currently this affects the template-level `omitGameHistory` flag, causing `<olderStoryHistory>` to remain present even for prompt families that would normally suppress it.
-- When `true`, slop-remover also switches from the standalone `prompts/slop-remover.xml.njk` template to the base-context include path (`prompts/base-context.xml.njk` with `promptType: slop-remover`). The legacy `attack_precheck` prompt and automatic player-action plausibility prompt call are currently disabled regardless of this setting because attacks and player-action plausibility checks resolve through chat tools.
+- When `true`, slop-remover also switches from the standalone `prompts/slop-remover.xml.njk` template to the base-context include path (`prompts/base-context.xml.njk` with `promptType: slop-remover`). The legacy `attack_precheck` prompt and automatic player-action plausibility prompt call are currently disabled regardless of this setting because attacks and non-attack skill checks resolve through chat tools.
 - This does **not** override lower-level base-context builder exclusions such as `base_context.omit_inventory_items`, `base_context.omit_abilities`, `base_context.omit_craft_history`, or per-call `omitEventSummaryHistory`.
 
 ## Tool-call chat debugging

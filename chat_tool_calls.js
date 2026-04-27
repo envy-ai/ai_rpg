@@ -591,18 +591,18 @@ const CHAT_TOOL_DEFINITIONS = Object.freeze([
     {
         type: 'function',
         function: {
-            name: 'resolvePlausibilityCheck',
-            description: 'Resolve an unopposed plausibility skill check and return the resulting outcome label.',
+            name: 'resolveSkillCheck',
+            description: 'Resolve an unopposed skill check for a meaningful uncertain non-attack action and return the resulting outcome label.',
             parameters: {
                 type: 'object',
                 properties: {
                     actor: {
                         type: 'string',
-                        description: 'Optional acting character name or "player". Defaults to the current player.'
+                        description: 'Optional acting character name or "player". Defaults to the current prose actor when available, otherwise the current player.'
                     },
                     reason: {
                         type: 'string',
-                        description: 'Brief reason this skill/attribute and difficulty are appropriate.'
+                        description: 'Brief reason this skill check is needed and why this skill/attribute and difficulty are appropriate.'
                     },
                     skill: {
                         type: 'string',
@@ -639,18 +639,18 @@ const CHAT_TOOL_DEFINITIONS = Object.freeze([
     {
         type: 'function',
         function: {
-            name: 'resolveOpposedPlausibilityCheck',
-            description: 'Resolve an opposed plausibility skill check against another present actor and return the resulting outcome label.',
+            name: 'resolveOpposedSkillCheck',
+            description: 'Resolve an opposed skill check against another present actor for a meaningful contested non-attack action and return the resulting outcome label.',
             parameters: {
                 type: 'object',
                 properties: {
                     actor: {
                         type: 'string',
-                        description: 'Optional acting character name or "player". Defaults to the current player.'
+                        description: 'Optional acting character name or "player". Defaults to the current prose actor when available, otherwise the current player.'
                     },
                     reason: {
                         type: 'string',
-                        description: 'Brief reason this opposed skill/attribute pairing is appropriate.'
+                        description: 'Brief reason this contested skill check is needed and why this opposed skill/attribute pairing is appropriate.'
                     },
                     skill: {
                         type: 'string',
@@ -1567,18 +1567,18 @@ const createChatToolRuntime = ({
                 skill: args.attackerInfo?.attackSkill
             });
         }
-        if (functionName === 'resolvePlausibilityCheck') {
+        if (functionName === 'resolveSkillCheck' || functionName === 'resolvePlausibilityCheck') {
             return stableCacheKey({
-                type: 'plausibility',
+                type: 'skill_check',
                 round: roundKey,
                 character: args.actor || 'player',
                 attribute: args.attribute,
                 skill: args.skill
             });
         }
-        if (functionName === 'resolveOpposedPlausibilityCheck') {
+        if (functionName === 'resolveOpposedSkillCheck' || functionName === 'resolveOpposedPlausibilityCheck') {
             return stableCacheKey({
-                type: 'opposed_plausibility',
+                type: 'opposed_skill_check',
                 round: roundKey,
                 character: args.actor || 'player',
                 opponent: args.opponent,
@@ -3886,11 +3886,11 @@ const createChatToolRuntime = ({
         attribute,
         difficultyLevel,
         circumstanceModifiers
-    } = {}, { defaultActorName = null } = {}) => {
-        const functionName = 'resolvePlausibilityCheck';
+    } = {}, { defaultActorName = null, toolName = 'resolveSkillCheck' } = {}) => {
+        const functionName = toolName;
         if (typeof resolvePlausibilityCheck !== 'function') {
             throw new ToolVisibleError(
-                'resolvePlausibilityCheck is unavailable because the plausibility resolver was not configured.',
+                `${functionName} is unavailable because the skill-check resolver was not configured.`,
                 { code: 'missing_dependency' }
             );
         }
@@ -3917,8 +3917,8 @@ const createChatToolRuntime = ({
         const actionResolution = resolved?.actionResolution || resolved;
         if (!actionResolution || typeof actionResolution !== 'object') {
             throw new ToolVisibleError(
-                'resolvePlausibilityCheck completed without returning an action resolution.',
-                { code: 'plausibility_resolution_failed' }
+                `${functionName} completed without returning an action resolution.`,
+                { code: 'skill_check_resolution_failed' }
             );
         }
 
@@ -3949,11 +3949,11 @@ const createChatToolRuntime = ({
         opponentSkill,
         opponentAttribute,
         circumstanceModifiers
-    } = {}, { defaultActorName = null } = {}) => {
-        const functionName = 'resolveOpposedPlausibilityCheck';
+    } = {}, { defaultActorName = null, toolName = 'resolveOpposedSkillCheck' } = {}) => {
+        const functionName = toolName;
         if (typeof resolveOpposedPlausibilityCheck !== 'function') {
             throw new ToolVisibleError(
-                'resolveOpposedPlausibilityCheck is unavailable because the opposed plausibility resolver was not configured.',
+                `${functionName} is unavailable because the opposed skill-check resolver was not configured.`,
                 { code: 'missing_dependency' }
             );
         }
@@ -3987,8 +3987,8 @@ const createChatToolRuntime = ({
         const actionResolution = resolved?.actionResolution || resolved;
         if (!actionResolution || typeof actionResolution !== 'object') {
             throw new ToolVisibleError(
-                'resolveOpposedPlausibilityCheck completed without returning an action resolution.',
-                { code: 'plausibility_resolution_failed' }
+                `${functionName} completed without returning an action resolution.`,
+                { code: 'skill_check_resolution_failed' }
             );
         }
 
@@ -4453,6 +4453,8 @@ const createChatToolRuntime = ({
         'alterNpc',
         'alterLocation',
         'resolveAttack',
+        'resolveSkillCheck',
+        'resolveOpposedSkillCheck',
         'resolvePlausibilityCheck',
         'resolveOpposedPlausibilityCheck',
         'locateNpcs',
@@ -4509,10 +4511,16 @@ const createChatToolRuntime = ({
                 toolResult = executeAlterLocationTool(argumentsObject);
             } else if (toolCall.functionName === 'resolveAttack') {
                 toolResult = executeResolveAttackTool(argumentsObject);
-            } else if (toolCall.functionName === 'resolvePlausibilityCheck') {
-                toolResult = executeResolvePlausibilityCheckTool(argumentsObject, { defaultActorName });
-            } else if (toolCall.functionName === 'resolveOpposedPlausibilityCheck') {
-                toolResult = executeResolveOpposedPlausibilityCheckTool(argumentsObject, { defaultActorName });
+            } else if (toolCall.functionName === 'resolveSkillCheck' || toolCall.functionName === 'resolvePlausibilityCheck') {
+                toolResult = executeResolvePlausibilityCheckTool(argumentsObject, {
+                    defaultActorName,
+                    toolName: toolCall.functionName
+                });
+            } else if (toolCall.functionName === 'resolveOpposedSkillCheck' || toolCall.functionName === 'resolveOpposedPlausibilityCheck') {
+                toolResult = executeResolveOpposedPlausibilityCheckTool(argumentsObject, {
+                    defaultActorName,
+                    toolName: toolCall.functionName
+                });
             } else if (toolCall.functionName === 'locateNpcs') {
                 toolResult = executeLocateNpcsTool(argumentsObject);
             } else if (toolCall.functionName === 'locateThings') {

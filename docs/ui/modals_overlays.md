@@ -13,6 +13,7 @@ Most modals live in `views/index.njk` and are wired up by the inline script or `
   - The viewer supports header dragging, native resize, and an internal vertical scrollbar when the combined text pane overflows.
   - Received-count and average-rate cells are displayed without byte/character unit labels; the `Avg/s` column header provides the rate context.
   - Supports drag/resize/contract; manual drag disables auto-anchoring for that session.
+  - While the overlay is visible, the progress table keeps the same wrapper/table/header DOM and replaces only body rows on rerender. It also remembers the widest rendered row/table width and applies that as a runtime-only minimum width so rows disappearing do not shrink the table. The remembered width is cleared after the empty overlay hides.
 - `#npcModalBackdrop`, `#questEditBackdrop`, `#craftingModalBackdrop`, `#salvageIntentBackdrop`:
   shared backdrops used to dim the page for certain modals.
 

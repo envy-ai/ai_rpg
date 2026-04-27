@@ -114,12 +114,14 @@ function toolResponseWithCalls(name, calls) {
     };
 }
 
-test('plausibility tool schemas expose separate unopposed and opposed check calls', () => {
-    const unopposed = findToolDefinition('resolvePlausibilityCheck');
-    const opposed = findToolDefinition('resolveOpposedPlausibilityCheck');
+test('skill-check tool schemas expose separate unopposed and opposed check calls', () => {
+    const unopposed = findToolDefinition('resolveSkillCheck');
+    const opposed = findToolDefinition('resolveOpposedSkillCheck');
 
-    assert.ok(unopposed, 'resolvePlausibilityCheck tool definition should exist');
-    assert.ok(opposed, 'resolveOpposedPlausibilityCheck tool definition should exist');
+    assert.ok(unopposed, 'resolveSkillCheck tool definition should exist');
+    assert.ok(opposed, 'resolveOpposedSkillCheck tool definition should exist');
+    assert.equal(findToolDefinition('resolvePlausibilityCheck'), null);
+    assert.equal(findToolDefinition('resolveOpposedPlausibilityCheck'), null);
     assert.deepEqual(unopposed.parameters.required, [
         'reason',
         'skill',
@@ -138,7 +140,7 @@ test('plausibility tool schemas expose separate unopposed and opposed check call
     ]);
 });
 
-test('resolvePlausibilityCheck returns outcome content and action resolution metadata', async () => {
+test('resolveSkillCheck returns outcome content and action resolution metadata', async () => {
     const capturedMessagesByRound = [];
     let capturedActor = null;
     let capturedPlausibility = null;
@@ -152,7 +154,7 @@ test('resolvePlausibilityCheck returns outcome content and action resolution met
         attribute: 'Dexterity'
     };
     const runtime = makeRuntime({
-        firstResponse: toolResponse('resolvePlausibilityCheck', {
+        firstResponse: toolResponse('resolveSkillCheck', {
             actor: 'player',
             reason: 'The lock is old but still complex.',
             skill: 'Lockpicking',
@@ -176,7 +178,7 @@ test('resolvePlausibilityCheck returns outcome content and action resolution met
         metadataLabel: 'test_resolve_plausibility_tool'
     });
 
-    assert.equal(result.toolInvocations[0].name, 'resolvePlausibilityCheck');
+    assert.equal(result.toolInvocations[0].name, 'resolveSkillCheck');
     assert.equal(result.toolInvocations[0].metadata.result, 'major success');
     assert.deepEqual(result.toolInvocations[0].metadata.actionResolution, actionResolution);
     assert.equal(capturedActor, 'player');
@@ -192,7 +194,7 @@ test('resolvePlausibilityCheck returns outcome content and action resolution met
     assert.equal(toolMessage.content, 'major success');
 });
 
-test('resolvePlausibilityCheck uses the prompt default actor when actor is omitted', async () => {
+test('resolveSkillCheck uses the prompt default actor when actor is omitted', async () => {
     const capturedMessagesByRound = [];
     let capturedActor = null;
     const actionResolution = {
@@ -203,7 +205,7 @@ test('resolvePlausibilityCheck uses the prompt default actor when actor is omitt
         difficulty: { label: 'Medium', dc: 15 }
     };
     const runtime = makeRuntime({
-        firstResponse: toolResponse('resolvePlausibilityCheck', {
+        firstResponse: toolResponse('resolveSkillCheck', {
             reason: 'The NPC tries to slip through the crowd.',
             skill: 'Stealth',
             attribute: 'Dexterity',
@@ -226,7 +228,7 @@ test('resolvePlausibilityCheck uses the prompt default actor when actor is omitt
     assert.equal(capturedActor, 'Rook');
 });
 
-test('resolveOpposedPlausibilityCheck builds opposed check payloads', async () => {
+test('resolveOpposedSkillCheck builds opposed check payloads', async () => {
     const capturedMessagesByRound = [];
     let capturedPlausibility = null;
     const actionResolution = {
@@ -238,7 +240,7 @@ test('resolveOpposedPlausibilityCheck builds opposed check payloads', async () =
         opponent: { name: 'Guard' }
     };
     const runtime = makeRuntime({
-        firstResponse: toolResponse('resolveOpposedPlausibilityCheck', {
+        firstResponse: toolResponse('resolveOpposedSkillCheck', {
             reason: 'The guard is actively watching for deception.',
             skill: 'Deception',
             attribute: 'Charisma',
@@ -259,7 +261,7 @@ test('resolveOpposedPlausibilityCheck builds opposed check payloads', async () =
         metadataLabel: 'test_resolve_opposed_plausibility_tool'
     });
 
-    assert.equal(result.toolInvocations[0].name, 'resolveOpposedPlausibilityCheck');
+    assert.equal(result.toolInvocations[0].name, 'resolveOpposedSkillCheck');
     assert.equal(result.toolInvocations[0].metadata.result, 'barely failed');
     assert.equal(result.toolInvocations[0].metadata.checkType, 'opposed');
     assert.deepEqual(result.toolInvocations[0].metadata.actionResolution, actionResolution);
@@ -274,7 +276,7 @@ test('resolveOpposedPlausibilityCheck builds opposed check payloads', async () =
     assert.equal(toolMessage.content, 'barely failed');
 });
 
-test('resolveOpposedPlausibilityCheck uses the prompt default actor when actor is omitted', async () => {
+test('resolveOpposedSkillCheck uses the prompt default actor when actor is omitted', async () => {
     const capturedMessagesByRound = [];
     let capturedActor = null;
     const actionResolution = {
@@ -285,7 +287,7 @@ test('resolveOpposedPlausibilityCheck uses the prompt default actor when actor i
         difficulty: { label: 'Opposed vs Guard', type: 'opposed' }
     };
     const runtime = makeRuntime({
-        firstResponse: toolResponse('resolveOpposedPlausibilityCheck', {
+        firstResponse: toolResponse('resolveOpposedSkillCheck', {
             reason: 'The NPC tries to feint past the guard.',
             skill: 'Deception',
             attribute: 'Charisma',
@@ -310,7 +312,7 @@ test('resolveOpposedPlausibilityCheck uses the prompt default actor when actor i
     assert.equal(capturedActor, 'Rook');
 });
 
-test('resolvePlausibilityCheck reuses cached results for repeated same-round checks', async () => {
+test('resolveSkillCheck reuses cached results for repeated same-round checks', async () => {
     const capturedMessagesByRound = [];
     let resolveCount = 0;
     const checkArgs = {
@@ -333,7 +335,7 @@ test('resolvePlausibilityCheck reuses cached results for repeated same-round che
         attribute: 'Dexterity'
     };
     const runtime = makeRuntime({
-        firstResponse: toolResponseWithCalls('resolvePlausibilityCheck', [checkArgs, {
+        firstResponse: toolResponseWithCalls('resolveSkillCheck', [checkArgs, {
             ...checkArgs,
             difficultyLevel: 'Legendary',
             circumstanceModifiers: [
@@ -362,7 +364,7 @@ test('resolvePlausibilityCheck reuses cached results for repeated same-round che
     assert.deepEqual(toolMessages.map(message => message.content), ['success', 'success']);
 });
 
-test('resolvePlausibilityCheck cache separates different attributes', async () => {
+test('resolveSkillCheck cache separates different attributes', async () => {
     const capturedMessagesByRound = [];
     let resolveCount = 0;
     const firstCheck = {
@@ -378,7 +380,7 @@ test('resolvePlausibilityCheck cache separates different attributes', async () =
         attribute: 'Strength'
     };
     const runtime = makeRuntime({
-        firstResponse: toolResponseWithCalls('resolvePlausibilityCheck', [firstCheck, secondCheck]),
+        firstResponse: toolResponseWithCalls('resolveSkillCheck', [firstCheck, secondCheck]),
         capturedMessagesByRound,
         resolvePlausibilityCheck: async ({ plausibility }) => {
             resolveCount += 1;
@@ -410,7 +412,7 @@ test('resolvePlausibilityCheck cache separates different attributes', async () =
     assert.deepEqual(toolMessages.map(message => message.content), ['dexterity', 'strength']);
 });
 
-test('resolveOpposedPlausibilityCheck cache separates different opposing attributes', async () => {
+test('resolveOpposedSkillCheck cache separates different opposing attributes', async () => {
     const capturedMessagesByRound = [];
     let resolveCount = 0;
     const firstCheck = {
@@ -428,7 +430,7 @@ test('resolveOpposedPlausibilityCheck cache separates different opposing attribu
         opponentAttribute: 'Intelligence'
     };
     const runtime = makeRuntime({
-        firstResponse: toolResponseWithCalls('resolveOpposedPlausibilityCheck', [firstCheck, secondCheck]),
+        firstResponse: toolResponseWithCalls('resolveOpposedSkillCheck', [firstCheck, secondCheck]),
         capturedMessagesByRound,
         resolveOpposedPlausibilityCheck: async ({ plausibility }) => {
             resolveCount += 1;

@@ -176,10 +176,10 @@ const EVENT_PROMPT_ORDER = [
         {
             key: "hostile_to_friendly",
             prompt: `Did any NPCs or entities that were previously hostile or unfriendly to the player become neutral, friendly, or allied? If so, respond with "[exact name of NPC/entity] → [previous disposition] → [new disposition] → [reason in one sentence]". If multiple, separate with vertical bars. Otherwise, respond N/A.`,
-        }
-    //],
-    // Misc stuff
-    //[
+        },
+        //],
+        // Misc stuff
+        //[
         {
             key: "in_combat",
             prompt: `Could the player be considered to be in physical combat at the moment? This can be true even if the player did not attack and was not directly attacked. Answer Yes or No.`,

@@ -34,11 +34,24 @@ const INFORMATION_GATHERING_CHAT_TOOL_NAMES = new Set([
     'getHistory',
     'listLocationEntities',
     'resolveAttack',
+    'resolveSkillCheck',
+    'resolveOpposedSkillCheck',
     'resolvePlausibilityCheck',
     'resolveOpposedPlausibilityCheck',
     'locateNpcs',
     'locateThings'
 ]);
+
+const SKILL_CHECK_CHAT_TOOL_NAMES = new Set([
+    'resolveSkillCheck',
+    'resolveOpposedSkillCheck',
+    'resolvePlausibilityCheck',
+    'resolveOpposedPlausibilityCheck'
+]);
+
+function isSkillCheckChatToolName(value) {
+    return typeof value === 'string' && SKILL_CHECK_CHAT_TOOL_NAMES.has(value);
+}
 
 let cachedCriticalThresholdFormulaRuntime = null;
 
@@ -7109,6 +7122,48 @@ module.exports = function registerApiRoutes(scope) {
             return true;
         };
 
+        const pruneMissingRegionLocationReferences = ({
+            regionId,
+            region,
+            context = 'movement'
+        } = {}) => {
+            const contextLabel = typeof context === 'string' && context.trim() ? context.trim() : 'movement';
+            if (!region) {
+                throw new Error(`[${contextLabel}] Region '${regionId}' is null or undefined.`);
+            }
+            if (!Array.isArray(region.locationIds)) {
+                throw new Error(`[${contextLabel}] Region '${regionId}' has invalid locationIds.`);
+            }
+
+            const missingLocationIds = [];
+            for (const rawLocationId of region.locationIds) {
+                if (typeof rawLocationId !== 'string' || !rawLocationId.trim()) {
+                    throw new Error(`[${contextLabel}] Region '${regionId}' has invalid location id '${rawLocationId}'.`);
+                }
+                const locationId = rawLocationId.trim();
+                if (!gameLocations.has(locationId)) {
+                    missingLocationIds.push(rawLocationId);
+                }
+            }
+
+            if (!missingLocationIds.length) {
+                return false;
+            }
+            if (typeof region.removeLocationId !== 'function') {
+                throw new Error(`[${contextLabel}] Region '${regionId}' cannot remove stale location references.`);
+            }
+
+            for (const missingLocationId of missingLocationIds) {
+                region.removeLocationId(missingLocationId);
+            }
+            console.warn(
+                `[${contextLabel}] Removed stale missing location reference(s) from region '${regionId}': `
+                + missingLocationIds.map(id => `'${id}'`).join(', ')
+                + '.'
+            );
+            return true;
+        };
+
         const assertMovementGraphIntegrity = ({ player = currentPlayer, context = 'movement' } = {}) => {
             const contextLabel = typeof context === 'string' && context.trim() ? context.trim() : 'movement';
 
@@ -7131,12 +7186,11 @@ module.exports = function registerApiRoutes(scope) {
             }
 
             for (const [regionId, region] of regions.entries()) {
-                if (!region) {
-                    throw new Error(`[${contextLabel}] Region '${regionId}' is null or undefined.`);
-                }
-                if (!Array.isArray(region.locationIds)) {
-                    throw new Error(`[${contextLabel}] Region '${regionId}' has invalid locationIds.`);
-                }
+                pruneMissingRegionLocationReferences({
+                    regionId,
+                    region,
+                    context: contextLabel
+                });
                 for (const locationId of region.locationIds) {
                     if (!gameLocations.has(locationId)) {
                         throw new Error(`[${contextLabel}] Region '${regionId}' references missing location '${locationId}'.`);
@@ -12568,7 +12622,7 @@ module.exports = function registerApiRoutes(scope) {
 
         function resolvePlausibilityToolCall({ actor = null, plausibility = null } = {}) {
             if (!plausibility || typeof plausibility !== 'object') {
-                throw new Error('resolvePlausibilityCheck requires a plausibility object.');
+                throw new Error('Skill-check tool resolver requires a plausibility object.');
             }
 
             const actingActor = resolveChatToolActor(actor || 'player', 'actor', { defaultToCurrentPlayer: true });
@@ -12577,7 +12631,7 @@ module.exports = function registerApiRoutes(scope) {
                 player: actingActor
             });
             if (!actionResolution || typeof actionResolution !== 'object') {
-                throw new Error('Plausibility tool did not produce an action resolution.');
+                throw new Error('Skill-check tool did not produce an action resolution.');
             }
 
             return {
@@ -15310,8 +15364,7 @@ module.exports = function registerApiRoutes(scope) {
                         }
 
                         const plausibilityToolInvocations = narrativeToolInvocations.filter(entry => (
-                            (entry?.name === 'resolvePlausibilityCheck'
-                                || entry?.name === 'resolveOpposedPlausibilityCheck')
+                            isSkillCheckChatToolName(entry?.name)
                             && entry?.metadata
                             && typeof entry.metadata === 'object'
                         ));
@@ -16006,7 +16059,7 @@ module.exports = function registerApiRoutes(scope) {
             };
 
             let whileYouWereAwayProcessed = false;
-            const runWhileYouWereAwayOnArrivalIfNeeded = async () => {
+            const runWhileYouWereAwayOnArrivalIfNeeded = async ({ parentEntryId = null } = {}) => {
                 if (whileYouWereAwayProcessed) {
                     return null;
                 }
@@ -16029,7 +16082,7 @@ module.exports = function registerApiRoutes(scope) {
                     locationOverride: arrivalLocation,
                     locationId: arrivalLocation.id,
                     entryCollector: newChatEntries,
-                    parentEntryId: aiResponseEntry?.id || null
+                    parentEntryId
                 });
             };
 
@@ -16648,7 +16701,7 @@ module.exports = function registerApiRoutes(scope) {
 
                         /*
                         Disabled: player-action plausibility is now resolved by the
-                        resolvePlausibilityCheck / resolveOpposedPlausibilityCheck
+                        resolveSkillCheck / resolveOpposedSkillCheck
                         chat tools during the action tool loop.
                         try {
                             stream.status('player_action:plausibility', 'Evaluating plausibility.');
@@ -17554,8 +17607,7 @@ module.exports = function registerApiRoutes(scope) {
                             responseData.attackDamage = attackToolInvocation.metadata.application;
                         }
                         const plausibilityToolInvocations = toolInvocations.filter(entry => (
-                            (entry?.name === 'resolvePlausibilityCheck'
-                                || entry?.name === 'resolveOpposedPlausibilityCheck')
+                            isSkillCheckChatToolName(entry?.name)
                             && entry?.metadata
                             && typeof entry.metadata === 'object'
                         ));
@@ -18378,7 +18430,9 @@ module.exports = function registerApiRoutes(scope) {
                         }, newChatEntries);
                     }
 
-                    await runWhileYouWereAwayOnArrivalIfNeeded();
+                    await runWhileYouWereAwayOnArrivalIfNeeded({
+                        parentEntryId: aiResponseEntry?.id || null
+                    });
 
                     if (stream.isEnabled && !playerActionStreamSent) {
                         const playerActionPreview = { ...responseData };

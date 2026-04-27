@@ -118,6 +118,10 @@ class AIRPGChat {
         this.promptProgressRenderTimer = null;
         this.promptProgressPendingEntries = null;
         this.promptProgressLastRenderTs = 0;
+        this.promptProgressMinTableWidth = null;
+        this.promptProgressTableWrap = null;
+        this.promptProgressTable = null;
+        this.promptProgressTableBody = null;
         this.promptProgressDragState = {
             active: false,
             pointerId: null,
@@ -3602,6 +3606,83 @@ class AIRPGChat {
         this.renderPromptProgress(entriesToRender);
     }
 
+    applyPromptProgressMinTableWidth(table) {
+        if (!table || !Number.isFinite(this.promptProgressMinTableWidth) || this.promptProgressMinTableWidth <= 0) {
+            return;
+        }
+        table.style.minWidth = `${Math.ceil(this.promptProgressMinTableWidth)}px`;
+    }
+
+    updatePromptProgressMinTableWidth(table) {
+        if (!table || !table.isConnected) {
+            return;
+        }
+        const rowCount = table.tBodies?.[0]?.rows?.length || 0;
+        if (rowCount <= 0) {
+            return;
+        }
+        const rectWidth = table.getBoundingClientRect().width;
+        const measuredWidth = Math.ceil(Math.max(
+            Number.isFinite(rectWidth) ? rectWidth : 0,
+            Number.isFinite(table.scrollWidth) ? table.scrollWidth : 0
+        ));
+        if (measuredWidth <= 0) {
+            return;
+        }
+        if (!Number.isFinite(this.promptProgressMinTableWidth) || measuredWidth > this.promptProgressMinTableWidth) {
+            this.promptProgressMinTableWidth = measuredWidth;
+            table.style.minWidth = `${measuredWidth}px`;
+        }
+    }
+
+    ensurePromptProgressTable(tableHeaderHtml) {
+        if (!this.promptProgressTableWrap || !this.promptProgressTable || !this.promptProgressTableBody) {
+            const table = document.createElement('table');
+            table.className = 'prompt-progress-table';
+
+            const thead = document.createElement('thead');
+            thead.innerHTML = tableHeaderHtml;
+            table.appendChild(thead);
+
+            const tbody = document.createElement('tbody');
+            table.appendChild(tbody);
+
+            const tableWrap = document.createElement('div');
+            tableWrap.className = 'prompt-progress-table-wrap';
+            tableWrap.appendChild(table);
+
+            this.promptProgressTableWrap = tableWrap;
+            this.promptProgressTable = table;
+            this.promptProgressTableBody = tbody;
+        }
+
+        if (!this.promptProgressTable.tHead) {
+            const thead = document.createElement('thead');
+            thead.innerHTML = tableHeaderHtml;
+            this.promptProgressTable.insertBefore(thead, this.promptProgressTable.firstChild);
+        }
+        if (!this.promptProgressTableBody.parentNode) {
+            this.promptProgressTable.appendChild(this.promptProgressTableBody);
+        }
+        this.applyPromptProgressMinTableWidth(this.promptProgressTable);
+
+        return {
+            tableWrap: this.promptProgressTableWrap,
+            table: this.promptProgressTable,
+            tbody: this.promptProgressTableBody
+        };
+    }
+
+    attachPromptProgressTable(contentDiv) {
+        if (!contentDiv || !this.promptProgressTableWrap) {
+            return;
+        }
+        if (this.promptProgressTableWrap.parentNode === contentDiv) {
+            return;
+        }
+        contentDiv.replaceChildren(this.promptProgressTableWrap);
+    }
+
     schedulePromptProgressRender(entries = [], { force = false } = {}) {
         const normalizedEntries = Array.isArray(entries)
             ? entries.filter(entry => entry && typeof entry === 'object')
@@ -3641,23 +3722,13 @@ class AIRPGChat {
             if (this.promptProgressMessage) {
                 const contentDiv = this.promptProgressMessage.querySelector('.prompt-progress-overlay__content');
                 if (contentDiv) {
-                    const emptyTable = document.createElement('table');
-                    emptyTable.className = 'prompt-progress-table';
-                    const emptyHead = document.createElement('thead');
-                    emptyHead.innerHTML = tableHeaderHtml;
-                    const emptyBody = document.createElement('tbody');
+                    const { tbody } = this.ensurePromptProgressTable(tableHeaderHtml);
                     const placeholderRow = document.createElement('tr');
                     placeholderRow.className = 'prompt-progress-placeholder-row';
                     placeholderRow.setAttribute('hidden', '');
                     placeholderRow.setAttribute('aria-hidden', 'true');
-                    emptyBody.appendChild(placeholderRow);
-                    emptyTable.appendChild(emptyHead);
-                    emptyTable.appendChild(emptyBody);
-                    const emptyWrap = document.createElement('div');
-                    emptyWrap.className = 'prompt-progress-table-wrap';
-                    emptyWrap.appendChild(emptyTable);
-                    contentDiv.innerHTML = '';
-                    contentDiv.appendChild(emptyWrap);
+                    tbody.replaceChildren(placeholderRow);
+                    this.attachPromptProgressTable(contentDiv);
                 }
                 if (!this.promptProgressHideTimer) {
                     this.promptProgressHideTimer = setTimeout(() => {
@@ -3669,9 +3740,12 @@ class AIRPGChat {
                         if (livePlaceholderRow && livePlaceholderRow.parentNode) {
                             livePlaceholderRow.parentNode.removeChild(livePlaceholderRow);
                         }
+                        this.promptProgressMinTableWidth = null;
                         this.promptProgressHideTimer = null;
                     }, 3500);
                 }
+            } else {
+                this.promptProgressMinTableWidth = null;
             }
             return;
         }
@@ -3683,12 +3757,8 @@ class AIRPGChat {
 
         this.closeLoadGameModalIfOpen();
 
-        const table = document.createElement('table');
-        table.className = 'prompt-progress-table';
-        const thead = document.createElement('thead');
-        thead.innerHTML = tableHeaderHtml;
-        table.appendChild(thead);
-        const tbody = document.createElement('tbody');
+        const { table, tableWrap, tbody } = this.ensurePromptProgressTable(tableHeaderHtml);
+        const rowsFragment = document.createDocumentFragment();
         this.promptProgressEntries.forEach(entry => {
             const row = document.createElement('tr');
             const isViewerActive = this.promptProgressViewerPromptId === entry.id;
@@ -3771,12 +3841,9 @@ class AIRPGChat {
             row.appendChild(latencyCell);
             row.appendChild(avgCell);
             row.appendChild(retryCell);
-            tbody.appendChild(row);
+            rowsFragment.appendChild(row);
         });
-        table.appendChild(tbody);
-        const tableWrap = document.createElement('div');
-        tableWrap.className = 'prompt-progress-table-wrap';
-        tableWrap.appendChild(table);
+        tbody.replaceChildren(rowsFragment);
 
         if (!this.promptProgressMessage) {
             const overlay = document.createElement('aside');
@@ -3857,8 +3924,7 @@ class AIRPGChat {
             }
             const contentDiv = this.promptProgressMessage.querySelector('.prompt-progress-overlay__content');
             if (contentDiv) {
-                contentDiv.innerHTML = '';
-                contentDiv.appendChild(tableWrap);
+                this.attachPromptProgressTable(contentDiv);
             }
             const tsDiv = this.promptProgressMessage.querySelector('.prompt-progress-overlay__timestamp');
             if (tsDiv) {
@@ -3866,6 +3932,7 @@ class AIRPGChat {
             }
             this.applyPromptProgressAutoAnchor(this.promptProgressMessage);
         }
+        this.updatePromptProgressMinTableWidth(table);
         this.syncPromptProgressViewer();
     }
 
