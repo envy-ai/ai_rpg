@@ -67,6 +67,7 @@ function loadRunAttackPrecheck() {
     const context = {
         Globals: {
             config: {
+                use_legacy_prompt_checks: false,
                 plausibility_checks: {
                     enabled: true
                 }
@@ -106,6 +107,9 @@ this.runAttackPrecheck = runAttackPrecheck;`,
         runAttackPrecheck: context.runAttackPrecheck,
         setPromptUsesCaching(value) {
             context.config.prompt_uses_caching = value;
+        },
+        setLegacyPromptChecks(value) {
+            context.Globals.config.use_legacy_prompt_checks = value;
         },
         wasRenderCalled() {
             return renderCalled;
@@ -161,6 +165,7 @@ test('slop remover uses base-context include when prompt_uses_caching is true', 
 
 test('attack precheck is skipped when prompt_uses_caching is true', async () => {
     const runtime = loadRunAttackPrecheck();
+    runtime.setLegacyPromptChecks(true);
     runtime.setPromptUsesCaching(true);
 
     const result = await runtime.runAttackPrecheck({
@@ -168,5 +173,16 @@ test('attack precheck is skipped when prompt_uses_caching is true', async () => 
     });
 
     assert.equal(result, true);
+    assert.equal(runtime.wasRenderCalled(), false);
+});
+
+test('attack precheck is skipped when legacy prompt checks are disabled', async () => {
+    const runtime = loadRunAttackPrecheck();
+
+    const result = await runtime.runAttackPrecheck({
+        actionText: 'The player swings at the goblin.'
+    });
+
+    assert.equal(result, false);
     assert.equal(runtime.wasRenderCalled(), false);
 });

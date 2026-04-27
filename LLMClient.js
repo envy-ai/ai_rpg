@@ -1,6 +1,8 @@
 const axios = require('axios');
 const { Console } = require('console');
-const { randomUUID } = require('crypto');
+const { createHash, randomUUID } = require('crypto');
+const fs = require('fs');
+const path = require('path');
 const Globals = require('./Globals.js');
 const { response } = require('express');
 const Utils = require('./Utils.js');
@@ -10,6 +12,7 @@ const CodexBridgeClient = require('./CodexBridgeClient.js');
 let sharpModule = null;
 
 const PROMPT_PROGRESS_BROADCAST_INTERVAL_MS = 500;
+const OAUTH_REFRESH_THRESHOLD_SECONDS = 300;
 
 class Semaphore {
     constructor(maxConcurrent = 1) {
@@ -122,6 +125,8 @@ class LLMClient {
     };
     static #codexQuotaTurnKeys = new Set();
     static #codexQuotaTurnKeyQueue = [];
+    static #oauthStates = new Map();
+    static #oauthRefreshPromises = new Map();
 
     static #isInteractive() {
         return process.stdout && process.stdout.isTTY;
@@ -1183,6 +1188,303 @@ class LLMClient {
             return raw;
         }
         return 1;
+    }
+
+    static #hashSecret(value) {
+        return createHash('sha256').update(String(value || '')).digest('hex');
+    }
+
+    static #normalizeOAuthKey(aiConfig) {
+        if (!aiConfig || typeof aiConfig !== 'object') {
+            return null;
+        }
+        const raw = aiConfig['oauth-key'] ?? aiConfig.oauthKey;
+        if (raw === undefined || raw === null || raw === '') {
+            return null;
+        }
+        if (typeof raw !== 'string') {
+            throw new Error('ai.oauth-key must be a string when configured.');
+        }
+        const trimmed = raw.trim();
+        if (!trimmed) {
+            return null;
+        }
+        return trimmed;
+    }
+
+    static #normalizeOAuthUrl(aiConfig) {
+        if (!aiConfig || typeof aiConfig !== 'object') {
+            return null;
+        }
+        const raw = aiConfig['oauth-url'] ?? aiConfig.oauthUrl;
+        if (raw === undefined || raw === null || raw === '') {
+            return null;
+        }
+        if (typeof raw !== 'string') {
+            throw new Error('ai.oauth-url must be a string when configured.');
+        }
+        const trimmed = raw.trim();
+        if (!trimmed) {
+            return null;
+        }
+        return trimmed;
+    }
+
+    static #normalizeOAuthClientId(aiConfig) {
+        if (!aiConfig || typeof aiConfig !== 'object') {
+            return null;
+        }
+        const raw = aiConfig['oauth-client-id'] ?? aiConfig.oauthClientId;
+        if (raw === undefined || raw === null || raw === '') {
+            return null;
+        }
+        if (typeof raw !== 'string') {
+            throw new Error('ai.oauth-client-id must be a string when configured.');
+        }
+        const trimmed = raw.trim();
+        return trimmed || null;
+    }
+
+    static #getOAuthCacheDir() {
+        const baseDir = Globals?.baseDir || process.cwd();
+        const cacheDir = path.join(baseDir, 'tmp', 'oauth');
+        fs.mkdirSync(cacheDir, { recursive: true, mode: 0o700 });
+        try {
+            fs.chmodSync(cacheDir, 0o700);
+        } catch (_) {
+            // Some filesystems do not support chmod; the write path below still uses private file modes.
+        }
+        return cacheDir;
+    }
+
+    static #getOAuthCacheKey({ tokenUrl, refreshToken }) {
+        return LLMClient.#hashSecret(`${tokenUrl || ''}\n${refreshToken || ''}`);
+    }
+
+    static #getOAuthCachePath(cacheKey) {
+        return path.join(LLMClient.#getOAuthCacheDir(), `${cacheKey}.json`);
+    }
+
+    static #buildOAuthRefreshHeaders(effectiveHeaders = {}) {
+        const headers = {};
+        if (effectiveHeaders && typeof effectiveHeaders === 'object') {
+            for (const [key, value] of Object.entries(effectiveHeaders)) {
+                const normalized = String(key || '').trim();
+                const lower = normalized.toLowerCase();
+                if (!normalized || lower === 'authorization' || lower === 'content-type' || lower === 'content-length') {
+                    continue;
+                }
+                if (typeof value === 'string') {
+                    headers[normalized] = value;
+                }
+            }
+        }
+        headers['Content-Type'] = 'application/x-www-form-urlencoded';
+        return headers;
+    }
+
+    static #loadOAuthState(cacheKey, bootstrapRefreshToken) {
+        const cached = LLMClient.#oauthStates.get(cacheKey);
+        if (cached) {
+            return cached;
+        }
+
+        const cachePath = LLMClient.#getOAuthCachePath(cacheKey);
+        let state = {
+            accessToken: '',
+            refreshToken: bootstrapRefreshToken,
+            expiresAt: 0,
+            expiresIn: 0,
+            tokenType: 'Bearer',
+            scope: ''
+        };
+        try {
+            if (fs.existsSync(cachePath)) {
+                const raw = fs.readFileSync(cachePath, 'utf8');
+                const payload = JSON.parse(raw);
+                if (payload && typeof payload === 'object') {
+                    state = {
+                        accessToken: typeof payload.accessToken === 'string'
+                            ? payload.accessToken
+                            : (typeof payload.access_token === 'string' ? payload.access_token : ''),
+                        refreshToken: typeof payload.refreshToken === 'string'
+                            ? payload.refreshToken
+                            : (typeof payload.refresh_token === 'string' ? payload.refresh_token : bootstrapRefreshToken),
+                        expiresAt: Number(payload.expiresAt ?? payload.expires_at) || 0,
+                        expiresIn: Number(payload.expiresIn ?? payload.expires_in) || 0,
+                        tokenType: typeof payload.tokenType === 'string'
+                            ? payload.tokenType
+                            : (typeof payload.token_type === 'string' ? payload.token_type : 'Bearer'),
+                        scope: typeof payload.scope === 'string' ? payload.scope : ''
+                    };
+                }
+            }
+        } catch (error) {
+            console.warn(`Failed to read OAuth cache; refreshing from configured key: ${error.message}`);
+        }
+
+        if (!state.refreshToken) {
+            state.refreshToken = bootstrapRefreshToken;
+        }
+        LLMClient.#oauthStates.set(cacheKey, state);
+        return state;
+    }
+
+    static #saveOAuthState(cacheKey, bootstrapRefreshToken, state) {
+        const cachePath = LLMClient.#getOAuthCachePath(cacheKey);
+        const tmpPath = `${cachePath}.${process.pid}.${Date.now()}.tmp`;
+        const payload = {
+            accessToken: state.accessToken || '',
+            refreshToken: state.refreshToken || bootstrapRefreshToken,
+            expiresAt: Number(state.expiresAt) || 0,
+            expiresIn: Number(state.expiresIn) || 0,
+            tokenType: state.tokenType || 'Bearer',
+            scope: state.scope || ''
+        };
+        fs.writeFileSync(tmpPath, JSON.stringify(payload, null, 2), { encoding: 'utf8', mode: 0o600 });
+        try {
+            fs.chmodSync(tmpPath, 0o600);
+        } catch (_) {
+            // Non-POSIX filesystems may ignore chmod after creation.
+        }
+        fs.renameSync(tmpPath, cachePath);
+        LLMClient.#oauthStates.set(cacheKey, payload);
+    }
+
+    static #invalidateOAuthAccessToken(oauthConfig) {
+        if (!oauthConfig?.refreshToken || !oauthConfig?.tokenUrl) {
+            return;
+        }
+        const cacheKey = LLMClient.#getOAuthCacheKey(oauthConfig);
+        const state = LLMClient.#loadOAuthState(cacheKey, oauthConfig.refreshToken);
+        const invalidated = {
+            ...state,
+            accessToken: '',
+            expiresAt: 0
+        };
+        LLMClient.#saveOAuthState(cacheKey, oauthConfig.refreshToken, invalidated);
+    }
+
+    static #isOAuthStateFresh(state) {
+        if (!state?.accessToken) {
+            return false;
+        }
+        const expiresAt = Number(state.expiresAt);
+        if (!Number.isFinite(expiresAt) || expiresAt <= 0) {
+            return false;
+        }
+        const expiresIn = Number(state.expiresIn);
+        const thresholdSeconds = Number.isFinite(expiresIn) && expiresIn > 0
+            ? Math.max(OAUTH_REFRESH_THRESHOLD_SECONDS, expiresIn * 0.5)
+            : OAUTH_REFRESH_THRESHOLD_SECONDS;
+        return expiresAt - Date.now() >= thresholdSeconds * 1000;
+    }
+
+    static async #refreshOAuthState(oauthConfig, currentState, effectiveHeaders = {}) {
+        const refreshToken = currentState?.refreshToken || oauthConfig?.refreshToken;
+        if (!refreshToken) {
+            throw new Error('OAuth refresh token is missing.');
+        }
+
+        const data = new URLSearchParams({
+            grant_type: 'refresh_token',
+            refresh_token: refreshToken
+        });
+        if (oauthConfig?.clientId) {
+            data.set('client_id', oauthConfig.clientId);
+        }
+        const authHeaders = {
+            ...LLMClient.#buildOAuthRefreshHeaders(effectiveHeaders)
+        };
+
+        let response;
+        try {
+            response = await axios.post(
+                oauthConfig.tokenUrl,
+                data.toString(),
+                {
+                    headers: authHeaders,
+                    timeout: 30000,
+                    validateStatus: () => true
+                }
+            );
+        } catch (error) {
+            throw new Error(`OAuth token refresh request failed: ${error.message}`);
+        }
+
+        const payload = typeof response.data === 'string'
+            ? (() => {
+                try {
+                    return JSON.parse(response.data);
+                } catch (_) {
+                    return {};
+                }
+            })()
+            : (response.data || {});
+
+        if (response.status === 401 || response.status === 403) {
+            const detail = typeof payload.error_description === 'string' && payload.error_description.trim()
+                ? `: ${payload.error_description.trim()}`
+                : '';
+            throw new Error(`OAuth credentials rejected (HTTP ${response.status})${detail}`);
+        }
+        if (response.status !== 200) {
+            const detail = typeof payload.error_description === 'string' && payload.error_description.trim()
+                ? `: ${payload.error_description.trim()}`
+                : '';
+            throw new Error(`OAuth token refresh failed (HTTP ${response.status})${detail}`);
+        }
+        if (!payload || typeof payload.access_token !== 'string' || !payload.access_token.trim()) {
+            throw new Error('OAuth token refresh response did not include an access token.');
+        }
+
+        const expiresIn = Number(payload.expires_in) || 0;
+        return {
+            accessToken: payload.access_token.trim(),
+            refreshToken: typeof payload.refresh_token === 'string' && payload.refresh_token.trim()
+                ? payload.refresh_token.trim()
+                : refreshToken,
+            expiresAt: expiresIn > 0 ? Date.now() + (expiresIn * 1000) : 0,
+            expiresIn,
+            tokenType: typeof payload.token_type === 'string' && payload.token_type.trim()
+                ? payload.token_type.trim()
+                : 'Bearer',
+            scope: typeof payload.scope === 'string' ? payload.scope : ''
+        };
+    }
+
+    static async #resolveOAuthAccessToken(oauthConfig, effectiveHeaders = {}) {
+        const cacheKey = LLMClient.#getOAuthCacheKey(oauthConfig);
+        const currentState = LLMClient.#loadOAuthState(cacheKey, oauthConfig.refreshToken);
+        if (LLMClient.#isOAuthStateFresh(currentState)) {
+            return currentState.accessToken;
+        }
+
+        const existingRefresh = LLMClient.#oauthRefreshPromises.get(cacheKey);
+        if (existingRefresh) {
+            return existingRefresh;
+        }
+
+        const refreshPromise = (async () => {
+            const latestState = LLMClient.#loadOAuthState(cacheKey, oauthConfig.refreshToken);
+            if (LLMClient.#isOAuthStateFresh(latestState)) {
+                return latestState.accessToken;
+            }
+            const refreshed = await LLMClient.#refreshOAuthState(
+                oauthConfig,
+                latestState,
+                effectiveHeaders
+            );
+            LLMClient.#saveOAuthState(cacheKey, oauthConfig.refreshToken, refreshed);
+            return refreshed.accessToken;
+        })();
+
+        LLMClient.#oauthRefreshPromises.set(cacheKey, refreshPromise);
+        try {
+            return await refreshPromise;
+        } finally {
+            LLMClient.#oauthRefreshPromises.delete(cacheKey);
+        }
     }
 
     static #ensureSemaphore(key, maxConcurrent, log = null) {
@@ -2692,7 +2994,7 @@ class LLMClient {
                     : 0;
             }
 
-            const resolveAttemptRuntime = ({ attemptNumber = 0 } = {}) => {
+            const resolveAttemptRuntime = async ({ attemptNumber = 0 } = {}) => {
                 const aiConfig = LLMClient.#cloneAiConfig();
                 if (multimodal) {
                     const multimodalConfig = Globals?.config?.ai_multimodal;
@@ -2846,16 +3148,33 @@ class LLMClient {
                 const resolvedEndpoint = resolvedBackend === CodexBridgeClient.backendName
                     ? null
                     : LLMClient.resolveChatEndpoint(endpoint || aiConfig.endpoint);
+                const oauthKey = resolvedBackend === CodexBridgeClient.backendName
+                    ? null
+                    : LLMClient.#normalizeOAuthKey(aiConfig);
+                const oauthUrl = oauthKey ? LLMClient.#normalizeOAuthUrl(aiConfig) : null;
+                const oauthClientId = oauthKey ? LLMClient.#normalizeOAuthClientId(aiConfig) : null;
+                if (oauthKey && !oauthUrl) {
+                    throw new Error('ai.oauth-url is required when ai.oauth-key is configured.');
+                }
+                const oauthConfig = oauthKey
+                    ? { refreshToken: oauthKey, tokenUrl: oauthUrl, clientId: oauthClientId }
+                    : null;
+                const configuredRequestHeaders = {
+                    ...effectiveHeaders,
+                    ...headers
+                };
                 const resolvedApiKey = resolvedBackend === CodexBridgeClient.backendName
                     ? null
-                    : (apiKey || aiConfig.apiKey);
+                    : (apiKey || (oauthConfig
+                        ? await LLMClient.#resolveOAuthAccessToken(oauthConfig, configuredRequestHeaders)
+                        : aiConfig.apiKey));
                 if (resolvedBackend !== CodexBridgeClient.backendName && !resolvedApiKey) {
                     throw new Error('AI API key is not configured.');
                 }
 
                 const semaphoreKey = resolvedBackend === CodexBridgeClient.backendName
                     ? CodexBridgeClient.getSemaphoreKey(aiConfig, resolvedModel)
-                    : `${resolvedApiKey || 'no-key'}::${resolvedModel || 'no-model'}`;
+                    : `${oauthConfig ? `oauth:${LLMClient.#getOAuthCacheKey(oauthConfig)}` : (resolvedApiKey || 'no-key')}::${resolvedModel || 'no-model'}`;
                 let resolvedTimeout = LLMClient.resolveTimeout(timeoutMs, timeoutScale);
                 let baseStartTimeoutMs = Number.isFinite(aiConfig.stream_start_timeout)
                     ? aiConfig.stream_start_timeout * 1000
@@ -2901,6 +3220,8 @@ class LLMClient {
                         semaphoreKey,
                         streamStartTimeoutMs,
                         streamContinueTimeoutMs,
+                        oauthConfig,
+                        configuredRequestHeaders,
                         baseAxiosOptions: null
                     };
                 }
@@ -2911,6 +3232,14 @@ class LLMClient {
                     ...effectiveHeaders,
                     ...headers
                 };
+                if (oauthConfig) {
+                    for (const key of Object.keys(requestHeaders)) {
+                        if (key.toLowerCase() === 'authorization') {
+                            delete requestHeaders[key];
+                        }
+                    }
+                    requestHeaders.Authorization = `Bearer ${resolvedApiKey}`;
+                }
                 const baseAxiosOptions = {
                     headers: requestHeaders,
                     timeout: payload.stream ? undefined : resolvedTimeout,
@@ -2942,6 +3271,8 @@ class LLMClient {
                     semaphoreKey,
                     streamStartTimeoutMs,
                     streamContinueTimeoutMs,
+                    oauthConfig,
+                    configuredRequestHeaders,
                     baseAxiosOptions
                 };
             };
@@ -2953,6 +3284,7 @@ class LLMClient {
             let lastTotalTokens = null;
             const shouldLogStreamChunks = logStreamChunksToConsole === true;
             const hasForcedOutput = resolvedForcedOutput !== null && resolvedForcedOutput !== undefined;
+            let oauthForcedRefreshRetries = 0;
             const resolvedRequiredRegex = (() => {
                 if (!requiredRegex) {
                     return null;
@@ -3036,7 +3368,7 @@ class LLMClient {
                             lastTotalTokens = response.data.usage.total_tokens;
                         }
                     } else {
-                        attemptRuntime = resolveAttemptRuntime({ attemptNumber: attempt });
+                        attemptRuntime = await resolveAttemptRuntime({ attemptNumber: attempt });
                         payload = attemptRuntime.payload;
                         requestMessages = attemptRuntime.requestMessages;
                         resolvedBackend = attemptRuntime.backend;
@@ -3504,20 +3836,32 @@ class LLMClient {
                         }
                     }
 
-                    const promptAppend = LLMClient.formatMessagesForErrorLog(payload?.messages || requestMessages || messages);
-                    const filePath = LLMClient.writeLogFile({
-                        prefix: 'chatCompletionError',
-                        metadataLabel,
-                        error: error,
-                        payload: responseContent || '',
-                        append: promptAppend,
-                        onFailureMessage: 'Failed to write chat completion error log file'
-                    });
-                    if (filePath) {
-                        warn(`Chat completion error response logged to ${filePath}`);
+                    const shouldForceOAuthRefresh = errorStatus === 401
+                        && attemptRuntime?.oauthConfig
+                        && oauthForcedRefreshRetries < 1;
+                    if (shouldForceOAuthRefresh) {
+                        oauthForcedRefreshRetries += 1;
+                        warn('OAuth access token was rejected; refreshing and retrying once.');
+                        LLMClient.#invalidateOAuthAccessToken(attemptRuntime.oauthConfig);
+                        if (attempt === retryAttempts) {
+                            retryAttempts += 1;
+                        }
+                    } else {
+                        const promptAppend = LLMClient.formatMessagesForErrorLog(payload?.messages || requestMessages || messages);
+                        const filePath = LLMClient.writeLogFile({
+                            prefix: 'chatCompletionError',
+                            metadataLabel,
+                            error: error,
+                            payload: responseContent || '',
+                            append: promptAppend,
+                            onFailureMessage: 'Failed to write chat completion error log file'
+                        });
+                        if (filePath) {
+                            warn(`Chat completion error response logged to ${filePath}`);
+                        }
                     }
 
-                    if (attempt === retryAttempts) {
+                    if (!shouldForceOAuthRefresh && attempt === retryAttempts) {
                         errorLog('Max retry attempts reached. Failing the chat completion request.');
                         debugLog(error);
                         return '';

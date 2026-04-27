@@ -38,8 +38,9 @@ Fields:
 - `severity`: string (`normal`, `important`, or `critical`)
 - `sourceType`: string | null (server/live event source such as `pick_up_item`, `harvest_gather`, `time_passed`, `need_bar_change`, `disposition_change`, `quest_received`, `completed_quest_objective`, `status_effect_change`, or `environmental_damage`)
 - `entityRefs`: array of `{ type, id, name }` references. `type` is a lowercase domain label such as `npc`, `thing`, `scenery`, `location`, `quest`, or `faction`; `id` and `name` may be null when unknown, but at least one is present.
+- `metadata`: object | null. Need rows include `metadata.needBarChange` with actor id/name, need id/name, configured need icon, signed delta text, reason, and display text. Disposition rows include `metadata.dispositionChange` with `npcId`, `npcName`, `typeKey`, `typeLabel`, configured disposition `icon`, signed `delta`, previous/new values, reason, and display text. The client uses these metadata objects to group rows per character.
 
-Legacy summaries may omit `severity`, `sourceType`, and `entityRefs`; the client treats them as normal-severity uncited rows and keeps legacy uncategorized event rows under `Other`.
+Legacy summaries may omit `severity`, `sourceType`, `entityRefs`, and `metadata`; the client treats them as normal-severity uncited rows and keeps legacy uncategorized event rows under `Other`.
 
 ## ActionResolution (resolveActionOutcome)
 Used by `/api/chat` (`actionResolution`) and `/api/craft` (`outcome`).
@@ -257,7 +258,7 @@ Fields:
 - `player`: `{ id, name }` | null
 - `range`: `{ min, max, typicalStep, typicalBigStep }`
 - `dispositions`: array of
-  - `key`, `label`, `description`, `value`, `intensity`
+  - `key`, `label`, `description`, `icon`, `value`, `intensity`
   - `thresholds`, `moveUp`, `moveDown`, `moveWayDown`
 
 ## SettingInfo (SettingInfo.toJSON)

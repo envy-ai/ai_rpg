@@ -115,3 +115,35 @@ test('buildFastTravelSummaryItem formats the origin, destination, and natural du
     assert.equal(summary.icon, '🚶');
     assert.equal(summary.description, 'Traveled from Dockside Market to Clocktower Plaza. 12 minutes passed.');
 });
+
+test('buildFastTravelSummaryItem can omit duration when timeProgress will render separately', () => {
+    const { buildFastTravelSummaryItem } = loadExitTravelTimeHelpers({
+        Utils: {
+            formatMinutesAsNaturalDuration: (minutes) => `${minutes} minutes`
+        }
+    });
+    const summary = buildFastTravelSummaryItem({
+        originLocation: { name: 'Dockside Market' },
+        destinationLocation: { name: 'Clocktower Plaza' },
+        travelTimeMinutes: 12,
+        includeDuration: false
+    });
+    assert.equal(summary.icon, '🚶');
+    assert.equal(summary.description, 'Traveled from Dockside Market to Clocktower Plaza.');
+    assert.equal(summary.category, 'travel');
+    assert.equal(summary.sourceType, 'travel_move');
+});
+
+test('buildFastTravelSummaryItem can describe zero-minute movement when duration is omitted', () => {
+    const { buildFastTravelSummaryItem } = loadExitTravelTimeHelpers();
+    const summary = buildFastTravelSummaryItem({
+        originLocation: { name: 'Dockside Market' },
+        destinationLocation: { name: 'Clocktower Plaza' },
+        travelTimeMinutes: 0,
+        includeDuration: false
+    });
+    assert.equal(summary.icon, '🚶');
+    assert.equal(summary.description, 'Traveled from Dockside Market to Clocktower Plaza.');
+    assert.equal(summary.category, 'travel');
+    assert.equal(summary.sourceType, 'travel_move');
+});

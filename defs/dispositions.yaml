@@ -7,6 +7,7 @@ range:
 dispositions:
   platonic:
     description: Represents a character's level of friendship or camaraderie with the player character.
+    icon: 🙂
     hostile_value: -40
     hostile_threshold: -31
     move_up:
@@ -42,6 +43,7 @@ dispositions:
       120: best friend (+10 to relevant circumstance modifier)
   romantic:
     description: Represents a character's level of romantic interest or affection towards the player character.
+    icon: ❤️
     hostile_value: -15
     move_up:
       - romantic gesture
@@ -77,6 +79,7 @@ dispositions:
       120: romantic partner (+10 to relevant circumstance modifier)
   lust:
     description: Represents a character's level of sexual desire or attraction towards the player character.
+    icon: 🔥
     hostile_value: 0
     move_up:
       - flirted
@@ -109,6 +112,7 @@ dispositions:
       120: lustful (+10 to relevant circumstance modifier)
   respect:
     description: Represents a character's level of admiration or esteem for the player character.
+    icon: 🙇
     move_up:
       - impressed by skill or talent
       - achieved something notable
@@ -139,6 +143,8 @@ dispositions:
       120: respected ally (+10 to relevant circumstance modifier)
   comfort_fear:
     description: Represents a character's level of comfort or fear around the player character.
+    # Icon should represent comfort since that's the positive on this scale
+    icon: 🧸
     hostile_value: -20
     move_up:
       - provided comfort during a difficult time
@@ -169,6 +175,7 @@ dispositions:
       120: very comfortable around you (+10 to relevant circumstance modifier)
   trust:
     description: Represents a character's level of trust or distrust towards the player character.
+    icon: 🤝
     hostile_value: -35
     move_up:
       - kept a secret

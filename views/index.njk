@@ -20980,6 +20980,10 @@
                     return false;
             }
         }
+
+        function shouldPromptBypassMove(exit) {
+            return isUnexploredLocationExit(exit);
+        }
             const locationOverlay = document.getElementById('locationOverlay');
             const locationOverlayText = document.getElementById('locationOverlayText');
             const locationNPCs = document.getElementById('locationNPCs');
@@ -27600,10 +27604,31 @@
         } 
 
         if (window.AIRPG_CHAT && typeof window.AIRPG_CHAT.dispatchAutomatedMessage === 'function') {
+            const promptBypassMove = shouldPromptBypassMove(exit);
+            const travelMetadata = promptBypassMove
+                ? {
+                    mode: 'direct',
+                    eventDriven: false,
+                    exit: {
+                        exitId: (typeof exit.id === 'string' && exit.id.trim()) ? exit.id.trim() : null,
+                        originLocationId: originLocationId || null,
+                        direction: directionKey,
+                        destinationId: exit.destination || null,
+                        destinationRegionId: exit.destinationRegion || null,
+                        destinationIsStub: Boolean(exit.destinationIsStub),
+                        destinationIsRegionEntryStub: Boolean(exit.destinationIsRegionEntryStub),
+                        isVehicle: Boolean(exit.isVehicle),
+                        vehicleType: typeof exit.vehicleType === 'string' ? exit.vehicleType.trim() : null,
+                        destinationName,
+                        regionName
+                    }
+                }
+                : null;
             try {
                 showMoveOverlay();
-                await window.AIRPG_CHAT.dispatchAutomatedMessage(`# ${message}`, {
+                await window.AIRPG_CHAT.dispatchAutomatedMessage(promptBypassMove ? message : `# ${message}`, {
                     travel: true,
+                    travelMetadata,
                     suppressTravelCompletionSound: true
                 });
             } catch (error) {

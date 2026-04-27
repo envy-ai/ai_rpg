@@ -22,7 +22,7 @@ Rendered inside `#mapContainer` in the Map tab.
 
 ### Interactions
 - Context menu on nodes and edges for edit/delete actions.
-- Tapping a location node fast-travels the player there through the existing player-teleport flow, but now also advances world time by the shortest directed route cost computed from stored exit `travelTimeMinutes`; when minutes advance, the chat history gets an event-summary entry reading `Traveled from X to Y. Z passed.`. When no route exists, the map fast travel still completes with `0` minutes elapsed.
+- Tapping a location node fast-travels the player there through the existing player-teleport flow, but now also advances world time by the shortest directed route cost computed from stored exit `travelTimeMinutes`; when minutes advance, the chat history gets travel and elapsed-time event-summary rows, parent-linked to visible arrival prose when one is generated. When no route exists, the map fast travel still completes with `0` minutes elapsed.
 - After a successful direct move or map fast-travel arrival, the client also refreshes chat history and Story Tools so any visible `while-you-were-away-player` reunion prose generated during arrival is shown immediately.
 - Stub node `Edit stub` opens the shared location-stub editor, including vehicle metadata controls (`isVehicle` + `vehicleInfo`) for both location stubs and region-entry stubs; the vehicle-exit field is a select labeled `inside -> outside`.
 - Hydrated location node context menu includes `Set Last Seen`, which opens the shared chat-page modal and submits the same `H AM/PM`, `H:MM AM/PM`, or `duration ago` formats accepted by `/set_last_seen` for that location's NPCs.

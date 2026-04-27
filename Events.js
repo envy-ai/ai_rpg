@@ -2033,6 +2033,7 @@ class Events {
         suppressMoveEvents = false,
         allowMoveTurnAppearances = false,
         suppressTimeAdvance = false,
+        locationOverride = null,
         _depth = 0,
         followupQueue = null,
     } = {}) {
@@ -2094,7 +2095,19 @@ class Events {
 
         const currentPlayer = this.currentPlayer;
         let location = null;
-        if (
+        if (locationOverride) {
+            if (typeof locationOverride === "string") {
+                if (!Location || typeof Location.get !== "function") {
+                    throw new Error("runEventChecks locationOverride id requires Location.get.");
+                }
+                location = Location.get(locationOverride) || null;
+            } else if (typeof locationOverride === "object") {
+                location = locationOverride;
+            }
+            if (!location) {
+                throw new Error("runEventChecks locationOverride could not be resolved.");
+            }
+        } else if (
             currentPlayer?.currentLocation &&
             Location &&
             typeof Location.get === "function"

@@ -82,6 +82,24 @@ Validation rules:
 - `backend` defaults to `openai_compatible` when omitted.
 - Unknown backend values fail validation loudly at startup and on reload.
 
+## OAuth Refresh-Token Auth
+
+For the `openai_compatible` backend, `ai.oauth-key` can be used instead of `ai.apiKey` for providers that expose a standard refresh-token endpoint:
+
+```yaml
+ai:
+  endpoint: https://provider.example/v1
+  model: provider-model-name
+  oauth-url: https://provider.example/oauth/token
+  oauth-key: "<refresh token>"
+  # Optional, included as client_id when set:
+  oauth-client-id: "<client id>"
+```
+
+The value of `oauth-key` is treated as an OAuth refresh token. `LLMClient` posts it to the exact `oauth-url`, sends the returned short-lived access token as `Authorization: Bearer ...`, and stores rotated credentials in the ignored local cache under `tmp/oauth/` rather than rewriting `config.yaml`. If the provider rejects a chat request with 401, `LLMClient` invalidates the cached access token, refreshes once, and retries the request.
+
+These fields also work in `ai_model_overrides` profiles, so only selected prompt labels can use an OAuth-backed provider. Request headers from `ai.headers` or the matching override profile are reused for OAuth refresh requests, excluding `Authorization`, `Content-Type`, and `Content-Length`. For chat requests, OAuth-backed configs always use the refreshed access token as the `Authorization` header.
+
 ## AI request timeout
 
 `ai.baseTimeoutSeconds` is the shared base request timeout for non-Codex text-generation calls. `LLMClient` converts this value to milliseconds before dispatching a request.
@@ -601,8 +619,22 @@ Rules:
 - Default is `false`.
 - When `true`, prompt-level omissions inside `prompts/base-context.xml.njk` are ignored so the prompt shape stays more stable for cache reuse experiments.
 - Currently this affects the template-level `omitGameHistory` flag, causing `<olderStoryHistory>` to remain present even for prompt families that would normally suppress it.
-- When `true`, slop-remover also switches from the standalone `prompts/slop-remover.xml.njk` template to the base-context include path (`prompts/base-context.xml.njk` with `promptType: slop-remover`). The legacy `attack_precheck` prompt and automatic player-action plausibility prompt call are currently disabled regardless of this setting because attacks and non-attack skill checks resolve through chat tools.
+- When `true`, slop-remover also switches from the standalone `prompts/slop-remover.xml.njk` template to the base-context include path (`prompts/base-context.xml.njk` with `promptType: slop-remover`). Legacy attack precheck still skips the cheap precheck when this is true, but can run the full legacy attack check when `use_legacy_prompt_checks` is enabled.
 - This does **not** override lower-level base-context builder exclusions such as `base_context.omit_inventory_items`, `base_context.omit_abilities`, `base_context.omit_craft_history`, or per-call `omitEventSummaryHistory`.
+
+## Legacy prompt checks
+
+`use_legacy_prompt_checks` switches player/NPC action attack and skill checks back to the older separate prompt flow.
+
+```yaml
+use_legacy_prompt_checks: false
+```
+
+Rules:
+- Must be a boolean when present.
+- Default is `false`.
+- When `false`, regular prose prompts get `resolveAttack`, `resolveSkillCheck`, and `resolveOpposedSkillCheck` tools and resolve attacks/checks inside the prose tool loop.
+- When `true`, regular player/NPC prose prompts do not receive those mechanical check tools. Player actions run the legacy `attack_precheck`/`attack_check` and player-action plausibility prompt before prose generation; NPC turns run their existing action-plan plausibility prompt and legacy attack check before NPC prose generation.
 
 ## Tool-call chat debugging
 

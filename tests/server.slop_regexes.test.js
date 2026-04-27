@@ -87,3 +87,27 @@ test('regex slop analysis treats YAML double-quoted word-boundary escapes as reg
 
     assert.deepEqual(Array.from(flagged), ['Elara']);
 });
+
+test('regex slop analysis removes asterisks before matching', async () => {
+    const Globals = loadSlopRuntime({
+        default: 200,
+        ngram_default: 5,
+        slopwords: {},
+        ngrams: {},
+        regexes: [
+            {
+                pattern: "/\\bdon't you dare stop\\b/i",
+                name: "Don't you dare stop",
+                ppm: 0
+            }
+        ]
+    });
+
+    const text = "Please don't you **dare** stop now.";
+
+    const directMatches = await Globals.findSlopRegexesInText(text);
+    const analyzedMatches = await Globals.analyzeSlopRegexesForText(text);
+
+    assert.deepEqual(Array.from(directMatches), ["Don't you dare stop"]);
+    assert.deepEqual(Array.from(analyzedMatches), ["Don't you dare stop"]);
+});

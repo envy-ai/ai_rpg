@@ -30,7 +30,7 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
 - Current player helpers:
   - `setCurrentPlayerResolver(resolver)`, `getCurrentPlayer()`, `getCurrentPlayerId()`.
 - Definitions:
-  - `getDispositionDefinitions()`, `getDispositionDefinition(name)`, `resolveDispositionIntensity(type, value)`.
+  - `getDispositionDefinitions()`, `getDispositionDefinition(name)`, `resolveDispositionIntensity(type, value)`; disposition definitions include the configured display `icon`.
   - `getNeedBarDefinitionsForContext()` (prompt/UI-safe need-bar definitions including icon/color metadata plus `small`/`medium`/`large`/`fill` and `small`/`medium`/`large`/`empty` trigger lists).
   - `validateNeedBarPromptSentences({ onError })` preflights `effect_thresholds.*.sentence` coverage for prompt-facing need summaries.
   - `reloadDefinitionCaches({ refreshInstances })` clears shared defs caches and can reapply merged need-bar definitions to already loaded actors.

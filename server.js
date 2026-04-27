@@ -2323,6 +2323,9 @@ async function validateConfiguration() {
     if (config.prompt_uses_caching !== undefined && typeof config.prompt_uses_caching !== 'boolean') {
         validationErrors.push('prompt_uses_caching must be a boolean when provided');
     }
+    if (config.use_legacy_prompt_checks !== undefined && typeof config.use_legacy_prompt_checks !== 'boolean') {
+        validationErrors.push('use_legacy_prompt_checks must be a boolean when provided');
+    }
     if (config.debug_tool_calls !== undefined && typeof config.debug_tool_calls !== 'boolean') {
         validationErrors.push('debug_tool_calls must be a boolean when provided');
     }
@@ -3159,6 +3162,13 @@ function countRegexMatches(text, regex) {
     return count;
 }
 
+function stripAsterisksForSlopRegexText(text) {
+    if (typeof text !== 'string') {
+        return '';
+    }
+    return text.replace(/\*/g, '');
+}
+
 async function loadSlopRegexDefinitions({ defaultPpmOverride = null } = {}) {
     const { defaultPpm, regexes } = await loadSlopwordConfig({ defaultPpmOverride });
     const definitions = [];
@@ -3225,7 +3235,8 @@ async function findSlopRegexesInText(text, {
     includePositivePpm = true,
     names = null
 } = {}) {
-    if (typeof text !== 'string' || !text.trim()) {
+    const regexText = stripAsterisksForSlopRegexText(text);
+    if (!regexText.trim()) {
         throw new Error('Slop regex matching requires a non-empty string.');
     }
 
@@ -3235,7 +3246,7 @@ async function findSlopRegexesInText(text, {
     );
     const flagged = [];
     for (const definition of definitions) {
-        if (countRegexMatches(text, definition.regex) > 0) {
+        if (countRegexMatches(regexText, definition.regex) > 0) {
             flagged.push(definition.name);
         }
     }
@@ -3247,7 +3258,8 @@ async function analyzeSlopRegexesForText(text, {
     includeZeroPpm = true,
     includePositivePpm = true
 } = {}) {
-    const tokens = tokenizeSlopText(text);
+    const regexText = stripAsterisksForSlopRegexText(text);
+    const tokens = tokenizeSlopText(regexText);
     if (!tokens.length) {
         throw new Error('Slop regex analysis requires a non-empty string.');
     }
@@ -3259,7 +3271,7 @@ async function analyzeSlopRegexesForText(text, {
     const totalWords = tokens.length;
     const flagged = [];
     for (const definition of definitions) {
-        const count = countRegexMatches(text, definition.regex);
+        const count = countRegexMatches(regexText, definition.regex);
         const ppm = (count / totalWords) * 1000000;
         if (ppm > definition.ppm) {
             flagged.push(definition.name);

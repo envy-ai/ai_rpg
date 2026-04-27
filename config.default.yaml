@@ -30,8 +30,17 @@ ai:
   endpoint: "https://nano-gpt.com/api/v1"
 
   # Your API key (keep this secure!)
-  # Required for openai_compatible backend
+  # Required for openai_compatible backend unless oauth-key is set
   apiKey: "your-api-key-here"
+
+  # Optional: OAuth refresh-token auth. When oauth-key and oauth-url are set,
+  # oauth-key is refreshed into short-lived Bearer access tokens for requests
+  # instead of using apiKey.
+  # oauth-url should be the exact token refresh endpoint.
+  # oauth-client-id is optional and is sent as client_id when set.
+  # oauth-url: ""
+  # oauth-key: ""
+  # oauth-client-id: ""
 
   # Used by both backends. For codex_cli_bridge this becomes the `codex -m` model.
   model: zai-org/glm-4.7
@@ -382,6 +391,10 @@ recent_history_turns: 25
 
 # When true, base-context templates ignore prompt-level omission flags such as omitGameHistory.
 prompt_uses_caching: false
+
+# When true, player/NPC action checks use the legacy attack/plausibility prompts
+# instead of resolving attacks and skill checks through prose-prompt tool calls.
+use_legacy_prompt_checks: false
 
 # When true, prose-prompt tool calls are written to a visible prompt-excluded debug chat entry as they run.
 debug_tool_calls: false

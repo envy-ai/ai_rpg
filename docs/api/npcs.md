@@ -121,7 +121,7 @@ Response:
 
 Notes:
 - When `accountTravelTime` is `true`, the route resolves the shortest directed path between the origin and destination using the location graph's stored `travelTimeMinutes`, advances world time by that total, and returns the resulting `worldTime` / `timeProgress`.
-- When the teleported character is the player and travel time advances, the route also records an event-summary chat entry in the form `Traveled from X to Y. Z passed.` and emits `chat_history_updated` when `clientId` is provided.
+- When the teleported character is the player and travel time advances, the route also records travel and elapsed-time event-summary rows, parent-linked to visible arrival prose when one is generated, and emits `chat_history_updated` when `clientId` is provided.
 - If no route exists, fast-travel time falls back to `0` minutes.
 
 ## DELETE /api/npcs/:id

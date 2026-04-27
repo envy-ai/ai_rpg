@@ -64,7 +64,7 @@ This page maps routes to templates and the client scripts/styles they load.
 - Notes: the global nav labels this route as `System`, while the page title is `System Configuration`.
 - Notes: the page is split into `Server Configuration` and `Game Configuration` tabs.
 - Notes: the AI section includes a backend selector. `openai_compatible` shows endpoint/API-key inputs, while `codex_cli_bridge` shows Codex command/home/session settings plus conditional session-id validation for `resume_id`.
-- Notes: Gameplay Tuning exposes `Debug Tool Calls`, which writes live prompt-excluded tool diagnostics into the chat log when enabled.
+- Notes: Gameplay Tuning exposes `Debug Tool Calls`, which writes live prompt-excluded tool diagnostics into the chat log when enabled, and `Legacy Prompt Checks`, which switches action attack/skill checks back to the separate prompt path.
 - Notes: the `Game Configuration` tab exposes a fixed-width YAML textarea for the currently loaded game's runtime config override. It saves through `PUT /api/game-config-override`, reloads config immediately on change, persists to the save as `gameConfigOverride.yaml`, and stays disabled when no game is loaded.
 
 ## World profiles manager

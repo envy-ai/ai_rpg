@@ -70,6 +70,17 @@
             .filter(Boolean);
     }
 
+    function normalizeMetadata(metadata) {
+        if (!isObject(metadata) || Array.isArray(metadata)) {
+            return null;
+        }
+        try {
+            return JSON.parse(JSON.stringify(metadata));
+        } catch (error) {
+            return null;
+        }
+    }
+
     function isTurnDiffEntry(entry) {
         if (!isObject(entry)) {
             return false;
@@ -130,6 +141,7 @@
                     severity: normalizeString(item.severity),
                     sourceType: normalizeString(item.sourceType),
                     entityRefs: normalizeEntityRefs(item.entityRefs),
+                    metadata: normalizeMetadata(item.metadata),
                     entryType: entry.type,
                     summaryTitle: normalizeString(entry.summaryTitle)
                 };
@@ -216,12 +228,42 @@
         return (a && a.originalOrder ? a.originalOrder : 0) - (b && b.originalOrder ? b.originalOrder : 0);
     }
 
+    function isElapsedTimeRow(row) {
+        const category = normalizeString(row && row.category).toLowerCase();
+        if (category !== 'time') {
+            return false;
+        }
+
+        const sourceType = normalizeString(row && row.sourceType).toLowerCase();
+        if (sourceType === 'time_passed') {
+            return true;
+        }
+
+        const icon = normalizeString(row && row.icon);
+        const text = normalizeString(row && row.text).toLowerCase();
+        return icon === '⏳' && /\bpassed\.?$/.test(text);
+    }
+
+    function formatElapsedTimeRow(row) {
+        const icon = normalizeString(row && row.icon);
+        const text = normalizeString(row && row.text);
+        if (!text) {
+            return icon;
+        }
+        if (icon && text.startsWith(icon)) {
+            return text;
+        }
+        return [icon, text].filter(Boolean).join(' ');
+    }
+
     function summarizeTurnDiff(entries) {
         const rows = normalizeTurnDiffEntries(entries);
+        const elapsedTimeRows = rows.filter(isElapsedTimeRow);
+        const bodyRows = rows.filter(row => !isElapsedTimeRow(row));
         const categoryCounts = new Map();
         let severity = 'normal';
 
-        rows.forEach(row => {
+        bodyRows.forEach(row => {
             categoryCounts.set(row.category, (categoryCounts.get(row.category) || 0) + 1);
             if (row.severity === 'critical') {
                 severity = 'critical';
@@ -240,10 +282,14 @@
 
         return {
             rows,
+            bodyRows,
+            elapsedTimeRows,
+            elapsedTimeText: elapsedTimeRows.map(formatElapsedTimeRow).filter(Boolean).join(' · '),
             total: rows.length,
+            changeCount: bodyRows.length,
             categories,
             severity,
-            defaultOpen: severity === 'critical' || severity === 'important'
+            defaultOpen: bodyRows.length > 0 && (severity === 'critical' || severity === 'important')
         };
     }
 
@@ -253,7 +299,7 @@
         }
 
         const itemText = normalizeEntryItems(entry)
-            .map(item => `${item.icon}:${item.text}`)
+            .map(item => `${item.icon}:${item.text}:${JSON.stringify(item.metadata || null)}`)
             .join('|');
 
         return [
@@ -370,15 +416,335 @@
         return list;
     }
 
+    function createStandardRow(row, options) {
+        const item = document.createElement('li');
+        item.className = `turn-diff-drawer__row turn-diff-drawer__row--${row.severity}`;
+        item.dataset.category = row.category;
+        item.dataset.severity = row.severity;
+        if (row.sourceType) {
+            item.dataset.sourceType = row.sourceType;
+        }
+
+        const icon = document.createElement('span');
+        icon.className = 'turn-diff-drawer__icon';
+        icon.setAttribute('aria-hidden', 'true');
+        icon.textContent = row.icon || '*';
+        item.appendChild(icon);
+
+        const main = document.createElement('span');
+        main.className = 'turn-diff-drawer__row-main';
+
+        const text = document.createElement('span');
+        text.className = 'turn-diff-drawer__text';
+        appendText(text, row.text, options);
+        main.appendChild(text);
+
+        const entityList = createEntityList(row);
+        if (entityList) {
+            main.appendChild(entityList);
+        }
+
+        item.appendChild(main);
+        return item;
+    }
+
+    function normalizeDispositionChange(row) {
+        if (!row) {
+            return null;
+        }
+
+        const metadata = row.metadata && typeof row.metadata === 'object'
+            ? row.metadata.dispositionChange
+            : null;
+        const text = normalizeString(row.text);
+        const parsed = text.match(/^(.+?)'s\s+(.+?)\s+disposition\s+Δ\s+([+-]?\d+)/i);
+        const npcName = normalizeString(metadata && metadata.npcName) || (parsed ? normalizeString(parsed[1]) : 'Someone');
+        const npcId = normalizeString(metadata && metadata.npcId) || null;
+        const typeLabel = normalizeString(metadata && metadata.typeLabel) || (parsed ? normalizeString(parsed[2]) : 'Disposition');
+        const metadataDelta = Number(metadata && metadata.delta);
+        const parsedDelta = parsed ? Number(parsed[3]) : NaN;
+        const delta = Number.isFinite(metadataDelta)
+            ? metadataDelta
+            : (Number.isFinite(parsedDelta) ? parsedDelta : null);
+        if (Number.isFinite(delta) && delta === 0) {
+            return null;
+        }
+        const icon = normalizeString(metadata && metadata.icon) || normalizeString(row.icon) || '💞';
+
+        return {
+            npcId,
+            npcName,
+            typeLabel,
+            icon,
+            delta,
+            row
+        };
+    }
+
+    function compareDispositionSeverity(currentSeverity, rowSeverity) {
+        const currentRank = SEVERITY_RANK[currentSeverity] ?? SEVERITY_RANK.normal;
+        const rowRank = SEVERITY_RANK[rowSeverity] ?? SEVERITY_RANK.normal;
+        return rowRank < currentRank ? rowSeverity : currentSeverity;
+    }
+
+    function groupDispositionRows(rows) {
+        const groups = new Map();
+        (Array.isArray(rows) ? rows : []).forEach(row => {
+            const change = normalizeDispositionChange(row);
+            if (!change) {
+                return;
+            }
+            const key = change.npcId || change.npcName.toLowerCase();
+            if (!groups.has(key)) {
+                groups.set(key, {
+                    npcName: change.npcName,
+                    changes: [],
+                    severity: row.severity || 'normal'
+                });
+            }
+            const group = groups.get(key);
+            group.changes.push(change);
+            group.severity = compareDispositionSeverity(group.severity, row.severity || 'normal');
+        });
+        return Array.from(groups.values()).filter(group => group.changes.length);
+    }
+
+    function createDispositionRows(rows, options) {
+        const groups = groupDispositionRows(rows);
+        if (!groups.length) {
+            return null;
+        }
+
+        const list = document.createElement('div');
+        list.className = 'turn-diff-drawer__disposition-list';
+
+        groups.forEach(group => {
+            const details = document.createElement('details');
+            details.className = `turn-diff-drawer__disposition-row turn-diff-drawer__row--${group.severity}`;
+            details.dataset.category = 'disposition';
+            details.dataset.severity = group.severity;
+
+            const summary = document.createElement('summary');
+            summary.className = 'turn-diff-drawer__disposition-summary';
+
+            const name = document.createElement('strong');
+            name.className = 'turn-diff-drawer__disposition-name';
+            name.textContent = group.npcName;
+            summary.appendChild(name);
+            summary.appendChild(document.createTextNode(': '));
+
+            const pills = document.createElement('span');
+            pills.className = 'turn-diff-drawer__disposition-pills';
+            group.changes.forEach(change => {
+                if (!Number.isFinite(change.delta) || change.delta === 0) {
+                    return;
+                }
+                const pill = document.createElement('span');
+                pill.className = 'turn-diff-drawer__disposition-pill';
+                pill.title = change.typeLabel;
+                pill.setAttribute('aria-label', `${change.typeLabel} ${change.delta > 0 ? 'increased' : 'decreased'} by ${Math.abs(Math.round(change.delta))}`);
+                const sign = change.delta > 0 ? '+' : '';
+                pill.textContent = `${change.icon}${sign}${Math.round(change.delta)}`;
+                pills.appendChild(pill);
+            });
+            summary.appendChild(pills);
+            details.appendChild(summary);
+
+            const body = document.createElement('div');
+            body.className = 'turn-diff-drawer__disposition-details';
+            const detailList = document.createElement('ul');
+            detailList.className = 'turn-diff-drawer__disposition-detail-list';
+
+            group.changes.forEach(change => {
+                const detailItem = document.createElement('li');
+                detailItem.className = 'turn-diff-drawer__disposition-detail';
+
+                const icon = document.createElement('span');
+                icon.className = 'turn-diff-drawer__icon';
+                icon.setAttribute('aria-hidden', 'true');
+                icon.textContent = change.icon || '💞';
+                detailItem.appendChild(icon);
+
+                const main = document.createElement('span');
+                main.className = 'turn-diff-drawer__row-main';
+
+                const text = document.createElement('span');
+                text.className = 'turn-diff-drawer__text';
+                appendText(text, change.row.text, options);
+                main.appendChild(text);
+
+                const entityList = createEntityList(change.row);
+                if (entityList) {
+                    main.appendChild(entityList);
+                }
+
+                detailItem.appendChild(main);
+                detailList.appendChild(detailItem);
+            });
+
+            body.appendChild(detailList);
+            details.appendChild(body);
+            list.appendChild(details);
+        });
+
+        return list;
+    }
+
+    function normalizeNeedBarChange(row) {
+        if (!row) {
+            return null;
+        }
+
+        const metadata = row.metadata && typeof row.metadata === 'object'
+            ? row.metadata.needBarChange
+            : null;
+        const text = normalizeString(row.text);
+        const parsed = text.match(/^(.+?)'s\s+(.+?)\s+(?:(?:small|medium|large|fill|all)\s+)?(?:increase|decrease|changed|raise|lower|restore|drain)\b.*?(?:Δ\s+([+-]?\d+(?:\.\d+)?))?/i);
+        const firstRef = Array.isArray(row.entityRefs) ? row.entityRefs.find(ref => ref && ref.type === 'npc') : null;
+        const actorName = normalizeString(metadata && metadata.actorName)
+            || normalizeString(firstRef && firstRef.name)
+            || (parsed ? normalizeString(parsed[1]) : 'Unknown');
+        const actorId = normalizeString(metadata && metadata.actorId)
+            || normalizeString(firstRef && firstRef.id)
+            || null;
+        const needBarName = normalizeString(metadata && metadata.needBarName)
+            || (parsed ? normalizeString(parsed[2]) : 'Need Bar');
+        const icon = normalizeString(metadata && metadata.icon) || normalizeString(row.icon) || '🧪';
+        const metadataDelta = Number(metadata && metadata.delta);
+        const parsedDeltaText = parsed ? normalizeString(parsed[3]) : '';
+        let deltaText = normalizeString(metadata && metadata.deltaText) || parsedDeltaText;
+        if (!deltaText && Number.isFinite(metadataDelta) && metadataDelta !== 0) {
+            deltaText = `${metadataDelta > 0 ? '+' : ''}${Math.round(metadataDelta)}`;
+        }
+        if (deltaText === '+0' || deltaText === '-0' || deltaText === '0') {
+            deltaText = '';
+        }
+
+        return {
+            actorId,
+            actorName,
+            needBarName,
+            icon,
+            deltaText,
+            row
+        };
+    }
+
+    function groupNeedRows(rows) {
+        const groups = new Map();
+        (Array.isArray(rows) ? rows : []).forEach(row => {
+            const change = normalizeNeedBarChange(row);
+            if (!change) {
+                return;
+            }
+            const key = change.actorId || change.actorName.toLowerCase();
+            if (!groups.has(key)) {
+                groups.set(key, {
+                    actorName: change.actorName,
+                    changes: [],
+                    severity: row.severity || 'normal'
+                });
+            }
+            const group = groups.get(key);
+            group.changes.push(change);
+            group.severity = compareDispositionSeverity(group.severity, row.severity || 'normal');
+        });
+        return Array.from(groups.values()).filter(group => group.changes.length);
+    }
+
+    function createNeedRows(rows, options) {
+        const groups = groupNeedRows(rows);
+        if (!groups.length) {
+            return null;
+        }
+
+        const list = document.createElement('div');
+        list.className = 'turn-diff-drawer__need-list';
+
+        groups.forEach(group => {
+            const details = document.createElement('details');
+            details.className = `turn-diff-drawer__need-row turn-diff-drawer__row--${group.severity}`;
+            details.dataset.category = 'needs';
+            details.dataset.severity = group.severity;
+
+            const summary = document.createElement('summary');
+            summary.className = 'turn-diff-drawer__need-summary';
+
+            const name = document.createElement('strong');
+            name.className = 'turn-diff-drawer__need-name';
+            name.textContent = group.actorName;
+            summary.appendChild(name);
+            summary.appendChild(document.createTextNode(': '));
+
+            const pills = document.createElement('span');
+            pills.className = 'turn-diff-drawer__need-pills';
+            group.changes.forEach(change => {
+                const pill = document.createElement('span');
+                pill.className = 'turn-diff-drawer__need-pill';
+                pill.title = change.needBarName;
+                pill.setAttribute('aria-label', change.deltaText
+                    ? `${change.needBarName} changed by ${change.deltaText}`
+                    : `${change.needBarName} changed`);
+                pill.textContent = `${change.icon}${change.deltaText || ''}`;
+                pills.appendChild(pill);
+            });
+            summary.appendChild(pills);
+            details.appendChild(summary);
+
+            const body = document.createElement('div');
+            body.className = 'turn-diff-drawer__need-details';
+            const detailList = document.createElement('ul');
+            detailList.className = 'turn-diff-drawer__need-detail-list';
+
+            group.changes.forEach(change => {
+                const detailItem = document.createElement('li');
+                detailItem.className = 'turn-diff-drawer__need-detail';
+
+                const icon = document.createElement('span');
+                icon.className = 'turn-diff-drawer__icon';
+                icon.setAttribute('aria-hidden', 'true');
+                icon.textContent = change.icon || '🧪';
+                detailItem.appendChild(icon);
+
+                const main = document.createElement('span');
+                main.className = 'turn-diff-drawer__row-main';
+
+                const text = document.createElement('span');
+                text.className = 'turn-diff-drawer__text';
+                appendText(text, change.row.text, options);
+                main.appendChild(text);
+
+                const entityList = createEntityList(change.row);
+                if (entityList) {
+                    main.appendChild(entityList);
+                }
+
+                detailItem.appendChild(main);
+                detailList.appendChild(detailItem);
+            });
+
+            body.appendChild(detailList);
+            details.appendChild(body);
+            list.appendChild(details);
+        });
+
+        return list;
+    }
+
     function createDrawer(entries, options = {}) {
         const summary = summarizeTurnDiff(entries);
         if (!summary.total) {
             return null;
         }
 
-        const open = typeof options.open === 'boolean' ? options.open : summary.defaultOpen;
+        const hasBodyRows = summary.changeCount > 0;
+        const open = hasBodyRows && (typeof options.open === 'boolean' ? options.open : summary.defaultOpen);
         const drawer = document.createElement('section');
-        drawer.className = `turn-diff-drawer turn-diff-drawer--${summary.severity}`;
+        drawer.className = [
+            'turn-diff-drawer',
+            `turn-diff-drawer--${summary.severity}`,
+            hasBodyRows ? '' : 'turn-diff-drawer--empty'
+        ].filter(Boolean).join(' ');
         drawer.dataset.severity = summary.severity;
 
         const bodyId = `turn-diff-drawer-body-${++drawerIdCounter}`;
@@ -391,11 +757,15 @@
         toggle.className = 'turn-diff-drawer__toggle';
         toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
         toggle.setAttribute('aria-controls', bodyId);
-        toggle.setAttribute('aria-label', `What changed, ${summary.total} item${summary.total === 1 ? '' : 's'}`);
+        toggle.setAttribute('aria-label', `What changed, ${summary.changeCount} item${summary.changeCount === 1 ? '' : 's'}`);
+        if (!hasBodyRows) {
+            toggle.disabled = true;
+            toggle.setAttribute('aria-disabled', 'true');
+        }
 
         const toggleLabel = document.createElement('span');
         toggleLabel.className = 'turn-diff-drawer__toggle-label';
-        toggleLabel.textContent = `What changed (${summary.total})`;
+        toggleLabel.textContent = `What changed (${summary.changeCount})`;
         toggle.appendChild(toggleLabel);
 
         const severity = document.createElement('span');
@@ -418,13 +788,20 @@
         });
         header.appendChild(chips);
 
+        if (summary.elapsedTimeText) {
+            const elapsedTime = document.createElement('span');
+            elapsedTime.className = 'turn-diff-drawer__elapsed-time';
+            elapsedTime.textContent = summary.elapsedTimeText;
+            header.appendChild(elapsedTime);
+        }
+
         const body = document.createElement('div');
         body.className = 'turn-diff-drawer__body';
         body.id = bodyId;
         body.hidden = !open;
 
         summary.categories.forEach(categoryInfo => {
-            const groupRows = summary.rows.filter(row => row.category === categoryInfo.category);
+            const groupRows = summary.bodyRows.filter(row => row.category === categoryInfo.category);
             if (!groupRows.length) {
                 return;
             }
@@ -438,46 +815,33 @@
             heading.textContent = categoryInfo.label;
             group.appendChild(heading);
 
-            const list = document.createElement('ul');
-            list.className = 'turn-diff-drawer__list';
-            groupRows.forEach(row => {
-                const item = document.createElement('li');
-                item.className = `turn-diff-drawer__row turn-diff-drawer__row--${row.severity}`;
-                item.dataset.category = row.category;
-                item.dataset.severity = row.severity;
-                if (row.sourceType) {
-                    item.dataset.sourceType = row.sourceType;
+            const dispositionRows = categoryInfo.category === 'disposition'
+                ? createDispositionRows(groupRows, options)
+                : null;
+            if (dispositionRows) {
+                group.appendChild(dispositionRows);
+            } else {
+                const needRows = categoryInfo.category === 'needs'
+                    ? createNeedRows(groupRows, options)
+                    : null;
+                if (needRows) {
+                    group.appendChild(needRows);
+                } else {
+                    const list = document.createElement('ul');
+                    list.className = 'turn-diff-drawer__list';
+                    groupRows.forEach(row => {
+                        list.appendChild(createStandardRow(row, options));
+                    });
+                    group.appendChild(list);
                 }
-
-                const icon = document.createElement('span');
-                icon.className = 'turn-diff-drawer__icon';
-                icon.setAttribute('aria-hidden', 'true');
-                icon.textContent = row.icon || '*';
-                item.appendChild(icon);
-
-                const main = document.createElement('span');
-                main.className = 'turn-diff-drawer__row-main';
-
-                const text = document.createElement('span');
-                text.className = 'turn-diff-drawer__text';
-                appendText(text, row.text, options);
-                main.appendChild(text);
-
-                const entityList = createEntityList(row);
-                if (entityList) {
-                    main.appendChild(entityList);
-                }
-
-                item.appendChild(main);
-
-                list.appendChild(item);
-            });
-
-            group.appendChild(list);
+            }
             body.appendChild(group);
         });
 
         toggle.addEventListener('click', () => {
+            if (!hasBodyRows || toggle.disabled) {
+                return;
+            }
             const expanded = toggle.getAttribute('aria-expanded') === 'true';
             toggle.setAttribute('aria-expanded', expanded ? 'false' : 'true');
             body.hidden = expanded;
@@ -528,6 +892,7 @@
         normalizeTurnDiffEntries,
         categorizeTurnDiffItem,
         summarizeTurnDiff,
+        isElapsedTimeRow,
         createDrawer,
         appendDrawer,
         createEntityList

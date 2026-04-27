@@ -42,6 +42,14 @@ const INFORMATION_GATHERING_CHAT_TOOL_NAMES = new Set([
     'locateThings'
 ]);
 
+const LEGACY_PROMPT_CHECK_CHAT_TOOL_NAMES = new Set([
+    'resolveAttack',
+    'resolveSkillCheck',
+    'resolveOpposedSkillCheck',
+    'resolvePlausibilityCheck',
+    'resolveOpposedPlausibilityCheck'
+]);
+
 const SKILL_CHECK_CHAT_TOOL_NAMES = new Set([
     'resolveSkillCheck',
     'resolveOpposedSkillCheck',
@@ -51,6 +59,17 @@ const SKILL_CHECK_CHAT_TOOL_NAMES = new Set([
 
 function isSkillCheckChatToolName(value) {
     return typeof value === 'string' && SKILL_CHECK_CHAT_TOOL_NAMES.has(value);
+}
+
+function isRegularProseChatToolAllowed(functionName) {
+    if (typeof functionName !== 'string' || !INFORMATION_GATHERING_CHAT_TOOL_NAMES.has(functionName)) {
+        return false;
+    }
+    if (Globals.config?.use_legacy_prompt_checks === true
+        && LEGACY_PROMPT_CHECK_CHAT_TOOL_NAMES.has(functionName)) {
+        return false;
+    }
+    return true;
 }
 
 let cachedCriticalThresholdFormulaRuntime = null;
@@ -3350,7 +3369,8 @@ module.exports = function registerApiRoutes(scope) {
             locationOverride = null,
             locationId = null,
             entryCollector = null,
-            parentEntryId = null
+            parentEntryId = null,
+            returnEntries = false
         } = {}) {
             const resolvedLocation = locationOverride
                 || (typeof currentPlayer?.currentLocation === 'string' && currentPlayer.currentLocation.trim()
@@ -3365,7 +3385,7 @@ module.exports = function registerApiRoutes(scope) {
                 ? baseContext.whileYouWereAwayNpcs
                 : [];
             if (!candidates.length) {
-                return null;
+                return returnEntries ? { hiddenEntry: null, visibleEntry: null } : null;
             }
             const rawThreshold = Number(config?.while_you_were_away_threshold_minutes);
             const whileYouWereAwayThresholdMinutes = Number.isInteger(rawThreshold) && rawThreshold >= 0
@@ -3376,7 +3396,7 @@ module.exports = function registerApiRoutes(scope) {
                 && candidate.lastSeenAgeMinutes >= whileYouWereAwayThresholdMinutes
             ));
             if (!hasEligibleCandidate) {
-                return null;
+                return returnEntries ? { hiddenEntry: null, visibleEntry: null } : null;
             }
 
             if (!config?.ai) {
@@ -3573,6 +3593,7 @@ module.exports = function registerApiRoutes(scope) {
             const playerFacingProse = typeof parsedResponse?.proseForPlayer === 'string'
                 ? parsedResponse.proseForPlayer.trim()
                 : '';
+            let storedVisibleEntry = null;
             if (playerFacingProse) {
                 const visibleEntry = {
                     role: 'assistant',
@@ -3584,10 +3605,12 @@ module.exports = function registerApiRoutes(scope) {
                 if (parentEntryId) {
                     visibleEntry.parentId = parentEntryId;
                 }
-                pushChatEntry(visibleEntry, entryCollector, resolvedLocationId);
+                storedVisibleEntry = pushChatEntry(visibleEntry, entryCollector, resolvedLocationId);
             }
 
-            return hiddenEntry;
+            return returnEntries
+                ? { hiddenEntry, visibleEntry: storedVisibleEntry }
+                : hiddenEntry;
         }
 
         function collectNpcLastMention(name) {
@@ -4631,6 +4654,13 @@ module.exports = function registerApiRoutes(scope) {
                 if (locationId.trim().toLowerCase() === normalizedName) {
                     return resolveLocationByIdOrName(locationId);
                 }
+                const candidate = resolveLocationByIdOrName(locationId);
+                const candidateName = typeof candidate?.name === 'string'
+                    ? candidate.name.trim().toLowerCase()
+                    : '';
+                if (candidateName && candidateName === normalizedName) {
+                    return candidate;
+                }
             }
             return null;
         };
@@ -4713,7 +4743,7 @@ module.exports = function registerApiRoutes(scope) {
             }
 
             const regionName = destinationParts[0].trim();
-            const locationName = destinationParts[1].trim();
+            let locationName = destinationParts[1].trim();
             if (!regionName && !locationName) {
                 throw new Error('Travel prose destination is missing location and region.');
             }
@@ -4748,9 +4778,21 @@ module.exports = function registerApiRoutes(scope) {
                 if (!region && pendingRegionId && regions instanceof Map && regions.has(pendingRegionId)) {
                     region = regions.get(pendingRegionId);
                 }
+                if (locationName
+                    && locationName.toLowerCase() === regionName.toLowerCase()
+                    && (!region || !resolveLocationInRegionByName(region, locationName))) {
+                    locationName = '';
+                }
                 if (!locationName) {
                     return { location: createdRegionEntryStub, region: region || null };
                 }
+            }
+
+            if (locationName
+                && locationName.toLowerCase() === regionName.toLowerCase()
+                && region
+                && !resolveLocationInRegionByName(region, locationName)) {
+                locationName = '';
             }
 
             if (!locationName) {
@@ -7017,6 +7059,61 @@ module.exports = function registerApiRoutes(scope) {
             return null;
         };
 
+        const findMostRecentTravelDrawerParentEntry = () => {
+            if (!Array.isArray(chatHistory)) {
+                throw new Error('Chat history is unavailable for travel summary parent resolution.');
+            }
+
+            let travelIndex = -1;
+            let travelUserEntry = null;
+            for (let idx = chatHistory.length - 1; idx >= 0; idx -= 1) {
+                const entry = chatHistory[idx];
+                if (entry && entry.role === 'user' && entry.travel === true) {
+                    travelIndex = idx;
+                    travelUserEntry = entry;
+                    break;
+                }
+            }
+
+            if (travelIndex < 0 || !travelUserEntry) {
+                return null;
+            }
+
+            const visibleAssistantParentTypes = new Set([
+                '',
+                'generic-prompt-response',
+                'npc-action',
+                'player-action',
+                'storyteller-answer',
+                'while-you-were-away-player'
+            ]);
+            let assistantCandidate = null;
+            for (let idx = travelIndex + 1; idx < chatHistory.length; idx += 1) {
+                const entry = chatHistory[idx];
+                if (!entry) {
+                    continue;
+                }
+                if (entry.role === 'user') {
+                    break;
+                }
+                const entryType = typeof entry.type === 'string' ? entry.type.trim() : '';
+                if (!visibleAssistantParentTypes.has(entryType)) {
+                    continue;
+                }
+                const metadata = entry.metadata && typeof entry.metadata === 'object'
+                    ? entry.metadata
+                    : null;
+                if (metadata?.excludeFromBaseContextHistory === true) {
+                    continue;
+                }
+                if (entry.role === 'assistant' && entry.id) {
+                    assistantCandidate = entry;
+                }
+            }
+
+            return assistantCandidate || travelUserEntry;
+        };
+
         const activePlayerMoveLocks = new Map();
 
         const tryAcquirePlayerMoveLock = (playerId, source = 'unknown') => {
@@ -7952,6 +8049,18 @@ module.exports = function registerApiRoutes(scope) {
             return candidate || null;
         }
 
+        function normalizeSummaryMetadata(value) {
+            if (!value || typeof value !== 'object' || Array.isArray(value)) {
+                return null;
+            }
+            try {
+                return JSON.parse(JSON.stringify(value));
+            } catch (error) {
+                console.warn('Failed to serialize event summary metadata:', error.message);
+                return null;
+            }
+        }
+
         function normalizeSummaryEntityRefs(refs) {
             if (!Array.isArray(refs)) {
                 return [];
@@ -8003,7 +8112,8 @@ module.exports = function registerApiRoutes(scope) {
                     category: normalizeSummaryCategory(item.category),
                     severity: normalizeSummarySeverity(item.severity),
                     sourceType: normalizeSummarySourceType(item.sourceType),
-                    entityRefs: normalizeSummaryEntityRefs(item.entityRefs)
+                    entityRefs: normalizeSummaryEntityRefs(item.entityRefs),
+                    metadata: normalizeSummaryMetadata(item.metadata)
                 });
             };
 
@@ -8674,13 +8784,15 @@ module.exports = function registerApiRoutes(scope) {
                     const detail = parts.length ? parts.join(' ') : 'changed';
                     const segments = [`${actorName}'s ${barName} ${detail}`];
                     const delta = Number(entry.delta);
+                    let deltaText = null;
                     if (Number.isFinite(delta) && delta !== 0) {
                         const normalizedBarName = String(rawBarName).trim().toLowerCase();
                         const normalizedSource = String(entry.source || '').trim().toLowerCase();
                         const roundedDelta = normalizedBarName === 'health' || normalizedSource === 'health_regen'
                             ? `${delta > 0 ? '+' : '-'}${Math.ceil(Math.abs(delta))}`
                             : `${delta > 0 ? '+' : ''}${Math.round(delta)}`;
-                        segments.push(`Δ ${roundedDelta}`);
+                        deltaText = roundedDelta;
+                        segments.push(`Δ ${deltaText}`);
                     }
                     const reason = entry.reason && String(entry.reason).trim();
                     if (reason) {
@@ -8699,7 +8811,22 @@ module.exports = function registerApiRoutes(scope) {
                         text: segments.join(' '),
                         category: 'needs',
                         sourceType: 'need_bar_change',
-                        entityRefs: summaryEntityRef('npc', { id: entry.actorId || null, name: actorName })
+                        entityRefs: summaryEntityRef('npc', { id: entry.actorId || null, name: actorName }),
+                        metadata: {
+                            needBarChange: {
+                                actorId: entry.actorId || null,
+                                actorName,
+                                needBarId: entry.needBarId || entry.id || null,
+                                needBarName: barName,
+                                icon,
+                                delta: Number.isFinite(delta) ? delta : null,
+                                deltaText,
+                                direction: entry.direction || null,
+                                magnitude: entry.magnitude || null,
+                                reason: reason || null,
+                                text: segments.join(' ')
+                            }
+                        }
                     });
                 });
                 shouldRefresh = true;
@@ -8735,12 +8862,29 @@ module.exports = function registerApiRoutes(scope) {
                     if (reason) {
                         text += ` - ${reason}`;
                     }
+                    const dispositionIcon = typeof entry.typeIcon === 'string' && entry.typeIcon.trim()
+                        ? entry.typeIcon.trim()
+                        : (typeof entry.icon === 'string' && entry.icon.trim() ? entry.icon.trim() : '💞');
                     add({
-                        icon: '💞',
+                        icon: dispositionIcon,
                         text,
                         category: 'disposition',
                         sourceType: 'disposition_change',
-                        entityRefs: summaryEntityRef('npc', { id: entry.npcId || null, name: npcName })
+                        entityRefs: summaryEntityRef('npc', { id: entry.npcId || null, name: npcName }),
+                        metadata: {
+                            dispositionChange: {
+                                npcId: entry.npcId || null,
+                                npcName,
+                                typeKey: entry.typeKey || null,
+                                typeLabel,
+                                icon: dispositionIcon,
+                                delta: Math.round(resolvedDelta),
+                                previousValue: Number.isFinite(previousValueRaw) ? previousValueRaw : null,
+                                newValue: Number.isFinite(newValueRaw) ? newValueRaw : null,
+                                reason: reason || null,
+                                text
+                            }
+                        }
                     });
                 });
                 shouldRefresh = true;
@@ -8824,7 +8968,8 @@ module.exports = function registerApiRoutes(scope) {
                     category: 'status',
                     severity: normalizeSummarySeverity(metadata.severity),
                     sourceType: normalizeSummarySourceType(metadata.sourceType || 'status_effect_change'),
-                    entityRefs: normalizeSummaryEntityRefs(metadata.entityRefs)
+                    entityRefs: normalizeSummaryEntityRefs(metadata.entityRefs),
+                    metadata: normalizeSummaryMetadata(metadata.metadata)
                 });
             };
 
@@ -8944,7 +9089,8 @@ module.exports = function registerApiRoutes(scope) {
                     category: normalizeSummaryCategory(item?.category),
                     severity: normalizeSummarySeverity(item?.severity),
                     sourceType: normalizeSummarySourceType(item?.sourceType),
-                    entityRefs: normalizeSummaryEntityRefs(item?.entityRefs)
+                    entityRefs: normalizeSummaryEntityRefs(item?.entityRefs),
+                    metadata: normalizeSummaryMetadata(item?.metadata)
                 })),
                 locationId: resolvedLocationId
             };
@@ -8992,7 +9138,8 @@ module.exports = function registerApiRoutes(scope) {
                     category: normalizeSummaryCategory(item?.category, 'status'),
                     severity: normalizeSummarySeverity(item?.severity),
                     sourceType: normalizeSummarySourceType(item?.sourceType),
-                    entityRefs: normalizeSummaryEntityRefs(item?.entityRefs)
+                    entityRefs: normalizeSummaryEntityRefs(item?.entityRefs),
+                    metadata: normalizeSummaryMetadata(item?.metadata)
                 })),
                 locationId: resolvedLocationId
             };
@@ -10232,6 +10379,9 @@ module.exports = function registerApiRoutes(scope) {
             resolveTravelContext = null,
             traveledToLocationId = null,
             vehicleArrivalsThisTurn = [],
+            travelDestinationOverride = null,
+            suppressPlayerMove = false,
+            suppressTimeAdvance = false,
             originLabelFallback = 'Origin',
             destinationLabelFallback = 'Destination'
         } = {}) {
@@ -10274,11 +10424,19 @@ module.exports = function registerApiRoutes(scope) {
                 })
                 : null;
             const requestedVehicleDestinationText = normalizeTravelProseDestinationField(travelProsePayload.vehicleDestination || '');
-            const requestedPlayerDestinationText = normalizeTravelProseDestinationField(
+            const promptPlayerDestinationText = normalizeTravelProseDestinationField(
                 typeof travelProsePayload.playerDestination === 'string'
                     ? travelProsePayload.playerDestination
                     : ''
             );
+            const overridePlayerDestinationText = normalizeTravelProseDestinationField(
+                typeof travelDestinationOverride?.destinationText === 'string'
+                    ? travelDestinationOverride.destinationText
+                    : ''
+            );
+            const requestedPlayerDestinationText = overridePlayerDestinationText || promptPlayerDestinationText;
+            const overridePlayerDestinationLocation = travelDestinationOverride?.destinationLocation || null;
+            const overridePlayerDestinationRegion = travelDestinationOverride?.destinationRegion || null;
             const effectiveVehicleDestinationText = travelVehicleName
                 ? (requestedVehicleDestinationText || requestedPlayerDestinationText || null)
                 : null;
@@ -10345,7 +10503,7 @@ module.exports = function registerApiRoutes(scope) {
             const destinationResolutionPromises = [];
             let playerDestinationResolutionIndex = -1;
             let vehicleDestinationResolutionIndex = -1;
-            if (requestedPlayerDestinationText) {
+            if (requestedPlayerDestinationText && !overridePlayerDestinationLocation) {
                 playerDestinationResolutionIndex = destinationResolutionPromises.push(
                     resolveTravelProseDestination(requestedPlayerDestinationText, {
                         allowCreate: false,
@@ -10401,6 +10559,19 @@ module.exports = function registerApiRoutes(scope) {
                 } catch (_) {
                     // Ignore destination resolution failures for match detection; exact-text matching still applies.
                 }
+            }
+            if (overridePlayerDestinationLocation) {
+                resolvedPlayerDestination = {
+                    location: overridePlayerDestinationLocation,
+                    region: overridePlayerDestinationRegion
+                };
+                resolvedPlayerDestinationId = typeof overridePlayerDestinationLocation.id === 'string'
+                    ? overridePlayerDestinationLocation.id.trim()
+                    : '';
+                resolvedPlayerDestinationRegionId = resolveTravelDestinationRegionId({
+                    location: overridePlayerDestinationLocation,
+                    region: overridePlayerDestinationRegion
+                });
             }
 
             const matchedDestinationId = resolvedVehicleDestinationId || resolvedPlayerDestinationId;
@@ -10509,7 +10680,8 @@ module.exports = function registerApiRoutes(scope) {
                     stream,
                     suppressMoveEvents: true,
                     allowMoveTurnAppearances: true,
-                    suppressTimeAdvance: suppressOriginTimeAdvance
+                    suppressTimeAdvance: Boolean(suppressTimeAdvance || suppressOriginTimeAdvance),
+                    locationOverride: location || null
                 });
             }
 
@@ -10551,20 +10723,27 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 if (shouldSplitEventChecks) {
-                    const resolvedDestination = await resolveTravelProseDestination(effectivePlayerDestinationText, {
-                        allowCreate: true,
-                        originLocation: location
-                    });
+                    const resolvedDestination = overridePlayerDestinationLocation
+                        ? {
+                            location: overridePlayerDestinationLocation,
+                            region: overridePlayerDestinationRegion
+                        }
+                        : await resolveTravelProseDestination(effectivePlayerDestinationText, {
+                            allowCreate: true,
+                            originLocation: location
+                        });
                     destinationLocation = resolvedDestination.location;
                     if (!destinationLocation) {
                         throw new Error('Travel prose player destination could not be resolved.');
                     }
 
-                    destinationLocation = await ensureTravelProseDestinationUnstubbed(destinationLocation, {
-                        travelContext: null
-                    });
+                    if (!(suppressPlayerMove && destinationLocation?.isStub && destinationLocation.stubMetadata?.isRegionEntryStub)) {
+                        destinationLocation = await ensureTravelProseDestinationUnstubbed(destinationLocation, {
+                            travelContext: null
+                        });
+                    }
 
-                    if (currentPlayer && currentPlayer.currentLocation !== destinationLocation.id) {
+                    if (!suppressPlayerMove && currentPlayer && currentPlayer.currentLocation !== destinationLocation.id) {
                         currentPlayer.setLocation(destinationLocation);
                         location = destinationLocation;
                         playerMoved = true;
@@ -10595,7 +10774,9 @@ module.exports = function registerApiRoutes(scope) {
                             ? userInput
                             : null,
                         stream,
-                        suppressMoveEvents: false
+                        suppressMoveEvents: Boolean(suppressPlayerMove),
+                        suppressTimeAdvance: Boolean(suppressTimeAdvance),
+                        locationOverride: location || null
                     });
                 }
                 return {
@@ -10625,7 +10806,8 @@ module.exports = function registerApiRoutes(scope) {
                     stream,
                     suppressMoveEvents: true,
                     allowMoveTurnAppearances: true,
-                    suppressTimeAdvance: false
+                    suppressTimeAdvance: Boolean(suppressTimeAdvance),
+                    locationOverride: destinationLocation || null
                 });
             }
 
@@ -11600,8 +11782,10 @@ module.exports = function registerApiRoutes(scope) {
             itemContext = '',
             abilityContext = ''
         }) {
-            // Disabled: attacks are resolved by the resolveAttack chat tool.
-            return null;
+            if (Globals.config?.use_legacy_prompt_checks !== true) {
+                console.info('Attack check skipped: use_legacy_prompt_checks is false.');
+                return null;
+            }
 
             if (Globals.config?.plausibility_checks?.enabled === false) {
                 console.info('Attack check skipped: plausibility_checks.enabled is false.');
@@ -11681,8 +11865,10 @@ module.exports = function registerApiRoutes(scope) {
         }
 
         async function runAttackPrecheck({ actionText }) {
-            // Disabled: the resolveAttack tool now owns attack detection/resolution.
-            return false;
+            if (Globals.config?.use_legacy_prompt_checks !== true) {
+                console.info('Attack precheck skipped: use_legacy_prompt_checks is false.');
+                return false;
+            }
 
             if (Globals.config?.plausibility_checks?.enabled === false) {
                 console.info('Attack precheck skipped: plausibility_checks.enabled is false.');
@@ -13594,6 +13780,7 @@ module.exports = function registerApiRoutes(scope) {
                         npcName: npc.name || npcEntry.name,
                         typeKey: typeDefinition.key,
                         typeLabel: typeDefinition.label || typeDefinition.key,
+                        typeIcon: typeDefinition.icon || null,
                         intensity: intensityValue,
                         delta,
                         previousValue: currentValue,
@@ -14910,7 +15097,7 @@ module.exports = function registerApiRoutes(scope) {
                     const functionName = typeof toolDefinition?.function?.name === 'string'
                         ? toolDefinition.function.name.trim()
                         : '';
-                    return INFORMATION_GATHERING_CHAT_TOOL_NAMES.has(functionName);
+                    return isRegularProseChatToolAllowed(functionName);
                 });
                 if (enabledChatTools.length > 0) {
                     additionalPayload.tools = enabledChatTools;
@@ -15199,8 +15386,30 @@ module.exports = function registerApiRoutes(scope) {
                     }
                     activeNpcTurnEntry = null;
 
-                    const attackCheck = null;
+                    let attackCheck = null;
                     let attackContext = null;
+                    if (Globals.config?.use_legacy_prompt_checks === true) {
+                        if (stream && stream.isEnabled) {
+                            stream.status('npc_turn:attack_check', {
+                                npcName: npc.name || npcName,
+                                index: npcTurnIndex
+                            });
+                        }
+
+                        attackCheck = await runAttackCheckPrompt({
+                            actionText,
+                            locationOverride: npcLocation,
+                            characterName: npc.name || 'Unknown NPC',
+                            itemContext,
+                            abilityContext
+                        });
+
+                        attackContext = buildAttackContextForActor({
+                            attackCheckInfo: attackCheck,
+                            actor: npc,
+                            location: npcLocation
+                        });
+                    }
 
                     const attackOutcome = attackContext?.outcome || null;
                     let attackDamageApplication = null;
@@ -16231,6 +16440,35 @@ module.exports = function registerApiRoutes(scope) {
                 return resolvedTravelContext;
             };
 
+            const buildTravelDestinationOverrideFromMetadata = () => {
+                if (!currentActionIsTravel || !travelMetadata?.exit) {
+                    return null;
+                }
+
+                const travelContext = resolveTravelContext();
+                const destinationLocation = travelContext?.destinationLocation || null;
+                if (!destinationLocation) {
+                    return null;
+                }
+
+                const destinationRegion = resolveRegionForLocationObject(destinationLocation);
+                const destinationLocationName = typeof destinationLocation.name === 'string' && destinationLocation.name.trim()
+                    ? destinationLocation.name.trim()
+                    : (travelMetadata.exit.destinationName || travelMetadata.exit.destinationId || '').trim();
+                const destinationRegionName = typeof destinationRegion?.name === 'string' && destinationRegion.name.trim()
+                    ? destinationRegion.name.trim()
+                    : (travelMetadata.exit.regionName || '').trim();
+                const destinationText = destinationRegionName && destinationLocationName
+                    ? `${destinationRegionName}|${destinationLocationName}`
+                    : (destinationLocationName || travelMetadata.exit.destinationId || null);
+
+                return {
+                    destinationText,
+                    destinationLocation,
+                    destinationRegion
+                };
+            };
+
             const stripStreamedEventArtifacts = (payload) => {
                 if (!payload || typeof payload !== 'object') {
                     return;
@@ -16382,14 +16620,16 @@ module.exports = function registerApiRoutes(scope) {
                         }
                     }
 
-                    if (travelMetadataIsEventDriven && currentActionIsTravel) {
+                    if (currentActionIsTravel && travelMetadata) {
                         try {
                             const resolvedTravel = resolveTravelContext();
-                            eventDrivenExitTravelTimeMinutes = resolveExitTravelTimeForTraversal({
-                                exit: resolvedTravel?.exit || null,
-                                sourceLocation: resolvedTravel?.originLocation || null
-                            });
-                            suppressEventDrivenExitTimeAdvance = eventDrivenExitTravelTimeMinutes > 0;
+                            if (travelMetadataIsEventDriven) {
+                                eventDrivenExitTravelTimeMinutes = resolveExitTravelTimeForTraversal({
+                                    exit: resolvedTravel?.exit || null,
+                                    sourceLocation: resolvedTravel?.originLocation || null
+                                });
+                                suppressEventDrivenExitTimeAdvance = eventDrivenExitTravelTimeMinutes > 0;
+                            }
                         } catch (error) {
                             const message = error.message || 'Failed to resolve travel metadata.';
                             stream.error({ message });
@@ -16591,6 +16831,7 @@ module.exports = function registerApiRoutes(scope) {
                     genericPromptStorageMode: isGenericPromptAction ? genericPromptStorageMode : null
                 };
                 const plausibilityChecksEnabled = Globals.config?.plausibility_checks?.enabled !== false;
+                const legacyPromptChecksEnabled = Globals.config?.use_legacy_prompt_checks === true;
                 let debugInfo = null;
                 let playerActionLogPayload = null;
                 const isPromptOnlyAction = isQuestionAction || isGenericPromptAction;
@@ -16634,7 +16875,11 @@ module.exports = function registerApiRoutes(scope) {
                         console.warn('Failed to update status effects before action:', tickError.message);
                     }
 
-                    if (!isEmptyPlayerAction && !isCreativeModeAction && !isForcedEventAction && plausibilityChecksEnabled) {
+                    if (!isEmptyPlayerAction
+                        && !isCreativeModeAction
+                        && !isForcedEventAction
+                        && plausibilityChecksEnabled
+                        && legacyPromptChecksEnabled) {
                         try {
                             stream.status('player_action:attack_check', 'Checking for potential attacks.');
                             const attackActionText = typeof sanitizedUserContent === 'string'
@@ -16699,10 +16944,6 @@ module.exports = function registerApiRoutes(scope) {
                             console.debug(attackError);
                         }
 
-                        /*
-                        Disabled: player-action plausibility is now resolved by the
-                        resolveSkillCheck / resolveOpposedSkillCheck
-                        chat tools during the action tool loop.
                         try {
                             stream.status('player_action:plausibility', 'Evaluating plausibility.');
                             plausibilityInfo = await runPlausibilityCheck({
@@ -16723,7 +16964,6 @@ module.exports = function registerApiRoutes(scope) {
                             console.warn('Failed to execute plausibility check:', plausibilityError.message);
                             console.debug(plausibilityError);
                         }
-                        */
                     } else if (!isEmptyPlayerAction && !plausibilityChecksEnabled) {
                         plausibilityInfo = {
                             raw: '',
@@ -17354,7 +17594,7 @@ module.exports = function registerApiRoutes(scope) {
                             const functionName = typeof toolDefinition?.function?.name === 'string'
                                 ? toolDefinition.function.name.trim()
                                 : '';
-                            return INFORMATION_GATHERING_CHAT_TOOL_NAMES.has(functionName);
+                            return isRegularProseChatToolAllowed(functionName);
                         }));
                 if (Array.isArray(enabledChatTools) && enabledChatTools.length > 0) {
                     additionalPayload.tools = enabledChatTools;
@@ -17769,6 +18009,9 @@ module.exports = function registerApiRoutes(scope) {
                             }
 
                             if (travelProsePayload) {
+                                const suppressDirectTravelPromptMutation = Boolean(currentActionIsTravel
+                                    && travelMetadata
+                                    && !travelMetadataIsEventDriven);
                                 const travelResult = await runTravelProseEventChecks({
                                     travelProsePayload,
                                     location,
@@ -17779,7 +18022,12 @@ module.exports = function registerApiRoutes(scope) {
                                     currentActionIsTravel,
                                     resolveTravelContext,
                                     traveledToLocationId,
-                                    vehicleArrivalsThisTurn
+                                    vehicleArrivalsThisTurn,
+                                    travelDestinationOverride: (currentActionIsTravel && travelMetadata)
+                                        ? buildTravelDestinationOverrideFromMetadata()
+                                        : null,
+                                    suppressPlayerMove: suppressDirectTravelPromptMutation,
+                                    suppressTimeAdvance: suppressDirectTravelPromptMutation
                                 });
                                 eventResult = travelResult.eventResult;
                                 originEventResult = travelResult.originEventResult;
@@ -17792,6 +18040,9 @@ module.exports = function registerApiRoutes(scope) {
                                 questResult = await Events.runQuestChecks();
                             } else {
                                 const textToCheck = aiResponse;
+                                const suppressDirectTravelPromptMutation = Boolean(currentActionIsTravel
+                                    && travelMetadata
+                                    && !travelMetadataIsEventDriven);
                                 [eventResult, questResult] = await Promise.all([
                                     Events.runEventChecks({
                                         textToCheck,
@@ -17800,8 +18051,9 @@ module.exports = function registerApiRoutes(scope) {
                                             : null,
                                         stream,
                                         // For non-travelProse turns, let event checks apply any narrated movement.
-                                        suppressMoveEvents: false,
-                                        suppressTimeAdvance: suppressEventDrivenExitTimeAdvance && eventDrivenTravelWillSucceed
+                                        suppressMoveEvents: suppressDirectTravelPromptMutation,
+                                        suppressTimeAdvance: suppressDirectTravelPromptMutation
+                                            || (suppressEventDrivenExitTimeAdvance && eventDrivenTravelWillSucceed)
                                     }),
                                     Events.runQuestChecks()
                                 ]);
@@ -19845,6 +20097,7 @@ module.exports = function registerApiRoutes(scope) {
                     key: typeDef.key,
                     label: typeDef.label || typeDef.key,
                     description: typeDef.description || '',
+                    icon: typeDef.icon || '',
                     value,
                     intensity,
                     thresholds: Array.isArray(typeDef.thresholds) ? typeDef.thresholds : [],
@@ -22165,7 +22418,7 @@ module.exports = function registerApiRoutes(scope) {
 
                 npc.setLocation(destinationLocation.id);
 
-                let fastTravelSummaryEntry = null;
+                let fastTravelSummaryItem = null;
                 if (fastTravelTimeMinutes > 0) {
                     fastTravelTimeAdjustment = await adjustWorldTimeByMinutes(fastTravelTimeMinutes, {
                         source: 'fast_travel',
@@ -22173,19 +22426,12 @@ module.exports = function registerApiRoutes(scope) {
                     });
 
                     if (!isNpc) {
-                        const fastTravelSummaryItem = buildFastTravelSummaryItem({
+                        fastTravelSummaryItem = buildFastTravelSummaryItem({
                             originLocation,
                             destinationLocation,
-                            travelTimeMinutes: fastTravelTimeMinutes
+                            travelTimeMinutes: fastTravelTimeMinutes,
+                            includeDuration: false
                         });
-                        if (fastTravelSummaryItem) {
-                            fastTravelSummaryEntry = recordEventSummaryEntry({
-                                label: '📋 Events',
-                                events: [fastTravelSummaryItem],
-                                timestamp: new Date().toISOString(),
-                                locationId: destinationLocation.id
-                            });
-                        }
                     }
                 }
 
@@ -22197,16 +22443,30 @@ module.exports = function registerApiRoutes(scope) {
                     gameLocations.set(destinationLocation.id, destinationLocation);
                 }
 
+                let whileYouWereAwayResult = null;
                 if (!isNpc) {
-                    await runWhileYouWereAwayPrompt({
+                    whileYouWereAwayResult = await runWhileYouWereAwayPrompt({
                         locationOverride: destinationLocation,
-                        locationId: destinationLocation.id
+                        locationId: destinationLocation.id,
+                        returnEntries: true
                     });
 
                     Player.recordNpcSightingsForCurrentPlayer({
                         player: npc,
                         locationId: destinationLocation.id,
                         previouslySharedNpcIds: npcIdsSharingPlayerLocationAtTurnStart
+                    });
+                }
+
+                let fastTravelSummaryEntry = null;
+                if (fastTravelSummaryItem) {
+                    fastTravelSummaryEntry = recordEventSummaryEntry({
+                        label: '📋 Events',
+                        events: [fastTravelSummaryItem],
+                        timeProgress: fastTravelTimeAdjustment?.timeProgress || null,
+                        timestamp: whileYouWereAwayResult?.visibleEntry?.timestamp || new Date().toISOString(),
+                        parentId: whileYouWereAwayResult?.visibleEntry?.id || null,
+                        locationId: destinationLocation.id
                     });
                 }
 
@@ -27197,10 +27457,31 @@ module.exports = function registerApiRoutes(scope) {
                     console.warn('Failed to ensure region secrets after move:', secretError?.message || secretError);
                 }
 
-                await runWhileYouWereAwayPrompt({
+                const whileYouWereAwayResult = await runWhileYouWereAwayPrompt({
                     locationOverride: destinationLocation,
-                    locationId: destinationLocation.id
+                    locationId: destinationLocation.id,
+                    returnEntries: true
                 });
+                const travelSummaryParentEntry = whileYouWereAwayResult?.visibleEntry
+                    || findMostRecentTravelDrawerParentEntry();
+                const travelSummaryParentId = travelSummaryParentEntry?.id || null;
+
+                const directTravelSummaryItem = buildFastTravelSummaryItem({
+                    originLocation: currentLocation,
+                    destinationLocation,
+                    travelTimeMinutes: exitTravelTimeMinutes,
+                    includeDuration: false
+                });
+                if (directTravelSummaryItem) {
+                    recordEventSummaryEntry({
+                        label: '📋 Events',
+                        events: [directTravelSummaryItem],
+                        timeProgress: exitTravelTimeAdjustment?.timeProgress || null,
+                        timestamp: travelSummaryParentEntry?.timestamp || new Date().toISOString(),
+                        parentId: travelSummaryParentId,
+                        locationId: destinationLocation.id
+                    });
+                }
 
                 const lastActionWasTravel = Boolean(currentPlayer?.lastActionWasTravel);
                 const consecutiveTravelActions = Number(currentPlayer?.consecutiveTravelActions) || 0;
@@ -35811,9 +36092,15 @@ module.exports = function registerApiRoutes(scope) {
             return shortestTravelTimeMinutes;
         }
 
-        function buildFastTravelSummaryItem({ originLocation, destinationLocation, travelTimeMinutes } = {}) {
+        function buildFastTravelSummaryItem({
+            originLocation,
+            destinationLocation,
+            travelTimeMinutes,
+            includeDuration = true
+        } = {}) {
             const advancedMinutes = Number(travelTimeMinutes);
-            if (!Number.isFinite(advancedMinutes) || advancedMinutes <= 0) {
+            const hasPositiveDuration = Number.isFinite(advancedMinutes) && advancedMinutes > 0;
+            if (includeDuration && !hasPositiveDuration) {
                 return null;
             }
 
@@ -35827,15 +36114,21 @@ module.exports = function registerApiRoutes(scope) {
                 return null;
             }
 
-            const durationText = Utils.formatMinutesAsNaturalDuration(Math.round(advancedMinutes));
-            if (!durationText) {
+            const durationText = hasPositiveDuration
+                ? Utils.formatMinutesAsNaturalDuration(Math.round(advancedMinutes))
+                : '';
+            if (includeDuration && !durationText) {
                 return null;
             }
 
+            const baseDescription = `Traveled from ${originName} to ${destinationName}.`;
             return {
                 icon: '🚶',
-                description: `Traveled from ${originName} to ${destinationName}. ${durationText} passed.`,
-                category: 'travel'
+                description: includeDuration && durationText
+                    ? `${baseDescription} ${durationText} passed.`
+                    : baseDescription,
+                category: 'travel',
+                sourceType: 'travel_move'
             };
         }
 

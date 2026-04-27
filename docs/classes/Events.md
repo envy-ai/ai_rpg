@@ -13,8 +13,8 @@ For a full reference of non-dummy event type keys, payloads, and application beh
 
 ## Public API (Static)
 - `initialize(deps)`: registers dependencies and builds parsers/aggregators/handlers.
-- `runEventChecks({ textToCheck, actionText, stream, allowEnvironmentalEffects, isNpcTurn, suppressMoveEvents, allowMoveTurnAppearances, _depth, followupQueue })`:
-    - Renders grouped event-check prompts plus a dedicated parallel need-bar prompt, calls `LLMClient.chatCompletion`, parses `<final>` and `<characters>` responses, and applies results through the shared handler pipeline.
+- `runEventChecks({ textToCheck, actionText, stream, allowEnvironmentalEffects, isNpcTurn, suppressMoveEvents, allowMoveTurnAppearances, suppressTimeAdvance, locationOverride, _depth, followupQueue })`:
+    - Renders grouped event-check prompts plus a dedicated parallel need-bar prompt, calls `LLMClient.chatCompletion`, parses `<final>` and `<characters>` responses, and applies results through the shared handler pipeline. `locationOverride` lets split travel-prose checks run destination prose against the destination location even before the player is mechanically moved.
 - `runQuestChecks({ allowWithoutEventChecks })`: LLM check for quest objective completion, including per-objective prompt `statusReason` text for completed objectives.
 - `applyEventOutcomes(parsedEvents, context)`: applies structured changes to world state.
 - `processQuestObjectiveCompletionEntries(entries, context)`: applies quest objective completion and rewards (items/xp/currency plus per-faction reputation deltas when configured on the quest), preserving the prompt-supplied completion reason on emitted objective updates.
@@ -82,5 +82,5 @@ For a full reference of non-dummy event type keys, payloads, and application beh
 - `time_passed` parsing ignores the prompt's leading reasoning field and parses only the final arrow-delimited duration segment through `Utils.parseDurationToMinutes` (`HH:MM`, integer minutes, or day/hour/minute/round units); legacy duration-only responses still work, and malformed duration values are logged and skipped.
 - `time_passed` accepts `0` from event checks; when this occurs, Events still advances canonical world time by 1 minute to avoid fully static clocks on zero-time turns.
 - Arrow-delimited event parsing accepts both ASCII `->` and unicode arrows (for example `→`), preventing malformed NPC/item names when models emit typographic arrows.
-- `disposition_check` is parsed and applied directly to NPC disposition toward the current player, and applied deltas are emitted as `dispositionChanges`.
+- `disposition_check` is parsed and applied directly to NPC disposition toward the current player, and applied deltas are emitted as `dispositionChanges` with the configured disposition icon attached for summary rendering.
 - `faction_reputation_change` is parsed and applied to player faction standings with fixed magnitudes (`a little` = `1`, `a lot` = `4`, signed by increase/decrease); entries are ignored unless a witness from that faction is present at the current location or in the party, and applied deltas are emitted as `factionReputationChanges`.

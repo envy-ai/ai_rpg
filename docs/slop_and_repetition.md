@@ -75,7 +75,7 @@ Quick refresher on where these systems live and how they're wired.
 - Configured regexes:
   - Source: `defs/slopwords.yaml` → `regexes`, an array of `{ pattern, name, ppm }` entries. Patterns use JavaScript-style `/pattern/flags` strings.
   - Analyzer: `server.js` → `analyzeSlopRegexesForText()` computes ppm against raw regex matches and returns triggered `name` values, not raw patterns.
-  - Regex matching uses the raw text and does not use k-gram normalization, common-word removal, or NPC name/alias exclusion.
+  - Regex matching removes all asterisks from the checked text before applying configured patterns, then otherwise uses raw regex matching without k-gram normalization, common-word removal, or NPC name/alias exclusion.
   - `api.js` → `getFilteredSlopRegexes()` checks `ppm: 0` regexes directly against the current response so it does not scan full slop history when one match is sufficient. Positive-ppm regexes are checked against combined slop history + current response, then filtered to regex names that also match the current response.
   - YAML double-quoted `\b` escape sequences are treated as regex word-boundary escapes when compiling configured regexes.
 - Repeated n-grams:

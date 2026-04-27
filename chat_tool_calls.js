@@ -3673,7 +3673,7 @@ const createChatToolRuntime = ({
         const defeatedText = remainingHealthPercent <= 0 ? ' (incapacitated or dead)' : '';
         return [
             `Damage: ${damagePercent}%`,
-            `Health remaining after attack: ${remainingHealthPercent}%${defeatedText}`
+            `Remaining health: ${remainingHealthPercent}%${defeatedText}`
         ].join('\n');
     };
 

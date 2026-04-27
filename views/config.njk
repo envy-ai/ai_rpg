@@ -841,6 +841,15 @@
                         </div>
 
                         <div class="form-group">
+                            <label for="use-legacy-prompt-checks">Legacy Prompt Checks:</label>
+                            <div class="checkbox-wrapper">
+                                <input type="hidden" name="use_legacy_prompt_checks::boolean" value="false">
+                                <input type="checkbox" id="use-legacy-prompt-checks" name="use_legacy_prompt_checks::boolean" value="true" {% if config.use_legacy_prompt_checks %}checked{% endif %}>
+                            </div>
+                            <span class="help-text">Use separate attack and skill-check prompts instead of prose-prompt tool calls</span>
+                        </div>
+
+                        <div class="form-group">
                             <label for="prose-length">Prose Length:</label>
                             <input type="text" id="prose-length" name="prose_length::string" value="{{ config.prose_length }}">
                             <span class="help-text">Sentence guidance for responses</span>

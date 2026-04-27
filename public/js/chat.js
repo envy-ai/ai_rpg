@@ -1234,6 +1234,46 @@ class AIRPGChat {
         return new Set(['event-summary', 'status-summary']);
     }
 
+    isLegacyDirectTravelSummaryEntry(entry) {
+        if (!entry || entry.type !== 'event-summary' || entry.parentId) {
+            return false;
+        }
+        const items = Array.isArray(entry.summaryItems) ? entry.summaryItems : [];
+        return items.some(item => {
+            if (!item || typeof item !== 'object') {
+                return false;
+            }
+            const category = typeof item.category === 'string' ? item.category.trim().toLowerCase() : '';
+            const sourceType = typeof item.sourceType === 'string' ? item.sourceType.trim().toLowerCase() : '';
+            const text = typeof item.text === 'string' ? item.text.trim().toLowerCase() : '';
+            return category === 'travel'
+                || sourceType === 'travel_move'
+                || text.startsWith('traveled from ');
+        });
+    }
+
+    findLegacyDirectTravelDrawerParentId(startIndex) {
+        if (!Array.isArray(this.serverHistory)) {
+            return null;
+        }
+        for (let index = startIndex + 1; index < this.serverHistory.length; index += 1) {
+            const candidate = this.serverHistory[index];
+            if (!candidate) {
+                continue;
+            }
+            if (candidate.type === 'while-you-were-away') {
+                continue;
+            }
+            if (candidate.type === 'while-you-were-away-player') {
+                return candidate.id || null;
+            }
+            if (candidate.role === 'user' || candidate.type === 'player-action' || candidate.type === 'npc-action') {
+                return null;
+            }
+        }
+        return null;
+    }
+
     getClientMessageHistoryConfig() {
         const config = window.AIRPG_CONFIG?.clientMessageHistory;
         if (!config || typeof config !== 'object') {
@@ -1398,7 +1438,7 @@ class AIRPGChat {
             return false;
         };
 
-        this.serverHistory.forEach(entry => {
+        this.serverHistory.forEach((entry, entryIndex) => {
             if (!entry) {
                 lastAttachable = null;
                 return;
@@ -1407,7 +1447,10 @@ class AIRPGChat {
             const entryType = entry.type || null;
             const isAttachmentType = attachmentTypes.has(entryType);
             const isTurnDiffType = turnDiffEntryTypes.has(entryType);
-            const parentId = entry.parentId || null;
+            const parentId = entry.parentId
+                || (this.isLegacyDirectTravelSummaryEntry(entry)
+                    ? this.findLegacyDirectTravelDrawerParentId(entryIndex)
+                    : null);
 
             if (isTurnDiffType && parentId) {
                 const parentRecord = recordsById.get(parentId);
@@ -2156,7 +2199,12 @@ class AIRPGChat {
         const list = document.createElement('ul');
         list.className = 'event-summary-list';
 
-        if (Array.isArray(entry.summaryItems) && entry.summaryItems.length) {
+        const dispositionRows = Array.isArray(entry.summaryItems) && entry.summaryItems.length
+            ? this.createDispositionSummaryRows(entry.summaryItems)
+            : null;
+        if (dispositionRows && this.hasOnlyDispositionSummaryItems(entry.summaryItems)) {
+            listWrapper.appendChild(dispositionRows);
+        } else if (Array.isArray(entry.summaryItems) && entry.summaryItems.length) {
             entry.summaryItems.forEach(item => {
                 if (!item || !item.text) {
                     return;
@@ -2173,9 +2221,8 @@ class AIRPGChat {
                 listItem.appendChild(textSpan);
                 list.appendChild(listItem);
             });
+            listWrapper.appendChild(list);
         }
-
-        listWrapper.appendChild(list);
 
         const timestampDiv = document.createElement('div');
         timestampDiv.className = 'message-timestamp';
@@ -4493,16 +4540,164 @@ class AIRPGChat {
             .filter(Boolean);
     }
 
+    normalizeTurnDiffMetadata(metadata) {
+        if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) {
+            return null;
+        }
+        try {
+            return JSON.parse(JSON.stringify(metadata));
+        } catch (error) {
+            console.warn('Failed to serialize turn diff metadata:', error.message);
+            return null;
+        }
+    }
+
+    normalizeDispositionSummaryItem(item) {
+        if (!item || typeof item !== 'object') {
+            return null;
+        }
+        const text = typeof item.text === 'string' ? item.text.trim() : '';
+        if (!text) {
+            return null;
+        }
+
+        const metadata = item.metadata && typeof item.metadata === 'object'
+            ? item.metadata.dispositionChange
+            : null;
+        const parsed = text.match(/^(.+?)'s\s+(.+?)\s+disposition\s+Δ\s+([+-]?\d+)/i);
+        const npcName = typeof metadata?.npcName === 'string' && metadata.npcName.trim()
+            ? metadata.npcName.trim()
+            : (parsed ? parsed[1].trim() : 'Someone');
+        const typeLabel = typeof metadata?.typeLabel === 'string' && metadata.typeLabel.trim()
+            ? metadata.typeLabel.trim()
+            : (parsed ? parsed[2].trim() : 'Disposition');
+        const metadataDelta = Number(metadata?.delta);
+        const parsedDelta = parsed ? Number(parsed[3]) : NaN;
+        const delta = Number.isFinite(metadataDelta)
+            ? metadataDelta
+            : (Number.isFinite(parsedDelta) ? parsedDelta : null);
+        const icon = typeof metadata?.icon === 'string' && metadata.icon.trim()
+            ? metadata.icon.trim()
+            : (typeof item.icon === 'string' && item.icon.trim() ? item.icon.trim() : '💞');
+        const npcId = typeof metadata?.npcId === 'string' && metadata.npcId.trim()
+            ? metadata.npcId.trim()
+            : null;
+
+        if (Number.isFinite(delta) && delta === 0) {
+            return null;
+        }
+
+        return {
+            npcId,
+            npcName,
+            typeLabel,
+            icon,
+            delta,
+            text,
+            item
+        };
+    }
+
+    groupDispositionSummaryItems(items) {
+        const groups = new Map();
+        (Array.isArray(items) ? items : []).forEach(item => {
+            const normalized = this.normalizeDispositionSummaryItem(item);
+            if (!normalized) {
+                return;
+            }
+            const groupKey = normalized.npcId || normalized.npcName.toLowerCase();
+            if (!groups.has(groupKey)) {
+                groups.set(groupKey, {
+                    npcName: normalized.npcName,
+                    changes: []
+                });
+            }
+            groups.get(groupKey).changes.push(normalized);
+        });
+        return Array.from(groups.values()).filter(group => group.changes.length);
+    }
+
+    hasOnlyDispositionSummaryItems(items) {
+        const sourceItems = (Array.isArray(items) ? items : [])
+            .filter(item => item && typeof item === 'object' && item.text);
+        return sourceItems.length > 0 && sourceItems.every(item => Boolean(this.normalizeDispositionSummaryItem(item)));
+    }
+
+    createDispositionSummaryRows(items) {
+        const groups = this.groupDispositionSummaryItems(items);
+        if (!groups.length) {
+            return null;
+        }
+
+        const wrapper = document.createElement('div');
+        wrapper.className = 'disposition-summary-rows';
+
+        groups.forEach(group => {
+            const details = document.createElement('details');
+            details.className = 'disposition-summary-row';
+
+            const summary = document.createElement('summary');
+            summary.className = 'disposition-summary-row__summary';
+
+            const name = document.createElement('strong');
+            name.className = 'disposition-summary-row__name';
+            name.textContent = group.npcName;
+            summary.appendChild(name);
+            summary.appendChild(document.createTextNode(': '));
+
+            const pills = document.createElement('span');
+            pills.className = 'disposition-summary-row__pills';
+            group.changes.forEach(change => {
+                if (!Number.isFinite(change.delta) || change.delta === 0) {
+                    return;
+                }
+                const pill = document.createElement('span');
+                pill.className = 'disposition-summary-row__pill';
+                pill.title = change.typeLabel;
+                const sign = change.delta > 0 ? '+' : '';
+                pill.textContent = `${change.icon}${sign}${Math.round(change.delta)}`;
+                pills.appendChild(pill);
+            });
+            summary.appendChild(pills);
+            details.appendChild(summary);
+
+            const body = document.createElement('div');
+            body.className = 'disposition-summary-row__details';
+            const list = document.createElement('ul');
+            list.className = 'event-summary-list disposition-summary-row__detail-list';
+            group.changes.forEach(change => {
+                const li = document.createElement('li');
+                const iconSpan = document.createElement('span');
+                iconSpan.className = 'event-summary-icon';
+                iconSpan.textContent = change.icon || '💞';
+                li.appendChild(iconSpan);
+                li.appendChild(document.createTextNode(' '));
+                const textSpan = document.createElement('span');
+                textSpan.className = 'event-summary-text';
+                this.setMessageContent(textSpan, change.text, { allowMarkdown: true });
+                li.appendChild(textSpan);
+                list.appendChild(li);
+            });
+            body.appendChild(list);
+            details.appendChild(body);
+            wrapper.appendChild(details);
+        });
+
+        return wrapper;
+    }
+
     addEventSummary(icon, summaryText, category = 'other', metadata = {}) {
-        if (!summaryText) {
+        const item = icon && typeof icon === 'object' && !Array.isArray(icon) ? icon : null;
+        const resolvedText = item ? item.text : summaryText;
+        if (!resolvedText) {
             return;
         }
 
-        if (this.pushEventBundleItem(icon || '📣', summaryText, category, metadata)) {
+        if (this.pushEventBundleItem(item || icon || '📣', resolvedText, category, metadata)) {
             return;
         }
 
-        this.renderStandaloneEventSummary(icon, summaryText);
+        this.renderStandaloneEventSummary(item?.icon || icon, resolvedText);
     }
 
     addStatusSummary(icon, summaryText, category = 'status', metadata = {}) {
@@ -4670,44 +4865,80 @@ class AIRPGChat {
             return fallbackIcon || '🧪';
         };
 
+        const toNeedBarSummaryItem = (change) => {
+            if (!change) {
+                return null;
+            }
+            const actorName = change.actorName || change.actorId || 'Unknown';
+            const barName = change.needBarName || change.needBar || change.bar || change.needBarId || 'Need Bar';
+            const direction = typeof change.direction === 'string' ? change.direction.trim().toLowerCase() : '';
+            const magnitude = typeof change.magnitude === 'string' ? change.magnitude.trim().toLowerCase() : '';
+            const parts = [];
+            if (magnitude) {
+                parts.push(magnitude);
+            }
+            if (direction) {
+                parts.push(direction);
+            }
+            const detail = parts.length ? parts.join(' ') : 'changed';
+
+            const baseline = `${actorName}'s ${barName} ${detail}`.trim();
+            const segments = [baseline];
+
+            const delta = Number(change.delta);
+            let deltaText = null;
+            if (Number.isFinite(delta) && delta !== 0) {
+                deltaText = this.formatNeedBarDelta(change, delta, barName, { roundNonHealth: true });
+                segments.push(`Δ ${deltaText}`);
+            }
+
+            const reason = change.reason && String(change.reason).trim();
+            if (reason) {
+                segments.push(`– ${reason}`);
+            }
+
+            const threshold = change.currentThreshold;
+            if (threshold && threshold.name) {
+                const effect = threshold.effect ? ` – ${threshold.effect}` : '';
+                segments.push(`→ ${threshold.name}${effect}`);
+            }
+
+            const icon = resolveNeedBarIcon(change);
+            const text = segments.join(' ');
+            return {
+                icon,
+                text,
+                category: 'needs',
+                sourceType: 'need_bar_change',
+                entityRefs: this.normalizeTurnDiffEntityRefs([{
+                    type: 'npc',
+                    id: change.actorId || null,
+                    name: actorName
+                }]),
+                metadata: {
+                    needBarChange: {
+                        actorId: change.actorId || null,
+                        actorName,
+                        needBarId: change.needBarId || change.id || null,
+                        needBarName: barName,
+                        icon,
+                        delta: Number.isFinite(delta) ? delta : null,
+                        deltaText,
+                        direction: direction || null,
+                        magnitude: magnitude || null,
+                        reason: reason || null,
+                        text
+                    }
+                }
+            };
+        };
+
         if (this.activeEventBundle) {
             items.forEach(change => {
-                if (!change) {
-                    return;
+                const summaryItem = toNeedBarSummaryItem(change);
+                if (summaryItem) {
+                    this.addEventSummary(summaryItem);
                 }
-                const actorName = change.actorName || change.actorId || 'Unknown';
-                const barName = change.needBarName || change.needBar || change.bar || change.needBarId || 'Need Bar';
-                const direction = typeof change.direction === 'string' ? change.direction.trim().toLowerCase() : '';
-                const magnitude = typeof change.magnitude === 'string' ? change.magnitude.trim().toLowerCase() : '';
-                const parts = [];
-                if (magnitude) {
-                    parts.push(magnitude);
-                }
-                if (direction) {
-                    parts.push(direction);
-                }
-                const detail = parts.length ? parts.join(' ') : 'changed';
-
-                const baseline = `${actorName}'s ${barName} ${detail}`.trim();
-                const segments = [baseline];
-
-                const delta = Number(change.delta);
-                if (Number.isFinite(delta) && delta !== 0) {
-                    segments.push(`Δ ${this.formatNeedBarDelta(change, delta, barName, { roundNonHealth: true })}`);
-                }
-
-                const reason = change.reason && String(change.reason).trim();
-                if (reason) {
-                    segments.push(`– ${reason}`);
-                }
-
-                const threshold = change.currentThreshold;
-                if (threshold && threshold.name) {
-                    const effect = threshold.effect ? ` – ${threshold.effect}` : '';
-                    segments.push(`→ ${threshold.name}${effect}`);
-                }
-
-                this.addEventSummary(resolveNeedBarIcon(change), segments.join(' '), 'needs');
             });
 
             this.markEventBundleRefresh();
@@ -4875,7 +5106,7 @@ class AIRPGChat {
             return;
         }
 
-        const toSummaryText = (change) => {
+        const toSummaryItem = (change) => {
             const npcName = change.npcName || change.name || 'Someone';
             const typeLabel = change.typeLabel || change.typeKey || 'Disposition';
             const deltaRaw = Number(change.delta);
@@ -4887,7 +5118,7 @@ class AIRPGChat {
                     ? (newRaw - previousRaw)
                     : 0);
             if (!delta) {
-                return '';
+                return null;
             }
 
             const sign = delta > 0 ? '+' : '';
@@ -4901,14 +5132,41 @@ class AIRPGChat {
             if (reason) {
                 summary += ` - ${reason}`;
             }
-            return summary;
+            const icon = typeof change.typeIcon === 'string' && change.typeIcon.trim()
+                ? change.typeIcon.trim()
+                : (typeof change.icon === 'string' && change.icon.trim() ? change.icon.trim() : '💞');
+            return {
+                icon,
+                text: summary,
+                category: 'disposition',
+                sourceType: 'disposition_change',
+                entityRefs: this.normalizeTurnDiffEntityRefs([{
+                    type: 'npc',
+                    id: change.npcId || null,
+                    name: npcName
+                }]),
+                metadata: {
+                    dispositionChange: {
+                        npcId: change.npcId || null,
+                        npcName,
+                        typeKey: change.typeKey || null,
+                        typeLabel,
+                        icon,
+                        delta: Math.round(delta),
+                        previousValue: Number.isFinite(previousRaw) ? previousRaw : null,
+                        newValue: Number.isFinite(newRaw) ? newRaw : null,
+                        reason: reason || null,
+                        text: summary
+                    }
+                }
+            };
         };
 
         if (this.activeEventBundle) {
             items.forEach(change => {
-                const summary = toSummaryText(change);
-                if (summary) {
-                    this.addEventSummary('💞', summary, 'disposition');
+                const summaryItem = toSummaryItem(change);
+                if (summaryItem) {
+                    this.addEventSummary(summaryItem);
                 }
             });
             this.markEventBundleRefresh();
@@ -4916,13 +5174,8 @@ class AIRPGChat {
         }
 
         const summaryItems = items
-            .map(toSummaryText)
-            .filter(Boolean)
-            .map(text => ({
-                icon: '💞',
-                text,
-                category: 'disposition'
-            }));
+            .map(toSummaryItem)
+            .filter(Boolean);
         if (!summaryItems.length) {
             return;
         }
@@ -5404,31 +5657,12 @@ class AIRPGChat {
         senderDiv.textContent = '💞 Disposition Changes';
 
         const contentDiv = document.createElement('div');
-        const list = document.createElement('ul');
-        list.className = 'event-summary-list';
-
-        items.forEach(item => {
-            if (!item || !item.text) {
-                return;
-            }
-            const li = document.createElement('li');
-            const iconSpan = document.createElement('span');
-            iconSpan.className = 'event-summary-icon';
-            iconSpan.textContent = item.icon || '💞';
-            li.appendChild(iconSpan);
-            li.appendChild(document.createTextNode(' '));
-            const textSpan = document.createElement('span');
-            textSpan.className = 'event-summary-text';
-            this.setMessageContent(textSpan, item.text, { allowMarkdown: true });
-            li.appendChild(textSpan);
-            list.appendChild(li);
-        });
-
-        if (!list.childElementCount) {
+        const rows = this.createDispositionSummaryRows(items);
+        if (!rows) {
             return;
         }
 
-        contentDiv.appendChild(list);
+        contentDiv.appendChild(rows);
 
         const timestampDiv = document.createElement('div');
         timestampDiv.className = 'message-timestamp';
@@ -5483,7 +5717,8 @@ class AIRPGChat {
             category: this.normalizeTurnDiffCategory(item.category),
             severity: this.normalizeTurnDiffSeverity(item.severity),
             sourceType: this.normalizeTurnDiffSourceType(item.sourceType),
-            entityRefs: this.normalizeTurnDiffEntityRefs(item.entityRefs)
+            entityRefs: this.normalizeTurnDiffEntityRefs(item.entityRefs),
+            metadata: this.normalizeTurnDiffMetadata(item.metadata)
         });
         return true;
     }
@@ -5504,7 +5739,8 @@ class AIRPGChat {
             category: this.normalizeTurnDiffCategory(item.category, 'status'),
             severity: this.normalizeTurnDiffSeverity(item.severity),
             sourceType: this.normalizeTurnDiffSourceType(item.sourceType || 'status_effect_change'),
-            entityRefs: this.normalizeTurnDiffEntityRefs(item.entityRefs)
+            entityRefs: this.normalizeTurnDiffEntityRefs(item.entityRefs),
+            metadata: this.normalizeTurnDiffMetadata(item.metadata)
         });
         return true;
     }
@@ -5572,7 +5808,8 @@ class AIRPGChat {
                     category: this.normalizeTurnDiffCategory(item.category),
                     severity: this.normalizeTurnDiffSeverity(item.severity),
                     sourceType: this.normalizeTurnDiffSourceType(item.sourceType),
-                    entityRefs: this.normalizeTurnDiffEntityRefs(item.entityRefs)
+                    entityRefs: this.normalizeTurnDiffEntityRefs(item.entityRefs),
+                    metadata: this.normalizeTurnDiffMetadata(item.metadata)
                 })),
                 timestamp: bundle.timestamp || new Date().toISOString()
             }]);
@@ -5593,22 +5830,27 @@ class AIRPGChat {
         const contentDiv = document.createElement('div');
         const list = document.createElement('ul');
         list.className = 'event-summary-list';
+        const dispositionRows = this.createDispositionSummaryRows(bundle.items);
 
-        bundle.items.forEach(item => {
-            const li = document.createElement('li');
-            const iconSpan = document.createElement('span');
-            iconSpan.className = 'event-summary-icon';
-            iconSpan.textContent = item.icon || '•';
-            li.appendChild(iconSpan);
-            li.appendChild(document.createTextNode(' '));
-            const textSpan = document.createElement('span');
-            textSpan.className = 'event-summary-text';
-            this.setMessageContent(textSpan, item.text, { allowMarkdown: true });
-            li.appendChild(textSpan);
-            list.appendChild(li);
-        });
+        if (dispositionRows && this.hasOnlyDispositionSummaryItems(bundle.items)) {
+            contentDiv.appendChild(dispositionRows);
+        } else {
+            bundle.items.forEach(item => {
+                const li = document.createElement('li');
+                const iconSpan = document.createElement('span');
+                iconSpan.className = 'event-summary-icon';
+                iconSpan.textContent = item.icon || '•';
+                li.appendChild(iconSpan);
+                li.appendChild(document.createTextNode(' '));
+                const textSpan = document.createElement('span');
+                textSpan.className = 'event-summary-text';
+                this.setMessageContent(textSpan, item.text, { allowMarkdown: true });
+                li.appendChild(textSpan);
+                list.appendChild(li);
+            });
 
-        contentDiv.appendChild(list);
+            contentDiv.appendChild(list);
+        }
 
         const timestampDiv = document.createElement('div');
         timestampDiv.className = 'message-timestamp';
@@ -5650,7 +5892,8 @@ class AIRPGChat {
                     category: this.normalizeTurnDiffCategory(item.category, 'status'),
                     severity: this.normalizeTurnDiffSeverity(item.severity),
                     sourceType: this.normalizeTurnDiffSourceType(item.sourceType || 'status_effect_change'),
-                    entityRefs: this.normalizeTurnDiffEntityRefs(item.entityRefs)
+                    entityRefs: this.normalizeTurnDiffEntityRefs(item.entityRefs),
+                    metadata: this.normalizeTurnDiffMetadata(item.metadata)
                 })),
                 timestamp: bundle.timestamp || new Date().toISOString()
             }]);

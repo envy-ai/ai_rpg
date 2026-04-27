@@ -7,6 +7,7 @@ const vm = require('node:vm');
 const rootDir = path.join(__dirname, '..');
 const viewSource = fs.readFileSync(path.join(rootDir, 'views', 'index.njk'), 'utf8');
 const apiSource = fs.readFileSync(path.join(rootDir, 'api.js'), 'utf8');
+const playerSource = fs.readFileSync(path.join(rootDir, 'Player.js'), 'utf8');
 const chatSource = fs.readFileSync(path.join(rootDir, 'public', 'js', 'chat.js'), 'utf8');
 const scssSource = fs.readFileSync(path.join(rootDir, 'public', 'css', 'main.scss'), 'utf8');
 const commonDocSource = fs.readFileSync(path.join(rootDir, 'docs', 'api', 'common.md'), 'utf8');
@@ -119,6 +120,11 @@ function createFakeDocument() {
     return {
         createElement(tagName) {
             return new FakeElement(tagName);
+        },
+        createTextNode(text) {
+            const node = new FakeElement('#text');
+            node.textContent = text;
+            return node;
         }
     };
 }
@@ -163,6 +169,9 @@ test('chat history rendering tracks parent-linked turn diff entries separately f
     assert.match(chatSource, /turnDiffEntries:\s*\[\]/);
     assert.match(chatSource, /pendingTurnDiffEntries/);
     assert.match(chatSource, /createChatMessageElement\(entry,\s*attachments,\s*turnDiffEntries\)/);
+    assert.match(chatSource, /isLegacyDirectTravelSummaryEntry\(entry\)/);
+    assert.match(chatSource, /findLegacyDirectTravelDrawerParentId\(entryIndex\)/);
+    assert.match(chatSource, /candidate\.type === 'while-you-were-away-player'/);
 
     const attachmentTypesMatch = chatSource.match(/getAttachmentTypes\(\)\s*\{[\s\S]*?return new Set\(\[([\s\S]*?)\]\);[\s\S]*?\}/);
     assert.ok(attachmentTypesMatch, 'getAttachmentTypes should return an explicit Set');
@@ -182,13 +191,25 @@ test('async disposition changes use a dedicated summary batch renderer', () => {
     assert.match(chatSource, /renderDispositionSummaryBatch\(items\)/);
     assert.match(chatSource, /messageDiv\.className = 'message event-summary-batch disposition-summary-batch'/);
     assert.match(chatSource, /senderDiv\.textContent = '💞 Disposition Changes'/);
+    assert.match(chatSource, /createDispositionSummaryRows\(items\)/);
     assert.match(chatSource, /this\.renderDispositionSummaryBatch\(summaryItems\)/);
+});
+
+test('disposition definition icons are preserved in applied summary metadata', () => {
+    assert.match(playerSource, /const icon = typeof config\.icon === 'string'/);
+    assert.match(playerSource, /description,\s*icon,\s*moveUp,/);
+    assert.match(apiSource, /typeIcon:\s*typeDefinition\.icon \|\| null/);
+    assert.match(apiSource, /dispositionChange:\s*\{/);
+    assert.match(apiSource, /icon:\s*dispositionIcon/);
 });
 
 test('turn state diff drawer styles are scoped and keyboard-visible', () => {
     assert.match(scssSource, /\.turn-diff-drawer/);
+    assert.match(scssSource, /\.turn-diff-drawer--empty/);
     assert.match(scssSource, /\.turn-diff-drawer__toggle/);
+    assert.match(scssSource, /&:disabled/);
     assert.match(scssSource, /\.turn-diff-drawer__category-chip/);
+    assert.match(scssSource, /\.turn-diff-drawer__elapsed-time/);
     assert.match(scssSource, /\.turn-diff-drawer__group/);
     assert.match(scssSource, /\.turn-diff-drawer__entity-chip/);
     assert.match(scssSource, /\.turn-diff-drawer__entity-chip--clickable/);
@@ -216,6 +237,166 @@ test('disposition changes get their own drawer category', () => {
     assert.deepEqual(Array.from(summary.categories, category => category.label), ['Dispositions']);
 });
 
+test('disposition drawer rows collapse by character with icon delta pills', () => {
+    const drawer = loadDrawerApi({
+        document: createFakeDocument(),
+        CustomEvent: FakeCustomEvent
+    });
+
+    const element = drawer.createDrawer([{
+        type: 'event-summary',
+        summaryTitle: 'Events - Disposition Check (Bob)',
+        summaryItems: [{
+            icon: '🙂',
+            category: 'disposition',
+            text: "Bob's Platonic disposition Δ +1 - shared a joke",
+            metadata: {
+                dispositionChange: {
+                    npcId: 'npc-bob',
+                    npcName: 'Bob',
+                    typeLabel: 'Platonic',
+                    icon: '🙂',
+                    delta: 1,
+                    text: "Bob's Platonic disposition Δ +1 - shared a joke"
+                }
+            }
+        }, {
+            icon: '❤️',
+            category: 'disposition',
+            text: "Bob's Romantic disposition Δ +4 - meaningful gift",
+            metadata: {
+                dispositionChange: {
+                    npcId: 'npc-bob',
+                    npcName: 'Bob',
+                    typeLabel: 'Romantic',
+                    icon: '❤️',
+                    delta: 4,
+                    text: "Bob's Romantic disposition Δ +4 - meaningful gift"
+                }
+            }
+        }, {
+            icon: '🔥',
+            category: 'disposition',
+            text: "Bob's Lust disposition Δ +0",
+            metadata: {
+                dispositionChange: {
+                    npcId: 'npc-bob',
+                    npcName: 'Bob',
+                    typeLabel: 'Lust',
+                    icon: '🔥',
+                    delta: 0,
+                    text: "Bob's Lust disposition Δ +0"
+                }
+            }
+        }]
+    }], { open: true });
+
+    const rows = collectByClass(element, 'turn-diff-drawer__disposition-row');
+    assert.equal(rows.length, 1);
+    assert.match(rows[0].textContent, /Bob/);
+    assert.match(rows[0].textContent, /🙂\+1/);
+    assert.match(rows[0].textContent, /❤️\+4/);
+    assert.doesNotMatch(rows[0].textContent, /🔥\+0/);
+    assert.match(rows[0].textContent, /shared a joke/);
+    assert.match(rows[0].textContent, /meaningful gift/);
+});
+
+test('need drawer rows collapse by character with icon delta pills', () => {
+    const drawer = loadDrawerApi({
+        document: createFakeDocument(),
+        CustomEvent: FakeCustomEvent
+    });
+
+    const element = drawer.createDrawer([{
+        type: 'event-summary',
+        summaryTitle: 'Events - Player Turn',
+        summaryItems: [{
+            icon: '🍗',
+            category: 'needs',
+            sourceType: 'need_bar_change',
+            text: "Bob's Hunger small decrease Δ -3 – missed lunch",
+            metadata: {
+                needBarChange: {
+                    actorId: 'npc-bob',
+                    actorName: 'Bob',
+                    needBarName: 'Hunger',
+                    icon: '🍗',
+                    delta: -3,
+                    deltaText: '-3',
+                    text: "Bob's Hunger small decrease Δ -3 – missed lunch"
+                }
+            }
+        }, {
+            icon: '💧',
+            category: 'needs',
+            sourceType: 'need_bar_change',
+            text: "Bob's Thirst medium decrease Δ -6 – desert heat",
+            metadata: {
+                needBarChange: {
+                    actorId: 'npc-bob',
+                    actorName: 'Bob',
+                    needBarName: 'Thirst',
+                    icon: '💧',
+                    delta: -6,
+                    deltaText: '-6',
+                    text: "Bob's Thirst medium decrease Δ -6 – desert heat"
+                }
+            }
+        }, {
+            icon: '🧘',
+            category: 'needs',
+            sourceType: 'need_bar_change',
+            text: "Bob's Calm changed – already centered",
+            metadata: {
+                needBarChange: {
+                    actorId: 'npc-bob',
+                    actorName: 'Bob',
+                    needBarName: 'Calm',
+                    icon: '🧘',
+                    delta: 0,
+                    deltaText: null,
+                    text: "Bob's Calm changed – already centered"
+                }
+            }
+        }, {
+            icon: '🛌',
+            category: 'needs',
+            sourceType: 'need_bar_change',
+            text: "Alice's Rest small increase Δ +2 – short break",
+            metadata: {
+                needBarChange: {
+                    actorId: 'npc-alice',
+                    actorName: 'Alice',
+                    needBarName: 'Rest',
+                    icon: '🛌',
+                    delta: 2,
+                    deltaText: '+2',
+                    text: "Alice's Rest small increase Δ +2 – short break"
+                }
+            }
+        }]
+    }], { open: true });
+
+    const rows = collectByClass(element, 'turn-diff-drawer__need-row');
+    assert.equal(rows.length, 2);
+    assert.match(rows[0].textContent, /Bob/);
+    assert.match(rows[0].textContent, /🍗-3/);
+    assert.match(rows[0].textContent, /💧-6/);
+    assert.match(rows[0].textContent, /🧘/);
+    assert.doesNotMatch(rows[0].textContent, /🧘[+-]?0/);
+    assert.match(rows[0].textContent, /missed lunch/);
+    assert.match(rows[0].textContent, /already centered/);
+    assert.match(rows[1].textContent, /Alice/);
+    assert.match(rows[1].textContent, /🛌\+2/);
+});
+
+test('need summary metadata is emitted for grouped drawer rows', () => {
+    assert.match(apiSource, /needBarChange:\s*\{/);
+    assert.match(apiSource, /deltaText/);
+    assert.match(chatSource, /needBarChange:\s*\{/);
+    assert.match(drawerSource, /function createNeedRows\(rows,\s*options\)/);
+});
+
 
 test('custom need bar changes are categorized as needs even when their reason mentions time', () => {
     const drawer = loadDrawerApi();
@@ -232,6 +413,87 @@ test('custom need bar changes are categorized as needs even when their reason me
     assert.equal(summary.total, 1);
     assert.equal(summary.rows[0].category, 'needs');
     assert.deepEqual(Array.from(summary.categories, category => category.category), ['needs']);
+});
+
+test('routine elapsed time rows render in the drawer header instead of the Time category', () => {
+    const entries = [{
+        type: 'event-summary',
+        summaryTitle: '📋 Events',
+        summaryItems: [{
+            icon: '⏳',
+            category: 'time',
+            sourceType: 'time_passed',
+            text: '2 minutes passed.'
+        }, {
+            icon: '💡',
+            category: 'time',
+            sourceType: 'world_time_transition',
+            text: 'Light level changed from day to evening.'
+        }]
+    }];
+
+    const drawer = loadDrawerApi({
+        document: createFakeDocument(),
+        CustomEvent: FakeCustomEvent
+    });
+    const summary = drawer.summarizeTurnDiff(entries);
+
+    assert.equal(summary.total, 2);
+    assert.equal(summary.changeCount, 1);
+    assert.equal(summary.elapsedTimeText, '⏳ 2 minutes passed.');
+    assert.equal(summary.elapsedTimeRows.length, 1);
+    assert.deepEqual(Array.from(summary.categories, category => category.category), ['time']);
+    assert.deepEqual(summary.bodyRows.map(row => row.text), ['Light level changed from day to evening.']);
+
+    const element = drawer.createDrawer(entries, { open: true });
+    const toggle = collectByClass(element, 'turn-diff-drawer__toggle')[0];
+    assert.equal(toggle.textContent, 'What changed (1)');
+    assert.equal(toggle.disabled, undefined);
+    const elapsedHeader = collectByClass(element, 'turn-diff-drawer__elapsed-time')[0];
+    assert.equal(elapsedHeader.textContent, '⏳ 2 minutes passed.');
+    assert.equal(collectByClass(element, 'turn-diff-drawer__row').length, 1);
+});
+
+test('Time category is omitted when it only contains routine elapsed time', () => {
+    const drawer = loadDrawerApi({
+        document: createFakeDocument(),
+        CustomEvent: FakeCustomEvent
+    });
+    const summary = drawer.summarizeTurnDiff([{
+        type: 'event-summary',
+        summaryTitle: '📋 Events',
+        summaryItems: [{
+            icon: '⏳',
+            category: 'time',
+            sourceType: 'time_passed',
+            text: '2 minutes passed.'
+        }]
+    }]);
+
+    assert.equal(summary.total, 1);
+    assert.equal(summary.changeCount, 0);
+    assert.equal(summary.elapsedTimeText, '⏳ 2 minutes passed.');
+    assert.deepEqual(Array.from(summary.categories, category => category.category), []);
+    assert.deepEqual(summary.bodyRows, []);
+
+    const element = drawer.createDrawer([{
+        type: 'event-summary',
+        summaryTitle: '📋 Events',
+        summaryItems: [{
+            icon: '⏳',
+            category: 'time',
+            sourceType: 'time_passed',
+            text: '2 minutes passed.'
+        }]
+    }], { open: true });
+    assert.ok(element.className.split(/\s+/).includes('turn-diff-drawer--empty'));
+    const toggle = collectByClass(element, 'turn-diff-drawer__toggle')[0];
+    assert.equal(toggle.textContent, 'What changed (0)');
+    assert.equal(toggle.disabled, true);
+    assert.equal(toggle.getAttribute('aria-disabled'), 'true');
+    assert.equal(toggle.getAttribute('aria-expanded'), 'false');
+    const elapsedHeader = collectByClass(element, 'turn-diff-drawer__elapsed-time')[0];
+    assert.equal(elapsedHeader.textContent, '⏳ 2 minutes passed.');
 });
 
 test('explicit inventory category keeps harvested items out of quests', () => {
@@ -297,13 +559,16 @@ test('phase 2 summary metadata is preserved for server and live drawer rows', ()
     assert.match(apiSource, /severity:\s*normalizeSummarySeverity\(item\?\.severity\)/);
     assert.match(apiSource, /sourceType:\s*normalizeSummarySourceType\(item\?\.sourceType\)/);
     assert.match(apiSource, /entityRefs:\s*normalizeSummaryEntityRefs\(item\?\.entityRefs\)/);
+    assert.match(apiSource, /metadata:\s*normalizeSummaryMetadata\(item\?\.metadata\)/);
 
     assert.match(chatSource, /pushEventBundleItem\(icon,\s*text,\s*category\s*=\s*'other',\s*metadata\s*=\s*\{\}/);
     assert.match(chatSource, /severity:\s*this\.normalizeTurnDiffSeverity\(item\.severity\)/);
     assert.match(chatSource, /sourceType:\s*this\.normalizeTurnDiffSourceType\(item\.sourceType\)/);
     assert.match(chatSource, /entityRefs:\s*this\.normalizeTurnDiffEntityRefs\(item\.entityRefs\)/);
+    assert.match(chatSource, /metadata:\s*this\.normalizeTurnDiffMetadata\(item\.metadata\)/);
 
     assert.match(drawerSource, /entityRefs:\s*normalizeEntityRefs\(item\.entityRefs\)/);
+    assert.match(drawerSource, /metadata:\s*normalizeMetadata\(item\.metadata\)/);
 });
 
 test('turn diff rows are ordered by severity inside drawer categories', () => {

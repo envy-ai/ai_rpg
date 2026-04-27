@@ -16,7 +16,7 @@ Centralized static state and helpers used across the server. Provides access to 
 - `setCurrentSaveInfo(info)` / `getCurrentSaveInfo()`.
 - `getBasePromptContext`, `getPromptEnv`, `parseXMLTemplate`: placeholders that must be assigned.
 - `appendChatEntry(entry, { collector, locationId, clientId, emitClientRefresh, refreshPayload })`: server-assigned helper that routes through `pushChatEntry` and can optionally emit `chat_history_updated`.
-- `analyzeSlopwordsForText(text)`, `analyzeConfiguredNgramsForText(text)`, `analyzeSlopRegexesForText(text)`, and `findSlopRegexesInText(text)`: server-assigned slop detection helpers used by the slop-remover flow.
+- `analyzeSlopwordsForText(text)`, `analyzeConfiguredNgramsForText(text)`, `analyzeSlopRegexesForText(text)`, and `findSlopRegexesInText(text)`: server-assigned slop detection helpers used by the slop-remover flow. Regex helpers strip asterisks from the checked text before applying configured patterns.
 - `getSceneSummaries()`: throws if not initialized.
 - `get currentPlayer()` / `set currentPlayer(player)`: resolves through `Player` unless overridden.
 - `set processedMove(value)` / `get processedMove()`.

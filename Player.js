@@ -1833,6 +1833,7 @@ class Player {
                 const key = this.#normalizeDispositionType(label);
 
                 const description = typeof config.description === 'string' ? config.description.trim() : '';
+                const icon = typeof config.icon === 'string' && config.icon.trim() ? config.icon.trim() : '';
                 const moveUp = Array.isArray(config.move_up)
                     ? config.move_up.filter(entry => typeof entry === 'string' && entry.trim()).map(entry => entry.trim())
                     : [];
@@ -1882,6 +1883,7 @@ class Player {
                     key,
                     label,
                     description,
+                    icon,
                     moveUp,
                     moveDown,
                     moveWayDown,

@@ -508,6 +508,59 @@ test('runWhileYouWereAwayPrompt applies need deltas, moves NPCs, and records a h
     assert.match(pushedEntries[1].content, /Mira waves you over and quickly fills you in before returning to the inn\./);
 });
 
+test('runWhileYouWereAwayPrompt can return both hidden and visible entries for parent linking', async () => {
+    const square = createLocation({ id: 'square', name: 'Town Square', regionId: 'alpha', npcIds: ['mira'] });
+    const regions = new Map([
+        ['alpha', { id: 'alpha', name: 'Alpha', locationIds: ['square'], entranceLocationId: 'square' }]
+    ]);
+    const gameLocations = new Map([[square.id, square]]);
+    const currentPlayer = { name: 'Baato', currentLocation: square.id };
+    const npc = {
+        id: 'mira',
+        isNPC: true,
+        name: 'Mira',
+        currentLocation: square.id,
+        _bars: [],
+        getNeedBars: () => []
+    };
+    const players = new Map([[npc.id, npc]]);
+    const { runWhileYouWereAwayPrompt } = loadWhileYouWereAwayHelpers({
+        currentPlayer,
+        players,
+        gameLocations,
+        regions,
+        prepareBasePromptContext: async () => ({
+            whileYouWereAwayNpcs: [{
+                id: 'mira',
+                name: 'Mira',
+                lastSeenAgeMinutes: 300,
+                lastSeenTimeAgo: '5 hours ago'
+            }]
+        }),
+        llmResponse: `
+<response>
+  <characterUpdates>
+    <characterUpdate>
+      <name>Mira</name>
+      <update>Mira waited near the fountain.</update>
+    </characterUpdate>
+  </characterUpdates>
+  <proseForPlayer>Mira is already waiting by the fountain.</proseForPlayer>
+</response>
+`
+    });
+
+    const result = await runWhileYouWereAwayPrompt({
+        locationOverride: square,
+        locationId: square.id,
+        returnEntries: true
+    });
+
+    assert.equal(result.hiddenEntry.type, 'while-you-were-away');
+    assert.equal(result.visibleEntry.type, 'while-you-were-away-player');
+    assert.match(result.visibleEntry.content, /Mira is already waiting by the fountain\./);
+});
+
 test('runWhileYouWereAwayPrompt silently ignores inactive need bars returned by the prompt', async () => {
     const square = createLocation({ id: 'square', name: 'Town Square', regionId: 'alpha', npcIds: ['mira'] });
     const regions = new Map([

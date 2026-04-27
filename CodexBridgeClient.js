@@ -925,8 +925,33 @@ class CodexBridgeClient {
             if (!aiConfig.endpoint) {
                 errors.push('AI endpoint not specified');
             }
-            if (!aiConfig.apiKey) {
-                errors.push('AI API key not specified');
+            const hasOAuthKey = typeof aiConfig['oauth-key'] === 'string' && aiConfig['oauth-key'].trim()
+                || typeof aiConfig.oauthKey === 'string' && aiConfig.oauthKey.trim();
+            const hasOAuthUrl = typeof aiConfig['oauth-url'] === 'string' && aiConfig['oauth-url'].trim()
+                || typeof aiConfig.oauthUrl === 'string' && aiConfig.oauthUrl.trim();
+            if (aiConfig['oauth-key'] !== undefined && typeof aiConfig['oauth-key'] !== 'string') {
+                errors.push('AI oauth-key must be a string');
+            }
+            if (aiConfig.oauthKey !== undefined && typeof aiConfig.oauthKey !== 'string') {
+                errors.push('AI oauthKey must be a string');
+            }
+            if (aiConfig['oauth-url'] !== undefined && typeof aiConfig['oauth-url'] !== 'string') {
+                errors.push('AI oauth-url must be a string');
+            }
+            if (aiConfig.oauthUrl !== undefined && typeof aiConfig.oauthUrl !== 'string') {
+                errors.push('AI oauthUrl must be a string');
+            }
+            if (aiConfig['oauth-client-id'] !== undefined && typeof aiConfig['oauth-client-id'] !== 'string') {
+                errors.push('AI oauth-client-id must be a string');
+            }
+            if (aiConfig.oauthClientId !== undefined && typeof aiConfig.oauthClientId !== 'string') {
+                errors.push('AI oauthClientId must be a string');
+            }
+            if (hasOAuthKey && !hasOAuthUrl) {
+                errors.push('AI oauth-url not specified');
+            }
+            if (!aiConfig.apiKey && !hasOAuthKey) {
+                errors.push('AI API key or oauth-key not specified');
             }
             if (!aiConfig.model) {
                 errors.push('AI model not specified');

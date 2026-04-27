@@ -22,14 +22,16 @@ function loadLocationMovePolicyHelpers(movePolicy = 'unexplored_locations') {
         `${functionSource}
 this.isUnexploredRegionExit = isUnexploredRegionExit;
 this.isUnexploredLocationExit = isUnexploredLocationExit;
-this.shouldUseEventMove = shouldUseEventMove;`,
+this.shouldUseEventMove = shouldUseEventMove;
+this.shouldPromptBypassMove = shouldPromptBypassMove;`,
         context
     );
 
     return {
         isUnexploredRegionExit: context.isUnexploredRegionExit,
         isUnexploredLocationExit: context.isUnexploredLocationExit,
-        shouldUseEventMove: context.shouldUseEventMove
+        shouldUseEventMove: context.shouldUseEventMove,
+        shouldPromptBypassMove: context.shouldPromptBypassMove
     };
 }
 
@@ -73,4 +75,32 @@ test('shouldUseEventMove still treats unresolved region exits as unexplored', ()
 
     assert.equal(isUnexploredLocationExit(exit), true);
     assert.equal(shouldUseEventMove(exit), true);
+});
+
+test('direct bypass prose prompt is reserved for unexplored exits', () => {
+    const { shouldPromptBypassMove } = loadLocationMovePolicyHelpers('never');
+
+    assert.equal(shouldPromptBypassMove({
+        destinationIsStub: false,
+        destinationIsRegionEntryStub: false,
+        destinationVisited: true,
+        destinationRegion: null,
+        destinationRegionExpanded: true
+    }), false);
+
+    assert.equal(shouldPromptBypassMove({
+        destinationIsStub: false,
+        destinationIsRegionEntryStub: false,
+        destinationVisited: false,
+        destinationRegion: null,
+        destinationRegionExpanded: true
+    }), true);
+
+    assert.equal(shouldPromptBypassMove({
+        destinationIsStub: false,
+        destinationIsRegionEntryStub: true,
+        destinationVisited: false,
+        destinationRegion: 'region-unknown',
+        destinationRegionExpanded: false
+    }), true);
 });
