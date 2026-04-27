@@ -18,14 +18,15 @@ Fields:
 - `timestamp`: ISO string (generated if missing)
 - `parentId`: string | null
 - `locationId`: string (required; enforced by `pushChatEntry`)
-- `type`: string | null (examples: `player-action`, `user-question`, `storyteller-answer`, `user-generic-prompt`, `generic-prompt-response`, `event-summary`, `quest-reward`, `status-summary`, visible assistant prose such as `while-you-were-away-player`, and hidden server-only story-note attachments such as `supplemental-story-info`, `while-you-were-away`, `plot-summary`, `plot-expander`, `offscreen-npc-activity-daily`, `offscreen-npc-activity-weekly`)
+- `type`: string | null (examples: `player-action`, `user-question`, `storyteller-answer`, `user-generic-prompt`, `generic-prompt-response`, `event-summary`, `quest-reward`, `status-summary`, visible diagnostics such as prompt-excluded `tool-call-debug`, visible assistant prose such as NPC-turn assistant entries and `while-you-were-away-player`, and hidden server-only story-note attachments such as `supplemental-story-info`, `while-you-were-away`, `plot-summary`, `plot-expander`, `offscreen-npc-activity-daily`, `offscreen-npc-activity-weekly`)
 - `summary`: string | null
 - `summaryTitle`: string | null (event summaries)
 - `summaryItems`: array | null (event/status summary rows; new rows use the SummaryItem shape below)
 - `travel`: boolean | undefined
 - `lastEditedAt`: ISO string | undefined (edited messages)
 - `ephemeral`: boolean | undefined (system-only entries)
-- `metadata`: object (always includes `locationId`; may include `requestId`, `npcNames`, `traveledToLocationId` for travel turns, quest metadata, etc.)
+- `toolCalls`: array | undefined (structured records on visible `tool-call-debug` entries; each record includes sequence/name/status, `cacheHit`/`cacheKey` for cached tool results, plus parameters and result or error payloads)
+- `metadata`: object (always includes `locationId`; may include `requestId`, `npcNames`, `traveledToLocationId` for travel turns, quest metadata, `npcTurnPending` plus `excludeFromBaseContextHistory` while a visible NPC-turn placeholder is still running, etc.)
 
 ## SummaryItem
 Rows inside `ChatEntry.summaryItems` for `event-summary` and `status-summary` entries.

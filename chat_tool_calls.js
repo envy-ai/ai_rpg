@@ -486,7 +486,7 @@ const CHAT_TOOL_DEFINITIONS = Object.freeze([
         type: 'function',
         function: {
             name: 'resolveAttack',
-            description: 'Resolve an attack using the same fields produced by the attack-check prompt. Returns the damage amount as a string, or "miss" if the attack misses. This does not apply damage to character health.',
+            description: 'Resolve an attack using the same fields produced by the attack-check prompt, apply the resulting damage to the defender, and return the damage done as a string or "miss" if the attack misses.',
             parameters: {
                 type: 'object',
                 properties: {
@@ -584,6 +584,109 @@ const CHAT_TOOL_DEFINITIONS = Object.freeze([
                     'circumstanceModifiers',
                     'damageEffectiveness'
                 ],
+                additionalProperties: false
+            }
+        }
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'resolvePlausibilityCheck',
+            description: 'Resolve an unopposed plausibility skill check and return the resulting outcome label.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    actor: {
+                        type: 'string',
+                        description: 'Optional acting character name or "player". Defaults to the current player.'
+                    },
+                    reason: {
+                        type: 'string',
+                        description: 'Brief reason this skill/attribute and difficulty are appropriate.'
+                    },
+                    skill: {
+                        type: 'string',
+                        description: 'N/A or exact skill name used for the check. Must specify either this or attribute.'
+                    },
+                    attribute: {
+                        type: 'string',
+                        description: 'N/A or exact attribute name used for the check. Must specify either this or skill.'
+                    },
+                    difficultyLevel: {
+                        type: 'string',
+                        enum: ['Trivial', 'Easy', 'Medium', 'Hard', 'Very Hard', 'Legendary'],
+                        description: 'Unopposed difficulty level.'
+                    },
+                    circumstanceModifiers: {
+                        type: 'array',
+                        description: 'Circumstance modifiers from -10 to 10. Use an empty array when none apply.',
+                        items: {
+                            type: 'object',
+                            properties: {
+                                amount: { type: 'integer' },
+                                reason: { type: 'string' }
+                            },
+                            required: ['amount', 'reason'],
+                            additionalProperties: false
+                        }
+                    }
+                },
+                required: ['reason', 'skill', 'attribute', 'difficultyLevel', 'circumstanceModifiers'],
+                additionalProperties: false
+            }
+        }
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'resolveOpposedPlausibilityCheck',
+            description: 'Resolve an opposed plausibility skill check against another present actor and return the resulting outcome label.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    actor: {
+                        type: 'string',
+                        description: 'Optional acting character name or "player". Defaults to the current player.'
+                    },
+                    reason: {
+                        type: 'string',
+                        description: 'Brief reason this opposed skill/attribute pairing is appropriate.'
+                    },
+                    skill: {
+                        type: 'string',
+                        description: 'N/A or exact acting character skill name used for the check. Must specify either this or attribute.'
+                    },
+                    attribute: {
+                        type: 'string',
+                        description: 'N/A or exact acting character attribute name used for the check. Must specify either this or skill.'
+                    },
+                    opponent: {
+                        type: 'string',
+                        description: 'Exact opponent name as seen in location context, or "player".'
+                    },
+                    opponentSkill: {
+                        type: 'string',
+                        description: 'N/A or exact opponent skill name used to resist. Must specify either this or opponentAttribute'
+                    },
+                    opponentAttribute: {
+                        type: 'string',
+                        description: 'N/A or exact opponent attribute name used to resist. Must specify either this or opponentSkill.'
+                    },
+                    circumstanceModifiers: {
+                        type: 'array',
+                        description: 'Acting character circumstance modifiers from -10 to 10. Use an empty array when none apply.',
+                        items: {
+                            type: 'object',
+                            properties: {
+                                amount: { type: 'integer' },
+                                reason: { type: 'string' }
+                            },
+                            required: ['amount', 'reason'],
+                            additionalProperties: false
+                        }
+                    }
+                },
+                required: ['reason', 'skill', 'attribute', 'opponent', 'opponentSkill', 'opponentAttribute', 'circumstanceModifiers'],
                 additionalProperties: false
             }
         }
@@ -900,6 +1003,8 @@ const createChatToolRuntime = ({
     alterNpcByEvent = null,
     alterLocationByEvent = null,
     resolveAttack = null,
+    resolvePlausibilityCheck = null,
+    resolveOpposedPlausibilityCheck = null,
     LLMClient,
     Player,
     Thing,
@@ -1385,6 +1490,105 @@ const createChatToolRuntime = ({
             `${functionName} "${fieldName}" must be a boolean when provided.`,
             { code: 'invalid_arguments' }
         );
+    };
+
+    const cloneToolResult = (value) => {
+        if (!value || typeof value !== 'object') {
+            return value;
+        }
+        try {
+            return JSON.parse(JSON.stringify(value));
+        } catch (_) {
+            return {
+                content: value.content,
+                metadata: value.metadata && typeof value.metadata === 'object'
+                    ? { ...value.metadata }
+                    : value.metadata
+            };
+        }
+    };
+
+    const normalizeCacheKeyPart = (value) => {
+        if (value === null || value === undefined) {
+            return null;
+        }
+        const normalized = String(value).trim().replace(/\s+/g, ' ').toLowerCase();
+        if (!normalized || normalized === 'n/a' || normalized === 'none' || normalized === 'null') {
+            return null;
+        }
+        return normalized;
+    };
+
+    const stableCacheKey = (parts = {}) => {
+        const entries = [];
+        Object.keys(parts).sort().forEach(key => {
+            const value = normalizeCacheKeyPart(parts[key]);
+            if (value !== null) {
+                entries.push(`${key}=${value}`);
+            }
+        });
+        return entries.join('|');
+    };
+
+    const normalizeToolResultCache = (cache, { metadataLabel } = {}) => {
+        if (cache && cache.entries instanceof Map) {
+            if (!cache.roundKey) {
+                cache.roundKey = metadataLabel || 'prompt';
+            }
+            return cache;
+        }
+        if (cache instanceof Map) {
+            if (!cache.roundKey) {
+                cache.roundKey = metadataLabel || 'prompt';
+            }
+            return {
+                roundKey: cache.roundKey,
+                entries: cache
+            };
+        }
+        return {
+            roundKey: metadataLabel || `prompt-${Date.now()}`,
+            entries: new Map()
+        };
+    };
+
+    const getCacheKeyForToolCall = (functionName, args, roundKey) => {
+        if (!args || typeof args !== 'object') {
+            return null;
+        }
+        if (functionName === 'resolveAttack') {
+            return stableCacheKey({
+                type: 'attack',
+                round: roundKey,
+                attacker: args.attacker,
+                target: args.defender,
+                weapon: args.weapon,
+                ability: args.ability,
+                skill: args.attackerInfo?.attackSkill
+            });
+        }
+        if (functionName === 'resolvePlausibilityCheck') {
+            return stableCacheKey({
+                type: 'plausibility',
+                round: roundKey,
+                character: args.actor || 'player',
+                attribute: args.attribute,
+                skill: args.skill
+            });
+        }
+        if (functionName === 'resolveOpposedPlausibilityCheck') {
+            return stableCacheKey({
+                type: 'opposed_plausibility',
+                round: roundKey,
+                character: args.actor || 'player',
+                opponent: args.opponent,
+                attribute: args.attribute,
+                skill: args.skill,
+                opponentAttribute: args.opponentAttribute,
+                opponentSkill: args.opponentSkill
+            });
+        }
+        return null;
     };
 
     const normalizeEntityTypeFilter = (value) => {
@@ -3356,6 +3560,123 @@ const createChatToolRuntime = ({
         });
     };
 
+    const normalizeFiniteNumberOrNull = (value) => {
+        if (typeof value === 'number') {
+            return Number.isFinite(value) ? value : null;
+        }
+        if (typeof value === 'string' && value.trim()) {
+            const parsed = Number(value);
+            return Number.isFinite(parsed) ? parsed : null;
+        }
+        return null;
+    };
+
+    const ceilStoredPercentOrNull = (value, { zeroWhenNonPositive = false } = {}) => {
+        const percent = normalizeFiniteNumberOrNull(value);
+        if (percent === null) {
+            return null;
+        }
+        if (zeroWhenNonPositive && percent <= 0) {
+            return 0;
+        }
+        return Math.ceil(percent - 1e-9);
+    };
+
+    const ceilPercentFromHealthRatioOrNull = (value, maxHealth, { zeroWhenNonPositive = false } = {}) => {
+        const finiteValue = normalizeFiniteNumberOrNull(value);
+        const finiteMaxHealth = normalizeFiniteNumberOrNull(maxHealth);
+        if (finiteValue === null || finiteMaxHealth === null || finiteMaxHealth <= 0) {
+            return null;
+        }
+        if (zeroWhenNonPositive && finiteValue <= 0) {
+            return 0;
+        }
+        return Math.ceil(((finiteValue / finiteMaxHealth) * 100) - 1e-9);
+    };
+
+    const firstFiniteNumberOrNull = (...values) => {
+        for (const value of values) {
+            const finiteValue = normalizeFiniteNumberOrNull(value);
+            if (finiteValue !== null) {
+                return finiteValue;
+            }
+        }
+        return null;
+    };
+
+    const buildResolveAttackHitContent = ({ resolved, damage }) => {
+        const application = resolved?.application && typeof resolved.application === 'object'
+            ? resolved.application
+            : {};
+        const summary = resolved?.summary && typeof resolved.summary === 'object'
+            ? resolved.summary
+            : {};
+        const summaryDamage = summary.damage && typeof summary.damage === 'object'
+            ? summary.damage
+            : {};
+        const summaryTarget = summary.target && typeof summary.target === 'object'
+            ? summary.target
+            : {};
+
+        const maxHealth = firstFiniteNumberOrNull(
+            application.maxHealthAfter,
+            application.maxHealthBefore,
+            summaryTarget.maxHealth,
+            summaryTarget.maximumHealth,
+            summaryTarget.totalHealth
+        );
+        const appliedDamage = firstFiniteNumberOrNull(
+            application.damageApplied,
+            summaryDamage.applied,
+            summaryDamage.total,
+            damage
+        );
+
+        let damagePercent = ceilPercentFromHealthRatioOrNull(appliedDamage, maxHealth);
+        if (damagePercent === null) {
+            damagePercent = firstFiniteNumberOrNull(
+                ceilStoredPercentOrNull(application.healthLostPercent),
+                ceilStoredPercentOrNull(summaryTarget.healthLostPercent)
+            );
+        }
+        if (damagePercent === null) {
+            throw new ToolVisibleError(
+                'resolveAttack hit, but no finite damage percentage could be calculated.',
+                { code: 'attack_resolution_failed' }
+            );
+        }
+
+        const remainingHealth = firstFiniteNumberOrNull(
+            application.endingHealth,
+            application.rawRemainingHealth,
+            summaryTarget.remainingHealth,
+            summaryTarget.rawRemainingHealth
+        );
+        let remainingHealthPercent = ceilPercentFromHealthRatioOrNull(
+            remainingHealth,
+            maxHealth,
+            { zeroWhenNonPositive: true }
+        );
+        if (remainingHealthPercent === null) {
+            remainingHealthPercent = firstFiniteNumberOrNull(
+                ceilStoredPercentOrNull(application.remainingHealthPercent, { zeroWhenNonPositive: true }),
+                ceilStoredPercentOrNull(summaryTarget.remainingHealthPercent, { zeroWhenNonPositive: true })
+            );
+        }
+        if (remainingHealthPercent === null) {
+            throw new ToolVisibleError(
+                'resolveAttack hit, but no finite remaining-health percentage could be calculated.',
+                { code: 'attack_resolution_failed' }
+            );
+        }
+
+        const defeatedText = remainingHealthPercent <= 0 ? ' (incapacitated or dead)' : '';
+        return [
+            `Damage: ${damagePercent}%`,
+            `Health remaining after attack: ${remainingHealthPercent}%${defeatedText}`
+        ].join('\n');
+    };
+
     const executeResolveAttackTool = async ({
         attacker,
         defender,
@@ -3420,7 +3741,7 @@ const createChatToolRuntime = ({
 
         const attackerModifiers = normalizeAttackModifierArray(
             circumstanceModifierObject.attackerCircumstanceModifier
-                ?? circumstanceModifierObject.attackerCircumstanceModifiers,
+            ?? circumstanceModifierObject.attackerCircumstanceModifiers,
             {
                 functionName,
                 fieldName: 'circumstanceModifiers.attackerCircumstanceModifier'
@@ -3428,7 +3749,7 @@ const createChatToolRuntime = ({
         );
         const defenderModifiers = normalizeAttackModifierArray(
             circumstanceModifierObject.defenderCircumstanceModifier
-                ?? circumstanceModifierObject.defenderCircumstanceModifiers,
+            ?? circumstanceModifierObject.defenderCircumstanceModifiers,
             {
                 functionName,
                 fieldName: 'circumstanceModifiers.defenderCircumstanceModifier',
@@ -3467,14 +3788,17 @@ const createChatToolRuntime = ({
                 metadata: {
                     result: 'miss',
                     hit: false,
+                    summary: resolved.summary || null,
                     attacker: attackerName,
                     defender: defenderName
                 }
             };
         }
 
-        const rawDamage = resolved.damage
+        const rawDamage = resolved.application?.damageApplied
+            ?? resolved.damageApplied
             ?? resolved.damageDone
+            ?? resolved.damage
             ?? resolved.damageAmount
             ?? resolved.attackOutcome?.damage?.total
             ?? resolved.outcome?.damage?.total;
@@ -3487,13 +3811,202 @@ const createChatToolRuntime = ({
         }
 
         return {
-            content: String(damage),
+            content: buildResolveAttackHitContent({ resolved, damage }),
             metadata: {
                 result: 'damage',
                 hit: true,
                 damage,
+                declaredDamage: Number.isFinite(Number(resolved.declaredDamage))
+                    ? Number(resolved.declaredDamage)
+                    : null,
+                application: resolved.application || null,
+                appliedStatusEffects: Array.isArray(resolved.appliedStatusEffects)
+                    ? resolved.appliedStatusEffects
+                    : [],
+                locationRefreshRequested: Boolean(resolved.locationRefreshRequested || resolved.application),
+                summary: resolved.summary || null,
                 attacker: attackerName,
                 defender: defenderName
+            }
+        };
+    };
+
+    const buildPlausibilitySkillCheck = ({
+        reason,
+        skill,
+        attribute,
+        difficultyLevel = null,
+        opposedCheck = null,
+        circumstanceModifiers = []
+    } = {}) => {
+        const cleanSkill = skill && skill.toLowerCase() !== 'n/a' ? skill : null;
+        const cleanAttribute = attribute && attribute.toLowerCase() !== 'n/a' ? attribute : null;
+        const totalModifier = circumstanceModifiers.reduce((sum, entry) => {
+            return sum + (Number.isFinite(entry?.amount) ? entry.amount : 0);
+        }, 0);
+        const circumstanceReasons = circumstanceModifiers
+            .map(entry => (entry?.reason && entry.reason.toLowerCase() !== 'n/a') ? entry.reason : null)
+            .filter(Boolean);
+        const skillCheck = {
+            reason,
+            skill: cleanSkill,
+            attribute: cleanAttribute,
+            circumstanceModifiers,
+            circumstanceModifier: totalModifier
+        };
+        if (circumstanceReasons.length) {
+            skillCheck.circumstanceModifierReason = circumstanceReasons.join('; ');
+        }
+        if (opposedCheck) {
+            skillCheck.difficulty = 'Opposed';
+            skillCheck.checkType = 'opposed';
+            skillCheck.opposedCheck = opposedCheck;
+        } else {
+            skillCheck.difficulty = difficultyLevel;
+            skillCheck.checkType = 'unopposed';
+            skillCheck.unopposedCheck = { difficultyLevel };
+        }
+        return {
+            type: 'Plausible',
+            reason,
+            skillCheck,
+            itemsMentioned: [],
+            abilitiesMentioned: []
+        };
+    };
+
+    const normalizePlausibilityModifierArray = (value, { functionName, fieldName } = {}) => (
+        normalizeAttackModifierArray(value, { functionName, fieldName })
+    );
+
+    const executeResolvePlausibilityCheckTool = async ({
+        actor,
+        reason,
+        skill,
+        attribute,
+        difficultyLevel,
+        circumstanceModifiers
+    } = {}, { defaultActorName = null } = {}) => {
+        const functionName = 'resolvePlausibilityCheck';
+        if (typeof resolvePlausibilityCheck !== 'function') {
+            throw new ToolVisibleError(
+                'resolvePlausibilityCheck is unavailable because the plausibility resolver was not configured.',
+                { code: 'missing_dependency' }
+            );
+        }
+
+        const actorName = normalizeOptionalString(actor) || normalizeOptionalString(defaultActorName) || 'player';
+        const reasonText = normalizeRequiredString(reason, { functionName, fieldName: 'reason' });
+        const skillName = normalizeRequiredString(skill, { functionName, fieldName: 'skill' });
+        const attributeName = normalizeRequiredString(attribute, { functionName, fieldName: 'attribute' });
+        const difficultyName = normalizeRequiredString(difficultyLevel, { functionName, fieldName: 'difficultyLevel' });
+        const modifiers = normalizePlausibilityModifierArray(circumstanceModifiers, {
+            functionName,
+            fieldName: 'circumstanceModifiers'
+        });
+
+        const plausibility = buildPlausibilitySkillCheck({
+            reason: reasonText,
+            skill: skillName,
+            attribute: attributeName,
+            difficultyLevel: difficultyName,
+            circumstanceModifiers: modifiers
+        });
+
+        const resolved = await resolvePlausibilityCheck({ actor: actorName, plausibility });
+        const actionResolution = resolved?.actionResolution || resolved;
+        if (!actionResolution || typeof actionResolution !== 'object') {
+            throw new ToolVisibleError(
+                'resolvePlausibilityCheck completed without returning an action resolution.',
+                { code: 'plausibility_resolution_failed' }
+            );
+        }
+
+        const resultLabel = normalizeOptionalString(actionResolution.label)
+            || normalizeOptionalString(actionResolution.degree)
+            || (actionResolution.success ? 'success' : 'failure');
+        return {
+            content: resultLabel,
+            metadata: {
+                result: resultLabel,
+                checkType: 'unopposed',
+                actor: actorName,
+                actionResolution,
+                plausibility: {
+                    raw: null,
+                    structured: resolved?.plausibility?.structured || plausibility
+                }
+            }
+        };
+    };
+
+    const executeResolveOpposedPlausibilityCheckTool = async ({
+        actor,
+        reason,
+        skill,
+        attribute,
+        opponent,
+        opponentSkill,
+        opponentAttribute,
+        circumstanceModifiers
+    } = {}, { defaultActorName = null } = {}) => {
+        const functionName = 'resolveOpposedPlausibilityCheck';
+        if (typeof resolveOpposedPlausibilityCheck !== 'function') {
+            throw new ToolVisibleError(
+                'resolveOpposedPlausibilityCheck is unavailable because the opposed plausibility resolver was not configured.',
+                { code: 'missing_dependency' }
+            );
+        }
+
+        const actorName = normalizeOptionalString(actor) || normalizeOptionalString(defaultActorName) || 'player';
+        const reasonText = normalizeRequiredString(reason, { functionName, fieldName: 'reason' });
+        const skillName = normalizeRequiredString(skill, { functionName, fieldName: 'skill' });
+        const attributeName = normalizeRequiredString(attribute, { functionName, fieldName: 'attribute' });
+        const opponentName = normalizeRequiredString(opponent, { functionName, fieldName: 'opponent' });
+        const opponentSkillName = normalizeRequiredString(opponentSkill, { functionName, fieldName: 'opponentSkill' });
+        const opponentAttributeName = normalizeRequiredString(opponentAttribute, { functionName, fieldName: 'opponentAttribute' });
+        const modifiers = normalizePlausibilityModifierArray(circumstanceModifiers, {
+            functionName,
+            fieldName: 'circumstanceModifiers'
+        });
+        const opposedCheck = {
+            opponent: opponentName,
+            opponentSkill: opponentSkillName && opponentSkillName.toLowerCase() !== 'n/a' ? opponentSkillName : null,
+            opponentAttribute: opponentAttributeName && opponentAttributeName.toLowerCase() !== 'n/a' ? opponentAttributeName : null
+        };
+
+        const plausibility = buildPlausibilitySkillCheck({
+            reason: reasonText,
+            skill: skillName,
+            attribute: attributeName,
+            opposedCheck,
+            circumstanceModifiers: modifiers
+        });
+
+        const resolved = await resolveOpposedPlausibilityCheck({ actor: actorName, plausibility });
+        const actionResolution = resolved?.actionResolution || resolved;
+        if (!actionResolution || typeof actionResolution !== 'object') {
+            throw new ToolVisibleError(
+                'resolveOpposedPlausibilityCheck completed without returning an action resolution.',
+                { code: 'plausibility_resolution_failed' }
+            );
+        }
+
+        const resultLabel = normalizeOptionalString(actionResolution.label)
+            || normalizeOptionalString(actionResolution.degree)
+            || (actionResolution.success ? 'success' : 'failure');
+        return {
+            content: resultLabel,
+            metadata: {
+                result: resultLabel,
+                checkType: 'opposed',
+                actor: actorName,
+                opponent: opponentName,
+                actionResolution,
+                plausibility: {
+                    raw: null,
+                    structured: resolved?.plausibility?.structured || plausibility
+                }
             }
         };
     };
@@ -3940,16 +4453,33 @@ const createChatToolRuntime = ({
         'alterNpc',
         'alterLocation',
         'resolveAttack',
+        'resolvePlausibilityCheck',
+        'resolveOpposedPlausibilityCheck',
         'locateNpcs',
         'locateThings'
     ]);
 
-    const executeChatToolCall = async (toolCall) => {
+    const executeChatToolCall = async (toolCall, { resultCache = null, defaultActorName = null } = {}) => {
         if (!toolCall || typeof toolCall !== 'object') {
             throw new Error('Tool execution requires a tool call object.');
         }
         try {
             const argumentsObject = toolCall.argumentsObject || {};
+            const cacheKey = resultCache
+                ? getCacheKeyForToolCall(toolCall.functionName, argumentsObject, resultCache.roundKey)
+                : null;
+            if (cacheKey && resultCache.entries.has(cacheKey)) {
+                const cachedResult = cloneToolResult(resultCache.entries.get(cacheKey));
+                if (cachedResult?.metadata && typeof cachedResult.metadata === 'object') {
+                    cachedResult.metadata = {
+                        ...cachedResult.metadata,
+                        cached: true,
+                        cacheKey
+                    };
+                }
+                return cachedResult;
+            }
+
             let toolResult = null;
             if (toolCall.functionName === 'moreInfo') {
                 toolResult = executeMoreInfoTool(argumentsObject);
@@ -3979,6 +4509,10 @@ const createChatToolRuntime = ({
                 toolResult = executeAlterLocationTool(argumentsObject);
             } else if (toolCall.functionName === 'resolveAttack') {
                 toolResult = executeResolveAttackTool(argumentsObject);
+            } else if (toolCall.functionName === 'resolvePlausibilityCheck') {
+                toolResult = executeResolvePlausibilityCheckTool(argumentsObject, { defaultActorName });
+            } else if (toolCall.functionName === 'resolveOpposedPlausibilityCheck') {
+                toolResult = executeResolveOpposedPlausibilityCheckTool(argumentsObject, { defaultActorName });
             } else if (toolCall.functionName === 'locateNpcs') {
                 toolResult = executeLocateNpcsTool(argumentsObject);
             } else if (toolCall.functionName === 'locateThings') {
@@ -3986,7 +4520,18 @@ const createChatToolRuntime = ({
             } else {
                 throw new Error(`Unsupported tool call function "${toolCall.functionName}".`);
             }
-            return await toolResult;
+            const resolvedToolResult = await toolResult;
+            if (cacheKey) {
+                if (resolvedToolResult?.metadata && typeof resolvedToolResult.metadata === 'object') {
+                    resolvedToolResult.metadata = {
+                        ...resolvedToolResult.metadata,
+                        cached: false,
+                        cacheKey
+                    };
+                }
+                resultCache.entries.set(cacheKey, cloneToolResult(resolvedToolResult));
+            }
+            return resolvedToolResult;
         } catch (error) {
             if (error instanceof ToolVisibleError) {
                 return buildToolVisibleErrorResult(toolCall.functionName, error);
@@ -4005,13 +4550,19 @@ const createChatToolRuntime = ({
     const runChatCompletionWithToolLoop = async ({
         requestOptions,
         streamEmitter = null,
-        metadataLabel = 'chat'
+        metadataLabel = 'chat',
+        toolResultCache = null,
+        onToolCallDebug = null,
+        defaultToolActor = null
     }) => {
         if (!requestOptions || typeof requestOptions !== 'object') {
             throw new Error('runChatCompletionWithToolLoop requires requestOptions.');
         }
         if (!Array.isArray(requestOptions.messages) || !requestOptions.messages.length) {
             throw new Error('runChatCompletionWithToolLoop requires non-empty requestOptions.messages.');
+        }
+        if (onToolCallDebug !== null && onToolCallDebug !== undefined && typeof onToolCallDebug !== 'function') {
+            throw new Error('runChatCompletionWithToolLoop onToolCallDebug must be a function when provided.');
         }
 
         const config = getConfig();
@@ -4034,6 +4585,15 @@ const createChatToolRuntime = ({
         let completed = false;
         let toolLoopActivated = false;
         const toolInvocations = [];
+        const resultCache = normalizeToolResultCache(toolResultCache, { metadataLabel });
+        const defaultActorName = normalizeOptionalString(defaultToolActor);
+        let toolInvocationSequence = 0;
+        const notifyToolCallDebug = async (payload) => {
+            if (typeof onToolCallDebug !== 'function') {
+                return;
+            }
+            await onToolCallDebug(payload);
+        };
 
         while (!completed) {
             rounds += 1;
@@ -4100,7 +4660,8 @@ const createChatToolRuntime = ({
             toolLoopActivated = true;
 
             if (streamEmitter?.isEnabled) {
-                streamEmitter.status('player_action:tool_calls', {
+                const toolStatusStage = `${metadataLabel || 'chat'}:tool_calls`;
+                streamEmitter.status(toolStatusStage, {
                     round: rounds,
                     toolCallCount: toolCalls.length,
                     message: `Running ${toolCalls.length} tool call${toolCalls.length === 1 ? '' : 's'}...`
@@ -4121,21 +4682,60 @@ const createChatToolRuntime = ({
             });
 
             for (const toolCall of toolCalls) {
-                const toolResult = await executeChatToolCall(toolCall);
-                if (!toolResult || typeof toolResult.content !== 'string' || !toolResult.content.trim()) {
-                    throw new Error(`Tool "${toolCall.functionName}" returned empty content.`);
-                }
-                toolInvocations.push({
+                toolInvocationSequence += 1;
+                const debugBase = {
+                    metadataLabel,
+                    round: rounds,
+                    sequence: toolInvocationSequence,
                     id: toolCall.id,
                     name: toolCall.functionName,
-                    metadata: toolResult.metadata || null
+                    parameters: toolCall.argumentsObject,
+                    argumentsText: toolCall.argumentsText
+                };
+                await notifyToolCallDebug({
+                    ...debugBase,
+                    phase: 'started'
                 });
-                messages.push({
-                    role: 'tool',
-                    tool_call_id: toolCall.id,
-                    name: toolCall.functionName,
-                    content: toolResult.content
-                });
+
+                try {
+                    const toolResult = await executeChatToolCall(toolCall, { resultCache, defaultActorName });
+                    if (!toolResult || typeof toolResult.content !== 'string' || !toolResult.content.trim()) {
+                        throw new Error(`Tool "${toolCall.functionName}" returned empty content.`);
+                    }
+                    const cacheHit = Boolean(toolResult.metadata?.cached);
+                    await notifyToolCallDebug({
+                        ...debugBase,
+                        phase: 'completed',
+                        cacheHit,
+                        cacheKey: typeof toolResult.metadata?.cacheKey === 'string'
+                            ? toolResult.metadata.cacheKey
+                            : null,
+                        result: {
+                            content: toolResult.content,
+                            metadata: toolResult.metadata || null
+                        }
+                    });
+                    toolInvocations.push({
+                        id: toolCall.id,
+                        name: toolCall.functionName,
+                        metadata: toolResult.metadata || null
+                    });
+                    messages.push({
+                        role: 'tool',
+                        tool_call_id: toolCall.id,
+                        name: toolCall.functionName,
+                        content: toolResult.content
+                    });
+                } catch (error) {
+                    await notifyToolCallDebug({
+                        ...debugBase,
+                        phase: 'error',
+                        error: {
+                            message: error?.message || String(error)
+                        }
+                    });
+                    throw error;
+                }
             }
         }
 

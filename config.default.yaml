@@ -343,7 +343,7 @@ repetition_buster: true
 repetition_buster_mode: glm
 
 slop_buster: true
-slop_remover_base_attempts: 2
+slop_remover_base_attempts: 1
 prose_length: 2-3 paragraphs
 # Number of events to check concurrently when processing text. Omit to do them all.
 # A lower number makes it easier for the AI but is slower and will use more tokens/requests.
@@ -382,6 +382,9 @@ recent_history_turns: 25
 
 # When true, base-context templates ignore prompt-level omission flags such as omitGameHistory.
 prompt_uses_caching: false
+
+# When true, prose-prompt tool calls are written to a visible prompt-excluded debug chat entry as they run.
+debug_tool_calls: false
 
 # Number of eligible player-action turns between automatic plot-expander prompt runs.
 # Set to 0 to disable automatic plot-expander runs.

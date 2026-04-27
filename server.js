@@ -2323,6 +2323,9 @@ async function validateConfiguration() {
     if (config.prompt_uses_caching !== undefined && typeof config.prompt_uses_caching !== 'boolean') {
         validationErrors.push('prompt_uses_caching must be a boolean when provided');
     }
+    if (config.debug_tool_calls !== undefined && typeof config.debug_tool_calls !== 'boolean') {
+        validationErrors.push('debug_tool_calls must be a boolean when provided');
+    }
     if (config.while_you_were_away_threshold_minutes !== undefined) {
         const threshold = Number(config.while_you_were_away_threshold_minutes);
         if (!Number.isInteger(threshold) || threshold < 0) {
@@ -2864,8 +2867,8 @@ function collectNpcNamesForContext(entry = null) {
 function pushChatEntry(entry, collector = null, locationId = null) {
     if (entry && typeof entry === 'object') {
         const entryRole = typeof entry.role === 'string' ? entry.role.trim().toLowerCase() : '';
-        const shouldScrub = entryRole !== 'user';
         const entryType = typeof entry.type === 'string' ? entry.type.trim().toLowerCase() : '';
+        const shouldScrub = entryRole !== 'user' && entryType !== 'tool-call-debug';
         const scrubOptions = entryType === 'event-summary'
             ? { scrub_events: false }
             : null;

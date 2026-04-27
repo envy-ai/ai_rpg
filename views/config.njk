@@ -832,6 +832,15 @@
                         </div>
 
                         <div class="form-group">
+                            <label for="debug-tool-calls">Debug Tool Calls:</label>
+                            <div class="checkbox-wrapper">
+                                <input type="hidden" name="debug_tool_calls::boolean" value="false">
+                                <input type="checkbox" id="debug-tool-calls" name="debug_tool_calls::boolean" value="true" {% if config.debug_tool_calls %}checked{% endif %}>
+                            </div>
+                            <span class="help-text">Show live prose-prompt tool call diagnostics in chat</span>
+                        </div>
+
+                        <div class="form-group">
                             <label for="prose-length">Prose Length:</label>
                             <input type="text" id="prose-length" name="prose_length::string" value="{{ config.prose_length }}">
                             <span class="help-text">Sentence guidance for responses</span>

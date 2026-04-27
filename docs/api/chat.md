@@ -37,10 +37,13 @@ Response (200):
   - `slopRemoval`: `{ slopWords: string[], slopRegexes: string[], slopNgrams: string[] }`
   - `debug`: object (debug payload, when enabled)
   - `actionResolution`: ActionResolution
+  - `actionResolutions`: ActionResolution[] (one skill-check outcome per plausibility tool call in this turn)
   - `attackCheck`: object (attack roll details)
-  - `attackSummary`: string
+  - `attackSummary`: object
+  - `attackSummaries`: object[] (one attack summary per `resolveAttack` tool call in this turn)
   - `attackDamage`: object
   - `plausibility`: `{ type, reason }`
+  - `plausibilities`: array (one plausibility payload per plausibility tool call in this turn)
   - `eventChecks`: string (HTML summary)
   - `eventChecksOrigin`, `eventChecksDestination`: string (HTML summaries when travel prose is split)
   - `events`: object | array
@@ -48,7 +51,7 @@ Response (200):
   - `experienceAwards`, `currencyChanges`, `environmentalDamageEvents`, `needBarChanges`, `dispositionChanges`, `factionReputationChanges`: arrays
   - `questsAwarded`, `questRewards`, `questObjectivesCompleted`, `followupEventChecks`: arrays
     - `questObjectivesCompleted[]` entries include quest/objective identifiers plus `objectiveDescription`, `reason`, `questCompleted`, and `questJustCompleted` when relevant
-  - `npcTurns`: array (NPC turn payloads)
+  - `npcTurns`: array (NPC turn payloads; each finalized turn includes the updated chat-entry `timestamp` and `entryId` when available)
   - `npcUpdates`: `{ added: string[], departed: string[], movedLocations: string[] }`
   - `locationRefreshRequested`: boolean
   - `corpseRemovals`, `corpseCountdownUpdates`: arrays
@@ -75,7 +78,7 @@ Response (200):
   - `commentLogged`: boolean (comment-only actions)
 
 Variants:
-- Empty player action: an empty final user message is accepted as a normal player-action continuation. The server skips the attack precheck, attack check, and plausibility check, then renders the player-action prompt with empty `actionText` so `prompts/_includes/player-action.njk` uses its "continue the previous scene" branch.
+- Empty player action: an empty final user message is accepted as a normal player-action continuation. The server skips plausibility and renders the player-action prompt with empty `actionText` so `prompts/_includes/player-action.njk` uses its "continue the previous scene" branch. The legacy attack precheck/check prompts and the automatic player-action plausibility prompt call are disabled for all player actions.
 - Comment-only action: if the user message begins with `#`, the response is `{ response: '', commentLogged: true, messages: [...] }` (no turn resolution).
 - Forced-event action: user message begins with `!!`; creative action begins with `!`. These alter processing but do not change the base response shape.
 - Question action: if the user message begins with `?`, the server routes through the `question` prompt template (`prompts/_includes/question.njk`) using the stripped question text (leading `?` and spaces removed for prompt rendering). It records chat entries as `type: user-question` (user) and `type: storyteller-answer` (assistant), skips event/random/NPC turn resolution for that request, bypasses slop-remover processing for that response, and returns a normal chat payload with the answer in `response`.
@@ -86,18 +89,23 @@ Variants:
 - No-context prompt actions route through `prompts/generic-prompt-nocontext.xml.njk` with stripped marker text:
   - `\...`: saved in chat history as `user-generic-prompt` + `generic-prompt-response`, marked so those entries are excluded from base-context history assembly, and runs with no chat tools.
 - All generic/no-context prompt variants (`@`, `@@`, `@@@`, `\`) bypass slop-remover processing for that response.
-- Inline die-roll override: player action text supports one or more `"<integer>"` tokens (pattern `/<-?\\d+>/`). These tokens are stripped from action text before prompt/check processing and before the user entry is persisted in chat history. When present, the first parsed integer is used as the player's die roll for this request's attack-roll and plausibility skill-check resolution (no clamping).
+- Inline die-roll override: player action text supports one or more `"<integer>"` tokens (pattern `/<-?\\d+>/`). These tokens are stripped from action text before prompt processing and before the user entry is persisted in chat history. The old automatic player-action plausibility prompt path that consumed this override is currently disabled in favor of tool-based checks.
 - Creative `!` actions now respect `repetition_buster`: when enabled, the response is required/parsing-validated as action XML (`<finalProse>`/`<travelProse>`); when disabled, creative actions remain free-form prose.
 - Tool calling is enabled in the chat generation loop. The model can emit `tool_calls`; the server executes each call, appends `role: tool` messages, and continues generation until normal assistant prose is returned.
 - Tool availability is prompt-mode gated:
-  - Regular prompts (not prefixed by `@`, `@@`, `@@@`, or `\`) get information-gathering tools only.
+  - Regular prompts (not prefixed by `@`, `@@`, `@@@`, or `\`) get information-gathering tools plus the health-mutating `resolveAttack` exception and the plausibility resolution tools. This includes both `player_action` and `npc_action` prose prompts.
   - Generic prompt actions (`@...`, `@@...`, `@@@...`) get the full tool set, including world-mutation tools.
   - No-context prompt actions (`\...`) do not get any chat tools.
 - Information-gathering tools (always available):
   - `moreInfo({ name, type? })`: returns `<moreInfoResults>...</moreInfoResults>` XML with curated, template-rendered markdown summaries (base-context style) for matching NPCs (including alias matches), things, locations, and regions whose names contain the query substring. Optional `type` may be `character`, `thing`, `location`, or `region`; omitting it searches all categories. Each entity node includes a `<markdown>` field.
   - `getHistory({ query, startIndex?, count? })`: returns `<historyResults>...</historyResults>` XML for assistant prose-like history entries whose content matches all case-insensitive query terms (`query` supports string or string-array inputs with AND semantics). Optional `startIndex` is 1-based and optional `count` limits how many matches are returned; omitting both preserves current behavior (all matches).
   - `listLocationEntities({ location, region?, entityType? })`: returns concise character/thing lists for a location; includes current player + party members when the player is present.
-  - `resolveAttack({ attacker, defender, attackerInfo, defenderInfo, ability, weapon, circumstanceModifiers, damageEffectiveness })`: resolves a non-mutating attack roll using the same attack fields produced by the attack-check prompt. Returns the damage amount as the tool content, or `miss` when the attack misses.
+  - `resolveAttack({ attacker, defender, attackerInfo, defenderInfo, ability, weapon, circumstanceModifiers, damageEffectiveness })`: resolves an attack roll using the same attack fields produced by the attack-check prompt, applies the resulting damage to the defender, and returns only `Damage: N%` plus `Remaining health: N%` as tool content, or `miss` when the attack misses. This is the only health-mutating tool available to regular prompts. Each call also emits an attack summary; persisted assistant turns store those summaries as `attack-check` attachment entries so every attack tool call renders as a hover insight button on the response.
+  - `resolvePlausibilityCheck({ actor?, reason, skill, attribute, difficultyLevel, circumstanceModifiers })`: resolves an unopposed plausibility skill check for the supplied actor, the acting NPC during `npc_action` when `actor` is omitted, or the current player otherwise. It returns the outcome label as tool content and emits both an `ActionResolution` and plausibility payload for skill-check/plausibility insight attachments.
+  - `resolveOpposedPlausibilityCheck({ actor?, reason, skill, attribute, opponent, opponentSkill, opponentAttribute, circumstanceModifiers })`: resolves a contested plausibility skill check against a resolved opponent actor, using the same omitted-actor default as `resolvePlausibilityCheck`, returns the outcome label as tool content, and emits the same skill-check/plausibility attachment metadata.
+  - Attack and plausibility tool results are cached for the current prose prompt round. Repeated calls with the same round plus attacker/actor, target/opponent when applicable, weapon/ability/attribute when applicable, and skill return the first result without re-rolling or re-applying damage; modifiers/difficulty changes in later drafts do not produce a new result for that same cache key. The cache is recreated for each new prose prompt and shared with same-prompt repetition reruns.
+  - When root config `debug_tool_calls` is `true`, each prose prompt with tool calls also creates one visible `tool-call-debug` chat entry. The entry stores structured `toolCalls` records for client rendering, marks cache hits with `cacheHit`/`cacheKey`, is updated as calls start and complete, refreshed via the existing `chat_history_updated` event, and marked `metadata.excludeFromBaseContextHistory: true` so it is never included in future prompt context.
+  - Post-player NPC turn processing creates a prompt-excluded pending `npc-action` planned-action chat entry while `next_npc_list` and the selected NPC action-plan prompt are running. It starts as `Another character is taking their turn`, changes to `NAME is taking their turn...` after the NPC is resolved, and is finalized in place with the deslopped planned-action text. The later `npc_turn` stream payload still represents the separate final NPC prose entry.
   - `locateNpcs({ query })`: locates NPCs by full name or alias; returns all matches with full name, location, and region.
   - `locateThings({ query })`: locates things by name; returns all matches with location/region, and includes owner name when in inventory.
 - World-mutation tools (available only for `@`/`@@`/`@@@` generic prompt actions):

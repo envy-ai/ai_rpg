@@ -13,7 +13,7 @@ This page maps routes to templates and the client scripts/styles they load.
 - Template: `views/index.njk`
 - Styles: `public/css/main.css`, `public/css/map.css`, plus mod styles if present.
 - Scripts (in order):
-  - Vendor: `public/vendor/cytoscape*.js`, `public/vendor/layout-base.js`, `public/vendor/cose-base.js`, `public/vendor/nunjucks.js`, `public/vendor/markdown-it.min.js`.
+  - Vendor: `public/vendor/cytoscape*.js`, `public/vendor/layout-base.js`, `public/vendor/cose-base.js`, `public/vendor/nunjucks.js`, `public/vendor/markdown-it.min.js`, `public/vendor/json-viewer.js`.
   - App: `public/js/cytoscape-convex-hull.js`, `public/js/lightbox.js`, `public/js/image-manager.js`, `public/js/currency-utils.js`, `public/js/formula-evaluator.js`, `public/js/attribute-skill-allocator.js`, `public/js/chat.js`, `public/js/map.js`, `public/js/world-map.js`, `public/js/player-stats.js`.
   - Optional mod scripts from `ModLoader` (injected by `server.js`).
 - Inline script responsibilities:
@@ -64,6 +64,7 @@ This page maps routes to templates and the client scripts/styles they load.
 - Notes: the global nav labels this route as `System`, while the page title is `System Configuration`.
 - Notes: the page is split into `Server Configuration` and `Game Configuration` tabs.
 - Notes: the AI section includes a backend selector. `openai_compatible` shows endpoint/API-key inputs, while `codex_cli_bridge` shows Codex command/home/session settings plus conditional session-id validation for `resume_id`.
+- Notes: Gameplay Tuning exposes `Debug Tool Calls`, which writes live prompt-excluded tool diagnostics into the chat log when enabled.
 - Notes: the `Game Configuration` tab exposes a fixed-width YAML textarea for the currently loaded game's runtime config override. It saves through `PUT /api/game-config-override`, reloads config immediately on change, persists to the save as `gameConfigOverride.yaml`, and stays disabled when no game is loaded.
 
 ## World profiles manager

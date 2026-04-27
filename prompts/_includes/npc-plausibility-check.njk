@@ -8,10 +8,10 @@ These characters are present and aware of the action. This is not necessary an e
 {% for npc in npcs %}- {{ npc.name }} ({{ npc.race }}/{{ npc.class }})
 {% endfor %}{% for member in party %}{% if member not in npcs %}- {{ member.name }} ({{ member.race }}/{{ member.class }})
 {% endif %}{% endfor %}
-Accounting for their information above, what has recently happened, their goals, motivations, etc, describe in 1-2 sentences what the NPC will attempt to do next. If the situation calls for it, consider having them make use of their abilities and/or skills. Then determine whether the action is trivial (guaranteed success) or requires a skill check (chance of success or failure).  Respond in this format:
+Accounting for their information above, what has recently happened, their goals, motivations, etc, describe in 1-2 sentences what the NPC will attempt to do next. If the situation calls for it, consider having them make use of their abilities and/or skills.{% if npcPlausibilityCheckRequired %} Then determine whether the action is trivial (guaranteed success) or requires a skill check (chance of success or failure).{% endif %}  Respond in this format:
 
 <npcAction>
-  <description>1-2 sentence description of what the NPC will attempt to do next. NPCs should converse with each other, further their own goals, and interact with the environment, as well as reacting to the player. Note that NPCs often talk to one another and not just the player. Whatever is interesting; be creative and in character. If the NPC is using one of its abilities, mention it by name, in *asterisks*. Any items mentioned should be mentioned by full name and also enclosed in *asterisks*.</description>
+  <description>1-2 sentence description of what the NPC will attempt to do next. NPCs should converse with each other, further their own goals, and interact with the environment, as well as reacting to the player. Note that NPCs often talk to one another and not just the player. Whatever is interesting; be creative and in character. If the NPC is using one of its abilities, mention it by name, in *asterisks*. Any items mentioned should be mentioned by full name and also enclosed in *asterisks*.</description>{% if npcPlausibilityCheckRequired %}
   <difficulty>Difficulty level (Trivial, Easy, Medium, Hard, Very Hard, Legendary)</difficulty>
   <skill>Name of a skill, or N/A if trivial</skill>
   <curcumstanceModifiers>
@@ -21,6 +21,7 @@ Accounting for their information above, what has recently happened, their goals,
     </circumstanceModifier>
     ... additional circumstanceModifier tags as needed ...
   </curcumstanceModifiers>
+  {% endif %}
 </npcAction>
 
 {{ config.prose_prompt_suffix }}

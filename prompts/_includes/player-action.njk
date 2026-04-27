@@ -102,9 +102,11 @@ Use this format:
 <finalProse>...</finalProse>
 {% endif %}
 {% else %}
+{#
 <actionStatus>
 {{ success_or_failure }}
 </actionStatus> 
+#}
 {% if currentVehicle.vehicleInfo.hasArrived -%}
 Vehicle update:
 The vehicle the player is onboard, "{{ currentVehicle.name }}" has arrived at "{{ currentVehicle.destination }}", and is no longer enroute. Your prose should reflect this.
@@ -140,7 +142,7 @@ Follow these steps:
 
 1d. NPCs should take initiative actions based on their desires, needs, and emotional state, and not just react to the player. If an NPC has a pressing need, they should act on it. If an NPC has a desire that fits with the current situation (even if it's not a need bar), they should take the initiative to pursue it.
 
-2. Draft Response: Generate a preliminary but full draft that continues the story based on the current context, stractly adhering to this degree of success/failure: "{{ success_or_failure }}" regardless of how hard the action is. This is just a first attempt. Use no more than {{ config.prose_length }}.
+2. Draft Response: Generate a preliminary but full draft that continues the story based on the current context{#, strictly adhering to this degree of success/failure: "{{ success_or_failure }}" regardless of how hard the action is#}. This is just a first attempt. Use no more than {{ config.prose_length }}. If a character is attacking another character, call the resolveAttack tool during your draft and then strictly adhere to the results in your writing, taking care to describe the attack according to the degree of damage and whether the defender is defeated. You may call this only during your first draft. If the attack is a miss, it's not necessary to describe the attack in detail, but you should still acknowledge that the attack occurred. If a character makes a non-attack action, call the resolvePlausibilityCheck or resolveOpposedPlausibilityCheck tool (depending on whether the action is opposed by another character) during your draft and strictly adhere to the results in your writing. You must call the tool for every attack or check you write about in this draft, not just the ones specifically called for in the playerAction block.
 
 {% if config.repetition_buster_mode == "glm" %}
 3. Editing and pruning:
@@ -180,11 +182,11 @@ Follow these steps:
 - **Movement and travel:** Is the player moving to a new scene? If so, identify which characters and items are present in the origin scene, noting that they must only be present in the part of the prose that takes place prior to the player arriving at the destination. Exception: If a character is moving to the same location as the player, mention them in the destination portion as well (and optionally in the between portion). Do this in cases where, for example, a character is conversing with, fighting with, or pursuing the player. Note: Talking ain't traveling! If the Player simply *discusses* moving somewhere else, that's conversation, not movement!
 - **Remaining guidelines:** Check the text against the remaining guidelines.
 {% endif %}
-4. Write a second draft based on the above, using no more than {{ config.prose_length }}.
+4. Write a second draft based on the above, using no more than {{ config.prose_length }}. Adhere to any plausibility, opposed plausibility, and attack outcomes you received tool results for in your first draft. Don't call them again.
 
 5. Analyze the second draft and make sure everything in it makes sense and is continuous with the story so far (the second draft should not reference things that were removed from the first draft, as important context will be missing, so make sure that context is present in the second draft itself!). Identify any issues to fix in the final prose. Don't add any additional things to the final prose beyond what was in the second draft. Finally, consider whether the player is traveling (to a new scene, region, or location). If ANY of those, which parts of the prose happen before, during, or after travel? NOTE: When thinking about XML tags outside of your final response, use %lt; and %gt; instead of angle brackets to avoid confusing the XML parser.
 
-Write your final, refined prose inside the finalProse or travelProse tags below, using what you determined above, using no more than {{ config.prose_length }}.
+Write your final, refined prose inside the finalProse or travelProse tags below, using what you determined above, using no more than {{ config.prose_length }}. Adhere to any plausibility, opposed plausibility, and attack outcomes you received tool results for in your first draft. Don't call them again.
 
 Use this format: 
 1a. ...

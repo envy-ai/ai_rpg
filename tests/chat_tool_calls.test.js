@@ -112,3 +112,116 @@ test('runChatCompletionWithToolLoop converts async ToolVisibleError rejections i
     assert.match(toolMessage.content, /<toolError>/);
     assert.match(toolMessage.content, /No targetRegion matches "Botanical Research Conservatory"\./);
 });
+
+test('runChatCompletionWithToolLoop reports tool-call debug lifecycle events', async () => {
+    const debugEvents = [];
+    const capturedMessagesByRound = [];
+    const llmResponses = [
+        {
+            data: {
+                choices: [
+                    {
+                        message: {
+                            content: '',
+                            tool_calls: [
+                                {
+                                    id: 'call_debug_1',
+                                    type: 'function',
+                                    function: {
+                                        name: 'moreInfo',
+                                        arguments: JSON.stringify({
+                                            name: 'No Such Thing',
+                                            type: 'thing'
+                                        })
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            data: {
+                choices: [
+                    {
+                        message: {
+                            content: 'Done.',
+                            tool_calls: []
+                        }
+                    }
+                ]
+            }
+        }
+    ];
+
+    const runtime = createChatToolRuntime({
+        getConfig: () => ({ ai: { max_tool_rounds: 4 } }),
+        getChatHistory: () => [],
+        isAssistantProseLikeEntry: () => true,
+        serializeNpcForClient: () => ({}),
+        buildLocationResponse: () => ({}),
+        getCurrentPlayer: () => ({ currentLocation: 'loc-origin' }),
+        createLocationFromEvent: async () => {
+            throw new Error('createLocationFromEvent should not be reached for this regression test.');
+        },
+        createRegionStubFromEvent: async () => {
+            throw new Error('createRegionStubFromEvent should not be reached for this regression test.');
+        },
+        generateItemsByNames: async () => [],
+        ensureExitConnection: () => {
+            throw new Error('ensureExitConnection should not be reached for this regression test.');
+        },
+        findRegionByLocationId: () => null,
+        LLMClient: {
+            chatCompletion: async (options) => {
+                capturedMessagesByRound.push(structuredClone(options.messages));
+                const response = llmResponses.shift();
+                assert.ok(response, 'Expected a queued LLM response for this round.');
+                options.onResponse?.(response);
+                return response.data.choices[0].message.content || '';
+            },
+            logPrompt: () => {},
+            formatMessagesForErrorLog: (messages) => JSON.stringify(messages)
+        },
+        Player: { getAll: () => [] },
+        Thing: { getAll: () => [] },
+        Location: { getAll: () => [], get: () => null },
+        Region: { getAll: () => [] },
+        getGameLocations: () => new Map(),
+        getFactions: () => [],
+        getRegionsMap: () => new Map(),
+        getPendingRegionStubs: () => new Map()
+    });
+
+    const result = await runtime.runChatCompletionWithToolLoop({
+        requestOptions: {
+            messages: [{ role: 'user', content: 'Look up a missing thing.' }]
+        },
+        metadataLabel: 'tool_debug_test',
+        onToolCallDebug: event => {
+            debugEvents.push(structuredClone(event));
+        }
+    });
+
+    assert.equal(result.aiResponse, 'Done.');
+    assert.equal(debugEvents.length, 2);
+    assert.equal(debugEvents[0].phase, 'started');
+    assert.equal(debugEvents[0].metadataLabel, 'tool_debug_test');
+    assert.equal(debugEvents[0].round, 1);
+    assert.equal(debugEvents[0].sequence, 1);
+    assert.equal(debugEvents[0].name, 'moreInfo');
+    assert.deepEqual(debugEvents[0].parameters, {
+        name: 'No Such Thing',
+        type: 'thing'
+    });
+    assert.equal(debugEvents[1].phase, 'completed');
+    assert.equal(debugEvents[1].sequence, 1);
+    assert.match(debugEvents[1].result.content, /<moreInfoResults>/);
+    assert.equal(debugEvents[1].result.metadata.totalMatches, 0);
+
+    const secondRoundMessages = capturedMessagesByRound[1];
+    const toolMessage = secondRoundMessages.find((message) => message.role === 'tool');
+    assert.ok(toolMessage, 'Expected a tool response message in the second round.');
+    assert.match(toolMessage.content, /<moreInfoResults>/);
+});

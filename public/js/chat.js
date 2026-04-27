@@ -1539,6 +1539,10 @@ class AIRPGChat {
             return this.createAttackCheckEntryElement(entry);
         }
 
+        if (entry.type === 'tool-call-debug') {
+            return this.createToolCallDebugEntryElement(entry);
+        }
+
         const messageDiv = document.createElement('div');
         const role = entry.type === 'user-question'
             ? 'user-question-message'
@@ -1549,12 +1553,13 @@ class AIRPGChat {
                     : 'ai-message';
         messageDiv.className = `message ${role}`;
         messageDiv.dataset.timestamp = entry.timestamp || '';
-
-
+        messageDiv.dataset.entryId = entry.id || '';
 
         const senderDiv = document.createElement('div');
         senderDiv.className = 'message-sender';
-        if (entry.role === 'user') {
+        if (entry.type === 'tool-call-debug') {
+            senderDiv.textContent = 'Tool Calls';
+        } else if (entry.role === 'user') {
             senderDiv.textContent = '👤 You';
         } else if (entry.isNpcTurn) {
             const npcName = entry.actor || (entry.role !== 'assistant' ? entry.role : null) || 'NPC';
@@ -1600,6 +1605,162 @@ class AIRPGChat {
         }
 
         return messageDiv;
+    }
+
+    createToolCallDebugEntryElement(entry) {
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'message ai-message tool-call-debug-message';
+        messageDiv.dataset.type = 'tool-call-debug';
+        messageDiv.dataset.timestamp = entry.timestamp || '';
+
+        const senderDiv = document.createElement('div');
+        senderDiv.className = 'message-sender';
+        senderDiv.textContent = 'Tool Calls';
+
+        const contentDiv = document.createElement('div');
+        contentDiv.className = 'message-content tool-call-debug-content';
+
+        const records = Array.isArray(entry.toolCalls) ? entry.toolCalls : [];
+        if (records.length) {
+            if (entry.summary) {
+                const overview = document.createElement('div');
+                overview.className = 'tool-call-debug-overview';
+                overview.textContent = String(entry.summary);
+                contentDiv.appendChild(overview);
+            }
+            records.forEach((record, index) => {
+                contentDiv.appendChild(this.createToolCallDebugRecordElement(record, index));
+            });
+        } else {
+            this.setMessageContent(
+                contentDiv,
+                entry.content || 'No tool calls recorded yet.',
+                { allowMarkdown: true }
+            );
+        }
+
+        const timestampDiv = document.createElement('div');
+        timestampDiv.className = 'message-timestamp';
+        timestampDiv.textContent = this.formatTimestamp(entry.timestamp);
+
+        messageDiv.appendChild(senderDiv);
+        messageDiv.appendChild(contentDiv);
+        messageDiv.appendChild(timestampDiv);
+
+        return messageDiv;
+    }
+
+    createToolCallDebugRecordElement(record, index) {
+        if (!record || typeof record !== 'object') {
+            throw new Error('Tool-call debug entry contains an invalid record.');
+        }
+
+        const name = typeof record.name === 'string' && record.name.trim()
+            ? record.name.trim()
+            : 'unknownTool';
+        const rawStatus = typeof record.status === 'string' && record.status.trim()
+            ? record.status.trim()
+            : 'unknown';
+        const status = ['running', 'completed', 'error', 'unknown'].includes(rawStatus)
+            ? rawStatus
+            : 'unknown';
+
+        const details = document.createElement('details');
+        details.className = `tool-call-debug-item tool-call-debug-item--${status}`;
+        if (record.cacheHit) {
+            details.classList.add('tool-call-debug-item--cache-hit');
+        }
+        details.open = status === 'running' || status === 'error';
+
+        const summary = document.createElement('summary');
+        summary.className = 'tool-call-debug-summary';
+
+        const nameSpan = document.createElement('span');
+        nameSpan.className = 'tool-call-debug-name';
+        nameSpan.textContent = name;
+        summary.appendChild(nameSpan);
+
+        const metaSpan = document.createElement('span');
+        metaSpan.className = 'tool-call-debug-meta';
+        const parsedSequence = Number(record.sequence);
+        const sequence = Number.isInteger(parsedSequence) && parsedSequence > 0
+            ? parsedSequence
+            : index + 1;
+        metaSpan.textContent = `#${sequence} • ${record.cacheHit ? 'cache hit' : status}`;
+        summary.appendChild(metaSpan);
+
+        details.appendChild(summary);
+
+        const body = document.createElement('div');
+        body.className = 'tool-call-debug-body';
+        if (record.sourceLabel || record.round || record.id || record.cacheHit || record.cacheKey) {
+            const facts = document.createElement('div');
+            facts.className = 'tool-call-debug-facts';
+            const factParts = [];
+            if (record.sourceLabel) {
+                factParts.push(`Prompt: ${record.sourceLabel}`);
+            }
+            if (record.round !== null && record.round !== undefined) {
+                factParts.push(`Round: ${record.round}`);
+            }
+            if (record.id) {
+                factParts.push(`Tool call id: ${record.id}`);
+            }
+            if (record.cacheHit) {
+                factParts.push('Cache: hit');
+            }
+            if (record.cacheHit && record.cacheKey) {
+                factParts.push(`Cache key: ${record.cacheKey}`);
+            }
+            facts.textContent = factParts.join(' • ');
+            body.appendChild(facts);
+        }
+
+        body.appendChild(this.createToolCallDebugSection('Parameters', record.parameters || {}));
+        if (Object.prototype.hasOwnProperty.call(record, 'result')) {
+            body.appendChild(this.createToolCallDebugSection('Result', record.result));
+        }
+        if (record.error) {
+            body.appendChild(this.createToolCallDebugSection('Error', record.error));
+        }
+
+        details.appendChild(body);
+        return details;
+    }
+
+    createToolCallDebugSection(label, value) {
+        const section = document.createElement('section');
+        section.className = 'tool-call-debug-section';
+
+        const heading = document.createElement('div');
+        heading.className = 'tool-call-debug-section-title';
+        heading.textContent = label;
+        section.appendChild(heading);
+
+        section.appendChild(this.createToolCallDebugJsonViewer(value));
+
+        return section;
+    }
+
+    createToolCallDebugJsonViewer(value) {
+        if (!window.customElements || !window.customElements.get('andypf-json-viewer')) {
+            throw new Error('The @andypf/json-viewer custom element is required for tool-call debug rendering.');
+        }
+
+        const viewer = document.createElement('andypf-json-viewer');
+        viewer.className = 'tool-call-debug-json-viewer';
+        viewer.indent = 2;
+        viewer.expanded = 1;
+        viewer.theme = 'darcula';
+        viewer.showDataTypes = true;
+        viewer.showToolbar = false;
+        viewer.showSize = true;
+        viewer.showCopy = true;
+        viewer.expandIconType = 'arrow';
+        viewer.expandEmpty = false;
+        viewer.preserveExpanded = true;
+        viewer.data = value === undefined ? null : value;
+        return viewer;
     }
 
     appendTurnDiffDrawer(parentElement, turnDiffEntries = []) {
@@ -1804,6 +1965,25 @@ class AIRPGChat {
         return {
             html: detailsElement.innerHTML
         };
+    }
+
+    getAttackSummaryRenderKey(summary) {
+        if (!summary || typeof summary !== 'object') {
+            return '';
+        }
+        try {
+            return JSON.stringify(summary);
+        } catch (_) {
+            return [
+                summary.attacker?.name || '',
+                summary.defender?.name || '',
+                summary.hit === true ? 'hit' : 'miss',
+                summary.roll?.die ?? '',
+                summary.roll?.total ?? '',
+                summary.damage?.total ?? '',
+                summary.damage?.applied ?? ''
+            ].join('|');
+        }
     }
 
     ensureTemplateEnvironment() {
@@ -4146,6 +4326,62 @@ class AIRPGChat {
 
         this.chatLog.appendChild(messageDiv);
         this.scrollToBottom();
+    }
+
+    updateRegisteredNpcTurnMessage(turn) {
+        if (!turn || !turn.response) {
+            return false;
+        }
+
+        let registered = turn.timestamp ? this.messageRegistry.get(turn.timestamp) : null;
+        if (!registered?.element && turn.entryId) {
+            const existingElement = Array.from(this.chatLog?.querySelectorAll?.('.message') || [])
+                .find(element => element?.dataset?.entryId === turn.entryId);
+            if (existingElement) {
+                registered = {
+                    entry: registered?.entry || null,
+                    element: existingElement
+                };
+            }
+        }
+
+        const element = registered?.element;
+        if (!element) {
+            return false;
+        }
+
+        const npcName = turn.name || 'NPC';
+        const senderDiv = element.querySelector('.message-sender');
+        if (senderDiv) {
+            senderDiv.textContent = `🧑 ${npcName}`;
+        }
+
+        const contentDiv = element.querySelector('.message-content');
+        if (contentDiv) {
+            this.setMessageContent(contentDiv, turn.response, { allowMarkdown: true });
+        }
+
+        if (turn.entryId) {
+            element.dataset.entryId = turn.entryId;
+        }
+        if (turn.timestamp) {
+            element.dataset.timestamp = turn.timestamp;
+            this.messageRegistry.set(turn.timestamp, {
+                entry: {
+                    ...(registered.entry || {}),
+                    id: turn.entryId || registered.entry?.id || null,
+                    role: 'assistant',
+                    actor: turn.name || registered.entry?.actor || null,
+                    content: turn.response,
+                    isNpcTurn: true,
+                    timestamp: turn.timestamp
+                },
+                element
+            });
+        }
+
+        this.scrollToBottom();
+        return true;
     }
 
 
@@ -6606,13 +6842,71 @@ class AIRPGChat {
             }
         }
 
-        if (payload.actionResolution && payload.actionResolution.roll !== null && payload.actionResolution.roll !== undefined) {
-            this.addSkillCheckMessage(payload.actionResolution);
+        const actionResolutions = [];
+        const hasActionResolutionsArray = Array.isArray(payload.actionResolutions);
+        if (hasActionResolutionsArray) {
+            payload.actionResolutions.forEach(resolution => {
+                if (resolution && typeof resolution === 'object') {
+                    actionResolutions.push(resolution);
+                }
+            });
+        }
+        if (!hasActionResolutionsArray && payload.actionResolution && typeof payload.actionResolution === 'object') {
+            actionResolutions.push(payload.actionResolution);
+        }
+        if (actionResolutions.length) {
+            if (context && !context.renderedActionResolutionKeys) {
+                context.renderedActionResolutionKeys = new Set();
+            }
+            const renderedActionResolutionKeys = context?.renderedActionResolutionKeys || null;
+            actionResolutions.forEach((resolution, index) => {
+                if (resolution.roll === null || resolution.roll === undefined) {
+                    return;
+                }
+                let renderKey = `${index}:`;
+                try {
+                    renderKey += JSON.stringify(resolution);
+                } catch (_) {
+                    renderKey += `${resolution.degree || ''}:${resolution.roll?.die ?? ''}:${resolution.roll?.total ?? ''}`;
+                }
+                if (renderedActionResolutionKeys && renderedActionResolutionKeys.has(renderKey)) {
+                    return;
+                }
+                this.addSkillCheckMessage(resolution);
+                if (renderedActionResolutionKeys) {
+                    renderedActionResolutionKeys.add(renderKey);
+                }
+            });
         }
 
+        const attackSummaries = [];
+        const hasAttackSummariesArray = Array.isArray(payload.attackSummaries);
+        if (hasAttackSummariesArray) {
+            payload.attackSummaries.forEach(summary => {
+                if (summary && typeof summary === 'object') {
+                    attackSummaries.push(summary);
+                }
+            });
+        }
         const resolvedAttackSummary = payload.attackSummary || payload.attackCheck?.summary || null;
-        if (resolvedAttackSummary) {
-            this.addAttackCheckMessage(resolvedAttackSummary);
+        if (!hasAttackSummariesArray && resolvedAttackSummary && typeof resolvedAttackSummary === 'object') {
+            attackSummaries.push(resolvedAttackSummary);
+        }
+        if (attackSummaries.length) {
+            if (context && !context.renderedAttackSummaryKeys) {
+                context.renderedAttackSummaryKeys = new Set();
+            }
+            const renderedAttackSummaryKeys = context?.renderedAttackSummaryKeys || null;
+            attackSummaries.forEach((summary, index) => {
+                const renderKey = `${index}:${this.getAttackSummaryRenderKey(summary)}`;
+                if (renderedAttackSummaryKeys && renderedAttackSummaryKeys.has(renderKey)) {
+                    return;
+                }
+                this.addAttackCheckMessage(summary);
+                if (renderedAttackSummaryKeys) {
+                    renderedAttackSummaryKeys.add(renderKey);
+                }
+            });
         }
 
         if (payload.events) {
@@ -6661,8 +6955,38 @@ class AIRPGChat {
         }
         this.flushStatusBundle();
 
-        if (payload.plausibility) {
-            this.addPlausibilityMessage(payload.plausibility);
+        const plausibilities = [];
+        const hasPlausibilitiesArray = Array.isArray(payload.plausibilities);
+        if (hasPlausibilitiesArray) {
+            payload.plausibilities.forEach(plausibility => {
+                if (plausibility && typeof plausibility === 'object') {
+                    plausibilities.push(plausibility);
+                }
+            });
+        }
+        if (!hasPlausibilitiesArray && payload.plausibility && typeof payload.plausibility === 'object') {
+            plausibilities.push(payload.plausibility);
+        }
+        if (plausibilities.length) {
+            if (context && !context.renderedPlausibilityKeys) {
+                context.renderedPlausibilityKeys = new Set();
+            }
+            const renderedPlausibilityKeys = context?.renderedPlausibilityKeys || null;
+            plausibilities.forEach((plausibility, index) => {
+                let renderKey = `${index}:`;
+                try {
+                    renderKey += JSON.stringify(plausibility);
+                } catch (_) {
+                    renderKey += plausibility.structured?.type || plausibility.raw || '';
+                }
+                if (renderedPlausibilityKeys && renderedPlausibilityKeys.has(renderKey)) {
+                    return;
+                }
+                this.addPlausibilityMessage(plausibility);
+                if (renderedPlausibilityKeys) {
+                    renderedPlausibilityKeys.add(renderKey);
+                }
+            });
         }
 
         if (payload.slopRemoval) {
@@ -6709,7 +7033,10 @@ class AIRPGChat {
             context.renderedNpcTurns.add(key);
         }
 
-        this.addNpcMessage(turn.name || 'NPC', turn.response);
+        const updatedExistingTurn = this.updateRegisteredNpcTurnMessage(turn);
+        if (!updatedExistingTurn) {
+            this.addNpcMessage(turn.name || 'NPC', turn.response);
+        }
         if (turn.slopRemoval) {
             this.addSlopRemovalMessage(turn.slopRemoval);
         }
@@ -6741,13 +7068,105 @@ class AIRPGChat {
         if (Array.isArray(turn.corpseRemovals) && turn.corpseRemovals.length) {
             window.removeNpcCards?.(turn.corpseRemovals);
         }
-        if (turn.attackSummary) {
-            this.addAttackCheckMessage(turn.attackSummary);
-        } else if (turn.attackCheck && turn.attackCheck.summary) {
-            this.addAttackCheckMessage(turn.attackCheck.summary);
+        const attackSummaries = [];
+        const hasAttackSummariesArray = Array.isArray(turn.attackSummaries);
+        if (hasAttackSummariesArray) {
+            turn.attackSummaries.forEach(summary => {
+                if (summary && typeof summary === 'object') {
+                    attackSummaries.push(summary);
+                }
+            });
         }
-        if (turn.actionResolution && turn.actionResolution.roll !== null && turn.actionResolution.roll !== undefined) {
-            this.addSkillCheckMessage(turn.actionResolution);
+        const resolvedAttackSummary = turn.attackSummary || turn.attackCheck?.summary || null;
+        if (!hasAttackSummariesArray && resolvedAttackSummary && typeof resolvedAttackSummary === 'object') {
+            attackSummaries.push(resolvedAttackSummary);
+        }
+        if (attackSummaries.length) {
+            if (context && !context.renderedNpcAttackSummaryKeys) {
+                context.renderedNpcAttackSummaryKeys = new Set();
+            }
+            const renderedNpcAttackSummaryKeys = context?.renderedNpcAttackSummaryKeys || null;
+            attackSummaries.forEach((summary, summaryIndex) => {
+                const renderKey = `${index}:${summaryIndex}:${this.getAttackSummaryRenderKey(summary)}`;
+                if (renderedNpcAttackSummaryKeys && renderedNpcAttackSummaryKeys.has(renderKey)) {
+                    return;
+                }
+                this.addAttackCheckMessage(summary);
+                if (renderedNpcAttackSummaryKeys) {
+                    renderedNpcAttackSummaryKeys.add(renderKey);
+                }
+            });
+        }
+
+        const actionResolutions = [];
+        const hasActionResolutionsArray = Array.isArray(turn.actionResolutions);
+        if (hasActionResolutionsArray) {
+            turn.actionResolutions.forEach(resolution => {
+                if (resolution && typeof resolution === 'object') {
+                    actionResolutions.push(resolution);
+                }
+            });
+        }
+        if (!hasActionResolutionsArray && turn.actionResolution && typeof turn.actionResolution === 'object') {
+            actionResolutions.push(turn.actionResolution);
+        }
+        if (actionResolutions.length) {
+            if (context && !context.renderedNpcActionResolutionKeys) {
+                context.renderedNpcActionResolutionKeys = new Set();
+            }
+            const renderedNpcActionResolutionKeys = context?.renderedNpcActionResolutionKeys || null;
+            actionResolutions.forEach((resolution, resolutionIndex) => {
+                if (resolution.roll === null || resolution.roll === undefined) {
+                    return;
+                }
+                let renderKey = `${index}:${resolutionIndex}:`;
+                try {
+                    renderKey += JSON.stringify(resolution);
+                } catch (_) {
+                    renderKey += `${resolution.degree || ''}:${resolution.roll?.die ?? ''}:${resolution.roll?.total ?? ''}`;
+                }
+                if (renderedNpcActionResolutionKeys && renderedNpcActionResolutionKeys.has(renderKey)) {
+                    return;
+                }
+                this.addSkillCheckMessage(resolution);
+                if (renderedNpcActionResolutionKeys) {
+                    renderedNpcActionResolutionKeys.add(renderKey);
+                }
+            });
+        }
+
+        const plausibilities = [];
+        const hasPlausibilitiesArray = Array.isArray(turn.plausibilities);
+        if (hasPlausibilitiesArray) {
+            turn.plausibilities.forEach(plausibility => {
+                if (plausibility && typeof plausibility === 'object') {
+                    plausibilities.push(plausibility);
+                }
+            });
+        }
+        if (!hasPlausibilitiesArray && turn.plausibility && typeof turn.plausibility === 'object') {
+            plausibilities.push(turn.plausibility);
+        }
+        if (plausibilities.length) {
+            if (context && !context.renderedNpcPlausibilityKeys) {
+                context.renderedNpcPlausibilityKeys = new Set();
+            }
+            const renderedNpcPlausibilityKeys = context?.renderedNpcPlausibilityKeys || null;
+            plausibilities.forEach((plausibility, plausibilityIndex) => {
+                let renderKey = `${index}:${plausibilityIndex}:`;
+                try {
+                    renderKey += JSON.stringify(plausibility);
+                } catch (_) {
+                    renderKey += plausibility.structured?.type || plausibility.raw || '';
+                }
+                if (renderedNpcPlausibilityKeys && renderedNpcPlausibilityKeys.has(renderKey)) {
+                    return;
+                }
+                this.addPlausibilityMessage(plausibility);
+                if (renderedNpcPlausibilityKeys) {
+                    renderedNpcPlausibilityKeys.add(renderKey);
+                }
+            });
         }
 
         this.flushEventBundle();

@@ -34,6 +34,8 @@ const INFORMATION_GATHERING_CHAT_TOOL_NAMES = new Set([
     'getHistory',
     'listLocationEntities',
     'resolveAttack',
+    'resolvePlausibilityCheck',
+    'resolveOpposedPlausibilityCheck',
     'locateNpcs',
     'locateThings'
 ]);
@@ -1129,6 +1131,8 @@ module.exports = function registerApiRoutes(scope) {
             alterNpcByEvent,
             alterLocationByEvent,
             resolveAttack: resolveAttackToolCall,
+            resolvePlausibilityCheck: resolvePlausibilityToolCall,
+            resolveOpposedPlausibilityCheck: resolvePlausibilityToolCall,
             LLMClient,
             Player,
             Thing,
@@ -11542,6 +11546,9 @@ module.exports = function registerApiRoutes(scope) {
             itemContext = '',
             abilityContext = ''
         }) {
+            // Disabled: attacks are resolved by the resolveAttack chat tool.
+            return null;
+
             if (Globals.config?.plausibility_checks?.enabled === false) {
                 console.info('Attack check skipped: plausibility_checks.enabled is false.');
                 return null;
@@ -11620,6 +11627,9 @@ module.exports = function registerApiRoutes(scope) {
         }
 
         async function runAttackPrecheck({ actionText }) {
+            // Disabled: the resolveAttack tool now owns attack detection/resolution.
+            return false;
+
             if (Globals.config?.plausibility_checks?.enabled === false) {
                 console.info('Attack precheck skipped: plausibility_checks.enabled is false.');
                 return true;
@@ -12507,6 +12517,82 @@ module.exports = function registerApiRoutes(scope) {
             };
         }
 
+        function resolveChatToolActor(rawName, label, { defaultToCurrentPlayer = false } = {}) {
+            const name = sanitizeNamedValue(rawName);
+            if (!name && defaultToCurrentPlayer) {
+                if (!currentPlayer) {
+                    throw new Error(`Could not resolve ${label} because no current player is active.`);
+                }
+                return currentPlayer;
+            }
+            if (!name) {
+                throw new Error(`A valid ${label} name is required.`);
+            }
+
+            const normalized = name.toLowerCase();
+            if (normalized === 'player' || normalized === 'the player' || normalized === 'you') {
+                if (!currentPlayer) {
+                    throw new Error(`Could not resolve ${label} "player" because no current player is active.`);
+                }
+                return currentPlayer;
+            }
+
+            if (currentPlayer && typeof currentPlayer.name === 'string'
+                && currentPlayer.name.trim().toLowerCase() === normalized) {
+                return currentPlayer;
+            }
+
+            const direct = (typeof findActorByName === 'function' ? findActorByName(name) : null)
+                || (typeof Player.getByName === 'function' ? Player.getByName(name) : null)
+                || null;
+            if (direct) {
+                return direct;
+            }
+
+            if (typeof Player.getAll === 'function') {
+                const allActors = Player.getAll();
+                if (Array.isArray(allActors)) {
+                    const exact = allActors.find(actor => (
+                        actor
+                        && typeof actor.name === 'string'
+                        && actor.name.trim().toLowerCase() === normalized
+                    ));
+                    if (exact) {
+                        return exact;
+                    }
+                }
+            }
+
+            throw new Error(`Could not resolve ${label} "${name}".`);
+        }
+
+        function resolvePlausibilityToolCall({ actor = null, plausibility = null } = {}) {
+            if (!plausibility || typeof plausibility !== 'object') {
+                throw new Error('resolvePlausibilityCheck requires a plausibility object.');
+            }
+
+            const actingActor = resolveChatToolActor(actor || 'player', 'actor', { defaultToCurrentPlayer: true });
+            const actionResolution = resolveActionOutcome({
+                plausibility,
+                player: actingActor
+            });
+            if (!actionResolution || typeof actionResolution !== 'object') {
+                throw new Error('Plausibility tool did not produce an action resolution.');
+            }
+
+            return {
+                actionResolution,
+                plausibility: {
+                    raw: null,
+                    structured: plausibility
+                },
+                actor: {
+                    id: actingActor?.id || null,
+                    name: actingActor?.name || actor || 'player'
+                }
+            };
+        }
+
         function resolveAttackToolCall({ attackEntry } = {}) {
             if (!attackEntry || typeof attackEntry !== 'object') {
                 throw new Error('resolveAttack requires an attackEntry object.');
@@ -12585,14 +12671,50 @@ module.exports = function registerApiRoutes(scope) {
             }
 
             const hit = Boolean(attackOutcome.hit);
-            const damage = hit ? Number(attackOutcome.damage?.total) : null;
-            if (hit && !Number.isFinite(damage)) {
+            const declaredDamage = hit ? Number(attackOutcome.damage?.total) : null;
+            if (hit && !Number.isFinite(declaredDamage)) {
                 throw new Error('resolveAttack produced a hit without a finite damage total.');
+            }
+
+            let attackDamageApplication = null;
+            let appliedStatusEffects = [];
+            let damage = declaredDamage;
+            if (hit) {
+                const damageResult = applyAttackDamageToTarget({
+                    attackContext,
+                    attackOutcome,
+                    attacker
+                });
+                attackDamageApplication = damageResult.application || null;
+                appliedStatusEffects = Array.isArray(damageResult.appliedStatusEffects)
+                    ? damageResult.appliedStatusEffects
+                    : [];
+                if (declaredDamage > 0 && !attackDamageApplication) {
+                    throw new Error(`resolveAttack hit ${attackEntry.defender || 'the defender'} but could not apply damage.`);
+                }
+                if (Number.isFinite(attackDamageApplication?.damageApplied)) {
+                    damage = attackDamageApplication.damageApplied;
+                }
+            }
+
+            const attackSummary = buildAttackSummary({
+                attackContext,
+                attackOutcome,
+                damageApplication: attackDamageApplication
+            });
+            if (attackSummary) {
+                attackContext.summary = attackSummary;
+                attackCheckInfo.summary = attackSummary;
             }
 
             return {
                 hit,
                 damage,
+                declaredDamage,
+                application: attackDamageApplication,
+                appliedStatusEffects,
+                locationRefreshRequested: Boolean(attackDamageApplication || appliedStatusEffects.length),
+                summary: attackSummary,
                 attackContext,
                 attackOutcome
             };
@@ -13032,9 +13154,7 @@ module.exports = function registerApiRoutes(scope) {
             };
 
             return {
-                description: getTagValue('description'),
-                difficulty: getTagValue('difficulty'),
-                skill: getTagValue('skill')
+                description: getTagValue('description')
             };
         }
 
@@ -14503,6 +14623,150 @@ module.exports = function registerApiRoutes(scope) {
             return task;
         }
 
+        function createPromptToolCallDebugRecorder({
+            promptLabel,
+            locationId,
+            stream = null,
+            entryCollector = null,
+            requestId = null
+        } = {}) {
+            if (!stream?.isEnabled) {
+                return null;
+            }
+            if (!Array.isArray(entryCollector)) {
+                throw new Error('createPromptToolCallDebugRecorder requires an entryCollector array.');
+            }
+            const resolvedLocationId = requireLocationId(locationId, 'tool-call debug entry');
+            const label = typeof promptLabel === 'string' && promptLabel.trim()
+                ? promptLabel.trim()
+                : 'chat';
+            const records = [];
+            const recordsBySequence = new Map();
+            let entry = null;
+
+            const stringifyDebugValue = (value) => {
+                try {
+                    return JSON.stringify(value === undefined ? null : value, null, 2);
+                } catch (error) {
+                    throw new Error(`Failed to serialize tool-call debug value: ${error.message}`);
+                }
+            };
+            const cloneDebugValue = (value) => {
+                try {
+                    return JSON.parse(stringifyDebugValue(value));
+                } catch (error) {
+                    throw new Error(`Failed to clone tool-call debug value: ${error.message}`);
+                }
+            };
+            const updateEntry = () => {
+                const completedCount = records.filter(record => record.status === 'completed').length;
+                const errorCount = records.filter(record => record.status === 'error').length;
+                const lines = [`Tool calls for ${label}`];
+                const resolvedRequestId = typeof requestId === 'string' && requestId.trim()
+                    ? requestId.trim()
+                    : (typeof stream.requestId === 'string' && stream.requestId.trim() ? stream.requestId.trim() : null);
+                if (resolvedRequestId) {
+                    lines.push(`Request: ${resolvedRequestId}`);
+                }
+                if (!records.length) {
+                    lines.push('', 'No tool calls recorded yet.');
+                } else {
+                    for (const record of records) {
+                        lines.push('', `${record.sequence}. ${record.name || 'unknownTool'}`);
+                        lines.push(`Status: ${record.status || 'unknown'}`);
+                        if (record.cacheHit) {
+                            lines.push('Cache: hit');
+                        }
+                    }
+                }
+
+                const summary = `Tool call debug: ${records.length} call${records.length === 1 ? '' : 's'}, ${completedCount} complete, ${errorCount} error${errorCount === 1 ? '' : 's'}.`;
+                if (!entry) {
+                    entry = pushChatEntry({
+                        role: 'system',
+                        type: 'tool-call-debug',
+                        content: lines.join('\n'),
+                        summary,
+                        toolCalls: cloneDebugValue(records),
+                        locationId: resolvedLocationId,
+                        metadata: {
+                            excludeFromBaseContextHistory: true,
+                            debugToolCalls: true,
+                            requestId: resolvedRequestId,
+                            promptLabel: label
+                        }
+                    }, entryCollector, resolvedLocationId);
+                } else {
+                    entry.content = lines.join('\n');
+                    entry.summary = summary;
+                    entry.toolCalls = cloneDebugValue(records);
+                }
+
+                entry.metadata = {
+                    ...(entry.metadata && typeof entry.metadata === 'object' ? entry.metadata : {}),
+                    excludeFromBaseContextHistory: true,
+                    debugToolCalls: true,
+                    toolCallCount: records.length,
+                    completedToolCallCount: completedCount,
+                    erroredToolCallCount: errorCount
+                };
+
+                stream.emit('chat_history_updated', {
+                    reason: 'tool_call_debug',
+                    entryId: entry.id || null
+                });
+            };
+
+            return {
+                record(event) {
+                    if (!event || typeof event !== 'object') {
+                        throw new Error('Tool-call debug recorder received an invalid event.');
+                    }
+                    const sequence = Number(event.sequence);
+                    if (!Number.isInteger(sequence) || sequence <= 0) {
+                        throw new Error('Tool-call debug recorder requires a positive integer sequence.');
+                    }
+                    const eventPromptLabel = typeof event.metadataLabel === 'string' && event.metadataLabel.trim()
+                        ? event.metadataLabel.trim()
+                        : label;
+                    const recordKey = `${eventPromptLabel}:${sequence}`;
+                    let record = recordsBySequence.get(recordKey);
+                    if (!record) {
+                        record = {
+                            sequence: records.length + 1,
+                            loopSequence: sequence,
+                            sourceLabel: eventPromptLabel,
+                            round: Number.isInteger(Number(event.round)) ? Number(event.round) : null,
+                            id: typeof event.id === 'string' ? event.id : null,
+                            name: typeof event.name === 'string' ? event.name : 'unknownTool',
+                            parameters: event.parameters && typeof event.parameters === 'object'
+                                ? cloneDebugValue(event.parameters)
+                                : {},
+                            status: 'running'
+                        };
+                        recordsBySequence.set(recordKey, record);
+                        records.push(record);
+                    }
+                    if (event.phase === 'completed') {
+                        record.status = 'completed';
+                        record.result = cloneDebugValue(event.result === undefined ? null : event.result);
+                        record.cacheHit = Boolean(event.cacheHit || event.result?.metadata?.cached);
+                        record.cacheKey = typeof event.cacheKey === 'string' && event.cacheKey.trim()
+                            ? event.cacheKey.trim()
+                            : (typeof event.result?.metadata?.cacheKey === 'string'
+                                ? event.result.metadata.cacheKey
+                                : null);
+                    } else if (event.phase === 'error') {
+                        record.status = 'error';
+                        record.error = cloneDebugValue(event.error || { message: 'Unknown tool error' });
+                    } else {
+                        record.status = 'running';
+                    }
+                    updateEntry();
+                }
+            };
+        }
+
         async function runActionNarrativeForActor({
             actor,
             actionText,
@@ -14512,7 +14776,9 @@ module.exports = function registerApiRoutes(scope) {
             locationOverride = null,
             isCreativeModeAction = false,
             itemContext = '',
-            abilityContext = ''
+            abilityContext = '',
+            stream = null,
+            entryCollector = null
         }) {
             console.log('Running action narrative for', actor ? actor.name : 'unknown actor');
             if (!actor) {
@@ -14581,9 +14847,27 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 const aiMetricsLabel = actor.isNPC ? 'npc_action' : 'player_action';
+                const additionalPayload = {};
+                const repetitionPenalty = Number(config.ai?.dialogue_repetition_penalty);
+                if (Number.isFinite(repetitionPenalty) && repetitionPenalty > 0) {
+                    additionalPayload.repetition_penalty = repetitionPenalty;
+                }
+                const enabledChatTools = CHAT_TOOL_DEFINITIONS.filter(toolDefinition => {
+                    const functionName = typeof toolDefinition?.function?.name === 'string'
+                        ? toolDefinition.function.name.trim()
+                        : '';
+                    return INFORMATION_GATHERING_CHAT_TOOL_NAMES.has(functionName);
+                });
+                if (enabledChatTools.length > 0) {
+                    additionalPayload.tools = enabledChatTools;
+                    additionalPayload.tool_choice = 'auto';
+                }
                 const requestOptions = {
                     messages,
                     metadataLabel: aiMetricsLabel,
+                    metadata: {
+                        clientId: stream?.clientId || null
+                    },
                     timeoutMs: baseTimeoutMilliseconds,
                     validateXML: false,
                 };
@@ -14595,7 +14879,49 @@ module.exports = function registerApiRoutes(scope) {
                     requestOptions.temperature = parsedTemplate.temperature;
                 }
 
-                let raw = await LLMClient.chatCompletion(requestOptions);
+                if (Object.keys(additionalPayload).length) {
+                    requestOptions.additionalPayload = additionalPayload;
+                }
+
+                let toolInvocations = [];
+                const toolResultCache = {
+                    roundKey: [
+                        aiMetricsLabel,
+                        actor.id || actor.name || 'actor',
+                        stream?.requestId || Date.now().toString(36),
+                        Math.random().toString(36).slice(2, 10)
+                    ].join(':'),
+                    entries: new Map()
+                };
+                const toolCallDebugRecorder = Globals.config?.debug_tool_calls === true
+                    ? createPromptToolCallDebugRecorder({
+                        promptLabel: aiMetricsLabel,
+                        locationId: locationOverride?.id || actor.currentLocation || currentPlayer?.currentLocation,
+                        stream,
+                        entryCollector,
+                        requestId: stream?.requestId || null
+                    })
+                    : null;
+
+                let raw = '';
+                if (enabledChatTools.length > 0) {
+                    const toolLoopResult = await runChatCompletionWithToolLoop({
+                        requestOptions,
+                        streamEmitter: stream,
+                        metadataLabel: aiMetricsLabel,
+                        toolResultCache,
+                        defaultToolActor: actor.name || null,
+                        onToolCallDebug: toolCallDebugRecorder
+                            ? event => toolCallDebugRecorder.record(event)
+                            : null
+                    });
+                    raw = toolLoopResult.aiResponse;
+                    toolInvocations = Array.isArray(toolLoopResult.toolInvocations)
+                        ? toolLoopResult.toolInvocations
+                        : [];
+                } else {
+                    raw = await LLMClient.chatCompletion(requestOptions);
+                }
                 if (promptLog) {
                     LLMClient.logPrompt({
                         prefix: actor.isNPC ? 'npc_action' : 'player_action',
@@ -14623,8 +14949,11 @@ module.exports = function registerApiRoutes(scope) {
                     attackContext,
                     attackDamageApplication
                 };
+                if (toolInvocations.length) {
+                    debug.toolInvocations = toolInvocations;
+                }
 
-                return { raw, debug };
+                return { raw, debug, toolInvocations };
             } catch (error) {
                 console.warn(`Failed to run action narrative for ${actor.name}:`, error.message);
                 return { raw: '', debug: { error: error.message } };
@@ -14641,13 +14970,108 @@ module.exports = function registerApiRoutes(scope) {
                 throw new Error('executeNpcTurnsAfterPlayer requires an entryCollector array when NPC turns are processed.');
             }
             const results = [];
+            const pendingNpcTurnTextForName = (npcName) => `*${npcName || 'NPC'} is taking their turn...*`;
+            const genericPendingNpcTurnText = '*Another character is taking their turn*';
+            const emitNpcTurnEntryRefresh = (entry, reason) => {
+                if (!stream?.isEnabled || !entry?.id) {
+                    return false;
+                }
+                return stream.emit('chat_history_updated', {
+                    reason,
+                    entryId: entry.id
+                });
+            };
+            const createPendingNpcTurnEntry = ({ npcName = null, locationOverride = null } = {}) => {
+                const pendingLocationId = requireLocationId(
+                    locationOverride?.id || location?.id,
+                    'pending npc turn entry'
+                );
+                const entry = pushChatEntry({
+                    role: 'assistant',
+                    type: 'npc-action',
+                    content: npcName ? pendingNpcTurnTextForName(npcName) : genericPendingNpcTurnText,
+                    actor: npcName || null,
+                    isNpcTurn: true,
+                    locationId: pendingLocationId,
+                    metadata: {
+                        excludeFromBaseContextHistory: true,
+                        npcTurnPending: true
+                    }
+                }, entryCollector, pendingLocationId);
+                emitNpcTurnEntryRefresh(entry, 'npc_turn_pending');
+                return entry;
+            };
+            const updatePendingNpcTurnEntry = (entry, {
+                npcName = null,
+                content = null,
+                locationOverride = null,
+                final = false
+            } = {}) => {
+                if (!entry) {
+                    return null;
+                }
+                const resolvedLocationId = locationOverride?.id
+                    ? requireLocationId(locationOverride.id, 'pending npc turn update')
+                    : entry.locationId;
+                const resolvedNpcName = npcName || entry.actor || null;
+                entry.role = final && resolvedNpcName ? resolvedNpcName : 'assistant';
+                entry.type = 'npc-action';
+                entry.actor = resolvedNpcName;
+                entry.isNpcTurn = true;
+                if (resolvedLocationId) {
+                    entry.locationId = resolvedLocationId;
+                }
+                entry.content = content !== null && content !== undefined
+                    ? content
+                    : pendingNpcTurnTextForName(npcName || entry.actor || 'NPC');
+                entry.metadata = {
+                    ...(entry.metadata && typeof entry.metadata === 'object' ? entry.metadata : {}),
+                    locationId: entry.locationId
+                };
+                if (final) {
+                    delete entry.metadata.excludeFromBaseContextHistory;
+                    delete entry.metadata.npcTurnPending;
+                    emitNpcTurnEntryRefresh(entry, 'npc_turn_complete');
+                } else {
+                    entry.metadata.excludeFromBaseContextHistory = true;
+                    entry.metadata.npcTurnPending = true;
+                    emitNpcTurnEntryRefresh(entry, 'npc_turn_named');
+                }
+                return entry;
+            };
+            const removePendingNpcTurnEntry = (entry) => {
+                if (!entry?.id) {
+                    return;
+                }
+                const removeById = (list) => {
+                    if (!Array.isArray(list)) {
+                        return false;
+                    }
+                    const index = list.findIndex(candidate => candidate?.id === entry.id);
+                    if (index === -1) {
+                        return false;
+                    }
+                    list.splice(index, 1);
+                    return true;
+                };
+                removeById(entryCollector);
+                removeById(chatHistory);
+                emitNpcTurnEntryRefresh(entry, 'npc_turn_pending_removed');
+            };
+            let pendingNpcTurnEntry = null;
+            let activeNpcTurnEntry = null;
 
             try {
                 console.log("Processing NPC turns")
+                pendingNpcTurnEntry = createPendingNpcTurnEntry({ locationOverride: location });
                 const npcQueue = await runNextNpcListPrompt({ locationOverride: location, maxFriendlyNpcsToAct, maxHostileNpcsToAct, currentTurnLog });
                 const npcNames = Array.isArray(npcQueue.names) ? npcQueue.names : [];
 
                 console.log(`NPC turn queue: ${npcNames.length} NPCs to process.`);
+                if (!npcNames.length) {
+                    removePendingNpcTurnEntry(pendingNpcTurnEntry);
+                    pendingNpcTurnEntry = null;
+                }
 
                 if (stream && stream.isEnabled && npcNames.length) {
                     stream.status('npc_turns:start', {
@@ -14681,12 +15105,23 @@ module.exports = function registerApiRoutes(scope) {
                     } catch (error) {
                         console.warn(`Failed to tick status effects for NPC ${npc.name}:`, error.message);
                     }
+                    activeNpcTurnEntry = pendingNpcTurnEntry || createPendingNpcTurnEntry({
+                        npcName: npc.name || npcName,
+                        locationOverride: npcLocation
+                    });
+                    pendingNpcTurnEntry = null;
+                    updatePendingNpcTurnEntry(activeNpcTurnEntry, {
+                        npcName: npc.name || npcName,
+                        locationOverride: npcLocation
+                    });
 
                     console.log(`Running plausibility check for NPC: ${npc.name || npcName}`);
 
                     const plausibilityResult = await runNpcPlausibilityPrompt({ npc, locationOverride: npcLocation });
                     const plan = plausibilityResult.structured;
                     if (!plan || !plan.description) {
+                        removePendingNpcTurnEntry(activeNpcTurnEntry);
+                        activeNpcTurnEntry = null;
                         continue;
                     }
 
@@ -14699,35 +15134,19 @@ module.exports = function registerApiRoutes(scope) {
                         actionTextForChat = await applySlopRemoval(actionTextForChat);
                     }
 
-                    const npcActionLocationId = requireLocationId(npcLocation?.id, 'npc action entry');
-                    pushChatEntry({
-                        role: npc.name || npcName,
+                    const npcActionEntry = updatePendingNpcTurnEntry(activeNpcTurnEntry, {
+                        npcName: npc.name || npcName,
                         content: actionTextForChat,
-                        type: 'npc-action',
-                        isNpcTurn: true,
-                        locationId: npcActionLocationId
-                    }, entryCollector, npcActionLocationId);
-
-                    if (stream && stream.isEnabled) {
-                        stream.status('npc_turn:attack_check', {
-                            npcName: npc.name || npcName,
-                            index: npcTurnIndex
-                        });
-                    }
-
-                    const attackCheck = await runAttackCheckPrompt({
-                        actionText,
                         locationOverride: npcLocation,
-                        characterName: npc.name || 'Unknown NPC',
-                        itemContext,
-                        abilityContext
+                        final: true
                     });
+                    if (!npcActionEntry) {
+                        throw new Error(`NPC action entry was unavailable for ${npc.name || npcName}.`);
+                    }
+                    activeNpcTurnEntry = null;
 
-                    let attackContext = buildAttackContextForActor({
-                        attackCheckInfo: attackCheck,
-                        actor: npc,
-                        location: npcLocation
-                    });
+                    const attackCheck = null;
+                    let attackContext = null;
 
                     const attackOutcome = attackContext?.outcome || null;
                     let attackDamageApplication = null;
@@ -14790,7 +15209,9 @@ module.exports = function registerApiRoutes(scope) {
                         attackDamageApplication,
                         locationOverride: npcLocation,
                         itemContext,
-                        abilityContext
+                        abilityContext,
+                        stream,
+                        entryCollector
                     });
 
                     let npcResponse = narrativeResult.raw && narrativeResult.raw.trim()
@@ -14848,11 +15269,75 @@ module.exports = function registerApiRoutes(scope) {
                         events: npcEventResult?.structured || null,
                         eventChecks: npcEventResult?.html || null,
                         debug: narrativeResult.debug,
-                        timestamp: npcTurnTimestamp
+                        timestamp: npcTurnTimestamp,
+                        entryId: npcTurnEntry?.id || null
                     };
 
                     if (npcSlopRemovalInfo) {
                         npcTurnResult.slopRemoval = npcSlopRemovalInfo;
+                    }
+                    const narrativeToolInvocations = Array.isArray(narrativeResult.toolInvocations)
+                        ? narrativeResult.toolInvocations
+                        : [];
+                    if (narrativeToolInvocations.length) {
+                        npcTurnResult.toolInvocations = narrativeToolInvocations;
+                        if (narrativeToolInvocations.some(entry => entry?.metadata?.locationRefreshRequested)) {
+                            npcTurnResult.locationRefreshRequested = true;
+                        }
+                        const attackToolSummaries = narrativeToolInvocations
+                            .filter(entry => entry?.name === 'resolveAttack'
+                                && entry?.metadata?.summary
+                                && typeof entry.metadata.summary === 'object')
+                            .map(entry => entry.metadata.summary);
+                        if (attackToolSummaries.length) {
+                            npcTurnResult.attackSummaries = attackToolSummaries;
+                            npcTurnResult.attackSummary = npcTurnResult.attackSummary || attackToolSummaries[0];
+                            attackToolSummaries.forEach(summary => {
+                                recordAttackCheckEntry({
+                                    summary,
+                                    timestamp: npcTurnTimestamp,
+                                    parentId: npcTurnEntry?.id || null,
+                                    locationId: npcTurnLocationId
+                                }, entryCollector);
+                            });
+                        }
+                        const attackToolInvocation = narrativeToolInvocations.find(entry => (
+                            entry?.name === 'resolveAttack'
+                            && entry?.metadata?.application
+                        ));
+                        if (attackToolInvocation?.metadata?.application) {
+                            npcTurnResult.attackDamage = attackToolInvocation.metadata.application;
+                        }
+
+                        const plausibilityToolInvocations = narrativeToolInvocations.filter(entry => (
+                            (entry?.name === 'resolvePlausibilityCheck'
+                                || entry?.name === 'resolveOpposedPlausibilityCheck')
+                            && entry?.metadata
+                            && typeof entry.metadata === 'object'
+                        ));
+                        const actionResolutions = plausibilityToolInvocations
+                            .map(entry => entry.metadata.actionResolution)
+                            .filter(resolution => resolution && typeof resolution === 'object');
+                        if (actionResolutions.length) {
+                            npcTurnResult.actionResolutions = actionResolutions;
+                            npcTurnResult.actionResolution = npcTurnResult.actionResolution || actionResolutions[0];
+                        }
+                        const plausibilityPayloads = plausibilityToolInvocations
+                            .map(entry => entry.metadata.plausibility)
+                            .filter(payload => payload && typeof payload === 'object'
+                                && (payload.raw || payload.structured));
+                        if (plausibilityPayloads.length) {
+                            npcTurnResult.plausibilities = plausibilityPayloads;
+                            npcTurnResult.plausibility = npcTurnResult.plausibility || plausibilityPayloads[0];
+                            plausibilityPayloads.forEach(plausibilityPayload => {
+                                recordPlausibilityEntry({
+                                    data: plausibilityPayload,
+                                    timestamp: npcTurnTimestamp,
+                                    parentId: npcTurnEntry?.id || null,
+                                    locationId: npcTurnLocationId
+                                }, entryCollector);
+                            });
+                        }
                     }
 
                     if (Array.isArray(npcEventResult?.experienceAwards) && npcEventResult.experienceAwards.length) {
@@ -14907,18 +15392,21 @@ module.exports = function registerApiRoutes(scope) {
                         locationId: npcTurnLocationId
                     }, entryCollector);
 
-                    if (!isAttack && actionResolution) {
+                    if (!isAttack && actionResolution && !npcTurnResult.actionResolution) {
                         npcTurnResult.actionResolution = actionResolution;
                     }
 
-                    if (npcTurnResult.actionResolution) {
+                    const npcActionResolutionsForLogging = Array.isArray(npcTurnResult.actionResolutions)
+                        ? npcTurnResult.actionResolutions.filter(resolution => resolution && typeof resolution === 'object')
+                        : (npcTurnResult.actionResolution ? [npcTurnResult.actionResolution] : []);
+                    npcActionResolutionsForLogging.forEach(resolution => {
                         recordSkillCheckEntry({
-                            resolution: npcTurnResult.actionResolution,
+                            resolution,
                             timestamp: npcTurnTimestamp,
                             parentId: npcTurnEntry?.id || null,
                             locationId: npcTurnLocationId
                         }, entryCollector);
-                    }
+                    });
 
                     if (isAttack) {
                         if (attackSummaryValue) {
@@ -14962,6 +15450,11 @@ module.exports = function registerApiRoutes(scope) {
                     npcTurnIndex += 1;
                 }
 
+                if (pendingNpcTurnEntry) {
+                    removePendingNpcTurnEntry(pendingNpcTurnEntry);
+                    pendingNpcTurnEntry = null;
+                }
+
                 if (stream && stream.isEnabled) {
                     stream.status('npc_turns:complete', {
                         message: 'NPC turns complete.',
@@ -14971,6 +15464,14 @@ module.exports = function registerApiRoutes(scope) {
             } catch (error) {
                 console.warn('Failed to execute NPC turns:', error.message);
                 console.debug(error);
+                if (activeNpcTurnEntry) {
+                    removePendingNpcTurnEntry(activeNpcTurnEntry);
+                    activeNpcTurnEntry = null;
+                }
+                if (pendingNpcTurnEntry) {
+                    removePendingNpcTurnEntry(pendingNpcTurnEntry);
+                    pendingNpcTurnEntry = null;
+                }
                 if (stream && stream.isEnabled) {
                     stream.error({
                         scope: 'npc_turns',
@@ -15187,6 +15688,180 @@ module.exports = function registerApiRoutes(scope) {
             let playerActionStreamSent = false;
             const newChatEntries = [];
             const getClientMessages = () => filterOrphanedChatEntries(newChatEntries);
+            const stringifyToolCallDebugValue = (value) => {
+                try {
+                    return JSON.stringify(value === undefined ? null : value, null, 2);
+                } catch (error) {
+                    throw new Error(`Failed to serialize tool-call debug value: ${error.message}`);
+                }
+            };
+            const cloneToolCallDebugValue = (value) => {
+                try {
+                    return JSON.parse(stringifyToolCallDebugValue(value));
+                } catch (error) {
+                    throw new Error(`Failed to clone tool-call debug value: ${error.message}`);
+                }
+            };
+            const buildToolCallDebugContent = ({ promptLabel, requestId, records }) => {
+                const label = typeof promptLabel === 'string' && promptLabel.trim()
+                    ? promptLabel.trim()
+                    : 'chat';
+                const lines = [`Tool calls for ${label}`];
+                if (typeof requestId === 'string' && requestId.trim()) {
+                    lines.push(`Request: ${requestId.trim()}`);
+                }
+                const list = Array.isArray(records) ? records : [];
+                if (!list.length) {
+                    lines.push('', 'No tool calls recorded yet.');
+                    return lines.join('\n');
+                }
+
+                for (const record of list) {
+                    if (!record || typeof record !== 'object') {
+                        continue;
+                    }
+                    lines.push('', `${record.sequence}. ${record.name || 'unknownTool'}`);
+                    lines.push(`Status: ${record.status || 'unknown'}`);
+                    if (record.cacheHit) {
+                        lines.push('Cache: hit');
+                    }
+                    if (record.sourceLabel) {
+                        lines.push(`Prompt: ${record.sourceLabel}`);
+                    }
+                    lines.push(`Round: ${record.round}`);
+                    if (record.id) {
+                        lines.push(`Tool call id: ${record.id}`);
+                    }
+                    if (record.cacheHit && record.cacheKey) {
+                        lines.push(`Cache key: ${record.cacheKey}`);
+                    }
+                    lines.push('Parameters:');
+                    lines.push('```json');
+                    lines.push(stringifyToolCallDebugValue(record.parameters || {}));
+                    lines.push('```');
+                    if (record.result !== undefined) {
+                        lines.push('Result:');
+                        lines.push('```json');
+                        lines.push(stringifyToolCallDebugValue(record.result));
+                        lines.push('```');
+                    }
+                    if (record.error) {
+                        lines.push('Error:');
+                        lines.push('```json');
+                        lines.push(stringifyToolCallDebugValue(record.error));
+                        lines.push('```');
+                    }
+                }
+                return lines.join('\n');
+            };
+            const createToolCallDebugRecorder = ({ promptLabel, locationId }) => {
+                const resolvedLocationId = requireLocationId(locationId, 'tool-call debug entry');
+                const records = [];
+                const recordsBySequence = new Map();
+                let entry = null;
+
+                const updateEntry = () => {
+                    const completedCount = records.filter(record => record.status === 'completed').length;
+                    const errorCount = records.filter(record => record.status === 'error').length;
+                    const content = buildToolCallDebugContent({
+                        promptLabel,
+                        requestId: stream.requestId || null,
+                        records
+                    });
+                    const summary = `Tool call debug: ${records.length} call${records.length === 1 ? '' : 's'}, ${completedCount} complete, ${errorCount} error${errorCount === 1 ? '' : 's'}.`;
+
+                    if (!entry) {
+                        entry = pushChatEntry({
+                            role: 'system',
+                            type: 'tool-call-debug',
+                            content,
+                            summary,
+                            toolCalls: cloneToolCallDebugValue(records),
+                            locationId: resolvedLocationId,
+                            metadata: {
+                                excludeFromBaseContextHistory: true,
+                                debugToolCalls: true,
+                                requestId: stream.requestId || null,
+                                promptLabel
+                            }
+                        }, newChatEntries, resolvedLocationId);
+                    } else {
+                        entry.content = content;
+                        entry.summary = summary;
+                    }
+                    entry.toolCalls = cloneToolCallDebugValue(records);
+
+                    entry.metadata = {
+                        ...(entry.metadata && typeof entry.metadata === 'object' ? entry.metadata : {}),
+                        excludeFromBaseContextHistory: true,
+                        debugToolCalls: true,
+                        toolCallCount: records.length,
+                        completedToolCallCount: completedCount,
+                        erroredToolCallCount: errorCount
+                    };
+
+                    stream.emit('chat_history_updated', {
+                        reason: 'tool_call_debug',
+                        entryId: entry.id || null
+                    });
+                };
+
+                return {
+                    record(event) {
+                        if (!event || typeof event !== 'object') {
+                            throw new Error('Tool-call debug recorder received an invalid event.');
+                        }
+                        const sequence = Number(event.sequence);
+                        if (!Number.isInteger(sequence) || sequence <= 0) {
+                            throw new Error('Tool-call debug recorder requires a positive integer sequence.');
+                        }
+                        const eventPromptLabel = typeof event.metadataLabel === 'string' && event.metadataLabel.trim()
+                            ? event.metadataLabel.trim()
+                            : promptLabel;
+                        const recordKey = `${eventPromptLabel}:${sequence}`;
+                        let record = recordsBySequence.get(recordKey);
+                        if (!record) {
+                            record = {
+                                sequence: records.length + 1,
+                                loopSequence: sequence,
+                                sourceLabel: eventPromptLabel,
+                                round: Number.isInteger(Number(event.round)) ? Number(event.round) : null,
+                                id: typeof event.id === 'string' ? event.id : null,
+                                name: typeof event.name === 'string' ? event.name : 'unknownTool',
+                                parameters: event.parameters && typeof event.parameters === 'object'
+                                    ? cloneToolCallDebugValue(event.parameters)
+                                    : {},
+                                status: 'running'
+                            };
+                            recordsBySequence.set(recordKey, record);
+                            records.push(record);
+                        }
+                        if (event.phase === 'completed') {
+                            record.status = 'completed';
+                            record.result = cloneToolCallDebugValue(event.result === undefined ? null : event.result);
+                            record.cacheHit = Boolean(event.cacheHit || event.result?.metadata?.cached);
+                            record.cacheKey = typeof event.cacheKey === 'string' && event.cacheKey.trim()
+                                ? event.cacheKey.trim()
+                                : (typeof event.result?.metadata?.cacheKey === 'string' && event.result.metadata.cacheKey.trim()
+                                    ? event.result.metadata.cacheKey.trim()
+                                    : null);
+                            delete record.error;
+                        } else if (event.phase === 'error') {
+                            record.status = 'error';
+                            record.error = cloneToolCallDebugValue(event.error || { message: 'Unknown tool-call error.' });
+                            record.cacheHit = false;
+                            record.cacheKey = null;
+                        } else if (event.phase === 'started') {
+                            record.status = 'running';
+                            record.cacheHit = false;
+                            record.cacheKey = null;
+                        } else {
+                            throw new Error(`Unknown tool-call debug phase "${event.phase}".`);
+                        }
+                        updateEntry();
+                    }
+                };
+            };
 
             if (Array.isArray(statusNeedAdjustments) && statusNeedAdjustments.length) {
                 const lines = statusNeedAdjustments.map(entry => {
@@ -15971,6 +16646,10 @@ module.exports = function registerApiRoutes(scope) {
                             console.debug(attackError);
                         }
 
+                        /*
+                        Disabled: player-action plausibility is now resolved by the
+                        resolvePlausibilityCheck / resolveOpposedPlausibilityCheck
+                        chat tools during the action tool loop.
                         try {
                             stream.status('player_action:plausibility', 'Evaluating plausibility.');
                             plausibilityInfo = await runPlausibilityCheck({
@@ -15991,6 +16670,7 @@ module.exports = function registerApiRoutes(scope) {
                             console.warn('Failed to execute plausibility check:', plausibilityError.message);
                             console.debug(plausibilityError);
                         }
+                        */
                     } else if (!isEmptyPlayerAction && !plausibilityChecksEnabled) {
                         plausibilityInfo = {
                             raw: '',
@@ -16044,7 +16724,7 @@ module.exports = function registerApiRoutes(scope) {
                         responseData.attackDamage = attackDamageApplication;
                     }
 
-                    if (plausibilityInfo?.structured || plausibilityInfo?.raw) {
+                    if (!responseData.plausibility && (plausibilityInfo?.structured || plausibilityInfo?.raw)) {
                         responseData.plausibility = {
                             raw: plausibilityInfo.raw || null,
                             structured: plausibilityInfo.structured || null
@@ -16639,6 +17319,16 @@ module.exports = function registerApiRoutes(scope) {
                 const usesActionXmlResponse = promptType === 'player-action'
                     || promptType === 'creative-mode-action';
                 const shouldUseRepetitionBusterXml = usesActionXmlResponse && Boolean(Globals.config.repetition_buster);
+                const toolResultCache = {
+                    roundKey: stream.requestId || `${promptMetadataLabel}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`,
+                    entries: new Map()
+                };
+                const toolCallDebugRecorder = Globals.config?.debug_tool_calls === true
+                    ? createToolCallDebugRecorder({
+                        promptLabel: promptMetadataLabel,
+                        locationId: location?.id || currentPlayer?.currentLocation
+                    })
+                    : null;
                 const requestOptions = {
                     messages: finalMessages,
                     metadataLabel: promptMetadataLabel,
@@ -16667,7 +17357,11 @@ module.exports = function registerApiRoutes(scope) {
                     const toolLoopResult = await runChatCompletionWithToolLoop({
                         requestOptions,
                         streamEmitter: stream,
-                        metadataLabel: promptMetadataLabel
+                        metadataLabel: promptMetadataLabel,
+                        toolResultCache,
+                        onToolCallDebug: toolCallDebugRecorder
+                            ? event => toolCallDebugRecorder.record(event)
+                            : null
                     });
                     aiResponse = toolLoopResult.aiResponse;
                     toolInvocations = Array.isArray(toolLoopResult.toolInvocations)
@@ -16742,7 +17436,11 @@ module.exports = function registerApiRoutes(scope) {
                                     const rerunLoopResult = await runChatCompletionWithToolLoop({
                                         requestOptions: rerunOptions,
                                         streamEmitter: stream,
-                                        metadataLabel: `${promptMetadataLabel}_rerun`
+                                        metadataLabel: `${promptMetadataLabel}_rerun`,
+                                        toolResultCache,
+                                        onToolCallDebug: toolCallDebugRecorder
+                                            ? event => toolCallDebugRecorder.record(event)
+                                            : null
                                     });
                                     let rerunResponse = rerunLoopResult.aiResponse;
                                     if (Array.isArray(rerunLoopResult.toolInvocations) && rerunLoopResult.toolInvocations.length) {
@@ -16827,6 +17525,55 @@ module.exports = function registerApiRoutes(scope) {
 
                     if (toolInvocations.length) {
                         responseData.toolInvocations = toolInvocations;
+                        if (toolInvocations.some(entry => entry?.metadata?.locationRefreshRequested)) {
+                            responseData.locationRefreshRequested = true;
+                        }
+                        const attackToolSummaries = toolInvocations
+                            .filter(entry => entry?.name === 'resolveAttack'
+                                && entry?.metadata?.summary
+                                && typeof entry.metadata.summary === 'object')
+                            .map(entry => entry.metadata.summary);
+                        if (attackToolSummaries.length) {
+                            responseData.attackSummaries = attackToolSummaries;
+                            if (aiResponseEntry) {
+                                attackToolSummaries.forEach(summary => {
+                                    recordAttackCheckEntry({
+                                        summary,
+                                        timestamp: aiResponseEntry.timestamp || new Date().toISOString(),
+                                        parentId: aiResponseEntry.id || null,
+                                        locationId: aiResponseLocationId
+                                    }, newChatEntries);
+                                });
+                            }
+                        }
+                        const attackToolInvocation = toolInvocations.find(entry => (
+                            entry?.name === 'resolveAttack'
+                            && entry?.metadata?.application
+                        ));
+                        if (attackToolInvocation?.metadata?.application) {
+                            responseData.attackDamage = attackToolInvocation.metadata.application;
+                        }
+                        const plausibilityToolInvocations = toolInvocations.filter(entry => (
+                            (entry?.name === 'resolvePlausibilityCheck'
+                                || entry?.name === 'resolveOpposedPlausibilityCheck')
+                            && entry?.metadata
+                            && typeof entry.metadata === 'object'
+                        ));
+                        const actionResolutions = plausibilityToolInvocations
+                            .map(entry => entry.metadata.actionResolution)
+                            .filter(resolution => resolution && typeof resolution === 'object');
+                        if (actionResolutions.length) {
+                            responseData.actionResolutions = actionResolutions;
+                            responseData.actionResolution = responseData.actionResolution || actionResolutions[0];
+                        }
+                        const plausibilityPayloads = plausibilityToolInvocations
+                            .map(entry => entry.metadata.plausibility)
+                            .filter(payload => payload && typeof payload === 'object'
+                                && (payload.raw || payload.structured));
+                        if (plausibilityPayloads.length) {
+                            responseData.plausibilities = plausibilityPayloads;
+                            responseData.plausibility = responseData.plausibility || plausibilityPayloads[0];
+                        }
                     }
 
                     if (aiResponseEntry?.summary) {
@@ -17592,13 +18339,30 @@ module.exports = function registerApiRoutes(scope) {
                         responseData.followupEventChecks = eventResult.followupResults;
                     }
 
-                    if (responseData.actionResolution) {
+                    const actionResolutionsForLogging = Array.isArray(responseData.actionResolutions)
+                        ? responseData.actionResolutions.filter(resolution => resolution && typeof resolution === 'object')
+                        : (responseData.actionResolution ? [responseData.actionResolution] : []);
+                    actionResolutionsForLogging.forEach(resolution => {
                         recordSkillCheckEntry({
-                            resolution: responseData.actionResolution,
+                            resolution,
                             timestamp: aiResponseEntry?.timestamp || new Date().toISOString(),
                             parentId: aiResponseEntry?.id || null,
                             locationId: aiResponseLocationId
                         }, newChatEntries);
+                    });
+
+                    if (Array.isArray(responseData.plausibilities) && responseData.plausibilities.length > 1) {
+                        responseData.plausibilities.slice(1).forEach(plausibilityPayload => {
+                            if (!plausibilityPayload || typeof plausibilityPayload !== 'object') {
+                                return;
+                            }
+                            recordPlausibilityEntry({
+                                data: plausibilityPayload,
+                                timestamp: aiResponseEntry?.timestamp || new Date().toISOString(),
+                                parentId: aiResponseEntry?.id || null,
+                                locationId: aiResponseLocationId
+                            }, newChatEntries);
+                        });
                     }
 
                     const attackSummaryForLogging = responseData.attackSummary

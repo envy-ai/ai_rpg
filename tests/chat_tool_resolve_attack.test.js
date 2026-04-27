@@ -81,6 +81,26 @@ function resolveAttackToolResponse(args) {
     };
 }
 
+function resolveAttackToolResponseWithCalls(calls) {
+    return {
+        data: {
+            choices: [{
+                message: {
+                    content: '',
+                    tool_calls: calls.map((args, index) => ({
+                        id: `call-resolve-attack-${index}`,
+                        type: 'function',
+                        function: {
+                            name: 'resolveAttack',
+                            arguments: JSON.stringify(args)
+                        }
+                    }))
+                }
+            }]
+        }
+    };
+}
+
 const attackArgs = {
     attacker: 'player',
     defender: 'Hollow Sentinel Valdrus',
@@ -122,15 +142,46 @@ test('resolveAttack tool schema mirrors attack-check attack fields', () => {
     assert.deepEqual(resolveAttack.parameters.properties.defenderInfo.required, ['evadeSkill', 'deflectSkill']);
 });
 
-test('resolveAttack returns damage content and preserves attack-check modifier semantics', async () => {
+test('resolveAttack returns applied damage health percentages and preserves attack-check modifier semantics', async () => {
     const capturedMessagesByRound = [];
     let capturedAttackEntry = null;
+    const attackSummary = {
+        hit: true,
+        attacker: { name: 'The player' },
+        defender: { name: 'Hollow Sentinel Valdrus' },
+        damage: { total: 9, applied: 7 },
+        target: {
+            startingHealth: 50,
+            remainingHealth: 43,
+            healthLostPercent: 14,
+            remainingHealthPercent: 86
+        }
+    };
     const runtime = makeRuntime({
         firstResponse: resolveAttackToolResponse(attackArgs),
         capturedMessagesByRound,
         resolveAttack: async ({ attackEntry }) => {
             capturedAttackEntry = attackEntry;
-            return { hit: true, damage: 7 };
+            return {
+                hit: true,
+                declaredDamage: 9,
+                damage: 7,
+                application: {
+                    targetId: 'npc-1',
+                    targetName: 'Hollow Sentinel Valdrus',
+                    damageDeclared: 9,
+                    damageApplied: 7,
+                    startingHealth: 50,
+                    endingHealth: 43,
+                    rawRemainingHealth: 43,
+                    maxHealthBefore: 50,
+                    maxHealthAfter: 50,
+                    healthLostPercent: 14,
+                    remainingHealthPercent: 86
+                },
+                locationRefreshRequested: true,
+                summary: attackSummary
+            };
         }
     });
 
@@ -142,6 +193,10 @@ test('resolveAttack returns damage content and preserves attack-check modifier s
     assert.equal(result.rounds, 2);
     assert.equal(result.toolInvocations[0].name, 'resolveAttack');
     assert.equal(result.toolInvocations[0].metadata.damage, 7);
+    assert.equal(result.toolInvocations[0].metadata.declaredDamage, 9);
+    assert.equal(result.toolInvocations[0].metadata.locationRefreshRequested, true);
+    assert.equal(result.toolInvocations[0].metadata.application.damageApplied, 7);
+    assert.deepEqual(result.toolInvocations[0].metadata.summary, attackSummary);
     assert.equal(capturedAttackEntry.attacker, 'player');
     assert.equal(capturedAttackEntry.defender, 'Hollow Sentinel Valdrus');
     assert.deepEqual(capturedAttackEntry.circumstanceModifiers, [
@@ -150,15 +205,72 @@ test('resolveAttack returns damage content and preserves attack-check modifier s
     ]);
 
     const toolMessage = capturedMessagesByRound[1].find(message => message.role === 'tool');
-    assert.equal(toolMessage.content, '7');
+    assert.equal(toolMessage.content, 'Damage: 14%\nRemaining health: 86%');
 });
 
-test('resolveAttack returns miss content when the attack misses', async () => {
+test('resolveAttack marks zero remaining health as incapacitated or dead', async () => {
     const capturedMessagesByRound = [];
     const runtime = makeRuntime({
         firstResponse: resolveAttackToolResponse(attackArgs),
         capturedMessagesByRound,
-        resolveAttack: async () => ({ hit: false })
+        resolveAttack: async () => {
+            return {
+                hit: true,
+                declaredDamage: 25,
+                damage: 25,
+                application: {
+                    targetId: 'npc-1',
+                    targetName: 'Hollow Sentinel Valdrus',
+                    damageDeclared: 25,
+                    damageApplied: 25,
+                    startingHealth: 20,
+                    endingHealth: 0,
+                    rawRemainingHealth: -5,
+                    maxHealthBefore: 100,
+                    maxHealthAfter: 100,
+                    healthLostPercent: 25,
+                    remainingHealthPercent: 0
+                },
+                locationRefreshRequested: true,
+                summary: {
+                    hit: true,
+                    attacker: { name: 'The player' },
+                    defender: { name: 'Hollow Sentinel Valdrus' },
+                    damage: { total: 25, applied: 25 },
+                    target: {
+                        startingHealth: 20,
+                        remainingHealth: 0,
+                        rawRemainingHealth: -5,
+                        healthLostPercent: 25,
+                        remainingHealthPercent: 0,
+                        defeated: true
+                    }
+                }
+            };
+        }
+    });
+
+    await runtime.runChatCompletionWithToolLoop({
+        requestOptions: { messages: [{ role: 'user', content: 'Attack.' }] },
+        metadataLabel: 'test_resolve_attack_defeated_tool'
+    });
+
+    const toolMessage = capturedMessagesByRound[1].find(message => message.role === 'tool');
+    assert.equal(toolMessage.content, 'Damage: 25%\nRemaining health: 0% (incapacitated or dead)');
+});
+
+test('resolveAttack returns miss content when the attack misses', async () => {
+    const capturedMessagesByRound = [];
+    const attackSummary = {
+        hit: false,
+        attacker: { name: 'The player' },
+        defender: { name: 'Hollow Sentinel Valdrus' },
+        roll: { die: 2, total: 6 }
+    };
+    const runtime = makeRuntime({
+        firstResponse: resolveAttackToolResponse(attackArgs),
+        capturedMessagesByRound,
+        resolveAttack: async () => ({ hit: false, summary: attackSummary })
     });
 
     const result = await runtime.runChatCompletionWithToolLoop({
@@ -167,6 +279,77 @@ test('resolveAttack returns miss content when the attack misses', async () => {
     });
 
     assert.equal(result.toolInvocations[0].metadata.result, 'miss');
+    assert.deepEqual(result.toolInvocations[0].metadata.summary, attackSummary);
     const toolMessage = capturedMessagesByRound[1].find(message => message.role === 'tool');
     assert.equal(toolMessage.content, 'miss');
+});
+
+test('resolveAttack reuses cached results for repeated same-round attacks', async () => {
+    const capturedMessagesByRound = [];
+    const debugEvents = [];
+    let resolveCount = 0;
+    const runtime = makeRuntime({
+        firstResponse: resolveAttackToolResponseWithCalls([attackArgs, attackArgs]),
+        capturedMessagesByRound,
+        resolveAttack: async () => {
+            resolveCount += 1;
+            return {
+                hit: true,
+                declaredDamage: 9,
+                damage: 7,
+                application: {
+                    targetId: 'npc-1',
+                    targetName: 'Hollow Sentinel Valdrus',
+                    damageDeclared: 9,
+                    damageApplied: 7,
+                    startingHealth: 50,
+                    endingHealth: 43,
+                    rawRemainingHealth: 43,
+                    maxHealthBefore: 50,
+                    maxHealthAfter: 50,
+                    healthLostPercent: 14,
+                    remainingHealthPercent: 86
+                },
+                locationRefreshRequested: true,
+                summary: {
+                    hit: true,
+                    attacker: { name: 'The player' },
+                    defender: { name: 'Hollow Sentinel Valdrus' },
+                    damage: { total: 9, applied: 7 },
+                    target: {
+                        startingHealth: 50,
+                        remainingHealth: 43,
+                        healthLostPercent: 14,
+                        remainingHealthPercent: 86
+                    }
+                }
+            };
+        }
+    });
+
+    const result = await runtime.runChatCompletionWithToolLoop({
+        requestOptions: { messages: [{ role: 'user', content: 'Attack twice in drafts.' }] },
+        metadataLabel: 'test_resolve_attack_cache',
+        onToolCallDebug: event => {
+            debugEvents.push(structuredClone(event));
+        }
+    });
+
+    assert.equal(resolveCount, 1);
+    assert.equal(result.toolInvocations.length, 2);
+    assert.equal(result.toolInvocations[0].metadata.cached, false);
+    assert.equal(result.toolInvocations[1].metadata.cached, true);
+    assert.equal(result.toolInvocations[0].metadata.cacheKey, result.toolInvocations[1].metadata.cacheKey);
+    const toolMessages = capturedMessagesByRound[1].filter(message => message.role === 'tool');
+    assert.deepEqual(toolMessages.map(message => message.content), [
+        'Damage: 14%\nRemaining health: 86%',
+        'Damage: 14%\nRemaining health: 86%'
+    ]);
+    assert.equal(debugEvents.length, 4);
+    assert.equal(debugEvents[1].phase, 'completed');
+    assert.equal(debugEvents[1].cacheHit, false);
+    assert.equal(debugEvents[3].phase, 'completed');
+    assert.equal(debugEvents[3].cacheHit, true);
+    assert.equal(debugEvents[3].cacheKey, result.toolInvocations[1].metadata.cacheKey);
+    assert.equal(debugEvents[3].result.metadata.cached, true);
 });

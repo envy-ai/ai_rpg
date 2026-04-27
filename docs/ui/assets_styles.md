@@ -44,6 +44,7 @@
 ## Vendor libraries (public/vendor)
 Loaded on the chat page:
 - `cytoscape.min.js` + layout plugins (`cose-base`, `fcose`, `euler`) for maps.
+- `json-viewer.js`, vendored from `@andypf/json-viewer`, registers the `andypf-json-viewer` web component used for tool-call debug JSON sections.
 - `markdown-it.min.js` for chat markdown rendering.
 - `nunjucks.js` for client-side templating.
 - `vaadin.js` (loaded for UI assets; check usage before removal).
