@@ -133,7 +133,9 @@ If moving to a new location or region, the above characters are present at the *
 You will now perform a self-correction and brainstorming process, then write a final, polished story continuation.
 
 Follow these steps:
-
+{% if actionText %}
+0. Before you begin, do a quick sanity check on the playerAction text. If it looks like an incomplete sentence or just a fragment of an action or doesn't make sense, stop the instructions here and return <rejected><!-- your reason for rejecting --></rejected> and end the response. Furthermore, the player may only act on behalf of themselves, not other characters or NPCs, unless explicitly able to control them due to an item, ability, etc OR if it would be very reasonable to assume they would go along with what the player is doing. If they attempt to do do something unreasonable on behalf of the party without an ability, reject the action (this is different from being implausible in that we don't process the attempt). However, if they ask an NPC to do something, this is plausible, and may require a skill check depending on the NPC's disposition and relationship with the player.
+{% endif %}
 1a. List each of the 1-3 NPCs you picked to respond or act by name and 1-2 sentences about their current emotional or plot position, desires, and what they're grappling with, if anything.
 
 1b. Information gathering and tool calling: If necessary, call any tools that might provide necessary information for writing the prose that's missing from the context. Just write N/A for this item if you have all the information you need (which will be the typical case). Note that the context contains the entire story history, although earlier parts may be abbreviated. Tool calls are slow, so avoid them if you have enough information to write the prose without them. Use a maximum of 2 tool calls, preferably 0 or 1.

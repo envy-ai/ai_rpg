@@ -1840,7 +1840,7 @@ module.exports = function registerApiRoutes(scope) {
                 .replace(/<\s*hr\s*>/gi, '<hr/>');
         }
 
-        const playerActionProseRegex = /<finalProse>[\s\S]*\S[\s\S]*<\/finalProse>|<travelProse>[\s\S]*\S[\s\S]*<\/travelProse>/i;
+        const playerActionProseRegex = /<finalProse>[\s\S]*\S[\s\S]*<\/finalProse>|<travelProse>[\s\S]*\S[\s\S]*<\/travelProse>|<rejected>[\s\S]*<\/rejected>/i;
 
         function stripToXmlPayload(input) {
             if (typeof input !== 'string') {
@@ -2031,6 +2031,33 @@ module.exports = function registerApiRoutes(scope) {
                 : '';
         }
 
+        function extractRejectedPlayerActionReason(rejectedNode) {
+            if (!rejectedNode) {
+                return '';
+            }
+
+            const chunks = [];
+            const visit = (node) => {
+                if (!node) {
+                    return;
+                }
+                if (node.nodeType === 3 || node.nodeType === 4 || node.nodeType === 8) {
+                    const value = typeof node.nodeValue === 'string' ? node.nodeValue.trim() : '';
+                    if (value) {
+                        chunks.push(value);
+                    }
+                    return;
+                }
+                const childNodes = node.childNodes || [];
+                for (let index = 0; index < childNodes.length; index += 1) {
+                    visit(childNodes[index]);
+                }
+            };
+
+            visit(rejectedNode);
+            return chunks.join('\n').trim();
+        }
+
         function parseStructuredTravelProseDestination(destinationNode, { fieldLabel = 'travelProse destination' } = {}) {
             if (!destinationNode) {
                 return null;
@@ -2174,6 +2201,17 @@ module.exports = function registerApiRoutes(scope) {
                 const jsonPayload = xmlNodeToJson(doc.documentElement);
                 console.log('Parsed player action XML:', JSON.stringify(jsonPayload, null, 2));
             }
+            const rejectedNode = doc.getElementsByTagName('rejected')[0] || null;
+            if (rejectedNode) {
+                const rejectionReason = extractRejectedPlayerActionReason(rejectedNode) || 'Action rejected.';
+                return {
+                    prose: '',
+                    travel: null,
+                    rejected: {
+                        reason: rejectionReason
+                    }
+                };
+            }
             const finalNode = doc.getElementsByTagName('finalProse')[0] || null;
             const finalText = finalNode ? (finalNode.textContent || '').trim() : '';
             if (finalText) {
@@ -2253,7 +2291,7 @@ module.exports = function registerApiRoutes(scope) {
                     }
                 };
             }
-            throw new Error('Player action XML missing finalProse or travelProse.');
+            throw new Error('Player action XML missing finalProse, travelProse, or rejected.');
         }
 
         function parseSupplementalStoryInfoResponse(rawResponse) {
@@ -9220,6 +9258,17 @@ module.exports = function registerApiRoutes(scope) {
             return pushChatEntry(entry, collector, resolvedLocationId);
         }
 
+        function markChatEntryExcludedFromBaseContextHistory(entry) {
+            if (!entry || typeof entry !== 'object') {
+                return null;
+            }
+            entry.metadata = {
+                ...(entry.metadata && typeof entry.metadata === 'object' ? entry.metadata : {}),
+                excludeFromBaseContextHistory: true
+            };
+            return entry;
+        }
+
         function recordSlopRemovalEntry({ data, timestamp = null, parentId = null, locationId = null } = {}, collector = null) {
             if (!Array.isArray(chatHistory)) {
                 return null;
@@ -16173,6 +16222,7 @@ module.exports = function registerApiRoutes(scope) {
             let locationMemoriesProcessed = false;
             let currentActionIsTravel = false;
             let previousActionWasTravel = false;
+            let storedUserEntry = null;
             let travelUserEntry = null;
             let travelAssistantEntry = null;
             let traveledToLocationId = null;
@@ -16697,7 +16747,7 @@ module.exports = function registerApiRoutes(scope) {
                         if (Object.keys(metadata).length) {
                             entryPayload.metadata = metadata;
                         }
-                        const storedUserEntry = pushChatEntry(entryPayload, newChatEntries, playerChatLocationId);
+                        storedUserEntry = pushChatEntry(entryPayload, newChatEntries, playerChatLocationId);
                         if (isTravelMessage) {
                             travelUserEntry = storedUserEntry;
                         }
@@ -17664,6 +17714,68 @@ module.exports = function registerApiRoutes(scope) {
                     aiResponse = await LLMClient.chatCompletion(requestOptions);
                 }
                 let travelProsePayload = null;
+                const respondWithRejectedPlayerActionXml = (parsedProse, rawXmlResponse) => {
+                    const rejectionReasonRaw = parsedProse?.rejected?.reason || 'Action rejected.';
+                    const rejectionReason = typeof rejectionReasonRaw === 'string' && rejectionReasonRaw.trim().length
+                        ? rejectionReasonRaw.trim()
+                        : 'Action rejected.';
+                    markChatEntryExcludedFromBaseContextHistory(storedUserEntry);
+
+                    const rejectionInfo = {
+                        raw: typeof rawXmlResponse === 'string' && rawXmlResponse.trim().length
+                            ? rawXmlResponse.trim()
+                            : null,
+                        structured: {
+                            type: 'Rejected',
+                            reason: rejectionReason
+                        }
+                    };
+                    const responseData = {
+                        response: rejectionReason,
+                        plausibility: rejectionInfo
+                    };
+                    responseData.worldTime = buildWorldTimePayload();
+                    if (stream.requestId) {
+                        responseData.requestId = stream.requestId;
+                    }
+
+                    const rejectionDebug = {
+                        ...(debugInfo || baseDebugInfo),
+                        ...attackDebugData,
+                        usedPlayerTemplate: promptType === 'player-action',
+                        usedCreativeTemplate: promptType === 'creative-mode-action',
+                        plausibilityType: 'Rejected',
+                        rejectionReason,
+                        playerActionXmlRejected: true
+                    };
+                    responseData.debug = rejectionDebug;
+
+                    const rejectionLocationId = requireLocationId(location?.id || currentPlayer?.currentLocation, 'player action XML rejection entry');
+                    const rejectionMetadata = {
+                        excludeFromBaseContextHistory: true
+                    };
+                    if (stream.requestId) {
+                        rejectionMetadata.requestId = stream.requestId;
+                    }
+                    const rejectionMessageEntry = pushChatEntry({
+                        role: 'assistant',
+                        content: rejectionReason,
+                        locationId: rejectionLocationId,
+                        metadata: rejectionMetadata
+                    }, newChatEntries, rejectionLocationId);
+                    markChatEntryExcludedFromBaseContextHistory(rejectionMessageEntry);
+
+                    recordPlausibilityEntry({
+                        data: rejectionInfo,
+                        timestamp: rejectionMessageEntry?.timestamp || new Date().toISOString(),
+                        parentId: rejectionMessageEntry?.id || null,
+                        locationId: rejectionLocationId
+                    }, newChatEntries);
+
+                    stream.status('player_action:rejected', 'Action rejected.');
+                    responseData.messages = getClientMessages();
+                    return respond(responseData);
+                };
                 //console.log("Player Prose Request Options:", requestOptions);
 
                 if (typeof aiResponse === 'string' && aiResponse.trim()) {
@@ -17707,6 +17819,9 @@ module.exports = function registerApiRoutes(scope) {
 
                     if (shouldUseRepetitionBusterXml) {
                         const parsedProse = await parsePlayerActionProseFromXml(aiResponse, { logJson: true });
+                        if (parsedProse.rejected) {
+                            return respondWithRejectedPlayerActionXml(parsedProse, aiResponse);
+                        }
                         aiResponse = parsedProse.prose;
                         travelProsePayload = parsedProse.travel;
                     }
@@ -17742,6 +17857,9 @@ module.exports = function registerApiRoutes(scope) {
                                     if (typeof rerunResponse === 'string' && rerunResponse.trim()) {
                                         if (usesActionXmlResponse) {
                                             const parsedProse = await parsePlayerActionProseFromXml(rerunResponse, { logJson: true });
+                                            if (parsedProse.rejected) {
+                                                return respondWithRejectedPlayerActionXml(parsedProse, rerunResponse);
+                                            }
                                             aiResponse = parsedProse.prose;
                                             travelProsePayload = parsedProse.travel;
                                         } else {
