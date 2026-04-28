@@ -57,8 +57,20 @@ const SKILL_CHECK_CHAT_TOOL_NAMES = new Set([
     'resolveOpposedPlausibilityCheck'
 ]);
 
+const CHECK_RESULT_CHAT_TOOL_NAMES = new Set([
+    'resolveAttack',
+    'resolveSkillCheck',
+    'resolveOpposedSkillCheck',
+    'resolvePlausibilityCheck',
+    'resolveOpposedPlausibilityCheck'
+]);
+
 function isSkillCheckChatToolName(value) {
     return typeof value === 'string' && SKILL_CHECK_CHAT_TOOL_NAMES.has(value);
+}
+
+function isCheckResultChatToolName(value) {
+    return typeof value === 'string' && CHECK_RESULT_CHAT_TOOL_NAMES.has(value);
 }
 
 function isRegularProseChatToolAllowed(functionName) {
@@ -1938,7 +1950,7 @@ module.exports = function registerApiRoutes(scope) {
             return trimmed;
         }
 
-        function normalizeTravelProseVehicleTravelTimeField(value) {
+        function normalizeTravelProseTravelTimeField(value) {
             if (typeof value !== 'string') {
                 return null;
             }
@@ -1966,6 +1978,10 @@ module.exports = function registerApiRoutes(scope) {
             }
 
             return trimmed;
+        }
+
+        function normalizeTravelProseVehicleTravelTimeField(value) {
+            return normalizeTravelProseTravelTimeField(value);
         }
 
         function normalizeTravelProseDestinationField(value) {
@@ -2227,6 +2243,15 @@ module.exports = function registerApiRoutes(scope) {
                 const playerDestinationName = parseStructuredTravelProseDestination(playerDestinationNode, {
                     fieldLabel: 'travelProse player destination'
                 });
+                const playerDestinationTravelTimeNode = playerDestinationNode
+                    ? getDirectChildElementByTagName(playerDestinationNode, 'travelTime')
+                    : null;
+                const playerDestinationTravelTimeCandidate = normalizeTravelProseTravelTimeField(
+                    playerDestinationTravelTimeNode ? (playerDestinationTravelTimeNode.textContent || '') : ''
+                );
+                if (!playerDestinationName && playerDestinationTravelTimeCandidate) {
+                    throw new Error('travelProse player destination travelTime requires a player destination.');
+                }
                 const legacyVehicleNode = getDirectChildElementByTagName(travelNode, 'vehicle');
                 if (legacyVehicleNode) {
                     throw new Error('travelProse vehicle metadata must use <vehicleInfo>...</vehicleInfo>.');
@@ -2285,6 +2310,7 @@ module.exports = function registerApiRoutes(scope) {
                         vehicleTravelTime: vehicleTravelTime || null,
                         vehicleDestination: vehicleDestination || null,
                         playerDestination: playerDestinationName || null,
+                        playerDestinationTravelTime: playerDestinationName ? (playerDestinationTravelTimeCandidate || null) : null,
                         originProse: origin || null,
                         betweenProse: between || null,
                         destinationProse: destinationProse || null
@@ -4706,7 +4732,9 @@ module.exports = function registerApiRoutes(scope) {
         const resolveTravelProseDestination = async (destinationText, {
             allowCreate = false,
             originLocation = null,
-            createOriginExit = true
+            createOriginExit = true,
+            travelTimeMinutes = undefined,
+            updateExistingExitTravelTime = true
         } = {}) => {
             const raw = typeof destinationText === 'string' ? destinationText.trim() : '';
             if (!raw) {
@@ -4731,7 +4759,9 @@ module.exports = function registerApiRoutes(scope) {
                         originLocation,
                         descriptionHint: `Path leading to ${normalizedLocationName}.`,
                         expandStub: false,
-                        createOriginExit
+                        createOriginExit,
+                        travelTimeMinutes,
+                        updateExistingExitTravelTime
                     });
                     if (!created) {
                         throw new Error(`Failed to create travel destination "${normalizedLocationName}".`);
@@ -4803,7 +4833,9 @@ module.exports = function registerApiRoutes(scope) {
                     name: regionName,
                     originLocation,
                     description: `An unexplored region known as ${regionName}.`,
-                    createOriginExit
+                    createOriginExit,
+                    travelTimeMinutes,
+                    updateExistingExitTravelTime
                 });
                 if (!createdRegionEntryStub) {
                     throw new Error(`Failed to create travel destination region "${regionName}".`);
@@ -4861,7 +4893,9 @@ module.exports = function registerApiRoutes(scope) {
                     descriptionHint: `Path leading to ${locationName}.`,
                     expandStub: false,
                     targetRegionId,
-                    createOriginExit
+                    createOriginExit,
+                    travelTimeMinutes,
+                    updateExistingExitTravelTime
                 });
                 if (!created) {
                     throw new Error(`Failed to create travel destination "${locationName}" in region "${regionName}".`);
@@ -10478,6 +10512,19 @@ module.exports = function registerApiRoutes(scope) {
                     ? travelProsePayload.playerDestination
                     : ''
             );
+            const rawPlayerDestinationTravelTime = normalizeTravelProseTravelTimeField(
+                typeof travelProsePayload.playerDestinationTravelTime === 'string'
+                    ? travelProsePayload.playerDestinationTravelTime
+                    : ''
+            );
+            const playerDestinationTravelTimeMinutes = rawPlayerDestinationTravelTime
+                ? Utils.normalizeGeneratedExitTravelTimeMinutes(
+                    Utils.parseDurationToMinutes(rawPlayerDestinationTravelTime, {
+                        fieldName: 'travelProse <playerDestination><travelTime>'
+                    }),
+                    { fieldName: 'travelProse <playerDestination><travelTime>' }
+                )
+                : undefined;
             const overridePlayerDestinationText = normalizeTravelProseDestinationField(
                 typeof travelDestinationOverride?.destinationText === 'string'
                     ? travelDestinationOverride.destinationText
@@ -10779,7 +10826,11 @@ module.exports = function registerApiRoutes(scope) {
                         }
                         : await resolveTravelProseDestination(effectivePlayerDestinationText, {
                             allowCreate: true,
-                            originLocation: location
+                            originLocation: location,
+                            travelTimeMinutes: overridePlayerDestinationLocation
+                                ? undefined
+                                : playerDestinationTravelTimeMinutes,
+                            updateExistingExitTravelTime: false
                         });
                     destinationLocation = resolvedDestination.location;
                     if (!destinationLocation) {
@@ -10942,6 +10993,396 @@ module.exports = function registerApiRoutes(scope) {
             }
 
             return pushChatEntry(entry, collector, resolvedLocationId);
+        }
+
+        function createCheckResultsRecorder({
+            promptLabel,
+            locationId,
+            stream = null,
+            entryCollector = null,
+            requestId = null
+        } = {}) {
+            if (!Array.isArray(entryCollector)) {
+                throw new Error('createCheckResultsRecorder requires an entryCollector array.');
+            }
+
+            const resolvedLocationId = requireLocationId(locationId, 'check-results entry');
+            const label = typeof promptLabel === 'string' && promptLabel.trim()
+                ? promptLabel.trim()
+                : 'chat';
+            const resolvedRequestId = typeof requestId === 'string' && requestId.trim()
+                ? requestId.trim()
+                : (typeof stream?.requestId === 'string' && stream.requestId.trim() ? stream.requestId.trim() : null);
+            const records = [];
+            const recordsBySequence = new Map();
+            let entry = null;
+
+            const cloneCheckValue = (value) => {
+                try {
+                    return JSON.parse(JSON.stringify(value === undefined ? null : value));
+                } catch (error) {
+                    throw new Error(`Failed to clone check-result value: ${error.message}`);
+                }
+            };
+
+            const cleanText = (value) => (
+                typeof value === 'string' && value.trim() ? value.trim() : ''
+            );
+
+            const titleCaseOutcome = (value) => {
+                const text = cleanText(value);
+                if (!text) {
+                    return '';
+                }
+                return text
+                    .replace(/[_-]+/g, ' ')
+                    .replace(/\s+/g, ' ')
+                    .replace(/\b\w/g, character => character.toUpperCase());
+            };
+
+            const outcomeDegreeIcons = Object.freeze({
+                critical_failure: '💣',
+                major_failure: '🧨',
+                failure: '❌',
+                implausible_failure: '❌',
+                barely_failed: '😞',
+                barely_succeeded: '😰',
+                success: '✔️',
+                automatic_success: '✔️',
+                major_success: '⭐',
+                critical_success: '🌟'
+            });
+
+            const normalizeOutcomeKey = (value) => {
+                const text = cleanText(value);
+                if (!text) {
+                    return '';
+                }
+                return text.toLowerCase().replace(/[_\-\s]+/g, '_');
+            };
+
+            const resolveOutcomeIcon = (degree, { success = null, result = null } = {}) => {
+                const degreeKey = normalizeOutcomeKey(degree);
+                if (degreeKey && outcomeDegreeIcons[degreeKey]) {
+                    return outcomeDegreeIcons[degreeKey];
+                }
+
+                const resultKey = normalizeOutcomeKey(result);
+                if (resultKey && outcomeDegreeIcons[resultKey]) {
+                    return outcomeDegreeIcons[resultKey];
+                }
+                if (resultKey === 'hit') {
+                    return outcomeDegreeIcons.success;
+                }
+                if (resultKey === 'miss') {
+                    return outcomeDegreeIcons.failure;
+                }
+
+                if (success === true) {
+                    return outcomeDegreeIcons.success;
+                }
+                if (success === false) {
+                    return outcomeDegreeIcons.failure;
+                }
+                return '';
+            };
+
+            const prefixOutcomeIcon = (summary, icon) => {
+                if (!icon) {
+                    return summary;
+                }
+                return `${icon} ${summary}`;
+            };
+
+            const resolveKind = (toolName, metadata = {}) => {
+                if (toolName === 'resolveAttack') {
+                    return 'attack';
+                }
+                const checkType = cleanText(metadata.checkType).toLowerCase();
+                if (toolName === 'resolveOpposedSkillCheck'
+                    || toolName === 'resolveOpposedPlausibilityCheck'
+                    || checkType === 'opposed') {
+                    return 'opposed-skill';
+                }
+                return 'skill';
+            };
+
+            const summarizeRunningCheck = (record) => {
+                const params = record.parameters && typeof record.parameters === 'object'
+                    ? record.parameters
+                    : {};
+                if (record.kind === 'attack') {
+                    const attacker = cleanText(params.attacker) || 'Attacker';
+                    const defender = cleanText(params.defender) || 'defender';
+                    return `Resolving attack: ${attacker} -> ${defender}`;
+                }
+
+                const actor = cleanText(params.actor) || 'Actor';
+                const skill = cleanText(params.skill) || 'skill';
+                const opponent = cleanText(params.opponent);
+                if (record.kind === 'opposed-skill' && opponent) {
+                    return `Resolving ${actor}'s ${skill} vs ${opponent}`;
+                }
+                return `Resolving ${actor}'s ${skill}`;
+            };
+
+            const summarizeSkillCheck = (record, metadata) => {
+                const resolution = metadata?.actionResolution && typeof metadata.actionResolution === 'object'
+                    ? metadata.actionResolution
+                    : null;
+                if (!resolution) {
+                    return summarizeRunningCheck(record);
+                }
+
+                const params = record.parameters && typeof record.parameters === 'object'
+                    ? record.parameters
+                    : {};
+                const opponent = resolution.opponent && typeof resolution.opponent === 'object'
+                    ? resolution.opponent
+                    : null;
+
+                const actor = cleanText(metadata.actor)
+                    || cleanText(params.actor)
+                    || 'Actor';
+                const skill = cleanText(resolution.skill)
+                    || cleanText(params.skill)
+                    || 'Skill check';
+                const outcome = titleCaseOutcome(resolution.label)
+                    || titleCaseOutcome(metadata.result)
+                    || (resolution.success ? 'Success' : 'Failure');
+
+                const subject = record.kind === 'opposed-skill'
+                    ? `${actor}'s ${skill} vs ${cleanText(opponent?.name) || cleanText(metadata.opponent) || cleanText(params.opponent) || 'opponent'}`
+                    : `${actor}'s ${skill}`;
+
+                const summary = `${subject}: ${outcome}`;
+                return prefixOutcomeIcon(summary, resolveOutcomeIcon(resolution.degree, {
+                    success: typeof resolution.success === 'boolean' ? resolution.success : null,
+                    result: resolution.label || metadata?.result || null
+                }));
+            };
+
+            const summarizeAttackCheck = (record, metadata) => {
+                const summary = metadata?.summary && typeof metadata.summary === 'object'
+                    ? metadata.summary
+                    : null;
+                const params = record.parameters && typeof record.parameters === 'object'
+                    ? record.parameters
+                    : {};
+                const attacker = cleanText(summary?.attacker?.name)
+                    || cleanText(metadata?.attacker)
+                    || cleanText(params.attacker)
+                    || 'Attacker';
+                const defender = cleanText(summary?.defender?.name)
+                    || cleanText(metadata?.defender)
+                    || cleanText(params.defender)
+                    || 'defender';
+
+                const hit = typeof summary?.hit === 'boolean'
+                    ? summary.hit
+                    : (typeof metadata?.hit === 'boolean' ? metadata.hit : null);
+                const parts = [];
+                if (hit === true) {
+                    parts.push('Hit');
+                } else if (hit === false) {
+                    parts.push('Miss');
+                } else {
+                    parts.push(titleCaseOutcome(metadata?.result) || 'Resolved');
+                }
+
+                const summaryText = `${attacker} -> ${defender}: ${parts.join(', ')}`;
+                return prefixOutcomeIcon(summaryText, resolveOutcomeIcon(null, {
+                    success: hit,
+                    result: hit === true ? 'hit' : (hit === false ? 'miss' : metadata?.result || null)
+                }));
+            };
+
+            const summarizeCompletedCheck = (record, metadata) => {
+                if (record.kind === 'attack') {
+                    return summarizeAttackCheck(record, metadata);
+                }
+                return summarizeSkillCheck(record, metadata);
+            };
+
+            const summarizeErrorCheck = (record) => {
+                const base = summarizeRunningCheck(record).replace(/^Resolving\s+/, '');
+                return `${base}: check failed`;
+            };
+
+            const buildContent = () => {
+                const lines = [`Checks for ${label}`];
+                if (resolvedRequestId) {
+                    lines.push(`Request: ${resolvedRequestId}`);
+                }
+                if (!records.length) {
+                    lines.push('', 'No checks recorded yet.');
+                    return lines.join('\n');
+                }
+                records.forEach(record => {
+                    lines.push('', `${record.sequence}. ${record.summary || summarizeRunningCheck(record)}`);
+                    lines.push(`Status: ${record.status || 'unknown'}`);
+                    if (record.cacheHit) {
+                        lines.push('Cache: hit');
+                    }
+                });
+                return lines.join('\n');
+            };
+
+            const updateEntry = () => {
+                const completedCount = records.filter(record => record.status === 'completed').length;
+                const errorCount = records.filter(record => record.status === 'error').length;
+                const summary = `Checks: ${records.length} check${records.length === 1 ? '' : 's'}, ${completedCount} complete, ${errorCount} error${errorCount === 1 ? '' : 's'}.`;
+                const publicRecords = records.map(record => {
+                    const publicRecord = {
+                        sequence: record.sequence,
+                        kind: record.kind,
+                        status: record.status,
+                        summary: record.summary
+                    };
+                    if (record.cacheHit) {
+                        publicRecord.cacheHit = true;
+                    }
+                    if (record.cacheKey) {
+                        publicRecord.cacheKey = record.cacheKey;
+                    }
+                    if (record.skillCheck) {
+                        publicRecord.skillCheck = record.skillCheck;
+                    }
+                    if (record.attackSummary) {
+                        publicRecord.attackSummary = record.attackSummary;
+                    }
+                    if (record.error) {
+                        publicRecord.error = record.error;
+                    }
+                    return publicRecord;
+                });
+                const clonedRecords = cloneCheckValue(publicRecords);
+
+                if (!entry) {
+                    entry = pushChatEntry({
+                        role: 'assistant',
+                        type: 'check-results',
+                        content: buildContent(),
+                        summary,
+                        checkResults: clonedRecords,
+                        locationId: resolvedLocationId,
+                        metadata: {
+                            excludeFromBaseContextHistory: true,
+                            checkResults: true,
+                            requestId: resolvedRequestId,
+                            promptLabel: label
+                        }
+                    }, entryCollector, resolvedLocationId);
+                } else {
+                    entry.content = buildContent();
+                    entry.summary = summary;
+                    entry.checkResults = clonedRecords;
+                }
+
+                entry.metadata = {
+                    ...(entry.metadata && typeof entry.metadata === 'object' ? entry.metadata : {}),
+                    excludeFromBaseContextHistory: true,
+                    checkResults: true,
+                    requestId: resolvedRequestId,
+                    promptLabel: label,
+                    checkResultCount: records.length,
+                    completedCheckResultCount: completedCount,
+                    erroredCheckResultCount: errorCount
+                };
+
+                if (stream?.isEnabled) {
+                    stream.emit('chat_history_updated', {
+                        reason: 'check_results',
+                        entryId: entry.id || null
+                    });
+                }
+            };
+
+            return {
+                hasRecords() {
+                    return records.length > 0;
+                },
+                hasEntry() {
+                    return Boolean(entry);
+                },
+                record(event) {
+                    if (!event || typeof event !== 'object') {
+                        throw new Error('Check-results recorder received an invalid event.');
+                    }
+                    if (!isCheckResultChatToolName(event.name)) {
+                        return;
+                    }
+
+                    const sequence = Number(event.sequence);
+                    if (!Number.isInteger(sequence) || sequence <= 0) {
+                        throw new Error('Check-results recorder requires a positive integer sequence.');
+                    }
+
+                    const eventPromptLabel = cleanText(event.metadataLabel) || label;
+                    const recordKey = `${eventPromptLabel}:${sequence}`;
+                    let record = recordsBySequence.get(recordKey);
+                    if (!record) {
+                        const initialMetadata = event.result?.metadata && typeof event.result.metadata === 'object'
+                            ? event.result.metadata
+                            : {};
+                        record = {
+                            sequence: records.length + 1,
+                            loopSequence: sequence,
+                            sourceLabel: eventPromptLabel,
+                            round: Number.isInteger(Number(event.round)) ? Number(event.round) : null,
+                            id: typeof event.id === 'string' ? event.id : null,
+                            toolName: cleanText(event.name) || 'unknownTool',
+                            kind: resolveKind(event.name, initialMetadata),
+                            status: 'running',
+                            summary: '',
+                            parameters: event.parameters && typeof event.parameters === 'object'
+                                ? cloneCheckValue(event.parameters)
+                                : {}
+                        };
+                        record.summary = summarizeRunningCheck(record);
+                        recordsBySequence.set(recordKey, record);
+                        records.push(record);
+                    }
+
+                    if (event.phase === 'completed') {
+                        const metadata = event.result?.metadata && typeof event.result.metadata === 'object'
+                            ? event.result.metadata
+                            : {};
+                        record.kind = resolveKind(record.toolName, metadata);
+                        record.status = 'completed';
+                        record.summary = summarizeCompletedCheck(record, metadata);
+                        record.cacheHit = Boolean(event.cacheHit || metadata.cached);
+                        record.cacheKey = cleanText(event.cacheKey) || cleanText(metadata.cacheKey) || null;
+                        delete record.error;
+                        if (record.kind === 'attack') {
+                            record.attackSummary = metadata.summary && typeof metadata.summary === 'object'
+                                ? cloneCheckValue(metadata.summary)
+                                : null;
+                        } else {
+                            record.skillCheck = metadata.actionResolution && typeof metadata.actionResolution === 'object'
+                                ? cloneCheckValue(metadata.actionResolution)
+                                : null;
+                        }
+                    } else if (event.phase === 'error') {
+                        record.status = 'error';
+                        record.summary = summarizeErrorCheck(record);
+                        record.error = {
+                            message: cleanText(event.error?.message) || 'Check resolution failed.'
+                        };
+                        record.cacheHit = false;
+                        record.cacheKey = null;
+                    } else if (event.phase === 'started') {
+                        record.status = 'running';
+                        record.summary = summarizeRunningCheck(record);
+                        record.cacheHit = false;
+                        record.cacheKey = null;
+                    } else {
+                        throw new Error(`Unknown check-results phase "${event.phase}".`);
+                    }
+
+                    updateEntry();
+                }
+            };
         }
 
         function loadRandomEventLines(type) {
@@ -15192,6 +15633,13 @@ module.exports = function registerApiRoutes(scope) {
                         requestId: stream?.requestId || null
                     })
                     : null;
+                const checkResultsRecorder = createCheckResultsRecorder({
+                    promptLabel: aiMetricsLabel,
+                    locationId: locationOverride?.id || actor.currentLocation || currentPlayer?.currentLocation,
+                    stream,
+                    entryCollector,
+                    requestId: stream?.requestId || null
+                });
 
                 let raw = '';
                 if (enabledChatTools.length > 0) {
@@ -15201,6 +15649,7 @@ module.exports = function registerApiRoutes(scope) {
                         metadataLabel: aiMetricsLabel,
                         toolResultCache,
                         defaultToolActor: actor.name || null,
+                        onToolCallEvent: event => checkResultsRecorder.record(event),
                         onToolCallDebug: toolCallDebugRecorder
                             ? event => toolCallDebugRecorder.record(event)
                             : null
@@ -15243,7 +15692,12 @@ module.exports = function registerApiRoutes(scope) {
                     debug.toolInvocations = toolInvocations;
                 }
 
-                return { raw, debug, toolInvocations };
+                return {
+                    raw,
+                    debug,
+                    toolInvocations,
+                    checkResultsRecorded: checkResultsRecorder.hasRecords()
+                };
             } catch (error) {
                 console.warn(`Failed to run action narrative for ${actor.name}:`, error.message);
                 return { raw: '', debug: { error: error.message } };
@@ -15588,6 +16042,9 @@ module.exports = function registerApiRoutes(scope) {
                     if (npcSlopRemovalInfo) {
                         npcTurnResult.slopRemoval = npcSlopRemovalInfo;
                     }
+                    if (narrativeResult.checkResultsRecorded === true) {
+                        npcTurnResult.checkResultsRecorded = true;
+                    }
                     const narrativeToolInvocations = Array.isArray(narrativeResult.toolInvocations)
                         ? narrativeResult.toolInvocations
                         : [];
@@ -15604,14 +16061,16 @@ module.exports = function registerApiRoutes(scope) {
                         if (attackToolSummaries.length) {
                             npcTurnResult.attackSummaries = attackToolSummaries;
                             npcTurnResult.attackSummary = npcTurnResult.attackSummary || attackToolSummaries[0];
-                            attackToolSummaries.forEach(summary => {
-                                recordAttackCheckEntry({
-                                    summary,
-                                    timestamp: npcTurnTimestamp,
-                                    parentId: npcTurnEntry?.id || null,
-                                    locationId: npcTurnLocationId
-                                }, entryCollector);
-                            });
+                            if (narrativeResult.checkResultsRecorded !== true) {
+                                attackToolSummaries.forEach(summary => {
+                                    recordAttackCheckEntry({
+                                        summary,
+                                        timestamp: npcTurnTimestamp,
+                                        parentId: npcTurnEntry?.id || null,
+                                        locationId: npcTurnLocationId
+                                    }, entryCollector);
+                                });
+                            }
                         }
                         const attackToolInvocation = narrativeToolInvocations.find(entry => (
                             entry?.name === 'resolveAttack'
@@ -15708,8 +16167,12 @@ module.exports = function registerApiRoutes(scope) {
                     }
 
                     const npcActionResolutionsForLogging = Array.isArray(npcTurnResult.actionResolutions)
-                        ? npcTurnResult.actionResolutions.filter(resolution => resolution && typeof resolution === 'object')
-                        : (npcTurnResult.actionResolution ? [npcTurnResult.actionResolution] : []);
+                        ? (npcTurnResult.checkResultsRecorded === true
+                            ? []
+                            : npcTurnResult.actionResolutions.filter(resolution => resolution && typeof resolution === 'object'))
+                        : (npcTurnResult.checkResultsRecorded === true
+                            ? []
+                            : (npcTurnResult.actionResolution ? [npcTurnResult.actionResolution] : []));
                     npcActionResolutionsForLogging.forEach(resolution => {
                         recordSkillCheckEntry({
                             resolution,
@@ -17672,6 +18135,13 @@ module.exports = function registerApiRoutes(scope) {
                         locationId: location?.id || currentPlayer?.currentLocation
                     })
                     : null;
+                const checkResultsRecorder = createCheckResultsRecorder({
+                    promptLabel: promptMetadataLabel,
+                    locationId: location?.id || currentPlayer?.currentLocation,
+                    stream,
+                    entryCollector: newChatEntries,
+                    requestId: stream.requestId || null
+                });
                 const requestOptions = {
                     messages: finalMessages,
                     metadataLabel: promptMetadataLabel,
@@ -17702,6 +18172,7 @@ module.exports = function registerApiRoutes(scope) {
                         streamEmitter: stream,
                         metadataLabel: promptMetadataLabel,
                         toolResultCache,
+                        onToolCallEvent: event => checkResultsRecorder.record(event),
                         onToolCallDebug: toolCallDebugRecorder
                             ? event => toolCallDebugRecorder.record(event)
                             : null
@@ -17846,6 +18317,7 @@ module.exports = function registerApiRoutes(scope) {
                                         streamEmitter: stream,
                                         metadataLabel: `${promptMetadataLabel}_rerun`,
                                         toolResultCache,
+                                        onToolCallEvent: event => checkResultsRecorder.record(event),
                                         onToolCallDebug: toolCallDebugRecorder
                                             ? event => toolCallDebugRecorder.record(event)
                                             : null
@@ -17936,6 +18408,10 @@ module.exports = function registerApiRoutes(scope) {
 
                     if (toolInvocations.length) {
                         responseData.toolInvocations = toolInvocations;
+                        const toolCheckResultsRecorded = checkResultsRecorder.hasRecords();
+                        if (toolCheckResultsRecorded) {
+                            responseData.checkResultsRecorded = true;
+                        }
                         if (toolInvocations.some(entry => entry?.metadata?.locationRefreshRequested)) {
                             responseData.locationRefreshRequested = true;
                         }
@@ -17946,7 +18422,7 @@ module.exports = function registerApiRoutes(scope) {
                             .map(entry => entry.metadata.summary);
                         if (attackToolSummaries.length) {
                             responseData.attackSummaries = attackToolSummaries;
-                            if (aiResponseEntry) {
+                            if (aiResponseEntry && !toolCheckResultsRecorded) {
                                 attackToolSummaries.forEach(summary => {
                                     recordAttackCheckEntry({
                                         summary,
@@ -18762,8 +19238,12 @@ module.exports = function registerApiRoutes(scope) {
                     }
 
                     const actionResolutionsForLogging = Array.isArray(responseData.actionResolutions)
-                        ? responseData.actionResolutions.filter(resolution => resolution && typeof resolution === 'object')
-                        : (responseData.actionResolution ? [responseData.actionResolution] : []);
+                        ? (responseData.checkResultsRecorded === true
+                            ? []
+                            : responseData.actionResolutions.filter(resolution => resolution && typeof resolution === 'object'))
+                        : (responseData.checkResultsRecorded === true
+                            ? []
+                            : (responseData.actionResolution ? [responseData.actionResolution] : []));
                     actionResolutionsForLogging.forEach(resolution => {
                         recordSkillCheckEntry({
                             resolution,
@@ -18790,7 +19270,7 @@ module.exports = function registerApiRoutes(scope) {
                     const attackSummaryForLogging = responseData.attackSummary
                         || responseData.attackCheck?.summary
                         || null;
-                    if (attackSummaryForLogging) {
+                    if (attackSummaryForLogging && responseData.checkResultsRecorded !== true) {
                         recordAttackCheckEntry({
                             summary: attackSummaryForLogging,
                             attackCheck: responseData.attackCheck || null,

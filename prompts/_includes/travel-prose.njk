@@ -29,6 +29,7 @@
     {% endif -%}
     <location><!-- The exact location of the player's destination, if known. Omit this tag if the destination is a new region or if the specific location isn't known. Example: "City Hall Exterior" --></location>
     <region><!-- The exact region of the player's destination. Omit if the destination is in the current region. Example: "Johnstown" --></region>
+    <travelTime><!-- Travel time with units (minutes and/or hours only), e.g. "1 hour", "30 minutes", "1 hour 30 minutes", "1.5 hours". Travel time should be realistic based on the distance and terrain, with a minimum of 1 minute for tiny adjacent spaces, at least 5 minutes for locations in small towns, at least 15 minutes in large cities, and 30 minutes or even multiple hours in wild terrain. --></travelTime>
   </playerDestination>
 
   <!-- Use ANY COMBINATION OF AT LEAST ONE OF THE BELOW (originProse, betweenProse, and/or destinationProse). If no prose applies to one or two sections, omit them.{% if currentVehicle and not currentVehicle.vehicleInfo.hasArrived %}

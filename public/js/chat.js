@@ -1586,6 +1586,10 @@ class AIRPGChat {
             return this.createAttackCheckEntryElement(entry);
         }
 
+        if (entry.type === 'check-results') {
+            return this.createCheckResultsEntryElement(entry);
+        }
+
         if (entry.type === 'tool-call-debug') {
             return this.createToolCallDebugEntryElement(entry);
         }
@@ -1808,6 +1812,163 @@ class AIRPGChat {
         viewer.preserveExpanded = true;
         viewer.data = value === undefined ? null : value;
         return viewer;
+    }
+
+    createCheckResultsEntryElement(entry) {
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'message ai-message check-results-message';
+        messageDiv.dataset.type = 'check-results';
+        messageDiv.dataset.timestamp = entry.timestamp || '';
+        messageDiv.dataset.entryId = entry.id || '';
+
+        const senderDiv = document.createElement('div');
+        senderDiv.className = 'message-sender';
+        senderDiv.textContent = '🎲 Checks';
+
+        const contentDiv = document.createElement('div');
+        contentDiv.className = 'message-content check-results-content';
+
+        const records = Array.isArray(entry.checkResults) ? entry.checkResults : [];
+        if (records.length) {
+            if (entry.summary) {
+                const overview = document.createElement('div');
+                overview.className = 'check-results-overview';
+                overview.textContent = String(entry.summary);
+                contentDiv.appendChild(overview);
+            }
+            records.forEach((record, index) => {
+                contentDiv.appendChild(this.createCheckResultRecordElement(record, index));
+            });
+        } else {
+            this.setMessageContent(
+                contentDiv,
+                entry.content || 'No checks recorded yet.',
+                { allowMarkdown: true }
+            );
+        }
+
+        const timestampDiv = document.createElement('div');
+        timestampDiv.className = 'message-timestamp';
+        timestampDiv.textContent = this.formatTimestamp(entry.timestamp);
+
+        messageDiv.appendChild(senderDiv);
+        messageDiv.appendChild(contentDiv);
+        messageDiv.appendChild(timestampDiv);
+
+        const actions = this.createMessageActions(entry);
+        if (actions) {
+            messageDiv.appendChild(actions);
+        }
+
+        return messageDiv;
+    }
+
+    createCheckResultRecordElement(record, index) {
+        if (!record || typeof record !== 'object') {
+            throw new Error('Check-results entry contains an invalid record.');
+        }
+
+        const rawStatus = typeof record.status === 'string' && record.status.trim()
+            ? record.status.trim()
+            : 'unknown';
+        const status = ['running', 'completed', 'error', 'unknown'].includes(rawStatus)
+            ? rawStatus
+            : 'unknown';
+        const rawKind = typeof record.kind === 'string' && record.kind.trim()
+            ? record.kind.trim()
+            : 'check';
+        const kind = rawKind.replace(/[^a-z0-9_-]+/gi, '-').toLowerCase() || 'check';
+
+        const details = document.createElement('details');
+        details.className = `check-result-item check-result-item--${status} check-result-item--${kind}`;
+        if (record.cacheHit) {
+            details.classList.add('check-result-item--cache-hit');
+        }
+
+        const summary = document.createElement('summary');
+        summary.className = 'check-result-summary';
+
+        const title = document.createElement('span');
+        title.className = 'check-result-title';
+        title.textContent = this.resolveCheckResultSummaryText(record);
+        summary.appendChild(title);
+
+        const meta = document.createElement('span');
+        meta.className = 'check-result-meta';
+        meta.textContent = record.cacheHit ? 'cache hit' : status;
+        summary.appendChild(meta);
+
+        details.appendChild(summary);
+
+        const body = document.createElement('div');
+        body.className = 'check-result-body';
+        const detailsHtml = this.buildCheckResultDetailsHtml(record);
+        if (detailsHtml) {
+            const detailsWrapper = document.createElement('div');
+            detailsWrapper.className = 'check-result-details';
+            detailsWrapper.innerHTML = detailsHtml;
+            body.appendChild(detailsWrapper);
+        } else if (status === 'error') {
+            const error = document.createElement('div');
+            error.className = 'check-result-error';
+            error.textContent = record.error?.message || 'Check resolution failed.';
+            body.appendChild(error);
+        } else if (status === 'running') {
+            const pending = document.createElement('div');
+            pending.className = 'check-result-pending';
+            pending.textContent = 'Resolving...';
+            body.appendChild(pending);
+        } else {
+            const empty = document.createElement('div');
+            empty.className = 'check-result-pending';
+            empty.textContent = 'No check details were recorded.';
+            body.appendChild(empty);
+        }
+
+        details.appendChild(body);
+        return details;
+    }
+
+    resolveCheckResultSummaryText(record) {
+        if (record && typeof record.summary === 'string' && record.summary.trim()) {
+            const summary = record.summary.trim();
+            if (record.kind === 'attack') {
+                return summary
+                    .replace(/,\s*[-+]?\d+(?:\.\d+)?\s+damage(?:,\s*[-+]?\d+(?:\.\d+)?%\s+remaining)?$/i, '')
+                    .replace(/,\s*[-+]?\d+(?:\.\d+)?%\s+remaining$/i, '');
+            }
+            if (record.kind === 'skill' || record.kind === 'opposed-skill') {
+                return summary
+                    .replace(/,\s*(?:total\s+)?[-+]?\d+(?:\.\d+)?(?:\s+vs\s+(?:DC\s+)?[-+]?\d+(?:\.\d+)?)?(?:,\s*margin\s+[-+]?\d+(?:\.\d+)?)?$/i, '')
+                    .replace(/,\s*margin\s+[-+]?\d+(?:\.\d+)?$/i, '');
+            }
+            return summary;
+        }
+        if (record?.kind === 'attack') {
+            return 'Attack check';
+        }
+        if (record?.kind === 'opposed-skill') {
+            return 'Opposed skill check';
+        }
+        if (record?.kind === 'skill') {
+            return 'Skill check';
+        }
+        return 'Check';
+    }
+
+    buildCheckResultDetailsHtml(record) {
+        if (!record || typeof record !== 'object') {
+            return '';
+        }
+        if ((record.kind === 'skill' || record.kind === 'opposed-skill') && record.skillCheck) {
+            const details = this.generateSkillCheckInsight(record.skillCheck);
+            return details?.html || '';
+        }
+        if (record.kind === 'attack' && record.attackSummary) {
+            const details = this.generateAttackCheckInsight(record.attackSummary);
+            return details?.html || '';
+        }
+        return '';
     }
 
     appendTurnDiffDrawer(parentElement, turnDiffEntries = []) {
@@ -7152,6 +7313,7 @@ class AIRPGChat {
             }
         }
 
+        const checkResultsRecorded = payload.checkResultsRecorded === true;
         const actionResolutions = [];
         const hasActionResolutionsArray = Array.isArray(payload.actionResolutions);
         if (hasActionResolutionsArray) {
@@ -7164,7 +7326,7 @@ class AIRPGChat {
         if (!hasActionResolutionsArray && payload.actionResolution && typeof payload.actionResolution === 'object') {
             actionResolutions.push(payload.actionResolution);
         }
-        if (actionResolutions.length) {
+        if (!checkResultsRecorded && actionResolutions.length) {
             if (context && !context.renderedActionResolutionKeys) {
                 context.renderedActionResolutionKeys = new Set();
             }
@@ -7202,7 +7364,7 @@ class AIRPGChat {
         if (!hasAttackSummariesArray && resolvedAttackSummary && typeof resolvedAttackSummary === 'object') {
             attackSummaries.push(resolvedAttackSummary);
         }
-        if (attackSummaries.length) {
+        if (!checkResultsRecorded && attackSummaries.length) {
             if (context && !context.renderedAttackSummaryKeys) {
                 context.renderedAttackSummaryKeys = new Set();
             }
@@ -7378,6 +7540,7 @@ class AIRPGChat {
         if (Array.isArray(turn.corpseRemovals) && turn.corpseRemovals.length) {
             window.removeNpcCards?.(turn.corpseRemovals);
         }
+        const turnCheckResultsRecorded = turn.checkResultsRecorded === true;
         const attackSummaries = [];
         const hasAttackSummariesArray = Array.isArray(turn.attackSummaries);
         if (hasAttackSummariesArray) {
@@ -7391,7 +7554,7 @@ class AIRPGChat {
         if (!hasAttackSummariesArray && resolvedAttackSummary && typeof resolvedAttackSummary === 'object') {
             attackSummaries.push(resolvedAttackSummary);
         }
-        if (attackSummaries.length) {
+        if (!turnCheckResultsRecorded && attackSummaries.length) {
             if (context && !context.renderedNpcAttackSummaryKeys) {
                 context.renderedNpcAttackSummaryKeys = new Set();
             }
@@ -7420,7 +7583,7 @@ class AIRPGChat {
         if (!hasActionResolutionsArray && turn.actionResolution && typeof turn.actionResolution === 'object') {
             actionResolutions.push(turn.actionResolution);
         }
-        if (actionResolutions.length) {
+        if (!turnCheckResultsRecorded && actionResolutions.length) {
             if (context && !context.renderedNpcActionResolutionKeys) {
                 context.renderedNpcActionResolutionKeys = new Set();
             }

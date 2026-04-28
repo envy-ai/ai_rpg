@@ -4561,6 +4561,7 @@ const createChatToolRuntime = ({
         metadataLabel = 'chat',
         toolResultCache = null,
         onToolCallDebug = null,
+        onToolCallEvent = null,
         defaultToolActor = null
     }) => {
         if (!requestOptions || typeof requestOptions !== 'object') {
@@ -4571,6 +4572,9 @@ const createChatToolRuntime = ({
         }
         if (onToolCallDebug !== null && onToolCallDebug !== undefined && typeof onToolCallDebug !== 'function') {
             throw new Error('runChatCompletionWithToolLoop onToolCallDebug must be a function when provided.');
+        }
+        if (onToolCallEvent !== null && onToolCallEvent !== undefined && typeof onToolCallEvent !== 'function') {
+            throw new Error('runChatCompletionWithToolLoop onToolCallEvent must be a function when provided.');
         }
 
         const config = getConfig();
@@ -4596,11 +4600,13 @@ const createChatToolRuntime = ({
         const resultCache = normalizeToolResultCache(toolResultCache, { metadataLabel });
         const defaultActorName = normalizeOptionalString(defaultToolActor);
         let toolInvocationSequence = 0;
-        const notifyToolCallDebug = async (payload) => {
-            if (typeof onToolCallDebug !== 'function') {
-                return;
+        const notifyToolCallLifecycle = async (payload) => {
+            if (typeof onToolCallEvent === 'function') {
+                await onToolCallEvent(payload);
             }
-            await onToolCallDebug(payload);
+            if (typeof onToolCallDebug === 'function') {
+                await onToolCallDebug(payload);
+            }
         };
 
         while (!completed) {
@@ -4700,7 +4706,7 @@ const createChatToolRuntime = ({
                     parameters: toolCall.argumentsObject,
                     argumentsText: toolCall.argumentsText
                 };
-                await notifyToolCallDebug({
+                await notifyToolCallLifecycle({
                     ...debugBase,
                     phase: 'started'
                 });
@@ -4711,7 +4717,7 @@ const createChatToolRuntime = ({
                         throw new Error(`Tool "${toolCall.functionName}" returned empty content.`);
                     }
                     const cacheHit = Boolean(toolResult.metadata?.cached);
-                    await notifyToolCallDebug({
+                    await notifyToolCallLifecycle({
                         ...debugBase,
                         phase: 'completed',
                         cacheHit,
@@ -4735,7 +4741,7 @@ const createChatToolRuntime = ({
                         content: toolResult.content
                     });
                 } catch (error) {
-                    await notifyToolCallDebug({
+                    await notifyToolCallLifecycle({
                         ...debugBase,
                         phase: 'error',
                         error: {

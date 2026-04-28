@@ -9254,7 +9254,7 @@ function normalizeRegionLocationName(name) {
     return typeof name === 'string' ? name.trim().toLowerCase() : '';
 }
 
-function ensureExitConnection(fromLocation, toLocation, { description, bidirectional = false, destinationRegion, travelTimeMinutes = undefined, isVehicle = undefined, vehicleType = undefined } = {}) {
+function ensureExitConnection(fromLocation, toLocation, { description, bidirectional = false, destinationRegion, travelTimeMinutes = undefined, updateExistingExitTravelTime = true, isVehicle = undefined, vehicleType = undefined } = {}) {
     if (!fromLocation || !toLocation) {
         console.log('🧭 ensureExitConnection aborted: missing from/to location');
         console.trace();
@@ -9373,7 +9373,7 @@ function ensureExitConnection(fromLocation, toLocation, { description, bidirecti
         } catch (_) {
             exit.update({ bidirectional: Boolean(bidirectional) });
         }
-        if (travelTimeMinutes !== undefined) {
+        if (travelTimeMinutes !== undefined && updateExistingExitTravelTime !== false) {
             try {
                 exit.travelTimeMinutes = travelTimeMinutes;
             } catch (_) {
@@ -9416,6 +9416,9 @@ function ensureExitConnection(fromLocation, toLocation, { description, bidirecti
     }
 
     if (bidirectional) {
+        const reverseTravelTimeMinutes = travelTimeMinutes !== undefined && updateExistingExitTravelTime !== false
+            ? travelTimeMinutes
+            : exit?.travelTimeMinutes;
         let reverseDestinationRegion = null;
         const reverseRegion = findRegionByLocationId(fromLocation.id);
         if (reverseRegion) {
@@ -9434,7 +9437,8 @@ function ensureExitConnection(fromLocation, toLocation, { description, bidirecti
                 description: `Path back to ${fromLocation.name || fromLocation.id}`,
                 bidirectional: false,
                 destinationRegion: reverseDestinationRegion,
-                travelTimeMinutes: travelTimeMinutes !== undefined ? travelTimeMinutes : exit?.travelTimeMinutes,
+                travelTimeMinutes: reverseTravelTimeMinutes,
+                updateExistingExitTravelTime,
                 isVehicle: resolvedIsVehicle,
                 vehicleType: resolvedVehicleType
             }
@@ -9458,7 +9462,8 @@ function buildLocationEventStubMetadata({
     resolvedVehicleType = null,
     resolvedIsVehicle = false,
     normalizedImageDataUrl = '',
-    createOriginExit = true
+    createOriginExit = true,
+    travelTimeMinutes = undefined
 } = {}) {
     const normalizedStubShortDescription = typeof stubShortDescription === 'string'
         ? stubShortDescription.trim()
@@ -9478,6 +9483,10 @@ function buildLocationEventStubMetadata({
         isVehicle: resolvedIsVehicle,
         imageDataUrl: normalizedImageDataUrl || null
     };
+
+    if (Number.isInteger(travelTimeMinutes) && travelTimeMinutes >= 0) {
+        metadata.travelTimeMinutes = travelTimeMinutes;
+    }
 
     if (normalizedStubShortDescription) {
         metadata.shortDescription = normalizedStubShortDescription;
@@ -9565,7 +9574,7 @@ function applyStubExpansionOverrides(location, { createOriginExit } = {}) {
     location.stubMetadata = metadata;
 }
 
-async function createLocationFromEvent({ name, originLocation = null, descriptionHint = null, directionHint = null, expandStub = true, targetRegionId = null, travelTimeMinutes = undefined, vehicleType = null, isVehicle = false, relativeLevel = null, imageDataUrl = '', imageDataUrlOriginal = '', createOriginExit = true } = {}) {
+async function createLocationFromEvent({ name, originLocation = null, descriptionHint = null, directionHint = null, expandStub = true, targetRegionId = null, travelTimeMinutes = undefined, updateExistingExitTravelTime = true, vehicleType = null, isVehicle = false, relativeLevel = null, imageDataUrl = '', imageDataUrlOriginal = '', createOriginExit = true } = {}) {
     const trimmedName = typeof name === 'string' ? name.trim() : '';
     if (!trimmedName) {
         return null;
@@ -9643,6 +9652,9 @@ async function createLocationFromEvent({ name, originLocation = null, descriptio
             if (Number.isFinite(levelData.computedBaseLevel) && metadata.computedBaseLevel !== levelData.computedBaseLevel) {
                 metadata.computedBaseLevel = levelData.computedBaseLevel;
             }
+            if (Number.isInteger(travelTimeMinutes) && travelTimeMinutes >= 0) {
+                metadata.travelTimeMinutes = travelTimeMinutes;
+            }
             if (createOriginExit === false) {
                 metadata.createOriginExit = false;
             }
@@ -9660,7 +9672,8 @@ async function createLocationFromEvent({ name, originLocation = null, descriptio
                 ensureExitConnection(originLocation, existing, {
                     description: descriptionHint || `${existing.name || trimmedName}`,
                     bidirectional: false,
-                    travelTimeMinutes
+                    travelTimeMinutes,
+                    updateExistingExitTravelTime
                 });
             } else {
                 console.log(`🧭 Skipping exit creation to existing location ${existing.name || existing.id} (already unstubbed).`);
@@ -9704,7 +9717,8 @@ async function createLocationFromEvent({ name, originLocation = null, descriptio
             resolvedVehicleType,
             resolvedIsVehicle,
             normalizedImageDataUrl,
-            createOriginExit
+            createOriginExit,
+            travelTimeMinutes
         }),
         checkRegionId: !pendingTargetRegion
     });
@@ -9766,7 +9780,7 @@ async function createLocationFromEvent({ name, originLocation = null, descriptio
     return stub;
 }
 
-async function createRegionStubFromEvent({ name, originLocation = null, description = null, parentRegionId = null, travelTimeMinutes = undefined, vehicleType = null, isVehicle = false, relativeLevel = null, imageDataUrl = '', imageDataUrlOriginal = '', createOriginExit = true } = {}) {
+async function createRegionStubFromEvent({ name, originLocation = null, description = null, parentRegionId = null, travelTimeMinutes = undefined, updateExistingExitTravelTime = true, vehicleType = null, isVehicle = false, relativeLevel = null, imageDataUrl = '', imageDataUrlOriginal = '', createOriginExit = true } = {}) {
     const trimmedName = typeof name === 'string' ? name.trim() : '';
     if (!trimmedName || !originLocation) {
         return null;
@@ -9815,7 +9829,8 @@ async function createRegionStubFromEvent({ name, originLocation = null, descript
             description: description || `${targetLocation.name || trimmedName}`,
             bidirectional: true,
             destinationRegion: destinationRegionId || null,
-            travelTimeMinutes
+            travelTimeMinutes,
+            updateExistingExitTravelTime
         };
 
         if (resolvedIsVehicle) {
@@ -10019,6 +10034,10 @@ async function createRegionStubFromEvent({ name, originLocation = null, descript
         imageDataUrl: normalizedImageDataUrl || null
     };
 
+    if (Number.isInteger(travelTimeMinutes) && travelTimeMinutes >= 0) {
+        stubMetadata.travelTimeMinutes = travelTimeMinutes;
+    }
+
     if (Number.isFinite(levelData.regionAverageLevel)) {
         stubMetadata.regionAverageLevel = levelData.regionAverageLevel;
     }
@@ -10092,6 +10111,7 @@ async function createRegionStubFromEvent({ name, originLocation = null, descript
         entranceStubId: regionEntryStub.id,
         createOriginExit: createOriginExit !== false,
         originDirection: stubMetadata.originDirection,
+        travelTimeMinutes: Number.isInteger(travelTimeMinutes) && travelTimeMinutes >= 0 ? travelTimeMinutes : null,
         createdAt: new Date().toISOString(),
         imageDataUrl: normalizedImageDataUrl || null
     });
@@ -10407,10 +10427,18 @@ async function expandRegionEntryStub(stubLocation) {
                 const entranceLocation = resolveEntranceLocation(existingRegionByName);
                 if (entranceLocation) {
                     applyStubControllingFaction(existingRegionByName);
+                    let originExitTravelTimeMinutes = Number.isInteger(metadata.travelTimeMinutes) && metadata.travelTimeMinutes >= 0
+                        ? metadata.travelTimeMinutes
+                        : undefined;
                     if (originLocation && typeof originLocation.removeExit === 'function' && typeof originLocation.getAvailableDirections === 'function') {
                         for (const direction of originLocation.getAvailableDirections()) {
                             const exit = originLocation.getExit(direction);
                             if (exit && exit.destination === stubLocation.id) {
+                                if (originExitTravelTimeMinutes === undefined
+                                    && Number.isInteger(exit.travelTimeMinutes)
+                                    && exit.travelTimeMinutes >= 0) {
+                                    originExitTravelTimeMinutes = exit.travelTimeMinutes;
+                                }
                                 originLocation.removeExit(direction);
                             }
                         }
@@ -10439,6 +10467,7 @@ async function expandRegionEntryStub(stubLocation) {
                                 description: originDescription,
                                 bidirectional: true,
                                 destinationRegion: existingRegionByName.id,
+                                travelTimeMinutes: originExitTravelTimeMinutes,
                                 isVehicle: originIsVehicle,
                                 vehicleType: originVehicleType
                             });
@@ -11057,6 +11086,11 @@ async function finalizeRegionEntry({ stubLocation, entranceLocation, region, ori
         }
 
         if (existingOriginExit) {
+            const originExitTravelTimeMinutes = Number.isInteger(existingOriginExit.travelTimeMinutes) && existingOriginExit.travelTimeMinutes >= 0
+                ? existingOriginExit.travelTimeMinutes
+                : (Number.isInteger(metadata.travelTimeMinutes) && metadata.travelTimeMinutes >= 0
+                    ? metadata.travelTimeMinutes
+                    : undefined);
             try {
                 existingOriginExit.destination = entranceLocation.id;
             } catch (_) {
@@ -11074,12 +11108,25 @@ async function finalizeRegionEntry({ stubLocation, entranceLocation, region, ori
             }
             existingOriginExit.isVehicle = originIsVehicle;
             existingOriginExit.vehicleType = originVehicleType;
+            if (originExitTravelTimeMinutes !== undefined) {
+                try {
+                    existingOriginExit.travelTimeMinutes = originExitTravelTimeMinutes;
+                } catch (_) {
+                    existingOriginExit.update({ travelTimeMinutes: originExitTravelTimeMinutes });
+                }
+            }
         }
 
+        const originExitTravelTimeMinutes = Number.isInteger(existingOriginExit?.travelTimeMinutes) && existingOriginExit.travelTimeMinutes >= 0
+            ? existingOriginExit.travelTimeMinutes
+            : (Number.isInteger(metadata.travelTimeMinutes) && metadata.travelTimeMinutes >= 0
+                ? metadata.travelTimeMinutes
+                : undefined);
         ensureExitConnection(originLocation, entranceLocation, {
             description: originDescription,
             bidirectional: true,
             destinationRegion: region.id,
+            travelTimeMinutes: originExitTravelTimeMinutes,
             isVehicle: originIsVehicle,
             vehicleType: originVehicleType
         });
@@ -11144,6 +11191,9 @@ async function finalizeRegionEntry({ stubLocation, entranceLocation, region, ori
                     description: `Path back to ${sourceLocation.name || sourceLocation.id}`,
                     bidirectional: false,
                     destinationRegion: reverseDestinationRegion,
+                    travelTimeMinutes: Number.isInteger(sourceExit.travelTimeMinutes) && sourceExit.travelTimeMinutes >= 0
+                        ? sourceExit.travelTimeMinutes
+                        : undefined,
                     isVehicle: Boolean(sourceExit.isVehicle),
                     vehicleType: sourceExit.vehicleType || null
                 });
@@ -11204,6 +11254,9 @@ async function finalizeRegionEntry({ stubLocation, entranceLocation, region, ori
     if (metadata.settingDescription && !entranceMetadata.settingDescription) {
         entranceMetadata.settingDescription = metadata.settingDescription;
     }
+    if (Number.isInteger(metadata.travelTimeMinutes) && metadata.travelTimeMinutes >= 0) {
+        entranceMetadata.travelTimeMinutes = metadata.travelTimeMinutes;
+    }
     entranceLocation.stubMetadata = entranceMetadata;
 
     const stubDirections = typeof stubLocation.getAvailableDirections === 'function'
@@ -11239,6 +11292,9 @@ async function finalizeRegionEntry({ stubLocation, entranceLocation, region, ori
             description,
             bidirectional: exit.bidirectional !== false,
             destinationRegion: exit.destinationRegion || null,
+            travelTimeMinutes: Number.isInteger(exit.travelTimeMinutes) && exit.travelTimeMinutes >= 0
+                ? exit.travelTimeMinutes
+                : undefined,
             isVehicle: Boolean(exit.isVehicle),
             vehicleType: exit.vehicleType || null
         });
@@ -24903,15 +24959,23 @@ async function generateLocationFromPrompt(options = {}) {
 
         if (isStubExpansion && resolvedOriginLocation && shouldCreateOriginExitFromStubMetadata(stubMetadata)) {
             const cleanedDescription = `${location.name || 'an adjacent area'}`;
-            ensureExitConnection(resolvedOriginLocation, location, {
+            const stubTravelTimeMinutes = Number.isInteger(stubMetadata?.travelTimeMinutes) && stubMetadata.travelTimeMinutes >= 0
+                ? stubMetadata.travelTimeMinutes
+                : undefined;
+            const originExit = ensureExitConnection(resolvedOriginLocation, location, {
                 description: cleanedDescription,
-                bidirectional: false
+                bidirectional: false,
+                travelTimeMinutes: stubTravelTimeMinutes
             });
 
             const returnDescription = `${resolvedOriginLocation.name || 'the previous area'}`;
+            const returnTravelTimeMinutes = Number.isInteger(originExit?.travelTimeMinutes) && originExit.travelTimeMinutes >= 0
+                ? originExit.travelTimeMinutes
+                : stubTravelTimeMinutes;
             ensureExitConnection(location, resolvedOriginLocation, {
                 description: returnDescription,
-                bidirectional: false
+                bidirectional: false,
+                travelTimeMinutes: returnTravelTimeMinutes
             });
         }
 

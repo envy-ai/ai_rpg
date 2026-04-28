@@ -48,7 +48,7 @@ Quick refresher on where these systems live and how they're wired.
 ### Notes
 - The rerun is only triggered for `player-action` responses (not NPC turns).
 - When repetition_buster is on, the server extracts `<finalProse>` or builds prose from `<travelProse>` for any `player-action` prompt, and logs the parsed XML as JSON for debugging. Random-event prompts use the same parser when repetition_buster is enabled.
-- If `<travelProse>` is returned, the server runs event checks on the origin and destination prose separately (move events suppressed), moves the player to the destination between them, and emits separate event summaries (applies to player-action and random-event flows).
+- If `<travelProse>` is returned, the server runs event checks on the origin and destination prose separately (move events suppressed), moves the player to the destination between them, and emits separate event summaries (applies to player-action and random-event flows). A `<playerDestination><travelTime>...</travelTime></playerDestination>` value is parsed as a generated exit duration and is applied only when player-destination resolution creates a new origin exit; newly created return exits copy the same duration, while existing exits keep their stored travel time.
 - Travel prose segments are normalized to remove leading indentation at paragraph starts before processing.
 - Attack prose uses the same repetition-buster flow (the attack branch of `prompts/_includes/player-action.njk` now includes the `<finalProse>` instructions).
 

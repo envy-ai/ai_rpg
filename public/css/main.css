@@ -5378,6 +5378,111 @@ body.dark .thing-toggle-hint {
   width: 100%;
 }
 
+.check-results-message {
+  border-left: 4px solid rgba(34, 197, 94, 0.76);
+}
+
+.check-results-content {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.check-results-overview {
+  color: #d1d5db;
+  font-size: 0.92rem;
+}
+
+.check-result-item {
+  background: rgba(15, 23, 42, 0.52);
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.check-result-item[open] {
+  border-color: rgba(34, 197, 94, 0.5);
+}
+
+.check-result-item--running {
+  border-color: rgba(125, 211, 252, 0.42);
+}
+
+.check-result-item--error {
+  border-color: rgba(248, 113, 113, 0.56);
+}
+
+.check-result-item--cache-hit {
+  border-color: rgba(52, 211, 153, 0.5);
+}
+
+.check-result-summary {
+  align-items: center;
+  cursor: pointer;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+  list-style: none;
+  min-height: 34px;
+  padding: 8px 10px;
+  user-select: none;
+}
+.check-result-summary::-webkit-details-marker {
+  display: none;
+}
+.check-result-summary::before {
+  border-bottom: 4px solid transparent;
+  border-left: 6px solid #86efac;
+  border-top: 4px solid transparent;
+  content: "";
+  flex: 0 0 auto;
+  height: 0;
+  transition: transform 0.15s ease;
+  width: 0;
+}
+.check-result-item[open] .check-result-summary::before {
+  transform: rotate(90deg);
+}
+
+.check-result-title {
+  color: #f8fafc;
+  flex: 1 1 auto;
+  font-size: 0.95rem;
+  font-weight: 650;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.check-result-meta {
+  color: #cbd5e1;
+  flex: 0 0 auto;
+  font-size: 0.8rem;
+  text-transform: capitalize;
+}
+
+.check-result-body {
+  border-top: 1px solid rgba(148, 163, 184, 0.2);
+  color: rgba(226, 232, 240, 0.94);
+  padding: 10px;
+}
+
+.check-result-details {
+  font-size: 0.92rem;
+}
+.check-result-details ul {
+  margin: 0;
+  padding-left: 1.25rem;
+}
+
+.check-result-error,
+.check-result-pending {
+  color: #cbd5e1;
+  font-size: 0.9rem;
+}
+
+.check-result-error {
+  color: #fecaca;
+}
+
 .message-insight-icons {
   display: flex;
   align-items: center;
