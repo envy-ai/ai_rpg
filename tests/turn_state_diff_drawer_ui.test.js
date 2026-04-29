@@ -343,6 +343,23 @@ test('need drawer rows collapse by character with icon delta pills', () => {
                 }
             }
         }, {
+            icon: '⚡',
+            category: 'needs',
+            sourceType: 'need_bar_change',
+            text: "Bob's Stamina all increase Δ +1000 – fully recovered",
+            metadata: {
+                needBarChange: {
+                    actorId: 'npc-bob',
+                    actorName: 'Bob',
+                    needBarName: 'Stamina',
+                    icon: '⚡',
+                    delta: 10,
+                    deltaText: '+1000',
+                    max: 1000,
+                    text: "Bob's Stamina all increase Δ +1000 – fully recovered"
+                }
+            }
+        }, {
             icon: '🧘',
             category: 'needs',
             sourceType: 'need_bar_change',
@@ -382,9 +399,11 @@ test('need drawer rows collapse by character with icon delta pills', () => {
     assert.match(rows[0].textContent, /Bob/);
     assert.match(rows[0].textContent, /🍗-3/);
     assert.match(rows[0].textContent, /💧-6/);
+    assert.match(rows[0].textContent, /⚡\+1000/);
     assert.match(rows[0].textContent, /🧘/);
     assert.doesNotMatch(rows[0].textContent, /🧘[+-]?0/);
     assert.match(rows[0].textContent, /missed lunch/);
+    assert.match(rows[0].textContent, /fully recovered/);
     assert.match(rows[0].textContent, /already centered/);
     assert.match(rows[1].textContent, /Alice/);
     assert.match(rows[1].textContent, /🛌\+2/);
@@ -393,7 +412,13 @@ test('need drawer rows collapse by character with icon delta pills', () => {
 test('need summary metadata is emitted for grouped drawer rows', () => {
     assert.match(apiSource, /needBarChange:\s*\{/);
     assert.match(apiSource, /deltaText/);
+    assert.match(apiSource, /formatNeedBarDisplayDelta\(entry,\s*delta,\s*rawBarName\)/);
+    assert.match(apiSource, /magnitude === 'all' \|\| magnitude === 'fill'/);
     assert.match(chatSource, /needBarChange:\s*\{/);
+    assert.match(chatSource, /resolveNeedBarMaxValue\(change,\s*barName\)/);
+    assert.match(chatSource, /magnitude === 'all' \|\| magnitude === 'fill'/);
+    assert.match(chatSource, /const deltaText = this\.formatNeedBarDelta\(change,\s*delta,\s*barName,\s*\{\s*roundNonHealth:\s*true\s*\}\);\s*if \(deltaText\)/);
+    assert.doesNotMatch(chatSource, /Number\.isFinite\(delta\) && delta !== 0/);
     assert.match(drawerSource, /function createNeedRows\(rows,\s*options\)/);
 });
 

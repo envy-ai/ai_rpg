@@ -2329,6 +2329,9 @@ async function validateConfiguration() {
     if (config.debug_tool_calls !== undefined && typeof config.debug_tool_calls !== 'boolean') {
         validationErrors.push('debug_tool_calls must be a boolean when provided');
     }
+    if (config.event_checks?.use_xml !== undefined && typeof config.event_checks.use_xml !== 'boolean') {
+        validationErrors.push('event_checks.use_xml must be a boolean when provided');
+    }
     if (config.while_you_were_away_threshold_minutes !== undefined) {
         const threshold = Number(config.while_you_were_away_threshold_minutes);
         if (!Number.isInteger(threshold) || threshold < 0) {
@@ -11463,12 +11466,15 @@ const deterministicTemplateEnv = new nunjucks.Environment(
     }
 );
 
-// Import and add dice filters to both environments
+// Import and add common template filters to server-side environments
 const diceModule = require('./nunjucks_dice.js');
+const { addEvalFilter } = require('./nunjucks_filters.js');
 const e = require('express');
 
-// Add dice filters to both environments
+// Add common template filters to server-side environments
 function addDiceFilters(env) {
+    addEvalFilter(env);
+
     env.addFilter('roll', function (notation, seedOrOpts) {
         const opts = typeof seedOrOpts === 'string' ? { seed: seedOrOpts } : (seedOrOpts || {});
         return diceModule.rollDice(notation, opts).total;
@@ -11538,14 +11544,14 @@ function parseXMLTemplate(xmlContent) {
         // Extract systemPrompt as raw inner XML/text (do not parse child nodes)
         const systemPromptNode = doc.getElementsByTagName('systemPrompt')[0];
         if (systemPromptNode) {
-            result.systemPrompt = Utils.innerXML(systemPromptNode).trim();
+            result.systemPrompt = Utils.extractXmlNodeContent(systemPromptNode);
         }
 
         // Extract generationPrompt as raw inner XML/text
         let generationPromptNode = doc.getElementsByTagName('generationPrompt')[0];
 
         if (generationPromptNode) {
-            result.generationPrompt = Utils.innerXML(generationPromptNode).trim();
+            result.generationPrompt = Utils.extractXmlNodeContent(generationPromptNode);
         }
 
         const maxTokensNode = doc.getElementsByTagName('maxTokens')[0];
@@ -27929,6 +27935,7 @@ const apiScope = {
     Thing,
     Events,
     diceModule,
+    addEvalFilter,
     promptEnv,
     modLoader,
     viewsEnv,

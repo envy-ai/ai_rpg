@@ -3321,6 +3321,8 @@
 
         initializeAdventurePanelResizing();
 
+        const HEALTH_DRAIN_ICON_PATH = '/assets/material-icons/misc/health_blood.svg';
+
         function createHealthBar(additionalClassNames = '') {
             const bar = document.createElement('div');
             bar.className = ['health-bar', additionalClassNames].filter(Boolean).join(' ');
@@ -3369,23 +3371,139 @@
                 : 'L.?';
         }
 
+        function formatHealthDrainDisplayAmount(value) {
+            const numericValue = Number(value);
+            if (!Number.isFinite(numericValue) || numericValue <= 0) {
+                return '';
+            }
+            return Number.isInteger(numericValue)
+                ? String(numericValue)
+                : String(numericValue);
+        }
+
+        function getActorHealthDrainPerRound(actor) {
+            if (!actor || Boolean(actor.isDead)) {
+                return null;
+            }
+
+            const statusEffects = Array.isArray(actor.statusEffects) ? actor.statusEffects : [];
+            let totalDrain = 0;
+
+            for (const effect of statusEffects) {
+                if (!effect || typeof effect !== 'object') {
+                    continue;
+                }
+                const hasDuration = effect.duration !== null
+                    && effect.duration !== undefined
+                    && String(effect.duration).trim() !== '';
+                const duration = hasDuration ? Number(effect.duration) : null;
+                if (hasDuration && Number.isFinite(duration) && duration === 0) {
+                    continue;
+                }
+                const needBars = Array.isArray(effect.needBars) ? effect.needBars : [];
+                for (const entry of needBars) {
+                    if (!entry || typeof entry !== 'object') {
+                        continue;
+                    }
+                    const rawName = typeof entry.name === 'string'
+                        ? entry.name
+                        : (typeof entry.bar === 'string' ? entry.bar : '');
+                    if (rawName.trim().toLowerCase() !== 'health') {
+                        continue;
+                    }
+                    const delta = Number(entry.delta);
+                    if (!Number.isFinite(delta) || delta >= 0) {
+                        continue;
+                    }
+                    totalDrain += Math.abs(delta);
+                }
+            }
+
+            return totalDrain > 0 ? totalDrain : null;
+        }
+
+        function appendCharacterConditionIndicator(portrait, indicator) {
+            const stack = ensureCharacterLevelStack(portrait);
+            if (stack) {
+                stack.appendChild(indicator);
+            } else {
+                portrait.appendChild(indicator);
+            }
+        }
+
+        function createHealthDrainIndicator(actor, amount) {
+            const displayAmount = formatHealthDrainDisplayAmount(amount);
+            if (!displayAmount) {
+                return null;
+            }
+
+            const labelName = typeof actor?.name === 'string' && actor.name.trim()
+                ? actor.name.trim()
+                : 'Character';
+            const indicator = document.createElement('div');
+            indicator.className = 'character-condition-indicator character-health-drain-indicator';
+            indicator.setAttribute('aria-label', `${labelName} is losing ${displayAmount} health per round`);
+            indicator.setAttribute('title', `${labelName} is losing ${displayAmount} health per round`);
+
+            const icon = document.createElement('span');
+            icon.className = 'character-health-drain-indicator__icon';
+            icon.style.setProperty('--character-health-drain-icon-url', `url("${HEALTH_DRAIN_ICON_PATH}")`);
+            icon.setAttribute('aria-hidden', 'true');
+            indicator.appendChild(icon);
+
+            const amountLabel = document.createElement('span');
+            amountLabel.className = 'character-health-drain-indicator__amount';
+            amountLabel.textContent = `-${displayAmount}`;
+            indicator.appendChild(amountLabel);
+
+            return indicator;
+        }
+
+        function applyCharacterHealthDrainStyling(portrait, actor) {
+            if (!portrait) {
+                return;
+            }
+
+            portrait.querySelectorAll('.character-health-drain-indicator').forEach(indicator => {
+                indicator.remove();
+            });
+
+            const healthDrain = getActorHealthDrainPerRound(actor);
+            if (!healthDrain) {
+                return;
+            }
+
+            const indicator = createHealthDrainIndicator(actor, healthDrain);
+            if (indicator) {
+                appendCharacterConditionIndicator(portrait, indicator);
+            }
+        }
+
         function applyNpcDeathStyling(card, portrait, npc) {
             if (!card || !portrait) {
                 return;
             }
 
-            const existingIndicator = portrait.querySelector('.npc-death-indicator');
-            existingIndicator?.remove();
+            portrait.querySelectorAll('.npc-death-indicator, .character-health-drain-indicator').forEach(indicator => {
+                indicator.remove();
+            });
 
             const isDead = Boolean(npc?.isDead);
             card.classList.toggle('is-dead', isDead);
 
             if (!isDead) {
+                const healthDrain = getActorHealthDrainPerRound(npc);
+                if (healthDrain) {
+                    const healthDrainIndicator = createHealthDrainIndicator(npc, healthDrain);
+                    if (healthDrainIndicator) {
+                        appendCharacterConditionIndicator(portrait, healthDrainIndicator);
+                    }
+                }
                 return;
             }
 
             const indicator = document.createElement('div');
-            indicator.className = 'npc-death-indicator';
+            indicator.className = 'character-condition-indicator npc-death-indicator';
 
             const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
             icon.className = 'npc-death-indicator__icon';
@@ -3420,12 +3538,7 @@
                 indicator.appendChild(countdown);
             }
 
-            const stack = ensureCharacterLevelStack(portrait);
-            if (stack) {
-                stack.appendChild(indicator);
-            } else {
-                portrait.appendChild(indicator);
-            }
+            appendCharacterConditionIndicator(portrait, indicator);
         }
 
         function escapeForSelector(value) {
@@ -4625,6 +4738,7 @@
                 data?.health,
                 data?.maxHealth
             );
+            applyCharacterHealthDrainStyling(chatSidebarElements.portrait, data);
 
             if (chatSidebarElements.needBars) {
                 renderNeedBars(

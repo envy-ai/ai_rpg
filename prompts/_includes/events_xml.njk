@@ -54,7 +54,7 @@ These characters are currently known by the system to be present. This is not ne
 
 ## Purpose
 
-This is an informal XML schema for a planned second event pipeline. It describes a single-prompt response format where the model reads one chat entry or prose segment and emits an `<events>` block. It is not an XSD document.
+This is the informal XML schema for the single-prompt event pipeline. It describes a response format where the model reads one chat entry or prose segment and emits an `<events>` block. It is not an XSD document.
 
 The XML element names use camelCase. Section headings use snake_case labels for readability; the XML examples show the exact tag names the model should emit.
 
@@ -73,8 +73,8 @@ Rules:
 - Omit event tags when that event did not occur.
 - Repeat event tags for multiple instances.
 - If no player/party travel occurred, all event elements remain direct children of `<events>` and belong to the active location.
-- The first `<moveLocation>` or `<moveNewLocation>` element is the travel boundary. Events before it happened at the origin; events after it happened after arrival at the destination. As such, it's important that events be listed in chronological order.
-- Omit any events that occur chronologically between the beginning or end of travel.
+- The first `<moveLocation>` or `<moveNewLocation>` element is the travel boundary. Events before it happened at the origin; events after `<arriveAtLocation/>` happened after arrival at the destination. As such, it is important that events be listed in chronological order.
+- Omit any events that occur chronologically between the beginning and end of travel.
 - Do not emit more than one player/party travel event in a single `<events>` block.
 - `newExitDiscovered` is a normal event and does not create a context boundary.
 - Emit one element for each observed event. Downstream processing may aggregate compatible entries later.
@@ -109,7 +109,7 @@ Use this when the player or party physically moves into a destination that is no
 
 ### `arrive_at_location`
 
-Optional empty marker for the chronological point where arrival completes after a `moveLocation` or `moveNewLocation` boundary. This is required if you use moveLocation or moveNewLocation; do not use without them.
+Empty marker for the chronological point where arrival completes after a `moveLocation` or `moveNewLocation` boundary. This is required if you use `moveLocation` or `moveNewLocation`; do not use it without them.
 
 ```xml
 <arriveAtLocation/>
@@ -121,15 +121,23 @@ Normal event elements are direct children of `<events>`.
 
 ### `new_exit_discovered`
 
-Use this when the text reveals, unlocks, unblocks, creates, clears, or otherwise discovers a route or vehicle connection from the current location to another location or region. Unlike movement tags, this does not mean the player traveled there. `newExitDiscovered` is not a travel context boundary.
+Use this when the text reveals, unlocks, unblocks, creates, clears, finds out about, or otherwise discovers a route or vehicle connection to another location or region. Unlike movement tags, this does not mean the player traveled there. `newExitDiscovered` is not a travel context boundary. You may chain these together to represent multiple discoveries in a single text block, or paths or areas consisting of multiple locations so long as every exitLocation already exists (either in the world or previously in the chain). Do not use this for exits that were already known or for travel that occurred without a new exit being discovered. If the text implies multiple exits in a chain but doesn't specify the intermediate locations, you may come up with them yourself.
 
 ```xml
 <newExitDiscovered>
-  <destinationName>Full destination location or region name</destinationName>
+  <destination>
+    <locationName>Exact location name of the exit's destination. Omit if the exit is to a new region.</locationName>
+    <regionName>Exact region name of the exit's destination</regionName>
+  </destination>
   <destinationKind>location|region</destinationKind>
-  <vehicleType>none OR vehicle type</vehicleType>
+  <vehicleType>none OR vehicle type, if this exit is a vehicle connection (like a ferry or train)</vehicleType>
   <description>1-2 sentence destination or exit description</description>
-  <travelTime>Exact duration, such as 30 minutes or 1 hour</travelTime>
+  <exitLocation>
+    <!-- Omit <exitLocation> block if the exit is discovered at the current location. -->
+    <locationName>Exact location name of the exit</locationName>
+    <regionName>Exact region name of the exit</regionName>
+  </exitLocation>  
+  <travelTime>Exact duration, such as 30 minutes or 1 hour, from the exitLocation, or the current location if omitted</travelTime>
 </newExitDiscovered>
 ```
 
@@ -418,16 +426,6 @@ Use this when an entity dies or becomes incapacitated. Use `dead` only when the 
 </deathIncapacitation>
 ```
 
-### `in_combat`
-
-Use this to indicate whether the player should currently be considered in physical combat, even if the player did not personally attack during the text.
-
-```xml
-<inCombat>
-  <value>true|false</value>
-</inCombat>
-```
-
 ### `received_quest`
 
 Use this when the player becomes aware of a quest, task, promise, self-imposed goal, request, or job this turn, even if they have not explicitly accepted it yet. Include quests the player invents for themselves or agrees to do.
@@ -438,7 +436,7 @@ Use this when the player becomes aware of a quest, task, promise, self-imposed g
   <summary>One sentence quest or task summary</summary>
 </receivedQuest>
 ```
-
+{#
 ### `completed_quest_objective`
 
 Use this when a listed player quest objective is completed. Use the quest and objective indexes from the prompt, and include a short reason explaining why the objective is complete.
@@ -450,7 +448,7 @@ Use this when a listed player quest objective is completed. Use the quest and ob
   <statusReason>Brief reason objective is complete</statusReason>
 </completedQuestObjective>
 ```
-
+#}
 ### `defeated_enemy`
 
 Use this when the player defeats one or more enemies during the turn. Do not use this for enemies merely damaged, delayed, escaped from, intimidated, or bypassed.
@@ -484,7 +482,7 @@ Use this when the player's reputation with a faction should significantly increa
   <reason>One sentence reason</reason>
 </factionReputationChange>
 ```
-
+{#
 ### `disposition_check`
 
 Use this when an NPC's disposition toward the current player changes significantly. If the NPC's attitude did not meaningfully change, omit the tag.
@@ -511,17 +509,7 @@ Use this when something in the turn changes a need bar for the player, party mem
   <reason>10 words or less</reason>
 </needBarChange>
 ```
-
-### `time_passed`
-
-Use this to report how much elapsed in-world wall-clock time the concrete actions in the text realistically consumed. Estimate elapsed wall-clock time, not reading time and not the sum of each participant's labor when characters work in parallel. Use `0` only when nothing time-consuming happened.
-
-```xml
-<timePassed>
-  <reasoning>Brief breakdown of time-consuming actions</reasoning>
-  <duration>Exact duration, or 0</duration>
-</timePassed>
-```
+#}
 
 ### `triggered_abilities`
 
@@ -534,6 +522,28 @@ Use this when a character's triggered ability fires during the turn. Include onl
 </triggeredAbility>
 ```
 
+### `time_passed` (REQUIRED FIELD, 1x ONLY)
+
+Use this to report how much elapsed in-world wall-clock time the concrete non-travel actions in the text realistically consumed. Estimate elapsed wall-clock time, not reading time and not the sum of each participant's labor when characters work in parallel. 
+
+```xml
+<timePassed>
+  <reasoning>Brief breakdown of time-consuming actions</reasoning>
+  <duration>Exact duration, or 0</duration>
+</timePassed>
+
+### `in_combat` (REQUIRED FIELD, 1x ONLY)
+
+Use this to indicate whether the player should currently be considered in physical combat, even if the player did not personally attack during the text.
+
+```xml
+<inCombat>
+  <value>true|false</value>
+</inCombat>
+```
+```
+
+
 ## End XML schema
 
 <task>
@@ -541,5 +551,5 @@ Use this when a character's triggered ability fires during the turn. Include onl
 
 2. For any events that you listed more than once, determine which is the best fit. Err on the side of keeping events rather than omitting them entirely; just remove duplicates.
 
-3. Output the best fitting events in chronologcal order using the XML schema above. Surround it in markdown '''xml marks.
-</task> 
+3. Output only one `<events>...</events>` XML block containing the best fitting events in chronological order. Do not include commentary, markdown fences, or any text outside the XML block.
+</task>

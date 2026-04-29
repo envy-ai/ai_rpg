@@ -265,6 +265,7 @@ offscreen_npc_activity_weekly_max_turns_between_prompts: 100
 # If this is false, no event checks will be performed. This will prevent prose from affecting anything in the game world. This also prevents quest completion checks.
 event_checks:
   enabled: true
+  use_xml: true
 
 # If false, everything is trivially plausible and the combat system doesn't activate. Damage may still occur from event checks.
 plausibility_checks:
@@ -405,7 +406,7 @@ plot_expander_prompt_frequency: 10
 
 # Minimum in-game time separation, in minutes, before the blocking while-you-were-away
 # reunion prompt runs when the player arrives at an NPC's location.
-while_you_were_away_threshold_minutes: 0
+while_you_were_away_threshold_minutes: 30
 
 base_context:
   # When true, omit inventory items from the base-context prompt.

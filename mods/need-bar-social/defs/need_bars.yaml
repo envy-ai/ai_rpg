@@ -39,6 +39,7 @@ need_bars:
       - isolation
       - humiliation
       - exile
+    while_you_were_away_prompt_notes: For characters with who are near other people, this should be between 75% and 100%. For characters who have been alone for a while or are in a very isolating environment, this could be between 10% and 50% depending on how long they've been alone and how much they typically crave social interaction.
     effect_thresholds:
       0:
         name: Extremely lonely

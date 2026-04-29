@@ -31,7 +31,7 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
   - `setCurrentPlayerResolver(resolver)`, `getCurrentPlayer()`, `getCurrentPlayerId()`.
 - Definitions:
   - `getDispositionDefinitions()`, `getDispositionDefinition(name)`, `resolveDispositionIntensity(type, value)`; disposition definitions include the configured display `icon`.
-  - `getNeedBarDefinitionsForContext()` (prompt/UI-safe need-bar definitions including icon/color metadata plus `small`/`medium`/`large`/`fill` and `small`/`medium`/`large`/`empty` trigger lists).
+  - `getNeedBarDefinitionsForContext()` (prompt/UI-safe need-bar definitions including icon/color metadata, `while_you_were_away_prompt_notes`, plus `small`/`medium`/`large`/`fill` and `small`/`medium`/`large`/`empty` trigger lists).
   - `validateNeedBarPromptSentences({ onError })` preflights `effect_thresholds.*.sentence` coverage for prompt-facing need summaries.
   - `reloadDefinitionCaches({ refreshInstances })` clears shared defs caches and can reapply merged need-bar definitions to already loaded actors.
   - `setAvailableSkills(skillsInput)`, `getAvailableSkills()`.
@@ -143,6 +143,7 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
 - `healthRegenPercentPerMinute` config applies passive health regeneration as a percentage of current max health for each elapsed world minute; per-actor `healthRegenAppliedAt` is persisted so reloads do not replay already-processed regeneration.
 - Need bar logic includes per-minute baseline drift (`change_per_minute`) and magnitude-based adjustments.
 - Global `defs/need_bars.yaml -> need_values` now defines separate `increase` and `decrease` default maps, each with its own `small` / `medium` / `large` deltas. Individual bars can override either direction via their own nested `need_values` block, and any missing per-bar directional keys still fall back to the matching global direction. These magnitudes preserve decimal values exactly instead of being rounded or forced up to a minimum of `1`.
+- Need-bar definitions can include `while_you_were_away_prompt_notes`; `getNeedBarDefinitionsForContext()` exposes it under the same snake_case key so the while-you-were-away prompt can use bar-specific reunion guidance.
 - `applyNeedBarChange(...)` now returns `needBarIcon` / `needBarColor` metadata alongside the usual delta/threshold payload so event summaries and notifications can use the configured need-bar icon directly.
 - Need bars now use explicit audience flags (`player`, `party`, `nonParty`). NPCs retain both party-only and non-party-only bar state internally so values survive party swaps. Active reads, prompt context, endpoint payloads, and per-minute drift treat `party` as “currently in the party or has ever been in the party,” while `nonParty` still means “not currently in the party,” so former party members can have both party-history bars and non-party bars active at once.
 - Per-actor need-bar minute drift now persists a `needBarRatesAppliedAt` timestamp in saves so reloads do not replay already-processed elapsed world minutes.

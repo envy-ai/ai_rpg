@@ -65,6 +65,18 @@ Rules:
 - Disabled mods are skipped for `mod.js` loading, defs overlays, and `public/` asset serving.
 - The active mod set is frozen at startup, so changing mod enablement on disk still requires a server restart to apply. `/reload_config` reports drift but does not hot-toggle mods.
 
+## Event Checks
+
+`event_checks.enabled` controls whether narrative event processing runs at all. When it is `false`, prose does not mutate world state through event checks and quest completion checks are skipped.
+
+```yaml
+event_checks:
+  enabled: true
+  use_xml: true
+```
+
+`event_checks.use_xml` defaults to `true` and must be a boolean when provided. When enabled, `Events.runEventChecks(...)` uses the `events_xml` prompt for ordinary event categories and parses one `<events>` block. Need bars still use the dedicated `need-bars` prompt when need-bar definitions are present, and those results are injected as ordinary `needbar_change` events before outcomes are applied. Set `event_checks.use_xml` to `false` to use the legacy grouped `event-checks` prompts plus the same dedicated `need-bars` prompt. The `/config` page exposes the same option as “XML Event Pipeline”.
+
 ## AI backend selection
 
 `config.ai.backend` selects which text-generation transport the game uses.
@@ -678,5 +690,6 @@ Rules:
 - Must be an integer `>= 0` when present.
 - Default is `240` (`4` hours).
 - The prompt input includes current-location NPCs that have persisted `last_seen_time` / `last_seen_location` and were not in the same location as the player on the previous round, so already-present reunion NPCs stay in the candidate list instead of being misclassified as arrivals.
+- The prompt input includes each need-bar definition's `while_you_were_away_prompt_notes` when provided, letting need-bar defs guide how offscreen NPCs tend to satisfy or lose that bar.
 - The threshold only controls whether the prompt runs at all: it runs when at least one such NPC has been away at least this many in-game minutes.
-- When it runs, it blocks the arrival flow long enough to apply returned need-bar percentage deltas, optional NPC travel destinations, store the hidden `while-you-were-away` internal history entry, and optionally append a visible `while-you-were-away-player` assistant chat entry when the prompt returns non-empty `<proseForPlayer>`.
+- When it runs, it blocks the arrival flow long enough to apply returned need-bar percentage values, optional NPC travel destinations, store the hidden `while-you-were-away` internal history entry, and optionally append a visible `while-you-were-away-player` assistant chat entry when the prompt returns non-empty `<proseForPlayer>`. Need-bar values strip nonnumeric text before parsing; blank/`N/A` values are ignored for that bar. If `slop_buster` is enabled, that visible prose is run through the shared slop-removal pipeline before storage.

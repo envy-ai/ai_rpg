@@ -34,3 +34,4 @@ Loads and initializes enabled mods from the `mods/` directory. Provides per-mod 
 - Disabled mods are skipped before JS loading, defs overlay application, and static asset serving.
 - The active mod set is frozen at startup; toggling `config.json.enabled` on disk requires a restart to change the running set.
 - `registerModRoute` namespaces routes under `/api/mods/<modName>/...`.
+- Mod prompt environments receive the shared `eval` Nunjucks filter when the server provides it in scope.

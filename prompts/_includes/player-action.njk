@@ -191,7 +191,7 @@ Follow these steps:
 {% if config.use_legacy_prompt_checks %}
 4. Write a second draft based on the above, using no more than {{ config.prose_length }}. Strictly adhere to the success_or_failure level provided and any attack outcome provided above.
 {% else %}
-4. Write a second draft based on the above, using no more than {{ config.prose_length }}. Adhere to any skill-check, opposed skill-check, and attack outcomes you received tool results for in your first draft. Don't call them again. Fix any formatting issues.
+4. Write a second draft based on the above, using no more than {{ config.prose_length }}. Adhere to any skill-check, opposed skill-check, and attack outcomes you received tool results for in your first draft. If you omitted any skill checks for the first draft, make them here and adjust your prose to account for them. Don't call any ones again that you already made in the first draft. Fix any formatting issues.
 {% endif %}
 
 5. Analyze the second draft and make sure everything in it makes sense and is continuous with the story so far (the second draft should not reference things that were removed from the first draft, as important context will be missing, so make sure that context is present in the second draft itself!). Identify any issues to fix in the final prose. Don't add any additional things to the final prose beyond what was in the second draft. Finally, consider whether the player is traveling (to a new scene, region, or location). If ANY of those, which parts of the prose happen before, during, or after travel? NOTE: When thinking about XML tags outside of your final response, use %lt; and %gt; instead of angle brackets to avoid confusing the XML parser.

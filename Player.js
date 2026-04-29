@@ -754,6 +754,9 @@ class Player {
 
         const name = typeof config.name === 'string' ? config.name : id;
         const description = typeof config.description === 'string' ? config.description : '';
+        const whileYouWereAwayPromptNotes = typeof config.while_you_were_away_prompt_notes === 'string'
+            ? config.while_you_were_away_prompt_notes
+            : (typeof config.whileYouWereAwayPromptNotes === 'string' ? config.whileYouWereAwayPromptNotes : '');
         const icon = typeof config.icon === 'string' ? config.icon : '';
         const color = typeof config.color === 'string' ? config.color : '';
         const min = Number.isFinite(Number(config.min)) ? Number(config.min) : 0;
@@ -792,6 +795,7 @@ class Player {
             id,
             name,
             description,
+            whileYouWereAwayPromptNotes,
             icon,
             color,
             min,
@@ -1043,6 +1047,9 @@ class Player {
             id: typeof definition.id === 'string' ? definition.id : null,
             name: typeof definition.name === 'string' ? definition.name : (definition.id || 'Unknown'),
             description: typeof definition.description === 'string' ? definition.description : '',
+            while_you_were_away_prompt_notes: typeof definition.whileYouWereAwayPromptNotes === 'string'
+                ? definition.whileYouWereAwayPromptNotes
+                : '',
             icon: typeof definition.icon === 'string' ? definition.icon : '',
             color: typeof definition.color === 'string' ? definition.color : '',
             player: Boolean(definition.player),

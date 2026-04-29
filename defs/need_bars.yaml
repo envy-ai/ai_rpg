@@ -41,6 +41,7 @@ need_bars:
     large_decrease:
       - strenuous activity
       - vomiting
+    while_you_were_away_prompt_notes: If food is available, this need bar should be at least 50%. If it's just after a meal time, it should be close to 100%.
     effect_thresholds:
       0:
         name: Starving
@@ -97,6 +98,7 @@ need_bars:
     large_decrease:
       - strenuous activity
       - swinging a heavy weapon
+    while_you_were_away_prompt_notes: This need bar should be between 90% and 100% unless the character is actively engaged in strenuous activity or combat when the player arrives, in which case it should be between 10% and 50% depending on how long the activity or combat has been going on for.
     effect_thresholds:
       0:
         name: Breathless
@@ -158,6 +160,7 @@ need_bars:
     large_decrease:
       - an all-nighter
       - extreme magically or chemically induced tiredness
+    while_you_were_away_prompt_notes: This should be 100% in the early morning, or proportionally less as the day goes on, down to 15% at 10 PM. If the arriving at the location after that, most likely any characters will have left for their sleeping quarters, or, if already there or unable, will be asleep with their rest bar partially charged.
     effect_thresholds:
       0:
         name: Exhausted
@@ -226,6 +229,7 @@ need_bars:
     large_decrease:
       - cast major spell
       - used a major ability that would require some kind of magical energy (like alchemy, mana, psi powers, etc)
+    while_you_were_away_prompt_notes: This need bar should be between 90% and 100% unless the character is actively engaged in magic use or magical combat when the player arrives, in which case it should be between 10% and 50% depending on how long the activity or combat has been going on for.
     effect_thresholds:
       0:
         name: Depleted

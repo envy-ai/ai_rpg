@@ -3527,7 +3527,7 @@ button.thing-action-icon:hover, button.thing-action-icon:focus-visible {
   display: block;
 }
 
-.npc-death-indicator {
+.character-condition-indicator {
   display: flex;
   align-items: flex-start;
   gap: 2px;
@@ -3537,6 +3537,27 @@ button.thing-action-icon:hover, button.thing-action-icon:focus-visible {
   letter-spacing: 0.01em;
   -webkit-text-stroke: 3px #000000;
   paint-order: stroke fill;
+}
+
+.character-health-drain-indicator {
+  align-items: center;
+  color: #fecaca;
+}
+
+.character-health-drain-indicator__icon {
+  --character-health-drain-icon-url: url("/assets/material-icons/misc/health_blood.svg");
+  width: 1em;
+  height: 1em;
+  display: block;
+  flex: 0 0 1em;
+  background: #ef4444;
+  -webkit-mask: var(--character-health-drain-icon-url) center/contain no-repeat;
+  mask: var(--character-health-drain-icon-url) center/contain no-repeat;
+  filter: drop-shadow(-1px 0 0 #000000) drop-shadow(1px 0 0 #000000) drop-shadow(0 -1px 0 #000000) drop-shadow(0 1px 0 #000000);
+}
+
+.character-health-drain-indicator__amount {
+  line-height: 1;
 }
 
 .npc-death-indicator__icon {
@@ -6399,8 +6420,38 @@ body.dark .thing-toggle-hint {
 .prompt-progress-viewer__actions {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 8px;
   flex: 0 0 auto;
+  flex-wrap: wrap;
+}
+
+.prompt-progress-viewer__follow {
+  min-height: 30px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(191, 219, 254, 0.32);
+  background: rgba(15, 23, 42, 0.58);
+  color: #dbeafe;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+}
+
+.prompt-progress-viewer__follow-input {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: #38bdf8;
+  flex: 0 0 auto;
+}
+
+.prompt-progress-viewer__follow-text {
+  line-height: 1;
 }
 
 .prompt-progress-viewer__copy,

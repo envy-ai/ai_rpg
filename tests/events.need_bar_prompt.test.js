@@ -97,7 +97,7 @@ test('runEventChecks applies dedicated need-bar prompt changes with reason and i
     Globals.baseDir = tempBaseDir;
     Globals.config = {
         ai: {},
-        event_checks: { enabled: true },
+        event_checks: { enabled: true, use_xml: false },
         quest_checks: { enabled: false },
         quests: { enabled: false },
         omit_npc_generation: true,
@@ -192,7 +192,7 @@ test('runEventChecks applies dedicated need-bar prompt changes with reason and i
         assert.equal(result.needBarChanges[0].reason, 'swung a weapon');
         assert.equal(result.needBarChanges[0].delta, -10);
         assert.equal(player.getNeedBarValue('stamina'), 90);
-        assert.deepEqual(capturedPromptTypes.sort(), ['event-checks', 'event-checks', 'event-checks', 'event-checks', 'need-bars'].sort());
+        assert.deepEqual(capturedPromptTypes.sort(), ['event-checks', 'event-checks', 'need-bars'].sort());
         assert.equal(loggedPrefixes.includes('need_bar_event_checks'), true);
     } finally {
         Events._deps = previousDeps;

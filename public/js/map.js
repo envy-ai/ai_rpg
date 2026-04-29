@@ -55,6 +55,18 @@ function logVehicleDebugMap(message, payload = null) {
   console.log(`[vehicle-debug] ${message}`, payload);
 }
 
+function focusAdventureTabForMapTravel() {
+  if (typeof window.activateTab === 'function') {
+    window.activateTab('adventure');
+  } else {
+    document.querySelector('[data-tab="adventure"]')?.click();
+  }
+
+  if (window.location && window.location.hash !== '#tab-adventure') {
+    window.location.hash = '#tab-adventure';
+  }
+}
+
 function getVehicleOverlayNodeId(targetNodeId) {
   return `${VEHICLE_OVERLAY_NODE_PREFIX}${targetNodeId}`;
 }
@@ -554,7 +566,8 @@ function renderMap(region) {
       return;
     }
     if (typeof window.travelToAdjacentLocationFromMap === 'function') {
-      window.travelToAdjacentLocationFromMap(locationId, { focusAdventureTab: true });
+      focusAdventureTabForMapTravel();
+      window.travelToAdjacentLocationFromMap(locationId, { focusAdventureTab: false });
     }
   });
 

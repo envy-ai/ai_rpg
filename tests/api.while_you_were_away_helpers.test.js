@@ -146,7 +146,15 @@ function loadWhileYouWereAwayHelpers({
     promptTemplate = {
         systemPrompt: 'system',
         generationPrompt: 'generation'
-    }
+    },
+    applySlopRemoval = async (text) => ({
+        text,
+        ran: false,
+        slopWords: [],
+        slopRegexes: [],
+        slopNgrams: []
+    }),
+    recordSlopRemovalEntry = null
 } = {}) {
     const source = fs.readFileSync(require.resolve('../api.js'), 'utf8');
     const start = source.indexOf('        function resolveRegionForLocationObject(location) {');
@@ -205,6 +213,29 @@ function loadWhileYouWereAwayHelpers({
         regionByName.set(String(region.name || '').trim().toLowerCase(), region);
     }
 
+    const pushChatEntry = (entry, collector = null, locationId = null) => {
+        const stored = {
+            ...entry,
+            id: entry.id || `entry-${pushedEntries.length + 1}`,
+            locationId: locationId || entry.locationId
+        };
+        pushedEntries.push(stored);
+        if (Array.isArray(collector)) {
+            collector.push(stored);
+        }
+        return stored;
+    };
+
+    const defaultRecordSlopRemovalEntry = ({ data, parentId = null, locationId = null } = {}, collector = null) => (
+        pushChatEntry({
+            role: 'assistant',
+            type: 'slop-remover',
+            parentId,
+            slopRemoval: data,
+            locationId
+        }, collector, locationId)
+    );
+
     const context = {
         Object,
         Array,
@@ -217,6 +248,10 @@ function loadWhileYouWereAwayHelpers({
             parseXmlDocument: (xml, mimeType) => new DOMParser().parseFromString(xml, mimeType)
         },
         config,
+        Globals: {
+            config,
+            scrubGeneratedBrackets: value => value
+        },
         currentPlayer,
         players,
         gameLocations,
@@ -251,23 +286,15 @@ function loadWhileYouWereAwayHelpers({
             chatCompletion: async () => llmResponse,
             logPrompt: () => {}
         },
+        applySlopRemoval,
+        recordSlopRemovalEntry: recordSlopRemovalEntry || defaultRecordSlopRemovalEntry,
         requireLocationId: (value, label) => {
             if (typeof value !== 'string' || !value.trim()) {
                 throw new Error(`${label} is missing a valid location id.`);
             }
             return value.trim();
         },
-        pushChatEntry: (entry, collector = null, locationId = null) => {
-            const stored = {
-                ...entry,
-                locationId: locationId || entry.locationId
-            };
-            pushedEntries.push(stored);
-            if (Array.isArray(collector)) {
-                collector.push(stored);
-            }
-            return stored;
-        }
+        pushChatEntry
     };
 
     vm.createContext(context);
@@ -288,7 +315,7 @@ this.runWhileYouWereAwayPrompt = runWhileYouWereAwayPrompt;`,
     };
 }
 
-test('parseWhileYouWereAwayResponse parses XML updates and percentage deltas', () => {
+test('parseWhileYouWereAwayResponse parses XML updates and absolute need bar values', () => {
     const { parseWhileYouWereAwayResponse } = loadWhileYouWereAwayHelpers();
     const parsed = parseWhileYouWereAwayResponse(`
 <characterUpdates>
@@ -298,7 +325,7 @@ test('parseWhileYouWereAwayResponse parses XML updates and percentage deltas', (
     <needBarChanges>
       <needBarEffect>
         <needBarId>energy</needBarId>
-        <delta>-10%</delta>
+        <value>75%</value>
       </needBarEffect>
     </needBarChanges>
     <travelDestination>
@@ -314,8 +341,41 @@ test('parseWhileYouWereAwayResponse parses XML updates and percentage deltas', (
     assert.equal(parsed.updates.length, 1);
     assert.equal(parsed.updates[0].name, 'Mira');
     assert.equal(parsed.updates[0].needBarChanges[0].needBarId, 'energy');
-    assert.equal(parsed.updates[0].needBarChanges[0].deltaPercent, -10);
+    assert.equal(parsed.updates[0].needBarChanges[0].valuePercent, 75);
     assert.equal(parsed.updates[0].travelDestination, 'Vale|');
+});
+
+test('parseWhileYouWereAwayResponse strips nonnumeric need bar value text and skips blanks', () => {
+    const { parseWhileYouWereAwayResponse } = loadWhileYouWereAwayHelpers();
+    const parsed = parseWhileYouWereAwayResponse(`
+<characterUpdates>
+  <characterUpdate>
+    <name>Mira</name>
+    <update>Mira caught up with friends and rested.</update>
+    <needBarChanges>
+      <needBarEffect>
+        <needBarId>energy</needBarId>
+        <value>about 80%</value>
+      </needBarEffect>
+      <needBarEffect>
+        <needBarId>sanity</needBarId>
+        <value>N/A</value>
+      </needBarEffect>
+      <needBarEffect>
+        <needBarId>social</needBarId>
+        <value> </value>
+      </needBarEffect>
+    </needBarChanges>
+  </characterUpdate>
+</characterUpdates>
+`, {
+        expectedNameKeys: new Set(['mira'])
+    });
+
+    assert.equal(parsed.updates.length, 1);
+    assert.equal(parsed.updates[0].needBarChanges.length, 1);
+    assert.equal(parsed.updates[0].needBarChanges[0].needBarId, 'energy');
+    assert.equal(parsed.updates[0].needBarChanges[0].valuePercent, 80);
 });
 
 test('parseWhileYouWereAwayResponse allows additional arriving characters marked with HERE', () => {
@@ -400,7 +460,7 @@ test('resolveWhileYouWereAwayDestination prefers the current region and supports
     assert.equal(regionOnly.location.id, 'beta-gate');
 });
 
-test('runWhileYouWereAwayPrompt applies need deltas, moves NPCs, and records a hidden history entry', async () => {
+test('runWhileYouWereAwayPrompt applies absolute need values, moves NPCs, and records a hidden history entry', async () => {
     const square = createLocation({ id: 'square', name: 'Town Square', regionId: 'alpha', npcIds: ['mira'] });
     const alphaInn = createLocation({ id: 'inn-alpha', name: 'Inn', regionId: 'alpha' });
     const betaInn = createLocation({ id: 'inn-beta', name: 'Inn', regionId: 'beta' });
@@ -419,7 +479,7 @@ test('runWhileYouWereAwayPrompt applies need deltas, moves NPCs, and records a h
         isNPC: true,
         name: 'Mira',
         currentLocation: 'square',
-        _bars: [{ id: 'energy', name: 'Energy', value: 50, min: 0, max: 100 }],
+        _bars: [{ id: 'energy', name: 'Energy', value: 500, min: 0, max: 1000 }],
         getNeedBars() {
             return this._bars.map(bar => ({ ...bar }));
         },
@@ -472,7 +532,7 @@ test('runWhileYouWereAwayPrompt applies need deltas, moves NPCs, and records a h
       <needBarChanges>
         <needBarEffect>
           <needBarId>energy</needBarId>
-          <delta>25</delta>
+          <value>75</value>
         </needBarEffect>
       </needBarChanges>
       <travelDestination>
@@ -492,7 +552,7 @@ test('runWhileYouWereAwayPrompt applies need deltas, moves NPCs, and records a h
         parentEntryId: 'parent-1'
     });
 
-    assert.equal(npc._bars[0].value, 75);
+    assert.equal(npc._bars[0].value, 750);
     assert.equal(npc.currentLocation, 'inn-alpha');
     assert.equal(square.npcIds.includes('mira'), false);
     assert.equal(alphaInn.npcIds.includes('mira'), true);
@@ -561,6 +621,82 @@ test('runWhileYouWereAwayPrompt can return both hidden and visible entries for p
     assert.match(result.visibleEntry.content, /Mira is already waiting by the fountain\./);
 });
 
+test('runWhileYouWereAwayPrompt runs slop removal on visible prose and records attachment', async () => {
+    const square = createLocation({ id: 'square', name: 'Town Square', regionId: 'alpha', npcIds: ['mira'] });
+    const regions = new Map([
+        ['alpha', { id: 'alpha', name: 'Alpha', locationIds: ['square'], entranceLocationId: 'square' }]
+    ]);
+    const gameLocations = new Map([[square.id, square]]);
+    const currentPlayer = { name: 'Baato', currentLocation: square.id };
+    const npc = {
+        id: 'mira',
+        isNPC: true,
+        name: 'Mira',
+        currentLocation: square.id,
+        _bars: [],
+        getNeedBars: () => []
+    };
+    const slopCalls = [];
+    const { runWhileYouWereAwayPrompt, pushedEntries } = loadWhileYouWereAwayHelpers({
+        config: { ai: {}, slop_buster: true },
+        currentPlayer,
+        players: new Map([[npc.id, npc]]),
+        gameLocations,
+        regions,
+        prepareBasePromptContext: async () => ({
+            whileYouWereAwayNpcs: [{
+                id: 'mira',
+                name: 'Mira',
+                lastSeenAgeMinutes: 300,
+                lastSeenTimeAgo: '5 hours ago'
+            }]
+        }),
+        llmResponse: `
+<response>
+  <characterUpdates>
+    <characterUpdate>
+      <name>Mira</name>
+      <update>Mira waited near the fountain.</update>
+    </characterUpdate>
+  </characterUpdates>
+  <proseForPlayer>Glimmering prose.</proseForPlayer>
+</response>
+`,
+        applySlopRemoval: async (text, options) => {
+            slopCalls.push({ text, options });
+            return {
+                text: 'Plain prose.',
+                ran: true,
+                slopWords: ['glimmering'],
+                slopRegexes: ['purple sentence'],
+                slopNgrams: ['waited near fountain']
+            };
+        }
+    });
+
+    const collector = [];
+    const result = await runWhileYouWereAwayPrompt({
+        locationOverride: square,
+        locationId: square.id,
+        entryCollector: collector,
+        returnEntries: true
+    });
+
+    assert.equal(slopCalls.length, 1);
+    assert.equal(slopCalls[0].text, 'Glimmering prose.');
+    assert.equal(slopCalls[0].options.returnDiagnostics, true);
+    assert.equal(result.visibleEntry.content, 'Plain prose.');
+    assert.equal(result.visibleEntry.summary, 'Plain prose.');
+    assert.equal(collector.length, 3);
+    assert.equal(pushedEntries[1].type, 'while-you-were-away-player');
+    assert.equal(pushedEntries[1].content, 'Plain prose.');
+    assert.equal(pushedEntries[2].type, 'slop-remover');
+    assert.equal(pushedEntries[2].parentId, pushedEntries[1].id);
+    assert.deepEqual(Array.from(pushedEntries[2].slopRemoval.slopWords), ['glimmering']);
+    assert.deepEqual(Array.from(pushedEntries[2].slopRemoval.slopRegexes), ['purple sentence']);
+    assert.deepEqual(Array.from(pushedEntries[2].slopRemoval.slopNgrams), ['waited near fountain']);
+});
+
 test('runWhileYouWereAwayPrompt silently ignores inactive need bars returned by the prompt', async () => {
     const square = createLocation({ id: 'square', name: 'Town Square', regionId: 'alpha', npcIds: ['mira'] });
     const regions = new Map([
@@ -616,7 +752,7 @@ test('runWhileYouWereAwayPrompt silently ignores inactive need bars returned by 
     <needBarChanges>
       <needBarEffect>
         <needBarId>energy</needBarId>
-        <delta>-10%</delta>
+        <value>40%</value>
       </needBarEffect>
     </needBarChanges>
   </characterUpdate>
@@ -692,7 +828,7 @@ test('runWhileYouWereAwayPrompt warns and ignores nonexistent need bars returned
     <needBarChanges>
       <needBarEffect>
         <needBarId>voidness</needBarId>
-        <delta>-10%</delta>
+        <value>40%</value>
       </needBarEffect>
     </needBarChanges>
   </characterUpdate>

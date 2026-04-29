@@ -55,6 +55,8 @@ The repository includes a defs-only sample mod in [`mods/npc-needs-demo`](../mod
 - `party: true`
 - `non_party: false`
 
+Need-bar defs may also include `while_you_were_away_prompt_notes`. Those notes are exposed to the blocking while-you-were-away reunion prompt so mods can give bar-specific guidance for offscreen time, such as how likely a character is to satisfy that need while the player is absent.
+
 ## Need-bar audience flags
 
 Need bars now use explicit audience booleans in `defs/need_bars.yaml`:

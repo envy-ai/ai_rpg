@@ -65,7 +65,7 @@ Quick refresher on where these systems live and how they're wired.
   - Analyzer: `server.js` → `analyzeSlopwordsForText()` computes ppm against the provided text.
   - Active-setting additions: `currentSetting.customSlopWords` entries with a single token are added as slop words (using `default` ppm threshold).
   - `api.js` → `getFilteredSlopWords()` runs the analyzer on combined slop history + current response, then filters to words present in the current response.
-  - Slop history segments include `player-action`, `npc-action`, `quest-reward`, and `random-event` chat entries.
+  - Slop history segments include `player-action`, `npc-action`, `quest-reward`, `random-event`, and visible `while-you-were-away-player` chat entries.
 - Configured ngrams:
   - Source: `defs/slopwords.yaml` → `ngrams` (with per-entry ppm or `default`, using `ngram_default`).
   - Analyzer: `server.js` → `analyzeConfiguredNgramsForText()` computes ppm over normalized tokens.
@@ -81,7 +81,7 @@ Quick refresher on where these systems live and how they're wired.
 - Repeated n-grams:
   - `api.js` → `collectSlopNgrams()`, which combines two scans using `Utils.findKgramOverlaps()`.
   - Base scan: `minK: 3` across the last 20 slop history segments.
-  - Supplemental scan: `minK: 6` across the last 80 assistant prose-like entries (`player-action`, `npc-action`, `quest-reward`, `random-event`, or null type).
+  - Supplemental scan: `minK: 6` across the last 80 assistant prose-like entries (`player-action`, `npc-action`, `quest-reward`, `random-event`, `while-you-were-away-player`, or null type).
   - Merges repetition-based ngrams with configured-PPM ngrams and prunes contained n-grams via `Utils.pruneContainedKgrams()`.
   - Uses the same punctuation stripping + `COMMON_WORDS` filtering as repetition detection.
 
@@ -111,6 +111,7 @@ Quick refresher on where these systems live and how they're wired.
 - Quest reward prose: `Events.js` → quest reward flow
 - Crafting narrative text: `api.js` → craft flow
 - Game intro prose (`<introProse>`): `api.js` → `runGameIntroPrompt` (new-game intro and `/game_intro` slash command path)
+- While-you-were-away visible reunion prose (`<proseForPlayer>`): `api.js` → `runWhileYouWereAwayPrompt`
 
 ### Explicit bypasses
 - `/api/chat` question actions (`?`) bypass slop-remover processing.

@@ -35,6 +35,7 @@ need_bars:
       - witnessing a horrific event
       - failing a crucial task
       - mind-affecting magic
+    while_you_were_away_prompt_notes: This need bar should be between 90% and 100% unless the character has recently witnessed something traumatic or is in a very stressful situation, in which case it could be between 10% and 50% depending on the severity of the trauma or stress (or if they have a mental condition affecting their sanity).
     effect_thresholds:
       0:
         name: Insane

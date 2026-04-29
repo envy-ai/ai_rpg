@@ -25,7 +25,7 @@ const EVENT_PROMPT_ORDER = [
         },
         {
             key: "new_exit_discovered",
-            prompt: `Did the text reveal, unlock, unblock, or otherwise discover a new exit or vehicle to another region or location (Note: roads, trails, paths, doors, portals, etc are exits and not scenery)? Or, did the player or any other entity create a new exit, clear a path, make a door, etc? If so, reply in the form [destination location or region name] → [the word "location" or "region"] → [type of vehicle or "none"] → [description of the location or region in 1-2 sentences] → [Exact travel time to the destination in minutes and/or hours "3 hours, 5 minutes" or "30 minutes" or "1 hour"]. In case of more than one, separate them with vertical bars. Otherwise answer N/A. An exit to a region may take the form of a vehicle to that region. If the new location or region is already known to the player or if it isn't, list it here. The exit may be to an existing location, but an exit to that new location may not already exist in this current location.`,
+            prompt: `Did the text reveal, unlock, unblock, or otherwise discover a new exit or vehicle to another region or location (Note: roads, trails, paths, doors, portals, etc are exits and not scenery)? Or, did the player or any other entity create a new exit, clear a path, make a door, etc? If so, reply in the form [destination location name, or destination region name if this is an exit to a region] → [the word "location" or "region"] → [type of vehicle or "none"] → [description of the location, region, or exit in 1-2 sentences] → [Exact travel time to the destination in minutes and/or hours "3 hours, 5 minutes" or "30 minutes" or "1 hour"] → [exit/source location name, or "current location" if this exit is at the current location] → [exit/source region name, or "current region" if this exit is at the current location] → [destination region name, or "none" if unknown/not needed]. In case of more than one, separate them with vertical bars. Otherwise answer N/A. An exit to a region may take the form of a vehicle to that region. If the new location or region is already known to the player or if it isn't, list it here. The exit may be to an existing location, but an exit to that new location may not already exist in the listed exit/source location.`,
         },
         // This dummy event gets the LLM to choose between mutually exclusive types of movement.
         {
@@ -421,6 +421,196 @@ function locationHasExitToDestination(location, destinationId) {
     });
 }
 
+function normalizeOptionalEventLocationField(value) {
+    const trimmed = typeof value === "string" ? value.trim() : "";
+    if (!trimmed) {
+        return "";
+    }
+    const normalized = trimmed.toLowerCase();
+    if (
+        normalized === "n/a" ||
+        normalized === "na" ||
+        normalized === "none" ||
+        normalized === "null" ||
+        normalized === "unknown" ||
+        normalized === "omitted" ||
+        normalized === "omit" ||
+        normalized === "current" ||
+        normalized === "current location" ||
+        normalized === "current region" ||
+        normalized === "same location" ||
+        normalized === "same region"
+    ) {
+        return "";
+    }
+    return trimmed;
+}
+
+function resolveEventRegionByName({ regions, findRegionByNameLoose } = {}, regionName) {
+    const trimmed = normalizeOptionalEventLocationField(regionName);
+    if (!trimmed) {
+        return null;
+    }
+
+    if (regions instanceof Map) {
+        const direct = regions.get(trimmed) || null;
+        if (direct) {
+            return direct;
+        }
+        const normalized = trimmed.toLowerCase();
+        for (const region of regions.values()) {
+            if (!region || typeof region !== "object") {
+                continue;
+            }
+            const id = typeof region.id === "string" ? region.id.trim().toLowerCase() : "";
+            const name = typeof region.name === "string" ? region.name.trim().toLowerCase() : "";
+            if (id === normalized || name === normalized) {
+                return region;
+            }
+        }
+    }
+
+    if (typeof findRegionByNameLoose === "function") {
+        return findRegionByNameLoose(trimmed) || null;
+    }
+
+    return null;
+}
+
+function resolveEventLocationByName({
+    Location,
+    gameLocations,
+    findLocationByNameLoose,
+    region = null,
+} = {}, locationName) {
+    const trimmed = normalizeOptionalEventLocationField(locationName);
+    if (!trimmed) {
+        return null;
+    }
+
+    const matchesLocationName = (candidate) => {
+        if (!candidate || typeof candidate !== "object") {
+            return false;
+        }
+        const normalized = trimmed.toLowerCase();
+        const id = typeof candidate.id === "string" ? candidate.id.trim().toLowerCase() : "";
+        const name = typeof candidate.name === "string" ? candidate.name.trim().toLowerCase() : "";
+        return id === normalized || name === normalized;
+    };
+
+    if (region && Array.isArray(region.locationIds)) {
+        for (const locationId of region.locationIds) {
+            let candidate = null;
+            if (Location && typeof Location.get === "function") {
+                try {
+                    candidate = Location.get(locationId) || null;
+                } catch (_) {
+                    candidate = null;
+                }
+            }
+            if (!candidate && gameLocations instanceof Map) {
+                candidate = gameLocations.get(locationId) || null;
+            }
+            if (matchesLocationName(candidate)) {
+                return candidate;
+            }
+        }
+    }
+
+    if (Location && typeof Location.get === "function") {
+        try {
+            const candidate = Location.get(trimmed) || null;
+            if (candidate && (!region || locationBelongsToEventRegion(candidate, region))) {
+                return candidate;
+            }
+        } catch (_) {
+            // Continue to name lookup.
+        }
+    }
+
+    if (Location && typeof Location.findByName === "function") {
+        try {
+            const candidate = Location.findByName(trimmed) || null;
+            if (candidate && (!region || locationBelongsToEventRegion(candidate, region))) {
+                return candidate;
+            }
+        } catch (_) {
+            // Continue to loose lookup.
+        }
+    }
+
+    if (typeof findLocationByNameLoose === "function") {
+        const candidate = findLocationByNameLoose(trimmed) || null;
+        if (candidate && (!region || locationBelongsToEventRegion(candidate, region))) {
+            return candidate;
+        }
+    }
+
+    return null;
+}
+
+function locationBelongsToEventRegion(location, region) {
+    if (!location || !region) {
+        return false;
+    }
+    const locationId = typeof location.id === "string" ? location.id.trim() : "";
+    if (locationId && Array.isArray(region.locationIds) && region.locationIds.includes(locationId)) {
+        return true;
+    }
+    const regionId = typeof region.id === "string" ? region.id.trim() : "";
+    if (!regionId) {
+        return false;
+    }
+    return location.regionId === regionId
+        || location.stubMetadata?.regionId === regionId
+        || location.stubMetadata?.targetRegionId === regionId;
+}
+
+function resolveExitDiscoveryOrigin(entry, context, deps, eventLabel) {
+    const explicitLocationName = normalizeOptionalEventLocationField(entry?.exitLocationName);
+    const explicitRegionName = normalizeOptionalEventLocationField(entry?.exitRegionName);
+
+    if (!explicitLocationName && !explicitRegionName) {
+        const originLocation = context.location || null;
+        const originRegion = context.region
+            || (typeof deps.findRegionByLocationId === "function" && originLocation?.id
+                ? deps.findRegionByLocationId(originLocation.id) || null
+                : originLocation?.region || null);
+        return { originLocation, originRegion };
+    }
+
+    if (!explicitLocationName) {
+        throw new Error(
+            `[${eventLabel}] exitLocation requires a location name when an exit/source region is provided.`,
+        );
+    }
+
+    const explicitRegion = resolveEventRegionByName(deps, explicitRegionName);
+    if (explicitRegionName && !explicitRegion) {
+        throw new Error(
+            `[${eventLabel}] Unable to resolve exit/source region "${explicitRegionName}".`,
+        );
+    }
+
+    const originLocation = resolveEventLocationByName({
+        ...deps,
+        region: explicitRegion,
+    }, explicitLocationName);
+    if (!originLocation) {
+        const regionSuffix = explicitRegionName ? ` in region "${explicitRegionName}"` : "";
+        throw new Error(
+            `[${eventLabel}] Unable to resolve exit/source location "${explicitLocationName}"${regionSuffix}.`,
+        );
+    }
+
+    const originRegion = explicitRegion
+        || (typeof deps.findRegionByLocationId === "function" && originLocation?.id
+            ? deps.findRegionByLocationId(originLocation.id) || null
+            : originLocation?.region || null);
+
+    return { originLocation, originRegion };
+}
+
 async function applyExitDiscovery(
     eventsInstance,
     entries = [],
@@ -446,29 +636,20 @@ async function applyExitDiscovery(
         ensureExitConnection,
         regenerateLocationName,
         gameLocations,
+        regions,
     } = deps;
 
-    const originLocation = context.location;
     if (
-        !originLocation ||
         typeof Location?.get !== "function" ||
         typeof ensureExitConnection !== "function"
     ) {
         if (movePlayer && entries && entries.length > 0) {
             console.warn(
-                `[${eventLabel}] Skipping move/exit creation because context.location is missing.`,
+                `[${eventLabel}] Skipping move/exit creation because required location dependencies are missing.`,
             );
         }
         return;
     }
-
-    const originRegion =
-        context.region ||
-        (typeof findRegionByLocationId === "function" && originLocation?.id
-            ? findRegionByLocationId(originLocation.id) || null
-            : originLocation?.region || null);
-    const originIsLocationVehicle = Boolean(originLocation?.isVehicle === true);
-    const originIsRegionVehicle = Boolean(originRegion?.isVehicle === true);
 
     const processedDestinations = new SanitizedStringSet();
 
@@ -480,26 +661,61 @@ async function applyExitDiscovery(
             continue;
         }
 
+        const { originLocation, originRegion } = resolveExitDiscoveryOrigin(
+            entry,
+            context,
+            {
+                Location,
+                gameLocations,
+                regions,
+                findLocationByNameLoose,
+                findRegionByNameLoose,
+                findRegionByLocationId,
+            },
+            eventLabel,
+        );
+        if (!originLocation) {
+            if (movePlayer) {
+                console.warn(
+                    `[${eventLabel}] Skipping move/exit creation because context.location is missing.`,
+                );
+            }
+            continue;
+        }
+
         const originNameFromEntry =
             typeof entry?.origin === "string" ? entry.origin.trim() : "";
         const originLocationName = originLocation?.name
             ? originLocation.name.trim()
             : "";
         const originReference = originNameFromEntry || originLocationName || null;
+        const originRegionId =
+            typeof originLocation?.regionId === "string"
+                ? originLocation.regionId.trim() || null
+                : typeof originLocation?.stubMetadata?.regionId === "string"
+                    ? originLocation.stubMetadata.regionId.trim() || null
+                    : typeof originLocation?.stubMetadata?.targetRegionId === "string"
+                        ? originLocation.stubMetadata.targetRegionId.trim() || null
+                        : null;
+        const originIsLocationVehicle = Boolean(originLocation?.isVehicle === true);
+        const originIsRegionVehicle = Boolean(originRegion?.isVehicle === true);
 
         //console.log(`entry for exit discovery: ${JSON.stringify(entry)}`);
 
         //console.log(`Checking exit "${exitName}" from origin "${originReference}"`);
+        const exitNameMatchesOrigin =
+            originLocationName &&
+            entry.name.toLowerCase().trim() === originLocationName.toLowerCase();
         if (
-            entry.name.toLowerCase().trim() ===
-            Globals.currentPlayer.getCurrentLocationName().toLowerCase().trim()
+            exitNameMatchesOrigin &&
+            typeof regenerateLocationName === "function"
         ) {
             try {
                 const regenInput = {
                     name: exitName,
                     description:
                         entry?.description || `A location connected to ${originReference}.`,
-                    regionId: Globals.currentPlayer.currentLocation.regionId,
+                    regionId: originRegionId,
                     baseLevel: Number.isFinite(originLocation?.baseLevel)
                         ? originLocation.baseLevel
                         : 1,
@@ -522,39 +738,67 @@ async function applyExitDiscovery(
             }
         }
 
-        if (processedDestinations.has(exitName)) {
+        const isRegion = entry?.kind === "region";
+        const destinationRegionName = normalizeOptionalEventLocationField(
+            entry?.destinationRegionName,
+        );
+        const destinationRegion = resolveEventRegionByName(
+            { regions, findRegionByNameLoose },
+            destinationRegionName,
+        );
+        if (!isRegion && destinationRegionName && !destinationRegion) {
+            throw new Error(
+                `[${eventLabel}] Unable to resolve destination region "${destinationRegionName}" for exit "${exitName}".`,
+            );
+        }
+
+        const processedDestinationKey = [
+            originLocation?.id || originLocationName || "unknown-origin",
+            isRegion ? "region" : "location",
+            exitName,
+            destinationRegion?.id || destinationRegionName || "",
+        ].join(" → ");
+        if (processedDestinations.has(processedDestinationKey)) {
             continue;
         }
 
-        processedDestinations.add(exitName);
+        processedDestinations.add(processedDestinationKey);
 
         let destination = null;
         let createdRegionStub = false;
 
-        if (typeof findLocationByNameLoose === "function") {
-            destination = findLocationByNameLoose(exitName) || null;
-        }
-        if (!destination && typeof Location.findByName === "function") {
-            try {
-                destination = Location.findByName(exitName);
-            } catch (_) {
-                destination = null;
+        if (!isRegion) {
+            destination = resolveEventLocationByName({
+                Location,
+                gameLocations,
+                findLocationByNameLoose,
+                region: destinationRegion,
+            }, exitName);
+        } else if (!destinationRegionName) {
+            if (typeof findLocationByNameLoose === "function") {
+                destination = findLocationByNameLoose(exitName) || null;
+            }
+            if (!destination && typeof Location.findByName === "function") {
+                try {
+                    destination = Location.findByName(exitName);
+                } catch (_) {
+                    destination = null;
+                }
             }
         }
 
-        const isRegion = entry?.kind === "region";
         const suppressLocationVehicleExitCreation = originIsLocationVehicle;
         const suppressRegionVehicleRegionExitCreation =
             !originIsLocationVehicle && originIsRegionVehicle && isRegion;
 
         let existingRegionDestination = null;
-        if (
-            !destination &&
-            isRegion &&
-            typeof findRegionByNameLoose === "function"
-        ) {
+        if (!destination && isRegion) {
             try {
-                const matchedRegion = findRegionByNameLoose(exitName) || null;
+                const matchedRegion =
+                    destinationRegion ||
+                    (typeof findRegionByNameLoose === "function"
+                        ? findRegionByNameLoose(exitName) || null
+                        : null);
                 const entranceLocationId =
                     typeof matchedRegion?.entranceLocationId === "string"
                         ? matchedRegion.entranceLocationId.trim()
@@ -567,6 +811,7 @@ async function applyExitDiscovery(
                 ) {
                     existingRegionDestination =
                         gameLocations.get(entranceLocationId) || null;
+                    destination = existingRegionDestination;
                 }
             } catch (_) {
                 existingRegionDestination = null;
@@ -585,7 +830,8 @@ async function applyExitDiscovery(
             (suppressLocationVehicleExitCreation || suppressRegionVehicleRegionExitCreation) &&
             !alreadyHasMatchingExit
         ) {
-            const originVehicleLabel = originLocation?.name || originLocation?.id || "unknown location vehicle";
+            const originVehicleLabel =
+                originLocation?.name || originLocation?.id || "unknown location vehicle";
             if (suppressLocationVehicleExitCreation) {
                 console.warn(
                     `[${eventLabel}] Suppressed event-created exit from location vehicle `
@@ -640,6 +886,7 @@ async function applyExitDiscovery(
                     vehicleType: entry?.vehicleType || null,
                     isVehicle: Boolean(entry?.vehicleType),
                     expandStub: false,
+                    targetRegionId: destinationRegion?.id || null,
                 });
             } catch (error) {
                 throw new Error(
@@ -719,17 +966,6 @@ async function applyExitDiscovery(
         }
 
         if (!isRegion) {
-            const originRegionRaw =
-                typeof originLocation?.regionId === "string"
-                    ? originLocation.regionId
-                    : typeof originLocation?.stubMetadata?.regionId === "string"
-                        ? originLocation.stubMetadata.regionId
-                        : null;
-            const originRegionId =
-                originRegionRaw && typeof originRegionRaw === "string"
-                    ? originRegionRaw.trim() || null
-                    : null;
-
             try {
                 ensureExitConnection(destination, originLocation, {
                     description:
@@ -1007,6 +1243,12 @@ function applyEventMoveTravelTime({
     if (!player || player.isNPC || context.suppressTimeAdvance) {
         return;
     }
+
+    // Once movement succeeds, route/exit travel time is authoritative for this
+    // event pass. A prompt-authored time_passed entry should only apply when no
+    // travel happened, even if this specific route has no positive time cost.
+    context.suppressTimeAdvance = true;
+
     if (eventLocationContextRepresentsVehicle(eventsInstance, originLocation)) {
         return;
     }
@@ -1022,7 +1264,18 @@ function applyEventMoveTravelTime({
     }
 
     context.timeProgress = Globals.advanceTime(travelTimeMinutes, { source: "event_move_travel" });
-    context.suppressTimeAdvance = true;
+    applyTimeBasedNeedBarEffectsAfterTimeAdvance(context);
+}
+
+function applyTimeBasedNeedBarEffectsAfterTimeAdvance(context = {}) {
+    const adjustments = Player.applyStatusEffectNeedBarsToAll();
+    if (Array.isArray(adjustments) && adjustments.length) {
+        if (!Array.isArray(context.timeBasedNeedBarAdjustments)) {
+            context.timeBasedNeedBarAdjustments = [];
+        }
+        context.timeBasedNeedBarAdjustments.push(...adjustments);
+    }
+    return adjustments;
 }
 
 function extractInteger(raw) {
@@ -1715,6 +1968,38 @@ class Events {
             .join(" | ");
     }
 
+    static _injectNeedBarPromptEntriesIntoStructured(structured, entries = []) {
+        const needBarPromptEntries = Array.isArray(entries) ? entries : [];
+        if (!structured || !needBarPromptEntries.length) {
+            return;
+        }
+        if (!structured.parsed || typeof structured.parsed !== "object") {
+            structured.parsed = {};
+        }
+        const existingNeedBarEntries = Array.isArray(structured.parsed.needbar_change)
+            ? structured.parsed.needbar_change
+            : [];
+        structured.parsed.needbar_change = [
+            ...existingNeedBarEntries,
+            ...needBarPromptEntries,
+        ];
+
+        if (!structured.rawEntries || typeof structured.rawEntries !== "object") {
+            structured.rawEntries = {};
+        }
+        const serializedNeedBarEntries =
+            this._serializeNeedBarPromptEntries(needBarPromptEntries);
+        if (serializedNeedBarEntries) {
+            const existingRawNeedBarEntries =
+                typeof structured.rawEntries.needbar_change === "string"
+                    ? structured.rawEntries.needbar_change.trim()
+                    : "";
+            structured.rawEntries.needbar_change = existingRawNeedBarEntries
+                ? `${existingRawNeedBarEntries} | ${serializedNeedBarEntries}`
+                : serializedNeedBarEntries;
+        }
+    }
+
     static async _runNeedBarEventChecks({
         baseContext,
         textToCheck,
@@ -2024,6 +2309,464 @@ class Events {
         return questResponseText;
     }
 
+    static _createEventCheckAccumulator() {
+        return {
+            experienceAwards: [],
+            currencyChanges: [],
+            environmentalDamageEvents: [],
+            needBarChanges: [],
+            dispositionChanges: [],
+            factionReputationChanges: [],
+            questsAwarded: [],
+            questRewards: [],
+            questObjectivesCompleted: [],
+            itemTriggeredStatusChanges: [],
+            timeProgress: null,
+        };
+    }
+
+    static _mergeOutcomeContextIntoAccumulator(outcomeContext, accumulator) {
+        if (!outcomeContext || !accumulator) {
+            return;
+        }
+        const mergeArray = (fromKey, toKey = fromKey) => {
+            const values = outcomeContext[fromKey];
+            if (Array.isArray(values) && values.length) {
+                accumulator[toKey].push(...values);
+            }
+        };
+
+        mergeArray("experienceAwards");
+        mergeArray("currencyChanges");
+        mergeArray("environmentalDamageEvents");
+        mergeArray("needBarChanges");
+        mergeArray("dispositionChanges");
+        mergeArray("factionReputationChanges");
+        mergeArray("questsAwarded");
+        mergeArray("questCompletionRewards", "questRewards");
+        mergeArray("completedQuestObjectives", "questObjectivesCompleted");
+        mergeArray("itemTriggeredStatusChanges");
+
+        if (
+            outcomeContext.timeProgress &&
+            typeof outcomeContext.timeProgress === "object"
+        ) {
+            accumulator.timeProgress = outcomeContext.timeProgress;
+        }
+    }
+
+    static _clearEnvironmentalEvents(structured) {
+        if (!structured || typeof structured !== "object") {
+            return;
+        }
+        if (structured.parsed && typeof structured.parsed === "object") {
+            structured.parsed.environmental_status_damage = [];
+        }
+        if (structured.rawEntries && typeof structured.rawEntries === "object") {
+            structured.rawEntries.environmental_status_damage = "";
+        }
+    }
+
+    static _buildEventCheckNpcUpdateState(Location) {
+        const findLocationByNameLoose = this._deps?.findLocationByNameLoose;
+        const resolveMovedLocationName = (name) => {
+            const trimmed = typeof name === "string" ? name.trim() : "";
+            if (!trimmed) {
+                return "";
+            }
+            let resolved = null;
+            if (Location && typeof Location.get === "function") {
+                try {
+                    resolved = Location.get(trimmed);
+                } catch (_) {
+                    resolved = null;
+                }
+            }
+            if (
+                !resolved &&
+                Location &&
+                typeof Location.findByName === "function"
+            ) {
+                try {
+                    resolved = Location.findByName(trimmed);
+                } catch (_) {
+                    resolved = null;
+                }
+            }
+            if (!resolved && typeof findLocationByNameLoose === "function") {
+                resolved = findLocationByNameLoose(trimmed) || null;
+            }
+            return resolved?.name || trimmed;
+        };
+
+        const addedCharacters = Array.from(this.newCharacters);
+        const departedCharacters = Array.from(this.departedCharacters);
+        const movedLocationNames = Array.from(
+            new Set(
+                Array.from(this.movedLocations)
+                    .map(resolveMovedLocationName)
+                    .filter(Boolean),
+            ),
+        );
+
+        return {
+            addedCharacters,
+            departedCharacters,
+            movedLocationNames,
+            addedSet: new Set(addedCharacters),
+            departedSet: new Set(departedCharacters),
+            movedSet: new Set(movedLocationNames),
+            locationRefreshRequested: Boolean(
+                addedCharacters.length ||
+                departedCharacters.length ||
+                movedLocationNames.length,
+            ),
+        };
+    }
+
+    static _mergeFollowupNpcUpdates(followup, npcState) {
+        if (!followup?.npcUpdates || !npcState) {
+            return;
+        }
+        if (Array.isArray(followup.npcUpdates.added)) {
+            followup.npcUpdates.added.forEach((name) => {
+                if (name && !npcState.addedSet.has(name)) {
+                    npcState.addedSet.add(name);
+                    npcState.addedCharacters.push(name);
+                }
+            });
+        }
+        if (Array.isArray(followup.npcUpdates.departed)) {
+            followup.npcUpdates.departed.forEach((name) => {
+                if (name && !npcState.departedSet.has(name)) {
+                    npcState.departedSet.add(name);
+                    npcState.departedCharacters.push(name);
+                }
+            });
+        }
+        if (Array.isArray(followup.npcUpdates.movedLocations)) {
+            followup.npcUpdates.movedLocations.forEach((name) => {
+                if (name && !npcState.movedSet.has(name)) {
+                    npcState.movedSet.add(name);
+                    npcState.movedLocationNames.push(name);
+                }
+            });
+        }
+    }
+
+    static async _applyStructuredEventsForRun(structured, context, accumulator) {
+        if (!structured || !structured.parsed) {
+            return null;
+        }
+        try {
+            const outcomeContext = await this.applyEventOutcomes(structured, {
+                ...context,
+                experienceAwards: [],
+                currencyChanges: [],
+                environmentalDamageEvents: [],
+                needBarChanges: [],
+                dispositionChanges: [],
+                factionReputationChanges: [],
+            });
+            this._mergeOutcomeContextIntoAccumulator(outcomeContext, accumulator);
+            return outcomeContext;
+        } catch (error) {
+            console.warn("Failed to apply event outcomes:", error.message);
+            return null;
+        }
+    }
+
+    static async _runXmlEventChecks({
+        textToCheck,
+        normalizedActionText,
+        includePlayerActionBlock,
+        stream,
+        allowEnvironmentalEffects,
+        isNpcTurn,
+        suppressMoveEvents,
+        allowMoveTurnAppearances,
+        suppressTimeAdvance,
+        location,
+        region,
+        currentPlayer,
+        baseContext,
+        promptEnv,
+        parseXMLTemplate,
+        Location,
+        findRegionByLocationId,
+        activeFollowupQueue,
+        depth,
+    }) {
+        const rendered = promptEnv.render("base-context.xml.njk", {
+            ...baseContext,
+            promptType: "events_xml",
+            textToCheck,
+            actionText: normalizedActionText,
+            includePlayerActionBlock,
+            omitGameHistory: true,
+        });
+
+        const parsedTemplate = parseXMLTemplate(rendered);
+        if (!parsedTemplate?.systemPrompt || !parsedTemplate?.generationPrompt) {
+            throw new Error("XML event check template did not produce prompts.");
+        }
+
+        let requestPayloadForLog = null;
+        let responsePayloadForLog = null;
+        const needBarEventCheckPromise = this._runNeedBarEventChecks({
+            baseContext,
+            textToCheck,
+            actionText: normalizedActionText,
+            includePlayerActionBlock,
+            promptEnv,
+            parseXMLTemplate,
+        });
+        const responseTextPromise = LLMClient.chatCompletion({
+            messages: [
+                { role: "system", content: parsedTemplate.systemPrompt },
+                { role: "user", content: parsedTemplate.generationPrompt },
+            ],
+            metadataLabel: "event_checks",
+            metadata: { eventPipeline: "xml" },
+            timeoutMs: this._baseTimeout,
+            temperature: 0,
+            validateXML: false,
+            requiredRegex: /<events\b[\s\S]*<\/events>/i,
+            dumpReasoningToConsole: true,
+            stream: true,
+            // captureRequestPayload: (payload) => { requestPayloadForLog = payload; },
+            // captureResponsePayload: (payload) => { responsePayloadForLog = payload; }
+        });
+        const [responseText, needBarEventCheck] = await Promise.all([
+            responseTextPromise,
+            needBarEventCheckPromise,
+        ]);
+
+        this.logEventCheck({
+            systemPrompt: parsedTemplate.systemPrompt,
+            generationPrompt: parsedTemplate.generationPrompt,
+            responseText,
+            metadataLabel: "event_checks",
+            prefix: "event_checks_xml",
+            requestPayload: requestPayloadForLog,
+            responsePayload: responsePayloadForLog,
+        });
+
+        const xmlEvents = this._parseXmlEventCheckResponse(responseText);
+        const needBarPromptEntries = Array.isArray(needBarEventCheck?.entries)
+            ? needBarEventCheck.entries
+            : [];
+        if (needBarPromptEntries.length) {
+            this._injectNeedBarPromptEntriesIntoStructured(
+                xmlEvents.beforeTravel.structured,
+                needBarPromptEntries,
+            );
+            xmlEvents.structured = this._mergeStructuredEventSets(
+                xmlEvents.beforeTravel.structured,
+                xmlEvents.travelMove.structured,
+                xmlEvents.afterTravel.structured,
+            );
+        }
+        if (!allowEnvironmentalEffects) {
+            this._clearEnvironmentalEvents(xmlEvents.beforeTravel.structured);
+            this._clearEnvironmentalEvents(xmlEvents.travelMove.structured);
+            this._clearEnvironmentalEvents(xmlEvents.afterTravel.structured);
+            this._clearEnvironmentalEvents(xmlEvents.structured);
+        }
+
+        const cleaned = xmlEvents.xml;
+        const html = this.escapeHtml(cleaned).replace(/\n/g, "<br>");
+        const accumulator = this._createEventCheckAccumulator();
+        const commonContext = {
+            player: currentPlayer,
+            allowEnvironmentalEffects: Boolean(allowEnvironmentalEffects),
+            isNpcTurn: Boolean(isNpcTurn),
+            suppressTimeAdvance: Boolean(suppressTimeAdvance),
+            suppressTimePassedEvents: Boolean(xmlEvents.hasTravelBoundary),
+            stream,
+            followupQueue: activeFollowupQueue,
+            _originatedFromEventChecks: true,
+        };
+
+        await this._applyStructuredEventsForRun(
+            xmlEvents.beforeTravel.structured,
+            {
+                ...commonContext,
+                location,
+                region,
+                suppressMoveEvents: Boolean(suppressMoveEvents),
+                allowMoveTurnAppearances: Boolean(allowMoveTurnAppearances),
+            },
+            accumulator,
+        );
+
+        let destinationLocation = location;
+        let destinationRegion = region;
+        if (xmlEvents.hasTravelBoundary) {
+            await this._applyStructuredEventsForRun(
+                xmlEvents.travelMove.structured,
+                {
+                    ...commonContext,
+                    location,
+                    region,
+                    suppressMoveEvents: Boolean(suppressMoveEvents),
+                    allowMoveTurnAppearances: Boolean(allowMoveTurnAppearances),
+                },
+                accumulator,
+            );
+
+            if (
+                currentPlayer?.currentLocation &&
+                Location &&
+                typeof Location.get === "function"
+            ) {
+                try {
+                    destinationLocation = Location.get(currentPlayer.currentLocation) || location;
+                } catch (_) {
+                    destinationLocation = location;
+                }
+            }
+            if (
+                destinationLocation &&
+                typeof findRegionByLocationId === "function"
+            ) {
+                try {
+                    destinationRegion =
+                        findRegionByLocationId(destinationLocation.id) || region;
+                } catch (_) {
+                    destinationRegion = region;
+                }
+            }
+
+            await this._applyStructuredEventsForRun(
+                xmlEvents.afterTravel.structured,
+                {
+                    ...commonContext,
+                    location: destinationLocation,
+                    region: destinationRegion,
+                    suppressMoveEvents: true,
+                    allowMoveTurnAppearances: true,
+                },
+                accumulator,
+            );
+        }
+
+        this._mergeItemTriggeredStatusChangesIntoStructured(
+            xmlEvents.structured,
+            accumulator.itemTriggeredStatusChanges,
+        );
+        this.mergeQuestOutcomesIntoStructured(xmlEvents.structured, {
+            questRewards: accumulator.questRewards,
+            questObjectivesCompleted: accumulator.questObjectivesCompleted,
+        });
+
+        const npcState = this._buildEventCheckNpcUpdateState(Location);
+        const followupResults = [];
+        if (
+            depth === 0 &&
+            Array.isArray(activeFollowupQueue) &&
+            activeFollowupQueue.length
+        ) {
+            const seen = new Set();
+            while (activeFollowupQueue.length) {
+                const pendingTexts = activeFollowupQueue.splice(
+                    0,
+                    activeFollowupQueue.length,
+                );
+                for (const followupText of pendingTexts) {
+                    if (typeof followupText !== "string") {
+                        continue;
+                    }
+                    const trimmedFollowup = followupText.trim();
+                    if (!trimmedFollowup || seen.has(trimmedFollowup)) {
+                        continue;
+                    }
+                    seen.add(trimmedFollowup);
+                    try {
+                        const followup = await this.runEventChecks({
+                            textToCheck: trimmedFollowup,
+                            stream,
+                            allowEnvironmentalEffects,
+                            isNpcTurn,
+                            suppressMoveEvents,
+                            allowMoveTurnAppearances,
+                            suppressTimeAdvance: true,
+                            _depth: depth + 1,
+                            followupQueue: activeFollowupQueue,
+                        });
+                        if (!followup) {
+                            continue;
+                        }
+
+                        followupResults.push({
+                            raw: followup.raw,
+                            html: followup.html,
+                            structured: followup.structured,
+                        });
+
+                        this._mergeOutcomeContextIntoAccumulator(
+                            {
+                                experienceAwards: followup.experienceAwards,
+                                currencyChanges: followup.currencyChanges,
+                                environmentalDamageEvents:
+                                    followup.environmentalDamageEvents,
+                                needBarChanges: followup.needBarChanges,
+                                dispositionChanges: followup.dispositionChanges,
+                                factionReputationChanges:
+                                    followup.factionReputationChanges,
+                                questsAwarded: followup.questsAwarded,
+                                questCompletionRewards: followup.questRewards,
+                                completedQuestObjectives:
+                                    followup.questObjectivesCompleted,
+                                timeProgress: followup.timeProgress,
+                            },
+                            accumulator,
+                        );
+
+                        if (followup.locationRefreshRequested) {
+                            npcState.locationRefreshRequested = true;
+                        }
+                        this._mergeFollowupNpcUpdates(followup, npcState);
+                    } catch (error) {
+                        console.warn(
+                            "Failed to process follow-up event text:",
+                            error.message,
+                        );
+                    }
+                }
+            }
+        }
+
+        console.debug(
+            "[QuestDebug] runEventChecks returning quests:",
+            accumulator.questsAwarded,
+        );
+
+        return {
+            raw: cleaned,
+            html,
+            structured: xmlEvents.structured,
+            xmlEvents,
+            experienceAwards: accumulator.experienceAwards,
+            currencyChanges: accumulator.currencyChanges,
+            environmentalDamageEvents: accumulator.environmentalDamageEvents,
+            needBarChanges: accumulator.needBarChanges,
+            dispositionChanges: accumulator.dispositionChanges,
+            factionReputationChanges: accumulator.factionReputationChanges,
+            npcUpdates: {
+                added: npcState.addedCharacters,
+                departed: npcState.departedCharacters,
+                movedLocations: npcState.movedLocationNames,
+            },
+            locationRefreshRequested: npcState.locationRefreshRequested,
+            questObjectivesCompleted: accumulator.questObjectivesCompleted,
+            questRewards: accumulator.questRewards,
+            questsAwarded: accumulator.questsAwarded,
+            followupResults,
+            timeProgress: accumulator.timeProgress,
+        };
+    }
+
     static async runEventChecks({
         textToCheck,
         actionText = null,
@@ -2131,6 +2874,30 @@ class Events {
         const baseContext = await prepareBasePromptContext({
             locationOverride: location,
         });
+
+        if (config?.event_checks?.use_xml !== false) {
+            return this._runXmlEventChecks({
+                textToCheck,
+                normalizedActionText,
+                includePlayerActionBlock,
+                stream,
+                allowEnvironmentalEffects,
+                isNpcTurn,
+                suppressMoveEvents,
+                allowMoveTurnAppearances,
+                suppressTimeAdvance,
+                location,
+                region,
+                currentPlayer,
+                baseContext,
+                promptEnv,
+                parseXMLTemplate,
+                Location,
+                findRegionByLocationId,
+                activeFollowupQueue,
+                depth,
+            });
+        }
 
         const promptGroups = EVENT_PROMPT_ORDER;
 
@@ -2256,33 +3023,10 @@ class Events {
         const needBarPromptEntries = Array.isArray(needBarEventCheck?.entries)
             ? needBarEventCheck.entries
             : [];
-        if (needBarPromptEntries.length) {
-            if (!structured.parsed || typeof structured.parsed !== "object") {
-                structured.parsed = {};
-            }
-            const existingNeedBarEntries = Array.isArray(structured.parsed.needbar_change)
-                ? structured.parsed.needbar_change
-                : [];
-            structured.parsed.needbar_change = [
-                ...existingNeedBarEntries,
-                ...needBarPromptEntries,
-            ];
-
-            if (!structured.rawEntries || typeof structured.rawEntries !== "object") {
-                structured.rawEntries = {};
-            }
-            const serializedNeedBarEntries =
-                this._serializeNeedBarPromptEntries(needBarPromptEntries);
-            if (serializedNeedBarEntries) {
-                const existingRawNeedBarEntries =
-                    typeof structured.rawEntries.needbar_change === "string"
-                        ? structured.rawEntries.needbar_change.trim()
-                        : "";
-                structured.rawEntries.needbar_change = existingRawNeedBarEntries
-                    ? `${existingRawNeedBarEntries} | ${serializedNeedBarEntries}`
-                    : serializedNeedBarEntries;
-            }
-        }
+        this._injectNeedBarPromptEntriesIntoStructured(
+            structured,
+            needBarPromptEntries,
+        );
         if (!allowEnvironmentalEffects) {
             if (Array.isArray(structured.parsed.environmental_status_damage)) {
                 structured.parsed.environmental_status_damage = [];
@@ -3296,6 +4040,673 @@ class Events {
         return { rawEntries, parsed: parsedEntries };
     }
 
+    static _extractEventsXmlBlock(responseText) {
+        if (typeof responseText !== "string") {
+            throw new Error("Event XML response must be a string.");
+        }
+        const match = responseText.match(/<events\b[\s\S]*<\/events>/i);
+        if (!match || !match[0] || !match[0].trim()) {
+            throw new Error("Event XML response missing <events> block.");
+        }
+        return match[0].trim();
+    }
+
+    static _getXmlElementChildren(node) {
+        return Array.from(node?.childNodes || []).filter(
+            (child) => child && child.nodeType === 1,
+        );
+    }
+
+    static _getXmlDirectChildText(node, tagName) {
+        if (!node || typeof tagName !== "string" || !tagName.trim()) {
+            return "";
+        }
+        const directChild = this._getXmlDirectChildNode(node, tagName);
+        const text = directChild?.textContent;
+        return typeof text === "string" ? text.trim() : "";
+    }
+
+    static _getXmlDirectChildNode(node, tagName) {
+        if (!node || typeof tagName !== "string" || !tagName.trim()) {
+            return null;
+        }
+        return this._getXmlElementChildren(node).find(
+            (child) => child.tagName === tagName,
+        ) || null;
+    }
+
+    static _formatXmlLegacyRawEntry(node, fields) {
+        const parts = fields.map((field) => {
+            if (Array.isArray(field)) {
+                const [tagName, fallback] = field;
+                const text = this._getXmlDirectChildText(node, tagName);
+                return text || fallback || "";
+            }
+            return this._getXmlDirectChildText(node, field);
+        });
+        return parts.join(" → ");
+    }
+
+    static _mapXmlEventNodeToLegacyRaw(node) {
+        const tagName = node?.tagName;
+        switch (tagName) {
+            case "newExitDiscovered": {
+                const destinationNode = this._getXmlDirectChildNode(node, "destination");
+                const exitLocationNode = this._getXmlDirectChildNode(node, "exitLocation");
+                const destinationKind = this._getXmlDirectChildText(node, "destinationKind");
+                const normalizedKind = destinationKind.trim().toLowerCase();
+                const legacyDestinationName =
+                    this._getXmlDirectChildText(node, "destinationName");
+                const destinationLocationName =
+                    this._getXmlDirectChildText(destinationNode, "locationName")
+                    || this._getXmlDirectChildText(node, "destinationLocationName");
+                const destinationRegionName =
+                    this._getXmlDirectChildText(destinationNode, "regionName")
+                    || this._getXmlDirectChildText(node, "destinationRegionName");
+                const destinationName = normalizedKind === "region"
+                    ? destinationRegionName || legacyDestinationName || destinationLocationName
+                    : destinationLocationName || legacyDestinationName || destinationRegionName;
+                const exitLocationName =
+                    this._getXmlDirectChildText(exitLocationNode, "locationName")
+                    || this._getXmlDirectChildText(node, "exitLocationName");
+                const exitRegionName =
+                    this._getXmlDirectChildText(exitLocationNode, "regionName")
+                    || this._getXmlDirectChildText(node, "exitRegionName");
+                return {
+                    key: "new_exit_discovered",
+                    raw: [
+                        destinationName || "none",
+                        destinationKind || "none",
+                        this._getXmlDirectChildText(node, "vehicleType") || "none",
+                        this._getXmlDirectChildText(node, "description") || "none",
+                        this._getXmlDirectChildText(node, "travelTime") || "none",
+                        exitLocationName || "none",
+                        exitRegionName || "none",
+                        destinationRegionName || "none",
+                    ].join(" → "),
+                };
+            }
+            case "moveLocation": {
+                const destination = this._getXmlDirectChildText(node, "destinationName")
+                    || (this._getXmlElementChildren(node).length ? "" : normalizeString(node.textContent));
+                return { key: "move_location", raw: destination };
+            }
+            case "moveNewLocation":
+                return {
+                    key: "move_new_location",
+                    raw: this._formatXmlLegacyRawEntry(node, [
+                        "originDifference",
+                        "destinationName",
+                        "destinationKind",
+                        ["vehicleType", "none"],
+                        "description",
+                    ]),
+                };
+            case "alterLocation":
+                return {
+                    key: "alter_location",
+                    raw: this._formatXmlLegacyRawEntry(node, [
+                        "currentLocationName",
+                        "newLocationName",
+                        "changeDescription",
+                    ]),
+                };
+            case "currency":
+                return {
+                    key: "currency",
+                    raw: this._getXmlDirectChildText(node, "amount"),
+                };
+            case "itemAppear":
+                return {
+                    key: "item_appear",
+                    raw: this._formatXmlLegacyRawEntry(node, [
+                        "fullItemName",
+                        "quantity",
+                        "description",
+                    ]),
+                };
+            case "sceneryAppear":
+                return {
+                    key: "scenery_appear",
+                    raw: this._formatXmlLegacyRawEntry(node, [
+                        "sceneryName",
+                        "description",
+                    ]),
+                };
+            case "harvestableResourceAppear":
+                return {
+                    key: "harvestable_resource_appear",
+                    raw: this._formatXmlLegacyRawEntry(node, [
+                        "resourceName",
+                        "description",
+                    ]),
+                };
+            case "pickUpItem":
+                return {
+                    key: "pick_up_item",
+                    raw: this._formatXmlLegacyRawEntry(node, [
+                        "actorName",
+                        "fullItemName",
+                        "quantity",
+                    ]),
+                };
+            case "dropItem":
+                return {
+                    key: "drop_item",
+                    raw: this._formatXmlLegacyRawEntry(node, [
+                        "actorName",
+                        "fullItemName",
+                        "quantity",
+                    ]),
+                };
+            case "transferItem":
+                return {
+                    key: "transfer_item",
+                    raw: this._formatXmlLegacyRawEntry(node, [
+                        "giverName",
+                        "fullItemName",
+                        "quantity",
+                        "receiverName",
+                    ]),
+                };
+            case "consumeItem":
+                return {
+                    key: "consume_item",
+                    raw: this._formatXmlLegacyRawEntry(node, [
+                        "fullItemName",
+                        "quantity",
+                        "reason",
+                    ]),
+                };
+            case "alterItem":
+                return {
+                    key: "alter_item",
+                    raw: this._formatXmlLegacyRawEntry(node, [
+                        "originalItemName",
+                        "quantity",
+                        "newItemName",
+                        "changeDescription",
+                    ]),
+                };
+            case "harvestGather":
+                return {
+                    key: "harvest_gather",
+                    raw: this._formatXmlLegacyRawEntry(node, [
+                        "harvesterName",
+                        "fullItemName",
+                        "quantity",
+                        "sourceName",
+                    ]),
+                };
+            case "itemInflict":
+                return {
+                    key: "item_inflict",
+                    raw: this._formatXmlLegacyRawEntry(node, [
+                        "fullItemName",
+                        "targetName",
+                        "statusEffect",
+                    ]),
+                };
+            case "itemIngest":
+                return {
+                    key: "item_ingest",
+                    raw: this._formatXmlLegacyRawEntry(node, [
+                        "fullItemName",
+                        "consumerName",
+                    ]),
+                };
+            case "itemToNpc":
+                return {
+                    key: "item_to_npc",
+                    raw: this._formatXmlLegacyRawEntry(node, [
+                        "sourceThingName",
+                        "npcName",
+                        "description",
+                    ]),
+                };
+            case "attackDamage":
+                return {
+                    key: "attack_damage",
+                    raw: this._formatXmlLegacyRawEntry(node, [
+                        "attackerName",
+                        "targetName",
+                    ]),
+                };
+            case "alterNpc":
+                return {
+                    key: "alter_npc",
+                    raw: this._formatXmlLegacyRawEntry(node, [
+                        "npcName",
+                        "alterationCategory",
+                        "changeDescription",
+                    ]),
+                };
+            case "statusEffectChange": {
+                const parts = [
+                    this._getXmlDirectChildText(node, "entityName"),
+                    this._getXmlDirectChildText(node, "statusEffectName"),
+                    this._getXmlDirectChildText(node, "action"),
+                ];
+                const level = this._getXmlDirectChildText(node, "level");
+                if (level) {
+                    parts.push(level);
+                }
+                return { key: "status_effect_change", raw: parts.join(" → ") };
+            }
+            case "npcArrivalDeparture": {
+                const parts = [
+                    this._getXmlDirectChildText(node, "npcName"),
+                    this._getXmlDirectChildText(node, "action"),
+                ];
+                const destinationRegion = this._getXmlDirectChildText(
+                    node,
+                    "destinationRegion",
+                );
+                const destinationLocation = this._getXmlDirectChildText(
+                    node,
+                    "destinationLocation",
+                );
+                if (destinationRegion || destinationLocation) {
+                    parts.push(destinationRegion, destinationLocation);
+                }
+                return { key: "npc_arrival_departure", raw: parts.join(" → ") };
+            }
+            case "npcFirstAppearance":
+                return {
+                    key: "npc_first_appearance",
+                    raw: this._getXmlDirectChildText(node, "npcName"),
+                };
+            case "partyChange":
+                return {
+                    key: "party_change",
+                    raw: this._formatXmlLegacyRawEntry(node, ["npcName", "action"]),
+                };
+            case "environmentalStatusDamage":
+                return {
+                    key: "environmental_status_damage",
+                    raw: this._formatXmlLegacyRawEntry(node, [
+                        "actorName",
+                        "effect",
+                        "severity",
+                        "reason",
+                    ]),
+                };
+            case "healRecover":
+                return {
+                    key: "heal_recover",
+                    raw: this._formatXmlLegacyRawEntry(node, [
+                        "characterName",
+                        "magnitude",
+                        "reason",
+                    ]),
+                };
+            case "hostileToFriendly":
+                return {
+                    key: "hostile_to_friendly",
+                    raw: this._formatXmlLegacyRawEntry(node, [
+                        "npcName",
+                        "previousDisposition",
+                        "newDisposition",
+                        "reason",
+                    ]),
+                };
+            case "deathIncapacitation":
+                return {
+                    key: "death_incapacitation",
+                    raw: this._formatXmlLegacyRawEntry(node, [
+                        "actorName",
+                        "outcome",
+                    ]),
+                };
+            case "inCombat":
+                return {
+                    key: "in_combat",
+                    raw: this._getXmlDirectChildText(node, "value"),
+                };
+            case "receivedQuest": {
+                const giverName = this._getXmlDirectChildText(node, "giverName");
+                const summary = this._getXmlDirectChildText(node, "summary");
+                return {
+                    key: "received_quest",
+                    raw: giverName ? `${giverName} → ${summary}` : summary,
+                };
+            }
+            case "completedQuestObjective": {
+                const parts = [
+                    this._getXmlDirectChildText(node, "questIndex"),
+                    this._getXmlDirectChildText(node, "objectiveIndex"),
+                ];
+                const statusReason = this._getXmlDirectChildText(
+                    node,
+                    "statusReason",
+                );
+                if (statusReason) {
+                    parts.push(statusReason);
+                }
+                return {
+                    key: "completed_quest_objective",
+                    raw: parts.join(" → "),
+                };
+            }
+            case "defeatedEnemy":
+                return {
+                    key: "defeated_enemy",
+                    raw: this._getXmlDirectChildText(node, "enemyName"),
+                };
+            case "experienceCheck":
+                return {
+                    key: "experience_check",
+                    raw: this._formatXmlLegacyRawEntry(node, ["amount", "reason"]),
+                };
+            case "factionReputationChange": {
+                const factionName = this._getXmlDirectChildText(node, "factionName");
+                const direction = this._getXmlDirectChildText(node, "direction");
+                const magnitude = this._getXmlDirectChildText(node, "magnitude");
+                const reason = this._getXmlDirectChildText(node, "reason");
+                return {
+                    key: "faction_reputation_change",
+                    raw: `${factionName} → ${direction}d ${magnitude} → ${reason}`,
+                };
+            }
+            case "dispositionCheck":
+                return {
+                    key: "disposition_check",
+                    raw: this._formatXmlLegacyRawEntry(node, [
+                        "npcName",
+                        "before",
+                        "after",
+                        "reason",
+                    ]),
+                };
+            case "needBarChange":
+                return {
+                    key: "needbar_change",
+                    raw: this._formatXmlLegacyRawEntry(node, [
+                        "characterName",
+                        "needBarId",
+                        "direction",
+                        "magnitude",
+                        "reason",
+                    ]),
+                };
+            case "timePassed":
+                return {
+                    key: "time_passed",
+                    raw: this._formatXmlLegacyRawEntry(node, [
+                        "reasoning",
+                        "duration",
+                    ]),
+                };
+            case "triggeredAbility":
+                return {
+                    key: "triggered_abilities",
+                    raw: this._formatXmlLegacyRawEntry(node, [
+                        "characterName",
+                        "abilityName",
+                    ]),
+                };
+            default:
+                throw new Error(`Unknown event XML tag <${tagName}>.`);
+        }
+    }
+
+    static _appendXmlRawEvent(rawEventLists, key, raw) {
+        if (!key) {
+            throw new Error("Cannot append XML event without a legacy event key.");
+        }
+        const normalizedRaw =
+            typeof raw === "string" ? raw.trim() : String(raw ?? "").trim();
+        if (!normalizedRaw || NO_EVENT_TOKENS.has(normalizedRaw.toLowerCase())) {
+            return;
+        }
+        if (!Array.isArray(rawEventLists[key])) {
+            rawEventLists[key] = [];
+        }
+        rawEventLists[key].push(normalizedRaw);
+    }
+
+    static _buildStructuredEventsFromRawLists(rawEventLists = {}, options = {}) {
+        const { trackItems = true } = options || {};
+        const rawEntries = {};
+        const parsedEntries = {};
+        const parsers =
+            this._parsers && Object.keys(this._parsers).length
+                ? this._parsers
+                : this._buildParsers();
+        const aggregators =
+            this._aggregators && Object.keys(this._aggregators).length
+                ? this._aggregators
+                : this._buildAggregators();
+
+        for (const [key, segments] of Object.entries(rawEventLists || {})) {
+            const normalizedSegments = ensureArray(segments)
+                .map((segment) =>
+                    typeof segment === "string" ? segment.trim() : String(segment ?? "").trim(),
+                )
+                .filter(
+                    (segment) =>
+                        segment.length > 0 && !NO_EVENT_TOKENS.has(segment.toLowerCase()),
+                );
+            if (!normalizedSegments.length) {
+                continue;
+            }
+
+            rawEntries[key] = normalizedSegments.join(" | ");
+            const parser = parsers[key];
+            const parsedSegments = normalizedSegments.map((segment) =>
+                typeof parser === "function" ? parser(segment) : segment,
+            );
+            const aggregator =
+                aggregators[key] || ((items) => flattenAndFilter(items));
+            const combined = aggregator(parsedSegments);
+            if (
+                Array.isArray(combined) &&
+                combined.length === 0 &&
+                !Object.prototype.hasOwnProperty.call(rawEventLists, key)
+            ) {
+                continue;
+            }
+            parsedEntries[key] = combined;
+        }
+
+        const itemAndSceneryNames = this.extractItemAndSceneryNames(rawEntries);
+        if (itemAndSceneryNames instanceof SanitizedStringSet) {
+            const filterOutItems = (entries, pickName) => {
+                if (!Array.isArray(entries)) {
+                    return entries;
+                }
+                return entries.filter((entry) => {
+                    const candidate = pickName(entry);
+                    return !itemAndSceneryNames.has(candidate);
+                });
+            };
+
+            parsedEntries.new_exit_discovered = filterOutItems(
+                parsedEntries.new_exit_discovered,
+                (entry) => entry?.name,
+            );
+            parsedEntries.move_new_location = filterOutItems(
+                parsedEntries.move_new_location,
+                (entry) => entry?.name,
+            );
+            parsedEntries.move_location = filterOutItems(
+                parsedEntries.move_location,
+                (entry) => entry,
+            );
+        }
+
+        const newExitEntries = Array.isArray(parsedEntries.new_exit_discovered)
+            ? parsedEntries.new_exit_discovered
+            : [];
+        const moveLocationEntries = Array.isArray(parsedEntries.move_location)
+            ? parsedEntries.move_location
+            : [];
+        if (newExitEntries.length === 0 && moveLocationEntries.length === 0) {
+            const firstAppearance = Array.isArray(parsedEntries.npc_first_appearance)
+                ? parsedEntries.npc_first_appearance
+                : [];
+            if (firstAppearance.length) {
+                const arrivals = firstAppearance
+                    .map((name) => normalizeString(name))
+                    .filter((name) => name.length > 0)
+                    .map((name) => ({
+                        name,
+                        action: "arrived",
+                        destination: null,
+                        firstAppearance: true,
+                    }));
+
+                if (!Array.isArray(parsedEntries.npc_arrival_departure)) {
+                    parsedEntries.npc_arrival_departure = [];
+                }
+
+                const existingNames =
+                    typeof Globals.location?.getNPCNames === "function"
+                        ? Globals.location.getNPCNames()
+                        : [];
+                const uniqueArrivals = arrivals.filter(
+                    (entry) => !existingNames.includes(entry.name),
+                );
+
+                parsedEntries.npc_arrival_departure.push(...uniqueArrivals);
+            }
+        }
+
+        if (trackItems) {
+            this._trackItemsFromParsing(parsedEntries);
+            this._pruneExcludedItemEntries(parsedEntries);
+        }
+
+        return { rawEntries, parsed: parsedEntries };
+    }
+
+    static _mergeStructuredEventSets(...structuredSets) {
+        const rawEventLists = {};
+        for (const structured of structuredSets) {
+            const rawEntries = structured?.rawEntries;
+            if (!rawEntries || typeof rawEntries !== "object") {
+                continue;
+            }
+            for (const [key, raw] of Object.entries(rawEntries)) {
+                if (typeof raw !== "string" || !raw.trim()) {
+                    continue;
+                }
+                if (!Array.isArray(rawEventLists[key])) {
+                    rawEventLists[key] = [];
+                }
+                rawEventLists[key].push(...splitPipeList(raw));
+            }
+        }
+        return this._buildStructuredEventsFromRawLists(rawEventLists, {
+            trackItems: false,
+        });
+    }
+
+    static _parseXmlEventCheckResponse(responseText) {
+        const xml = this._extractEventsXmlBlock(responseText);
+        let doc;
+        try {
+            doc = Utils.parseXmlDocumentStrict(xml, "text/xml");
+        } catch (error) {
+            throw new Error(`Failed to parse event XML response: ${error.message}`);
+        }
+
+        const root = doc?.documentElement;
+        if (!root || root.tagName !== "events") {
+            throw new Error("Event XML response did not parse into an <events> document.");
+        }
+
+        const beforeRawLists = {};
+        const travelMoveRawLists = {};
+        const afterRawLists = {};
+        const ignoredDuringEvents = [];
+        let phase = "before";
+        let hasTravelBoundary = false;
+        let hasArrived = false;
+
+        for (const child of this._getXmlElementChildren(root)) {
+            const tagName = child.tagName;
+            if (tagName === "arriveAtLocation") {
+                if (!hasTravelBoundary) {
+                    throw new Error(
+                        "Event XML contains <arriveAtLocation/> without a preceding move boundary.",
+                    );
+                }
+                if (hasArrived) {
+                    throw new Error(
+                        "Event XML contains multiple travel arrival markers.",
+                    );
+                }
+                hasArrived = true;
+                phase = "after";
+                continue;
+            }
+
+            const isMoveBoundary =
+                tagName === "moveLocation" || tagName === "moveNewLocation";
+            if (isMoveBoundary) {
+                if (hasTravelBoundary) {
+                    throw new Error(
+                        "Event XML contains multiple travel boundaries in one <events> block.",
+                    );
+                }
+                if (hasArrived) {
+                    throw new Error(
+                        "Event XML contains multiple travel boundaries in one <events> block.",
+                    );
+                }
+                hasTravelBoundary = true;
+                phase = "during";
+                const { key, raw } = this._mapXmlEventNodeToLegacyRaw(child);
+                this._appendXmlRawEvent(travelMoveRawLists, key, raw);
+                continue;
+            }
+
+            const { key, raw } = this._mapXmlEventNodeToLegacyRaw(child);
+            if (phase === "before") {
+                this._appendXmlRawEvent(beforeRawLists, key, raw);
+            } else if (phase === "during") {
+                ignoredDuringEvents.push({ tagName, key, raw });
+            } else {
+                this._appendXmlRawEvent(afterRawLists, key, raw);
+            }
+        }
+
+        if (hasTravelBoundary && !hasArrived) {
+            throw new Error(
+                "Event XML travel boundary requires <arriveAtLocation/>.",
+            );
+        }
+
+        const beforeTravel = {
+            rawEventLists: beforeRawLists,
+            structured: this._buildStructuredEventsFromRawLists(beforeRawLists),
+        };
+        const travelMove = {
+            rawEventLists: travelMoveRawLists,
+            structured: this._buildStructuredEventsFromRawLists(travelMoveRawLists),
+        };
+        const afterTravel = {
+            rawEventLists: afterRawLists,
+            structured: this._buildStructuredEventsFromRawLists(afterRawLists),
+        };
+        const structured = this._mergeStructuredEventSets(
+            beforeTravel.structured,
+            travelMove.structured,
+            afterTravel.structured,
+        );
+
+        return {
+            xml,
+            hasTravelBoundary,
+            ignoredDuringEvents,
+            beforeTravel,
+            travelMove,
+            afterTravel,
+            structured,
+        };
+    }
+
     static _extractFinalEventBlock(responseText) {
         if (typeof responseText !== "string") {
             throw new Error("Event check response must be a string.");
@@ -3754,11 +5165,24 @@ class Events {
                             return null;
                         }
                         const [name, kind, vehicle] = parts;
-                        const hasTravelTime = parts.length >= 5;
-                        const description = hasTravelTime
-                            ? parts.slice(3, -1).join(" → ")
-                            : parts.slice(3).join(" → ");
-                        const travelTimeText = hasTravelTime ? parts[parts.length - 1] : "";
+                        let descriptionParts = [];
+                        let travelTimeText = "";
+                        let exitLocationName = "";
+                        let exitRegionName = "";
+                        let destinationRegionName = "";
+                        if (parts.length >= 8) {
+                            descriptionParts = parts.slice(3, -4);
+                            travelTimeText = parts[parts.length - 4];
+                            exitLocationName = parts[parts.length - 3];
+                            exitRegionName = parts[parts.length - 2];
+                            destinationRegionName = parts[parts.length - 1];
+                        } else if (parts.length >= 5) {
+                            descriptionParts = parts.slice(3, -1);
+                            travelTimeText = parts[parts.length - 1];
+                        } else {
+                            descriptionParts = parts.slice(3);
+                        }
+                        const description = descriptionParts.join(" → ");
                         const normalizedKind = (kind || "").toLowerCase();
                         if (
                             !name ||
@@ -3769,12 +5193,14 @@ class Events {
                         }
                         const vehicleType = normalizeString(vehicle);
                         let travelTimeMinutes = null;
-                        if (travelTimeText) {
-                            travelTimeMinutes = Utils.parseDurationToMinutes(travelTimeText, {
+                        const normalizedTravelTimeText =
+                            normalizeOptionalEventLocationField(travelTimeText);
+                        if (normalizedTravelTimeText) {
+                            travelTimeMinutes = Utils.parseDurationToMinutes(normalizedTravelTimeText, {
                                 fieldName: "new_exit_discovered travel time",
                             });
                         }
-                        return {
+                        const result = {
                             name: name.trim(),
                             kind: normalizedKind,
                             vehicleType:
@@ -3784,6 +5210,22 @@ class Events {
                             description: description.trim(),
                             travelTimeMinutes,
                         };
+                        const normalizedExitLocationName =
+                            normalizeOptionalEventLocationField(exitLocationName);
+                        const normalizedExitRegionName =
+                            normalizeOptionalEventLocationField(exitRegionName);
+                        const normalizedDestinationRegionName =
+                            normalizeOptionalEventLocationField(destinationRegionName);
+                        if (normalizedExitLocationName) {
+                            result.exitLocationName = normalizedExitLocationName;
+                        }
+                        if (normalizedExitRegionName) {
+                            result.exitRegionName = normalizedExitRegionName;
+                        }
+                        if (normalizedDestinationRegionName) {
+                            result.destinationRegionName = normalizedDestinationRegionName;
+                        }
+                        return result;
                     })
                     .filter(Boolean),
             move_new_location: (raw) => {
@@ -4481,7 +5923,7 @@ class Events {
                     .filter(Boolean);
             },
             received_quest: (raw) => {
-                if (!Globals.config.quests.enabled) {
+                if (!Globals.config?.quests?.enabled) {
                     return [];
                 }
                 if (typeof raw !== "string") {
@@ -4538,9 +5980,9 @@ class Events {
                         if (typeof entry !== "string") {
                             return null;
                         }
-                        const [questIndexRaw, objectiveIndexRaw] = splitArrowParts(
+                        const [questIndexRaw, objectiveIndexRaw, statusReasonRaw] = splitArrowParts(
                             entry,
-                            2,
+                            3,
                         );
                         if (!questIndexRaw || !objectiveIndexRaw) {
                             return null;
@@ -4553,10 +5995,15 @@ class Events {
                         ) {
                             return null;
                         }
-                        return {
+                        const record = {
                             questIndex: questIndexValue,
                             objectiveIndex: objectiveIndexValue,
                         };
+                        const statusReason = normalizeString(statusReasonRaw);
+                        if (statusReason) {
+                            record.statusReason = statusReason;
+                        }
+                        return record;
                     })
                     .filter(Boolean);
             },
@@ -4664,6 +6111,22 @@ class Events {
                     return 0;
                 }
                 return numbers.reduce((total, value) => total + value, 0);
+            },
+            time_passed: (list) => {
+                const numbers = flattenAndFilter(list)
+                    .map(Number)
+                    .filter(Number.isFinite);
+                if (!numbers.length) {
+                    return null;
+                }
+                return numbers.reduce((total, value) => total + value, 0);
+            },
+            in_combat: (list) => {
+                const values = flattenAndFilter(list);
+                if (!values.length) {
+                    return false;
+                }
+                return Boolean(values[values.length - 1]);
             },
             consume_item: (list) => {
                 const entries = flattenAndFilter(list);
@@ -5614,13 +7077,14 @@ class Events {
                     console.trace();
                     return;
                 }
-                if (context.isNpcTurn || context.suppressTimeAdvance) {
+                if (context.isNpcTurn || context.suppressTimeAdvance || context.suppressTimePassedEvents) {
                     return;
                 }
 
                 const advancementAmount = amount === 0 ? 1 : amount;
                 const advancement = Globals.advanceTime(advancementAmount, { source: "event_check" });
                 context.timeProgress = advancement;
+                applyTimeBasedNeedBarEffectsAfterTimeAdvance(context);
             },
             in_combat: function (flag, context = {}) {
                 //console.log(`Processing in_combat event: ${JSON.stringify(flag)}`);
@@ -5711,16 +7175,24 @@ class Events {
                                 this.animatedItems.add(itemName);
                                 this.destroyedItems.add(itemName);
                             }
-                            if (npcName) {
-                                this.newCharacters.add(npcName);
-                                this.arrivedCharacters.add(npcName);
-                            }
                             const npc = await ensureNpcByName(npcName, transformationContext);
                             if (!npc) {
                                 throw new Error(
                                     `item_to_npc failed to create NPC "${npcName}"`,
                                 );
                             }
+                            const finalNpcName = normalizeString(npc.name);
+                            if (!finalNpcName) {
+                                throw new Error(
+                                    `item_to_npc created NPC "${npcName}" but the actor has no final name.`,
+                                );
+                            }
+                            if (finalNpcName !== npcName) {
+                                entry.originalNpc = npcName;
+                                entry.npc = finalNpcName;
+                            }
+                            this.newCharacters.add(finalNpcName);
+                            this.arrivedCharacters.add(finalNpcName);
                         })(),
                     );
                 }
@@ -6130,19 +7602,32 @@ class Events {
                     ) {
                         generationTasks.push(
                             (async () => {
+                                const originalItemName = entry.item;
                                 const generatedItems = await generateItemsByNames({
-                                    itemNames: [entry.item],
+                                    itemNames: [originalItemName],
                                     owner: actor,
                                 });
                                 const generatedThing = Array.isArray(generatedItems)
-                                    ? generatedItems.find((candidate) => candidate?.name === entry.item) || generatedItems[0] || null
+                                    ? generatedItems.find((candidate) => candidate?.name === originalItemName) || generatedItems[0] || null
                                     : null;
                                 if (!generatedThing) {
                                     throw new Error(
-                                        `Failed to generate harvested item "${entry.item}".`,
+                                        `Failed to generate harvested item "${originalItemName}".`,
                                     );
                                 }
+                                const finalItemName = this._getGeneratedThingFinalName(
+                                    generatedThing,
+                                    {
+                                        requestedName: originalItemName,
+                                        eventKey: "harvest_gather",
+                                    },
+                                );
+                                if (finalItemName !== originalItemName) {
+                                    entry.originalItem = originalItemName;
+                                    entry.item = finalItemName;
+                                }
                                 generatedThing.count = entry.quantity;
+                                this.obtainedItems.add(finalItemName);
                                 return generatedItems;
                             })().catch((error) => {
                                 console.warn(
@@ -6276,6 +7761,7 @@ class Events {
                                 0,
                             );
                             if (availableQuantity < quantity) {
+                                const existingAvailableThings = availableThings.slice();
                                 const generatedItems = await this._generateItemsIntoWorld(
                                     [itemName],
                                     context.location,
@@ -6288,25 +7774,39 @@ class Events {
                                         `Unable to generate item "${itemName}" for pick_up_item.`,
                                     );
                                 }
+                                const finalItemName = this._getGeneratedThingFinalName(
+                                    generatedThing,
+                                    {
+                                        requestedName: itemName,
+                                        eventKey: "pick_up_item",
+                                    },
+                                );
+                                if (finalItemName !== itemName) {
+                                    entry.originalItem = entry.item;
+                                    entry.item = finalItemName;
+                                }
                                 const shortfall = quantity - availableQuantity;
                                 generatedThing.count = shortfall;
-                                availableThings = this._findThingsByExactName(itemName, {
+                                const generatedAvailableThings = this._findThingsByExactName(finalItemName, {
                                     location: context.location || null,
                                     unownedOnly: true,
                                     preferredThing: generatedThing,
                                 });
+                                availableThings = finalItemName === itemName
+                                    ? generatedAvailableThings
+                                    : [...existingAvailableThings, ...generatedAvailableThings];
                             }
 
                             const selectedThings = this._extractThingQuantityFromCandidates(
                                 availableThings,
                                 quantity,
-                                { itemName, eventKey: "pick_up_item" },
+                                { itemName: entry.item, eventKey: "pick_up_item" },
                             );
                             selectedThings.forEach((thing) => {
                                 actor.addInventoryItem(thing);
                                 thing.metadata = { ...(thing.metadata || {}), ownerId: actor.id };
                             });
-                            this.obtainedItems.add(itemName);
+                            this.obtainedItems.add(entry.item);
                         })(),
                     );
                 }
@@ -6385,24 +7885,36 @@ class Events {
                 }
 
                 for (const entry of filteredItems) {
+                    const originalName = entry.name;
                     const generatedItems = await generateItemsByNames({
-                        itemNames: [entry.name],
+                        itemNames: [originalName],
                         location: context.location || null,
                         seeds: [{
-                            name: entry.name,
+                            name: originalName,
                             description: entry.description || undefined,
                         }],
                     });
                     const generatedThing = Array.isArray(generatedItems)
-                        ? generatedItems.find((candidate) => candidate?.name === entry.name) || generatedItems[0] || null
+                        ? generatedItems.find((candidate) => candidate?.name === originalName) || generatedItems[0] || null
                         : null;
                     if (!generatedThing) {
                         throw new Error(
-                            `item_appear failed to generate "${entry.name}".`,
+                            `item_appear failed to generate "${originalName}".`,
                         );
                     }
+                    const finalName = this._getGeneratedThingFinalName(
+                        generatedThing,
+                        {
+                            requestedName: originalName,
+                            eventKey: "item_appear",
+                        },
+                    );
+                    if (finalName !== originalName) {
+                        entry.originalName = originalName;
+                        entry.name = finalName;
+                    }
                     generatedThing.count = entry.quantity;
-                    this.newItems.add(entry.name);
+                    this._trackGeneratedItemNames(originalName, finalName);
                 }
             },
             scenery_appear: async function (items = [], context = {}) {
@@ -6421,25 +7933,45 @@ class Events {
                     "scenery_appear",
                 );
                 const filteredItems = items
-                    .map((item) => (typeof item === "string" ? item.trim() : ""))
+                    .map((item, index) => ({
+                        index,
+                        name: typeof item === "string" ? item.trim() : "",
+                    }))
                     .filter(
                         (item) =>
-                            !!item &&
-                            !this.alteredItems.has(item) &&
-                            !this._isItemAlreadyTracked(item) &&
-                            !sceneItemNames.has(item),
+                            !!item.name &&
+                            !this.alteredItems.has(item.name) &&
+                            !this._isItemAlreadyTracked(item.name) &&
+                            !sceneItemNames.has(item.name),
                     );
 
-                try {
-                    await this._generateItemsIntoWorld(filteredItems, context.location, {
-                        treatAsScenery: true,
-                    });
-                } catch (error) {
-                    console.warn("Failed to generate scenery items:", error.message);
-                }
-
                 for (const item of filteredItems) {
-                    this.newItems.add(item);
+                    try {
+                        const generatedItems = await this._generateItemsIntoWorld(
+                            [item.name],
+                            context.location,
+                            { treatAsScenery: true },
+                        );
+                        const generatedThing = Array.isArray(generatedItems)
+                            ? generatedItems.find((candidate) => candidate?.name === item.name) || generatedItems[0] || null
+                            : null;
+                        if (!generatedThing) {
+                            throw new Error(`scenery_appear failed to generate "${item.name}".`);
+                        }
+                        const finalName = this._getGeneratedThingFinalName(
+                            generatedThing,
+                            {
+                                requestedName: item.name,
+                                eventKey: "scenery_appear",
+                            },
+                        );
+                        if (finalName !== item.name) {
+                            items[item.index] = finalName;
+                        }
+                        this._trackGeneratedItemNames(item.name, finalName);
+                    } catch (error) {
+                        console.warn("Failed to generate scenery item:", error.message);
+                    }
                 }
             },
             harvestable_resource_appear: async function (items = [], context = {}) {
@@ -6452,31 +7984,53 @@ class Events {
                     "harvestable_resource_appear",
                 );
                 const filteredItems = items
-                    .map((item) => (typeof item === "string" ? item.trim() : ""))
+                    .map((item, index) => ({
+                        index,
+                        name: typeof item === "string" ? item.trim() : "",
+                    }))
                     .filter(
                         (item) =>
-                            !!item &&
-                            !this._isItemAlreadyTracked(item) &&
-                            !sceneItemNames.has(item),
+                            !!item.name &&
+                            !this._isItemAlreadyTracked(item.name) &&
+                            !sceneItemNames.has(item.name),
                     );
 
                 if (!filteredItems.length) {
                     return;
                 }
 
-                try {
-                    await this._generateItemsIntoWorld(filteredItems, context.location, {
-                        treatAsResource: true,
-                    });
-                } catch (error) {
-                    console.warn(
-                        "Failed to generate harvestable resources:",
-                        error.message,
-                    );
-                }
-
                 for (const item of filteredItems) {
-                    this.newItems.add(item);
+                    try {
+                        const generatedItems = await this._generateItemsIntoWorld(
+                            [item.name],
+                            context.location,
+                            { treatAsResource: true },
+                        );
+                        const generatedThing = Array.isArray(generatedItems)
+                            ? generatedItems.find((candidate) => candidate?.name === item.name) || generatedItems[0] || null
+                            : null;
+                        if (!generatedThing) {
+                            throw new Error(
+                                `harvestable_resource_appear failed to generate "${item.name}".`,
+                            );
+                        }
+                        const finalName = this._getGeneratedThingFinalName(
+                            generatedThing,
+                            {
+                                requestedName: item.name,
+                                eventKey: "harvestable_resource_appear",
+                            },
+                        );
+                        if (finalName !== item.name) {
+                            items[item.index] = finalName;
+                        }
+                        this._trackGeneratedItemNames(item.name, finalName);
+                    } catch (error) {
+                        console.warn(
+                            "Failed to generate harvestable resource:",
+                            error.message,
+                        );
+                    }
                 }
             },
             alter_npc: async function (entries = [], context = {}) {
@@ -6789,10 +8343,6 @@ class Events {
                     if (action === "arrived" || isFirstAppearance) {
                         this.newCharacters.add(finalizedName);
                         this.arrivedCharacters.add(finalizedName);
-                        if (originalName !== finalizedName) {
-                            this.newCharacters.add(originalName);
-                            this.arrivedCharacters.add(originalName);
-                        }
                     }
 
                     const npc = findActorByName?.(finalizedName);
@@ -9115,6 +10665,35 @@ class Events {
             location: locationCandidate,
             options,
         });
+    }
+
+    static _getGeneratedThingFinalName(
+        generatedThing,
+        { requestedName = "", eventKey = "event" } = {},
+    ) {
+        const finalName = normalizeString(generatedThing?.name);
+        if (!finalName) {
+            throw new Error(
+                `${eventKey} generated "${requestedName || "an item"}" but the generated Thing has no final name.`,
+            );
+        }
+        return finalName;
+    }
+
+    static _trackGeneratedItemNames(originalName, finalName) {
+        const resolvedFinalName = normalizeString(finalName);
+        const resolvedOriginalName = normalizeString(originalName);
+
+        if (resolvedFinalName) {
+            this.newItems.add(resolvedFinalName);
+        }
+        if (
+            resolvedOriginalName &&
+            resolvedFinalName &&
+            resolvedOriginalName.toLowerCase() !== resolvedFinalName.toLowerCase()
+        ) {
+            this.newItems.add(resolvedOriginalName);
+        }
     }
 
     static async _ensureItemsExist(

@@ -1,5 +1,3 @@
-{% include "_includes/need-bar-definitions.njk" %}
-
 {% if whileYouWereAwayNpcs and whileYouWereAwayNpcs | length -%}
 The following NPCs are currently at this location and have not been with the player continuously since the player last saw them. Here's where they were last seen and how long ago:
 {% for npc in whileYouWereAwayNpcs -%}
@@ -11,6 +9,12 @@ The following NPCs are currently at this location and have not been with the pla
 
 If one of the above listed characters was already here when the player arrived, keep them in their listed update. Only use the optional arrival section for a character who is physically in the exact current location right now but was not listed above. Do not use it for someone who is merely nearby, elsewhere in the same building, or audible from another room.
 
+Need bar instructions:{% for bar in needBarDefinitions %}
+- {{ bar.id }}: {{ bar.while_you_were_away_prompt_notes | eval }}
+{% endfor %}
+
+These instructions take precedence over existing game state descriptions, which described the characters at the time they were last seen and are not intended to lock characters in that state. Even if a character is narratively 'starving,' if food is available in the scene, their food bar should be at least 50%, etc.
+
 Return a response in this format:
 
 <response>
@@ -18,33 +22,33 @@ Return a response in this format:
     {% for npc in whileYouWereAwayNpcs -%}
     <characterUpdate>
       <name>{{ npc.name }}</name>
-      <update><!-- A paragraph describing what this character has been up to since they last saw the player. Include any notable events, changes in status, or other relevant information. Characters will almost ALWAYS prioritize addressing serious/desperate/pressing needs if they have them. --></update>
       <needBarChanges>
-        <!-- For each need bar that has been affected for this character since they last saw the player, add the following fields. You may omit this section if there are no changes, and only include specific need bars that have been affected due to events or actions during this time. You may also infer need bar changes if they make sense, even if not explicitly stated. If someone's hungry, they probably ate (unless something would prevent them from doing so). Likewise with sleep. -->
+        <!-- For each need bar for this character since they last saw the player, add the following fields. You may omit need bars that the character doesn't have. -->
         <needBarEffect>
           <needBarId><!-- The ID of the need bar that was affected --></needBarId>
-          <delta><!-- The amount the need bar has changed (in a negative or positive percentage) since they last saw the player. This should be a number between -100% and 100%, where negative numbers indicate a decrease and positive numbers indicate an increase. Make a reasonable guess based on what they've been doing. Examples: "-100%", "30%". Don't worry about the need bar's current value; the increase and decrease will be capped at these limits automatically. Don't account for normal fluctuations over time, only changes due to specific events or actions. --></delta>   
+          <value><!-- The current value of their need bar, from 0 to 100%, or N/A if this character does not have that need bar. Determine this value using the instructions above. --></value>   
         </needBarEffect>
       </needBarChanges>
       <travelDestination><!-- Did they travel to a different location and not return yet? If so, where are they now? If they stayed in the same location, you can omit this section or put "N/A". -->
         <location><!-- The name of the location they traveled to, if applicable --></location>
         <region><!-- The name of the region they traveled to, if applicable --></region>
       </travelDestination>
+      <update><!-- A paragraph describing what this character has been up to since they last saw the player. Include any notable events, changes in status, or other relevant information. Characters will almost ALWAYS prioritize addressing serious/desperate/pressing needs if they have them. --></update>
     </characterUpdate>
     {% endfor -%}
 
     <!-- Optionally, if any character who is NOT listed above ARRIVED at this location since the player was last here, you can include them here like this: -->
     <characterUpdate>
       <name><!-- The exact name of the arriving character --></name>
-      <update><!-- A paragraph describing what this character has been up to since they last saw the player. Include any notable events, changes in status, or other relevant information. --></update>
       <needBarChanges>
-        <!-- For each need bar that has been affected for this character since they last saw the player, add the following fields. You may omit this section if there are no changes, and only include specific need bars that have been affected due to events or actions during this time. Characters will almost ALWAYS prioritize addressing serious/desperate/pressing needs if they have them. You may also infer need bar changes if they make sense, even if not explicitly stated. If someone's hungry, they probably ate (unless something would prevent them from doing so). Likewise with sleep. -->
+        <!-- For each need bar for this character since they last saw the player, add the following fields. You may omit need bars that the character doesn't have. -->
         <needBarEffect>
           <needBarId><!-- The ID of the need bar that was affected --></needBarId>
-          <delta><!-- The amount the need bar has changed (in a negative or positive percentage) since they last saw the player. This should be a number between -100% and 100%, where negative numbers indicate a decrease and positive numbers indicate an increase. Make a reasonable guess based on what they've been doing. Examples: "-100%", "30%". Don't worry about the need bar's current value; the increase and decrease will be capped at these limits automatically. Don't account for normal fluctuations over time, only changes due to specific events or actions. --></delta>   
+          <value><!-- The current value of their need bar, from 0 to 100%, or N/A if this character does not have that need bar. Determine this value using the instructions above. --></value>
         </needBarEffect>
       </needBarChanges>
       <travelDestination>HERE</travelDestination><!-- Use the literal text HERE only for a character who arrived at this exact current location and is still physically here. Do not use HERE for nearby rooms, adjacent locations, or the same building in general. -->
+      <update><!-- A paragraph describing what this character has been up to since they last saw the player. Include any notable events, changes in status, or other relevant information. --></update>
     </characterUpdate>
 
     <!-- Repeat as necessary for arriving characters -->

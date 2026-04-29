@@ -7,6 +7,9 @@ regexes:
   - pattern: "/gossip/i"
     name: "gossip/gossiping/etc"
     ppm: default
+  - pattern: "/(logging|logbook|document|data point|record|journal|ledger)/i"
+    name: "Stop having characters log and document everything. It's an overused trope. Omit."
+    ppm: 0
 slopwords:
   # Custom ones first:
   singing: default

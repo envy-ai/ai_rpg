@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This is an informal XML schema for a planned second event pipeline. It describes a single-prompt response format where the model reads one chat entry or prose segment and emits an `<events>` block. It is not an XSD document.
+This is the informal XML schema for the default single-prompt event pipeline (`event_checks.use_xml: true`). The model reads one chat entry or prose segment and emits an `<events>` block. It is not an XSD document.
 
 The XML element names use camelCase. Section headings use snake_case labels for readability; the XML examples show the exact tag names the model should emit.
 
@@ -21,8 +21,8 @@ Rules:
 - Omit event tags when that event did not occur.
 - Repeat event tags for multiple instances.
 - If no player/party travel occurred, all event elements remain direct children of `<events>` and belong to the active location.
-- The first `<moveLocation>` or `<moveNewLocation>` element is the travel boundary. Events before it happened at the origin; events after it happened after arrival at the destination. As such, it's important that events be listed in chronological order.
-- Omit any events that occur chronologically between the beginning or end of travel.
+- The first `<moveLocation>` or `<moveNewLocation>` element is the travel boundary. Events before it happened at the origin; events after `<arriveAtLocation/>` happened after arrival at the destination. As such, it is important that events be listed in chronological order.
+- Omit any events that occur chronologically between the beginning and end of travel. If such tags are emitted anyway, the processor ignores them.
 - Do not emit more than one player/party travel event in a single `<events>` block.
 - `newExitDiscovered` is a normal event and does not create a context boundary.
 - Emit one element for each observed event. Downstream processing may aggregate compatible entries later.
@@ -57,7 +57,7 @@ Use this when the player or party physically moves into a destination that is no
 
 ### `arrive_at_location`
 
-Optional empty marker for the chronological point where arrival completes after a `moveLocation` or `moveNewLocation` boundary. This is required if you use moveLocation or moveNewLocation; do not use without them.
+Empty marker for the chronological point where arrival completes after a `moveLocation` or `moveNewLocation` boundary. This is required if you use `moveLocation` or `moveNewLocation`; do not use it without them. The processor throws a parse error for move-without-arrival, arrival-without-move, or multiple move boundaries.
 
 ```xml
 <arriveAtLocation/>
@@ -69,15 +69,22 @@ Normal event elements are direct children of `<events>`.
 
 ### `new_exit_discovered`
 
-Use this when the text reveals, unlocks, unblocks, creates, clears, or otherwise discovers a route or vehicle connection from the current location to another location or region. Unlike movement tags, this does not mean the player traveled there. `newExitDiscovered` is not a travel context boundary.
+Use this when the text reveals, unlocks, unblocks, creates, clears, finds out about, or otherwise discovers a route or vehicle connection to another location or region. Unlike movement tags, this does not mean the player traveled there. `newExitDiscovered` is not a travel context boundary. Omit `exitLocation` when the route is discovered at the current location; include it when the discovered exit starts somewhere else.
 
 ```xml
 <newExitDiscovered>
-  <destinationName>Full destination location or region name</destinationName>
+  <destination>
+    <locationName>Exact location name of the exit's destination. Omit if the exit is to a region.</locationName>
+    <regionName>Exact region name of the exit's destination</regionName>
+  </destination>
   <destinationKind>location|region</destinationKind>
-  <vehicleType>none OR vehicle type</vehicleType>
+  <vehicleType>none OR vehicle type, if this exit is a vehicle connection</vehicleType>
   <description>1-2 sentence destination or exit description</description>
-  <travelTime>Exact duration, such as 30 minutes or 1 hour</travelTime>
+  <exitLocation>
+    <locationName>Exact location name where the exit starts</locationName>
+    <regionName>Exact region name where the exit starts</regionName>
+  </exitLocation>
+  <travelTime>Exact duration, such as 30 minutes or 1 hour, from the exitLocation or current location</travelTime>
 </newExitDiscovered>
 ```
 
@@ -462,7 +469,7 @@ Use this when something in the turn changes a need bar for the player, party mem
 
 ### `time_passed`
 
-Use this to report how much elapsed in-world wall-clock time the concrete actions in the text realistically consumed. Estimate elapsed wall-clock time, not reading time and not the sum of each participant's labor when characters work in parallel. Use `0` only when nothing time-consuming happened.
+Use this to report how much elapsed in-world wall-clock time the concrete non-travel actions in the text realistically consumed. Estimate elapsed wall-clock time, not reading time and not the sum of each participant's labor when characters work in parallel. If the player travels by exit/route or the XML block includes `<moveLocation>`/`<moveNewLocation>`, use `0` here because travel time is resolved from the route or exit instead. Use `0` when nothing non-travel and time-consuming happened.
 
 ```xml
 <timePassed>

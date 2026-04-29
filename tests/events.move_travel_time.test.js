@@ -134,6 +134,20 @@ test('event-driven player movement assumes one minute when no route exists', asy
     }
 });
 
+test('event-driven player movement with zero-minute route suppresses duplicate time_passed', async () => {
+    const fixture = createMoveFixture({ shortestTravelTimeMinutes: 0 });
+    try {
+        const context = await fixture.moveWithOptionalTimePassed(45);
+
+        assert.equal(fixture.player.currentLocation, fixture.destinationLocation.id);
+        assert.deepEqual(fixture.advances, []);
+        assert.equal(context.timeProgress, undefined);
+        assert.equal(context.suppressTimeAdvance, true);
+    } finally {
+        fixture.cleanup();
+    }
+});
+
 test('event-driven player movement inside a vehicle does not apply fast-travel time', async () => {
     const fixture = createMoveFixture({
         shortestTravelTimeMinutes: 17,
@@ -144,11 +158,12 @@ test('event-driven player movement inside a vehicle does not apply fast-travel t
         }
     });
     try {
-        const context = await fixture.moveWithOptionalTimePassed();
+        const context = await fixture.moveWithOptionalTimePassed(45);
 
         assert.equal(fixture.player.currentLocation, fixture.destinationLocation.id);
         assert.deepEqual(fixture.advances, []);
         assert.equal(context.timeProgress, undefined);
+        assert.equal(context.suppressTimeAdvance, true);
     } finally {
         fixture.cleanup();
     }

@@ -1,7 +1,11 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { createChatToolRuntime } = require('../chat_tool_calls.js');
+const { CHAT_TOOL_DEFINITIONS, createChatToolRuntime } = require('../chat_tool_calls.js');
+
+function findToolDefinition(name) {
+    return CHAT_TOOL_DEFINITIONS.find(entry => entry?.function?.name === name)?.function || null;
+}
 
 test('runChatCompletionWithToolLoop converts async ToolVisibleError rejections into tool messages', async () => {
     const originLocation = {
@@ -224,4 +228,168 @@ test('runChatCompletionWithToolLoop reports tool-call debug lifecycle events', a
     const toolMessage = secondRoundMessages.find((message) => message.role === 'tool');
     assert.ok(toolMessage, 'Expected a tool response message in the second round.');
     assert.match(toolMessage.content, /<moreInfoResults>/);
+});
+
+test('getFullScene tool returns delineated actions and prose for a numbered scene', async () => {
+    const chatHistory = [
+        {
+            id: 'entry-user-1',
+            role: 'user',
+            content: 'Scout the silent hall.',
+            locationId: 'loc-1'
+        },
+        {
+            id: 'entry-prose-1',
+            role: 'assistant',
+            type: 'player-action',
+            content: 'You move along the wall, keeping your lantern low.',
+            locationId: 'loc-1'
+        },
+        {
+            id: 'entry-npc-action-1',
+            role: 'Mara',
+            type: 'npc-action',
+            actor: 'Mara',
+            content: 'Mara tests the old lock with a bent pin.',
+            locationId: 'loc-1'
+        },
+        {
+            id: 'entry-npc-prose-1',
+            role: 'assistant',
+            actor: 'Mara',
+            content: 'Mara kneels by the lock and listens for the tumblers.',
+            locationId: 'loc-1'
+        },
+        {
+            id: 'entry-event-1',
+            role: 'assistant',
+            type: 'event-summary',
+            content: '📋 Events\nA mechanical row that should not be returned.',
+            locationId: 'loc-1'
+        },
+        {
+            id: 'entry-user-2',
+            role: 'user',
+            content: 'Open the chest.',
+            locationId: 'loc-1'
+        }
+    ];
+    const sceneSummaries = {
+        getScenesInOrder: () => [
+            {
+                startIndex: 1,
+                endIndex: 4,
+                startEntryId: 'entry-user-1',
+                endEntryId: 'entry-npc-prose-1',
+                summary: 'The party scouts a hallway and Mara checks a lock.'
+            }
+        ]
+    };
+    const capturedMessagesByRound = [];
+    const runtime = createChatToolRuntime({
+        getConfig: () => ({ ai: { max_tool_rounds: 3 } }),
+        getChatHistory: () => chatHistory,
+        getSceneSummaries: () => sceneSummaries,
+        isAssistantProseLikeEntry: (entry) => {
+            if (!entry || entry.role !== 'assistant') {
+                return false;
+            }
+            const entryType = typeof entry.type === 'string' ? entry.type : null;
+            return entryType === null || ['player-action', 'npc-action', 'while-you-were-away-player'].includes(entryType);
+        },
+        serializeNpcForClient: () => ({}),
+        buildLocationResponse: () => ({}),
+        getCurrentPlayer: () => ({ id: 'player-1', name: 'Test Player', currentLocation: 'loc-1' }),
+        createLocationFromEvent: async () => {
+            throw new Error('createLocationFromEvent should not be reached.');
+        },
+        createRegionStubFromEvent: async () => {
+            throw new Error('createRegionStubFromEvent should not be reached.');
+        },
+        generateItemsByNames: async () => [],
+        ensureExitConnection: () => {
+            throw new Error('ensureExitConnection should not be reached.');
+        },
+        findRegionByLocationId: () => null,
+        LLMClient: {
+            chatCompletion: async (options) => {
+                capturedMessagesByRound.push(structuredClone(options.messages));
+                if (capturedMessagesByRound.length === 1) {
+                    options.onResponse?.({
+                        data: {
+                            choices: [{
+                                message: {
+                                    content: '',
+                                    tool_calls: [{
+                                        id: 'call-get-full-scene',
+                                        type: 'function',
+                                        function: {
+                                            name: 'getFullScene',
+                                            arguments: JSON.stringify({ sceneNumber: 1 })
+                                        }
+                                    }]
+                                }
+                            }]
+                        }
+                    });
+                    return '';
+                }
+                options.onResponse?.({
+                    data: {
+                        choices: [{
+                            message: {
+                                content: 'Scene reviewed.',
+                                tool_calls: []
+                            }
+                        }]
+                    }
+                });
+                return 'Scene reviewed.';
+            },
+            logPrompt: () => {},
+            formatMessagesForErrorLog: messages => JSON.stringify(messages)
+        },
+        Player: { getAll: () => [] },
+        Thing: { getAll: () => [] },
+        Location: { getAll: () => [], get: () => null },
+        Region: { getAll: () => [] },
+        getGameLocations: () => new Map(),
+        getFactions: () => [],
+        getRegionsMap: () => new Map(),
+        getPendingRegionStubs: () => new Map()
+    });
+
+    const result = await runtime.runChatCompletionWithToolLoop({
+        requestOptions: {
+            messages: [{ role: 'user', content: 'Review scene one.' }]
+        },
+        metadataLabel: 'get_full_scene_test'
+    });
+
+    assert.equal(result.aiResponse, 'Scene reviewed.');
+    assert.equal(result.toolInvocations.length, 1);
+    assert.equal(result.toolInvocations[0].name, 'getFullScene');
+    assert.equal(result.toolInvocations[0].metadata.returnedCount, 4);
+
+    const secondRoundMessages = capturedMessagesByRound[1];
+    const toolMessage = secondRoundMessages.find((message) => message.role === 'tool');
+    assert.ok(toolMessage, 'Expected a getFullScene tool response message.');
+    assert.match(toolMessage.content, /<fullScene number="1" totalScenes="1">/);
+    assert.match(toolMessage.content, /Action by Test Player/);
+    assert.match(toolMessage.content, /Scout the silent hall\./);
+    assert.match(toolMessage.content, /Storyteller prose/);
+    assert.match(toolMessage.content, /You move along the wall/);
+    assert.match(toolMessage.content, /Action by Mara/);
+    assert.match(toolMessage.content, /Mara tests the old lock/);
+    assert.match(toolMessage.content, /Storyteller prose for Mara/);
+    assert.match(toolMessage.content, /Mara kneels by the lock/);
+    assert.doesNotMatch(toolMessage.content, /mechanical row/);
+    assert.doesNotMatch(toolMessage.content, /Open the chest/);
+});
+
+test('getFullScene tool schema exists', () => {
+    const getFullScene = findToolDefinition('getFullScene');
+    assert.ok(getFullScene, 'getFullScene tool definition should exist');
+    assert.deepEqual(getFullScene.parameters.required, ['sceneNumber']);
+    assert.equal(getFullScene.parameters.properties.sceneNumber.type, 'integer');
 });

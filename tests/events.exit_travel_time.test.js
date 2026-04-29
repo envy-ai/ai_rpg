@@ -36,6 +36,41 @@ test('new_exit_discovered parser still accepts legacy four-field entries', () =>
     ]);
 });
 
+test('new_exit_discovered parser captures source location and destination region fields', () => {
+    const parser = Events._buildParsers().new_exit_discovered;
+
+    const parsed = parser('Hidden Garden -> location -> none -> A concealed path through the hedge. -> 5 minutes -> Old Gatehouse -> Castle Grounds -> Hedge Maze');
+
+    assert.deepEqual(parsed, [
+        {
+            name: 'Hidden Garden',
+            kind: 'location',
+            vehicleType: null,
+            description: 'A concealed path through the hedge.',
+            travelTimeMinutes: 5,
+            exitLocationName: 'Old Gatehouse',
+            exitRegionName: 'Castle Grounds',
+            destinationRegionName: 'Hedge Maze',
+        },
+    ]);
+});
+
+test('new_exit_discovered parser preserves arrows in legacy descriptions', () => {
+    const parser = Events._buildParsers().new_exit_discovered;
+
+    const parsed = parser('Hidden Cellar -> location -> none -> A trapdoor opens -> then stairs descend. -> 5 minutes');
+
+    assert.deepEqual(parsed, [
+        {
+            name: 'Hidden Cellar',
+            kind: 'location',
+            vehicleType: null,
+            description: 'A trapdoor opens → then stairs descend.',
+            travelTimeMinutes: 5,
+        },
+    ]);
+});
+
 test('new_exit_discovered parser fails loudly on malformed travel time', () => {
     const parser = Events._buildParsers().new_exit_discovered;
 
@@ -111,6 +146,119 @@ test('new_exit_discovered handler threads travel time through location exit crea
         assert.equal(ensureCalls.length, 2);
         assert.equal(ensureCalls[0][2].travelTimeMinutes, 65);
         assert.equal(ensureCalls[1][2].travelTimeMinutes, 65);
+    } finally {
+        Globals.currentPlayer = previousCurrentPlayer;
+    }
+});
+
+test('new_exit_discovered handler creates exits from explicit source locations', async () => {
+    const handlers = Events._buildHandlers();
+    const parser = Events._buildParsers().new_exit_discovered;
+    const previousCurrentPlayer = Globals.currentPlayer;
+    Globals.currentPlayer = {
+        getCurrentLocationName: () => 'Taproom',
+    };
+
+    try {
+        const ensureCalls = [];
+        const createdLocationCalls = [];
+        const sourceLocation = {
+            id: 'loc_gatehouse',
+            name: 'Old Gatehouse',
+            regionId: 'region_castle',
+            isVehicle: false,
+            getAvailableDirections: () => [],
+            getExit: () => null,
+        };
+        const contextLocation = {
+            id: 'loc_taproom',
+            name: 'Taproom',
+            regionId: 'region_tavern',
+            isVehicle: false,
+            getAvailableDirections: () => [],
+            getExit: () => null,
+        };
+        const destination = {
+            id: 'loc_hidden_garden',
+            name: 'Hidden Garden',
+            regionId: 'region_hedge',
+            getAvailableDirections: () => [],
+            getExit: () => null,
+        };
+        const castleRegion = {
+            id: 'region_castle',
+            name: 'Castle Grounds',
+            isVehicle: false,
+            locationIds: ['loc_gatehouse'],
+        };
+        const hedgeRegion = {
+            id: 'region_hedge',
+            name: 'Hedge Maze',
+            isVehicle: false,
+            locationIds: [],
+        };
+        const regions = new Map([
+            ['region_castle', castleRegion],
+            ['region_hedge', hedgeRegion],
+        ]);
+        const locations = new Map([
+            ['loc_gatehouse', sourceLocation],
+            ['loc_taproom', contextLocation],
+        ]);
+        const entries = parser('Hidden Garden -> location -> none -> A concealed path through the hedge. -> 5 minutes -> Old Gatehouse -> Castle Grounds -> Hedge Maze');
+
+        await handlers.new_exit_discovered.call(
+            {
+                _deps: {
+                    Location: {
+                        get: (id) => locations.get(id) || null,
+                        findByName: () => null,
+                    },
+                    findLocationByNameLoose: () => null,
+                    findRegionByNameLoose: (name) => {
+                        const normalized = String(name || '').trim().toLowerCase();
+                        return Array.from(regions.values()).find(
+                            (region) => region.name.toLowerCase() === normalized,
+                        ) || null;
+                    },
+                    findRegionByLocationId: (locationId) => {
+                        if (locationId === 'loc_gatehouse') {
+                            return castleRegion;
+                        }
+                        if (locationId === 'loc_taproom') {
+                            return { id: 'region_tavern', name: 'Tavern', isVehicle: false };
+                        }
+                        return null;
+                    },
+                    createLocationFromEvent: async (options) => {
+                        createdLocationCalls.push(options);
+                        return destination;
+                    },
+                    createRegionStubFromEvent: async () => null,
+                    ensureExitConnection: (...args) => ensureCalls.push(args),
+                    regenerateLocationName: async () => ({ name: 'unused' }),
+                    gameLocations: locations,
+                    regions,
+                },
+            },
+            entries,
+            {
+                location: contextLocation,
+                region: { id: 'region_tavern', name: 'Tavern', isVehicle: false },
+            }
+        );
+
+        assert.equal(createdLocationCalls.length, 1);
+        assert.equal(createdLocationCalls[0].originLocation, sourceLocation);
+        assert.equal(createdLocationCalls[0].targetRegionId, 'region_hedge');
+        assert.equal(createdLocationCalls[0].travelTimeMinutes, 5);
+        assert.equal(ensureCalls.length, 2);
+        assert.equal(ensureCalls[0][0], sourceLocation);
+        assert.equal(ensureCalls[0][1], destination);
+        assert.equal(ensureCalls[1][0], destination);
+        assert.equal(ensureCalls[1][1], sourceLocation);
+        assert.equal(ensureCalls[0][2].destinationRegion, 'region_hedge');
+        assert.equal(ensureCalls[1][2].destinationRegion, 'region_castle');
     } finally {
         Globals.currentPlayer = previousCurrentPlayer;
     }

@@ -16,6 +16,7 @@ need_bars:
     initial: 1000
     change_per_minute: -20
     relative_to_level: false
+    while_you_were_away_prompt_notes: This need bar should be between 75% and 100% unless there isn't anything readily available to drink. If nothing is available to drink, use your judgement depending on the circumstances.
     small_increase:
       - small sip of water
       - eating a fruit

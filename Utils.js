@@ -43,6 +43,20 @@ class Utils {
     return Array.from(node.childNodes).map(n => s.serializeToString(n)).join('');
   }
 
+  static extractXmlNodeContent(node) {
+    if (!node) {
+      return '';
+    }
+
+    const children = Array.from(node.childNodes || []);
+    const hasCdataChild = children.some((child) => child?.nodeType === 4);
+    if (hasCdataChild) {
+      return (node.textContent || '').trim();
+    }
+
+    return this.innerXML(node).trim();
+  }
+
   static roundAwayFromZero(value) {
     if (!Number.isFinite(value) || value === 0) {
       return 0;

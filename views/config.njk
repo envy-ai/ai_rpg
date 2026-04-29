@@ -661,6 +661,15 @@
                         </div>
 
                         <div class="form-group">
+                            <label for="event-checks-use-xml">XML Event Pipeline:</label>
+                            <div class="checkbox-wrapper">
+                                <input type="hidden" name="event_checks.use_xml::boolean" value="false">
+                                <input type="checkbox" id="event-checks-use-xml" name="event_checks.use_xml::boolean" value="true" {% if config.event_checks.use_xml is not defined or config.event_checks.use_xml %}checked{% endif %}>
+                            </div>
+                            <span class="help-text">Use the single XML event prompt instead of grouped legacy event checks</span>
+                        </div>
+
+                        <div class="form-group">
                             <label for="plausibility-checks-enabled">Plausibility Checks:</label>
                             <div class="checkbox-wrapper">
                                 <input type="hidden" name="plausibility_checks.enabled::boolean" value="false">

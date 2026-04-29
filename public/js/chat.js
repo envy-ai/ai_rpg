@@ -136,6 +136,7 @@ class AIRPGChat {
         };
         this.promptProgressViewer = null;
         this.promptProgressViewerPromptId = null;
+        this.promptProgressViewerFollowStream = false;
         this.worldTimeIndicator = document.getElementById('worldTimeIndicator');
         this.worldTimeIndicatorTime = document.getElementById('worldTimeIndicatorTime');
         this.worldTimeIndicatorDate = document.getElementById('worldTimeIndicatorDate');
@@ -2826,7 +2827,50 @@ class AIRPGChat {
         return resolvedBarName === 'health' || source === 'health_regen';
     }
 
+    resolveNeedBarMaxValue(change, barName = '') {
+        const directMax = Number(change?.max);
+        if (Number.isFinite(directMax)) {
+            return directMax;
+        }
+
+        const definitions = Array.isArray(window.needBarDefinitions) ? window.needBarDefinitions : [];
+        const barId = typeof change?.needBarId === 'string' ? change.needBarId.trim() : '';
+        const resolvedBarName = String(barName || change?.needBarName || change?.needBar || change?.bar || change?.needBarId || '').trim().toLowerCase();
+        const match = definitions.find((definition) => {
+            if (!definition || typeof definition !== 'object') {
+                return false;
+            }
+            const definitionId = typeof definition.id === 'string' ? definition.id.trim() : '';
+            if (definitionId && barId && definitionId === barId) {
+                return true;
+            }
+            const definitionName = typeof definition.name === 'string' ? definition.name.trim().toLowerCase() : '';
+            return Boolean(resolvedBarName && definitionName && definitionName === resolvedBarName);
+        });
+        const definitionMax = Number(match?.max);
+        return Number.isFinite(definitionMax) ? definitionMax : null;
+    }
+
     formatNeedBarDelta(change, delta, barName = '', { roundNonHealth = false } = {}) {
+        const magnitude = typeof change?.magnitude === 'string' ? change.magnitude.trim().toLowerCase() : '';
+        const direction = typeof change?.direction === 'string' ? change.direction.trim().toLowerCase() : '';
+        if (magnitude === 'all' || magnitude === 'fill') {
+            const maxValue = this.resolveNeedBarMaxValue(change, barName);
+            if (Number.isFinite(maxValue)) {
+                const sign = direction === 'decrease'
+                    ? '-'
+                    : (direction === 'increase' || magnitude === 'fill'
+                        ? '+'
+                        : (Number(delta) < 0 ? '-' : '+'));
+                if (this.isHealthNeedBarChange(change, barName)) {
+                    const displayMax = this.formatHealthDisplayValue(maxValue);
+                    return displayMax !== null ? `${sign}${displayMax}` : '';
+                }
+                const displayMax = roundNonHealth ? Math.round(maxValue) : maxValue;
+                return `${sign}${displayMax}`;
+            }
+        }
+
         if (!Number.isFinite(delta) || delta === 0) {
             return '';
         }
@@ -3583,6 +3627,20 @@ class AIRPGChat {
         }
     }
 
+    scrollPromptProgressViewerToBottom() {
+        const viewer = this.promptProgressViewer;
+        if (!viewer) {
+            return;
+        }
+        const streamTextElement = viewer.querySelector('.prompt-progress-viewer__stream-text');
+        if (!streamTextElement) {
+            return;
+        }
+        requestAnimationFrame(() => {
+            streamTextElement.scrollTop = streamTextElement.scrollHeight;
+        });
+    }
+
     ensurePromptProgressViewer() {
         if (this.promptProgressViewer) {
             return this.promptProgressViewer;
@@ -3608,6 +3666,29 @@ class AIRPGChat {
 
         const actions = document.createElement('div');
         actions.className = 'prompt-progress-viewer__actions';
+
+        const followLabel = document.createElement('label');
+        followLabel.className = 'prompt-progress-viewer__follow';
+        followLabel.title = 'Keep the streamed response view scrolled to the bottom';
+
+        const followCheckbox = document.createElement('input');
+        followCheckbox.type = 'checkbox';
+        followCheckbox.className = 'prompt-progress-viewer__follow-input';
+        followCheckbox.checked = this.promptProgressViewerFollowStream === true;
+        followCheckbox.setAttribute('aria-label', 'Keep streamed response view scrolled to the bottom');
+        followCheckbox.addEventListener('change', () => {
+            this.promptProgressViewerFollowStream = followCheckbox.checked;
+            if (followCheckbox.checked) {
+                this.scrollPromptProgressViewerToBottom();
+            }
+        });
+
+        const followText = document.createElement('span');
+        followText.className = 'prompt-progress-viewer__follow-text';
+        followText.textContent = 'Follow';
+
+        followLabel.appendChild(followCheckbox);
+        followLabel.appendChild(followText);
 
         const copyPromptButton = document.createElement('button');
         copyPromptButton.type = 'button';
@@ -3657,6 +3738,7 @@ class AIRPGChat {
         meta.appendChild(title);
         meta.appendChild(subtitle);
         header.appendChild(meta);
+        actions.appendChild(followLabel);
         actions.appendChild(copyPromptButton);
         actions.appendChild(closeButton);
         header.appendChild(actions);
@@ -3709,6 +3791,7 @@ class AIRPGChat {
         const title = viewer.querySelector('.prompt-progress-viewer__title');
         const subtitle = viewer.querySelector('.prompt-progress-viewer__subtitle');
         const copyButton = viewer.querySelector('.prompt-progress-viewer__copy');
+        const followCheckbox = viewer.querySelector('.prompt-progress-viewer__follow-input');
         const streamTextElement = viewer.querySelector('.prompt-progress-viewer__stream-text');
         const promptTextElement = viewer.querySelector('.prompt-progress-viewer__prompt-inline');
         const responseTextElement = viewer.querySelector('.prompt-progress-viewer__response-inline');
@@ -3739,6 +3822,9 @@ class AIRPGChat {
                 ? 'Copy the full prompt to the clipboard'
                 : 'Prompt text is not available to copy';
         }
+        if (followCheckbox) {
+            followCheckbox.checked = this.promptProgressViewerFollowStream === true;
+        }
         const renderedPromptText = promptText || 'Prompt not available for this stream.';
         const renderedResponseText = previewText || 'Waiting for streamed text...';
         if (promptTextElement) {
@@ -3759,6 +3845,9 @@ class AIRPGChat {
 
         if (!viewer.isConnected) {
             document.body.appendChild(viewer);
+        }
+        if (this.promptProgressViewerFollowStream === true) {
+            this.scrollPromptProgressViewerToBottom();
         }
     }
 
@@ -5047,9 +5136,8 @@ class AIRPGChat {
             const segments = [baseline];
 
             const delta = Number(change.delta);
-            let deltaText = null;
-            if (Number.isFinite(delta) && delta !== 0) {
-                deltaText = this.formatNeedBarDelta(change, delta, barName, { roundNonHealth: true });
+            const deltaText = this.formatNeedBarDelta(change, delta, barName, { roundNonHealth: true });
+            if (deltaText) {
                 segments.push(`Δ ${deltaText}`);
             }
 
@@ -5087,6 +5175,7 @@ class AIRPGChat {
                         deltaText,
                         direction: direction || null,
                         magnitude: magnitude || null,
+                        max: Number.isFinite(Number(change.max)) ? Number(change.max) : null,
                         reason: reason || null,
                         text
                     }
@@ -5135,8 +5224,9 @@ class AIRPGChat {
             const segments = [];
             segments.push(`<strong>${this.escapeHtml(String(actorName))}</strong> – ${this.escapeHtml(String(barName))}`);
 
-            if (Number.isFinite(delta) && delta !== 0) {
-                segments.push(this.formatNeedBarDelta(change, delta, barName));
+            const deltaText = this.formatNeedBarDelta(change, delta, barName);
+            if (deltaText) {
+                segments.push(deltaText);
             } else if (change.magnitude === 'all' || change.magnitude === 'fill') {
                 segments.push('Adjusted to limit');
             }

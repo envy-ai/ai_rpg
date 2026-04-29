@@ -9,8 +9,8 @@ Most modals live in `views/index.njk` and are wired up by the inline script or `
   - Auto-closes `#loadGameModal` before showing prompt activity.
   - Renders in the upper modal layer so prompt activity stays visible above the full interface.
   - Auto-anchors below the top header/tab controls by default so top navigation remains clickable.
-  - Each prompt row includes an eye action that opens a separate floating viewer window with one combined text pane: the full prompt appears first in a differently styled inline span, followed by the live streamed response text, and the viewer header includes a `Copy Prompt` button.
-  - The viewer supports header dragging, native resize, and an internal vertical scrollbar when the combined text pane overflows.
+  - Each prompt row includes an eye action that opens a separate floating viewer window with one combined text pane: the full prompt appears first in a differently styled inline span, followed by the live streamed response text, and the viewer header includes a `Copy Prompt` button plus a `Follow` checkbox.
+  - The viewer supports header dragging, native resize, and an internal vertical scrollbar when the combined text pane overflows. When `Follow` is checked, the combined prompt/response pane stays scrolled to the bottom as throttled stream updates render.
   - Received-count and average-rate cells are displayed without byte/character unit labels; the `Avg/s` column header provides the rate context.
   - Supports drag/resize/contract; manual drag disables auto-anchoring for that session.
   - While the overlay is visible, the progress table keeps the same wrapper/table/header DOM and replaces only body rows on rerender. It also remembers the widest rendered row/table width and applies that as a runtime-only minimum width so rows disappearing do not shrink the table. The remembered width is cleared after the empty overlay hides.

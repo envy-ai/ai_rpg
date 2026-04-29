@@ -32,6 +32,7 @@ const console = require('console');
 const INFORMATION_GATHERING_CHAT_TOOL_NAMES = new Set([
     'moreInfo',
     'getHistory',
+    'getFullScene',
     'listLocationEntities',
     'resolveAttack',
     'resolveSkillCheck',
@@ -1162,6 +1163,7 @@ module.exports = function registerApiRoutes(scope) {
         const { collectHistoryMatches, runChatCompletionWithToolLoop } = createChatToolRuntime({
             getConfig: () => config,
             getChatHistory: () => chatHistory,
+            getSceneSummaries: () => Globals.getSceneSummaries(),
             isAssistantProseLikeEntry: (entry) => isAssistantProseLikeEntry(entry),
             serializeNpcForClient,
             buildLocationResponse,
@@ -1230,6 +1232,14 @@ module.exports = function registerApiRoutes(scope) {
             return next;
         };
 
+        const SLOP_HISTORY_ENTRY_TYPES = new Set([
+            'player-action',
+            'npc-action',
+            'quest-reward',
+            'random-event',
+            'while-you-were-away-player'
+        ]);
+
         const getSlopHistorySegments = () => {
             if (!Array.isArray(chatHistory)) {
                 throw new Error('Chat history is unavailable for slopword analysis.');
@@ -1240,10 +1250,7 @@ module.exports = function registerApiRoutes(scope) {
                     continue;
                 }
                 const entryType = typeof entry.type === 'string' ? entry.type : null;
-                if (entryType !== 'player-action'
-                    && entryType !== 'npc-action'
-                    && entryType !== 'quest-reward'
-                    && entryType !== 'random-event') {
+                if (!SLOP_HISTORY_ENTRY_TYPES.has(entryType)) {
                     continue;
                 }
                 const content = typeof entry.content === 'string' ? entry.content.trim() : '';
@@ -1262,11 +1269,7 @@ module.exports = function registerApiRoutes(scope) {
                 return false;
             }
             const entryType = typeof entry.type === 'string' ? entry.type : null;
-            return entryType === 'player-action'
-                || entryType === 'npc-action'
-                || entryType === 'quest-reward'
-                || entryType === 'random-event'
-                || entryType === null;
+            return entryType === null || SLOP_HISTORY_ENTRY_TYPES.has(entryType);
         };
 
         const getAssistantProseHistorySegments = () => {
@@ -1504,14 +1507,7 @@ module.exports = function registerApiRoutes(scope) {
                 if (entry.role === 'user') {
                     playerEntries.push({ index, content });
                 }
-                const entryType = typeof entry.type === 'string' ? entry.type : null;
-                const isProseLike = entry.role === 'assistant'
-                    && (entryType === 'player-action'
-                        || entryType === 'npc-action'
-                        || entryType === 'quest-reward'
-                        || entryType === 'random-event'
-                        || entryType === null);
-                if (isProseLike) {
+                if (isAssistantProseLikeEntry(entry)) {
                     proseEntries.push({ index, content });
                 }
             }
@@ -3030,20 +3026,24 @@ module.exports = function registerApiRoutes(scope) {
             );
         }
 
-        function normalizeWhileYouWereAwayNeedBarDeltaPercent(value, fieldLabel = 'while-you-were-away need bar delta') {
+        function normalizeWhileYouWereAwayNeedBarValuePercent(value, fieldLabel = 'while-you-were-away need bar value') {
             const raw = typeof value === 'number'
                 ? String(value)
                 : (typeof value === 'string' ? value.trim() : '');
             if (!raw) {
-                throw new Error(`${fieldLabel} is missing.`);
+                return null;
             }
 
-            const normalized = raw.endsWith('%')
-                ? raw.slice(0, -1).trim()
-                : raw;
+            const normalized = raw.replace(/[^\d.]/g, '');
+            if (!normalized) {
+                return null;
+            }
             const numeric = Number(normalized);
             if (!Number.isFinite(numeric)) {
                 throw new Error(`${fieldLabel} "${raw}" is not a finite number.`);
+            }
+            if (numeric < 0 || numeric > 100) {
+                throw new Error(`${fieldLabel} "${raw}" must be between 0 and 100.`);
             }
             return numeric;
         }
@@ -3213,14 +3213,17 @@ module.exports = function registerApiRoutes(scope) {
                                 `While-you-were-away entry "${name}" needBarEffect #${effectIndex + 1} is missing <needBarId>.`
                             );
                         }
-                        const deltaRaw = getDirectChildTextByTagName(effectNode, 'delta').trim();
-                        const deltaPercent = normalizeWhileYouWereAwayNeedBarDeltaPercent(
-                            deltaRaw,
-                            `While-you-were-away delta for "${name}" need bar "${needBarId}"`
+                        const valueRaw = getDirectChildTextByTagName(effectNode, 'value').trim();
+                        const valuePercent = normalizeWhileYouWereAwayNeedBarValuePercent(
+                            valueRaw,
+                            `While-you-were-away value for "${name}" need bar "${needBarId}"`
                         );
+                        if (valuePercent === null) {
+                            continue;
+                        }
                         needBarChanges.push({
                             needBarId,
-                            deltaPercent
+                            valuePercent
                         });
                     }
                 }
@@ -3592,18 +3595,15 @@ module.exports = function registerApiRoutes(scope) {
                         return [];
                     }
 
-                    const currentValue = Number(bar.value);
-                    if (!Number.isFinite(currentValue)) {
-                        throw new Error(`While-you-were-away need bar "${bar.id}" for "${npc.name}" is missing a numeric value.`);
+                    const min = Number.isFinite(Number(bar.min)) ? Number(bar.min) : 0;
+                    const max = Number.isFinite(Number(bar.max)) ? Number(bar.max) : 100;
+                    const total = max - min;
+                    if (!Number.isFinite(total) || total < 0) {
+                        throw new Error(`While-you-were-away need bar "${bar.id}" for "${npc.name}" has an invalid min/max range.`);
                     }
-                    const min = Number(bar.min);
-                    const max = Number(bar.max);
-                    const total = Number.isFinite(max) && Number.isFinite(min)
-                        ? (max - min)
-                        : (Number.isFinite(max) ? max : 100);
                     return {
                         identifier: bar.id || change.needBarId,
-                        nextValue: currentValue + ((total * change.deltaPercent) / 100)
+                        nextValue: min + ((total * change.valuePercent) / 100)
                     };
                 });
 
@@ -3654,9 +3654,22 @@ module.exports = function registerApiRoutes(scope) {
             }
             const hiddenEntry = pushChatEntry(entry, entryCollector, resolvedLocationId);
 
-            const playerFacingProse = typeof parsedResponse?.proseForPlayer === 'string'
+            let playerFacingProse = typeof parsedResponse?.proseForPlayer === 'string'
                 ? parsedResponse.proseForPlayer.trim()
                 : '';
+            let slopRemovalInfo = null;
+            if (playerFacingProse && Globals.config?.slop_buster === true) {
+                const slopResult = await applySlopRemoval(playerFacingProse, { returnDiagnostics: true });
+                playerFacingProse = slopResult.text;
+                if (slopResult.ran) {
+                    slopRemovalInfo = {
+                        slopWords: slopResult.slopWords || [],
+                        slopRegexes: slopResult.slopRegexes || [],
+                        slopNgrams: slopResult.slopNgrams || []
+                    };
+                }
+            }
+
             let storedVisibleEntry = null;
             if (playerFacingProse) {
                 const visibleEntry = {
@@ -3670,6 +3683,13 @@ module.exports = function registerApiRoutes(scope) {
                     visibleEntry.parentId = parentEntryId;
                 }
                 storedVisibleEntry = pushChatEntry(visibleEntry, entryCollector, resolvedLocationId);
+                if (slopRemovalInfo && storedVisibleEntry) {
+                    recordSlopRemovalEntry({
+                        data: slopRemovalInfo,
+                        parentId: storedVisibleEntry?.id || null,
+                        locationId: resolvedLocationId
+                    }, entryCollector);
+                }
             }
 
             return returnEntries
@@ -8083,6 +8103,35 @@ module.exports = function registerApiRoutes(scope) {
             return description;
         };
 
+        const formatNeedBarDisplayDelta = (entry, delta, rawBarName) => {
+            const magnitude = typeof entry?.magnitude === 'string' ? entry.magnitude.trim().toLowerCase() : '';
+            const direction = typeof entry?.direction === 'string' ? entry.direction.trim().toLowerCase() : '';
+            const maxValue = Number(entry?.max);
+            if ((magnitude === 'all' || magnitude === 'fill') && Number.isFinite(maxValue)) {
+                const sign = direction === 'decrease'
+                    ? '-'
+                    : (direction === 'increase' || magnitude === 'fill'
+                        ? '+'
+                        : (Number(delta) < 0 ? '-' : '+'));
+                const normalizedBarName = String(rawBarName).trim().toLowerCase();
+                const normalizedSource = String(entry.source || '').trim().toLowerCase();
+                const displayMax = normalizedBarName === 'health' || normalizedSource === 'health_regen'
+                    ? Math.ceil(Math.abs(maxValue))
+                    : Math.round(maxValue);
+                return `${sign}${displayMax}`;
+            }
+
+            if (!Number.isFinite(delta) || delta === 0) {
+                return null;
+            }
+
+            const normalizedBarName = String(rawBarName).trim().toLowerCase();
+            const normalizedSource = String(entry.source || '').trim().toLowerCase();
+            return normalizedBarName === 'health' || normalizedSource === 'health_regen'
+                ? `${delta > 0 ? '+' : '-'}${Math.ceil(Math.abs(delta))}`
+                : `${delta > 0 ? '+' : ''}${Math.round(delta)}`;
+        };
+
         const EVENT_SUMMARY_CATEGORIES = new Set([
             'time',
             'travel',
@@ -8856,14 +8905,8 @@ module.exports = function registerApiRoutes(scope) {
                     const detail = parts.length ? parts.join(' ') : 'changed';
                     const segments = [`${actorName}'s ${barName} ${detail}`];
                     const delta = Number(entry.delta);
-                    let deltaText = null;
-                    if (Number.isFinite(delta) && delta !== 0) {
-                        const normalizedBarName = String(rawBarName).trim().toLowerCase();
-                        const normalizedSource = String(entry.source || '').trim().toLowerCase();
-                        const roundedDelta = normalizedBarName === 'health' || normalizedSource === 'health_regen'
-                            ? `${delta > 0 ? '+' : '-'}${Math.ceil(Math.abs(delta))}`
-                            : `${delta > 0 ? '+' : ''}${Math.round(delta)}`;
-                        deltaText = roundedDelta;
+                    const deltaText = formatNeedBarDisplayDelta(entry, delta, rawBarName);
+                    if (deltaText) {
                         segments.push(`Δ ${deltaText}`);
                     }
                     const reason = entry.reason && String(entry.reason).trim();
@@ -8895,6 +8938,7 @@ module.exports = function registerApiRoutes(scope) {
                                 deltaText,
                                 direction: entry.direction || null,
                                 magnitude: entry.magnitude || null,
+                                max: Number.isFinite(Number(entry.max)) ? Number(entry.max) : null,
                                 reason: reason || null,
                                 text: segments.join(' ')
                             }
@@ -11094,6 +11138,15 @@ module.exports = function registerApiRoutes(scope) {
                 return `${icon} ${summary}`;
             };
 
+            const formatCollapsedAttackDamageText = (value) => {
+                const numericValue = Number(value);
+                if (!Number.isFinite(numericValue)) {
+                    return '';
+                }
+                const displayValue = Math.ceil(numericValue - 1e-9);
+                return `(💥-${displayValue}hp)`;
+            };
+
             const resolveKind = (toolName, metadata = {}) => {
                 if (toolName === 'resolveAttack') {
                     return 'attack';
@@ -11183,7 +11236,12 @@ module.exports = function registerApiRoutes(scope) {
                     : (typeof metadata?.hit === 'boolean' ? metadata.hit : null);
                 const parts = [];
                 if (hit === true) {
-                    parts.push('Hit');
+                    const damageText = formatCollapsedAttackDamageText(
+                        metadata?.damage
+                        ?? summary?.damage?.applied
+                        ?? summary?.damage?.total
+                    );
+                    parts.push(damageText ? `Hit ${damageText}` : 'Hit');
                 } else if (hit === false) {
                     parts.push('Miss');
                 } else {
@@ -11191,10 +11249,15 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 const summaryText = `${attacker} -> ${defender}: ${parts.join(', ')}`;
-                return prefixOutcomeIcon(summaryText, resolveOutcomeIcon(null, {
-                    success: hit,
-                    result: hit === true ? 'hit' : (hit === false ? 'miss' : metadata?.result || null)
-                }));
+                const icon = hit === true
+                    ? '⚔️'
+                    : (hit === false
+                        ? '💨'
+                        : resolveOutcomeIcon(null, {
+                            success: hit,
+                            result: metadata?.result || null
+                        }));
+                return prefixOutcomeIcon(summaryText, icon);
             };
 
             const summarizeCompletedCheck = (record, metadata) => {
@@ -17141,7 +17204,7 @@ module.exports = function registerApiRoutes(scope) {
                                     exit: resolvedTravel?.exit || null,
                                     sourceLocation: resolvedTravel?.originLocation || null
                                 });
-                                suppressEventDrivenExitTimeAdvance = eventDrivenExitTravelTimeMinutes > 0;
+                                suppressEventDrivenExitTimeAdvance = true;
                             }
                         } catch (error) {
                             const message = error.message || 'Failed to resolve travel metadata.';
@@ -18606,6 +18669,10 @@ module.exports = function registerApiRoutes(scope) {
                                 const suppressDirectTravelPromptMutation = Boolean(currentActionIsTravel
                                     && travelMetadata
                                     && !travelMetadataIsEventDriven);
+                                const suppressTravelPromptTimeAdvance = Boolean(
+                                    suppressDirectTravelPromptMutation
+                                    || (suppressEventDrivenExitTimeAdvance && eventDrivenTravelWillSucceed)
+                                );
                                 const travelResult = await runTravelProseEventChecks({
                                     travelProsePayload,
                                     location,
@@ -18621,7 +18688,7 @@ module.exports = function registerApiRoutes(scope) {
                                         ? buildTravelDestinationOverrideFromMetadata()
                                         : null,
                                     suppressPlayerMove: suppressDirectTravelPromptMutation,
-                                    suppressTimeAdvance: suppressDirectTravelPromptMutation
+                                    suppressTimeAdvance: suppressTravelPromptTimeAdvance
                                 });
                                 eventResult = travelResult.eventResult;
                                 originEventResult = travelResult.originEventResult;

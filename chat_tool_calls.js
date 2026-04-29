@@ -1,5 +1,10 @@
 const path = require('path');
 const nunjucks = require('nunjucks');
+const { addEvalFilter } = require('./nunjucks_filters.js');
+const {
+    getSceneSummaryIndexText,
+    shouldIncludeEntryInSceneSummaryIndex
+} = require('./scene_summary_index.js');
 
 const CHAT_TOOL_MAX_ROUNDS = 8;
 const MORE_INFO_MAX_MATCHES = 50;
@@ -53,6 +58,25 @@ const CHAT_TOOL_DEFINITIONS = Object.freeze([
                     }
                 },
                 required: ['query'],
+                additionalProperties: false
+            }
+        }
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'getFullScene',
+            description: 'Return all scene-summary-indexed action inputs and prose entries for a stored scene number.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    sceneNumber: {
+                        type: 'integer',
+                        minimum: 1,
+                        description: '1-based scene number as shown by /scene_summaries.'
+                    }
+                },
+                required: ['sceneNumber'],
                 additionalProperties: false
             }
         }
@@ -902,6 +926,14 @@ const normalizeOptionalPositiveInteger = (value, name) => {
     return numeric;
 };
 
+const normalizeRequiredPositiveInteger = (value, name, toolName) => {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric) || !Number.isInteger(numeric) || numeric < 1) {
+        throw new Error(`${toolName} "${name}" must be an integer >= 1.`);
+    }
+    return numeric;
+};
+
 const normalizeMoreInfoType = (value) => {
     if (value === null || value === undefined) {
         return null;
@@ -990,6 +1022,7 @@ const normalizeMoreInfoMarkdown = (input) => {
 const createChatToolRuntime = ({
     getConfig,
     getChatHistory,
+    getSceneSummaries = null,
     isAssistantProseLikeEntry,
     serializeNpcForClient,
     buildLocationResponse,
@@ -1041,7 +1074,7 @@ const createChatToolRuntime = ({
             throw new Error('Nunjucks is unavailable for moreInfo display templates.');
         }
         const templatesPath = path.join(__dirname, 'templates');
-        return new nunjucks.Environment(
+        const env = new nunjucks.Environment(
             new nunjucks.FileSystemLoader(templatesPath, { noCache: true }),
             {
                 autoescape: false,
@@ -1050,6 +1083,8 @@ const createChatToolRuntime = ({
                 lstripBlocks: true
             }
         );
+        addEvalFilter(env);
+        return env;
     })();
 
     const renderMoreInfoTemplate = (templateName, context = {}) => {
@@ -4440,6 +4475,228 @@ const createChatToolRuntime = ({
         };
     };
 
+    const getOrderedSceneSummaries = () => {
+        if (typeof getSceneSummaries !== 'function') {
+            throw new Error('Scene summaries are unavailable for getFullScene.');
+        }
+        const sceneSummaries = getSceneSummaries();
+        if (!sceneSummaries || typeof sceneSummaries.getScenesInOrder !== 'function') {
+            throw new Error('Scene summaries are unavailable for getFullScene.');
+        }
+        const scenes = sceneSummaries.getScenesInOrder();
+        if (!Array.isArray(scenes)) {
+            throw new Error('Scene summaries returned an invalid scene list.');
+        }
+        return scenes;
+    };
+
+    const resolveSceneEntryLabel = (entry) => {
+        const entryType = typeof entry?.type === 'string' ? entry.type.trim().toLowerCase() : '';
+        const role = typeof entry?.role === 'string' ? entry.role.trim() : '';
+        const normalizedRole = role.toLowerCase();
+
+        if (normalizedRole === 'user') {
+            const currentPlayer = typeof getCurrentPlayer === 'function' ? getCurrentPlayer() : null;
+            const speaker = typeof entry?.actor === 'string' && entry.actor.trim()
+                ? entry.actor.trim()
+                : (typeof currentPlayer?.name === 'string' && currentPlayer.name.trim()
+                    ? currentPlayer.name.trim()
+                    : 'Player');
+            const actionKind = entryType === 'user-question'
+                ? 'question'
+                : (entryType === 'user-generic-prompt' ? 'genericPrompt' : 'playerAction');
+            const actionLabel = entryType === 'user-question'
+                ? `Question by ${speaker}`
+                : (entryType === 'user-generic-prompt'
+                    ? `Generic prompt by ${speaker}`
+                    : (entry?.travel === true ? `Travel action by ${speaker}` : `Action by ${speaker}`));
+            return {
+                kind: actionKind,
+                label: actionLabel,
+                speaker
+            };
+        }
+
+        if (entryType === 'npc-action') {
+            const speaker = typeof entry?.actor === 'string' && entry.actor.trim()
+                ? entry.actor.trim()
+                : (normalizedRole && normalizedRole !== 'assistant' && normalizedRole !== 'system'
+                    ? role
+                    : 'NPC');
+            return {
+                kind: 'npcAction',
+                label: `Action by ${speaker}`,
+                speaker
+            };
+        }
+
+        if (isAssistantProseLikeEntry(entry)) {
+            const speaker = typeof entry?.actor === 'string' && entry.actor.trim()
+                ? entry.actor.trim()
+                : 'Storyteller';
+            return {
+                kind: 'prose',
+                label: speaker === 'Storyteller'
+                    ? 'Storyteller prose'
+                    : `Storyteller prose for ${speaker}`,
+                speaker
+            };
+        }
+
+        if (normalizedRole === 'assistant') {
+            const speaker = typeof entry?.actor === 'string' && entry.actor.trim()
+                ? entry.actor.trim()
+                : 'Storyteller';
+            const hiddenSceneTypes = new Set([
+                'supplemental-story-info',
+                'offscreen-npc-activity-daily',
+                'offscreen-npc-activity-weekly',
+                'while-you-were-away'
+            ]);
+            return {
+                kind: hiddenSceneTypes.has(entryType) ? 'hiddenSceneNote' : 'prose',
+                label: hiddenSceneTypes.has(entryType)
+                    ? `Hidden scene note (${entryType})`
+                    : (speaker === 'Storyteller' ? 'Storyteller prose' : `Storyteller prose for ${speaker}`),
+                speaker
+            };
+        }
+
+        const speaker = role || 'Unknown';
+        return {
+            kind: 'sceneEntry',
+            label: `Scene entry by ${speaker}`,
+            speaker
+        };
+    };
+
+    const collectFullSceneEntries = ({ sceneNumber }) => {
+        const normalizedSceneNumber = normalizeRequiredPositiveInteger(
+            sceneNumber,
+            'sceneNumber',
+            'getFullScene'
+        );
+        const scenes = getOrderedSceneSummaries();
+        if (scenes.length === 0) {
+            throw new Error('getFullScene cannot return a scene because no scene summaries are stored.');
+        }
+        if (normalizedSceneNumber > scenes.length) {
+            throw new Error(`getFullScene sceneNumber ${normalizedSceneNumber} is out of range; stored scenes: ${scenes.length}.`);
+        }
+
+        const scene = scenes[normalizedSceneNumber - 1];
+        const startIndex = Number(scene?.startIndex);
+        const endIndex = Number(scene?.endIndex);
+        if (!Number.isInteger(startIndex) || startIndex < 1) {
+            throw new Error(`Stored scene ${normalizedSceneNumber} has an invalid startIndex.`);
+        }
+        if (!Number.isInteger(endIndex) || endIndex < startIndex) {
+            throw new Error(`Stored scene ${normalizedSceneNumber} has an invalid endIndex.`);
+        }
+
+        const chatHistory = getChatHistory();
+        if (!Array.isArray(chatHistory)) {
+            throw new Error('Chat history is unavailable for getFullScene.');
+        }
+
+        const entries = [];
+        let sceneEntryIndex = 0;
+        for (let historyIndex = 0; historyIndex < chatHistory.length; historyIndex += 1) {
+            const entry = chatHistory[historyIndex];
+            if (!shouldIncludeEntryInSceneSummaryIndex(entry)) {
+                continue;
+            }
+            const indexedText = getSceneSummaryIndexText(entry);
+            if (!indexedText) {
+                continue;
+            }
+
+            sceneEntryIndex += 1;
+            if (sceneEntryIndex < startIndex) {
+                continue;
+            }
+            if (sceneEntryIndex > endIndex) {
+                break;
+            }
+
+            const content = typeof entry.content === 'string' && entry.content.trim()
+                ? entry.content
+                : (typeof entry.summary === 'string' ? entry.summary : '');
+            const label = resolveSceneEntryLabel(entry);
+            entries.push({
+                sceneEntryIndex,
+                historyIndex,
+                id: typeof entry.id === 'string' ? entry.id : null,
+                type: typeof entry.type === 'string' ? entry.type : null,
+                role: typeof entry.role === 'string' ? entry.role : null,
+                kind: label.kind,
+                label: label.label,
+                speaker: label.speaker,
+                timestamp: typeof entry.timestamp === 'string' ? entry.timestamp : null,
+                locationId: typeof entry.locationId === 'string' ? entry.locationId : null,
+                content
+            });
+        }
+
+        return {
+            sceneNumber: normalizedSceneNumber,
+            totalScenes: scenes.length,
+            startIndex,
+            endIndex,
+            summary: typeof scene.summary === 'string' ? scene.summary : '',
+            entries
+        };
+    };
+
+    const executeGetFullSceneTool = ({ sceneNumber }) => {
+        const sceneResult = collectFullSceneEntries({ sceneNumber });
+        const lines = [
+            `<fullScene number="${xmlEscapeAttribute(sceneResult.sceneNumber)}" totalScenes="${xmlEscapeAttribute(sceneResult.totalScenes)}">`,
+            `  <range startIndex="${xmlEscapeAttribute(sceneResult.startIndex)}" endIndex="${xmlEscapeAttribute(sceneResult.endIndex)}"/>`
+        ];
+        if (sceneResult.summary) {
+            lines.push(`  <sceneSummary>${xmlEscapeText(sceneResult.summary)}</sceneSummary>`);
+        }
+        lines.push(`  <entries count="${xmlEscapeAttribute(sceneResult.entries.length)}">`);
+        for (const entry of sceneResult.entries) {
+            lines.push(`    <entry sceneEntryIndex="${xmlEscapeAttribute(entry.sceneEntryIndex)}" historyIndex="${xmlEscapeAttribute(entry.historyIndex)}" kind="${xmlEscapeAttribute(entry.kind)}">`);
+            lines.push(`      <label>${xmlEscapeText(entry.label)}</label>`);
+            lines.push(`      <speaker>${xmlEscapeText(entry.speaker)}</speaker>`);
+            if (entry.id) {
+                lines.push(`      <id>${xmlEscapeText(entry.id)}</id>`);
+            }
+            if (entry.type) {
+                lines.push(`      <type>${xmlEscapeText(entry.type)}</type>`);
+            }
+            if (entry.role) {
+                lines.push(`      <role>${xmlEscapeText(entry.role)}</role>`);
+            }
+            if (entry.timestamp) {
+                lines.push(`      <timestamp>${xmlEscapeText(entry.timestamp)}</timestamp>`);
+            }
+            if (entry.locationId) {
+                lines.push(`      <locationId>${xmlEscapeText(entry.locationId)}</locationId>`);
+            }
+            lines.push(`      <content>${xmlEscapeText(entry.content)}</content>`);
+            lines.push('    </entry>');
+        }
+        lines.push('  </entries>');
+        lines.push('</fullScene>');
+
+        return {
+            content: lines.join('\n'),
+            metadata: {
+                sceneNumber: sceneResult.sceneNumber,
+                totalScenes: sceneResult.totalScenes,
+                startIndex: sceneResult.startIndex,
+                endIndex: sceneResult.endIndex,
+                returnedCount: sceneResult.entries.length,
+                entryIndexes: sceneResult.entries.map(entry => entry.historyIndex),
+                sceneEntryIndexes: sceneResult.entries.map(entry => entry.sceneEntryIndex)
+            }
+        };
+    };
+
     const TOOL_FUNCTIONS_WITH_VISIBLE_ERRORS = new Set([
         'teleportCharacterToLocation',
         'teleportThingToLocation',
@@ -4487,6 +4744,8 @@ const createChatToolRuntime = ({
                 toolResult = executeMoreInfoTool(argumentsObject);
             } else if (toolCall.functionName === 'getHistory') {
                 toolResult = executeGetHistoryTool(argumentsObject);
+            } else if (toolCall.functionName === 'getFullScene') {
+                toolResult = executeGetFullSceneTool(argumentsObject);
             } else if (toolCall.functionName === 'teleportCharacterToLocation') {
                 toolResult = executeTeleportCharacterToLocationTool(argumentsObject);
             } else if (toolCall.functionName === 'teleportThingToLocation') {

@@ -2,6 +2,8 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('path');
 const nunjucks = require('nunjucks');
+const Utils = require('../Utils.js');
+const Globals = require('../Globals.js');
 
 function createPromptEnv() {
     return nunjucks.configure(path.join(process.cwd(), 'prompts'), {
@@ -135,4 +137,34 @@ test('base-context compact inventory item lines include value before description
         rendered,
         /Brass Compass: Common level 1 \(3 gold\) - Points toward the nearest open road\./
     );
+});
+
+test('base-context generationPrompt CDATA preserves literal XML-shaped instructions', () => {
+    const promptEnv = createPromptEnv();
+    const context = {
+        ...buildRenderContext(),
+        promptType: 'events_xml',
+        textToCheck: 'Nothing happens.',
+        actionText: '',
+        includePlayerActionBlock: false,
+        characterName: 'Tester',
+        experiencePointValues: [],
+        needBarDefinitions: []
+    };
+    const rendered = promptEnv.render('base-context.xml.njk', context);
+    const previousConfig = Globals.config;
+    Globals.config = { ...(previousConfig || {}), strictXMLParsing: false };
+    let generationPrompt;
+    try {
+        const doc = Utils.parseXmlDocument(rendered, 'text/xml');
+        const generationPromptNode = doc.getElementsByTagName('generationPrompt')[0];
+        generationPrompt = Utils.extractXmlNodeContent(generationPromptNode);
+    } finally {
+        Globals.config = previousConfig;
+    }
+
+    assert.match(rendered, /<generationPrompt>\s*<!\[CDATA\[/);
+    assert.doesNotMatch(generationPrompt, /<!\[CDATA\[|\]\]>/);
+    assert.match(generationPrompt, /<gameState>/);
+    assert.match(generationPrompt, /<events>/);
 });

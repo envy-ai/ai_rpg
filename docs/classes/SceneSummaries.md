@@ -25,6 +25,7 @@ Stores and manages scene summaries extracted from chat history. Tracks scene ran
 ## Diagnostics
 - `/scene_summaries` lists stored scene summaries by display number and covered 1-based entry range, and reports coverage gaps against the current scene-summary-eligible chat history.
 - Scene-summary entry counts come from `scene_summary_index.js`, shared by `/summarize`, `/summarize check`, `/scene_summaries`, automatic threshold summarization, and the actual server-side scene summarizer. The shared index excludes event/status summary entries and plot-summary/plot-expander entries while preserving hidden supplemental/offscreen story entries.
+- Chat prompts can call `getFullScene({ sceneNumber })` with the same display number used by `/scene_summaries`. The tool resolves the stored scene range through the shared scene-summary index and returns delineated entries for user actions, NPC action plans, storyteller prose, and eligible hidden scene notes.
 
 ## Private Helpers
 - `#ingestEntryIndexMap(entryIndexMap)`: validates and populates entry id/index and NPC name maps.

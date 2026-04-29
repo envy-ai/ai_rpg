@@ -662,9 +662,14 @@
 
   function ensureAdventureTabFocus() {
     if (typeof window.activateTab !== 'function') {
-      return;
+      document.querySelector('[data-tab="adventure"]')?.click();
+    } else {
+      window.activateTab('adventure');
     }
-    window.activateTab('adventure');
+
+    if (window.location && window.location.hash !== '#tab-adventure') {
+      window.location.hash = '#tab-adventure';
+    }
   }
 
   function handleWorldMapTravelResult(result) {
@@ -702,7 +707,8 @@
         return;
       }
       try {
-        const travelResult = window.travelToAdjacentLocationFromMap(locationId, { focusAdventureTab: true });
+        ensureAdventureTabFocus();
+        const travelResult = window.travelToAdjacentLocationFromMap(locationId, { focusAdventureTab: false });
         handleWorldMapTravelResult(travelResult);
       } catch (error) {
         console.warn('Failed to initiate travel from world map:', error);

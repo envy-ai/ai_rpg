@@ -142,6 +142,9 @@ class ModLoader {
             modPromptEnv = nunjucks.configure(modPromptsDir, {
                 autoescape: false
             });
+            if (typeof scope.addEvalFilter === 'function') {
+                scope.addEvalFilter(modPromptEnv);
+            }
             this.modPromptEnvs.set(modName, modPromptEnv);
         }
 
