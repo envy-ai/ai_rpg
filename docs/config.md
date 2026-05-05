@@ -75,7 +75,7 @@ event_checks:
   use_xml: true
 ```
 
-`event_checks.use_xml` defaults to `true` and must be a boolean when provided. When enabled, `Events.runEventChecks(...)` uses the `events_xml` prompt for ordinary event categories and parses one `<events>` block. Need bars still use the dedicated `need-bars` prompt when need-bar definitions are present, and those results are injected as ordinary `needbar_change` events before outcomes are applied. Set `event_checks.use_xml` to `false` to use the legacy grouped `event-checks` prompts plus the same dedicated `need-bars` prompt. The `/config` page exposes the same option as “XML Event Pipeline”.
+`event_checks.use_xml` defaults to `true` and must be a boolean when provided. When enabled, `Events.runEventChecks(...)` uses the `events-xml` prompt for ordinary event categories and parses one `<events>` block. Need bars still use the dedicated `need-bars` prompt when need-bar definitions are present, and those results are injected as ordinary `needbar_change` events before outcomes are applied. Set `event_checks.use_xml` to `false` to use the legacy grouped `event-checks` prompts plus the same dedicated `need-bars` prompt. The `/config` page exposes the same option as “XML Event Pipeline”.
 
 ## AI backend selection
 
@@ -662,6 +662,31 @@ Rules:
 - When `true`, `/api/chat` creates one `tool-call-debug` chat entry per prose prompt that uses tools, updates that same entry as each tool starts and completes, and emits the existing `chat_history_updated` realtime event after each update.
 - The debug entry stores the tool name, parameters, result content, and result metadata in structured `toolCalls` records. It is marked with `metadata.excludeFromBaseContextHistory: true`, so it is visible in the chat log but excluded from future prompt context.
 - The chat client renders each tool call as its own collapsible sub-box, marks cached results as `cache hit`, and uses `@andypf/json-viewer` to format the parameters/result JSON.
+
+## Extra system instructions and tonal scale
+
+Applied world profiles can define `unifiedTonalScale` selections through the `/settings` Tone Scale tab. When present, the rendered tonal-scale section is inserted into relevant system prompts before `extra_system_instructions`.
+
+Rules:
+- `extra_system_instructions` remains global/config-driven prompt text.
+- Setting-level tonal scale selections are persisted on `SettingInfo` and rendered from `defs/unified_tonal_scale.yaml`.
+- If the same tonal guidance is also left in `extra_system_instructions`, the prompt will contain both sections.
+
+## Hidden player-action notes
+
+`show_hidden_notes` controls whether player-action `<hidden>...</hidden>` notes are sent to developer-facing full-history views such as Story Tools.
+
+```yaml
+show_hidden_notes: false
+```
+
+Rules:
+- Must be a boolean when present.
+- Default is `false`.
+- The Adventure chat feed always strips hidden-note blocks from server-rendered history, realtime player-action payloads, and ordinary `/api/chat/history` results.
+- Stored chat history keeps hidden-note blocks for future LLM context.
+- When `true`, `/api/chat/history?includeAllEntries=true` keeps hidden tags in the full-history response used by Story Tools.
+- When `false`, hidden blocks are stripped from that full-history response too.
 
 ## Plot expander cadence
 

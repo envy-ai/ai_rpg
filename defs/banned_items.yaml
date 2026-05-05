@@ -1,4 +1,5 @@
 banned_items:
   - N/A
+  - provenance
 banned_item_regexes:
   - /[Ll]eather-?bound [Jj]ournal/

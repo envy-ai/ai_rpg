@@ -10,7 +10,7 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
 - Skills/abilities: `#skills`, `#abilities`, `#unspentSkillPoints`, `#unspentAttributePoints`.
 - Pending level-up ability draft state: `#pendingAbilityOptionsByLevel` (per-level generated options for player-only ability selection flow).
 - Status/needs: `#statusEffects`, `#needBars`, `#needBarApplicability`, `#needBarRatesAppliedAt`.
-- Social: `#dispositions`, `#personalityType`, `#personalityTraits`, `#personalityNotes`, `#resistances`, `#vulnerabilities`.
+- Social: `#dispositions`, `#personalityType`, `#personalityTraits`, `#personalityNotes`, `#aiNotes`, `#resistances`, `#vulnerabilities`.
 - Factions: `#factionId`, `#factionStandings` (map of `factionId -> number`).
 - UI state: `#thingListViewPreferences` (per-panel shared thing-list view modes for location/inventory/crafting panels).
 - Party/quests: `#partyMembers`, `#quests`, `#goals`, `#characterArc`.
@@ -45,7 +45,7 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
   - `setNpcInventoryChangeHandler(handler)`, `setLevelUpHandler(handler)`.
 
 ## Accessors (Grouped)
-- Identity and descriptors: `id`, `name`, `aliases`, `description`, `shortDescription`, `imageId`, `class`, `race`, `gender`, `personalityType`, `personalityTraits`, `personalityNotes`, `resistances`, `vulnerabilities`.
+- Identity and descriptors: `id`, `name`, `aliases`, `description`, `shortDescription`, `imageId`, `class`, `race`, `gender`, `personalityType`, `personalityTraits`, `personalityNotes`, `aiNotes`, `resistances`, `vulnerabilities`.
 - Factions: `factionId`.
 - State: `level`, `experience`, `health`, `maxHealth`, `healthAttribute`, `isDead`, `persistWhenDead`, `isDisabled`, `inCombat`, `isHostile`, `corpseCountdown`, `elapsedTime`, `createdAt`, `lastUpdated`.
 - Locations: `currentLocation`, `location`, `currentVehicle`, `previousLocationId`, `previousLocation`, `currentLocationObject`, `lastVisitedTime`, `last_seen_time`, `last_seen_location`, `was_in_player_location_previous_round` (plus camelCase aliases).
@@ -139,6 +139,7 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
 ## Notes
 - The class supports NPCs and players; many behaviors are shared with `isNPC` gating certain flows.
 - Gear and inventory are tightly coupled; equip/unequip flows update health and modifiers.
+- NPC/player inventory generation uses the shared base-context prompt wrapper with `promptType: "inventory-generator"` and the task-specific include at `prompts/_includes/inventory-generator.njk`; generated item XML is still parsed by the existing inventory item parser and stored as `Thing` records.
 - Current health is stored and serialized as a finite float. Health setters/modifiers accept finite non-negative numbers, while client-facing health readouts round displayed current/max health upward with `Math.ceil`.
 - `healthRegenPercentPerMinute` config applies passive health regeneration as a percentage of current max health for each elapsed world minute; per-actor `healthRegenAppliedAt` is persisted so reloads do not replay already-processed regeneration.
 - Need bar logic includes per-minute baseline drift (`change_per_minute`) and magnitude-based adjustments.

@@ -129,6 +129,118 @@ function loadConnectExistingRegion() {
     };
 }
 
+function loadRegionInstantiationHelpers() {
+    const source = fs.readFileSync(require.resolve('../server.js'), 'utf8');
+    const rollbackStart = source.indexOf('function rollbackFailedRegionInstantiation({');
+    const rollbackEnd = source.indexOf('\nfunction parseRegionVehicleDefinitions(xmlSnippet) {', rollbackStart);
+    const instantiateStart = source.indexOf('async function instantiateRegionLocations({');
+    const instantiateEnd = source.indexOf('\nasync function chooseRegionEntrance({', instantiateStart);
+    if (rollbackStart < 0 || rollbackEnd < 0 || instantiateStart < 0 || instantiateEnd < 0) {
+        throw new Error('Unable to locate region instantiation helpers in server.js');
+    }
+
+    const functionSource = [
+        source.slice(rollbackStart, rollbackEnd),
+        source.slice(instantiateStart, instantiateEnd),
+    ].join('\n');
+    const gameLocations = new Map();
+    const gameLocationExits = new Map();
+    let locationCounter = 0;
+    let exitCounter = 0;
+
+    class StubLocationExit {
+        constructor(data = {}) {
+            this.id = data.id || `exit_${++exitCounter}`;
+            this.description = data.description || '';
+            this.destination = data.destination;
+            this.travelTimeMinutes = data.travelTimeMinutes;
+            this.bidirectional = data.bidirectional !== false;
+        }
+    }
+
+    class StubLocation {
+        static get(id) {
+            return gameLocations.get(id) || null;
+        }
+
+        static removeFromIndex() {}
+
+        constructor(data = {}) {
+            this.id = data.id || `loc_${++locationCounter}`;
+            this.name = data.name || 'Unnamed Location';
+            this.description = data.description || null;
+            this.shortDescription = data.shortDescription || null;
+            this.baseLevel = data.baseLevel ?? null;
+            this.isStub = data.isStub !== false;
+            this.regionId = data.regionId || null;
+            this.controllingFactionId = data.controllingFactionId || null;
+            this.generationHints = data.generationHints || {};
+            this.stubMetadata = data.stubMetadata || {};
+            this.exits = new Map();
+        }
+
+        addExit(direction, exit) {
+            this.exits.set(direction, exit);
+            gameLocationExits.set(exit.id, exit);
+        }
+
+        removeExit(direction) {
+            return this.exits.delete(direction);
+        }
+
+        getExit(direction) {
+            return this.exits.get(direction) || null;
+        }
+
+        getAvailableDirections() {
+            return Array.from(this.exits.keys());
+        }
+    }
+
+    const context = {
+        console,
+        gameLocations,
+        gameLocationExits,
+        pendingLocationImages: new Map(),
+        stubExpansionPromises: new Map(),
+        regionEntryExpansionPromises: new Map(),
+        regions: new Map(),
+        Location: StubLocation,
+        Region: {
+            removeFromIndex: () => {},
+        },
+        LocationExit: StubLocationExit,
+        normalizePendingRegionLocationIds: (value) => {
+            if (!Array.isArray(value)) {
+                return [];
+            }
+            return Array.from(new Set(value.filter(id => typeof id === 'string' && id.trim())));
+        },
+        normalizeLocationWeatherExposure: (value) => value ?? null,
+        resolveFactionNameToId: () => ({ id: null }),
+        clampLevel: (value) => value,
+        normalizeRegionLocationName: (value) => String(value || '').trim().toLowerCase(),
+        ensureLocationNameAllowed: async () => {},
+        directionKeyFromName: (value, fallback = 'path') => String(value || fallback).trim().toLowerCase().replace(/[^a-z0-9]+/g, '_'),
+        getOppositeDirection: () => null,
+        generateRegionExitStubs: async () => {},
+        generateVehicleStubs: async () => {},
+    };
+    vm.createContext(context);
+    vm.runInContext(
+        `${functionSource}\nthis.instantiateRegionLocations = instantiateRegionLocations;\nthis.rollbackFailedRegionInstantiation = rollbackFailedRegionInstantiation;`,
+        context
+    );
+    return {
+        instantiateRegionLocations: context.instantiateRegionLocations,
+        rollbackFailedRegionInstantiation: context.rollbackFailedRegionInstantiation,
+        StubLocation,
+        StubLocationExit,
+        gameLocations,
+        gameLocationExits,
+    };
+}
+
 function toPlainJson(value) {
     return JSON.parse(JSON.stringify(value));
 }
@@ -394,4 +506,162 @@ test('connectExistingRegion mirrors parsed travel time onto both directions for 
     assert.equal(ensureCalls.length, 2);
     assert.equal(ensureCalls[0][2].travelTimeMinutes, 30);
     assert.equal(ensureCalls[1][2].travelTimeMinutes, 30);
+});
+
+test('instantiateRegionLocations reuses matching pending-region locations', async () => {
+    const {
+        instantiateRegionLocations,
+        StubLocation,
+        gameLocations
+    } = loadRegionInstantiationHelpers();
+    const preserved = new StubLocation({
+        id: 'loc_hidden_garden',
+        name: 'Hidden Garden',
+        regionId: 'pending_hedge',
+        isStub: true,
+        stubMetadata: { regionId: 'pending_hedge' }
+    });
+    gameLocations.set(preserved.id, preserved);
+    const region = {
+        id: 'pending_hedge',
+        name: 'Hedge Maze',
+        averageLevel: 5,
+        locationBlueprints: [
+            {
+                name: 'Hidden Garden',
+                description: 'A hidden garden in the maze.',
+                shortDescription: 'A hidden garden.',
+                exits: [{ target: 'Fountain Court', travelTimeMinutes: 4 }],
+                relativeLevel: 0
+            },
+            {
+                name: 'Fountain Court',
+                description: 'A court around a dry fountain.',
+                shortDescription: 'A dry fountain court.',
+                exits: [],
+                relativeLevel: 0
+            }
+        ],
+        locationIds: [],
+        addLocationId(id) {
+            if (!this.locationIds.includes(id)) {
+                this.locationIds.push(id);
+            }
+        }
+    };
+
+    const stubMap = await instantiateRegionLocations({
+        region,
+        regionAverageLevel: 5,
+        preservedLocations: [preserved],
+    });
+
+    assert.equal(stubMap.get('hidden garden'), preserved);
+    assert.equal(region.locationIds.includes('loc_hidden_garden'), true);
+    assert.equal(stubMap.createdLocationIds.has('loc_hidden_garden'), false);
+    assert.equal(
+        Array.from(gameLocations.values()).filter(location => location.name === 'Hidden Garden').length,
+        1
+    );
+    assert.equal(preserved.stubMetadata.stubDescription, 'A hidden garden in the maze.');
+    assert.equal(preserved.getAvailableDirections().length, 1);
+});
+
+test('instantiateRegionLocations preserves pending-region locations omitted by generated blueprints', async () => {
+    const {
+        instantiateRegionLocations,
+        StubLocation,
+        gameLocations
+    } = loadRegionInstantiationHelpers();
+    const preserved = new StubLocation({
+        id: 'loc_hidden_garden',
+        name: 'Hidden Garden',
+        regionId: 'pending_hedge',
+        isStub: true,
+        stubMetadata: { regionId: 'pending_hedge' }
+    });
+    gameLocations.set(preserved.id, preserved);
+    const region = {
+        id: 'pending_hedge',
+        name: 'Hedge Maze',
+        averageLevel: 5,
+        locationBlueprints: [
+            {
+                name: 'Fountain Court',
+                description: 'A court around a dry fountain.',
+                shortDescription: 'A dry fountain court.',
+                exits: [],
+                relativeLevel: 0
+            }
+        ],
+        locationIds: [],
+        addLocationId(id) {
+            if (!this.locationIds.includes(id)) {
+                this.locationIds.push(id);
+            }
+        }
+    };
+
+    const stubMap = await instantiateRegionLocations({
+        region,
+        regionAverageLevel: 5,
+        preservedLocations: [preserved],
+    });
+
+    assert.equal(stubMap.get('hidden garden'), preserved);
+    assert.equal(region.locationIds.includes('loc_hidden_garden'), true);
+    assert.equal(gameLocations.has('loc_hidden_garden'), true);
+});
+
+test('rollbackFailedRegionInstantiation does not delete preserved pending-region locations', () => {
+    const {
+        rollbackFailedRegionInstantiation,
+        StubLocation,
+        StubLocationExit,
+        gameLocations,
+        gameLocationExits
+    } = loadRegionInstantiationHelpers();
+    const preserved = new StubLocation({
+        id: 'loc_hidden_garden',
+        name: 'Hidden Garden',
+        regionId: 'pending_hedge',
+        isStub: true,
+        stubMetadata: { regionId: 'pending_hedge' }
+    });
+    const created = new StubLocation({
+        id: 'loc_generated',
+        name: 'Generated Court',
+        regionId: 'pending_hedge',
+        isStub: true,
+        stubMetadata: { regionId: 'pending_hedge' }
+    });
+    const outside = new StubLocation({
+        id: 'loc_outside',
+        name: 'Outside',
+        regionId: 'source_region',
+        isStub: false,
+        stubMetadata: null
+    });
+    gameLocations.set(preserved.id, preserved);
+    gameLocations.set(created.id, created);
+    gameLocations.set(outside.id, outside);
+    preserved.addExit('generated', new StubLocationExit({ destination: created.id }));
+    outside.addExit('generated', new StubLocationExit({ destination: created.id }));
+
+    rollbackFailedRegionInstantiation({
+        region: {
+            id: 'pending_hedge',
+            name: 'Hedge Maze',
+            locationIds: [preserved.id, created.id],
+            entranceLocationId: null
+        },
+        preserveLocationIds: [preserved.id],
+        context: 'test rollback'
+    });
+
+    assert.equal(gameLocations.has(preserved.id), true);
+    assert.equal(gameLocations.has(created.id), false);
+    assert.equal(preserved.getAvailableDirections().length, 0);
+    assert.equal(outside.getAvailableDirections().length, 0);
+    assert.equal(gameLocationExits.size, 0);
 });

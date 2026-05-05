@@ -3,6 +3,8 @@ const assert = require('node:assert/strict');
 
 const { CHAT_TOOL_DEFINITIONS, createChatToolRuntime } = require('../chat_tool_calls.js');
 
+const CACHED_CHECK_TOOL_CALL_NOTE = 'You already made this tool call. Do not re-run tool calls for the same checks that you made in earlier drafts.';
+
 function findToolDefinition(name) {
     return CHAT_TOOL_DEFINITIONS.find(entry => entry?.function?.name === name)?.function || null;
 }
@@ -343,7 +345,7 @@ test('resolveAttack reuses cached results for repeated same-round attacks', asyn
     const toolMessages = capturedMessagesByRound[1].filter(message => message.role === 'tool');
     assert.deepEqual(toolMessages.map(message => message.content), [
         'Damage: 14%\nRemaining health: 86%',
-        'Damage: 14%\nRemaining health: 86%'
+        `Damage: 14%\nRemaining health: 86%\n\n${CACHED_CHECK_TOOL_CALL_NOTE}`
     ]);
     assert.equal(debugEvents.length, 4);
     assert.equal(debugEvents[1].phase, 'completed');

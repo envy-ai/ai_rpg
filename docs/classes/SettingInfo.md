@@ -5,7 +5,7 @@ Represents a game setting/world configuration, including theme, genre, prompts, 
 
 ## Key State
 - Core fields: `#id`, `#name`, `#description`, `#theme`, `#genre`, `#tone`, `#difficulty`, `#startingLocationType`.
-- Prompt and style fields: `#currencyName`, `#currencyNamePlural`, `#currencyValueNotes`, `#writingStyleNotes`, `#baseContextPreamble`, `#characterGenInstructions`, `#imagePromptPrefix*`, `#customSlopWords`.
+- Prompt and style fields: `#currencyName`, `#currencyNamePlural`, `#currencyValueNotes`, `#writingStyleNotes`, `#baseContextPreamble`, `#characterGenInstructions`, `#imagePromptPrefix*`, `#customSlopWords`, `#unifiedTonalScale`.
 - Defaults: `#playerStartingLevel`, `#defaultStartingCurrency`, `#defaultPlayerName`, `#defaultPlayerDescription`, `#defaultStartingLocation` (generation instructions), `#defaultExistingSkills`, `#defaultFactionCount`, `#defaultFactions`.
 - Lists: `#availableClasses`, `#availableRaces`, `#customSlopWords`.
 - Metadata: `#createdAt`, `#lastUpdated`.
@@ -22,7 +22,7 @@ Represents a game setting/world configuration, including theme, genre, prompts, 
 - `getStatus()`: returns a full snapshot of all fields.
 - `toJSON()`: alias of `getStatus()`.
 - `clone(newName)`: deep-ish copy with a new id and timestamps; optionally renames.
-- `getPromptVariables()`: returns a reduced object for prompt templates.
+- `getPromptVariables()`: returns a reduced object for prompt templates, including `unifiedTonalScale`.
 - `toString()`: returns `"name (theme/genre)"`.
 - `save(saveDir)`: writes to `saves/settings` (or provided dir) as JSON.
 - `deleteSavedFile(saveDir)`: deletes persisted files for this setting by id suffix match.
@@ -44,5 +44,6 @@ Represents a game setting/world configuration, including theme, genre, prompts, 
 ## Notes
 - Many setters normalize line endings to `\n` for prompt fields.
 - List normalization accepts string (newline-delimited) or array input.
+- `unifiedTonalScale` is stored as an object keyed by `defs/unified_tonal_scale.yaml` axis key. Each populated axis stores `{ level, comment? }`; comments require a selected numeric level.
 - Faction draft normalization validates ids/names, relation targets/statuses/notes, assets, and reputation tiers; invalid payloads throw explicit errors.
 - `baseContextPreamble` is prepended to image-generation prompts at execution time for the OpenAI and NanoGPT backends; ComfyUI skips it.

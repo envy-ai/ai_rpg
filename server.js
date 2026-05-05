@@ -106,6 +106,10 @@ const ModLoader = require('./ModLoader.js');
 const { diffFrozenEnabledModDirectoryNames } = require('./ModDiscovery.js');
 const { initializeLorebookManager, getLorebookManager } = require('./lorebook.js');
 const { loadMergedDefinitionFile, validateDefinitionOverlays } = require('./DefinitionLoader.js');
+const {
+    buildUnifiedTonalScalePromptForSetting,
+    loadUnifiedTonalScaleDefinition
+} = require('./UnifiedTonalScale.js');
 
 Globals.baseDir = __dirname;
 Globals.sceneSummaries = new SceneSummaries();
@@ -153,6 +157,23 @@ function loadDefaultSkillsForSettings() {
     } catch (error) {
         console.warn(`Failed to load default skills from defs/default_skills.yaml: ${error.message}`);
         return { skills: [], error: error.message || 'Failed to load default skills.' };
+    }
+}
+
+function loadUnifiedTonalScaleForSettings() {
+    try {
+        return {
+            definition: loadUnifiedTonalScaleDefinition({
+                baseDir: Globals.baseDir || __dirname
+            }),
+            error: ''
+        };
+    } catch (error) {
+        console.warn(`Failed to load unified tonal scale from defs/unified_tonal_scale.yaml: ${error.message}`);
+        return {
+            definition: null,
+            error: error.message
+        };
     }
 }
 
@@ -862,6 +883,12 @@ function extractPersonality(primary = null, fallback = null) {
         ?? primaryObj?.personalityNotes
         ?? fallbackObj?.personalityNotes
     );
+    const aiNotes = sanitizePersonalityValue(
+        personalitySource?.aiNotes
+        ?? primaryObj?.aiNotes
+        ?? fallbackObj?.aiNotes
+        ?? fallbackObj?.personality?.aiNotes
+    );
 
     const goals = collectPersonalityGoals(
         personalitySource?.goals
@@ -871,7 +898,7 @@ function extractPersonality(primary = null, fallback = null) {
         ?? fallbackObj?.goals
     );
 
-    return { type, traits, notes, goals };
+    return { type, traits, notes, aiNotes, goals };
 }
 
 axios.interceptors.request.use(request_config => {
@@ -2329,6 +2356,9 @@ async function validateConfiguration() {
     if (config.debug_tool_calls !== undefined && typeof config.debug_tool_calls !== 'boolean') {
         validationErrors.push('debug_tool_calls must be a boolean when provided');
     }
+    if (config.show_hidden_notes !== undefined && typeof config.show_hidden_notes !== 'boolean') {
+        validationErrors.push('show_hidden_notes must be a boolean when provided');
+    }
     if (config.event_checks?.use_xml !== undefined && typeof config.event_checks.use_xml !== 'boolean') {
         validationErrors.push('event_checks.use_xml must be a boolean when provided');
     }
@@ -2632,7 +2662,13 @@ function buildSettingPromptContext(settingSnapshot = null, { descriptionFallback
         currencyValueNotes: normalizeSettingValue(settingSnapshot?.currencyValueNotes, ''),
         writingStyleNotes: normalizeSettingValue(settingSnapshot?.writingStyleNotes, ''),
         baseContextPreamble: normalizeSettingValue(settingSnapshot?.baseContextPreamble, ''),
-        characterGenInstructions: normalizeSettingValue(settingSnapshot?.characterGenInstructions, '')
+        characterGenInstructions: normalizeSettingValue(settingSnapshot?.characterGenInstructions, ''),
+        unifiedTonalScale: settingSnapshot?.unifiedTonalScale && typeof settingSnapshot.unifiedTonalScale === 'object'
+            ? JSON.parse(JSON.stringify(settingSnapshot.unifiedTonalScale))
+            : {},
+        unifiedTonalScalePrompt: buildUnifiedTonalScalePromptForSetting(settingSnapshot, {
+            baseDir: Globals.baseDir || __dirname
+        })
     };
 
     if (!context.description && fallbackDescription) {
@@ -2795,6 +2831,91 @@ function scrubGeneratedBrackets(text, options = null) {
 }
 
 Globals.scrubGeneratedBrackets = scrubGeneratedBrackets;
+
+function shouldShowHiddenNotes(sourceConfig = config) {
+    return sourceConfig?.show_hidden_notes === true;
+}
+
+function stripHiddenNotesFromText(text) {
+    if (typeof text !== 'string') {
+        return text;
+    }
+    return text
+        .replace(/<hidden\b[^>]*>[\s\S]*?<\/hidden>/gi, '')
+        .replace(/<hidden\b[^>]*>[\s\S]*$/gi, '')
+        .replace(/[ \t]+\n/g, '\n')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+}
+
+function filterHiddenNotesFromClientText(text, sourceConfig = config) {
+    if (shouldShowHiddenNotes(sourceConfig)) {
+        return text;
+    }
+    return stripHiddenNotesFromText(text);
+}
+
+function filterHiddenNotesFromChatEntryForClient(entry, sourceConfig = config) {
+    if (shouldShowHiddenNotes(sourceConfig) || !entry || typeof entry !== 'object') {
+        return entry;
+    }
+    const filtered = { ...entry };
+    if (typeof filtered.content === 'string') {
+        filtered.content = stripHiddenNotesFromText(filtered.content);
+    }
+    if (typeof filtered.summary === 'string') {
+        filtered.summary = stripHiddenNotesFromText(filtered.summary);
+    }
+    if (Array.isArray(filtered.summaryItems)) {
+        filtered.summaryItems = filtered.summaryItems.map(item => {
+            if (!item || typeof item !== 'object') {
+                return item;
+            }
+            const filteredItem = { ...item };
+            if (typeof filteredItem.text === 'string') {
+                filteredItem.text = stripHiddenNotesFromText(filteredItem.text);
+            }
+            return filteredItem;
+        });
+    }
+    return filtered;
+}
+
+function filterHiddenNotesFromChatEntriesForClient(entries, sourceConfig = config) {
+    if (shouldShowHiddenNotes(sourceConfig) || !Array.isArray(entries)) {
+        return entries;
+    }
+    return entries.map(entry => filterHiddenNotesFromChatEntryForClient(entry, sourceConfig));
+}
+
+function filterHiddenNotesFromClientPayload(payload, sourceConfig = config) {
+    if (shouldShowHiddenNotes(sourceConfig) || !payload || typeof payload !== 'object') {
+        return payload;
+    }
+    if (Array.isArray(payload)) {
+        return payload.map(item => filterHiddenNotesFromClientPayload(item, sourceConfig));
+    }
+    const filtered = { ...payload };
+    for (const key of ['content', 'response', 'summary', 'text']) {
+        if (typeof filtered[key] === 'string') {
+            filtered[key] = stripHiddenNotesFromText(filtered[key]);
+        }
+    }
+    for (const key of ['messages', 'history', 'npcTurns', 'summaryItems']) {
+        if (Array.isArray(filtered[key])) {
+            filtered[key] = filtered[key].map(item => filterHiddenNotesFromClientPayload(item, sourceConfig));
+        }
+    }
+    if (filtered.entry && typeof filtered.entry === 'object') {
+        filtered.entry = filterHiddenNotesFromClientPayload(filtered.entry, sourceConfig);
+    }
+    return filtered;
+}
+
+Globals.stripHiddenNotesFromText = stripHiddenNotesFromText;
+Globals.filterHiddenNotesFromClientText = filterHiddenNotesFromClientText;
+Globals.filterHiddenNotesFromChatEntriesForClient = filterHiddenNotesFromChatEntriesForClient;
+Globals.filterHiddenNotesFromClientPayload = filterHiddenNotesFromClientPayload;
 
 function collectNpcNamesForContext(entry = null) {
     const names = new Set();
@@ -3905,6 +4026,7 @@ function serializeNpcForClient(npc, options = {}) {
         personalityType: personality?.type ?? null,
         personalityTraits: personality?.traits ?? null,
         personalityNotes: personality?.notes ?? null,
+        aiNotes: personality?.aiNotes ?? null,
         createdAt: npc.createdAt,
         lastUpdated: npc.lastUpdated,
         dispositionsTowardPlayer
@@ -4609,6 +4731,156 @@ function findRegionByNameLoose(name) {
         if (!region) continue;
         if (region.name && region.name.trim().toLowerCase() === normalized) {
             return region;
+        }
+    }
+    return null;
+}
+
+function normalizePendingRegionLocationIds(locationIds) {
+    if (!Array.isArray(locationIds)) {
+        return [];
+    }
+    const seen = new Set();
+    const normalized = [];
+    for (const rawId of locationIds) {
+        const id = typeof rawId === 'string' ? rawId.trim() : '';
+        if (!id || seen.has(id)) {
+            continue;
+        }
+        seen.add(id);
+        normalized.push(id);
+    }
+    return normalized;
+}
+
+function findPendingRegionByNameLoose(name) {
+    if (!name || typeof name !== 'string' || !(pendingRegionStubs instanceof Map)) {
+        return null;
+    }
+    const normalized = name.trim().toLowerCase();
+    if (!normalized) {
+        return null;
+    }
+    const direct = pendingRegionStubs.get(name.trim()) || null;
+    if (direct) {
+        return direct;
+    }
+    for (const pending of pendingRegionStubs.values()) {
+        if (!pending || typeof pending !== 'object') {
+            continue;
+        }
+        const candidates = [
+            pending.id,
+            pending.name,
+            pending.originalName,
+            pending.targetRegionName,
+        ];
+        if (candidates.some(candidate =>
+            typeof candidate === 'string' && candidate.trim().toLowerCase() === normalized
+        )) {
+            return pending;
+        }
+    }
+    return null;
+}
+
+function registerPendingRegionLocationId(regionId, locationId) {
+    const normalizedRegionId = typeof regionId === 'string' ? regionId.trim() : '';
+    const normalizedLocationId = typeof locationId === 'string' ? locationId.trim() : '';
+    if (!normalizedRegionId || !normalizedLocationId) {
+        throw new Error('Cannot register pending region location without region and location ids.');
+    }
+    const pending = pendingRegionStubs.get(normalizedRegionId);
+    if (!pending) {
+        throw new Error(`Pending region '${normalizedRegionId}' was not found while registering location '${normalizedLocationId}'.`);
+    }
+    const locationIds = normalizePendingRegionLocationIds(pending.locationIds);
+    if (!locationIds.includes(normalizedLocationId)) {
+        locationIds.push(normalizedLocationId);
+    }
+    pending.locationIds = locationIds;
+    pendingRegionStubs.set(normalizedRegionId, pending);
+    return pending;
+}
+
+function getLocationRegionId(location) {
+    if (!location || typeof location !== 'object') {
+        return null;
+    }
+    const candidates = [
+        location.stubMetadata?.regionId,
+        location.stubMetadata?.targetRegionId,
+        location.regionId,
+    ];
+    for (const candidate of candidates) {
+        const normalized = typeof candidate === 'string' ? candidate.trim() : '';
+        if (normalized) {
+            return normalized;
+        }
+    }
+    return null;
+}
+
+function locationBelongsToRegionId(location, regionId) {
+    const normalizedRegionId = typeof regionId === 'string' ? regionId.trim() : '';
+    if (!location || !normalizedRegionId) {
+        return false;
+    }
+    if (getLocationRegionId(location) === normalizedRegionId) {
+        return true;
+    }
+    const region = regions.get(normalizedRegionId) || null;
+    if (region && Array.isArray(region.locationIds) && region.locationIds.includes(location.id)) {
+        return true;
+    }
+    const pending = pendingRegionStubs.get(normalizedRegionId) || null;
+    return Boolean(
+        pending &&
+        normalizePendingRegionLocationIds(pending.locationIds).includes(location.id),
+    );
+}
+
+function findLocationByNameInRegionLoose(name, regionId) {
+    const trimmed = typeof name === 'string' ? name.trim() : '';
+    const normalizedRegionId = typeof regionId === 'string' ? regionId.trim() : '';
+    if (!trimmed || !normalizedRegionId) {
+        return null;
+    }
+    const normalizedName = trimmed.toLowerCase();
+    const region = regions.get(normalizedRegionId) || null;
+    const pending = pendingRegionStubs.get(normalizedRegionId) || null;
+    const locationIds = new Set([
+        ...(Array.isArray(region?.locationIds) ? region.locationIds : []),
+        ...normalizePendingRegionLocationIds(pending?.locationIds),
+    ].filter(id => typeof id === 'string' && id.trim()));
+
+    for (const locationId of locationIds) {
+        let location = gameLocations.get(locationId) || null;
+        if (!location) {
+            try {
+                location = Location.get(locationId) || null;
+            } catch (_) {
+                location = null;
+            }
+        }
+        if (!location) {
+            continue;
+        }
+        const candidateId = typeof location.id === 'string' ? location.id.trim().toLowerCase() : '';
+        const candidateName = typeof location.name === 'string' ? location.name.trim().toLowerCase() : '';
+        if (candidateId === normalizedName || candidateName === normalizedName) {
+            return location;
+        }
+    }
+
+    for (const location of gameLocations.values()) {
+        if (!locationBelongsToRegionId(location, normalizedRegionId)) {
+            continue;
+        }
+        const candidateId = typeof location.id === 'string' ? location.id.trim().toLowerCase() : '';
+        const candidateName = typeof location.name === 'string' ? location.name.trim().toLowerCase() : '';
+        if (candidateId === normalizedName || candidateName === normalizedName) {
+            return location;
         }
     }
     return null;
@@ -5569,6 +5841,7 @@ function buildBasePromptContext({
 
     const abilities = shouldOmitAbilities ? [] : (currentPlayer.getAbilities() || []);
 
+    const currentPlayerPersonality = extractPersonality(playerStatus, currentPlayer);
     const currentPlayerContext = {
         name: playerStatus?.name || currentPlayer?.name || 'Unknown Adventurer',
         description: playerStatus?.description || currentPlayer?.description || '',
@@ -5582,7 +5855,8 @@ function buildBasePromptContext({
         abilities: abilities,
         skills: currentPlayerSkills,
         gear: gearSnapshot,
-        personality: extractPersonality(playerStatus, currentPlayer),
+        personality: currentPlayerPersonality,
+        aiNotes: currentPlayerPersonality.aiNotes || '',
         currency: playerStatus?.currency ?? currentPlayer?.currency ?? 0,
         needBars: currentPlayerNeedBars,
         needs: currentPlayerNeeds,
@@ -5689,6 +5963,7 @@ function buildBasePromptContext({
                 dispositionsTowardsPlayer,
                 skills,
                 personality,
+                aiNotes: personality.aiNotes || '',
                 needBars,
                 needs,
                 importantMemories,
@@ -5739,6 +6014,7 @@ function buildBasePromptContext({
                 inventory: memberInventory,
                 abilities: shouldOmitAbilities ? [] : member.getAbilities(),
                 personality,
+                aiNotes: personality.aiNotes || '',
                 skills,
                 dispositionsTowardsPlayer,
                 needBars,
@@ -5872,10 +6148,6 @@ function buildBasePromptContext({
         }
         return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
     });
-
-    if (!npcs.length && party.length) {
-        npcs.push(...party.map(member => ({ ...member })));
-    }
 
     const itemsInScene = [];
     if (location) {
@@ -6499,9 +6771,6 @@ function buildBasePromptContext({
             const recentLines = buildHistoryLines(recentSegments);
             const olderLines = buildHistoryLines(olderSegments);
             recentGameHistory = recentLines.join('\n');
-            if (olderLines.length && recentLines.length) {
-                olderLines.push('--- Recent story (verbatim, not summarized) ---');
-            }
             gameHistory = olderLines.join('\n');
         }
     }
@@ -6619,6 +6888,7 @@ function buildBasePromptContext({
         omitAbilities: shouldOmitAbilities,
         npcs,
         party,
+        partyMemberIds: partyMemberIds.slice(),
         lastSeenNpcs,
         currentLocationLastSeenNpcs,
         whileYouWereAwayNpcs,
@@ -9615,6 +9885,9 @@ async function createLocationFromEvent({ name, originLocation = null, descriptio
     const originRegion = originLocation ? findRegionByLocationId(originLocation.id) : null;
     const targetRegion = targetRegionId ? regions.get(targetRegionId) || null : null;
     const pendingTargetRegion = (!targetRegion && targetRegionId) ? pendingRegionStubs.get(targetRegionId) || null : null;
+    if (targetRegionId && !targetRegion && !pendingTargetRegion) {
+        throw new Error(`Target region '${targetRegionId}' was not found for new location '${trimmedName}'.`);
+    }
     const levelData = resolveEventLocationStubLevelData({
         originLocation,
         originRegion,
@@ -9639,7 +9912,9 @@ async function createLocationFromEvent({ name, originLocation = null, descriptio
         throw new Error('Unable to determine region for new location.');
     }
 
-    let existing = findLocationByNameLoose(trimmedName);
+    let existing = targetRegionId
+        ? findLocationByNameInRegionLoose(trimmedName, effectiveRegionId)
+        : findLocationByNameLoose(trimmedName);
     if (existing) {
         if (existing.isStub) {
             const metadata = existing.stubMetadata || {};
@@ -9685,6 +9960,8 @@ async function createLocationFromEvent({ name, originLocation = null, descriptio
 
         if (effectiveRegion && typeof effectiveRegion.addLocationId === 'function') {
             effectiveRegion.addLocationId(existing.id);
+        } else if (pendingTargetRegion) {
+            registerPendingRegionLocationId(effectiveRegionId, existing.id);
         }
         return existing;
     }
@@ -9756,12 +10033,7 @@ async function createLocationFromEvent({ name, originLocation = null, descriptio
     if (effectiveRegion && typeof effectiveRegion.addLocationId === 'function') {
         effectiveRegion.addLocationId(stub.id);
     } else if (pendingTargetRegion) {
-        if (!Array.isArray(pendingTargetRegion.locationIds)) {
-            pendingTargetRegion.locationIds = [];
-        }
-        if (!pendingTargetRegion.locationIds.includes(stub.id)) {
-            pendingTargetRegion.locationIds.push(stub.id);
-        }
+        registerPendingRegionLocationId(effectiveRegionId, stub.id);
     } else if (originLocation?.stubMetadata?.regionId) {
         const fallbackRegion = regions.get(originLocation.stubMetadata.regionId);
         if (fallbackRegion && typeof fallbackRegion.addLocationId === 'function') {
@@ -10112,6 +10384,7 @@ async function createRegionStubFromEvent({ name, originLocation = null, descript
         sourceRegionId: currentRegion?.id || null,
         exitLocationId: originLocation.id,
         entranceStubId: regionEntryStub.id,
+        locationIds: [],
         createOriginExit: createOriginExit !== false,
         originDirection: stubMetadata.originDirection,
         travelTimeMinutes: Number.isInteger(travelTimeMinutes) && travelTimeMinutes >= 0 ? travelTimeMinutes : null,
@@ -10122,6 +10395,36 @@ async function createRegionStubFromEvent({ name, originLocation = null, descript
     console.log(`🌐 Created region stub "${regionEntryStub.name}" (${newRegionId}) from event at ${originLocation.name || originLocation.id}.`);
 
     return regionEntryStub;
+}
+
+function collectPendingRegionLocationsForExpansion(regionId) {
+    const normalizedRegionId = typeof regionId === 'string' ? regionId.trim() : '';
+    if (!normalizedRegionId) {
+        throw new Error('Cannot collect pending region locations without a region id.');
+    }
+
+    const pending = pendingRegionStubs.get(normalizedRegionId) || null;
+    const locationIds = new Set(normalizePendingRegionLocationIds(pending?.locationIds));
+
+    for (const location of gameLocations.values()) {
+        if (!location || location.stubMetadata?.isRegionEntryStub) {
+            continue;
+        }
+        if (locationBelongsToRegionId(location, normalizedRegionId)) {
+            locationIds.add(location.id);
+        }
+    }
+
+    const locations = Array.from(locationIds)
+        .map(locationId => gameLocations.get(locationId) || null)
+        .filter(location => location && !location.stubMetadata?.isRegionEntryStub);
+
+    if (pending) {
+        pending.locationIds = locations.map(location => location.id);
+        pendingRegionStubs.set(normalizedRegionId, pending);
+    }
+
+    return locations;
 }
 
 function pickAvailableDirections(location, exclude = []) {
@@ -10365,6 +10668,8 @@ async function expandRegionEntryStub(stubLocation) {
 
         let region = regions.get(targetRegionId) || null;
         const pendingInfo = pendingRegionStubs.get(targetRegionId) || null;
+        const preservedRegionLocations = collectPendingRegionLocationsForExpansion(targetRegionId);
+        const preservedRegionLocationIds = preservedRegionLocations.map(location => location.id);
         const metadataImageDataUrl = typeof metadata.imageDataUrl === 'string' ? metadata.imageDataUrl.trim() : '';
         const pendingImageDataUrl = typeof pendingInfo?.imageDataUrl === 'string' ? pendingInfo.imageDataUrl.trim() : '';
         const resolvedImageDataUrl = metadataImageDataUrl || pendingImageDataUrl;
@@ -10715,12 +11020,14 @@ async function expandRegionEntryStub(stubLocation) {
                     themeHint,
                     regionAverageLevel,
                     settingDescription,
+                    preservedLocations: preservedRegionLocations,
                     predefinedExitDefinitions: filteredExitDefinitions,
                     predefinedVehicleDefinitions: vehicleDefinitions
                 });
             } catch (instantiationError) {
                 rollbackFailedRegionInstantiation({
                     region,
+                    preserveLocationIds: preservedRegionLocationIds,
                     context: 'region stub instantiation'
                 });
                 console.warn(`Failed to instantiate region from stub "${region?.name || targetRegionId}": ${instantiationError.message}`);
@@ -11750,6 +12057,9 @@ async function generateInventoryForCharacter({ character, characterDescriptor = 
             return [];
         }
 
+        const resolvedLocation = location || (character?.currentLocation ? (gameLocations.get(character.currentLocation) || null) : null);
+        const resolvedRegion = region || (resolvedLocation ? findRegionByLocationId(resolvedLocation.id) : null);
+
         const settingSnapshot = getActiveSettingSnapshot();
         if (!settingSnapshot) {
             if (!character || !character.isNPC) {
@@ -11764,14 +12074,14 @@ async function generateInventoryForCharacter({ character, characterDescriptor = 
         try {
             const lorebookManager = getLorebookManager();
             if (lorebookManager) {
-                const locationName = location?.name || '';
-                const locationDesc = location?.description
-                    || location?.stubMetadata?.stubDescription
-                    || location?.stubMetadata?.blueprintDescription
-                    || location?.stubMetadata?.shortDescription
+                const locationName = resolvedLocation?.name || '';
+                const locationDesc = resolvedLocation?.description
+                    || resolvedLocation?.stubMetadata?.stubDescription
+                    || resolvedLocation?.stubMetadata?.blueprintDescription
+                    || resolvedLocation?.stubMetadata?.shortDescription
                     || '';
-                const regionName = region?.name || '';
-                const regionDesc = region?.description || '';
+                const regionName = resolvedRegion?.name || '';
+                const regionDesc = resolvedRegion?.description || '';
                 const characterName = character?.name || '';
                 const characterDesc = character?.description || '';
                 const characterClass = characterDescriptor?.class || characterDescriptor?.role || '';
@@ -11782,16 +12092,10 @@ async function generateInventoryForCharacter({ character, characterDescriptor = 
             console.warn('[Lorebook] Failed to get entries for character inventory generation:', err.message);
         }
 
-        const renderedTemplate = renderInventoryPrompt({
+        const renderedTemplate = await renderInventoryPrompt({
             setting: settingDescription,
-            region: region ? { name: region.name, description: region.description } : null,
-            location: location ? {
-                name: location.name,
-                description: location.description
-                    || location.stubMetadata?.stubDescription
-                    || location.stubMetadata?.blueprintDescription
-                    || location.stubMetadata?.shortDescription
-            } : null,
+            region: resolvedRegion,
+            location: resolvedLocation,
             character: {
                 name: character.name,
                 role: characterDescriptor.role || characterDescriptor.class || 'citizen',
@@ -11945,7 +12249,7 @@ async function generateInventoryForCharacter({ character, characterDescriptor = 
                         metadata.ownerId = character.id;
                         metadataChanged = true;
                     }
-                    const locationId = location?.id || null;
+                    const locationId = resolvedLocation?.id || null;
                     if (locationId && metadata.locationId !== locationId) {
                         metadata.locationId = locationId;
                         metadataChanged = true;
@@ -11971,7 +12275,7 @@ async function generateInventoryForCharacter({ character, characterDescriptor = 
         }
 
         if (createdThings.length) {
-            await ensureThingNamesAllowed({ things: createdThings, location, region });
+            await ensureThingNamesAllowed({ things: createdThings, location: resolvedLocation, region: resolvedRegion });
         }
 
         LLMClient.logPrompt({
@@ -11987,8 +12291,8 @@ async function generateInventoryForCharacter({ character, characterDescriptor = 
                 await equipBestGearForCharacter({
                     character,
                     characterDescriptor,
-                    region,
-                    location,
+                    region: resolvedRegion,
+                    location: resolvedLocation,
                     settingDescription,
                     timeoutScale: timeoutScale
                 });
@@ -11999,7 +12303,7 @@ async function generateInventoryForCharacter({ character, characterDescriptor = 
 
         if (createdThings.length) {
             try {
-                await ensureUniqueThingNames({ things: createdThings, owner: character, location });
+                await ensureUniqueThingNames({ things: createdThings, owner: character, location: resolvedLocation });
             } catch (error) {
                 console.warn('Failed to enforce unique thing names for inventory generation:', error.message);
             }
@@ -14245,6 +14549,10 @@ function normalizeNpcPromptSeed(seed = {}) {
     copyTrimmed('role');
     copyTrimmed('class');
     copyTrimmed('race');
+    const rawAiNotes = seed.aiNotes ?? seed.personality?.aiNotes;
+    if (typeof rawAiNotes === 'string') {
+        normalized.aiNotes = rawAiNotes;
+    }
     if (Object.prototype.hasOwnProperty.call(seed, 'startingHealthPercentage')
         || Object.prototype.hasOwnProperty.call(seed, 'satartingHealthPercentage')) {
         const rawStartingHealth = Object.prototype.hasOwnProperty.call(seed, 'startingHealthPercentage')
@@ -14720,6 +15028,7 @@ async function generateNpcFromEvent({
             personalityType: npcData?.personalityType || null,
             personalityTraits: npcData?.personalityTraits || null,
             personalityNotes: npcData?.personalityNotes || null,
+            aiNotes: npcData?.aiNotes || null,
             goals: Array.isArray(npcData?.goals) ? npcData.goals : null,
             needBars: resolveGeneratedNpcStartingNeedBars(npcData?.needBars),
             needBarApplicability: npcData?.needBarApplicability && typeof npcData.needBarApplicability === 'object'
@@ -14868,23 +15177,72 @@ async function generateNpcFromEvent({
     return generationPromise;
 }
 
-function renderInventoryPrompt(context = {}) {
+async function renderInventoryPrompt(context = {}) {
     try {
-        const templateName = 'inventory-generator.njk';
+        const templateName = 'base-context.xml.njk';
         const gearSlotTypes = getGearSlotTypes();
         const attributeNames = Object.keys(attributeDefinitionsForPrompt || {})
             .filter(name => typeof name === 'string' && name.trim())
             .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+
+        const locationOverride = context.location && typeof context.location === 'object' && context.location.id
+            ? context.location
+            : null;
+        const baseContext = await prepareBasePromptContext({ locationOverride });
+
+        const buildRegionContext = () => {
+            const source = context.region && typeof context.region === 'object'
+                ? context.region
+                : null;
+            const fallback = baseContext.currentRegion || {};
+            if (!source && !locationOverride) {
+                return {
+                    name: 'Unknown Region',
+                    description: 'No description provided.',
+                    secrets: [],
+                    locations: [],
+                    connectedRegions: []
+                };
+            }
+            return {
+                ...fallback,
+                name: source?.name || source?.regionName || fallback.name || 'Unknown Region',
+                description: source?.description || source?.regionDescription || fallback.description || 'No description provided.',
+                secrets: Array.isArray(fallback.secrets) ? fallback.secrets : [],
+                locations: Array.isArray(fallback.locations) ? fallback.locations : [],
+                connectedRegions: Array.isArray(fallback.connectedRegions) ? fallback.connectedRegions : []
+            };
+        };
+
+        const buildLocationContext = () => {
+            const source = context.location && typeof context.location === 'object'
+                ? context.location
+                : null;
+            const fallback = baseContext.currentLocation || {};
+            if (!source) {
+                return null;
+            }
+            return {
+                ...fallback,
+                name: source?.name || fallback.name || 'Unknown Location',
+                description: source?.description
+                    || source?.stubMetadata?.stubDescription
+                    || source?.stubMetadata?.blueprintDescription
+                    || source?.stubMetadata?.shortDescription
+                    || fallback.description
+                    || 'No description provided.',
+                statusEffects: Array.isArray(fallback.statusEffects) ? fallback.statusEffects : [],
+                exits: Array.isArray(fallback.exits) ? fallback.exits : [],
+                items: Array.isArray(fallback.items) ? fallback.items : [],
+                scenery: Array.isArray(fallback.scenery) ? fallback.scenery : []
+            };
+        };
+
         return promptEnv.render(templateName, {
-            setting: context.setting || 'A mysterious fantasy realm.',
-            region: {
-                regionName: context.region?.name || 'Unknown Region',
-                regionDescription: context.region?.description || 'No description provided.'
-            },
-            location: {
-                name: context.location?.name || 'Unknown Location',
-                description: context.location?.description || 'No description provided.'
-            },
+            ...baseContext,
+            promptType: 'inventory-generator',
+            contextRegion: buildRegionContext(),
+            currentLocation: buildLocationContext(),
             character: {
                 name: context.character?.name || 'Unnamed Character',
                 role: context.character?.role || context.character?.class || 'citizen',
@@ -14896,7 +15254,9 @@ function renderInventoryPrompt(context = {}) {
             gearSlots: gearSlotTypes,
             equipmentSlots: gearSlotTypes,
             attributeDefinitions: attributeDefinitionsForPrompt,
-            attributes: attributeNames
+            attributes: attributeNames,
+            lorebookEntries: Array.isArray(context.lorebookEntries) ? context.lorebookEntries : [],
+            thingSeed: {}
         });
     } catch (error) {
         console.error('Error rendering inventory template:', error);
@@ -15683,6 +16043,7 @@ function parseLocationNpcs(xmlContent) {
             const factionNode = node.getElementsByTagName('faction')[0];
             const relativeLevelNode = node.getElementsByTagName('relativeLevel')[0];
             const healthAttributeNode = node.getElementsByTagName('healthAttribute')[0];
+            const aiNotesNode = node.getElementsByTagName('aiNotes')[0];
             const personalityNode = node.getElementsByTagName('personality')[0];
             const currencyNode = node.getElementsByTagName('currency')[0];
             const isHostileNode = node.getElementsByTagName('isHostile')[0];
@@ -15707,6 +16068,9 @@ function parseLocationNpcs(xmlContent) {
             const attributes = {};
             const relativeLevel = relativeLevelNode ? Number(relativeLevelNode.textContent.trim()) : null;
             const healthAttribute = healthAttributeNode ? healthAttributeNode.textContent.trim() : null;
+            const aiNotes = aiNotesNode && typeof aiNotesNode.textContent === 'string'
+                ? aiNotesNode.textContent.trim()
+                : '';
             const currencyValue = currencyNode ? parseIntegerFromText(currencyNode.textContent) : null;
 
             let personalityType = null;
@@ -15778,6 +16142,7 @@ function parseLocationNpcs(xmlContent) {
                     personalityType,
                     personalityTraits,
                     personalityNotes,
+                    aiNotes,
                     goals,
                     needBars: startingNeeds.needBars,
                     needBarApplicability: startingNeeds.needBarApplicability,
@@ -15844,6 +16209,7 @@ function parseRegionNpcs(xmlContent) {
             const attributesNode = node.getElementsByTagName('attributes')[0];
             const relativeLevelNode = node.getElementsByTagName('relativeLevel')[0];
             const healthAttributeNode = node.getElementsByTagName('healthAttribute')[0];
+            const aiNotesNode = node.getElementsByTagName('aiNotes')[0];
             const personalityNode = node.getElementsByTagName('personality')[0];
             const currencyNode = node.getElementsByTagName('currency')[0];
             const isHostileNode = node.getElementsByTagName('isHostile')[0];
@@ -15885,6 +16251,9 @@ function parseRegionNpcs(xmlContent) {
 
             const relativeLevel = relativeLevelNode ? Number(relativeLevelNode.textContent.trim()) : null;
             const healthAttribute = healthAttributeNode ? healthAttributeNode.textContent.trim() : null;
+            const aiNotes = aiNotesNode && typeof aiNotesNode.textContent === 'string'
+                ? aiNotesNode.textContent.trim()
+                : '';
             const currencyValue = currencyNode ? parseIntegerFromText(currencyNode.textContent) : null;
 
             let personalityType = null;
@@ -15946,6 +16315,7 @@ function parseRegionNpcs(xmlContent) {
                 personalityType,
                 personalityTraits,
                 personalityNotes,
+                aiNotes,
                 goals,
                 needBars: startingNeeds.needBars,
                 needBarApplicability: startingNeeds.needBarApplicability,
@@ -16243,6 +16613,9 @@ function buildNpcGenerationSeedXml(npc, { location = null } = {}) {
     const personalityType = typeof npc?.personality?.type === 'string' ? npc.personality.type.trim() : '';
     const personalityTraits = typeof npc?.personality?.traits === 'string' ? npc.personality.traits.trim() : '';
     const personalityNotes = typeof npc?.personality?.notes === 'string' ? npc.personality.notes.trim() : '';
+    const aiNotes = typeof npc?.aiNotes === 'string'
+        ? npc.aiNotes.trim()
+        : (typeof npc?.personality?.aiNotes === 'string' ? npc.personality.aiNotes.trim() : '');
     const lines = [
         '<response>',
         '  <npcs>',
@@ -16274,6 +16647,7 @@ function buildNpcGenerationSeedXml(npc, { location = null } = {}) {
     }
     lines.push('        </goals>');
     lines.push('      </personality>');
+    lines.push(`      <aiNotes>${escapeXmlText(aiNotes)}</aiNotes>`);
     lines.push('    </npc>');
     lines.push('  </npcs>');
     lines.push('</response>');
@@ -22317,6 +22691,7 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
                 personalityType: npcData.personalityType || null,
                 personalityTraits: npcData.personalityTraits || null,
                 personalityNotes: npcData.personalityNotes || null,
+                aiNotes: npcData.aiNotes || null,
                 goals: Array.isArray(npcData.goals) ? npcData.goals : null,
                 needBars: resolveGeneratedNpcStartingNeedBars(npcData.needBars),
                 needBarApplicability: npcData.needBarApplicability && typeof npcData.needBarApplicability === 'object'
@@ -22749,6 +23124,7 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
                 personalityType: npcData.personalityType || null,
                 personalityTraits: npcData.personalityTraits || null,
                 personalityNotes: npcData.personalityNotes || null,
+                aiNotes: npcData.aiNotes || null,
                 goals: Array.isArray(npcData.goals) ? npcData.goals : null,
                 needBars: resolveGeneratedNpcStartingNeedBars(npcData.needBars),
                 needBarApplicability: npcData.needBarApplicability && typeof npcData.needBarApplicability === 'object'
@@ -25932,6 +26308,7 @@ function parseRegionStubLocations(xmlSnippet) {
 
 function rollbackFailedRegionInstantiation({
     region,
+    preserveLocationIds = [],
     context = 'region instantiation rollback'
 } = {}) {
     if (!region) {
@@ -25942,7 +26319,10 @@ function rollbackFailedRegionInstantiation({
     const regionLocationIds = Array.isArray(region.locationIds)
         ? [...region.locationIds].filter(id => typeof id === 'string' && id.trim())
         : [];
-    const regionLocationIdSet = new Set(regionLocationIds);
+    const preservedLocationIdSet = new Set(normalizePendingRegionLocationIds(preserveLocationIds));
+    const rollbackLocationIdSet = new Set(
+        regionLocationIds.filter(id => !preservedLocationIdSet.has(id)),
+    );
     const removeExit = (location, direction, exitId = null) => {
         if (!location || typeof location.removeExit !== 'function' || !direction) {
             return false;
@@ -25965,8 +26345,8 @@ function rollbackFailedRegionInstantiation({
             if (!exit) {
                 continue;
             }
-            const isOutboundFromRolledBackLocation = regionLocationIdSet.has(locationId);
-            const isInboundToRolledBackLocation = regionLocationIdSet.has(exit.destination);
+            const isOutboundFromRolledBackLocation = rollbackLocationIdSet.has(locationId);
+            const isInboundToRolledBackLocation = rollbackLocationIdSet.has(exit.destination);
             if (!isOutboundFromRolledBackLocation && !isInboundToRolledBackLocation) {
                 continue;
             }
@@ -25975,6 +26355,9 @@ function rollbackFailedRegionInstantiation({
     }
 
     for (const locationId of regionLocationIds) {
+        if (preservedLocationIdSet.has(locationId)) {
+            continue;
+        }
         const location = gameLocations.get(locationId) || Location.get(locationId);
         if (!location) {
             continue;
@@ -26421,6 +26804,7 @@ async function generateRegionExitStubs({
             sourceRegionId: region.id,
             exitLocationId: sourceLocation.id,
             entranceStubId: regionEntryStub.id,
+            locationIds: [],
             createdAt: new Date().toISOString(),
             controllingFactionId: controllingFactionResolution.id
         });
@@ -26949,10 +27333,118 @@ async function instantiateRegionLocations({
     themeHint,
     regionAverageLevel,
     settingDescription,
+    preservedLocations = [],
     predefinedExitDefinitions = null,
     predefinedVehicleDefinitions = null
 }) {
     const stubMap = new Map();
+    const createdLocationIds = new Set();
+
+    const aliasesForLocation = (location, extraAliases = []) => {
+        const metadata = location?.stubMetadata || {};
+        return [
+            location?.name,
+            location?.id,
+            metadata.originalName,
+            metadata.regionName,
+            metadata.shortDescription,
+            metadata.stubShortDescription,
+            ...extraAliases,
+        ]
+            .map(alias => normalizeRegionLocationName(alias))
+            .filter(Boolean);
+    };
+
+    const registerStubAliases = (location, extraAliases = []) => {
+        for (const alias of aliasesForLocation(location, extraAliases)) {
+            stubMap.set(alias, location);
+        }
+    };
+
+    const buildSuggestedRegionExits = (blueprint) => (blueprint.exits || []).map(exit => {
+        if (!exit) {
+            return null;
+        }
+        if (typeof exit === 'string') {
+            return exit;
+        }
+        if (typeof exit === 'object' && typeof exit.target === 'string') {
+            return exit.target;
+        }
+        return null;
+    }).filter(Boolean);
+
+    const applyBlueprintToPreservedLocation = (location, {
+        blueprint,
+        stubDescription,
+        stubShortDescription,
+        relativeLevel,
+        computedBaseLevel,
+        numNpcs,
+        numHostiles,
+        hasWeather,
+        controllingFactionId,
+    }) => {
+        if (!location) {
+            return;
+        }
+        if (Number.isFinite(computedBaseLevel) && location.isStub) {
+            try {
+                location.baseLevel = computedBaseLevel;
+            } catch (error) {
+                console.warn(`Failed to update base level for preserved pending-region location ${location.id}:`, error.message);
+            }
+        }
+        if (stubShortDescription && !location.shortDescription) {
+            location.shortDescription = stubShortDescription;
+        }
+        if (controllingFactionId && !location.controllingFactionId) {
+            location.controllingFactionId = controllingFactionId;
+        }
+        if (location.isStub) {
+            const metadata = location.stubMetadata || {};
+            metadata.regionId = region.id;
+            metadata.regionName = region.name;
+            metadata.blueprintDescription = metadata.blueprintDescription || stubDescription;
+            metadata.stubDescription = metadata.stubDescription || stubDescription;
+            metadata.stubShortDescription = metadata.stubShortDescription || stubShortDescription;
+            metadata.suggestedRegionExits = buildSuggestedRegionExits(blueprint);
+            metadata.themeHint = metadata.themeHint || themeHint;
+            metadata.shortDescription = metadata.shortDescription || stubShortDescription;
+            metadata.locationPurpose = metadata.locationPurpose || `Part of the ${region.name} region`;
+            metadata.allowRename = false;
+            metadata.relativeLevel = Number.isFinite(relativeLevel) ? relativeLevel : null;
+            metadata.regionAverageLevel = Number.isFinite(region.averageLevel) ? region.averageLevel : null;
+            metadata.computedBaseLevel = computedBaseLevel;
+            metadata.numNpcs = numNpcs;
+            metadata.numHostiles = numHostiles;
+            metadata.locationHasWeather = hasWeather;
+            metadata.hasWeather = hasWeather;
+            location.stubMetadata = metadata;
+        }
+        const existingHints = location.generationHints || {};
+        location.generationHints = {
+            ...existingHints,
+            numNpcs: existingHints.numNpcs ?? numNpcs,
+            numHostiles: existingHints.numHostiles ?? numHostiles,
+            hasWeather: existingHints.hasWeather ?? hasWeather,
+        };
+    };
+
+    for (const location of Array.isArray(preservedLocations) ? preservedLocations : []) {
+        if (!location || !location.id || location.stubMetadata?.isRegionEntryStub) {
+            continue;
+        }
+        gameLocations.set(location.id, location);
+        region.addLocationId(location.id);
+        if (location.isStub) {
+            const metadata = location.stubMetadata || {};
+            metadata.regionId = region.id;
+            metadata.regionName = region.name;
+            location.stubMetadata = metadata;
+        }
+        registerStubAliases(location);
+    }
 
     for (const blueprint of region.locationBlueprints) {
         const stubDescription = typeof blueprint.description === 'string' ? blueprint.description.trim() : '';
@@ -26979,67 +27471,68 @@ async function instantiateRegionLocations({
             fieldLabel: `Location controlling faction for "${blueprint.name || 'Unnamed Location'}"`
         });
 
-        const stub = new Location({
-            name: blueprint.name,
-            description: null,
-            shortDescription: stubShortDescription,
-            baseLevel: computedBaseLevel,
-            isStub: true,
-            regionId: region.id,
-            controllingFactionId: controllingFactionResolution.id,
-            checkRegionId: false,
-            generationHints: {
-                numNpcs,
-                numHostiles
-            },
-            stubMetadata: {
-                regionId: region.id,
-                regionName: region.name,
-                blueprintDescription: stubDescription,
-                stubDescription: stubDescription,
-                stubShortDescription: stubShortDescription,
-                suggestedRegionExits: (blueprint.exits || []).map(exit => {
-                    if (!exit) {
-                        return null;
-                    }
-                    if (typeof exit === 'string') {
-                        return exit;
-                    }
-                    if (typeof exit === 'object' && typeof exit.target === 'string') {
-                        return exit.target;
-                    }
-                    return null;
-                }).filter(Boolean),
-                themeHint,
-                shortDescription: stubShortDescription,
-                locationPurpose: `Part of the ${region.name} region`,
-                allowRename: false,
-                relativeLevel: Number.isFinite(relativeLevel) ? relativeLevel : null,
-                regionAverageLevel: Number.isFinite(region.averageLevel) ? region.averageLevel : null,
+        const blueprintAliases = [
+            blueprint.name,
+            ...(Array.isArray(blueprint.aliases) ? blueprint.aliases : []),
+        ].map(alias => normalizeRegionLocationName(alias)).filter(Boolean);
+        let stub = blueprintAliases.map(alias => stubMap.get(alias)).find(Boolean) || null;
+
+        if (stub) {
+            applyBlueprintToPreservedLocation(stub, {
+                blueprint,
+                stubDescription,
+                stubShortDescription,
+                relativeLevel,
                 computedBaseLevel,
                 numNpcs,
                 numHostiles,
-                locationHasWeather: hasWeather,
-                hasWeather
-            }
-        });
+                hasWeather,
+                controllingFactionId: controllingFactionResolution.id,
+            });
+            region.addLocationId(stub.id);
+        } else {
+            stub = new Location({
+                name: blueprint.name,
+                description: null,
+                shortDescription: stubShortDescription,
+                baseLevel: computedBaseLevel,
+                isStub: true,
+                regionId: region.id,
+                controllingFactionId: controllingFactionResolution.id,
+                checkRegionId: false,
+                generationHints: {
+                    numNpcs,
+                    numHostiles
+                },
+                stubMetadata: {
+                    regionId: region.id,
+                    regionName: region.name,
+                    blueprintDescription: stubDescription,
+                    stubDescription: stubDescription,
+                    stubShortDescription: stubShortDescription,
+                    suggestedRegionExits: buildSuggestedRegionExits(blueprint),
+                    themeHint,
+                    shortDescription: stubShortDescription,
+                    locationPurpose: `Part of the ${region.name} region`,
+                    allowRename: false,
+                    relativeLevel: Number.isFinite(relativeLevel) ? relativeLevel : null,
+                    regionAverageLevel: Number.isFinite(region.averageLevel) ? region.averageLevel : null,
+                    computedBaseLevel,
+                    numNpcs,
+                    numHostiles,
+                    locationHasWeather: hasWeather,
+                    hasWeather
+                }
+            });
 
-        gameLocations.set(stub.id, stub);
-        region.addLocationId(stub.id);
+            gameLocations.set(stub.id, stub);
+            region.addLocationId(stub.id);
+            createdLocationIds.add(stub.id);
 
-        await ensureLocationNameAllowed(stub);
-
-        const aliases = new Set();
-        aliases.add(normalizeRegionLocationName(stub.name));
-        aliases.add(normalizeRegionLocationName(blueprint.name));
-        if (Array.isArray(blueprint.aliases)) {
-            blueprint.aliases.forEach(alias => aliases.add(normalizeRegionLocationName(alias)));
+            await ensureLocationNameAllowed(stub);
         }
-        aliases.forEach(alias => {
-            if (alias) {
-                stubMap.set(alias, stub);
-            }
-        });
+
+        registerStubAliases(stub, [blueprint.name, ...(Array.isArray(blueprint.aliases) ? blueprint.aliases : [])]);
     }
 
     const addStubExit = (fromStub, toStub, label, travelTimeMinutes = 0) => {
@@ -27184,6 +27677,7 @@ async function instantiateRegionLocations({
         predefinedDefinitions: predefinedVehicleDefinitions
     });
 
+    stubMap.createdLocationIds = createdLocationIds;
     return stubMap;
 }
 
@@ -27423,7 +27917,10 @@ app.get('/', (req, res) => {
         ...clientMessageHistory,
         mode: 'max'
     });
-    const filteredChatHistory = filterOrphanedChatEntries(prunedChatHistory);
+    const filteredChatHistory = filterHiddenNotesFromChatEntriesForClient(
+        filterOrphanedChatEntries(prunedChatHistory),
+        { show_hidden_notes: false }
+    );
 
     // Get mod scripts and styles if modLoader is available
     const modScripts = (typeof apiScope !== 'undefined' && apiScope.modLoader && typeof apiScope.modLoader.getModClientScripts === 'function')
@@ -27836,6 +28333,10 @@ app.put('/api/game-config-override', (req, res) => {
 // Settings management page
 app.get('/settings', (req, res) => {
     const { skills: defaultExistingSkills, error: defaultExistingSkillsError } = loadDefaultSkillsForSettings();
+    const {
+        definition: unifiedTonalScaleDefinition,
+        error: unifiedTonalScaleError
+    } = loadUnifiedTonalScaleForSettings();
     const parsedFactionCount = Number.parseInt(config?.factions?.count, 10);
     const defaultFactionCountFallback = Number.isFinite(parsedFactionCount) && parsedFactionCount >= 0
         ? parsedFactionCount
@@ -27845,7 +28346,9 @@ app.get('/settings', (req, res) => {
         currentPage: 'settings',
         defaultExistingSkills,
         defaultExistingSkillsError,
-        defaultFactionCountFallback
+        defaultFactionCountFallback,
+        unifiedTonalScaleDefinition,
+        unifiedTonalScaleError
     });
 });
 
@@ -27922,6 +28425,9 @@ const apiScope = {
     resolveClientMessageHistoryConfig,
     pruneClientMessageHistory,
     filterOrphanedChatEntries,
+    stripHiddenNotesFromText,
+    filterHiddenNotesFromChatEntriesForClient,
+    filterHiddenNotesFromClientPayload,
     nunjucks,
     JOB_STATUS,
     PORT,

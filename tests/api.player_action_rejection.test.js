@@ -92,6 +92,42 @@ test('player action XML parser extracts rejected reasons from text content', asy
     assert.equal(parsed.rejected?.reason, 'Please enter a complete action.');
 });
 
+test('player action XML parser ignores draft finalProse blocks before the final root', async () => {
+    const context = loadPlayerActionXmlParser();
+    const parsed = await context.parsePlayerActionProseFromXml([
+        '1. Draft:',
+        '<finalProse>Draft prose that should not be used.</finalProse>',
+        '2. Final:',
+        '<finalProse>Final prose.<hidden>Keep this note.</hidden></finalProse>'
+    ].join('\n'));
+
+    assert.equal(parsed.prose, 'Final prose.<hidden>Keep this note.</hidden>');
+    assert.equal(parsed.travel, null);
+});
+
+test('player action XML parser chooses final travelProse after earlier draft prose XML', async () => {
+    const context = loadPlayerActionXmlParser();
+    const parsed = await context.parsePlayerActionProseFromXml([
+        '<finalProse>Draft prose that should not be used.</finalProse>',
+        '<travelProse>',
+        '<originProse>Origin beat.</originProse>',
+        '<destinationProse>Destination beat.</destinationProse>',
+        '</travelProse>'
+    ].join('\n'));
+
+    assert.equal(parsed.prose, 'Origin beat.\n\nDestination beat.');
+    assert.deepEqual(JSON.parse(JSON.stringify(parsed.travel)), {
+        vehicle: null,
+        vehicleTravelTime: null,
+        vehicleDestination: null,
+        playerDestination: null,
+        playerDestinationTravelTime: null,
+        originProse: 'Origin beat.',
+        betweenProse: null,
+        destinationProse: 'Destination beat.'
+    });
+});
+
 test('context exclusion helper preserves metadata while excluding entry', () => {
     const markChatEntryExcludedFromBaseContextHistory = loadContextExclusionHelper();
     const entry = {

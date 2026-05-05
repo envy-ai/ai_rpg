@@ -70,6 +70,7 @@ test('parseLocationNpcs captures starting need levels and applicability', () => 
     <npc>
       <name>Dockhand Pell</name>
       <description>A tired dockhand.</description>
+      <aiNotes>Pell warns dockworkers before a storm hits.</aiNotes>
       <startingNeeds>
         <needBar>
           <id>food</id>
@@ -106,6 +107,7 @@ test('parseLocationNpcs captures starting need levels and applicability', () => 
             percentage: 55,
             deceased: false
         });
+        assert.equal(npc.aiNotes, 'Pell warns dockworkers before a storm hits.');
     } finally {
         Globals.config = previousConfig;
     }
@@ -122,6 +124,7 @@ test('parseRegionNpcs captures starting need levels and applicability', () => {
     <npc>
       <name>Archivist Nera</name>
       <location>Archive Hall</location>
+      <aiNotes>Nera seals the stacks if fire is mentioned.</aiNotes>
       <startingNeeds>
         <needBar>
           <id>focus</id>
@@ -147,6 +150,7 @@ test('parseRegionNpcs captures starting need levels and applicability', () => {
         assert.deepEqual(JSON.parse(JSON.stringify(npc.needBars)), [
             { id: 'focus', percentage: 72 }
         ]);
+        assert.equal(npc.aiNotes, 'Nera seals the stacks if fire is mentioned.');
     } finally {
         Globals.config = previousConfig;
     }

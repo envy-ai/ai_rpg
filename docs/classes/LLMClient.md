@@ -28,7 +28,7 @@ Centralized client for LLM chat completions with concurrency limits, streaming p
 - `getMaxConcurrent(aiConfigOverride)`: reads `max_concurrent_requests`.
 - Background requests marked with `runInBackground: true` use the same per-backend semaphore, but queued foreground requests are dispatched first. When `max_concurrent_requests > 1`, background requests reserve one configured slot for foreground work instead of filling every slot.
 - `resetForcedOutputState()`: clears cached forced-output fixture data/counters.
-- `writeLogFile({ prefix, metadataLabel, payload, serializeJson, onFailureMessage, error, append })`: writes error logs.
+- `writeLogFile({ prefix, metadataLabel, payload, serializeJson, onFailureMessage, error, append })`: writes error logs named `ERROR_<prefix>_<metadataLabel>_<timestamp>.log`, with the label sanitized for filenames.
 - `formatMessagesForErrorLog(messages)`: formats messages into a readable log.
 - `logPrompt({...})`: writes prompt/response logs to `logs/`.
 - `baseTimeoutMilliseconds()` / `resolveTimeout(timeoutMs, multiplier)`.
@@ -46,6 +46,7 @@ Centralized client for LLM chat completions with concurrency limits, streaming p
   - Normalizes response payloads for both stream and non-stream calls so `choices[0].message.tool_calls` is available to callers.
   - Assembles streamed `delta.tool_calls` chunks into full function calls and validates that each call has parseable JSON `function.arguments`.
   - Uses `LLMClient.logPrompt` and emits prompt progress via `Globals.realtimeHub`.
+  - Error logs use `errorLogLabel` when supplied, then `metadata.promptName`, then `metadata.promptType`, then `metadataLabel`, so prompts can keep AI override labels while writing clearer error filenames.
 
 ## Private Helpers (Selected)
 - Stream tracking: `#isInteractive`, `#shouldTrackPromptProgress`, `#renderStreamProgress`, `#ensureProgressTicker`, `#trackStreamStart`, `#trackStreamReceived`, `#trackStreamBytes`, `#applyStreamPreviewText`, `#applyCodexPreviewUpdate`, `#trackStreamStatus`, `#trackStreamEnd`, `#formatCodexProgressEvent`, `#extractCodexPreviewUpdate`, `#broadcastProgress`.

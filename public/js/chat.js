@@ -14,6 +14,290 @@ const TURN_DIFF_CATEGORIES = new Set([
 ]);
 const TURN_DIFF_SEVERITIES = new Set(['normal', 'important', 'critical']);
 
+function normalizeNewExitSummaryText(value) {
+    if (value === null || value === undefined) {
+        return '';
+    }
+    return String(value).trim().replace(/\s+/g, ' ');
+}
+
+function normalizeNewExitSummaryComparison(value) {
+    return normalizeNewExitSummaryText(value).toLowerCase();
+}
+
+function selectNewExitSummaryField(entry, keys) {
+    if (!entry || typeof entry !== 'object' || !Array.isArray(keys)) {
+        return '';
+    }
+    for (const key of keys) {
+        const text = normalizeNewExitSummaryText(entry[key]);
+        if (text) {
+            return text;
+        }
+    }
+    return '';
+}
+
+function formatNewExitLocationEndpoint(locationName, regionName, currentRegionName) {
+    const normalizedLocationName = normalizeNewExitSummaryText(locationName);
+    if (!normalizedLocationName) {
+        return '';
+    }
+
+    const normalizedRegionName = normalizeNewExitSummaryText(regionName);
+    const normalizedCurrentRegionName = normalizeNewExitSummaryText(currentRegionName);
+    const locationComparison = normalizeNewExitSummaryComparison(normalizedLocationName);
+    const regionComparison = normalizeNewExitSummaryComparison(normalizedRegionName);
+    const currentRegionComparison = normalizeNewExitSummaryComparison(normalizedCurrentRegionName);
+    const shouldAppendRegion = Boolean(
+        normalizedRegionName
+        && regionComparison
+        && regionComparison !== locationComparison
+        && (!currentRegionComparison || regionComparison !== currentRegionComparison)
+    );
+
+    return shouldAppendRegion
+        ? `${normalizedLocationName} (${normalizedRegionName})`
+        : normalizedLocationName;
+}
+
+function getCurrentNewExitSummaryContext() {
+    const currentLocation = window.AIRPG_LAST_LOCATION && typeof window.AIRPG_LAST_LOCATION === 'object'
+        ? window.AIRPG_LAST_LOCATION
+        : null;
+    return {
+        currentLocationName: normalizeNewExitSummaryText(currentLocation?.name || ''),
+        currentRegionName: normalizeNewExitSummaryText(
+            currentLocation?.regionName
+            || currentLocation?.region?.name
+            || currentLocation?.stubMetadata?.regionName
+            || currentLocation?.stubMetadata?.targetRegionName
+            || ''
+        )
+    };
+}
+
+function formatNewExitDiscoveredSummaryDetail(entry, {
+    currentLocationName = '',
+    currentRegionName = ''
+} = {}) {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+        return normalizeNewExitSummaryText(entry) || 'a new path';
+    }
+
+    const kind = selectNewExitSummaryField(entry, ['kind', 'destinationKind', 'type']).toLowerCase();
+    const primaryDestinationName = selectNewExitSummaryField(entry, [
+        'destinationName',
+        'name',
+        'targetName',
+        'label',
+        'text',
+        'raw'
+    ]);
+    const destinationLocationName = selectNewExitSummaryField(entry, [
+        'destinationLocationName',
+        'targetLocationName'
+    ]);
+    let destinationRegionName = selectNewExitSummaryField(entry, [
+        'destinationRegionName',
+        'targetRegionName',
+        'destinationRegion'
+    ]);
+    if (!destinationRegionName && kind === 'region') {
+        destinationRegionName = primaryDestinationName;
+    }
+
+    const originLocationName = selectNewExitSummaryField(entry, [
+        'exitLocationName',
+        'originLocationName',
+        'sourceLocationName',
+        'originLocation',
+        'origin'
+    ]);
+    const originRegionName = selectNewExitSummaryField(entry, [
+        'exitRegionName',
+        'originRegionName',
+        'sourceRegionName',
+        'originRegion'
+    ]);
+
+    let destinationDetail = '';
+    if (destinationLocationName) {
+        destinationDetail = formatNewExitLocationEndpoint(
+            destinationLocationName,
+            destinationRegionName,
+            currentRegionName
+        );
+    } else if (kind === 'region') {
+        destinationDetail = destinationRegionName || primaryDestinationName;
+    } else {
+        destinationDetail = formatNewExitLocationEndpoint(
+            primaryDestinationName,
+            destinationRegionName,
+            currentRegionName
+        );
+    }
+
+    if (!destinationDetail) {
+        destinationDetail = primaryDestinationName || 'a new path';
+    }
+
+    const originDetail = formatNewExitLocationEndpoint(
+        originLocationName,
+        originRegionName,
+        currentRegionName
+    );
+    const currentLocationComparison = normalizeNewExitSummaryComparison(currentLocationName);
+    const originLocationComparison = normalizeNewExitSummaryComparison(originLocationName);
+    const currentRegionComparison = normalizeNewExitSummaryComparison(currentRegionName);
+    const originRegionComparison = normalizeNewExitSummaryComparison(originRegionName);
+    const originMatchesCurrent = Boolean(
+        currentLocationComparison
+        && originLocationComparison === currentLocationComparison
+        && (!originRegionComparison || !currentRegionComparison || originRegionComparison === currentRegionComparison)
+    );
+
+    return originDetail && !originMatchesCurrent
+        ? `${originDetail} -> ${destinationDetail}`
+        : destinationDetail;
+}
+
+function buildNewExitDiscoveredSummaryMetadata(entry, detail = '') {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+        return null;
+    }
+
+    const destinationKind = selectNewExitSummaryField(entry, [
+        'destinationKind',
+        'kind',
+        'type'
+    ]).toLowerCase();
+    const originLocationId = selectNewExitSummaryField(entry, [
+        'originLocationId',
+        'exitLocationId',
+        'sourceLocationId'
+    ]);
+    const originRegionId = selectNewExitSummaryField(entry, [
+        'originRegionId',
+        'exitRegionId',
+        'sourceRegionId'
+    ]);
+    const destinationId = selectNewExitSummaryField(entry, [
+        'destinationId',
+        'destinationLocationId',
+        'targetLocationId',
+        'stubId'
+    ]);
+    const destinationRegionId = selectNewExitSummaryField(entry, [
+        'destinationRegionId',
+        'targetRegionId',
+        'regionId'
+    ]);
+    const exitId = selectNewExitSummaryField(entry, ['exitId']);
+
+    if (!originLocationId && !originRegionId && !destinationId && !destinationRegionId && !exitId) {
+        return null;
+    }
+
+    const destinationRegionName = selectNewExitSummaryField(entry, [
+        'destinationRegionName',
+        'targetRegionName',
+        'destinationRegion'
+    ]);
+    const destinationLocationName = selectNewExitSummaryField(entry, [
+        'destinationLocationName',
+        'targetLocationName'
+    ]);
+    const destinationName = destinationLocationName
+        || selectNewExitSummaryField(entry, ['destinationName', 'name', 'targetName'])
+        || destinationRegionName;
+    const originLocationName = selectNewExitSummaryField(entry, [
+        'originLocationName',
+        'exitLocationName',
+        'sourceLocationName',
+        'originLocation',
+        'origin'
+    ]);
+    const originRegionName = selectNewExitSummaryField(entry, [
+        'originRegionName',
+        'exitRegionName',
+        'sourceRegionName',
+        'originRegion'
+    ]);
+
+    return {
+        label: normalizeNewExitSummaryText(detail) || destinationName || destinationRegionName || 'New exit',
+        destinationKind: destinationKind || null,
+        originLocationId: originLocationId || null,
+        originLocationName: originLocationName || null,
+        originRegionId: originRegionId || null,
+        originRegionName: originRegionName || null,
+        destinationId: destinationId || null,
+        destinationName: destinationName || null,
+        destinationLocationName: destinationLocationName || null,
+        destinationRegionId: destinationRegionId || null,
+        destinationRegionName: destinationRegionName || null,
+        exitId: exitId || null
+    };
+}
+
+function normalizeNewExitNavigationMetadata(value) {
+    const source = value && typeof value === 'object' && !Array.isArray(value)
+        ? value
+        : null;
+    if (!source) {
+        return null;
+    }
+    const metadata = source.newExitDiscovered && typeof source.newExitDiscovered === 'object'
+        ? source.newExitDiscovered
+        : source;
+    const normalized = {};
+    [
+        'label',
+        'destinationKind',
+        'originLocationId',
+        'originLocationName',
+        'originRegionId',
+        'originRegionName',
+        'destinationId',
+        'destinationName',
+        'destinationLocationName',
+        'destinationRegionId',
+        'destinationRegionName',
+        'exitId'
+    ].forEach(key => {
+        const text = normalizeNewExitSummaryText(metadata[key]);
+        normalized[key] = text || null;
+    });
+
+    if (!normalized.originRegionId && !normalized.originLocationId && !normalized.destinationId && !normalized.exitId) {
+        return null;
+    }
+
+    return normalized;
+}
+
+function getNewExitPillLabel(metadata) {
+    const destination = normalizeNewExitSummaryText(
+        metadata?.destinationLocationName
+        || metadata?.destinationName
+        || metadata?.destinationRegionName
+        || metadata?.label
+    );
+    return destination || 'Map';
+}
+
+function dispatchNewExitSummarySelected(target, metadata) {
+    const normalized = normalizeNewExitNavigationMetadata(metadata);
+    if (!target || !normalized) {
+        return;
+    }
+    target.dispatchEvent(new CustomEvent('airpg:new-exit-summary-selected', {
+        bubbles: true,
+        detail: normalized
+    }));
+}
+
 class AIRPGChat {
     constructor() {
         this.chatLog = document.getElementById('chatLog');
@@ -1218,6 +1502,7 @@ class AIRPGChat {
         if (allowMarkdown && this.markdownRenderer && raw) {
             try {
                 target.innerHTML = this.markdownRenderer.render(raw);
+                this.promoteHiddenNoteTags(target);
                 return;
             } catch (error) {
                 console.warn('Failed to render markdown content:', error);
@@ -1225,6 +1510,21 @@ class AIRPGChat {
         }
 
         target.textContent = raw;
+    }
+
+    promoteHiddenNoteTags(target) {
+        if (!target || typeof target.querySelectorAll !== 'function') {
+            return;
+        }
+        const hiddenNodes = Array.from(target.querySelectorAll('hidden'));
+        hiddenNodes.forEach(node => {
+            const wrapper = document.createElement('div');
+            wrapper.className = 'hidden-note';
+            while (node.firstChild) {
+                wrapper.appendChild(node.firstChild);
+            }
+            node.replaceWith(wrapper);
+        });
     }
 
     getAttachmentTypes() {
@@ -2348,6 +2648,48 @@ class AIRPGChat {
         return true;
     }
 
+    createNewExitSummaryPill(metadata) {
+        const normalized = normalizeNewExitNavigationMetadata(metadata);
+        if (!normalized) {
+            return null;
+        }
+
+        const pill = document.createElement('button');
+        pill.type = 'button';
+        pill.className = 'event-summary-new-exit-pill';
+        pill.textContent = `🗺️ ${getNewExitPillLabel(normalized)}`;
+        pill.title = 'Open this exit on the map';
+        pill.setAttribute('aria-label', `Open ${getNewExitPillLabel(normalized)} on the map`);
+        try {
+            pill.dataset.newExitSummaryPayload = JSON.stringify(normalized);
+        } catch (_) {
+            // The click listener closes over normalized metadata, so dataset serialization is only for server-rendered parity.
+        }
+        pill.addEventListener('click', event => {
+            event.preventDefault();
+            event.stopPropagation();
+            dispatchNewExitSummarySelected(pill, normalized);
+        });
+        return pill;
+    }
+
+    appendEventSummaryItemContent(listItem, item) {
+        if (!listItem || !item || !item.text) {
+            return;
+        }
+
+        const textSpan = document.createElement('span');
+        textSpan.className = 'event-summary-text';
+        this.setMessageContent(textSpan, item.text, { allowMarkdown: true });
+        listItem.appendChild(textSpan);
+
+        const pill = this.createNewExitSummaryPill(item.metadata?.newExitDiscovered || null);
+        if (pill) {
+            listItem.appendChild(document.createTextNode(' '));
+            listItem.appendChild(pill);
+        }
+    }
+
     createEventSummaryElement(entry) {
         const container = document.createElement('div');
         container.className = 'message event-summary-batch';
@@ -2377,10 +2719,7 @@ class AIRPGChat {
                 iconSpan.textContent = item.icon || '•';
                 listItem.appendChild(iconSpan);
                 listItem.appendChild(document.createTextNode(' '));
-                const textSpan = document.createElement('span');
-                textSpan.className = 'event-summary-text';
-                this.setMessageContent(textSpan, item.text, { allowMarkdown: true });
-                listItem.appendChild(textSpan);
+                this.appendEventSummaryItemContent(listItem, item);
                 list.appendChild(listItem);
             });
             listWrapper.appendChild(list);
@@ -4569,6 +4908,23 @@ class AIRPGChat {
     bindEvents() {
         this.sendButton.addEventListener('click', () => this.sendMessage());
 
+        document.addEventListener('click', (event) => {
+            const trigger = event.target?.closest?.('.event-summary-new-exit-pill[data-new-exit-summary-payload]');
+            if (!trigger) {
+                return;
+            }
+            event.preventDefault();
+            event.stopPropagation();
+            let metadata = null;
+            try {
+                metadata = JSON.parse(trigger.dataset.newExitSummaryPayload || 'null');
+            } catch (error) {
+                console.warn('Failed to parse new exit summary map target:', error);
+                return;
+            }
+            dispatchNewExitSummarySelected(trigger, metadata);
+        });
+
         if (this.prefixHelpLink) {
             this.prefixHelpLink.addEventListener('click', (event) => {
                 event.preventDefault();
@@ -4947,7 +5303,7 @@ class AIRPGChat {
             return;
         }
 
-        this.renderStandaloneEventSummary(item?.icon || icon, resolvedText);
+        this.renderStandaloneEventSummary(item?.icon || icon, resolvedText, item);
     }
 
     addStatusSummary(icon, summaryText, category = 'status', metadata = {}) {
@@ -5702,9 +6058,26 @@ class AIRPGChat {
                 handleMoveLocation(normalized.map(value => value.trim()));
             },
             new_exit_discovered: (entries) => {
+                const currentLocationSummaryContext = getCurrentNewExitSummaryContext();
                 entries.forEach((description) => {
-                    const detail = safeItem(description, 'a new path');
-                    this.addEventSummary('🚪', `New exit discovered: ${detail}.`, 'travel');
+                    const detail = formatNewExitDiscoveredSummaryDetail(
+                        description,
+                        currentLocationSummaryContext
+                    );
+                    const newExitMetadata = buildNewExitDiscoveredSummaryMetadata(
+                        description,
+                        detail
+                    );
+                    this.addEventSummary({
+                        icon: '🚪',
+                        text: `New exit discovered: ${detail}.`,
+                        category: 'travel',
+                        severity: 'important',
+                        sourceType: 'new_exit_discovered',
+                        metadata: newExitMetadata
+                            ? { newExitDiscovered: newExitMetadata }
+                            : null
+                    });
                     console.log("[Debug] New exit discovered event:", detail)
                 });
             },
@@ -5871,7 +6244,7 @@ class AIRPGChat {
         }
     }
 
-    renderStandaloneEventSummary(icon, summaryText) {
+    renderStandaloneEventSummary(icon, summaryText, item = null) {
         const messageDiv = document.createElement('div');
         messageDiv.className = 'message event-summary';
 
@@ -5880,7 +6253,21 @@ class AIRPGChat {
         senderDiv.textContent = `${icon || '📣'} Event`;
 
         const contentDiv = document.createElement('div');
-        this.setMessageContent(contentDiv, summaryText, { allowMarkdown: true });
+        if (item && typeof item === 'object' && item.metadata?.newExitDiscovered) {
+            const list = document.createElement('ul');
+            list.className = 'event-summary-list';
+            const li = document.createElement('li');
+            const iconSpan = document.createElement('span');
+            iconSpan.className = 'event-summary-icon';
+            iconSpan.textContent = item.icon || icon || '•';
+            li.appendChild(iconSpan);
+            li.appendChild(document.createTextNode(' '));
+            this.appendEventSummaryItemContent(li, item);
+            list.appendChild(li);
+            contentDiv.appendChild(list);
+        } else {
+            this.setMessageContent(contentDiv, summaryText, { allowMarkdown: true });
+        }
 
         const timestampDiv = document.createElement('div');
         timestampDiv.className = 'message-timestamp';
@@ -6093,10 +6480,7 @@ class AIRPGChat {
                 iconSpan.textContent = item.icon || '•';
                 li.appendChild(iconSpan);
                 li.appendChild(document.createTextNode(' '));
-                const textSpan = document.createElement('span');
-                textSpan.className = 'event-summary-text';
-                this.setMessageContent(textSpan, item.text, { allowMarkdown: true });
-                li.appendChild(textSpan);
+                this.appendEventSummaryItemContent(li, item);
                 list.appendChild(li);
             });
 
@@ -7945,11 +8329,48 @@ class AIRPGChat {
                 || 'a new exit';
             console.log('Discovered new exit:');
             console.log(exitName);
-            const summary = payload.created?.type === 'region'
-                ? `New region pathway discovered: ${exitName}`
-                : `New exit discovered: ${exitName}`;
-            if (!this.pushEventBundleItem('🚪', summary, 'travel')) {
-                this.addMessage('ai', `🚪 ${summary}`, false);
+            const detail = formatNewExitDiscoveredSummaryDetail({
+                kind: payload.created?.type || 'location',
+                name: exitName,
+                destinationId: payload.created?.destinationId || payload.created?.stubId || '',
+                destinationRegionId: payload.created?.regionId || payload.created?.destinationRegionId || '',
+                exitId: payload.created?.exitId || '',
+                originLocationName: payload.originLocationName || '',
+                originLocationId: payload.originLocationId || '',
+                originRegionName: payload.originRegionName || '',
+                originRegionId: payload.originRegionId || '',
+                destinationRegionName: payload.created?.type === 'region'
+                    ? exitName
+                    : (payload.created?.destinationRegionName || '')
+            }, getCurrentNewExitSummaryContext());
+            const newExitMetadata = buildNewExitDiscoveredSummaryMetadata({
+                kind: payload.created?.type || 'location',
+                name: exitName,
+                destinationId: payload.created?.destinationId || payload.created?.stubId || '',
+                destinationRegionId: payload.created?.regionId || payload.created?.destinationRegionId || '',
+                exitId: payload.created?.exitId || '',
+                originLocationName: payload.originLocationName || '',
+                originLocationId: payload.originLocationId || '',
+                originRegionName: payload.originRegionName || '',
+                originRegionId: payload.originRegionId || '',
+                destinationRegionName: payload.created?.type === 'region'
+                    ? exitName
+                    : (payload.created?.destinationRegionName || '')
+            }, detail);
+            const summary = `New exit discovered: ${detail}`;
+            const metadata = newExitMetadata
+                ? { newExitDiscovered: newExitMetadata }
+                : {};
+            const item = {
+                icon: '🚪',
+                text: summary,
+                category: 'travel',
+                severity: 'important',
+                sourceType: 'new_exit_discovered',
+                metadata
+            };
+            if (!this.pushEventBundleItem(item)) {
+                this.addEventSummary(item);
             }
         }
     }

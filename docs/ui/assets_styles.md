@@ -61,6 +61,9 @@ Loaded on the chat page:
 - Markdown code fences / preformatted blocks in chat messages (`.message .message-content pre`)
   use `white-space: pre-wrap`, `overflow-wrap: anywhere`, and `word-break: break-word` so
   long lines wrap inside the message column instead of forcing horizontal overflow.
+- New-exit map pills use `.turn-diff-drawer__new-exit-pill` inside the `What changed` drawer and
+  `.event-summary-new-exit-pill` in standalone/initial event-summary rows. Both share the compact
+  rounded cyan pill treatment and keyboard-visible focus ring.
 - Item tooltip styling includes stacked tooltip cards (`.tooltip-thing-stack*`) so hovering an
   equippable item can show currently equipped compatible-slot items beneath the primary card.
 - The shared image lightbox now has an optional two-pane thing-view mode driven by

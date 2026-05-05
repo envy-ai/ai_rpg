@@ -1532,7 +1532,7 @@ class LLMClient {
             const safeLabel = metadataLabel
                 ? metadataLabel.replace(/[^a-z0-9_-]/gi, '_')
                 : 'unknown';
-            const filePath = path.join(logDir, `ERROR_${prefix}_${Date.now()}.log`);
+            const filePath = path.join(logDir, `ERROR_${prefix}_${safeLabel}_${Date.now()}.log`);
 
             let dataToWrite = payload;
             if (serializeJson) {
@@ -2870,6 +2870,7 @@ class LLMClient {
         timeoutMs,
         timeoutScale = 1,
         metadataLabel = '',
+        errorLogLabel = '',
         metadata,
         retryAttempts = null,
         headers = {},
@@ -2915,6 +2916,26 @@ class LLMClient {
         const errorLog = (...args) => {
             console.error(...args);
         };
+        const resolvedErrorLogLabel = (() => {
+            if (typeof errorLogLabel === 'string' && errorLogLabel.trim()) {
+                return errorLogLabel.trim();
+            }
+            if (metadata && typeof metadata === 'object') {
+                const promptName = typeof metadata.promptName === 'string'
+                    ? metadata.promptName.trim()
+                    : '';
+                if (promptName) {
+                    return promptName;
+                }
+                const promptType = typeof metadata.promptType === 'string'
+                    ? metadata.promptType.trim()
+                    : '';
+                if (promptType) {
+                    return promptType;
+                }
+            }
+            return metadataLabel;
+        })();
         const debugLog = (...args) => {
             if (!isSilent) {
                 outputConsole.debug(...args);
@@ -3685,7 +3706,7 @@ class LLMClient {
                             const errorMsg = `Required regex ${resolvedRequiredRegex} did not match response (attempt ${attempt + 1}).`;
                             const filePath = LLMClient.writeLogFile({
                                 prefix: 'missingRegex',
-                                metadataLabel,
+                                metadataLabel: resolvedErrorLogLabel,
                                 error: errorMsg,
                                 payload: responseContent || '',
                                 onFailureMessage: 'Failed to write missing regex log file'
@@ -3758,7 +3779,7 @@ class LLMClient {
                             errorLog(`XML validation failed (attempt ${attempt + 1}):`, xmlError);
                             const filePath = LLMClient.writeLogFile({
                                 prefix: 'invalidXML',
-                                metadataLabel,
+                                metadataLabel: resolvedErrorLogLabel,
                                 error: xmlError,
                                 payload: `${LLMClient.formatMessagesForErrorLog(payload?.messages || requestMessages || messages)}\n\nResponse:\n\n${responseContent || ''}`,
                                 onFailureMessage: 'Failed to write invalid XML log file'
@@ -3776,7 +3797,7 @@ class LLMClient {
                                 const errorMsg = `Required XML tag <${tag}> is missing in the response (attempt ${attempt + 1}).`;
                                 const filePath = LLMClient.writeLogFile({
                                     prefix: 'missingTag',
-                                    metadataLabel,
+                                    metadataLabel: resolvedErrorLogLabel,
                                     error: errorMsg,
                                     payload: responseContent || '',
                                     onFailureMessage: 'Failed to write missing tag log file'
@@ -3850,7 +3871,7 @@ class LLMClient {
                         const promptAppend = LLMClient.formatMessagesForErrorLog(payload?.messages || requestMessages || messages);
                         const filePath = LLMClient.writeLogFile({
                             prefix: 'chatCompletionError',
-                            metadataLabel,
+                            metadataLabel: resolvedErrorLogLabel,
                             error: error,
                             payload: responseContent || '',
                             append: promptAppend,

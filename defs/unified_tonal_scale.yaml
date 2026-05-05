@@ -1,0 +1,84 @@
+axes:
+  idealism:
+    title: Idealism
+    abbreviation: I
+    framing: How the universe treats hope
+    levels:
+      - level: 1
+        name: Grimdark
+        description: Hope is a trap. Good people lose. Virtue is punished or mocked.
+      - level: 2
+        name: Cynical
+        description: Systems are corrupt. Small victories possible but costly. Trust is weakness.
+      - level: 3
+        name: Mixed
+        description: Good struggles. Sometimes wins, sometimes pays. World is compromised but not hopeless.
+      - level: 4
+        name: Hopeful
+        description: Virtue usually rewarded. Darkness is beatable. Effort and courage matter.
+      - level: 5
+        name: Idealistic
+        description: Good triumphs. People are redeemable. The universe validates hope.
+
+  grit:
+    title: Grit
+    abbreviation: G
+    framing: How the world looks and feels
+    levels:
+      - level: 1
+        name: Pristine
+        description: Clean, bright, stylized. Adventure-ready. Consequences are aesthetic.
+      - level: 2
+        name: Polished
+        description: Mostly appealing with realistic touches. Wear shows but doesn't overwhelm.
+      - level: 3
+        name: Lived-in
+        description: Realistic decay and consequence. Bodies leave stains. History accumulates.
+      - level: 4
+        name: Grimy
+        description: Oppressive atmosphere. Decay visible everywhere. Survival is messy.
+      - level: 5
+        name: Brutal
+        description: Everything broken, dirty, dying. The world itself is hostile.
+
+  seriousness:
+    title: Seriousness
+    abbreviation: S
+    framing: How heavily content is treated
+    levels:
+      - level: 1
+        name: Farce
+        description: Nothing is serious, including stakes. Rule of Funny overrides all.
+      - level: 2
+        name: Comic Relief
+        description: Stakes are real but humor is very frequent. Comedy serves the story, doesn't undermine it.
+      - level: 3
+        name: Balanced
+        description: Equal weight to light and heavy moments. Tonal shifts are deliberate.
+      - level: 4
+        name: Sober
+        description: Humor is rare and pointed. Most content carries weight.
+      - level: 5
+        name: Grave
+        description: Everything is serious. No relief. Consequences are absolute.
+
+  focus:
+    title: Focus Scale
+    abbreviation: F
+    framing: Adventure vs. Romance
+    levels:
+      - level: 1
+        name: Adventure-Dominant
+        description: Plot drives everything. Romance is absent or incidental. Action, exploration, and external conflict are primary.
+      - level: 2
+        name: Adventure-Heavy
+        description: Romance exists as subplot or character flavor. The adventure is the main story; relationships develop alongside it. Love interests are not needy. Keep focus away from relationship dynamics. MC not idealized, and many other people around are as decent as MC. Characters should be designed around being interesting, independent people, not romantic interests for the MC.
+      - level: 3
+        name: Balanced
+        description: Adventure and romance receive roughly equal weight. Either can drive a scene. Combat and intimacy both matter. There are many other people as decent as MC and romantic interests have had healthy relationships in the past. Potential romantic interests are not waiting to be swept off their feet.
+      - level: 4
+        name: Romance-Heavy
+        description: Adventure serves as backdrop for relationship development. The love story is the story. People as good as MC exist, but are fairly rare. Potential romantic interests are lonely, waiting to be swept off their feet.
+      - level: 5
+        name: Romance-Dominant
+        description: Pure relationship focus. Adventure is minimal window dressing. Lots of focus on transactionality, the main character being unique in that they stay, etc. Love interests are lonely before meeting MC. MC is idealized and a uniquely decent person.

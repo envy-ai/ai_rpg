@@ -57,6 +57,71 @@ class Utils {
     return this.innerXML(node).trim();
   }
 
+  static extractFinalXmlRootBlock(input, rootTags) {
+    if (input === null || input === undefined) {
+      throw new TypeError('Utils.extractFinalXmlRootBlock requires a string input.');
+    }
+    const text = typeof input === 'string' ? input : String(input);
+    const tags = Array.isArray(rootTags) ? rootTags : [rootTags];
+    const normalizedTags = tags
+      .map((tag) => (typeof tag === 'string' ? tag.trim() : ''))
+      .filter(Boolean);
+    if (!normalizedTags.length) {
+      throw new TypeError('Utils.extractFinalXmlRootBlock requires at least one root tag.');
+    }
+
+    const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    let bestMatch = null;
+
+    for (const tag of normalizedTags) {
+      if (!/^[A-Za-z_][A-Za-z0-9_.:-]*$/.test(tag)) {
+        throw new Error(`Invalid XML root tag name: ${tag}`);
+      }
+      const escapedTag = escapeRegExp(tag);
+      const closingPattern = new RegExp(`</\\s*${escapedTag}\\s*>`, 'gi');
+      let closingMatch = null;
+      let match = null;
+      while ((match = closingPattern.exec(text)) !== null) {
+        closingMatch = {
+          index: match.index,
+          end: match.index + match[0].length,
+        };
+      }
+      if (!closingMatch) {
+        continue;
+      }
+
+      const openingPattern = new RegExp(`<\\s*${escapedTag}(?=[\\s>/])[^>]*>`, 'gi');
+      let openingMatch = null;
+      while ((match = openingPattern.exec(text)) !== null) {
+        if (match.index >= closingMatch.index) {
+          break;
+        }
+        if (/\/\s*>$/.test(match[0])) {
+          continue;
+        }
+        openingMatch = {
+          index: match.index,
+          end: match.index + match[0].length,
+        };
+      }
+      if (!openingMatch) {
+        continue;
+      }
+
+      if (!bestMatch || closingMatch.end > bestMatch.closingEnd) {
+        bestMatch = {
+          openingStart: openingMatch.index,
+          closingEnd: closingMatch.end,
+        };
+      }
+    }
+
+    return bestMatch
+      ? text.slice(bestMatch.openingStart, bestMatch.closingEnd)
+      : '';
+  }
+
   static roundAwayFromZero(value) {
     if (!Number.isFinite(value) || value === 0) {
       return 0;
@@ -1815,6 +1880,36 @@ class Utils {
     };
 
     const safeNumber = (value) => (Number.isFinite(value) ? value : null);
+    const normalizeIdList = (value) => {
+      if (!Array.isArray(value)) {
+        return [];
+      }
+      const seen = new Set();
+      const ids = [];
+      for (const rawId of value) {
+        const id = normalize(rawId);
+        if (!id || seen.has(id)) {
+          continue;
+        }
+        seen.add(id);
+        ids.push(id);
+      }
+      return ids;
+    };
+    const mergeIdLists = (...lists) => {
+      const seen = new Set();
+      const merged = [];
+      for (const list of lists) {
+        for (const id of normalizeIdList(list)) {
+          if (seen.has(id)) {
+            continue;
+          }
+          seen.add(id);
+          merged.push(id);
+        }
+      }
+      return merged;
+    };
 
     const prefer = (primary, fallback) => {
       if (primary === null || primary === undefined) {
@@ -1849,6 +1944,7 @@ class Utils {
       merged.sourceRegionId = normalizeOptional(prefer(existing.sourceRegionId, draft.sourceRegionId));
       merged.exitLocationId = normalizeOptional(prefer(existing.exitLocationId, draft.exitLocationId));
       merged.entranceStubId = normalizeOptional(prefer(existing.entranceStubId, draft.entranceStubId));
+      merged.locationIds = mergeIdLists(existing.locationIds, draft.locationIds);
       merged.originDirection = normalizeOptional(prefer(existing.originDirection, draft.originDirection));
       merged.imageDataUrl = normalizeOptional(prefer(existing.imageDataUrl, draft.imageDataUrl));
       merged.createdAt = prefer(existing.createdAt, draft.createdAt) || new Date().toISOString();
@@ -1900,8 +1996,36 @@ class Utils {
           sourceRegionId: normalizeOptional(metadata.originRegionId),
           exitLocationId: normalizeOptional(metadata.originLocationId),
           entranceStubId: normalizeOptional(location.id),
+          locationIds: normalizeIdList(metadata.locationIds),
           originDirection: normalizeOptional(metadata.originDirection),
           imageDataUrl: normalizeOptional(metadata.imageDataUrl)
+        });
+      }
+
+      for (const location of gameLocations.values()) {
+        if (!location || !location.isStub) {
+          continue;
+        }
+        const metadata = location.stubMetadata || {};
+        if (metadata.isRegionEntryStub) {
+          continue;
+        }
+        const regionId = normalizeOptional(metadata.regionId)
+          || normalizeOptional(metadata.targetRegionId)
+          || normalizeOptional(location.regionId);
+        if (!regionId || (regions instanceof Map && regions.has(regionId))) {
+          continue;
+        }
+        const pending = pendingRegionStubs.get(regionId);
+        if (!pending && !metadata.regionName) {
+          continue;
+        }
+        ensurePendingEntry(regionId, {
+          id: regionId,
+          name: normalize(metadata.regionName) || normalize(pending?.name) || regionId,
+          originalName: normalize(metadata.regionName) || normalize(pending?.originalName) || regionId,
+          description: normalize(pending?.description) || normalize(metadata.regionDescription),
+          locationIds: [location.id]
         });
       }
     }
@@ -1944,6 +2068,7 @@ class Utils {
           sourceRegionId: normalizeOptional(metadata.originRegionId),
           exitLocationId: normalizeOptional(metadata.originLocationId),
           entranceStubId: normalizeOptional(destinationLocation?.id),
+          locationIds: normalizeIdList(metadata.locationIds),
           originDirection: normalizeOptional(metadata.originDirection),
           imageDataUrl: normalizeOptional(metadata.imageDataUrl)
         });
@@ -1976,6 +2101,36 @@ class Utils {
       return normalized || null;
     };
     const safeNumber = (value) => (Number.isFinite(value) ? value : null);
+    const normalizeIdList = (value) => {
+      if (!Array.isArray(value)) {
+        return [];
+      }
+      const seen = new Set();
+      const ids = [];
+      for (const rawId of value) {
+        const id = normalizeOptional(rawId);
+        if (!id || seen.has(id)) {
+          continue;
+        }
+        seen.add(id);
+        ids.push(id);
+      }
+      return ids;
+    };
+    const mergeIdLists = (...lists) => {
+      const seen = new Set();
+      const merged = [];
+      for (const list of lists) {
+        for (const id of normalizeIdList(list)) {
+          if (seen.has(id)) {
+            continue;
+          }
+          seen.add(id);
+          merged.push(id);
+        }
+      }
+      return merged;
+    };
 
     const resolveStubNameKey = (entry) => {
       const raw = entry?.name || entry?.originalName || entry?.targetRegionName || entry?.id || '';
@@ -2037,6 +2192,7 @@ class Utils {
       merged.sourceRegionId = normalizeOptional(merged.sourceRegionId || incoming.sourceRegionId);
       merged.exitLocationId = normalizeOptional(merged.exitLocationId || incoming.exitLocationId);
       merged.entranceStubId = normalizeOptional(merged.entranceStubId || incoming.entranceStubId);
+      merged.locationIds = mergeIdLists(merged.locationIds, incoming.locationIds);
       merged.originDirection = normalizeOptional(merged.originDirection || incoming.originDirection);
       merged.imageDataUrl = normalizeOptional(merged.imageDataUrl || incoming.imageDataUrl);
 
@@ -2074,6 +2230,34 @@ class Utils {
       if (canonicalRelativeLevel !== null) {
         metadata.targetRegionRelativeLevel = canonicalRelativeLevel;
         metadata.relativeLevel = canonicalRelativeLevel;
+      }
+      location.stubMetadata = metadata;
+    };
+
+    const updatePendingMemberLocation = (location, oldRegionId, canonicalId, canonicalName) => {
+      if (!location || !canonicalId) {
+        return;
+      }
+      const normalizedOldRegionId = normalizeOptional(oldRegionId);
+      const metadata = location.stubMetadata || {};
+      const matchesOldRegion = !normalizedOldRegionId
+        || normalizeOptional(location.regionId) === normalizedOldRegionId
+        || normalizeOptional(metadata.regionId) === normalizedOldRegionId
+        || normalizeOptional(metadata.targetRegionId) === normalizedOldRegionId;
+      if (!matchesOldRegion) {
+        return;
+      }
+      try {
+        location.regionId = canonicalId;
+      } catch (_) {
+        // Keep metadata in sync even if this object does not expose a setter.
+      }
+      metadata.regionId = canonicalId;
+      if (metadata.targetRegionId && normalizeOptional(metadata.targetRegionId) === normalizedOldRegionId) {
+        metadata.targetRegionId = canonicalId;
+      }
+      if (canonicalName && !metadata.regionName) {
+        metadata.regionName = canonicalName;
       }
       location.stubMetadata = metadata;
     };
@@ -2162,10 +2346,26 @@ class Utils {
           }
         }
 
+        for (const locationId of normalizeIdList(entry.locationIds)) {
+          const location = gameLocations.get(locationId) || null;
+          if (location) {
+            updatePendingMemberLocation(
+              location,
+              entry.id,
+              canonical.id,
+              mergedCanonical.name
+            );
+          }
+        }
+
         pendingRegionStubs.delete(entry.id);
       }
 
       mergedCanonical.entranceStubId = canonicalEntranceId;
+      mergedCanonical.locationIds = mergeIdLists(
+        mergedCanonical.locationIds,
+        entries.flatMap(entry => normalizeIdList(entry.locationIds))
+      );
       pendingRegionStubs.set(canonical.id, mergedCanonical);
 
       const canonicalLocation = gameLocations.get(canonicalEntranceId);
@@ -2177,6 +2377,18 @@ class Utils {
           mergedCanonical.description,
           safeNumber(mergedCanonical.relativeLevel)
         );
+      }
+
+      for (const locationId of normalizeIdList(mergedCanonical.locationIds)) {
+        const location = gameLocations.get(locationId) || null;
+        if (location) {
+          updatePendingMemberLocation(
+            location,
+            null,
+            canonical.id,
+            mergedCanonical.name
+          );
+        }
       }
 
       const canonicalName = normalizeOptional(mergedCanonical.name)

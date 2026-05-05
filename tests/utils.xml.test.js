@@ -44,3 +44,29 @@ test('extractXmlNodeContent preserves inner XML for non-CDATA prompt nodes', () 
         /<gameState><name>Test<\/name><\/gameState>/
     );
 });
+
+test('extractFinalXmlRootBlock returns the last complete requested root block', () => {
+    const response = [
+        'Draft:',
+        '<finalProse>Draft text.</finalProse>',
+        'Final:',
+        '<travelProse><originProse>Origin.</originProse></travelProse>'
+    ].join('\n');
+
+    assert.equal(
+        Utils.extractFinalXmlRootBlock(response, ['finalProse', 'travelProse']),
+        '<travelProse><originProse>Origin.</originProse></travelProse>'
+    );
+});
+
+test('extractFinalXmlRootBlock supports root attributes', () => {
+    const response = [
+        '<finalProse>Draft text.</finalProse>',
+        '<finalProse mode="final">Final text.</finalProse>'
+    ].join('\n');
+
+    assert.equal(
+        Utils.extractFinalXmlRootBlock(response, 'finalProse'),
+        '<finalProse mode="final">Final text.</finalProse>'
+    );
+});

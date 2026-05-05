@@ -31,6 +31,7 @@
       {% endfor %}
     </goals>
     <notes>{{ currentNpc.personality.notes | default('', true) }}</notes>
+    <aiNotes>{{ currentNpc.aiNotes | default(currentNpc.personality.aiNotes, true) | default('', true) }}</aiNotes>
   </personality>
   <health>{{ currentNpc.health | default('unknown') }}</health>
   <maxHealth>{{ currentNpc.maxHealth | default('unknown') }}</maxHealth>

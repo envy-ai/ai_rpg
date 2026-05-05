@@ -400,6 +400,9 @@ use_legacy_prompt_checks: false
 # When true, prose-prompt tool calls are written to a visible prompt-excluded debug chat entry as they run.
 debug_tool_calls: false
 
+# When true, player-action <hidden> notes are included in the client-visible chat log.
+show_hidden_notes: false
+
 # Number of eligible player-action turns between automatic plot-expander prompt runs.
 # Set to 0 to disable automatic plot-expander runs.
 plot_expander_prompt_frequency: 10

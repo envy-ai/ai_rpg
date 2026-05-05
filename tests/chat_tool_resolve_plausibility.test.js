@@ -3,6 +3,8 @@ const assert = require('node:assert/strict');
 
 const { CHAT_TOOL_DEFINITIONS, createChatToolRuntime } = require('../chat_tool_calls.js');
 
+const CACHED_CHECK_TOOL_CALL_NOTE = 'You already made this tool call. Do not re-run tool calls for the same checks that you made in earlier drafts.';
+
 function findToolDefinition(name) {
     return CHAT_TOOL_DEFINITIONS.find(entry => entry?.function?.name === name)?.function || null;
 }
@@ -361,7 +363,10 @@ test('resolveSkillCheck reuses cached results for repeated same-round checks', a
     assert.equal(result.toolInvocations[0].metadata.cacheKey, result.toolInvocations[1].metadata.cacheKey);
     assert.deepEqual(result.toolInvocations[1].metadata.actionResolution, actionResolution);
     const toolMessages = capturedMessagesByRound[1].filter(message => message.role === 'tool');
-    assert.deepEqual(toolMessages.map(message => message.content), ['success', 'success']);
+    assert.deepEqual(toolMessages.map(message => message.content), [
+        'success',
+        `success\n\n${CACHED_CHECK_TOOL_CALL_NOTE}`
+    ]);
 });
 
 test('resolveSkillCheck cache separates different attributes', async () => {

@@ -44,6 +44,7 @@ Notes:
   - Harvest/salvage lines use `from <source>`.
   - Craft/process lines use `using <inputs>`.
 - Prose-mode craft/process/salvage/harvest result summaries now append the same `⏳ <natural duration> passed.` line used by normal turn event-summary bundles, sourced from the action's applied `timeTakenMinutes`.
+- Craft/process/salvage/harvest success-degree outcomes are recorded as visible prompt-excluded `check-results` chat entries using the same collapsed and expanded rendering as skill checks. This is synthesized from the action's `ActionResolution`, so it also appears for no-prose requests even though prose and event-summary entries are skipped.
 - Craft/process/salvage/harvest requests attempt the standard autosave before the action starts, then attempt another autosave after a successful action has applied inventory/scenery changes, time advancement, harvest history, vehicle arrivals, and NPC sighting updates.
 - Crafting/harvest prompts omit prior craft/harvest/process entries from base-context history to reduce duplicate actions.
 - Harvest plausibility prompts now receive `lastHarvestTime` as human-readable `... ago` text plus `harvestTarget.pastHarvests` from the source node's persisted harvest history.

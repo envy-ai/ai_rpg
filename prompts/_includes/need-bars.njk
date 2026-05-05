@@ -56,10 +56,10 @@ Characters at location:
 
 Respond in this format:
 Planning: 
-<!-- briefly list each character (without HTML/XML tags) and how each of their need bars are affected (if at all) and why. -->
+<!-- briefly list each character (without HTML/XML tags) and how each of their need bars are affected (if at all) and why. Need bars are affected by events in the textToCheck block, even if they're continuing an action they started earlier and their need was affected then as well. For example, if a character's hunger need was affected by eating during the previous turn and they continue to eat, the bar will continue to be affected. -->
 
 <characters>
-  <!-- for each character that has an event affecting their need bars, include a block like this -->
+  <!-- for each character that has an event affecting their need bars, include a block like this --> 
   <character>
     <name><!-- exact name of the character --></name>
     <affectedNeedBars>

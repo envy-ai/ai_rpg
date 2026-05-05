@@ -9,6 +9,7 @@ const viewSource = fs.readFileSync(path.join(rootDir, 'views', 'index.njk'), 'ut
 const apiSource = fs.readFileSync(path.join(rootDir, 'api.js'), 'utf8');
 const playerSource = fs.readFileSync(path.join(rootDir, 'Player.js'), 'utf8');
 const chatSource = fs.readFileSync(path.join(rootDir, 'public', 'js', 'chat.js'), 'utf8');
+const mapSource = fs.readFileSync(path.join(rootDir, 'public', 'js', 'map.js'), 'utf8');
 const scssSource = fs.readFileSync(path.join(rootDir, 'public', 'css', 'main.scss'), 'utf8');
 const commonDocSource = fs.readFileSync(path.join(rootDir, 'docs', 'api', 'common.md'), 'utf8');
 const chatDocSource = fs.readFileSync(path.join(rootDir, 'docs', 'ui', 'chat_interface.md'), 'utf8');
@@ -213,6 +214,8 @@ test('turn state diff drawer styles are scoped and keyboard-visible', () => {
     assert.match(scssSource, /\.turn-diff-drawer__group/);
     assert.match(scssSource, /\.turn-diff-drawer__entity-chip/);
     assert.match(scssSource, /\.turn-diff-drawer__entity-chip--clickable/);
+    assert.match(scssSource, /\.turn-diff-drawer__new-exit-pill/);
+    assert.match(scssSource, /\.event-summary-new-exit-pill/);
     assert.match(scssSource, /\.turn-diff-drawer__toggle:focus-visible/);
     assert.match(scssSource, /\.turn-diff-drawer__entity-chip--clickable:focus-visible/);
     assert.match(scssSource, /content:\s*"▶"/);
@@ -678,6 +681,58 @@ test('drawer renders exact entity chips and dispatches id-backed selection event
     assert.equal(selectedDetail, null);
 });
 
+test('drawer renders new exit map pill and dispatches navigation metadata', () => {
+    const drawer = loadDrawerApi({
+        document: createFakeDocument(),
+        CustomEvent: FakeCustomEvent
+    });
+
+    const element = drawer.createDrawer([{
+        type: 'event-summary',
+        summaryTitle: '📋 Events',
+        summaryItems: [{
+            icon: '🚪',
+            text: 'New exit discovered: Old Gatehouse -> Gorge Trailhead (Copperwheel Gorge).',
+            category: 'travel',
+            severity: 'important',
+            sourceType: 'new_exit_discovered',
+            metadata: {
+                newExitDiscovered: {
+                    label: 'Old Gatehouse -> Gorge Trailhead (Copperwheel Gorge)',
+                    destinationKind: 'region',
+                    originLocationId: 'loc_gatehouse',
+                    originRegionId: 'region_castle',
+                    destinationId: 'loc_gorge_stub',
+                    destinationLocationName: 'Gorge Trailhead',
+                    destinationRegionId: 'region_gorge',
+                    destinationRegionName: 'Copperwheel Gorge',
+                    exitId: 'exit_gorge'
+                }
+            }
+        }]
+    }], { open: true });
+
+    const pills = collectByClass(element, 'turn-diff-drawer__new-exit-pill');
+    assert.equal(pills.length, 1);
+    assert.equal(pills[0].tagName, 'BUTTON');
+    assert.equal(pills[0].textContent, '🗺️ Gorge Trailhead');
+
+    let selectedDetail = null;
+    element.addEventListener('airpg:new-exit-summary-selected', event => {
+        selectedDetail = event.detail;
+    });
+
+    pills[0].dispatchEvent({
+        type: 'click',
+        bubbles: true,
+        cancelable: true
+    });
+
+    assert.equal(selectedDetail.originRegionId, 'region_castle');
+    assert.equal(selectedDetail.destinationId, 'loc_gorge_stub');
+    assert.equal(selectedDetail.exitId, 'exit_gorge');
+});
+
 test('phase 3 drawer docs describe entity chips and severity ordering', () => {
     assert.match(chatDocSource, /entity chips/i);
     assert.match(chatDocSource, /id-backed/i);
@@ -695,6 +750,18 @@ test('chat page routes exact turn diff entity selection events to existing UI ta
     assert.match(viewSource, /activateTurnDiffEntityPanel\('quests'\)/);
     assert.match(viewSource, /activateTurnDiffEntityPanel\('factions'\)/);
     assert.match(scssSource, /\.turn-diff-drawer__entity-target-highlight/);
+});
+
+test('new exit map pills route through focused region map loading', () => {
+    assert.match(chatSource, /event-summary-new-exit-pill/);
+    assert.match(chatSource, /airpg:new-exit-summary-selected/);
+    assert.match(viewSource, /openNewExitSummaryOnMap/);
+    assert.match(viewSource, /__AIRPG_NEXT_REGION_MAP_OPTIONS/);
+    assert.match(viewSource, /window\.activateTab\('map'\)/);
+    assert.match(mapSource, /function loadRegionMap\(regionId = null,\s*options = \{\}\)/);
+    assert.match(mapSource, /function focusRegionMapNode\(options = \{\}\)/);
+    assert.match(mapSource, /region-exit-\$\{normalized\.focusExitId\}/);
+    assert.match(mapSource, /selector:\s*'node\.map-focus'/);
 });
 
 test('common API docs describe phase 2 summary item metadata', () => {

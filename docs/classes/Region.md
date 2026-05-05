@@ -57,6 +57,7 @@ Represents a region containing multiple locations, with metadata like average le
 ## Notes
 - Region stub expansion expects a `<shortDescription>` in the stub response and persists it on the generated `Region`.
 - Region entry stubs with an assigned controlling faction pass that faction into stub-generation prompts as authoritative context; the region-level `<controllingFaction>` field is omitted from stub-mode output expectations so expansion preserves the stub faction.
+- Pending region-entry stubs can carry `locationIds` for specific location stubs discovered before the region is expanded. Expansion seeds the generated region with those locations, reuses them when a generated blueprint matches by normalized name or alias, preserves them if the blueprint omits them, and protects them from rollback if later generated-location instantiation fails.
 - `fromXMLSnippet` accepts both `<region>` and mixed tag variants (name/description/shortDescription).
 - `fromXMLSnippet` now reads location blueprints only from direct `<locations><location>` children, so nested vehicle-destination tags like `<destination><location>...` do not get misparsed as region locations.
 - Region XML location exits now use `<exit><destination>...</destination><travelTime>...</travelTime></exit>` and normalize to blueprint entries shaped like `{ target, travelTimeMinutes }`.

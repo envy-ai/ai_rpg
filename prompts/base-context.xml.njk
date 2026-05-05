@@ -17,6 +17,10 @@ You work in the following genre and tone:
 You are an AI designed to perform various tasks related to managing novel writing and character/world simulation. You will be provided with the current world setting, location description, character information, and items in the scene. Your tasks may include checking for specific events, determining the plausibility of character actions, and generating narrative responses to character actions. Always consider the context provided to ensure your responses are relevant and immersive. When given editing tasks, you focus on things that are actually broken; don't make performative fixes just to seem helpful.
 
 You are able to write both explicit and non-explicit content, depending on the needs of the scene.
+{% if setting.unifiedTonalScalePrompt %}
+{{ setting.unifiedTonalScalePrompt }}
+
+{% endif %}
 {{ config.extra_system_instructions | default('') }}
 
     </systemPrompt>
@@ -146,6 +150,7 @@ The below context is an account of the current game state, including the setting
     <statusEffects>
       {% for effect in currentLocation.statusEffects %}
       <effect>
+        <name>{{ effect.name | default('unknown', true) }}</name>
         <description>{{ effect.description }}</description>
         <duration>{{ effect.duration | default('unknown') }}</duration>
       </effect>
@@ -179,6 +184,7 @@ The below context is an account of the current game state, including the setting
         <statusEffects>
           {% for effect in item.statusEffects %}
           <effect>
+            <name>{{ effect.name | default('unknown', true) }}</name>
             <description>{{ effect.description }}</description>
             <duration>{{ effect.duration | default('unknown') }}</duration>
           </effect>
@@ -190,7 +196,9 @@ The below context is an account of the current game state, including the setting
       {% endfor %}
     {% endif %}</items>
     <npcs>
+      {% set listedPartyMemberIds = partyMemberIds | default([], true) %}
       {% for npc in npcs %}
+      {% if not npc.id or not (npc.id in listedPartyMemberIds) %}
       <npc>
         <id>{{ npc.id | default('unknown', true) }}</id>
         <name>{{ npc.name }}</name>
@@ -208,6 +216,7 @@ The below context is an account of the current game state, including the setting
               {% endfor %}
           </goals>
           <notes>{{ npc.personality.notes | default('', true) }}</notes>
+          <aiNotes>{{ npc.aiNotes | default(npc.personality.aiNotes, true) | default('', true) }}</aiNotes>
         </personality>
 {#        <health>{{ npc.health | default('unknown') }}</health>
         <maxHealth>{{ npc.maxHealth | default('unknown') }}</maxHealth> #}
@@ -258,6 +267,7 @@ The below context is an account of the current game state, including the setting
         <statusEffects>
           {% for effect in npc.statusEffects %}
           <effect>
+            <name>{{ effect.name | default('unknown', true) }}</name>
             <description>{{ effect.description }}</description>
             <duration>{{ effect.duration | default('unknown') }}</duration>
           </effect>
@@ -267,6 +277,7 @@ The below context is an account of the current game state, including the setting
 {% for sentence in npc.needs %}        - {{ sentence }}
 {% endfor %}        </needs>
       </npc>
+      {% endif %}
       {% endfor %}
     </npcs>
     <itemsInScene>{% if useShortDescriptions -%}
@@ -287,6 +298,7 @@ The below context is an account of the current game state, including the setting
         <statusEffects>
           {% for effect in item.statusEffects %}
           <effect>
+            <name>{{ effect.name | default('unknown', true) }}</name>
             <description>{{ effect.description }}</description>
             <duration>{{ effect.duration | default('unknown') }}</duration>
           </effect>
@@ -315,6 +327,7 @@ The below context is an account of the current game state, including the setting
         <statusEffects>
           {% for effect in item.statusEffects %}
           <effect>
+            <name>{{ effect.name | default('unknown', true) }}</name>
             <description>{{ effect.description }}</description>
             <duration>{{ effect.duration | default('unknown') }}</duration>
           </effect>
@@ -338,6 +351,7 @@ The below context is an account of the current game state, including the setting
     <statusEffects>
       {% for effect in currentPlayer.statusEffects %}
       <effect>
+        <name>{{ effect.name | default('unknown', true) }}</name>
         <description>{{ effect.description }}</description>
         <duration>{{ effect.duration | default('unknown') }}</duration>
       </effect>
@@ -376,6 +390,7 @@ The below context is an account of the current game state, including the setting
         <statusEffects>
           {% for effect in item.statusEffects %}
           <effect>
+            <name>{{ effect.name | default('unknown', true) }}</name>
             <description>{{ effect.description }}</description>
             <duration>{{ effect.duration | default('unknown') }}</duration>
           </effect>
@@ -425,6 +440,7 @@ The below context is an account of the current game state, including the setting
           {% endfor %}
         </goals>
         <notes>{{ member.personality.notes | default('', true) }}</notes>
+        <aiNotes>{{ member.aiNotes | default(member.personality.aiNotes, true) | default('', true) }}</aiNotes>
       </personality>
 {#      <health>{{ member.health | default('unknown') }}</health>
       <maxHealth>{{ member.maxHealth | default('unknown') }}</maxHealth> #}
@@ -475,6 +491,7 @@ The below context is an account of the current game state, including the setting
       <statusEffects>
         {% for effect in member.statusEffects %}
         <effect>
+          <name>{{ effect.name | default('unknown', true) }}</name>
           <description>{{ effect.description }}</description>
           <duration>{{ effect.duration | default('unknown') }}</duration>
         </effect>
@@ -567,8 +584,9 @@ The below context is an account of the current game state, including the setting
   </vehicle>
   {% endif %}
   <currentCharacterNeeds>
+    {% set listedPartyMemberIds = partyMemberIds | default([], true) %}
     {% for npc in npcs %}
-    {% if npc.needs and npc.needs | length %}
+    {% if (not npc.id or not (npc.id in listedPartyMemberIds)) and npc.needs and npc.needs | length %}
     <character>
       <name>{{ npc.name }}</name>
       <needs>

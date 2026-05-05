@@ -73,11 +73,12 @@ This page maps routes to templates and the client scripts/styles they load.
 - Styles: `public/css/main.css`, `public/css/settings.css`.
 - Script: inline (settings CRUD is embedded in the template).
 - Data injected by `server.js`:
-  - `currentPage` only. Data is loaded via `/api/settings` calls.
+  - `currentPage`, `defaultExistingSkills`, `defaultExistingSkillsError`, `defaultFactionCountFallback`, `unifiedTonalScaleDefinition`, and `unifiedTonalScaleError`. Profile data is loaded via `/api/settings` calls.
 - Notes: the global nav labels this route as `Worlds`, while the page title is `World Profiles`. The underlying API and internal ids still use `settings`.
 - Notes: uses a master-detail layout with a left world-profile library and a right editor panel.
 - Notes: the left panel includes search (`name/theme/genre/tone/difficulty`), sort controls, and selection-scoped actions (`Edit`, `Apply`, `Clone`, `Delete`), instead of per-row action buttons.
-- Notes: editor fields are grouped into tabbed sections (`Basics`, `New Game Defaults`, `Factions`, `Character Options`, `Prompt Guidance`, `Image Prefixes`) and a sticky action bar keeps `Clear`, `Create/Update`, and `Auto-Fill Blank Fields` visible while scrolling.
+- Notes: editor fields are grouped into tabbed sections (`Basics`, `New Game Defaults`, `Tone Scale`, `Factions`, `Character Options`, `Prompt Guidance`, `Image Prefixes`) and a sticky action bar keeps `Clear`, `Create/Update`, and `Auto-Fill Blank Fields` visible while scrolling.
+- Notes: the `Tone Scale` tab renders axes from `defs/unified_tonal_scale.yaml`; if any tonal axis is selected, every axis must have a numeric level, and optional comments are saved in `setting.unifiedTonalScale`.
 - Notes: the `Factions` tab includes:
   - `Number of Factions` input (`defaultFactionCount`) for new-game faction target count.
   - A settings-local faction editor (list/detail, assets/relations/tiers, add/delete/apply).

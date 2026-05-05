@@ -25,6 +25,7 @@ const { CHAT_TOOL_DEFINITIONS, createChatToolRuntime } = require('./chat_tool_ca
 const {
     countSceneSummaryIndexEntries
 } = require('./scene_summary_index.js');
+const { normalizeUnifiedTonalScaleSelections } = require('./UnifiedTonalScale.js');
 const e = require('express');
 const { getLorebookManager } = require('./lorebook.js');
 const console = require('console');
@@ -83,6 +84,217 @@ function isRegularProseChatToolAllowed(functionName) {
         return false;
     }
     return true;
+}
+
+function normalizeNewExitSummaryText(value) {
+    if (value === null || value === undefined) {
+        return '';
+    }
+    return String(value).trim().replace(/\s+/g, ' ');
+}
+
+function normalizeNewExitSummaryComparison(value) {
+    return normalizeNewExitSummaryText(value).toLowerCase();
+}
+
+function selectNewExitSummaryField(entry, keys) {
+    if (!entry || typeof entry !== 'object' || !Array.isArray(keys)) {
+        return '';
+    }
+    for (const key of keys) {
+        const text = normalizeNewExitSummaryText(entry[key]);
+        if (text) {
+            return text;
+        }
+    }
+    return '';
+}
+
+function formatNewExitLocationEndpoint(locationName, regionName, currentRegionName) {
+    const normalizedLocationName = normalizeNewExitSummaryText(locationName);
+    if (!normalizedLocationName) {
+        return '';
+    }
+
+    const normalizedRegionName = normalizeNewExitSummaryText(regionName);
+    const normalizedCurrentRegionName = normalizeNewExitSummaryText(currentRegionName);
+    const locationComparison = normalizeNewExitSummaryComparison(normalizedLocationName);
+    const regionComparison = normalizeNewExitSummaryComparison(normalizedRegionName);
+    const currentRegionComparison = normalizeNewExitSummaryComparison(normalizedCurrentRegionName);
+    const shouldAppendRegion = Boolean(
+        normalizedRegionName
+        && regionComparison
+        && regionComparison !== locationComparison
+        && (!currentRegionComparison || regionComparison !== currentRegionComparison)
+    );
+
+    return shouldAppendRegion
+        ? `${normalizedLocationName} (${normalizedRegionName})`
+        : normalizedLocationName;
+}
+
+function formatNewExitDiscoveredSummaryDetail(entry, {
+    currentLocationName = '',
+    currentRegionName = ''
+} = {}) {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+        return normalizeNewExitSummaryText(entry) || 'a new path';
+    }
+
+    const kind = selectNewExitSummaryField(entry, ['kind', 'destinationKind', 'type']).toLowerCase();
+    const primaryDestinationName = selectNewExitSummaryField(entry, [
+        'destinationName',
+        'name',
+        'targetName',
+        'label',
+        'text',
+        'raw'
+    ]);
+    const destinationLocationName = selectNewExitSummaryField(entry, [
+        'destinationLocationName',
+        'targetLocationName'
+    ]);
+    let destinationRegionName = selectNewExitSummaryField(entry, [
+        'destinationRegionName',
+        'targetRegionName',
+        'destinationRegion'
+    ]);
+    if (!destinationRegionName && kind === 'region') {
+        destinationRegionName = primaryDestinationName;
+    }
+
+    const originLocationName = selectNewExitSummaryField(entry, [
+        'exitLocationName',
+        'originLocationName',
+        'sourceLocationName',
+        'originLocation',
+        'origin'
+    ]);
+    const originRegionName = selectNewExitSummaryField(entry, [
+        'exitRegionName',
+        'originRegionName',
+        'sourceRegionName',
+        'originRegion'
+    ]);
+
+    let destinationDetail = '';
+    if (destinationLocationName) {
+        destinationDetail = formatNewExitLocationEndpoint(
+            destinationLocationName,
+            destinationRegionName,
+            currentRegionName
+        );
+    } else if (kind === 'region') {
+        destinationDetail = destinationRegionName || primaryDestinationName;
+    } else {
+        destinationDetail = formatNewExitLocationEndpoint(
+            primaryDestinationName,
+            destinationRegionName,
+            currentRegionName
+        );
+    }
+
+    if (!destinationDetail) {
+        destinationDetail = primaryDestinationName || 'a new path';
+    }
+
+    const originDetail = formatNewExitLocationEndpoint(
+        originLocationName,
+        originRegionName,
+        currentRegionName
+    );
+    const currentLocationComparison = normalizeNewExitSummaryComparison(currentLocationName);
+    const originLocationComparison = normalizeNewExitSummaryComparison(originLocationName);
+    const currentRegionComparison = normalizeNewExitSummaryComparison(currentRegionName);
+    const originRegionComparison = normalizeNewExitSummaryComparison(originRegionName);
+    const originMatchesCurrent = Boolean(
+        currentLocationComparison
+        && originLocationComparison === currentLocationComparison
+        && (!originRegionComparison || !currentRegionComparison || originRegionComparison === currentRegionComparison)
+    );
+
+    return originDetail && !originMatchesCurrent
+        ? `${originDetail} -> ${destinationDetail}`
+        : destinationDetail;
+}
+
+function buildNewExitDiscoveredSummaryMetadata(entry, detail = '') {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+        return null;
+    }
+
+    const destinationKind = selectNewExitSummaryField(entry, [
+        'destinationKind',
+        'kind',
+        'type'
+    ]).toLowerCase();
+    const originLocationId = selectNewExitSummaryField(entry, [
+        'originLocationId',
+        'exitLocationId',
+        'sourceLocationId'
+    ]);
+    const originRegionId = selectNewExitSummaryField(entry, [
+        'originRegionId',
+        'exitRegionId',
+        'sourceRegionId'
+    ]);
+    const destinationId = selectNewExitSummaryField(entry, [
+        'destinationId',
+        'destinationLocationId',
+        'targetLocationId',
+        'stubId'
+    ]);
+    const destinationRegionId = selectNewExitSummaryField(entry, [
+        'destinationRegionId',
+        'targetRegionId',
+        'regionId'
+    ]);
+    const exitId = selectNewExitSummaryField(entry, ['exitId']);
+
+    if (!originLocationId && !originRegionId && !destinationId && !destinationRegionId && !exitId) {
+        return null;
+    }
+
+    const destinationRegionName = selectNewExitSummaryField(entry, [
+        'destinationRegionName',
+        'targetRegionName',
+        'destinationRegion'
+    ]);
+    const destinationLocationName = selectNewExitSummaryField(entry, [
+        'destinationLocationName',
+        'targetLocationName'
+    ]);
+    const destinationName = destinationLocationName
+        || selectNewExitSummaryField(entry, ['destinationName', 'name', 'targetName'])
+        || destinationRegionName;
+    const originLocationName = selectNewExitSummaryField(entry, [
+        'originLocationName',
+        'exitLocationName',
+        'sourceLocationName',
+        'originLocation',
+        'origin'
+    ]);
+    const originRegionName = selectNewExitSummaryField(entry, [
+        'originRegionName',
+        'exitRegionName',
+        'sourceRegionName',
+        'originRegion'
+    ]);
+
+    return {
+        label: normalizeNewExitSummaryText(detail) || destinationName || destinationRegionName || 'New exit',
+        destinationKind: destinationKind || null,
+        originLocationId: originLocationId || null,
+        originLocationName: originLocationName || null,
+        originRegionId: originRegionId || null,
+        originRegionName: originRegionName || null,
+        destinationId: destinationId || null,
+        destinationName: destinationName || null,
+        destinationLocationName: destinationLocationName || null,
+        destinationRegionId: destinationRegionId || null,
+        destinationRegionName: destinationRegionName || null,
+        exitId: exitId || null
+    };
 }
 
 let cachedCriticalThresholdFormulaRuntime = null;
@@ -520,6 +732,9 @@ module.exports = function registerApiRoutes(scope) {
     if (typeof scope.filterOrphanedChatEntries !== 'function') {
         throw new Error('registerApiRoutes requires filterOrphanedChatEntries helper.');
     }
+    if (typeof scope.stripHiddenNotesFromText !== 'function') {
+        throw new Error('registerApiRoutes requires stripHiddenNotesFromText helper.');
+    }
 
     if (!scope[Symbol.unscopables]) {
         Object.defineProperty(scope, Symbol.unscopables, {
@@ -603,6 +818,26 @@ module.exports = function registerApiRoutes(scope) {
             return trimmed;
         }
 
+        const adventureHiddenNotesConfig = Object.freeze({ show_hidden_notes: false });
+
+        const filterHiddenNotesForAdventurePayload = (payload) => (
+            typeof scope.filterHiddenNotesFromClientPayload === 'function'
+                ? scope.filterHiddenNotesFromClientPayload(payload, adventureHiddenNotesConfig)
+                : payload
+        );
+
+        const filterHiddenNotesForAdventureEntries = (entries) => (
+            typeof scope.filterHiddenNotesFromChatEntriesForClient === 'function'
+                ? scope.filterHiddenNotesFromChatEntriesForClient(entries, adventureHiddenNotesConfig)
+                : entries
+        );
+
+        const filterHiddenNotesForConfiguredEntries = (entries) => (
+            typeof scope.filterHiddenNotesFromChatEntriesForClient === 'function'
+                ? scope.filterHiddenNotesFromChatEntriesForClient(entries, config)
+                : entries
+        );
+
         function createStreamEmitter({ clientId, requestId } = {}) {
             const hasRealtime = Boolean(realtimeHub && typeof realtimeHub.emit === 'function');
             const targetClientId = (typeof clientId === 'string' && clientId.trim()) ? clientId.trim() : null;
@@ -619,7 +854,11 @@ module.exports = function registerApiRoutes(scope) {
                     ...payload
                 };
                 try {
-                    return Boolean(realtimeHub.emit(targetClientId, type, enrichedPayload));
+                    return Boolean(realtimeHub.emit(
+                        targetClientId,
+                        type,
+                        filterHiddenNotesForAdventurePayload(enrichedPayload)
+                    ));
                 } catch (error) {
                     console.warn('Failed to emit realtime message:', error.message);
                     return false;
@@ -1549,9 +1788,28 @@ module.exports = function registerApiRoutes(scope) {
                 throw new Error('Slop remover requires non-empty prose.');
             }
 
-            const slopWordSet = new Set(await getFilteredSlopWords(currentProse));
-            const slopRegexSet = new Set(await getFilteredSlopRegexes(currentProse));
-            const slopNgramSet = new Set(await collectSlopNgrams(currentProse));
+            const getVisibleProseForSlopChecks = (text) => {
+                const stripped = stripHiddenNotesFromText(text);
+                return typeof stripped === 'string' ? stripped.trim() : '';
+            };
+
+            const initialVisibleProse = getVisibleProseForSlopChecks(currentProse);
+            if (!initialVisibleProse) {
+                if (returnDiagnostics) {
+                    return {
+                        text: currentProse,
+                        slopWords: [],
+                        slopRegexes: [],
+                        slopNgrams: [],
+                        ran: false
+                    };
+                }
+                return currentProse;
+            }
+
+            const slopWordSet = new Set(await getFilteredSlopWords(initialVisibleProse));
+            const slopRegexSet = new Set(await getFilteredSlopRegexes(initialVisibleProse));
+            const slopNgramSet = new Set(await collectSlopNgrams(initialVisibleProse));
 
             const detectedSlopWords = Array.from(slopWordSet);
             const detectedSlopRegexes = Array.from(slopRegexSet);
@@ -1623,7 +1881,7 @@ module.exports = function registerApiRoutes(scope) {
                     throw new Error('missing <editedText> response');
                 }
 
-                const editedText = editedTextNode.textContent.trim();
+                const editedText = extractProseNodeContentPreservingTags(editedTextNode);
                 if (!editedText) {
                     throw new Error('empty <editedText> response');
                 }
@@ -1729,9 +1987,10 @@ module.exports = function registerApiRoutes(scope) {
                 const candidateProse = scrubber(parsedSlopResponse.trim());
                 currentProse = candidateProse;
 
-                const remainingWords = await getFilteredSlopWords(currentProse);
-                const remainingRegexes = await getFilteredSlopRegexes(currentProse);
-                const remainingNgrams = await collectSlopNgrams(currentProse);
+                const remainingVisibleProse = getVisibleProseForSlopChecks(currentProse);
+                const remainingWords = remainingVisibleProse ? await getFilteredSlopWords(remainingVisibleProse) : [];
+                const remainingRegexes = remainingVisibleProse ? await getFilteredSlopRegexes(remainingVisibleProse) : [];
+                const remainingNgrams = remainingVisibleProse ? await collectSlopNgrams(remainingVisibleProse) : [];
                 if (!remainingWords.length && !remainingRegexes.length && !remainingNgrams.length) {
                     break;
                 }
@@ -1849,6 +2108,7 @@ module.exports = function registerApiRoutes(scope) {
         }
 
         const playerActionProseRegex = /<finalProse>[\s\S]*\S[\s\S]*<\/finalProse>|<travelProse>[\s\S]*\S[\s\S]*<\/travelProse>|<rejected>[\s\S]*<\/rejected>/i;
+        const playerActionXmlRootTags = ['finalProse', 'travelProse', 'rejected'];
 
         function stripToXmlPayload(input) {
             if (typeof input !== 'string') {
@@ -1860,6 +2120,17 @@ module.exports = function registerApiRoutes(scope) {
                 return '';
             }
             return input.slice(start, end + 1);
+        }
+
+        function extractPlayerActionXmlPayload(input) {
+            if (typeof input !== 'string') {
+                throw new TypeError('extractPlayerActionXmlPayload requires a string input.');
+            }
+            const finalRootBlock = Utils.extractFinalXmlRootBlock(input, playerActionXmlRootTags);
+            if (finalRootBlock) {
+                return finalRootBlock;
+            }
+            return stripToXmlPayload(input);
         }
 
         function xmlNodeToJson(node) {
@@ -2099,6 +2370,16 @@ module.exports = function registerApiRoutes(scope) {
             return `${regionText}|${locationText}`;
         }
 
+        function extractProseNodeContentPreservingTags(node) {
+            if (!node) {
+                return '';
+            }
+            const content = typeof Utils.extractXmlNodeContent === 'function'
+                ? Utils.extractXmlNodeContent(node)
+                : (node.textContent || '');
+            return trimLeadingParagraphSpaces(content || '').trim();
+        }
+
         function extractXmlFatalErrorText(error) {
             const rawMessage = typeof error?.message === 'string'
                 ? error.message
@@ -2142,7 +2423,7 @@ module.exports = function registerApiRoutes(scope) {
                     throw new Error('xml-fix returned an empty response.');
                 }
 
-                const fixedXmlPayload = stripToXmlPayload(xmlFixResponse);
+                const fixedXmlPayload = extractPlayerActionXmlPayload(xmlFixResponse);
                 if (!fixedXmlPayload) {
                     throw new Error('xml-fix response missing XML content.');
                 }
@@ -2178,7 +2459,7 @@ module.exports = function registerApiRoutes(scope) {
             if (typeof rawResponse !== 'string') {
                 throw new TypeError('Player action response must be a string.');
             }
-            const xmlPayload = stripToXmlPayload(rawResponse);
+            const xmlPayload = extractPlayerActionXmlPayload(rawResponse);
             if (!xmlPayload) {
                 throw new Error('Player action response missing XML content.');
             }
@@ -2225,7 +2506,7 @@ module.exports = function registerApiRoutes(scope) {
                 };
             }
             const finalNode = doc.getElementsByTagName('finalProse')[0] || null;
-            const finalText = finalNode ? (finalNode.textContent || '').trim() : '';
+            const finalText = extractProseNodeContentPreservingTags(finalNode);
             if (finalText) {
                 return { prose: finalText, travel: null };
             }
@@ -2292,9 +2573,9 @@ module.exports = function registerApiRoutes(scope) {
                 const originNode = getDirectChildElementByTagName(travelNode, 'originProse');
                 const betweenNode = getDirectChildElementByTagName(travelNode, 'betweenProse');
                 const destinationProseNode = getDirectChildElementByTagName(travelNode, 'destinationProse');
-                const origin = originNode ? trimLeadingParagraphSpaces(originNode.textContent || '').trim() : '';
-                const between = betweenNode ? trimLeadingParagraphSpaces(betweenNode.textContent || '').trim() : '';
-                const destinationProse = destinationProseNode ? trimLeadingParagraphSpaces(destinationProseNode.textContent || '').trim() : '';
+                const origin = extractProseNodeContentPreservingTags(originNode);
+                const between = extractProseNodeContentPreservingTags(betweenNode);
+                const destinationProse = extractProseNodeContentPreservingTags(destinationProseNode);
                 const segments = [origin, between, destinationProse].filter(Boolean);
                 if (!segments.length) {
                     throw new Error('travelProse requires at least one of originProse, betweenProse, or destinationProse.');
@@ -8288,6 +8569,33 @@ module.exports = function registerApiRoutes(scope) {
                 : null;
 
             let movedTo = new SanitizedStringSet();
+            const resolveCurrentLocationSummaryContext = () => {
+                const currentPlayer = Globals.currentPlayer || null;
+                const currentLocationId = normalizeNewExitSummaryText(
+                    currentPlayer?.currentLocation || currentPlayer?.locationId || ''
+                );
+                const currentLocation = currentLocationId
+                    ? (gameLocations.get(currentLocationId) || Location.get(currentLocationId) || null)
+                    : null;
+                const currentLocationName = normalizeNewExitSummaryText(
+                    currentLocation?.name
+                    || (typeof currentPlayer?.getCurrentLocationName === 'function'
+                        ? currentPlayer.getCurrentLocationName()
+                        : '')
+                );
+                const currentRegionName = normalizeNewExitSummaryText(
+                    (currentLocationId ? resolveRegionNameForLocationId(currentLocationId) : '')
+                    || currentLocation?.region?.name
+                    || Globals.region?.name
+                    || ''
+                );
+
+                return {
+                    currentLocationName,
+                    currentRegionName
+                };
+            };
+            const currentLocationSummaryContext = resolveCurrentLocationSummaryContext();
 
             if (parsed) {
                 Object.entries(parsed).forEach(([eventType, payload]) => {
@@ -8478,14 +8786,25 @@ module.exports = function registerApiRoutes(scope) {
                         }
                         case 'new_exit_discovered':
                             entries.forEach(description => {
+                                const detail = formatNewExitDiscoveredSummaryDetail(
+                                    description,
+                                    currentLocationSummaryContext
+                                );
+                                const newExitMetadata = buildNewExitDiscoveredSummaryMetadata(
+                                    description,
+                                    detail
+                                );
                                 add({
                                     icon: '🚪',
-                                    text: `New exit discovered: ${safeSummaryItem(description, 'a new path')}.`,
+                                    text: `New exit discovered: ${safeSummaryItem(detail, 'a new path')}.`,
                                     category: 'travel',
                                     severity: 'important',
-                                    sourceType: 'new_exit_discovered'
+                                    sourceType: 'new_exit_discovered',
+                                    metadata: newExitMetadata
+                                        ? { newExitDiscovered: newExitMetadata }
+                                        : null
                                 });
-                                console.log("[Debug] New exit discovered event:", description);
+                                console.log("[Debug] New exit discovered event:", detail);
                             });
                             break;
                         case 'npc_arrival_departure':
@@ -10527,13 +10846,13 @@ module.exports = function registerApiRoutes(scope) {
             }
 
             const originProse = typeof travelProsePayload.originProse === 'string'
-                ? travelProsePayload.originProse.trim()
+                ? stripHiddenNotesFromText(travelProsePayload.originProse).trim()
                 : '';
             const betweenProse = typeof travelProsePayload.betweenProse === 'string'
-                ? travelProsePayload.betweenProse.trim()
+                ? stripHiddenNotesFromText(travelProsePayload.betweenProse).trim()
                 : '';
             const destinationProse = typeof travelProsePayload.destinationProse === 'string'
-                ? travelProsePayload.destinationProse.trim()
+                ? stripHiddenNotesFromText(travelProsePayload.destinationProse).trim()
                 : '';
             const combinedProse = [originProse, betweenProse, destinationProse]
                 .filter(Boolean)
@@ -11044,7 +11363,8 @@ module.exports = function registerApiRoutes(scope) {
             locationId,
             stream = null,
             entryCollector = null,
-            requestId = null
+            requestId = null,
+            parentId = null
         } = {}) {
             if (!Array.isArray(entryCollector)) {
                 throw new Error('createCheckResultsRecorder requires an entryCollector array.');
@@ -11328,6 +11648,7 @@ module.exports = function registerApiRoutes(scope) {
                         content: buildContent(),
                         summary,
                         checkResults: clonedRecords,
+                        parentId: parentId || null,
                         locationId: resolvedLocationId,
                         metadata: {
                             excludeFromBaseContextHistory: true,
@@ -11367,6 +11688,9 @@ module.exports = function registerApiRoutes(scope) {
                 },
                 hasEntry() {
                     return Boolean(entry);
+                },
+                getEntry() {
+                    return entry;
                 },
                 record(event) {
                     if (!event || typeof event !== 'object') {
@@ -11446,6 +11770,67 @@ module.exports = function registerApiRoutes(scope) {
                     updateEntry();
                 }
             };
+        }
+
+        function recordActionOutcomeCheckResultsEntry({
+            resolution,
+            actorName = null,
+            skillLabel = null,
+            reason = null,
+            promptLabel = 'action',
+            parentId = null,
+            locationId = null,
+            requestId = null
+        } = {}, collector = null) {
+            if (!Array.isArray(chatHistory)) {
+                return null;
+            }
+            if (!resolution || typeof resolution !== 'object') {
+                throw new Error('recordActionOutcomeCheckResultsEntry requires an action resolution.');
+            }
+
+            const localCollector = Array.isArray(collector) ? collector : [];
+            const clean = (value) => (typeof value === 'string' && value.trim() ? value.trim() : '');
+            const resolvedPromptLabel = clean(promptLabel) || 'action';
+            const resolvedActorName = clean(actorName) || clean(currentPlayer?.name) || 'player';
+            const resolvedSkillLabel = clean(resolution.skill) || clean(skillLabel) || 'Skill check';
+            const resolvedReason = clean(reason) || clean(resolution.reason) || resolvedSkillLabel;
+            const displayResolution = { ...resolution };
+            if (!clean(displayResolution.skill)) {
+                displayResolution.skill = resolvedSkillLabel;
+            }
+            if (!clean(displayResolution.reason)) {
+                displayResolution.reason = resolvedReason;
+            }
+
+            const recorder = createCheckResultsRecorder({
+                promptLabel: resolvedPromptLabel,
+                locationId,
+                entryCollector: localCollector,
+                requestId,
+                parentId
+            });
+
+            recorder.record({
+                name: 'resolveSkillCheck',
+                phase: 'completed',
+                sequence: 1,
+                metadataLabel: resolvedPromptLabel,
+                parameters: {
+                    actor: resolvedActorName,
+                    skill: resolvedSkillLabel,
+                    reason: resolvedReason
+                },
+                result: {
+                    metadata: {
+                        actionResolution: displayResolution,
+                        actor: resolvedActorName,
+                        result: clean(resolution.label) || clean(resolution.degree) || null
+                    }
+                }
+            });
+
+            return recorder.getEntry();
         }
 
         function loadRandomEventLines(type) {
@@ -14618,8 +15003,10 @@ module.exports = function registerApiRoutes(scope) {
                         type: npc.personalityType || '',
                         traits: npc.personalityTraits || '',
                         notes: npc.personalityNotes || '',
+                        aiNotes: npc.aiNotes || '',
                         goals: Array.isArray(npc.goals) ? npc.goals.slice(0) : []
                     },
+                    aiNotes: npc.aiNotes || '',
                     health: npc.health ?? 'unknown',
                     maxHealth: npc.maxHealth ?? 'unknown',
                     dispositionsTowardsPlayer: [],
@@ -14636,11 +15023,14 @@ module.exports = function registerApiRoutes(scope) {
                     type: npc.personalityType || '',
                     traits: npc.personalityTraits || '',
                     notes: npc.personalityNotes || '',
+                    aiNotes: npc.aiNotes || '',
                     goals: Array.isArray(npc.goals) ? npc.goals.slice(0) : []
                 };
             } else if (!Array.isArray(currentNpcContext.personality.goals)) {
                 currentNpcContext.personality.goals = Array.isArray(npc.goals) ? npc.goals.slice(0) : [];
             }
+            currentNpcContext.aiNotes = currentNpcContext.aiNotes || currentNpcContext.personality?.aiNotes || npc.aiNotes || '';
+            currentNpcContext.personality.aiNotes = currentNpcContext.personality.aiNotes || currentNpcContext.aiNotes || '';
 
             const existingMemories = Array.isArray(npc.importantMemories) ? npc.importantMemories : [];
             currentNpcContext.importantMemories = existingMemories.slice(0);
@@ -16524,7 +16914,9 @@ module.exports = function registerApiRoutes(scope) {
             };
             let playerActionStreamSent = false;
             const newChatEntries = [];
-            const getClientMessages = () => filterOrphanedChatEntries(newChatEntries);
+            const getClientMessages = () => filterHiddenNotesForAdventureEntries(
+                filterOrphanedChatEntries(newChatEntries)
+            );
             const stringifyToolCallDebugValue = (value) => {
                 try {
                     return JSON.stringify(value === undefined ? null : value, null, 2);
@@ -16915,10 +17307,10 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 if (statusCode !== 200) {
-                    return res.status(statusCode).json(payload);
+                    return res.status(statusCode).json(filterHiddenNotesForAdventurePayload(payload));
                 }
 
-                return res.json(payload);
+                return res.json(filterHiddenNotesForAdventurePayload(payload));
             };
 
             try {
@@ -17750,8 +18142,13 @@ module.exports = function registerApiRoutes(scope) {
                             if (!settingSnapshot || typeof settingSnapshot !== 'object') {
                                 throw new Error('No-context generic prompt requires an active setting.');
                             }
+                            const settingDescription = typeof describeSettingForPrompt === 'function'
+                                ? describeSettingForPrompt(settingSnapshot)
+                                : '';
                             promptVariables = {
-                                setting: settingSnapshot,
+                                setting: typeof buildSettingPromptContext === 'function'
+                                    ? buildSettingPromptContext(settingSnapshot, { descriptionFallback: settingDescription })
+                                    : settingSnapshot,
                                 config: Globals.config || {},
                                 promptType: 'generic-prompt-nocontext',
                                 prompt: actionText
@@ -18700,7 +19097,7 @@ module.exports = function registerApiRoutes(scope) {
                                 traveledToLocationId = travelResult.traveledToLocationId || traveledToLocationId;
                                 questResult = await Events.runQuestChecks();
                             } else {
-                                const textToCheck = aiResponse;
+                                const textToCheck = stripHiddenNotesFromText(aiResponse);
                                 const suppressDirectTravelPromptMutation = Boolean(currentActionIsTravel
                                     && travelMetadata
                                     && !travelMetadataIsEventDriven);
@@ -19813,8 +20210,12 @@ module.exports = function registerApiRoutes(scope) {
                         return filterOrphanedChatEntries(prunedHistory);
                     })();
 
+                const filteredHistory = includeAllEntries
+                    ? filterHiddenNotesForConfiguredEntries(historyForClient)
+                    : filterHiddenNotesForAdventureEntries(historyForClient);
+
                 res.json({
-                    history: historyForClient,
+                    history: filteredHistory,
                     count: chatHistory.length,
                     worldTime: buildWorldTimePayload()
                 });
@@ -19886,10 +20287,10 @@ module.exports = function registerApiRoutes(scope) {
                 entry.summaryTitle = entry.summaryTitle || 'Event Summary';
             }
 
-            res.json({
+            res.json(filterHiddenNotesForAdventurePayload({
                 success: true,
                 entry
-            });
+            }));
         });
 
         app.delete('/api/chat/message', (req, res) => {
@@ -19951,11 +20352,11 @@ module.exports = function registerApiRoutes(scope) {
                 }
             }
 
-            res.json({
+            res.json(filterHiddenNotesForAdventurePayload({
                 success: true,
                 removed,
                 orphaned
-            });
+            }));
         });
 
         // Player management API endpoints
@@ -22127,6 +22528,7 @@ module.exports = function registerApiRoutes(scope) {
                     personalityType,
                     personalityTraits,
                     personalityNotes,
+                    aiNotes,
                     statusEffects,
                     aliases,
                     needBarApplicability
@@ -22447,6 +22849,14 @@ module.exports = function registerApiRoutes(scope) {
                         npc.personalityNotes = typeof personalityNotes === 'string' ? personalityNotes : '';
                     } catch (personalityError) {
                         console.warn(`Failed to set personality notes for NPC ${npcId}:`, personalityError.message);
+                    }
+                }
+
+                if (aiNotes !== undefined) {
+                    try {
+                        npc.aiNotes = typeof aiNotes === 'string' ? aiNotes : '';
+                    } catch (personalityError) {
+                        console.warn(`Failed to set AI notes for NPC ${npcId}:`, personalityError.message);
                     }
                 }
 
@@ -26288,6 +26698,19 @@ module.exports = function registerApiRoutes(scope) {
                 }
             }
 
+            if (stubId && pendingRegionStubs instanceof Map) {
+                for (const [pendingRegionId, pendingRegion] of pendingRegionStubs.entries()) {
+                    if (!pendingRegion || typeof pendingRegion !== 'object') {
+                        continue;
+                    }
+                    if (!Array.isArray(pendingRegion.locationIds) || !pendingRegion.locationIds.includes(stubId)) {
+                        continue;
+                    }
+                    pendingRegion.locationIds = pendingRegion.locationIds.filter(locationId => locationId !== stubId);
+                    pendingRegionStubs.set(pendingRegionId, pendingRegion);
+                }
+            }
+
             if (stubId && gameLocations.has(stubId)) {
                 gameLocations.delete(stubId);
                 if (typeof Location.removeFromIndex === 'function') {
@@ -26304,6 +26727,157 @@ module.exports = function registerApiRoutes(scope) {
                     || stubLocation.stubMetadata?.shortDescription
                     || stubLocation.stubMetadata?.targetRegionName
                     || stubId
+            };
+        }
+
+        function resolvePendingRegionIdForLocation(location) {
+            if (!location || !(pendingRegionStubs instanceof Map)) {
+                return null;
+            }
+
+            const locationId = typeof location.id === 'string' && location.id.trim()
+                ? location.id.trim()
+                : '';
+            const metadata = location.stubMetadata || {};
+            const candidateIds = [
+                metadata.targetRegionId,
+                metadata.regionId
+            ];
+
+            for (const candidateId of candidateIds) {
+                const normalizedCandidateId = typeof candidateId === 'string' && candidateId.trim()
+                    ? candidateId.trim()
+                    : '';
+                if (normalizedCandidateId && pendingRegionStubs.has(normalizedCandidateId)) {
+                    return normalizedCandidateId;
+                }
+            }
+
+            if (locationId) {
+                for (const [pendingRegionId, pendingRegion] of pendingRegionStubs.entries()) {
+                    if (!pendingRegion || typeof pendingRegion !== 'object') {
+                        continue;
+                    }
+                    if (pendingRegion.entranceStubId === locationId) {
+                        return pendingRegionId;
+                    }
+                    if (Array.isArray(pendingRegion.locationIds) && pendingRegion.locationIds.includes(locationId)) {
+                        return pendingRegionId;
+                    }
+                }
+            }
+
+            return null;
+        }
+
+        function exitTargetsPendingRegion(exit, pendingRegionId) {
+            const normalizedRegionId = typeof pendingRegionId === 'string' && pendingRegionId.trim()
+                ? pendingRegionId.trim()
+                : '';
+            if (!exit || !normalizedRegionId || !(pendingRegionStubs instanceof Map)) {
+                return false;
+            }
+
+            if (exit.destinationRegion === normalizedRegionId) {
+                return true;
+            }
+
+            const destinationId = typeof exit.destination === 'string' && exit.destination.trim()
+                ? exit.destination.trim()
+                : '';
+            if (!destinationId) {
+                return false;
+            }
+
+            const pendingRegion = pendingRegionStubs.get(normalizedRegionId) || null;
+            if (pendingRegion?.entranceStubId === destinationId) {
+                return true;
+            }
+            if (Array.isArray(pendingRegion?.locationIds) && pendingRegion.locationIds.includes(destinationId)) {
+                return true;
+            }
+
+            const destinationLocation = gameLocations.get(destinationId) || Location.get(destinationId) || null;
+            return resolvePendingRegionIdForLocation(destinationLocation) === normalizedRegionId;
+        }
+
+        function collectExitReferencesToPendingRegion(pendingRegionId) {
+            const normalizedRegionId = typeof pendingRegionId === 'string' && pendingRegionId.trim()
+                ? pendingRegionId.trim()
+                : '';
+            if (!normalizedRegionId) {
+                return [];
+            }
+
+            const references = [];
+            for (const location of gameLocations.values()) {
+                if (!location || typeof location.getAvailableDirections !== 'function' || typeof location.getExit !== 'function') {
+                    continue;
+                }
+
+                for (const direction of location.getAvailableDirections()) {
+                    const exit = location.getExit(direction);
+                    if (!exit || !exitTargetsPendingRegion(exit, normalizedRegionId)) {
+                        continue;
+                    }
+                    references.push({
+                        locationId: location.id || null,
+                        direction,
+                        exitId: exit.id || null,
+                        destinationId: exit.destination || null
+                    });
+                }
+            }
+
+            return references;
+        }
+
+        function deletePendingRegionStubRecord(pendingRegionId, { alreadyDeletedStubIds = [] } = {}) {
+            const normalizedRegionId = typeof pendingRegionId === 'string' && pendingRegionId.trim()
+                ? pendingRegionId.trim()
+                : '';
+            if (!normalizedRegionId || !(pendingRegionStubs instanceof Map) || !pendingRegionStubs.has(normalizedRegionId)) {
+                return null;
+            }
+
+            const pendingRegion = pendingRegionStubs.get(normalizedRegionId) || {};
+            const alreadyDeleted = new Set(
+                (Array.isArray(alreadyDeletedStubIds) ? alreadyDeletedStubIds : [])
+                    .filter(id => typeof id === 'string' && id.trim())
+                    .map(id => id.trim())
+            );
+            const candidateStubIds = [
+                pendingRegion.entranceStubId,
+                ...(Array.isArray(pendingRegion.locationIds) ? pendingRegion.locationIds : [])
+            ];
+            const deletedLocationStubs = [];
+
+            for (const candidateStubId of candidateStubIds) {
+                const stubId = typeof candidateStubId === 'string' && candidateStubId.trim()
+                    ? candidateStubId.trim()
+                    : '';
+                if (!stubId || alreadyDeleted.has(stubId)) {
+                    continue;
+                }
+
+                const stubLocation = gameLocations.get(stubId) || Location.get(stubId) || null;
+                if (!stubLocation?.isStub) {
+                    continue;
+                }
+
+                const deletedStub = deleteStubLocation(stubLocation);
+                if (deletedStub) {
+                    deletedLocationStubs.push(deletedStub);
+                    alreadyDeleted.add(stubId);
+                }
+            }
+
+            pendingRegionStubs.delete(normalizedRegionId);
+
+            return {
+                regionStubId: normalizedRegionId,
+                regionStubName: pendingRegion.name || pendingRegion.originalName || normalizedRegionId,
+                deletedLocationStubs
             };
         }
 
@@ -26641,7 +27215,7 @@ module.exports = function registerApiRoutes(scope) {
                     }
                 }
 
-                const normalizedType = targetRegionId && resolvedType === 'region' ? 'location' : resolvedType;
+                const normalizedType = resolvedType === 'region' ? 'region' : 'location';
                 const imageDataUrl = typeof imageDataUrlRaw === 'string' ? imageDataUrlRaw.trim() : '';
                 const imageDataUrlOriginal = typeof imageDataUrlOriginalRaw === 'string'
                     ? imageDataUrlOriginalRaw.trim()
@@ -26675,7 +27249,8 @@ module.exports = function registerApiRoutes(scope) {
                         });
                     }
                 }
-                const creatingNewRegion = normalizedType === 'region';
+                const targetingExistingRegion = normalizedType === 'region' && Boolean(targetRegionId);
+                const creatingNewRegion = normalizedType === 'region' && !targetRegionId;
                 const creatingNewLocation = normalizedType === 'location' && !targetLocationId;
                 if (imageDataUrl && !(creatingNewRegion || creatingNewLocation)) {
                     return res.status(400).json({
@@ -26720,7 +27295,109 @@ module.exports = function registerApiRoutes(scope) {
 
                 let createdInfo = null;
 
-                if (normalizedType === 'region') {
+                if (targetingExistingRegion) {
+                    const destinationRegion = regions.get(targetRegionId) || null;
+                    const pendingDestinationRegion = pendingRegionStubs.get(targetRegionId) || null;
+
+                    const findRegionEntranceLocation = () => {
+                        const candidateIds = [];
+                        if (destinationRegion?.entranceLocationId) {
+                            candidateIds.push(destinationRegion.entranceLocationId);
+                        }
+                        if (Array.isArray(destinationRegion?.locationIds)) {
+                            candidateIds.push(...destinationRegion.locationIds);
+                        }
+                        if (pendingDestinationRegion?.entranceStubId) {
+                            candidateIds.push(pendingDestinationRegion.entranceStubId);
+                        }
+                        if (Array.isArray(pendingDestinationRegion?.locationIds)) {
+                            candidateIds.push(...pendingDestinationRegion.locationIds);
+                        }
+
+                        for (const candidateId of candidateIds) {
+                            if (!candidateId) {
+                                continue;
+                            }
+                            const candidateLocation = gameLocations.get(candidateId) || Location.get(candidateId);
+                            if (candidateLocation) {
+                                return candidateLocation;
+                            }
+                        }
+
+                        for (const candidateLocation of gameLocations.values()) {
+                            if (!candidateLocation || typeof candidateLocation !== 'object') {
+                                continue;
+                            }
+                            const metadata = candidateLocation.stubMetadata || {};
+                            if (metadata.isRegionEntryStub && (metadata.targetRegionId === targetRegionId || metadata.regionId === targetRegionId)) {
+                                return candidateLocation;
+                            }
+                        }
+                        return null;
+                    };
+
+                    const destinationLocation = findRegionEntranceLocation();
+                    if (!destinationLocation) {
+                        const targetRegionName = pendingDestinationRegion?.name || destinationRegion?.name || targetRegionId;
+                        return res.status(404).json({
+                            success: false,
+                            error: `No entrance location was found for region '${targetRegionName}'.`
+                        });
+                    }
+
+                    const originRegionId = originLocation
+                        ? (findRegionByLocationId(originLocation.id)?.id || originLocation.stubMetadata?.regionId || null)
+                        : null;
+                    const destinationRegionForExit = targetRegionId && originRegionId !== targetRegionId
+                        ? targetRegionId
+                        : null;
+                    const regionDisplayName = pendingDestinationRegion?.name
+                        || destinationRegion?.name
+                        || destinationLocation.stubMetadata?.targetRegionName
+                        || destinationLocation.name
+                        || targetRegionId;
+                    const destinationMetadata = destinationLocation.stubMetadata || {};
+                    const exitDescription = resolvedDescription
+                        || destinationMetadata.shortDescription
+                        || destinationMetadata.targetRegionDescription
+                        || destinationMetadata.blueprintDescription
+                        || destinationLocation.description
+                        || pendingDestinationRegion?.description
+                        || destinationRegion?.description
+                        || regionDisplayName;
+
+                    const exitOptions = {
+                        description: exitDescription,
+                        bidirectional: true,
+                        destinationRegion: destinationRegionForExit,
+                        travelTimeMinutes
+                    };
+
+                    if (isVehicleExit) {
+                        exitOptions.isVehicle = true;
+                        exitOptions.vehicleType = normalizedVehicleType;
+                    }
+
+                    ensureExitConnection(originLocation, destinationLocation, exitOptions);
+
+                    syncStubPresentationWithExit(destinationLocation, {
+                        name: regionDisplayName,
+                        description: exitDescription,
+                        relativeLevel
+                    });
+
+                    createdInfo = {
+                        type: 'region',
+                        stubId: destinationLocation.id,
+                        regionId: targetRegionId,
+                        destinationRegionId: targetRegionId,
+                        name: regionDisplayName,
+                        existing: true,
+                        isStub: Boolean(pendingDestinationRegion),
+                        isVehicle: isVehicleExit,
+                        vehicleType: normalizedVehicleType
+                    };
+                } else if (normalizedType === 'region') {
                     if (!resolvedName) {
                         return res.status(400).json({
                             success: false,
@@ -26933,6 +27610,21 @@ module.exports = function registerApiRoutes(scope) {
                     });
                 }
 
+                const createdDestinationId = typeof createdInfo?.destinationId === 'string' && createdInfo.destinationId.trim()
+                    ? createdInfo.destinationId.trim()
+                    : (typeof createdInfo?.stubId === 'string' && createdInfo.stubId.trim()
+                        ? createdInfo.stubId.trim()
+                        : '');
+                if (createdDestinationId) {
+                    const createdExitMatch = findExitOnLocation(
+                        refreshedLocation,
+                        exit => exit && exit.destination === createdDestinationId
+                    );
+                    if (createdExitMatch?.exit?.id) {
+                        createdInfo.exitId = createdExitMatch.exit.id;
+                    }
+                }
+
                 const originRegion = findRegionByLocationId(refreshedLocation.id) || null;
                 const eventPayload = {
                     originLocationId: refreshedLocation.id,
@@ -27034,7 +27726,8 @@ module.exports = function registerApiRoutes(scope) {
 
                 if (!resolvedRegionStubId && destinationLocation?.id) {
                     for (const [candidateId, stubInfo] of pendingRegionStubs.entries()) {
-                        if (stubInfo?.entranceStubId === destinationLocation.id) {
+                        if (stubInfo?.entranceStubId === destinationLocation.id
+                            || (Array.isArray(stubInfo?.locationIds) && stubInfo.locationIds.includes(destinationLocation.id))) {
                             resolvedRegionStubId = candidateId;
                             break;
                         }
@@ -27042,7 +27735,14 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 const pendingRegionStub = resolvedRegionStubId ? pendingRegionStubs.get(resolvedRegionStubId) : null;
-                const destinationIsRegionStub = Boolean(destinationMetadata?.isRegionEntryStub || pendingRegionStub);
+                const destinationIsRegionStub = Boolean(
+                    destinationMetadata?.isRegionEntryStub
+                    || (
+                        pendingRegionStub?.entranceStubId
+                        && destinationLocation?.id
+                        && pendingRegionStub.entranceStubId === destinationLocation.id
+                    )
+                );
                 const destinationWasStub = Boolean(destinationLocation?.isStub);
 
                 const body = req.body || {};
@@ -27075,17 +27775,35 @@ module.exports = function registerApiRoutes(scope) {
 
                 if (destinationLocation && destinationWasStub) {
                     if (destinationIsRegionStub) {
-                        const stubDescriptor = deleteStubLocation(destinationLocation);
-                        if (resolvedRegionStubId && pendingRegionStubs.has(resolvedRegionStubId)) {
-                            const stubRecord = pendingRegionStubs.get(resolvedRegionStubId);
-                            stubDescriptor.regionStubId = resolvedRegionStubId;
-                            stubDescriptor.regionStubName = stubRecord?.name || stubDescriptor.name;
-                            pendingRegionStubs.delete(resolvedRegionStubId);
-                        } else if (resolvedRegionStubId) {
-                            stubDescriptor.regionStubId = resolvedRegionStubId;
-                            stubDescriptor.regionStubName = stubDescriptor.name;
+                        const remainingPendingRegionExits = resolvedRegionStubId
+                            ? collectExitReferencesToPendingRegion(resolvedRegionStubId)
+                            : [];
+                        if (!resolvedRegionStubId || remainingPendingRegionExits.length === 0) {
+                            const stubDescriptor = deleteStubLocation(destinationLocation);
+                            if (resolvedRegionStubId && pendingRegionStubs.has(resolvedRegionStubId)) {
+                                const pendingRegionDeletion = deletePendingRegionStubRecord(resolvedRegionStubId, {
+                                    alreadyDeletedStubIds: [destinationLocation.id]
+                                });
+                                stubDescriptor.regionStubId = resolvedRegionStubId;
+                                stubDescriptor.regionStubName = pendingRegionDeletion?.regionStubName || stubDescriptor.name;
+                                stubDescriptor.pendingRegionDeleted = true;
+                                if (Array.isArray(pendingRegionDeletion?.deletedLocationStubs)
+                                    && pendingRegionDeletion.deletedLocationStubs.length) {
+                                    stubDescriptor.deletedLocationStubs = pendingRegionDeletion.deletedLocationStubs;
+                                }
+                            } else if (resolvedRegionStubId) {
+                                stubDescriptor.regionStubId = resolvedRegionStubId;
+                                stubDescriptor.regionStubName = stubDescriptor.name;
+                            }
+                            deletedStubInfo = stubDescriptor;
+                        } else {
+                            preservedStubInfo = {
+                                stubId: destinationLocation.id,
+                                regionStubId: resolvedRegionStubId,
+                                regionStubName: pendingRegionStub?.name || destinationLocation.name || resolvedRegionStubId,
+                                remainingExitCount: remainingPendingRegionExits.length
+                            };
                         }
-                        deletedStubInfo = stubDescriptor;
                     } else {
                         const remainingDirections = destinationLocation.getAvailableDirections()
                             .map(direction => ({ direction, exit: destinationLocation.getExit(direction) }))
@@ -27093,10 +27811,28 @@ module.exports = function registerApiRoutes(scope) {
 
                         if (remainingDirections.length === 0) {
                             deletedStubInfo = deleteStubLocation(destinationLocation);
+                            if (resolvedRegionStubId && pendingRegionStubs.has(resolvedRegionStubId)) {
+                                const remainingPendingRegionExits = collectExitReferencesToPendingRegion(resolvedRegionStubId);
+                                if (remainingPendingRegionExits.length === 0) {
+                                    const pendingRegionDeletion = deletePendingRegionStubRecord(resolvedRegionStubId, {
+                                        alreadyDeletedStubIds: [destinationLocation.id]
+                                    });
+                                    if (pendingRegionDeletion) {
+                                        deletedStubInfo.regionStubId = pendingRegionDeletion.regionStubId;
+                                        deletedStubInfo.regionStubName = pendingRegionDeletion.regionStubName;
+                                        deletedStubInfo.pendingRegionDeleted = true;
+                                        if (Array.isArray(pendingRegionDeletion.deletedLocationStubs)
+                                            && pendingRegionDeletion.deletedLocationStubs.length) {
+                                            deletedStubInfo.deletedLocationStubs = pendingRegionDeletion.deletedLocationStubs;
+                                        }
+                                    }
+                                }
+                            }
                         } else {
                             preservedStubInfo = {
                                 stubId: destinationLocation.id,
-                                remainingExitCount: remainingDirections.length
+                                remainingExitCount: remainingDirections.length,
+                                regionStubId: resolvedRegionStubId || null
                             };
                         }
                     }
@@ -27597,6 +28333,11 @@ module.exports = function registerApiRoutes(scope) {
                 const description = trimText(payload.description);
                 if (description) {
                     npcSeed.description = description;
+                }
+
+                const aiNotes = trimText(payload.aiNotes);
+                if (aiNotes) {
+                    npcSeed.aiNotes = aiNotes;
                 }
 
                 const notes = trimText(payload.notes);
@@ -29465,12 +30206,6 @@ module.exports = function registerApiRoutes(scope) {
                             locationId: resolvedLocationId
                         });
 
-                        recordSkillCheckEntry({
-                            resolution: actionOutcome,
-                            parentId: chatEntry.id,
-                            locationId: resolvedLocationId
-                        });
-
                         if (craftingSlopRemovalInfo) {
                             recordSlopRemovalEntry({
                                 data: craftingSlopRemovalInfo,
@@ -29480,6 +30215,22 @@ module.exports = function registerApiRoutes(scope) {
                         }
                     }
                 }
+
+                const craftCheckLabel = isHarvestAction
+                    ? 'Harvesting'
+                    : (isSalvageAction
+                        ? 'Salvaging'
+                        : (craftingMode === 'process' ? 'Processing' : 'Crafting'));
+                recordActionOutcomeCheckResultsEntry({
+                    resolution: actionOutcome,
+                    actorName,
+                    skillLabel: craftCheckLabel,
+                    reason: primaryActionSummaryText,
+                    promptLabel: craftCheckLabel,
+                    parentId: chatEntry?.id || null,
+                    locationId: resolvedLocationId,
+                    requestId: payload.requestId
+                });
 
                 if (!isNoProseRequest) {
                     const eventItems = [];
@@ -30274,12 +31025,6 @@ module.exports = function registerApiRoutes(scope) {
                             locationId: resolvedLocationId
                         });
 
-                        recordSkillCheckEntry({
-                            resolution: actionOutcome,
-                            parentId: chatEntry.id,
-                            locationId: resolvedLocationId
-                        });
-
                         if (slopRemovalInfo) {
                             recordSlopRemovalEntry({
                                 data: slopRemovalInfo,
@@ -30289,6 +31034,17 @@ module.exports = function registerApiRoutes(scope) {
                         }
                     }
                 }
+
+                recordActionOutcomeCheckResultsEntry({
+                    resolution: actionOutcome,
+                    actorName,
+                    skillLabel: 'Location Modification',
+                    reason: primaryActionSummaryText,
+                    promptLabel: 'Location Modification',
+                    parentId: chatEntry?.id || null,
+                    locationId: resolvedLocationId,
+                    requestId: payload.requestId
+                });
 
                 if (!isNoProseRequest) {
                     const eventItems = [{
@@ -32823,6 +33579,7 @@ module.exports = function registerApiRoutes(scope) {
                 defaultExistingSkills: toStringArray(raw.defaultExistingSkills),
                 defaultFactionCount: toNumberString(raw.defaultFactionCount),
                 defaultFactions: toFactionArray(raw.defaultFactions),
+                unifiedTonalScale: normalizeUnifiedTonalScaleSelections(raw.unifiedTonalScale),
                 availableClasses: toStringArray(raw.availableClasses),
                 availableRaces: toStringArray(raw.availableRaces),
                 customSlopWords: toStringArray(raw.customSlopWords)
@@ -37879,3 +38636,6 @@ module.exports = function registerApiRoutes(scope) {
 
     }
 };
+
+module.exports.formatNewExitDiscoveredSummaryDetail = formatNewExitDiscoveredSummaryDetail;
+module.exports.buildNewExitDiscoveredSummaryMetadata = buildNewExitDiscoveredSummaryMetadata;

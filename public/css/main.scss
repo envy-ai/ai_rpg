@@ -5757,6 +5757,16 @@ body.dark .thing-toggle-hint {
   em {
     color: #cbcbcb;
   }
+
+  hidden,
+  .hidden-note {
+    display: block;
+    padding: 10px;
+    margin: 4px;
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    font-size: 0.8em;
+    opacity: 0.8;
+  }
 }
 
 .message-actions {
@@ -11376,6 +11386,42 @@ button.turn-diff-drawer__entity-chip {
   outline: none;
   border-color: rgba(125, 211, 252, 0.75);
   box-shadow: 0 0 0 2px rgba(14, 165, 233, 0.34);
+}
+
+.turn-diff-drawer__new-exit-pill,
+.event-summary-new-exit-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-self: start;
+  max-width: 100%;
+  border: 1px solid rgba(56, 189, 248, 0.36);
+  border-radius: 999px;
+  background: rgba(14, 116, 144, 0.22);
+  color: rgba(224, 242, 254, 0.96);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.74rem;
+  font-weight: 700;
+  line-height: 1.1;
+  min-height: 1.45rem;
+  overflow-wrap: anywhere;
+  padding: 0.2rem 0.48rem;
+  text-align: left;
+  transition:
+    background 140ms ease,
+    border-color 140ms ease,
+    box-shadow 140ms ease;
+
+  &:hover {
+    background: rgba(14, 116, 144, 0.34);
+    border-color: rgba(125, 211, 252, 0.58);
+  }
+
+  &:focus-visible {
+    outline: none;
+    border-color: rgba(125, 211, 252, 0.78);
+    box-shadow: 0 0 0 2px rgba(14, 165, 233, 0.34);
+  }
 }
 
 .turn-diff-drawer__entity-target-highlight {

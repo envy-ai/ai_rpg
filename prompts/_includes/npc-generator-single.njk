@@ -30,11 +30,11 @@ Respond in the below format, making sure that <npcInfo> is the root tag and encl
             <name>{% if npc.name %}{{ npc.name }}<!--Name is fixed; do not change it.-->{% else %}<!--An appropriate name for this NPC. Do not use the name of an existing or deceased NPC.-->{% endif %}</name>
             <description>{% if npc.description %}{{ npc.description | replace('\n', ' ') }}{% else %}<!--Three sentences describing appearance, personality, current goals, and how they relate to the location. Replace their name with %NAME%.--> {% endif %}</description>
             <shortDescription>{% if npc.shortDescription %}{{ npc.shortDescription }}{% else %}<!--Ten words or fewer summarizing the NPC. Replace their name with %NAME%.--> {% endif %}</shortDescription>
-            <role>{% if npc.role %}{{ npc.role  }}{% else %}<!--Clear role, job, or niche within the location.-->{% endif %}</role>
+            <role>{% if npc.role %}{{ npc.role }}{% else %}<!--Clear role, job, or niche within the location.-->{% endif %}</role>
             <class>{% if npc.class %}{{ npc.class }}{% else %}<!--RPG class, vocation, or archetype.-->{% endif %}</class>
 
             <faction><!-- Full faction name from the list or "None" --></faction>
-            <race>{% if npc.race %}{{ npc.race }}{% else %}<!--Species or origin.-->{% endif %}</race>
+            <race>{% if npc.race %}{{ npc.race }}{% else %}<!--Species or origin.-->{% endif %}</race>            
 
             <!-- Only list things for resistances and vulnerabilities if they would differ significantly from a typical human. For example, if the NPC is a fire elemental, you might list "fire" under resistances and "cold" under vulnerabilities. If the NPC is a normal human with no particular resistances or vulnerabilities, leave these blank. For instance, humans aren't considered vulnerable to fire, as they take standard damage from it.-->
             <resistances>{% if npc.resistances %}{{ npc.resistances }}{% else %}<!--Any specific resistances, immunities, or things that are ineffective against them. "None" if none. Example: "slashing (resistant), cold (immune), charm effects (resistant)" -->{% endif %}</resistances>
@@ -74,6 +74,7 @@ Respond in the below format, making sure that <npcInfo> is the root tag and encl
                 <notes><!-- up to 2 paragraphs of additional information that's unique to the character. If the character has any secrets (known to the character themselves or not), put them here. --></notes>
             </personality>
             <healthAttribute><!-- Name of the attribute (from the list) that determines health gained at level up. Usually something related to toughness or stamina, but may differ for particularly strange npcs or creatures --></healthAttribute>
+            <aiNotes>{% if npc.aiNotes %}{{ npc.aiNotes }}{% else %}<!-- One or two brief sentences about things that might trigger the character to take action, like "Bob will attempt to heal if anyone is injured or bleeding, prioritizing allies over himself. He will attempt to flee if his health drops below 30%." -->{% endif %}</aiNotes>
         </npc>
     </npcs>
     <memories>

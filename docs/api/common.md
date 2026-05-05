@@ -26,7 +26,7 @@ Fields:
 - `lastEditedAt`: ISO string | undefined (edited messages)
 - `ephemeral`: boolean | undefined (system-only entries)
 - `toolCalls`: array | undefined (structured records on visible `tool-call-debug` entries; each record includes sequence/name/status, `cacheHit`/`cacheKey` for cached tool results, plus parameters and result or error payloads)
-- `checkResults`: array | undefined (structured records on visible `check-results` entries; each record includes `kind` (`skill`, `opposed-skill`, or `attack`), `status`, one-line `summary`, optional `skillCheck` or `attackSummary` expanded-detail payload, and `cacheHit`/`cacheKey` for cached tool results. Completed collapsed summaries avoid roll/DC/margin/health numbers; those stay in the expanded payloads. Skill summaries prefix the icon mapped from the existing outcome `degree` (`💣` critical failure, `🧨` major failure, `❌` failure, `😞` barely failed, `😰` barely succeeded, `✔️` success, `⭐` major success, `🌟` critical success); attack summaries map hits to `⚔️` with `(💥-Nhp)` appended and misses to `💨`.)
+- `checkResults`: array | undefined (structured records on visible `check-results` entries; each record includes `kind` (`skill`, `opposed-skill`, or `attack`), `status`, one-line `summary`, optional `skillCheck` or `attackSummary` expanded-detail payload, and `cacheHit`/`cacheKey` for cached tool results. Completed collapsed summaries avoid roll/DC/margin/health numbers; those stay in the expanded payloads. Skill summaries prefix the icon mapped from the existing outcome `degree` (`💣` critical failure, `🧨` major failure, `❌` failure, `😞` barely failed, `😰` barely succeeded, `✔️` success, `⭐` major success, `🌟` critical success); attack summaries map hits to `⚔️` with `(💥-Nhp)` appended and misses to `💨`. Craft/process/salvage/harvest and location-modification success-degree outcomes also use this shape, synthesized from their `ActionResolution` rather than from chat-tool calls.)
 - `metadata`: object (always includes `locationId`; may include `requestId`, `npcNames`, `traveledToLocationId` for travel turns, quest metadata, `npcTurnPending` plus `excludeFromBaseContextHistory` while a visible NPC-turn placeholder is still running, etc.)
 
 ## SummaryItem
@@ -42,6 +42,8 @@ Fields:
 - `metadata`: object | null. Need rows include `metadata.needBarChange` with actor id/name, need id/name, configured need icon, signed delta text, optional max value, reason, and display text. For `all`/`fill` need-bar changes, `deltaText` is the signed need-bar maximum rather than the capped actual delta. Disposition rows include `metadata.dispositionChange` with `npcId`, `npcName`, `typeKey`, `typeLabel`, configured disposition `icon`, signed `delta`, previous/new values, reason, and display text. The client uses these metadata objects to group rows per character.
 
 Legacy summaries may omit `severity`, `sourceType`, `entityRefs`, and `metadata`; the client treats them as normal-severity uncited rows and keeps legacy uncategorized event rows under `Other`.
+
+`new_exit_discovered` travel rows use the final parsed source/destination data for their display text. When the discovered exit starts somewhere other than the current location, the row is rendered as `Origin Location (Region) -> Destination Location (Region)` or `Origin Location -> Region`; region parentheticals are omitted for endpoints in the current region, and XML region exits keep any explicit destination location name for display. Rows may include `metadata.newExitDiscovered` with origin/destination location and region ids plus the created `exitId`; the client uses that metadata to render a map pill that opens the origin-region map and focuses the new destination or region-exit bubble.
 
 ## ActionResolution (resolveActionOutcome)
 Used by `/api/chat` (`actionResolution`) and `/api/craft` (`outcome`).
@@ -143,8 +145,8 @@ Fields:
 - `thingListViewPreferences` (object map of shared thing-list panel key -> view mode)
 - `factionId` (string | null)
 - `factionStandings` (object map of `factionId -> number`)
-- `personality` (object | null)
-- `personalityType`, `personalityTraits`, `personalityNotes`
+- `personality` (object | null, including `aiNotes` when available)
+- `personalityType`, `personalityTraits`, `personalityNotes`, `aiNotes`
 - `createdAt`, `lastUpdated`
 - `dispositionsTowardPlayer` (object map)
 - `quests` (array of Quest) when available

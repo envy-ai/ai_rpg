@@ -59,6 +59,7 @@ Region and Location Information:
                   {% endfor %}
               </goals>
               <notes>{{ npc.personality.notes | default('', true) }}</notes>
+              <aiNotes>{{ npc.aiNotes | default(npc.personality.aiNotes, true) | default('', true) }}</aiNotes>
             </personality>
             <health>{{ npc.health | default('unknown') }}</health>
             <maxHealth>{{ npc.maxHealth | default('unknown') }}</maxHealth>

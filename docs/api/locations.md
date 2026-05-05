@@ -85,7 +85,7 @@ Request:
   - `slots` may be empty; no-material attempts are judged from the location, player abilities, and notes.
   - Each selected item must be in the active player's inventory and must not be equipped.
   - `notes` may include an inline `<N>` die-roll override; the token is stripped before prompt rendering.
-  - `noProse=true` skips player-action prose and event-summary chat entries, but still applies mutation, material consumption, received-item grants, time advancement, need/status ticking, vehicle-arrival processing, and quest checks.
+  - `noProse=true` skips player-action prose and event-summary chat entries, but still applies mutation, material consumption, received-item grants, time advancement, need/status ticking, vehicle-arrival processing, quest checks, and the prompt-excluded `check-results` success-degree entry.
 
 Responses:
 - 200: `{ success: true, location, outcome, resultLevel, plausibility, modification, consumedThingIds, consumedThingNames, receivedThingIds, receivedThingNames, narrative, unmatchedConsumedNames, timeTakenMinutes, timeProgress, worldTime, imageCleared }`
@@ -150,6 +150,7 @@ Responses:
 - 200: `{ success: true, message, location: LocationResponse, created }`
   - `created` varies:
     - Region stub: `{ type: 'region', stubId, regionId, name, parentRegionId, isVehicle, vehicleType }`
+    - Existing live/pending region entrance: `{ type: 'region', stubId, regionId, destinationRegionId, name, existing: true, isStub, isVehicle, vehicleType }`
     - Existing location: `{ type: 'location', destinationId, name, isStub, existing: true, isVehicle, vehicleType }`
     - New location stub: `{ type: 'location', destinationId, name, isStub, isVehicle, vehicleType }`
 - 400/404/500: `{ success: false, error }`
@@ -157,6 +158,7 @@ Responses:
 
 Notes:
 - When neither `travelTime` nor `travelTimeMinutes` is supplied, the exit defaults to `1` minute.
+- `type: "region"` plus an existing `regionId` creates an exit to that live or pending region's entrance location/stub; no new location name is required.
 - Name validation happens before any new location/region stub is created, so rejected modal submissions do not mutate the world or add an exit.
 
 ## DELETE /api/locations/:id/exits/:exitId
@@ -168,8 +170,9 @@ Responses:
 - 200: `{ success: true, message, location: LocationResponse, removed, reverseRemoved?, deletedStub?, preservedStub? }`
   - `removed`: `{ exitId, direction }`
   - `reverseRemoved`: `{ exitId, direction }` when a reverse exit is removed
-  - `deletedStub`: stub deletion info when removing the last exit of a stub
+  - `deletedStub`: stub deletion info when removing the last exit of a stub; when this also removes the last reference to a pending region, includes `regionStubId`, `regionStubName`, `pendingRegionDeleted: true`, and any additional unresolved child stubs cleaned up under `deletedLocationStubs`
   - `preservedStub`: stub info when stub remains but loses this exit
+- Pending region-entry stubs are deleted only when no remaining exits anywhere in the location graph still target that pending region's entrance stub or one of its tracked pending child-location stubs. If other exits remain, the pending region record and entrance stub are preserved and `preservedStub` includes the pending `regionStubId`.
 - 400/404/500: `{ success: false, error }`
 
 ## POST /api/locations/:id/npcs

@@ -58,7 +58,7 @@ test('XML event parser converts core camelCase tags to existing event keys', () 
     try {
         const parsed = Events._parseXmlEventCheckResponse(`
 <events>
-  <newExitDiscovered><destination><locationName>Hidden Garden</locationName><regionName>Hedge Maze</regionName></destination><destinationKind>location</destinationKind><vehicleType>none</vehicleType><description>A concealed garden path.</description><exitLocation><locationName>Old Gatehouse</locationName><regionName>Castle Grounds</regionName></exitLocation><travelTime>5 minutes</travelTime></newExitDiscovered>
+  <newExitDiscovered><destination><locationName>Hidden Garden</locationName><regionName>Hedge Maze</regionName></destination><destinationKind>location</destinationKind><vehicleType>none</vehicleType><description>A concealed garden path.</description><origin><locationName>Old Gatehouse</locationName><regionName>Castle Grounds</regionName></origin><travelTime>5 minutes</travelTime></newExitDiscovered>
   <alterLocation><currentLocationName>Hall</currentLocationName><newLocationName>Burned Hall</newLocationName><changeDescription>Smoke blackens the walls.</changeDescription></alterLocation>
   <itemInflict><fullItemName>Healing Salve</fullItemName><targetName>Wanderer</targetName><statusEffect>Soothed</statusEffect></itemInflict>
   <itemIngest><fullItemName>Bitter Tea</fullItemName><consumerName>Wanderer</consumerName></itemIngest>
@@ -95,6 +95,7 @@ test('XML event parser converts core camelCase tags to existing event keys', () 
 
         const events = parsed.structured.parsed;
         assert.equal(events.new_exit_discovered[0].name, 'Hidden Garden');
+        assert.equal(events.new_exit_discovered[0].destinationLocationName, 'Hidden Garden');
         assert.equal(events.new_exit_discovered[0].destinationRegionName, 'Hedge Maze');
         assert.equal(events.new_exit_discovered[0].exitLocationName, 'Old Gatehouse');
         assert.equal(events.new_exit_discovered[0].exitRegionName, 'Castle Grounds');
@@ -136,6 +137,36 @@ test('XML event parser converts core camelCase tags to existing event keys', () 
     } finally {
         Globals.config = previousConfig;
     }
+});
+
+test('XML newExitDiscovered preserves destination location when destination kind is region', () => {
+    const parsed = Events._parseXmlEventCheckResponse(`
+<events>
+  <newExitDiscovered>
+    <destination>
+      <locationName>Gorge Trailhead</locationName>
+      <regionName>Copperwheel Gorge</regionName>
+    </destination>
+    <destinationKind>region</destinationKind>
+    <vehicleType>none</vehicleType>
+    <description>A switchback trail leads down into the copper gorge.</description>
+    <origin>
+      <locationName>Old Gatehouse</locationName>
+      <regionName>Castle Grounds</regionName>
+    </origin>
+    <travelTime>12 minutes</travelTime>
+  </newExitDiscovered>
+</events>
+`);
+
+    const entry = parsed.structured.parsed.new_exit_discovered[0];
+    assert.equal(entry.name, 'Copperwheel Gorge');
+    assert.equal(entry.kind, 'region');
+    assert.equal(entry.destinationLocationName, 'Gorge Trailhead');
+    assert.equal(entry.destinationRegionName, 'Copperwheel Gorge');
+    assert.equal(entry.exitLocationName, 'Old Gatehouse');
+    assert.equal(entry.exitRegionName, 'Castle Grounds');
+    assert.equal(entry.travelTimeMinutes, 12);
 });
 
 test('XML event parser splits travel phases and ignores during-travel events', () => {
@@ -271,7 +302,7 @@ test('runEventChecks defaults to XML events plus dedicated need-bar prompt witho
             textToCheck: 'Wanderer finds seven coins.'
         });
 
-        assert.deepEqual(capturedPromptTypes.sort(), ['events_xml', 'need-bars'].sort());
+        assert.deepEqual(capturedPromptTypes.sort(), ['events-xml', 'need-bars'].sort());
         assert.equal(loggedPrefixes.includes('event_checks_xml'), true);
         assert.equal(loggedPrefixes.includes('need_bar_event_checks'), true);
         assert.equal(result.currencyChanges.length, 1);
@@ -363,7 +394,7 @@ test('runEventChecks uses grouped legacy pathway when event_checks.use_xml is fa
             textToCheck: 'Nothing changes.'
         });
 
-        assert.equal(capturedPromptTypes.includes('events_xml'), false);
+        assert.equal(capturedPromptTypes.includes('events-xml'), false);
         assert.deepEqual(capturedPromptTypes, ['event-checks', 'event-checks']);
     } finally {
         Events._deps = previousDeps;

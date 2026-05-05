@@ -36,6 +36,7 @@
     <type>{{ alteredCharacter.personality.type or alteredCharacter.personality }}</type>
     <traits>{{ alteredCharacter.personality.traits }}</traits>
     <notes>{{ alteredCharacter.personality.notes }}</notes>
+    <aiNotes>{{ alteredCharacter.aiNotes | default(alteredCharacter.personality.aiNotes, true) }}</aiNotes>
     <goals>
       {%- if alteredCharacter.personality.goals -%}
         {% for goal in alteredCharacter.personality.goals %}
@@ -85,6 +86,7 @@ Guidelines:
 - Update the description and shortDescription to reflect any lasting physical, psychological, or social changes.
 - Adjust role, class, race, relative level, abilities, status effects, inventory, or currency if the alteration logically impacts them.
 - Refresh personality details to match the new mindset or outlook while preserving continuity with prior lore when appropriate.
+- Update AI notes when the alteration changes what should trigger this character to act.
 - Rename the character only when the alteration necessitates it; otherwise keep the existing name.
 - Ensure the revised character still fits the location, setting, and campaign tone, and keep banned names in mind.
 - Item names should be no more than 5 words long. 
@@ -107,6 +109,7 @@ Return the character in the following format:
     <traits>{% if characterSeed.personality and characterSeed.personality.traits %}{{ characterSeed.personality.traits }}{% else %}[Optional comma-separated quirks, neurodivergences, or notable traits]
     {% endif %}</traits>
     <notes>{% if characterSeed.personality and characterSeed.personality.notes %}{{ characterSeed.personality.notes }}{% else %}[0-2 sentences with extra context or hooks]{% endif %}</notes>
+    <aiNotes>{% if characterSeed.aiNotes %}{{ characterSeed.aiNotes }}{% elif characterSeed.personality and characterSeed.personality.aiNotes %}{{ characterSeed.personality.aiNotes }}{% else %}[One or two brief sentences about things that should trigger this character to take action]{% endif %}</aiNotes>
   </personality>
   <statusEffects>
     <effect>

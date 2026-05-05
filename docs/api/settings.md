@@ -15,6 +15,7 @@ Create a new setting.
 Request:
 - Body: SettingInfo fields (at minimum `name`)
   - Includes `defaultFactionCount` (non-negative integer or empty) and `defaultFactions` (array of faction drafts) for settings-scoped faction defaults.
+  - Includes `unifiedTonalScale`, an object keyed by tonal-axis id, where each selected axis is `{ level, comment? }`.
 
 Response:
 - 201: `{ success: true, setting: SettingInfo, message }`
@@ -35,6 +36,7 @@ Notes:
 - When autofilling `defaultExistingSkills` (and the list is empty or baseline-only), the AI is asked to add up to ~10 setting-specific skills to complement the baseline list.
 - `customSlopWords` is accepted as a list (or newline-delimited string) and round-trips through autofill as `<customSlopWords><word>...</word></customSlopWords>`.
 - `defaultFactionCount` and `defaultFactions` are accepted in the payload and preserved through merge behavior; setting autofill does not currently synthesize faction drafts directly.
+- `unifiedTonalScale` is accepted and preserved through merge behavior; setting autofill does not currently synthesize tonal-scale selections.
 
 Response:
 - 200: `{ success: true, setting, raw }` (merged setting values and raw AI XML)
@@ -60,6 +62,7 @@ Update a setting.
 Request:
 - Body: SettingInfo fields
   - Supports `defaultFactionCount` and `defaultFactions` updates.
+  - Supports `unifiedTonalScale` updates with numeric levels and optional comments.
 
 Response:
 - 200: `{ success: true, setting: SettingInfo, message }`

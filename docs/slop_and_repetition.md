@@ -6,7 +6,7 @@ Quick refresher on where these systems live and how they're wired.
 
 ### What it does
 - Default is ON (`config.default.yaml` sets `repetition_buster: true`), but it can be toggled in config.
-- When `config.repetition_buster` is enabled, the player-action prompt runs a multi-step self-correction flow and outputs either `<finalProse>...</finalProse>` or `<travelProse>...</travelProse>`. The server enforces a `requiredRegex` and extracts the prose for player-action prompts (used for player actions and NPC narratives).
+- When `config.repetition_buster` is enabled, the player-action prompt runs a multi-step self-correction flow and outputs either `<finalProse>...</finalProse>` or `<travelProse>...</travelProse>`. The server enforces a `requiredRegex` and extracts the final complete player-action root block for player-action prompts (used for player actions and NPC narratives), so draft/thinking text that mentions the same XML tags earlier in the response is ignored.
 - The normal non-attack player-action branch includes the `<travelProse>` scaffold for both explicit actions and empty "continue the scene" actions. The attack branch remains final-prose only so combat narration cannot accidentally trigger split travel handling.
 - If `config.repetition_buster` is **disabled**, the server still checks for repetition against recent prose. When overlap is detected, it re-renders the player-action prompt with repetition_buster forced on and re-asks the model.
 
@@ -47,7 +47,8 @@ Quick refresher on where these systems live and how they're wired.
 
 ### Notes
 - The rerun is only triggered for `player-action` responses (not NPC turns).
-- When repetition_buster is on, the server extracts `<finalProse>` or builds prose from `<travelProse>` for any `player-action` prompt, and logs the parsed XML as JSON for debugging. Random-event prompts use the same parser when repetition_buster is enabled.
+- When repetition_buster is on, the server extracts the last complete `<finalProse>`, `<travelProse>`, or `<rejected>` root block before strict parsing, then extracts `<finalProse>` or builds prose from `<travelProse>` for any `player-action` prompt, and logs the parsed XML as JSON for debugging. Random-event prompts use the same parser when repetition_buster is enabled.
+- Player-action prose extraction preserves nested `<hidden>...</hidden>` note blocks in `<finalProse>` and travel prose segments. Slop removal ignores hidden-note text when deciding whether visible prose needs cleanup and preserves hidden blocks in `<editedText>` output.
 - If `<travelProse>` is returned, the server runs event checks on the origin and destination prose separately (move events suppressed), moves the player to the destination between them, and emits separate event summaries (applies to player-action and random-event flows). A `<playerDestination><travelTime>...</travelTime></playerDestination>` value is parsed as a generated exit duration and is applied only when player-destination resolution creates a new origin exit; newly created return exits copy the same duration, while existing exits keep their stored travel time.
 - Travel prose segments are normalized to remove leading indentation at paragraph starts before processing.
 - Attack prose uses the same repetition-buster flow (the attack branch of `prompts/_includes/player-action.njk` now includes the `<finalProse>` instructions).

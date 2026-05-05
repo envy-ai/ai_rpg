@@ -387,6 +387,121 @@ test('getFullScene tool returns delineated actions and prose for a numbered scen
     assert.doesNotMatch(toolMessage.content, /Open the chest/);
 });
 
+test('getFullScene out-of-range errors return toolError and continue the loop', async () => {
+    const capturedMessagesByRound = [];
+    const debugEvents = [];
+    const loggedPrompts = [];
+    const sceneSummaries = {
+        getScenesInOrder: () => [
+            { startIndex: 1, endIndex: 1, startEntryId: 'a', endEntryId: 'a', summary: 'One.' },
+            { startIndex: 2, endIndex: 2, startEntryId: 'b', endEntryId: 'b', summary: 'Two.' },
+            { startIndex: 3, endIndex: 3, startEntryId: 'c', endEntryId: 'c', summary: 'Three.' },
+            { startIndex: 4, endIndex: 4, startEntryId: 'd', endEntryId: 'd', summary: 'Four.' }
+        ]
+    };
+    const runtime = createChatToolRuntime({
+        getConfig: () => ({ ai: { max_tool_rounds: 3 } }),
+        getChatHistory: () => [],
+        getSceneSummaries: () => sceneSummaries,
+        isAssistantProseLikeEntry: () => true,
+        serializeNpcForClient: () => ({}),
+        buildLocationResponse: () => ({}),
+        getCurrentPlayer: () => ({ id: 'player-1', name: 'Test Player', currentLocation: 'loc-1' }),
+        createLocationFromEvent: async () => {
+            throw new Error('createLocationFromEvent should not be reached.');
+        },
+        createRegionStubFromEvent: async () => {
+            throw new Error('createRegionStubFromEvent should not be reached.');
+        },
+        generateItemsByNames: async () => [],
+        ensureExitConnection: () => {
+            throw new Error('ensureExitConnection should not be reached.');
+        },
+        findRegionByLocationId: () => null,
+        LLMClient: {
+            chatCompletion: async (options) => {
+                capturedMessagesByRound.push(structuredClone(options.messages));
+                if (capturedMessagesByRound.length === 1) {
+                    options.onResponse?.({
+                        data: {
+                            choices: [{
+                                message: {
+                                    content: '',
+                                    tool_calls: [{
+                                        id: 'call-get-full-scene-out-of-range',
+                                        type: 'function',
+                                        function: {
+                                            name: 'getFullScene',
+                                            arguments: JSON.stringify({ sceneNumber: 7 })
+                                        }
+                                    }]
+                                }
+                            }]
+                        }
+                    });
+                    return '';
+                }
+                options.onResponse?.({
+                    data: {
+                        choices: [{
+                            message: {
+                                content: 'Recovered after scene lookup error.',
+                                tool_calls: []
+                            }
+                        }]
+                    }
+                });
+                return 'Recovered after scene lookup error.';
+            },
+            logPrompt: (payload) => {
+                loggedPrompts.push(payload);
+            },
+            formatMessagesForErrorLog: messages => JSON.stringify(messages)
+        },
+        Player: { getAll: () => [] },
+        Thing: { getAll: () => [] },
+        Location: { getAll: () => [], get: () => null },
+        Region: { getAll: () => [] },
+        getGameLocations: () => new Map(),
+        getFactions: () => [],
+        getRegionsMap: () => new Map(),
+        getPendingRegionStubs: () => new Map()
+    });
+
+    const result = await runtime.runChatCompletionWithToolLoop({
+        requestOptions: {
+            messages: [{ role: 'user', content: 'Review scene seven.' }]
+        },
+        metadataLabel: 'get_full_scene_out_of_range_test',
+        onToolCallDebug: event => {
+            debugEvents.push(structuredClone(event));
+        }
+    });
+
+    assert.equal(result.aiResponse, 'Recovered after scene lookup error.');
+    assert.equal(result.rounds, 2);
+    assert.equal(result.toolInvocations.length, 1);
+    assert.equal(result.toolInvocations[0].name, 'getFullScene');
+    assert.equal(result.toolInvocations[0].metadata.error, true);
+    assert.equal(result.toolInvocations[0].metadata.code, 'tool_execution_error');
+    assert.match(result.toolInvocations[0].metadata.message, /sceneNumber 7 is out of range; stored scenes: 4/);
+
+    assert.equal(debugEvents.length, 2);
+    assert.equal(debugEvents[0].phase, 'started');
+    assert.equal(debugEvents[1].phase, 'error');
+    assert.match(debugEvents[1].error.message, /sceneNumber 7 is out of range; stored scenes: 4/);
+
+    const secondRoundMessages = capturedMessagesByRound[1];
+    const toolMessage = secondRoundMessages.find((message) => message.role === 'tool');
+    assert.ok(toolMessage, 'Expected a tool response message in the second round.');
+    assert.match(toolMessage.content, /<toolError>/);
+    assert.match(toolMessage.content, /getFullScene sceneNumber 7 is out of range; stored scenes: 4\./);
+    assert.ok(
+        loggedPrompts.some(entry => entry?.prefix === 'get_full_scene_out_of_range_test_tool_call_error'),
+        'Expected the tool execution error to be logged.'
+    );
+});
+
 test('getFullScene tool schema exists', () => {
     const getFullScene = findToolDefinition('getFullScene');
     assert.ok(getFullScene, 'getFullScene tool definition should exist');

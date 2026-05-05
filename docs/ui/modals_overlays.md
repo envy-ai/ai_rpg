@@ -51,7 +51,7 @@ Most modals live in `views/index.njk` and are wired up by the inline script or `
 ## NPC views and management
 
 - `#npcInventoryModal`: character inventory listing with filters.
-- `#thingContainerModal`: two-column thing-container inventory modal using the shared thing-list renderer for current player inventory and selected container contents; on mobile it becomes a two-row vertical split where player inventory takes the top half and container contents the bottom half. Drag/drop, touch long-press drag, shift-click, `Add all`, or `Remove all` moves whole stacks, and nested containers reuse the same modal with a breadcrumb/back stack. `Add all`/`Remove all` operate only on the currently visible filtered items in their column, send one bulk API request, and use preflight validation for equipped items and self-containment.
+- `#thingContainerModal`: two-column thing-container inventory modal using the shared thing-list renderer for current player inventory and selected container contents; on mobile it becomes a two-row vertical split where player inventory takes the top half and container contents the bottom half. Drag/drop, touch long-press drag, shift-click, `Add all`, or `Remove all` moves whole stacks, and nested containers reuse the same modal with a breadcrumb/back stack. For single-item drag/drop or shift-click transfers, distinct dragged item moves can process concurrently; the same item and bulk moves remain guarded, and late responses are ignored unless they still target the active container modal session. `Add all`/`Remove all` operate only on the currently visible filtered items in their column, send one bulk API request, and use preflight validation for equipped items and self-containment.
 - `#npcViewModal`: character overview (attributes, skills, faction info, gear, read-only ability cards with active/passive/triggered color coding, status, plus read-only resistances/vulnerabilities text boxes).
   - Attributes/skills now use the shared allocation partials from the New Game UI.
   - Section order now renders Skills, the `Apply Point Changes` action row, and a Faction section above Equipment in the modal body.
@@ -65,10 +65,10 @@ Most modals live in `views/index.njk` and are wired up by the inline script or `
 - `#npcNeedsModal`: adjust need bars.
 - `#npcMemoriesModal`: edit important memories.
 - `#npcGoalsModal`: edit goals.
-- `#npcEditModal`: full NPC edit form (attributes, skills, abilities, status effects, faction membership, resistances, vulnerabilities).
+- `#npcEditModal`: full NPC edit form (attributes, skills, abilities, status effects, faction membership, resistances, vulnerabilities, and AI notes).
   - Abilities in the edit form include a required short description field, and their name/type fields are color-coded by active/passive/triggered type.
   - NPCs also expose per-character need-bar applicability checkboxes here; unchecked bars are removed for that NPC, and re-enabling them restores the bar at `100`. This section is omitted for the player.
-- `#addNpcModal`: generate and add a new NPC (optional reference image).
+- `#addNpcModal`: generate and add a new NPC (optional reference image and AI-notes seed).
 
 ## Item / scenery editing
 
@@ -91,7 +91,7 @@ Most modals live in `views/index.njk` and are wired up by the inline script or `
 - `#regionWeatherEditModal`: edit the current location's containing region weather definition from the location context menu.
 - `#calendarEditModal`: tabbed field editor for the active `calendarDefinition`, opened from the location/map context menus. It loads `/api/calendar`, edits year name plus ordered months, weekdays, seasons/time descriptions, and holidays, saves through `PUT /api/calendar`, and displays validation failures from the server without mutating the calendar.
 - `#setLastSeenModal`: opened from the main-location and map location context menus. It prompts for the same exact-time (`H AM/PM` or `H:MM AM/PM`) or relative (`duration ago`) input supported by `/set_last_seen`, displays the selected location label, and submits by calling the existing slash-command execution path instead of duplicating client-side parsing.
-- `#newExitModal`: create or edit exits (new region/location, editable travel time, optional image). User-entered names for new locations/regions are validated server-side before creation; duplicate existing/pending world names, banned name fragments, and slop words return an alert and do not create a stub or exit.
+- `#newExitModal`: create or edit exits (new region/location, existing location, or an existing pending region's entrance, with editable travel time and optional image for new stubs). User-entered names for new locations/regions are validated server-side before creation; duplicate existing/pending world names, banned name fragments, and slop words return an alert and do not create a stub or exit.
 - Summon NPC/item now reuse the shared searchable chooser modal (`.npc-selection-modal`) instead of dedicated `<select>`-based forms.
   - `Summon NPC` filters existing NPCs by name/location and executes immediately on row click.
   - `Summon Item or Scenery` filters existing thing records by name/type/origin label (including inventory origins like `Bob's inventory`) and executes immediately on row click.

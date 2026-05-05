@@ -75,6 +75,7 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                 <div class="editor-tabs" role="tablist" aria-label="Setting editor sections">
                     <button type="button" class="editor-tab-btn is-active" data-editor-tab="basics" aria-selected="true">Basics</button>
                     <button type="button" class="editor-tab-btn" data-editor-tab="defaults" aria-selected="false">New Game Defaults</button>
+                    <button type="button" class="editor-tab-btn" data-editor-tab="tone-scale" aria-selected="false">Tone Scale</button>
                     <button type="button" class="editor-tab-btn" data-editor-tab="factions" aria-selected="false">Factions</button>
                     <button type="button" class="editor-tab-btn" data-editor-tab="characters" aria-selected="false">Character Options</button>
                     <button type="button" class="editor-tab-btn" data-editor-tab="prompts" aria-selected="false">Prompt Guidance</button>
@@ -191,6 +192,55 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                                 <textarea id="defaultExistingSkills" name="defaultExistingSkills" rows="7" placeholder="Enter skill names..."></textarea>
                                 <div class="help-text">These skills become the default skill list for new games.</div>
                             </div>
+                        </div>
+                    </section>
+
+                    <section class="editor-tab-panel" data-editor-panel="tone-scale">
+                        <div class="field-grid tone-scale-grid">
+                            <div class="form-group full-width">
+                                <div class="help-text">Pick one level for each tonal axis. Comments are optional and are appended to the selected level's meaning in system prompts.</div>
+                            </div>
+                            {% if unifiedTonalScaleError %}
+                            <div class="form-group full-width">
+                                <div class="tone-scale-error">Unified tonal scale could not be loaded: {{ unifiedTonalScaleError }}</div>
+                            </div>
+                            {% elif unifiedTonalScaleDefinition and unifiedTonalScaleDefinition.axes %}
+                            {% for axisKey, axis in unifiedTonalScaleDefinition.axes %}
+                            <div class="form-group full-width tone-scale-axis" data-tonal-axis-card="{{ axisKey }}">
+                                <div class="tone-scale-axis-header">
+                                    <div>
+                                        <h3>{{ axis.title }}</h3>
+                                        <p>{{ axis.framing }}</p>
+                                    </div>
+                                    <span>{{ axis.abbreviation }}</span>
+                                </div>
+                                <div class="tone-scale-axis-fields">
+                                    <div>
+                                        <label for="unifiedTonalScale_{{ axisKey }}_level">Level</label>
+                                        <select id="unifiedTonalScale_{{ axisKey }}_level" data-tonal-axis="{{ axisKey }}">
+                                            <option value="">Not set</option>
+                                            {% for level in axis.levels %}
+                                            <option value="{{ level.level }}">{{ level.level }} - {{ level.name }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label for="unifiedTonalScale_{{ axisKey }}_comment">Comment</label>
+                                        <textarea id="unifiedTonalScale_{{ axisKey }}_comment" data-tonal-axis-comment="{{ axisKey }}" rows="3" placeholder="Optional setting-specific guidance for this axis..."></textarea>
+                                    </div>
+                                </div>
+                                <div class="tone-scale-levels">
+                                    {% for level in axis.levels %}
+                                    <div><strong>{{ level.level }} {{ level.name }}:</strong> {{ level.description }}</div>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                            {% endfor %}
+                            {% else %}
+                            <div class="form-group full-width">
+                                <div class="tone-scale-error">No tonal scale axes are available.</div>
+                            </div>
+                            {% endif %}
                         </div>
                     </section>
 
@@ -421,6 +471,8 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
         const defaultExistingSkillsList = {{ (defaultExistingSkills or []) | dump | safe }};
         const defaultExistingSkillsLoadError = {{ (defaultExistingSkillsError or '') | dump | safe }};
         const defaultFactionCountFallback = {{ (defaultFactionCountFallback or 5) | dump | safe }};
+        const unifiedTonalScaleDefinition = {{ (unifiedTonalScaleDefinition or {}) | dump | safe }};
+        const unifiedTonalScaleLoadError = {{ (unifiedTonalScaleError or '') | dump | safe }};
         const autofillInstructionsModal = document.getElementById('autofillInstructionsModal');
         const autofillInstructionsInput = document.getElementById('autofillInstructionsInput');
         const autofillImageInput = document.getElementById('autofillImageInput');
@@ -443,6 +495,129 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
 
         function getDefaultExistingSkillsText() {
             return getDefaultExistingSkillsList().join('\n');
+        }
+
+        function getUnifiedTonalScaleAxes() {
+            const axes = unifiedTonalScaleDefinition && typeof unifiedTonalScaleDefinition === 'object'
+                ? unifiedTonalScaleDefinition.axes
+                : null;
+            if (!axes || typeof axes !== 'object' || Array.isArray(axes)) {
+                return [];
+            }
+            return Object.entries(axes).map(([key, axis]) => ({
+                key,
+                title: axis?.title || key,
+                abbreviation: axis?.abbreviation || key.slice(0, 1).toUpperCase()
+            }));
+        }
+
+        function getTonalScaleField(attributeName, axisKey) {
+            return Array.from(document.querySelectorAll(`[${attributeName}]`))
+                .find(field => field.getAttribute(attributeName) === axisKey) || null;
+        }
+
+        function clearUnifiedTonalScaleForm() {
+            getUnifiedTonalScaleAxes().forEach(({ key }) => {
+                const levelField = getTonalScaleField('data-tonal-axis', key);
+                const commentField = getTonalScaleField('data-tonal-axis-comment', key);
+                if (levelField) {
+                    levelField.value = '';
+                }
+                if (commentField) {
+                    commentField.value = '';
+                }
+            });
+        }
+
+        function applyUnifiedTonalScaleToForm(value) {
+            clearUnifiedTonalScaleForm();
+            if (!value || typeof value !== 'object' || Array.isArray(value)) {
+                return;
+            }
+            getUnifiedTonalScaleAxes().forEach(({ key }) => {
+                const entry = value[key];
+                if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+                    return;
+                }
+                const levelField = getTonalScaleField('data-tonal-axis', key);
+                const commentField = getTonalScaleField('data-tonal-axis-comment', key);
+                if (levelField && entry.level !== undefined && entry.level !== null) {
+                    levelField.value = String(entry.level);
+                }
+                if (commentField && typeof entry.comment === 'string') {
+                    commentField.value = entry.comment;
+                }
+            });
+        }
+
+        function collectUnifiedTonalScaleFromForm() {
+            const axes = getUnifiedTonalScaleAxes();
+            if (!axes.length) {
+                return {};
+            }
+
+            const selections = {};
+            const missingLevels = [];
+            let hasAnyValue = false;
+
+            axes.forEach(({ key, title }) => {
+                const levelField = getTonalScaleField('data-tonal-axis', key);
+                const commentField = getTonalScaleField('data-tonal-axis-comment', key);
+                const rawLevel = (levelField?.value || '').trim();
+                const comment = (commentField?.value || '').trim();
+                if (!rawLevel && !comment) {
+                    return;
+                }
+
+                hasAnyValue = true;
+                if (!rawLevel) {
+                    missingLevels.push(title);
+                    return;
+                }
+
+                const level = Number(rawLevel);
+                if (!Number.isFinite(level)) {
+                    throw new Error(`${title} level must be numeric.`);
+                }
+
+                selections[key] = { level };
+                if (comment) {
+                    selections[key].comment = comment;
+                }
+            });
+
+            if (!hasAnyValue) {
+                return {};
+            }
+            if (missingLevels.length) {
+                throw new Error(`Tone scale comments require selected levels: ${missingLevels.join(', ')}.`);
+            }
+            const selectedAxisCount = Object.keys(selections).length;
+            if (selectedAxisCount !== axes.length) {
+                const missing = axes
+                    .filter(({ key }) => !selections[key])
+                    .map(({ title }) => title);
+                throw new Error(`Select a level for every tone scale axis before saving. Missing: ${missing.join(', ')}.`);
+            }
+
+            return selections;
+        }
+
+        function buildUnifiedTonalScaleNotationFromForm() {
+            const axes = getUnifiedTonalScaleAxes();
+            if (!axes.length) {
+                return '';
+            }
+            const parts = [];
+            for (const { key, abbreviation } of axes) {
+                const levelField = getTonalScaleField('data-tonal-axis', key);
+                const rawLevel = (levelField?.value || '').trim();
+                if (!rawLevel) {
+                    return '';
+                }
+                parts.push(`${abbreviation}${rawLevel}`);
+            }
+            return parts.join('-');
         }
 
         function applyDefaultExistingSkillsIfBlank() {
@@ -524,6 +699,9 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                 const warningMessage = `Warning: default skills could not be loaded. ${defaultExistingSkillsLoadError}`;
                 showMessage(warningMessage, 'error');
                 window.alert(warningMessage);
+            }
+            if (unifiedTonalScaleLoadError) {
+                showMessage(`Warning: unified tonal scale could not be loaded. ${unifiedTonalScaleLoadError}`, 'error');
             }
             applyDefaultExistingSkillsIfBlank();
         });
@@ -866,6 +1044,7 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
             assignValue('baseContextPreamble', setting.baseContextPreamble || '');
             assignValue('characterGenInstructions', setting.characterGenInstructions || '');
             assignValue('customSlopWords', joinLines(setting.customSlopWords));
+            applyUnifiedTonalScaleToForm(setting.unifiedTonalScale);
             assignValue('imagePromptPrefixCharacter', setting.imagePromptPrefixCharacter || '');
             assignValue('imagePromptPrefixLocation', setting.imagePromptPrefixLocation || '');
             assignValue('imagePromptPrefixItem', setting.imagePromptPrefixItem || '');
@@ -1073,6 +1252,7 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
             if (defaultFactionsField) {
                 defaultFactionsField.value = '[]';
             }
+            clearUnifiedTonalScaleForm();
             if (settingsFactionEditor) {
                 settingsFactionEditor.clear();
             }
@@ -1119,6 +1299,10 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
             }
             if (Number.isFinite(parsedFactionCount) && parsedFactionCount >= 0) {
                 extraLines.push(`Factions: ${parsedFactionCount}`);
+            }
+            const toneScaleNotation = buildUnifiedTonalScaleNotationFromForm();
+            if (toneScaleNotation) {
+                extraLines.push(`Tone Scale: ${toneScaleNotation}`);
             }
             
             content.innerHTML = `
@@ -1874,6 +2058,12 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                     showMessage(error?.message || 'Default factions JSON is invalid.', 'error');
                     return;
                 }
+                try {
+                    settingData.unifiedTonalScale = collectUnifiedTonalScaleFromForm();
+                } catch (error) {
+                    showMessage(error?.message || 'Tone scale selections are invalid.', 'error');
+                    return;
+                }
                 
                 try {
                     let response;
@@ -2172,6 +2362,7 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                     ? parsedDefaultFactionCount
                     : '';
                 settingPayload.defaultFactions = parseDefaultFactionsValue(settingPayload.defaultFactions);
+                settingPayload.unifiedTonalScale = collectUnifiedTonalScaleFromForm();
 
                 const requestBody = {
                     setting: settingPayload,

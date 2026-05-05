@@ -139,11 +139,39 @@ test('base-context compact inventory item lines include value before description
     );
 });
 
+test('base-context status effect XML includes effect names', () => {
+    const promptEnv = createPromptEnv();
+    const context = buildRenderContext();
+    context.saveFileSaveVersion = 0;
+    context.Globals.saveFileSaveVersion = 0;
+    context.currentLocation.statusEffects = [{
+        name: 'Bleeding Wounds',
+        description: 'Open cuts continue to bleed.',
+        duration: 45
+    }];
+    context.currentPlayer.statusEffects = [{
+        name: 'Shaken',
+        description: 'Hands tremble after the ambush.',
+        duration: 10
+    }];
+    context.currentPlayer.inventory[0].statusEffects = [{
+        name: 'True North',
+        description: 'The needle refuses to point anywhere else.',
+        duration: -1
+    }];
+
+    const rendered = promptEnv.render('base-context.xml.njk', context);
+
+    assert.match(rendered, /<effect>\s*<name>Bleeding Wounds<\/name>\s*<description>Open cuts continue to bleed\.<\/description>/);
+    assert.match(rendered, /<effect>\s*<name>Shaken<\/name>\s*<description>Hands tremble after the ambush\.<\/description>/);
+    assert.match(rendered, /<effect>\s*<name>True North<\/name>\s*<description>The needle refuses to point anywhere else\.<\/description>/);
+});
+
 test('base-context generationPrompt CDATA preserves literal XML-shaped instructions', () => {
     const promptEnv = createPromptEnv();
     const context = {
         ...buildRenderContext(),
-        promptType: 'events_xml',
+        promptType: 'events-xml',
         textToCheck: 'Nothing happens.',
         actionText: '',
         includePlayerActionBlock: false,
@@ -167,4 +195,83 @@ test('base-context generationPrompt CDATA preserves literal XML-shaped instructi
     assert.doesNotMatch(generationPrompt, /<!\[CDATA\[|\]\]>/);
     assert.match(generationPrompt, /<gameState>/);
     assert.match(generationPrompt, /<events>/);
+});
+
+test('base-context renders inventory-generator as an include prompt', () => {
+    const promptEnv = createPromptEnv();
+    const context = {
+        ...buildRenderContext(),
+        promptType: 'inventory-generator',
+        character: {
+            name: 'Tessa',
+            role: 'guide',
+            description: 'A cautious trail guide.',
+            class: 'Ranger',
+            level: 3,
+            race: 'Elf'
+        },
+        attributeDefinitions: {
+            Might: { description: 'Physical strength.' },
+            Wits: { description: 'Quick thinking.' }
+        },
+        attributes: ['Might', 'Wits'],
+        gearSlots: ['weapon', 'armor'],
+        equipmentSlots: ['weapon', 'armor'],
+        lorebookEntries: [{ content: 'Trail guides in this region carry storm charms.' }],
+        thingSeed: {}
+    };
+
+    const rendered = promptEnv.render('base-context.xml.njk', context);
+
+    assert.match(rendered, /<gameState>/);
+    assert.match(rendered, /<name>Tessa<\/name>/);
+    assert.match(rendered, /generate a set of 1 to 5 items/);
+    assert.match(rendered, /Trail guides in this region carry storm charms\./);
+    assert.doesNotMatch(rendered, /<generationPrompt><!\[CDATA\[[\s\S]*<template>/);
+});
+
+test('base-context current location NPC list omits party members', () => {
+    const promptEnv = createPromptEnv();
+    const partyMember = {
+        id: 'party-mira',
+        name: 'Mira',
+        description: 'A party member.',
+        class: 'Cleric',
+        race: 'Human',
+        personality: { type: '', traits: '', goals: [], notes: '', aiNotes: '' },
+        dispositionsTowardsPlayer: [],
+        selectedImportantMemories: [],
+        inventory: [],
+        skills: [],
+        abilities: [],
+        statusEffects: [],
+        needs: ['Mira needs rest.']
+    };
+    const locationNpc = {
+        id: 'npc-tessa',
+        name: 'Tessa',
+        description: 'A local guide.',
+        class: 'Ranger',
+        race: 'Elf',
+        personality: { type: '', traits: '', goals: [], notes: '', aiNotes: '' },
+        dispositionsTowardsPlayer: [],
+        selectedImportantMemories: [],
+        inventory: [],
+        skills: [],
+        abilities: [],
+        statusEffects: [],
+        needs: ['Tessa needs water.']
+    };
+    const context = {
+        ...buildRenderContext(),
+        npcs: [partyMember, locationNpc],
+        party: [partyMember],
+        partyMemberIds: [partyMember.id]
+    };
+
+    const rendered = promptEnv.render('base-context.xml.njk', context);
+    const currentLocationNpcBlock = rendered.match(/<currentLocation>[\s\S]*?<npcs>([\s\S]*?)<\/npcs>/)?.[1] || '';
+
+    assert.doesNotMatch(currentLocationNpcBlock, /<name>Mira<\/name>/);
+    assert.match(currentLocationNpcBlock, /<name>Tessa<\/name>/);
 });

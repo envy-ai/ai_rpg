@@ -426,6 +426,73 @@
   gap: 0.5rem;
 }
 
+.tone-scale-grid {
+  gap: 0.9rem;
+}
+
+.tone-scale-axis {
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.24);
+  padding: 0.85rem;
+}
+
+.tone-scale-axis-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.85rem;
+  margin-bottom: 0.75rem;
+
+  h3 {
+    margin: 0;
+    color: $white;
+    font-size: 1rem;
+  }
+
+  p {
+    margin: 0.2rem 0 0;
+    color: $white-70;
+    font-size: 0.82rem;
+  }
+
+  span {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 2rem;
+    height: 2rem;
+    border-radius: 999px;
+    background: rgba(102, 126, 234, 0.35);
+    color: $white;
+    font-weight: 700;
+  }
+}
+
+.tone-scale-axis-fields {
+  display: grid;
+  grid-template-columns: minmax(150px, 220px) minmax(0, 1fr);
+  gap: 0.8rem;
+  align-items: start;
+}
+
+.tone-scale-levels {
+  display: grid;
+  gap: 0.38rem;
+  margin-top: 0.75rem;
+  color: $white-70;
+  font-size: 0.8rem;
+  line-height: 1.35;
+}
+
+.tone-scale-error {
+  border: 1px solid rgba(234, 67, 53, 0.5);
+  border-radius: 8px;
+  background: rgba(234, 67, 53, 0.16);
+  color: #ffb2ad;
+  padding: 0.75rem;
+}
+
 .preview-section {
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(255, 255, 255, 0.18);
@@ -586,6 +653,10 @@
   }
 
   .settings-faction-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .tone-scale-axis-fields {
     grid-template-columns: 1fr;
   }
 

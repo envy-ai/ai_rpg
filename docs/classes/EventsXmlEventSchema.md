@@ -69,22 +69,22 @@ Normal event elements are direct children of `<events>`.
 
 ### `new_exit_discovered`
 
-Use this when the text reveals, unlocks, unblocks, creates, clears, finds out about, or otherwise discovers a route or vehicle connection to another location or region. Unlike movement tags, this does not mean the player traveled there. `newExitDiscovered` is not a travel context boundary. Omit `exitLocation` when the route is discovered at the current location; include it when the discovered exit starts somewhere else.
+Use this when the text reveals, unlocks, unblocks, creates, clears, finds out about, or otherwise discovers a route or vehicle connection to another location or region. Unlike movement tags, this does not mean the player traveled there. `newExitDiscovered` is not a travel context boundary. Omit `origin` when the route is discovered at the current location; include it when the discovered exit starts somewhere else. If the destination is a region, still include a concrete destination location name when the text provides or implies one; the handler uses the region as the wiring target while summaries can display the specific destination location.
 
 ```xml
 <newExitDiscovered>
   <destination>
-    <locationName>Exact location name of the exit's destination. Omit if the exit is to a region.</locationName>
     <regionName>Exact region name of the exit's destination</regionName>
+    <locationName>Exact location name of the exit's destination, including for region exits when known or implied</locationName>
   </destination>
   <destinationKind>location|region</destinationKind>
   <vehicleType>none OR vehicle type, if this exit is a vehicle connection</vehicleType>
   <description>1-2 sentence destination or exit description</description>
-  <exitLocation>
+  <origin>
     <locationName>Exact location name where the exit starts</locationName>
     <regionName>Exact region name where the exit starts</regionName>
-  </exitLocation>
-  <travelTime>Exact duration, such as 30 minutes or 1 hour, from the exitLocation or current location</travelTime>
+  </origin>
+  <travelTime>Exact duration, such as 30 minutes or 1 hour, from the origin or current location</travelTime>
 </newExitDiscovered>
 ```
 
@@ -292,7 +292,7 @@ Use this when an animate entity gains or loses a temporary status effect that is
 
 ### `npc_arrival_departure`
 
-Use this when an animate entity arrives at the current location from elsewhere, newly appears in the scene, or leaves the scene for another destination. For departures, include the best-known destination region and location. Do not use this for party members simply remaining with the player.
+Use this when an animate entity arrives at the current location from elsewhere, newly appears in the scene, or leaves the scene for another destination. For departures, include the best-known destination region and location. If a party member stops accompanying the player and goes to a destination, use this event so they can leave the party before moving there. Do not use this for party members simply remaining with the player.
 
 ```xml
 <npcArrivalDeparture>
@@ -315,7 +315,7 @@ Use this as a catch-all for physically present entities mentioned or acting in t
 
 ### `party_change`
 
-Use this when a physically present NPC begins willingly accompanying, leading, following, or otherwise joining the player party, or stops doing so. Do not use this for casual cooperation unless the NPC is actually accompanying the player.
+Use this when a physically present NPC begins willingly accompanying, leading, following, or otherwise joining the player party, or stops doing so without moving to another known destination. Do not use this for casual cooperation unless the NPC is actually accompanying the player.
 
 ```xml
 <partyChange>

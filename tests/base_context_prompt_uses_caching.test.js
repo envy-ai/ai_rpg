@@ -1,5 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('fs');
 const path = require('path');
 const nunjucks = require('nunjucks');
 
@@ -114,4 +115,10 @@ test('base-context keeps olderStoryHistory when prompt_uses_caching is true', ()
     }));
 
     assert.match(rendered, /<olderStoryHistory>Older story entry\.<\/olderStoryHistory>/);
+});
+
+test('base-context history assembly does not append an empty recent-story separator to older history', () => {
+    const serverSource = fs.readFileSync(path.join(process.cwd(), 'server.js'), 'utf8');
+
+    assert.doesNotMatch(serverSource, /Recent story \(verbatim, not summarized\)/);
 });

@@ -103,6 +103,74 @@ function syncVehicleOverlayPositions(cy) {
   });
 }
 
+function normalizeMapFocusOptions(options = {}) {
+  const source = options && typeof options === 'object' ? options : {};
+  const normalized = {};
+  [
+    'focusNodeId',
+    'focusLocationId',
+    'focusDestinationId',
+    'destinationId',
+    'focusExitId',
+    'exitId'
+  ].forEach(key => {
+    const value = typeof source[key] === 'string' ? source[key].trim() : '';
+    if (value) {
+      normalized[key] = value;
+    }
+  });
+  return normalized;
+}
+
+function resolveMapFocusNode(options = {}) {
+  if (!cyInstance) {
+    return null;
+  }
+  const normalized = normalizeMapFocusOptions(options);
+  const candidateIds = [
+    normalized.focusNodeId,
+    normalized.focusLocationId,
+    normalized.focusDestinationId,
+    normalized.destinationId,
+    normalized.focusExitId ? `region-exit-${normalized.focusExitId}` : '',
+    normalized.exitId ? `region-exit-${normalized.exitId}` : ''
+  ].filter(Boolean);
+
+  for (const candidateId of candidateIds) {
+    const node = cyInstance.getElementById(candidateId);
+    if (node && !node.empty()) {
+      return node;
+    }
+  }
+  return null;
+}
+
+function focusRegionMapNode(options = {}) {
+  if (!cyInstance) {
+    return false;
+  }
+  const node = typeof options === 'string'
+    ? resolveMapFocusNode({ focusNodeId: options })
+    : resolveMapFocusNode(options);
+  if (!node) {
+    return false;
+  }
+  cyInstance.nodes().removeClass('map-focus');
+  node.addClass('map-focus');
+  try {
+    cyInstance.animate({
+      center: { eles: node },
+      zoom: Math.max(cyInstance.zoom(), 1.15)
+    }, {
+      duration: 450,
+      easing: 'ease-out'
+    });
+  } catch (_) {
+    cyInstance.center(node);
+  }
+  return true;
+}
+
 function ensureCytoscape(container) {
   if (cyInstance) {
     cyInstance.destroy();
@@ -274,6 +342,16 @@ function ensureCytoscape(container) {
       }
     },
     {
+      selector: 'node.map-focus',
+      style: {
+        'border-color': '#38bdf8',
+        'border-width': 5,
+        'shadow-blur': 18,
+        'shadow-color': '#38bdf8',
+        'shadow-opacity': 0.85
+      }
+    },
+    {
       selector: 'edge.region-exit-edge',
       style: {
         'width': 2,
@@ -293,9 +371,9 @@ function ensureCytoscape(container) {
 }
 
 
-function loadRegionMap(regionId = null) {
+function loadRegionMap(regionId = null, options = {}) {
   const container = document.getElementById('mapContainer');
-  if (!container) return;
+  if (!container) return Promise.resolve(false);
 
   container.classList.add('map-placeholder');
   container.textContent = 'Loading map...';
@@ -310,19 +388,23 @@ function loadRegionMap(regionId = null) {
     url += `?regionId=${encodeURIComponent(regionId)}`;
   }
 
-  fetch(url)
+  return fetch(url)
     .then(res => res.json())
     .then(data => {
       if (!data.success) {
         showMapError(data.error || 'Failed to load region map');
-        return;
+        return false;
       }
-      renderMap(data.region);
+      renderMap(data.region, options);
+      return true;
     })
-    .catch(err => showMapError(err.message));
+    .catch(err => {
+      showMapError(err.message);
+      return false;
+    });
 }
 
-function renderMap(region) {
+function renderMap(region, options = {}) {
   const container = document.getElementById('mapContainer');
   if (!container) return;
 
@@ -494,7 +576,8 @@ function renderMap(region) {
 
   cy.nodes().forEach(node => node.toggleClass('stub', node.data('isStub')));
   cy.nodes().forEach(node => node.toggleClass('visited', node.data('visited')));
-  const runLayout = (options = {}) => {
+  const focusOptions = normalizeMapFocusOptions(options);
+  const runLayout = (layoutOptions = {}, afterLayout = null) => {
     if (!cyInstance) return;
     const layout = cyInstance.layout({
       name: 'fcose',
@@ -503,15 +586,22 @@ function renderMap(region) {
       animationEasing: 'ease-out',
       randomize: false,
       fit: false,
-      ...options
+      ...layoutOptions
     });
     layout.on('layoutstop', () => {
       syncVehicleOverlayPositions(cyInstance);
+      if (typeof afterLayout === 'function') {
+        afterLayout();
+      }
     });
     layout.run();
   };
 
-  runLayout({ randomize: true, fit: true });
+  runLayout({ randomize: true, fit: true }, () => {
+    if (Object.keys(focusOptions).length) {
+      focusRegionMapNode(focusOptions);
+    }
+  });
   cy.boxSelectionEnabled(false);
   cy.nodes().grabify();
   cy.nodes('.vehicle-overlay').ungrabify();
@@ -1413,3 +1503,4 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 window.loadRegionMap = loadRegionMap;
+window.focusRegionMapNode = focusRegionMapNode;

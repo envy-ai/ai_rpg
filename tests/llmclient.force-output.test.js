@@ -8,6 +8,58 @@ const axios = require('axios');
 const Globals = require('../Globals.js');
 const LLMClient = require('../LLMClient.js');
 
+test('LLMClient.chatCompletion includes the prompt label in chat completion error log filenames', { concurrency: false }, async () => {
+    const originalAxiosPost = axios.post;
+    const originalConfig = Globals.config;
+    const originalBaseDir = Globals.baseDir;
+    const tmpRoot = path.resolve(__dirname, '..', 'tmp');
+    fs.mkdirSync(tmpRoot, { recursive: true });
+    const tempBaseDir = fs.mkdtempSync(path.join(tmpRoot, 'llmclient-error-log-'));
+
+    axios.post = async () => {
+        const error = new Error('Synthetic chat completion failure.');
+        error.status = 500;
+        throw error;
+    };
+    Globals.baseDir = tempBaseDir;
+    Globals.config = {
+        ai: {
+            backend: 'openai_compatible',
+            endpoint: 'https://example.invalid/v1/chat/completions',
+            apiKey: 'test-key',
+            model: 'test-model',
+            stream: false,
+            retryAttempts: 0,
+            max_concurrent_requests: 1,
+            supress_seed: true
+        }
+    };
+
+    try {
+        const result = await LLMClient.chatCompletion({
+            messages: [{ role: 'user', content: 'Trigger an error.' }],
+            metadataLabel: 'event_checks',
+            errorLogLabel: 'events-xml',
+            validateXML: false,
+            stream: false,
+            retryAttempts: 0,
+            output: 'silent'
+        });
+
+        assert.equal(result, '');
+        const logDir = path.join(tempBaseDir, 'logs');
+        const filenames = fs.readdirSync(logDir);
+        assert.ok(
+            filenames.some(filename => /^ERROR_chatCompletionError_events-xml_\d+\.log$/.test(filename)),
+            `Expected events-xml chat completion error log, got: ${filenames.join(', ')}`
+        );
+    } finally {
+        axios.post = originalAxiosPost;
+        Globals.config = originalConfig;
+        Globals.baseDir = originalBaseDir;
+    }
+});
+
 test('LLMClient.chatCompletion uses forceOutput string without network call', async () => {
     const originalAxiosPost = axios.post;
     const originalConfig = Globals.config;

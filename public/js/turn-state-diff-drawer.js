@@ -416,6 +416,71 @@
         return list;
     }
 
+    function normalizeNewExitMetadata(row) {
+        const metadata = row && row.metadata && typeof row.metadata === 'object'
+            ? row.metadata.newExitDiscovered
+            : null;
+        if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) {
+            return null;
+        }
+
+        const normalized = {};
+        [
+            'label',
+            'destinationKind',
+            'originLocationId',
+            'originLocationName',
+            'originRegionId',
+            'originRegionName',
+            'destinationId',
+            'destinationName',
+            'destinationLocationName',
+            'destinationRegionId',
+            'destinationRegionName',
+            'exitId'
+        ].forEach(key => {
+            const text = normalizeString(metadata[key]);
+            normalized[key] = text || null;
+        });
+
+        if (!normalized.originRegionId && !normalized.originLocationId && !normalized.destinationId && !normalized.exitId) {
+            return null;
+        }
+
+        return normalized;
+    }
+
+    function createNewExitPill(row) {
+        const metadata = normalizeNewExitMetadata(row);
+        if (!metadata) {
+            return null;
+        }
+        const label = normalizeString(
+            metadata.destinationLocationName
+            || metadata.destinationName
+            || metadata.destinationRegionName
+            || metadata.label
+        ) || 'Map';
+        const pill = document.createElement('button');
+        pill.type = 'button';
+        pill.className = 'turn-diff-drawer__new-exit-pill';
+        pill.textContent = `🗺️ ${label}`;
+        pill.title = 'Open this exit on the map';
+        pill.setAttribute('aria-label', `Open ${label} on the map`);
+        pill.addEventListener('click', event => {
+            event.preventDefault();
+            event.stopPropagation();
+            if (typeof global.CustomEvent !== 'function') {
+                throw new Error('CustomEvent is required for new exit summary navigation.');
+            }
+            pill.dispatchEvent(new global.CustomEvent('airpg:new-exit-summary-selected', {
+                bubbles: true,
+                detail: metadata
+            }));
+        });
+        return pill;
+    }
+
     function createStandardRow(row, options) {
         const item = document.createElement('li');
         item.className = `turn-diff-drawer__row turn-diff-drawer__row--${row.severity}`;
@@ -438,6 +503,11 @@
         text.className = 'turn-diff-drawer__text';
         appendText(text, row.text, options);
         main.appendChild(text);
+
+        const newExitPill = createNewExitPill(row);
+        if (newExitPill) {
+            main.appendChild(newExitPill);
+        }
 
         const entityList = createEntityList(row);
         if (entityList) {

@@ -1,11 +1,3 @@
-<template>
-    <role>Character Inventory Generator</role>
-    
-    <systemPrompt>
-You are a an AI role-playing gamemaster.
-    </systemPrompt>
-    
-    <generationPrompt>
 <context>
 Here is a list of all character attributes:
 {% for attrName, attrDef in attributeDefinitions %}- {{ attrName }}: {{ attrDef.description }}
@@ -15,17 +7,6 @@ Here is a list of available equipment slot types:
 {% for slot in gearSlots %}- {{ slot }}
 {% endfor %}
 
-<setting>
-{{ setting }}
-</setting>
-<region>
-<name>{{ region.regionName }}</name>
-<description>{{ region.regionDescription }}</description>
-</region>
-<location>
-<name>{{ location.name }}</name>
-<description>{{ location.description }}</description>
-</location>
 <character>
 <name>{{ character.name }}</name>
 <role>{{ character.role }}</role>
@@ -50,5 +31,4 @@ I'd like you to generate a set of 1 to 5 items that would be found in the above 
 {% include "_includes/item.njk" %}
 [0-4 more items depending on how many you generate]
 </items>
-</generationPrompt>
-</template>
+

@@ -8,6 +8,7 @@ const {
 
 const CHAT_TOOL_MAX_ROUNDS = 8;
 const MORE_INFO_MAX_MATCHES = 50;
+const CACHED_CHECK_TOOL_CALL_NOTE = 'You already made this tool call. Do not re-run tool calls for the same checks that you made in earlier drafts.';
 const CHAT_TOOL_DEFINITIONS = Object.freeze([
     {
         type: 'function',
@@ -66,14 +67,14 @@ const CHAT_TOOL_DEFINITIONS = Object.freeze([
         type: 'function',
         function: {
             name: 'getFullScene',
-            description: 'Return all scene-summary-indexed action inputs and prose entries for a stored scene number.',
+            description: 'Return all scene-summary-indexed action inputs and prose entries for a stored Scene N listed inside the <olderStoryHistory> context.',
             parameters: {
                 type: 'object',
                 properties: {
                     sceneNumber: {
                         type: 'integer',
                         minimum: 1,
-                        description: '1-based scene number as shown by /scene_summaries.'
+                        description: '1-based Scene N number from <olderStoryHistory>, matching the display number shown by /scene_summaries.'
                     }
                 },
                 required: ['sceneNumber'],
@@ -1541,6 +1542,20 @@ const createChatToolRuntime = ({
                     : value.metadata
             };
         }
+    };
+
+    const appendCachedCheckToolCallNote = (toolResult) => {
+        if (!toolResult || typeof toolResult !== 'object') {
+            throw new Error('Cannot append cached check-tool note to an invalid tool result.');
+        }
+        if (typeof toolResult.content !== 'string' || !toolResult.content.trim()) {
+            throw new Error('Cannot append cached check-tool note to a tool result without content.');
+        }
+        if (toolResult.content.includes(CACHED_CHECK_TOOL_CALL_NOTE)) {
+            return toolResult;
+        }
+        toolResult.content = `${toolResult.content.trimEnd()}\n\n${CACHED_CHECK_TOOL_CALL_NOTE}`;
+        return toolResult;
     };
 
     const normalizeCacheKeyPart = (value) => {
@@ -4697,26 +4712,20 @@ const createChatToolRuntime = ({
         };
     };
 
-    const TOOL_FUNCTIONS_WITH_VISIBLE_ERRORS = new Set([
-        'teleportCharacterToLocation',
-        'teleportThingToLocation',
-        'moveThingFromLocationToCharacterInventory',
-        'createRegionStub',
-        'createLocationStub',
-        'createExit',
-        'listLocationEntities',
-        'createThing',
-        'alterThing',
-        'alterNpc',
-        'alterLocation',
-        'resolveAttack',
-        'resolveSkillCheck',
-        'resolveOpposedSkillCheck',
-        'resolvePlausibilityCheck',
-        'resolveOpposedPlausibilityCheck',
-        'locateNpcs',
-        'locateThings'
-    ]);
+    const buildToolExecutionErrorResult = (functionName, error) => {
+        const visibleError = error instanceof ToolVisibleError
+            ? error
+            : new ToolVisibleError(
+                error?.message || `Tool "${toTrimmedString(functionName) || 'unknownTool'}" failed.`,
+                { code: 'tool_execution_error' }
+            );
+        const result = buildToolVisibleErrorResult(functionName, visibleError);
+        result.metadata = {
+            ...(result.metadata && typeof result.metadata === 'object' ? result.metadata : {}),
+            stack: typeof error?.stack === 'string' ? error.stack : null
+        };
+        return result;
+    };
 
     const executeChatToolCall = async (toolCall, { resultCache = null, defaultActorName = null } = {}) => {
         if (!toolCall || typeof toolCall !== 'object') {
@@ -4736,6 +4745,7 @@ const createChatToolRuntime = ({
                         cacheKey
                     };
                 }
+                appendCachedCheckToolCallNote(cachedResult);
                 return cachedResult;
             }
 
@@ -4800,17 +4810,7 @@ const createChatToolRuntime = ({
             }
             return resolvedToolResult;
         } catch (error) {
-            if (error instanceof ToolVisibleError) {
-                return buildToolVisibleErrorResult(toolCall.functionName, error);
-            }
-            if (TOOL_FUNCTIONS_WITH_VISIBLE_ERRORS.has(toolCall.functionName)) {
-                const visibleError = new ToolVisibleError(
-                    error?.message || `Tool "${toolCall.functionName}" failed.`,
-                    { code: 'tool_execution_error' }
-                );
-                return buildToolVisibleErrorResult(toolCall.functionName, visibleError);
-            }
-            throw error;
+            return buildToolExecutionErrorResult(toolCall.functionName, error);
         }
     };
 
@@ -4865,6 +4865,39 @@ const createChatToolRuntime = ({
             }
             if (typeof onToolCallDebug === 'function') {
                 await onToolCallDebug(payload);
+            }
+        };
+        const logToolCallError = ({ toolCall, toolResult }) => {
+            const metadata = toolResult?.metadata && typeof toolResult.metadata === 'object'
+                ? toolResult.metadata
+                : {};
+            const functionName = toTrimmedString(metadata.functionName) || toTrimmedString(toolCall?.functionName) || 'unknownTool';
+            const message = toTrimmedString(metadata.message) || 'Tool call failed.';
+            const code = toTrimmedString(metadata.code) || 'tool_error';
+            const stack = toTrimmedString(metadata.stack);
+            console.warn(`Chat tool call "${functionName}" failed (${code}): ${message}`);
+            if (stack) {
+                console.warn(stack);
+            }
+            if (LLMClient && typeof LLMClient.logPrompt === 'function') {
+                try {
+                    LLMClient.logPrompt({
+                        prefix: `${metadataLabel || 'chat'}_tool_call_error`,
+                        metadataLabel: `${metadataLabel || 'chat'}_tool_call_error`,
+                        systemPrompt: '',
+                        generationPrompt: [
+                            `Tool: ${functionName}`,
+                            `Arguments: ${toTrimmedString(toolCall?.argumentsText) || '{}'}`,
+                            `Code: ${code}`,
+                            `Message: ${message}`
+                        ].join('\n'),
+                        response: toolResult?.content || '',
+                        sections: stack ? [{ title: 'Stack', content: stack }] : [],
+                        output: 'silent'
+                    });
+                } catch (logError) {
+                    console.warn(`Failed to write chat tool error log for "${functionName}":`, logError?.message || logError);
+                }
             }
         };
 
@@ -4970,24 +5003,47 @@ const createChatToolRuntime = ({
                     phase: 'started'
                 });
 
+                let toolResult = null;
                 try {
-                    const toolResult = await executeChatToolCall(toolCall, { resultCache, defaultActorName });
+                    toolResult = await executeChatToolCall(toolCall, { resultCache, defaultActorName });
                     if (!toolResult || typeof toolResult.content !== 'string' || !toolResult.content.trim()) {
                         throw new Error(`Tool "${toolCall.functionName}" returned empty content.`);
                     }
+                } catch (error) {
+                    toolResult = buildToolExecutionErrorResult(toolCall.functionName, error);
+                }
+
+                try {
                     const cacheHit = Boolean(toolResult.metadata?.cached);
-                    await notifyToolCallLifecycle({
-                        ...debugBase,
-                        phase: 'completed',
-                        cacheHit,
-                        cacheKey: typeof toolResult.metadata?.cacheKey === 'string'
-                            ? toolResult.metadata.cacheKey
-                            : null,
-                        result: {
-                            content: toolResult.content,
-                            metadata: toolResult.metadata || null
-                        }
-                    });
+                    const toolErrored = Boolean(toolResult.metadata?.error);
+                    if (toolErrored) {
+                        logToolCallError({ toolCall, toolResult });
+                        await notifyToolCallLifecycle({
+                            ...debugBase,
+                            phase: 'error',
+                            error: {
+                                message: toolResult.metadata?.message || `Tool "${toolCall.functionName}" failed.`,
+                                code: toolResult.metadata?.code || 'tool_error',
+                                result: {
+                                    content: toolResult.content,
+                                    metadata: toolResult.metadata || null
+                                }
+                            }
+                        });
+                    } else {
+                        await notifyToolCallLifecycle({
+                            ...debugBase,
+                            phase: 'completed',
+                            cacheHit,
+                            cacheKey: typeof toolResult.metadata?.cacheKey === 'string'
+                                ? toolResult.metadata.cacheKey
+                                : null,
+                            result: {
+                                content: toolResult.content,
+                                metadata: toolResult.metadata || null
+                            }
+                        });
+                    }
                     toolInvocations.push({
                         id: toolCall.id,
                         name: toolCall.functionName,

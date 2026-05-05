@@ -850,6 +850,15 @@
                         </div>
 
                         <div class="form-group">
+                            <label for="show-hidden-notes">Show Hidden Notes in Story Tools:</label>
+                            <div class="checkbox-wrapper">
+                                <input type="hidden" name="show_hidden_notes::boolean" value="false">
+                                <input type="checkbox" id="show-hidden-notes" name="show_hidden_notes::boolean" value="true" {% if config.show_hidden_notes %}checked{% endif %}>
+                            </div>
+                            <span class="help-text">Show player-action &lt;hidden&gt; notes in Story Tools full-history view; Adventure chat always filters them</span>
+                        </div>
+
+                        <div class="form-group">
                             <label for="use-legacy-prompt-checks">Legacy Prompt Checks:</label>
                             <div class="checkbox-wrapper">
                                 <input type="hidden" name="use_legacy_prompt_checks::boolean" value="false">

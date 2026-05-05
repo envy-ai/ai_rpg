@@ -63,6 +63,7 @@ class Player {
     #personalityType;
     #personalityTraits;
     #personalityNotes;
+    #aiNotes;
     #resistances;
     #vulnerabilities;
     #goals = [];
@@ -2004,6 +2005,7 @@ class Player {
         this.#personalityType = Player.#sanitizePersonalityValue(options.personalityType ?? personalityOption?.type);
         this.#personalityTraits = Player.#sanitizePersonalityValue(options.personalityTraits ?? personalityOption?.traits);
         this.#personalityNotes = Player.#sanitizePersonalityValue(options.personalityNotes ?? personalityOption?.notes);
+        this.#aiNotes = Player.#sanitizePersonalityValue(options.aiNotes ?? personalityOption?.aiNotes);
         this.#resistances = typeof options.resistances === 'string'
             ? options.resistances
             : (typeof options.resistance === 'string' ? options.resistance : '');
@@ -3785,6 +3787,15 @@ class Player {
 
     set personalityNotes(value) {
         this.#personalityNotes = Player.#sanitizePersonalityValue(value);
+        this.#lastUpdated = new Date().toISOString();
+    }
+
+    get aiNotes() {
+        return this.#aiNotes;
+    }
+
+    set aiNotes(value) {
+        this.#aiNotes = Player.#sanitizePersonalityValue(value);
         this.#lastUpdated = new Date().toISOString();
     }
 
@@ -5816,6 +5827,7 @@ class Player {
             personalityType: this.#personalityType,
             personalityTraits: this.#personalityTraits,
             personalityNotes: this.#personalityNotes,
+            aiNotes: this.#aiNotes,
             resistances: this.#resistances,
             vulnerabilities: this.#vulnerabilities,
             aliases: this.getAliases(),
@@ -5854,6 +5866,7 @@ class Player {
             type: this.#personalityType,
             traits: this.#personalityTraits,
             notes: this.#personalityNotes,
+            aiNotes: this.#aiNotes,
             goals: this.#goals.slice(),
             characterArc: this.characterArc
         };
@@ -5907,12 +5920,14 @@ class Player {
                 type: this.#personalityType,
                 traits: this.#personalityTraits,
                 notes: this.#personalityNotes,
+                aiNotes: this.#aiNotes,
                 goals: this.#goals.slice(),
                 characterArc: this.characterArc
             },
             personalityType: this.#personalityType,
             personalityTraits: this.#personalityTraits,
             personalityNotes: this.#personalityNotes,
+            aiNotes: this.#aiNotes,
             resistances: this.#resistances,
             vulnerabilities: this.#vulnerabilities,
             goals: this.#goals.slice(),
@@ -5979,6 +5994,7 @@ class Player {
             personalityType: data.personality?.type ?? data.personalityType,
             personalityTraits: data.personality?.traits ?? data.personalityTraits,
             personalityNotes: data.personality?.notes ?? data.personalityNotes,
+            aiNotes: data.aiNotes ?? data.personality?.aiNotes,
             resistances: typeof data.resistances === 'string'
                 ? data.resistances
                 : (typeof data.resistance === 'string' ? data.resistance : ''),

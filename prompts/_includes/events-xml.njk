@@ -121,23 +121,23 @@ Normal event elements are direct children of `<events>`.
 
 ### `new_exit_discovered`
 
-Use this when the text reveals, unlocks, unblocks, creates, clears, finds out about, or otherwise discovers a route or vehicle connection to another location or region. Unlike movement tags, this does not mean the player traveled there. `newExitDiscovered` is not a travel context boundary. You may chain these together to represent multiple discoveries in a single text block, or paths or areas consisting of multiple locations so long as every exitLocation already exists (either in the world or previously in the chain). Do not use this for exits that were already known or for travel that occurred without a new exit being discovered. If the text implies multiple exits in a chain but doesn't specify the intermediate locations, you may come up with them yourself.
+Use this when the text reveals, unlocks, unblocks, creates, clears, finds out about, or otherwise discovers a route or vehicle connection to another location or region. Unlike movement tags, this does not mean the player traveled there. `newExitDiscovered` is not a travel context boundary. You may chain these together to represent multiple discoveries in a single text block, or paths or areas consisting of multiple locations so long as every origin location already exists (either in the world or previously in the chain). Do not use this for exits that were already known or for travel that occurred without a new exit being discovered. If the text implies multiple exits in a chain but doesn't specify the intermediate locations, you may come up with them yourself.
 
 ```xml
 <newExitDiscovered>
   <destination>
-    <locationName>Exact location name of the exit's destination. Omit if the exit is to a new region.</locationName>
     <regionName>Exact region name of the exit's destination</regionName>
+    <locationName>Exact location name of the exit's destination (make something up if need be; should not be the same as the region name).</locationName>
   </destination>
   <destinationKind>location|region</destinationKind>
   <vehicleType>none OR vehicle type, if this exit is a vehicle connection (like a ferry or train)</vehicleType>
   <description>1-2 sentence destination or exit description</description>
-  <exitLocation>
-    <!-- Omit <exitLocation> block if the exit is discovered at the current location. -->
-    <locationName>Exact location name of the exit</locationName>
-    <regionName>Exact region name of the exit</regionName>
-  </exitLocation>  
-  <travelTime>Exact duration, such as 30 minutes or 1 hour, from the exitLocation, or the current location if omitted</travelTime>
+  <origin>
+    <!-- Is the exit located somewhere else? This should only be the current location if the exit is within the current location. -->
+    <regionName>Exact region name of the exit's origin</regionName>
+    <locationName>Exact location name of the exit's origin</locationName>
+  </origin>  
+  <travelTime>Exact duration, such as 30 minutes or 1 hour, from the origin (not the current location unless they're the same)</travelTime>
 </newExitDiscovered>
 ```
 
@@ -165,7 +165,7 @@ Use this when the player gains currency, pays currency, or otherwise has currenc
 
 ### `item_appear`
 
-Use this when new tangible, carryable items appear in the scene for the first time, either newly created or newly described as present. Do not use this for scenery, harvestable resources, items merely moved from inventory, or crafted output already represented as an obtained item.
+Use this when new tangible, carryable items appear in the scene for the first time, either newly created or newly described as present. Do not use this for scenery, harvestable resources, items merely moved from inventory, or crafted output already represented as an obtained item. Do not use this for exits.
 
 ```xml
 <itemAppear>
@@ -177,7 +177,7 @@ Use this when new tangible, carryable items appear in the scene for the first ti
 
 ### `scenery_appear`
 
-Use this when new non-carryable scenery, furniture, buildings, workstations, containers, piles, or other scene fixtures appear for the first time. Do not use this for carryable items or harvestable resources that should use more specific tags.
+Use this when new non-carryable scenery, furniture, buildings, workstations, containers, piles, or other scene fixtures appear for the first time. Do not use this for carryable items or harvestable resources that should use more specific tags. Do not use this for exits.
 
 ```xml
 <sceneryAppear>
@@ -332,7 +332,7 @@ Use this for significant lasting changes to an animate entity, especially physic
 
 ### `status_effect_change`
 
-Use this when an animate entity gains or loses a temporary status effect that is not already represented as a permanent NPC alteration. Use `gained` for new effects and `lost` only when an existing listed status effect goes away. If the effect came from an item use or ingestion, prefer `itemInflict` or `itemIngest` instead of duplicating the same change here.
+Use this when an animate entity gains or loses a temporary status effect that is not already represented as a permanent NPC alteration. Use `gained` for new effects and `lost` only when an existing listed status effect goes away. If the effect came from an item use or ingestion, prefer `itemInflict` or `itemIngest` instead of duplicating the same change here. Healing or damage recovery usually cause status effects that drain health to end.
 
 ```xml
 <statusEffectChange>
@@ -345,7 +345,7 @@ Use this when an animate entity gains or loses a temporary status effect that is
 
 ### `npc_arrival_departure`
 
-Use this when an animate entity arrives at the current location from elsewhere, newly appears in the scene, or leaves the scene for another destination. For departures, include the best-known destination region and location. Do not use this for party members simply remaining with the player.
+Use this when an animate entity arrives at the current location from elsewhere, newly appears in the scene, or leaves the scene for another destination. For departures, include the best-known destination region and location. If a party member stops accompanying the player and goes to a destination, use this event so they can leave the party before moving there. Do not use this for party members simply remaining with the player.
 
 ```xml
 <npcArrivalDeparture>
@@ -368,7 +368,7 @@ Use this as a catch-all for physically present entities mentioned or acting in t
 
 ### `party_change`
 
-Use this when a physically present NPC begins willingly accompanying, leading, following, or otherwise joining the player party, or stops doing so. Do not use this for casual cooperation unless the NPC is actually accompanying the player.
+Use this when a physically present NPC begins willingly accompanying, leading, following, or otherwise joining the player party, or stops doing so without moving to another known destination. Do not use this for casual cooperation unless the NPC is actually accompanying the player.
 
 ```xml
 <partyChange>

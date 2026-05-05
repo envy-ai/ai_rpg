@@ -138,7 +138,7 @@ const EVENT_PROMPT_ORDER = [
         },
         {
             key: "npc_arrival_departure",
-            prompt: `Did any animate entities (NPCs, animals, monsters, robots, or anything else capable of moving on its own) leave the scene? If so, list the full names of those entities as seen in the location context (capitalized as Proper Nouns) separated by vertical bars. Decide what location they went to. Use the format: "[name] → left → [destination region] → [destination location]". If you don't know exactly where they went, what makes the most sense. Otherwise, answer N/A.`,
+            prompt: `Did any animate entities (NPCs, animals, monsters, robots, or anything else capable of moving on its own) leave the scene? If so, list the full names of those entities as seen in the location context (capitalized as Proper Nouns) separated by vertical bars. Decide what location they went to. If a party member stops accompanying the player and goes to a destination, list them here so they can leave the party before moving there. Use the format: "[name] → left → [destination region] → [destination location]". If you don't know exactly where they went, use what makes the most sense. Otherwise, answer N/A.`,
             postProcess: (entry) => ({ ...entry, action: entry?.action || "left" }),
         },
         {
@@ -159,7 +159,7 @@ const EVENT_PROMPT_ORDER = [
         },
         {
             key: "party_change",
-            prompt: `Is any physically present entity (including ones you may have listed above) that is not listed in playerParty currently leading, following, or otherwise willingly accompanying the player? If yes, list "[npc name] → joined". For anyone who began leading or following (even temporarily), also list them as "[npc name] → joined". If anyone left the party, list "[npc name] → left". Separate multiple entries with vertical bars. If no party status occurred, respond with N/A.`,
+            prompt: `Is any physically present entity (including ones you may have listed above) that is not listed in playerParty currently leading, following, or otherwise willingly accompanying the player? If yes, list "[npc name] → joined". For anyone who began leading or following (even temporarily), also list them as "[npc name] → joined". If anyone left the party without moving to another known destination, list "[npc name] → left". Separate multiple entries with vertical bars. If no party status occurred, respond with N/A.`,
         },
         {
             key: "environmental_status_damage",
@@ -421,6 +421,28 @@ function locationHasExitToDestination(location, destinationId) {
     });
 }
 
+function findExitToDestination(location, destinationId) {
+    const normalizedDestinationId =
+        typeof destinationId === "string" ? destinationId.trim() : "";
+    if (
+        !location ||
+        !normalizedDestinationId ||
+        typeof location.getAvailableDirections !== "function" ||
+        typeof location.getExit !== "function"
+    ) {
+        return null;
+    }
+
+    for (const direction of location.getAvailableDirections()) {
+        const exit = location.getExit(direction);
+        if (exit && exit.destination === normalizedDestinationId) {
+            return { direction, exit };
+        }
+    }
+
+    return null;
+}
+
 function normalizeOptionalEventLocationField(value) {
     const trimmed = typeof value === "string" ? value.trim() : "";
     if (!trimmed) {
@@ -446,7 +468,7 @@ function normalizeOptionalEventLocationField(value) {
     return trimmed;
 }
 
-function resolveEventRegionByName({ regions, findRegionByNameLoose } = {}, regionName) {
+function resolveEventRegionByName({ regions, pendingRegionStubs, findRegionByNameLoose } = {}, regionName) {
     const trimmed = normalizeOptionalEventLocationField(regionName);
     if (!trimmed) {
         return null;
@@ -466,6 +488,30 @@ function resolveEventRegionByName({ regions, findRegionByNameLoose } = {}, regio
             const name = typeof region.name === "string" ? region.name.trim().toLowerCase() : "";
             if (id === normalized || name === normalized) {
                 return region;
+            }
+        }
+    }
+
+    if (pendingRegionStubs instanceof Map) {
+        const direct = pendingRegionStubs.get(trimmed) || null;
+        if (direct) {
+            return direct;
+        }
+        const normalized = trimmed.toLowerCase();
+        for (const pending of pendingRegionStubs.values()) {
+            if (!pending || typeof pending !== "object") {
+                continue;
+            }
+            const candidates = [
+                pending.id,
+                pending.name,
+                pending.originalName,
+                pending.targetRegionName,
+            ];
+            if (candidates.some(candidate =>
+                typeof candidate === "string" && candidate.trim().toLowerCase() === normalized
+            )) {
+                return pending;
             }
         }
     }
@@ -566,7 +612,7 @@ function locationBelongsToEventRegion(location, region) {
         || location.stubMetadata?.targetRegionId === regionId;
 }
 
-function resolveExitDiscoveryOrigin(entry, context, deps, eventLabel) {
+async function resolveExitDiscoveryOrigin(entry, context, deps, eventLabel) {
     const explicitLocationName = normalizeOptionalEventLocationField(entry?.exitLocationName);
     const explicitRegionName = normalizeOptionalEventLocationField(entry?.exitRegionName);
 
@@ -581,7 +627,7 @@ function resolveExitDiscoveryOrigin(entry, context, deps, eventLabel) {
 
     if (!explicitLocationName) {
         throw new Error(
-            `[${eventLabel}] exitLocation requires a location name when an exit/source region is provided.`,
+            `[${eventLabel}] origin/source region requires a location name.`,
         );
     }
 
@@ -592,10 +638,30 @@ function resolveExitDiscoveryOrigin(entry, context, deps, eventLabel) {
         );
     }
 
-    const originLocation = resolveEventLocationByName({
+    let originLocation = resolveEventLocationByName({
         ...deps,
         region: explicitRegion,
     }, explicitLocationName);
+
+    if (!originLocation && explicitRegion && typeof deps.createLocationFromEvent === "function") {
+        try {
+            originLocation = await deps.createLocationFromEvent({
+                name: explicitLocationName,
+                originLocation: context?.location || null,
+                descriptionHint:
+                    entry?.originDescription ||
+                    `A known location in ${explicitRegion.name || explicitRegionName}.`,
+                expandStub: false,
+                targetRegionId: explicitRegion.id || null,
+                createOriginExit: false,
+            });
+        } catch (error) {
+            throw new Error(
+                `[${eventLabel}] Failed to create exit/source location "${explicitLocationName}": ${error.message}`,
+            );
+        }
+    }
+
     if (!originLocation) {
         const regionSuffix = explicitRegionName ? ` in region "${explicitRegionName}"` : "";
         throw new Error(
@@ -637,6 +703,7 @@ async function applyExitDiscovery(
         regenerateLocationName,
         gameLocations,
         regions,
+        pendingRegionStubs,
     } = deps;
 
     if (
@@ -661,16 +728,18 @@ async function applyExitDiscovery(
             continue;
         }
 
-        const { originLocation, originRegion } = resolveExitDiscoveryOrigin(
+        const { originLocation, originRegion } = await resolveExitDiscoveryOrigin(
             entry,
             context,
             {
                 Location,
                 gameLocations,
                 regions,
+                pendingRegionStubs,
                 findLocationByNameLoose,
                 findRegionByNameLoose,
                 findRegionByLocationId,
+                createLocationFromEvent,
             },
             eventLabel,
         );
@@ -743,7 +812,7 @@ async function applyExitDiscovery(
             entry?.destinationRegionName,
         );
         const destinationRegion = resolveEventRegionByName(
-            { regions, findRegionByNameLoose },
+            { regions, pendingRegionStubs, findRegionByNameLoose },
             destinationRegionName,
         );
         if (!isRegion && destinationRegionName && !destinationRegion) {
@@ -945,10 +1014,11 @@ async function applyExitDiscovery(
             entry?.description || `Path to ${destination.name || exitName}`;
         const vehicleType = entry?.vehicleType || null;
         const isVehicleExit = Boolean(vehicleType);
+        let originExit = null;
 
         if (!createdRegionStub) {
             try {
-                ensureExitConnection(originLocation, destination, {
+                originExit = ensureExitConnection(originLocation, destination, {
                     description: exitDescription,
                     bidirectional: !isRegion,
                     destinationRegion: destinationRegionId,
@@ -963,6 +1033,28 @@ async function applyExitDiscovery(
                     `[${eventLabel}] Failed to ensure exit connection to "${destination.name || exitName}": ${error.message}`,
                 );
             }
+        } else {
+            originExit = findExitToDestination(originLocation, destination.id)?.exit || null;
+        }
+
+        entry.originLocationId = originLocation?.id || null;
+        entry.exitLocationId = originLocation?.id || null;
+        entry.originRegionId = originRegion?.id || originRegionId || null;
+        entry.exitRegionId = originRegion?.id || originRegionId || null;
+        entry.destinationId = destination?.id || null;
+        entry.destinationKind = isRegion ? "region" : "location";
+        entry.destinationRegionId = destinationRegionId || destinationRegion?.id || null;
+        if (originExit?.id) {
+            entry.exitId = originExit.id;
+        }
+        if (!entry.exitLocationName && originLocationName) {
+            entry.exitLocationName = originLocationName;
+        }
+        if (!entry.exitRegionName && originRegion?.name) {
+            entry.exitRegionName = originRegion.name;
+        }
+        if (!entry.destinationLocationName && !isRegion && destination?.name) {
+            entry.destinationLocationName = destination.name;
         }
 
         if (!isRegion) {
@@ -2499,7 +2591,7 @@ class Events {
     }) {
         const rendered = promptEnv.render("base-context.xml.njk", {
             ...baseContext,
-            promptType: "events_xml",
+            promptType: "events-xml",
             textToCheck,
             actionText: normalizedActionText,
             includePlayerActionBlock,
@@ -2527,7 +2619,8 @@ class Events {
                 { role: "user", content: parsedTemplate.generationPrompt },
             ],
             metadataLabel: "event_checks",
-            metadata: { eventPipeline: "xml" },
+            errorLogLabel: "events-xml",
+            metadata: { eventPipeline: "xml", promptType: "events-xml" },
             timeoutMs: this._baseTimeout,
             temperature: 0,
             validateXML: false,
@@ -4092,7 +4185,7 @@ class Events {
         switch (tagName) {
             case "newExitDiscovered": {
                 const destinationNode = this._getXmlDirectChildNode(node, "destination");
-                const exitLocationNode = this._getXmlDirectChildNode(node, "exitLocation");
+                const originNode = this._getXmlDirectChildNode(node, "origin");
                 const destinationKind = this._getXmlDirectChildText(node, "destinationKind");
                 const normalizedKind = destinationKind.trim().toLowerCase();
                 const legacyDestinationName =
@@ -4107,11 +4200,11 @@ class Events {
                     ? destinationRegionName || legacyDestinationName || destinationLocationName
                     : destinationLocationName || legacyDestinationName || destinationRegionName;
                 const exitLocationName =
-                    this._getXmlDirectChildText(exitLocationNode, "locationName")
-                    || this._getXmlDirectChildText(node, "exitLocationName");
+                    this._getXmlDirectChildText(originNode, "locationName")
+                    || this._getXmlDirectChildText(node, "originLocationName");
                 const exitRegionName =
-                    this._getXmlDirectChildText(exitLocationNode, "regionName")
-                    || this._getXmlDirectChildText(node, "exitRegionName");
+                    this._getXmlDirectChildText(originNode, "regionName")
+                    || this._getXmlDirectChildText(node, "originRegionName");
                 return {
                     key: "new_exit_discovered",
                     raw: [
@@ -4123,6 +4216,7 @@ class Events {
                         exitLocationName || "none",
                         exitRegionName || "none",
                         destinationRegionName || "none",
+                        destinationLocationName || "none",
                     ].join(" → "),
                 };
             }
@@ -5170,7 +5264,15 @@ class Events {
                         let exitLocationName = "";
                         let exitRegionName = "";
                         let destinationRegionName = "";
-                        if (parts.length >= 8) {
+                        let destinationLocationName = "";
+                        if (parts.length >= 9) {
+                            descriptionParts = parts.slice(3, -5);
+                            travelTimeText = parts[parts.length - 5];
+                            exitLocationName = parts[parts.length - 4];
+                            exitRegionName = parts[parts.length - 3];
+                            destinationRegionName = parts[parts.length - 2];
+                            destinationLocationName = parts[parts.length - 1];
+                        } else if (parts.length >= 8) {
                             descriptionParts = parts.slice(3, -4);
                             travelTimeText = parts[parts.length - 4];
                             exitLocationName = parts[parts.length - 3];
@@ -5216,6 +5318,8 @@ class Events {
                             normalizeOptionalEventLocationField(exitRegionName);
                         const normalizedDestinationRegionName =
                             normalizeOptionalEventLocationField(destinationRegionName);
+                        const normalizedDestinationLocationName =
+                            normalizeOptionalEventLocationField(destinationLocationName);
                         if (normalizedExitLocationName) {
                             result.exitLocationName = normalizedExitLocationName;
                         }
@@ -5224,6 +5328,9 @@ class Events {
                         }
                         if (normalizedDestinationRegionName) {
                             result.destinationRegionName = normalizedDestinationRegionName;
+                        }
+                        if (normalizedDestinationLocationName) {
+                            result.destinationLocationName = normalizedDestinationLocationName;
                         }
                         return result;
                     })
@@ -8055,13 +8162,28 @@ class Events {
                 } = this._deps;
                 const suppressedIndexes = new Set();
                 const processedNames = new SanitizedStringSet();
-                const partyExcludedNames = new SanitizedStringSet();
+                const playerExcludedNames = new SanitizedStringSet();
+                const partyMemberNames = new SanitizedStringSet();
+                const partyMemberIds = new Set();
+                const partyOwners = [];
 
-                const registerActorName = (actor) => {
+                const registerPlayerName = (actor) => {
                     if (!actor || typeof actor.name !== "string") {
                         return;
                     }
-                    partyExcludedNames.add(actor.name);
+                    playerExcludedNames.add(actor.name);
+                };
+
+                const registerPartyMember = (actor, memberId = null) => {
+                    const resolvedId = typeof memberId === "string" && memberId.trim()
+                        ? memberId.trim()
+                        : (typeof actor?.id === "string" ? actor.id.trim() : "");
+                    if (resolvedId) {
+                        partyMemberIds.add(resolvedId);
+                    }
+                    if (actor && typeof actor.name === "string") {
+                        partyMemberNames.add(actor.name);
+                    }
                 };
 
                 const resolveActorById = (id) => {
@@ -8078,6 +8200,25 @@ class Events {
                         return this.players.get(id);
                     }
                     return null;
+                };
+
+                const normalizePartyMemberList = (value) => {
+                    if (Array.isArray(value)) {
+                        return value;
+                    }
+                    if (value && typeof value.forEach === "function") {
+                        return Array.from(value);
+                    }
+                    return [];
+                };
+
+                const registerPartyOwner = (actor) => {
+                    if (!actor || typeof actor.getPartyMembers !== "function") {
+                        return;
+                    }
+                    if (!partyOwners.includes(actor)) {
+                        partyOwners.push(actor);
+                    }
                 };
 
                 if (Globals.processedMove) {
@@ -8122,34 +8263,58 @@ class Events {
                     }
                 }
 
-                const collectPartyNames = (actor) => {
+                const collectPartyState = (actor) => {
                     if (!actor) {
                         return;
                     }
-                    registerActorName(actor);
+                    registerPlayerName(actor);
                     if (typeof actor.getPartyMembers !== "function") {
                         return;
                     }
-                    const memberIds = actor.getPartyMembers();
-                    if (!Array.isArray(memberIds)) {
-                        return;
-                    }
+                    registerPartyOwner(actor);
+                    const memberIds = normalizePartyMemberList(actor.getPartyMembers());
                     for (const memberId of memberIds) {
                         const member = resolveActorById(memberId);
-                        if (member) {
-                            registerActorName(member);
-                        }
+                        registerPartyMember(member, memberId);
                     }
                 };
 
-                collectPartyNames(context.player);
+                collectPartyState(context.player);
                 const currentPlayer = this.currentPlayer;
                 if (currentPlayer && currentPlayer !== context.player) {
-                    collectPartyNames(currentPlayer);
+                    collectPartyState(currentPlayer);
                 }
 
                 const normalize = (value) =>
                     typeof value === "string" ? value.trim() : "";
+
+                const isAllowedPartyMemberDeparture = (name, action) =>
+                    action === "left" && partyMemberNames.has(name);
+
+                const removeDepartingPartyMember = (actor) => {
+                    const actorId = typeof actor?.id === "string" ? actor.id.trim() : "";
+                    if (!actorId || !partyMemberIds.has(actorId)) {
+                        return false;
+                    }
+                    let removed = false;
+                    for (const owner of partyOwners) {
+                        if (!owner || owner === actor || typeof owner.removePartyMember !== "function") {
+                            continue;
+                        }
+                        const ownerMemberIds = normalizePartyMemberList(
+                            typeof owner.getPartyMembers === "function"
+                                ? owner.getPartyMembers()
+                                : [],
+                        )
+                            .map((id) => (typeof id === "string" ? id.trim() : ""))
+                            .filter(Boolean);
+                        if (!ownerMemberIds.includes(actorId)) {
+                            continue;
+                        }
+                        removed = owner.removePartyMember(actorId) || removed;
+                    }
+                    return removed;
+                };
 
                 const lookupRegionByName = (name) => {
                     const trimmed = normalize(name);
@@ -8293,7 +8458,11 @@ class Events {
                         continue;
                     }
 
-                    if (partyExcludedNames.has(originalName)) {
+                    if (
+                        playerExcludedNames.has(originalName) ||
+                        (partyMemberNames.has(originalName) &&
+                            !isAllowedPartyMemberDeparture(originalName, action))
+                    ) {
                         suppressedIndexes.add(index);
                         continue;
                     }
@@ -8323,7 +8492,11 @@ class Events {
                         continue;
                     }
 
-                    if (partyExcludedNames.has(finalizedName)) {
+                    if (
+                        playerExcludedNames.has(finalizedName) ||
+                        (partyMemberNames.has(finalizedName) &&
+                            !isAllowedPartyMemberDeparture(finalizedName, action))
+                    ) {
                         suppressedIndexes.add(index);
                         continue;
                     }
@@ -8444,6 +8617,7 @@ class Events {
                         }
 
                         try {
+                            removeDepartingPartyMember(npc);
                             const originLocation = npc.location || context.location || null;
                             if (
                                 originLocation &&
@@ -9377,7 +9551,9 @@ class Events {
                     type: npc.personalityType,
                     traits: npc.personalityTraits,
                     notes: npc.personalityNotes,
+                    aiNotes: npc.aiNotes,
                 },
+                aiNotes: npc.aiNotes,
                 statusEffects: existingStatusEffects,
                 abilities: existingAbilities,
                 inventory: existingInventory,
@@ -9396,7 +9572,9 @@ class Events {
                     type: npc.personalityType,
                     traits: npc.personalityTraits,
                     notes: npc.personalityNotes,
+                    aiNotes: npc.aiNotes,
                 },
+                aiNotes: npc.aiNotes,
             };
 
             const changeDescription =
@@ -9616,6 +9794,9 @@ class Events {
             if (typeof parsedCharacter.personality.notes === "string") {
                 npc.personalityNotes = parsedCharacter.personality.notes.trim();
             }
+        }
+        if (typeof parsedCharacter.aiNotes === "string") {
+            npc.aiNotes = parsedCharacter.aiNotes.trim();
         }
 
         if (Number.isFinite(parsedCharacter.currency)) {
@@ -10423,8 +10604,13 @@ class Events {
                         personalityNode
                             .getElementsByTagName("notes")[0]
                             ?.textContent?.trim() || "",
+                    aiNotes:
+                        personalityNode
+                            .getElementsByTagName("aiNotes")[0]
+                            ?.textContent?.trim() || "",
                 }
                 : null;
+            const aiNotes = getText("aiNotes") || personality?.aiNotes || "";
 
             const statusEffects = [];
             const statusParent = npcNode.getElementsByTagName("statusEffects")[0];
@@ -10514,6 +10700,7 @@ class Events {
                 relativeLevel: Number.isFinite(relativeLevel) ? relativeLevel : null,
                 currency: Number.isFinite(currency) ? currency : null,
                 personality,
+                aiNotes,
                 attributes,
                 statusEffects,
                 abilities,

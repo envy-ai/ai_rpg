@@ -235,6 +235,16 @@
                                                                         <li>
                                                                             <span class="event-summary-icon">{{ item.icon or '•' }}</span>
                                                                             {{ item.text }}
+                                                                            {% if item.metadata and item.metadata.newExitDiscovered %}
+                                                                                {% set newExitTarget = item.metadata.newExitDiscovered %}
+                                                                                <button
+                                                                                    type="button"
+                                                                                    class="event-summary-new-exit-pill"
+                                                                                    data-new-exit-summary-payload="{{ newExitTarget | dump | escape }}"
+                                                                                    aria-label="Open {{ newExitTarget.destinationLocationName or newExitTarget.destinationName or newExitTarget.destinationRegionName or newExitTarget.label or 'new exit' }} on the map"
+                                                                                    title="Open this exit on the map"
+                                                                                >🗺️ {{ newExitTarget.destinationLocationName or newExitTarget.destinationName or newExitTarget.destinationRegionName or newExitTarget.label or 'Map' }}</button>
+                                                                            {% endif %}
                                                                         </li>
                                                                     {% endif %}
                                                                 {% endfor %}
@@ -1558,6 +1568,10 @@
                     <textarea id="addNpcDescription" name="description" rows="4" placeholder="Optional: Describe appearance, personality, goals..."></textarea>
                 </div>
                 <div class="npc-edit-section">
+                    <label for="addNpcAiNotes">AI Notes</label>
+                    <textarea id="addNpcAiNotes" name="aiNotes" rows="2"></textarea>
+                </div>
+                <div class="npc-edit-section">
                     <label for="addNpcNotes">Notes for generation</label>
                     <textarea id="addNpcNotes" name="notes" rows="3" placeholder="Optional: Extra instructions for the NPC generator"></textarea>
                 </div>
@@ -1781,6 +1795,10 @@
                         <div class="npc-edit-field npc-edit-field--wide">
                             <label for="npcEditPersonalityNotes">Notes</label>
                             <textarea id="npcEditPersonalityNotes" rows="3"></textarea>
+                        </div>
+                        <div class="npc-edit-field npc-edit-field--wide">
+                            <label for="npcEditAiNotes">AI Notes</label>
+                            <textarea id="npcEditAiNotes" rows="2"></textarea>
                         </div>
                     </div>
                 </div>
@@ -8211,6 +8229,7 @@
         const addNpcNameInput = document.getElementById('addNpcName');
         const addNpcShortDescriptionInput = document.getElementById('addNpcShortDescription');
         const addNpcDescriptionInput = document.getElementById('addNpcDescription');
+        const addNpcAiNotesInput = document.getElementById('addNpcAiNotes');
         const addNpcNotesInput = document.getElementById('addNpcNotes');
         const addNpcRoleInput = document.getElementById('addNpcRole');
         const addNpcClassInput = document.getElementById('addNpcClass');
@@ -8262,6 +8281,7 @@
         const npcEditPersonalityTypeInput = document.getElementById('npcEditPersonalityType');
         const npcEditPersonalityTraitsInput = document.getElementById('npcEditPersonalityTraits');
         const npcEditPersonalityNotesInput = document.getElementById('npcEditPersonalityNotes');
+        const npcEditAiNotesInput = document.getElementById('npcEditAiNotes');
         const npcEditNeedBarApplicabilitySection = document.getElementById('npcEditNeedBarApplicabilitySection');
         const npcEditNeedBarApplicabilityList = document.getElementById('npcEditNeedBarApplicabilityList');
         const npcEditAttributesContainer = document.getElementById('npcEditAttributes');
@@ -9440,6 +9460,57 @@
             void handleTurnDiffEntitySelected(event);
         });
 
+        function normalizeNewExitSummaryNavigationDetail(detail) {
+            if (!detail || typeof detail !== 'object') {
+                return null;
+            }
+            const read = key => typeof detail[key] === 'string' ? detail[key].trim() : '';
+            const normalized = {
+                label: read('label'),
+                destinationKind: read('destinationKind').toLowerCase(),
+                originLocationId: read('originLocationId'),
+                originRegionId: read('originRegionId'),
+                destinationId: read('destinationId'),
+                destinationRegionId: read('destinationRegionId'),
+                exitId: read('exitId')
+            };
+            if (!normalized.originRegionId && !normalized.originLocationId && !normalized.destinationId && !normalized.exitId) {
+                return null;
+            }
+            return normalized;
+        }
+
+        function openNewExitSummaryOnMap(detail) {
+            const target = normalizeNewExitSummaryNavigationDetail(detail);
+            if (!target) {
+                return;
+            }
+
+            const mapOptions = {
+                focusLocationId: target.destinationId || '',
+                destinationId: target.destinationId || '',
+                focusExitId: target.exitId || '',
+                exitId: target.exitId || ''
+            };
+            window.__AIRPG_NEXT_REGION_MAP_ID = target.originRegionId || null;
+            window.__AIRPG_NEXT_REGION_MAP_OPTIONS = mapOptions;
+
+            if (typeof window.activateTab === 'function') {
+                window.activateTab('map');
+            } else {
+                document.querySelector('[data-tab="map"]')?.click();
+            }
+        }
+
+        document.addEventListener('airpg:new-exit-summary-selected', event => {
+            try {
+                openNewExitSummaryOnMap(event?.detail);
+            } catch (error) {
+                console.error('Failed to open new exit on map:', error);
+                alert(`Failed to open exit on map: ${error?.message || error}`);
+            }
+        });
+
         function safeJsonStringify(value, fallback = '') {
             try {
                 return JSON.stringify(value, null, 2);
@@ -10169,10 +10240,15 @@
         let currentThingContainerVisibleContents = [];
         let currentThingContainerVisiblePlayerInventory = [];
         let thingContainerHistory = [];
-        let thingContainerMoveInFlight = false;
+        const thingContainerMoveInFlightIds = new Set();
+        let thingContainerBulkMoveInFlight = false;
+        let thingContainerRefreshInFlight = false;
+        let thingContainerSessionToken = 0;
+        let thingContainerPayloadApplyVersion = 0;
+        let thingContainerLastAppliedPayloadVersion = 0;
         let currentThingContainerDragSource = null;
         let modalInventoryDragState = null;
-        let modalInventoryDropInFlight = false;
+        const modalInventoryDropInFlightThingIds = new Set();
         let modalInventoryTouchDragState = null;
         let currentNpcViewId = null;
         let currentNpcViewIsPlayer = false;
@@ -10199,7 +10275,14 @@
             return !(target instanceof Node) || !sourceModal.contains(target);
         }
 
-        function clearModalInventoryDragState() {
+        function clearModalInventoryDragState(expectedThingId = null) {
+            if (
+                expectedThingId
+                && modalInventoryDragState
+                && modalInventoryDragState.thingId !== expectedThingId
+            ) {
+                return;
+            }
             modalInventoryDragState = null;
         }
 
@@ -10287,6 +10370,9 @@
             document.body.classList.remove('thing-touch-drag-active');
             clearThingContainerTouchDropHighlights();
             currentThingContainerDragSource = null;
+            if (state.dragStarted) {
+                clearModalInventoryDragState(state.thing?.id || null);
+            }
         }
 
         function beginModalInventoryTouchDrag(state) {
@@ -10332,10 +10418,22 @@
                 return;
             }
 
-            await dropThingToCurrentLocation(thing, {
-                context: state.context || 'general',
-                npcId: state.npcId || null
-            });
+            if (thing?.id && modalInventoryDropInFlightThingIds.has(thing.id)) {
+                return;
+            }
+            if (thing?.id) {
+                modalInventoryDropInFlightThingIds.add(thing.id);
+            }
+            try {
+                await dropThingToCurrentLocation(thing, {
+                    context: state.context || 'general',
+                    npcId: state.npcId || null
+                });
+            } finally {
+                if (thing?.id) {
+                    modalInventoryDropInFlightThingIds.delete(thing.id);
+                }
+            }
         }
 
         function wireModalInventoryTouchDrag(card, {
@@ -10589,7 +10687,7 @@
         }
 
         async function dropModalInventoryDragAtCurrentLocation(event) {
-            if (!modalInventoryDragState || modalInventoryDropInFlight) {
+            if (!modalInventoryDragState) {
                 return;
             }
             if (!isModalInventoryDragOutsideSourceModal(event)) {
@@ -10599,8 +10697,11 @@
             event.preventDefault();
             event.stopPropagation();
             const dragState = modalInventoryDragState;
-            clearModalInventoryDragState();
-            modalInventoryDropInFlight = true;
+            if (modalInventoryDropInFlightThingIds.has(dragState.thingId)) {
+                return;
+            }
+            clearModalInventoryDragState(dragState.thingId);
+            modalInventoryDropInFlightThingIds.add(dragState.thingId);
             try {
                 const thing = thingDataCache.get(dragState.thingId) || dragState.thing || { id: dragState.thingId };
                 await dropThingToCurrentLocation(thing, {
@@ -10611,7 +10712,7 @@
                 console.warn('Failed to drop dragged inventory item:', error);
                 alert(`Failed to drop item: ${error?.message || error}`);
             } finally {
-                modalInventoryDropInFlight = false;
+                modalInventoryDropInFlightThingIds.delete(dragState.thingId);
             }
         }
 
@@ -12055,6 +12156,11 @@
                     ?? personalityDetails.notes
                     ?? '';
             }
+            if (npcEditAiNotesInput) {
+                npcEditAiNotesInput.value = npc.aiNotes
+                    ?? personalityDetails.aiNotes
+                    ?? '';
+            }
 
             populateNpcAttributes(npc.attributes || {});
             populateNpcSkills(npc.skills || {});
@@ -13455,6 +13561,9 @@
             if (addNpcNotesInput) {
                 addNpcNotesInput.value = '';
             }
+            if (addNpcAiNotesInput) {
+                addNpcAiNotesInput.value = '';
+            }
             setAddNpcStatus('', null);
             if (addNpcSaveBtn) {
                 addNpcSaveBtn.disabled = false;
@@ -13529,6 +13638,9 @@
             }
             if (addNpcNotesInput) {
                 addNpcNotesInput.value = '';
+            }
+            if (addNpcAiNotesInput) {
+                addNpcAiNotesInput.value = '';
             }
             if (addNpcSaveBtn) {
                 addNpcSaveBtn.disabled = false;
@@ -13723,6 +13835,10 @@
             const description = addNpcDescriptionInput?.value?.trim();
             if (description) {
                 payload.description = description;
+            }
+            const aiNotes = addNpcAiNotesInput?.value?.trim();
+            if (aiNotes) {
+                payload.aiNotes = aiNotes;
             }
             const notes = addNpcNotesInput?.value?.trim();
             if (notes) {
@@ -13988,8 +14104,13 @@
 
             const createOption = document.createElement('option');
             createOption.value = '';
-            createOption.textContent = 'Create new location';
+            createOption.textContent = regionOption?.isStub
+                ? 'Use pending region entrance'
+                : 'Create new location';
             createOption.dataset.isCreateOption = 'true';
+            if (regionOption?.isStub) {
+                createOption.dataset.isPendingRegionEntryOption = 'true';
+            }
             newExitLocationSelect.appendChild(createOption);
 
             if (regionOption && Array.isArray(regionOption.locations)) {
@@ -14013,6 +14134,14 @@
             return !selectedLocationId;
         }
 
+        function isNewExitPendingRegionSelected(regionId = newExitRegionSelect?.value || '') {
+            const normalizedRegionId = typeof regionId === 'string' ? regionId.trim() : '';
+            if (!normalizedRegionId) {
+                return false;
+            }
+            return Boolean(getNewExitRegionOption(normalizedRegionId)?.isStub);
+        }
+
         function shouldShowExitRelativeLevelField() {
             const selectedRegionId = newExitRegionSelect?.value?.trim() || '';
             const creatingNewRegion = !selectedRegionId;
@@ -14031,6 +14160,7 @@
             const selectedLocationId = newExitLocationSelect?.value?.trim() || '';
             const showFields = !selectedLocationId;
             const creatingNewRegion = !selectedRegionId;
+            const usingPendingRegionEntry = Boolean(selectedRegionId && !selectedLocationId && isNewExitPendingRegionSelected(selectedRegionId));
             const currentRegionId = newExitOriginRegionId
                 || lastRenderedLocation?.regionId
                 || lastRenderedLocation?.stubMetadata?.regionId
@@ -14070,7 +14200,7 @@
                 }
             }
             if (newExitRelativeLevelGroup) {
-                if (shouldShowExitRelativeLevelField()) {
+                if (shouldShowExitRelativeLevelField() && !usingPendingRegionEntry) {
                     newExitRelativeLevelGroup.removeAttribute('hidden');
                 } else {
                     newExitRelativeLevelGroup.setAttribute('hidden', '');
@@ -14380,13 +14510,23 @@
             }
 
             if (nameFieldsVisible && !name) {
-                alert('Please provide a name for the exit.');
-                return;
+                const blankNameTargetsPendingRegion = Boolean(selectedRegionId && isNewExitPendingRegionSelected(selectedRegionId));
+                if (!blankNameTargetsPendingRegion) {
+                    alert('Please provide a name for the exit.');
+                    return;
+                }
             }
 
             const creatingNewRegion = !selectedRegionId;
+            const targetPendingRegionEntry = Boolean(
+                selectedRegionId
+                && isNewExitPendingRegionSelected(selectedRegionId)
+                && !selectedLocationId
+                && !name
+            );
             const creatingNewLocation = Boolean(
                 selectedRegionId
+                && !targetPendingRegionEntry
                 && (!selectedLocationId || !Array.from(newExitLocationSelect?.options || []).some(opt => opt.value === selectedLocationId))
             );
             const usingExistingLocation = Boolean(selectedRegionId && selectedLocationId);
@@ -14395,7 +14535,7 @@
                 ? (lastRenderedLocation?.regionId || lastRenderedLocation?.stubMetadata?.regionId || null)
                 : null;
 
-            const type = creatingNewRegion ? 'region' : 'location';
+            const type = creatingNewRegion || targetPendingRegionEntry ? 'region' : 'location';
             const locationOption = selectedLocationId
                 ? Array.from(newExitLocationSelect?.options || []).find(opt => opt.value === selectedLocationId)
                 : null;
@@ -14439,7 +14579,6 @@
             if (imageFile) {
                 if (!creatingNewRegion && !creatingNewLocation) {
                     alert('Reference images are only supported when creating a new location or region.');
-                    removePlaceholder();
                     return;
                 }
                 try {
@@ -15883,6 +16022,9 @@
                 }
                 if (npcEditPersonalityNotesInput) {
                     payload.personalityNotes = npcEditPersonalityNotesInput.value ?? '';
+                }
+                if (npcEditAiNotesInput) {
+                    payload.aiNotes = npcEditAiNotesInput.value ?? '';
                 }
                 if (npcEditAliasesInput) {
                     payload.aliases = npcEditAliasesInput.value
@@ -17905,7 +18047,7 @@
                                 event.dataTransfer.effectAllowed = 'move';
                             });
                             card.addEventListener('dragend', () => {
-                                clearModalInventoryDragState();
+                                clearModalInventoryDragState(thing.id);
                             });
                             wireModalInventoryTouchDrag(card, {
                                 thing,
@@ -17970,6 +18112,10 @@
             if (!thingContainerModal || !npcModalBackdrop) {
                 throw new Error('Container modal is unavailable.');
             }
+            thingContainerSessionToken += 1;
+            thingContainerMoveInFlightIds.clear();
+            thingContainerBulkMoveInFlight = false;
+            thingContainerRefreshInFlight = false;
             thingContainerModal.removeAttribute('hidden');
             thingContainerModal.setAttribute('aria-hidden', 'false');
             thingContainerModal.setAttribute('aria-busy', 'true');
@@ -17980,6 +18126,64 @@
             }
             updateThingContainerBulkButtons();
             scrollModalToTop(thingContainerModal);
+        }
+
+        function hasThingContainerMoveWorkInFlight() {
+            return thingContainerBulkMoveInFlight || thingContainerMoveInFlightIds.size > 0;
+        }
+
+        function hasThingContainerBulkWorkInFlight() {
+            return hasThingContainerMoveWorkInFlight() || thingContainerRefreshInFlight;
+        }
+
+        function isThingContainerOpenForSession(containerId, sessionToken) {
+            return Boolean(
+                containerId
+                && currentThingContainerId === containerId
+                && thingContainerSessionToken === sessionToken
+                && thingContainerModal
+                && !thingContainerModal.hasAttribute('hidden')
+            );
+        }
+
+        function reserveThingContainerPayloadApplyVersion() {
+            thingContainerPayloadApplyVersion += 1;
+            return thingContainerPayloadApplyVersion;
+        }
+
+        function applyThingContainerPayloadForSession(payload, {
+            containerId = null,
+            sessionToken = thingContainerSessionToken,
+            applyVersion = null
+        } = {}) {
+            if (containerId && !isThingContainerOpenForSession(containerId, sessionToken)) {
+                return false;
+            }
+            if (Number.isInteger(applyVersion)) {
+                if (applyVersion < thingContainerLastAppliedPayloadVersion) {
+                    return false;
+                }
+                thingContainerLastAppliedPayloadVersion = applyVersion;
+            }
+            applyThingContainerPayload(payload);
+            return true;
+        }
+
+        async function refreshThingContainerForSession(containerId, sessionToken) {
+            if (!isThingContainerOpenForSession(containerId, sessionToken)) {
+                return null;
+            }
+            const applyVersion = reserveThingContainerPayloadApplyVersion();
+            thingContainerRefreshInFlight = true;
+            updateThingContainerBulkButtons();
+            try {
+                const payload = await fetchThingContainerPayload(containerId);
+                applyThingContainerPayloadForSession(payload, { containerId, sessionToken, applyVersion });
+                return payload;
+            } finally {
+                thingContainerRefreshInFlight = false;
+                updateThingContainerBulkButtons();
+            }
         }
 
         function cacheThingContainerPayload(payload = {}) {
@@ -18042,14 +18246,15 @@
         function updateThingContainerBulkButtons() {
             const hasOpenContainer = Boolean(currentThingContainerId && thingContainerModal && !thingContainerModal.hasAttribute('hidden'));
             const modalBusy = Boolean(thingContainerModal && thingContainerModal.getAttribute('aria-busy') === 'true');
+            const moveBusy = hasThingContainerBulkWorkInFlight();
             if (containerPlayerInventoryAddAllBtn) {
-                containerPlayerInventoryAddAllBtn.disabled = thingContainerMoveInFlight
+                containerPlayerInventoryAddAllBtn.disabled = moveBusy
                     || modalBusy
                     || !hasOpenContainer
                     || currentThingContainerVisiblePlayerInventory.length === 0;
             }
             if (containerContentsRemoveAllBtn) {
-                containerContentsRemoveAllBtn.disabled = thingContainerMoveInFlight
+                containerContentsRemoveAllBtn.disabled = moveBusy
                     || modalBusy
                     || !hasOpenContainer
                     || currentThingContainerVisibleContents.length === 0;
@@ -18116,8 +18321,10 @@
                     });
                 });
                 card.addEventListener('dragend', () => {
-                    currentThingContainerDragSource = null;
-                    clearModalInventoryDragState();
+                    if (currentThingContainerDragSource === source) {
+                        currentThingContainerDragSource = null;
+                    }
+                    clearModalInventoryDragState(thing.id);
                     containerPlayerInventoryGrid?.classList.remove('is-drag-over');
                     containerContentsGrid?.classList.remove('is-drag-over');
                 });
@@ -18304,7 +18511,17 @@
             }
 
             showThingContainerShell(thing?.name || 'Container');
+            const sessionToken = thingContainerSessionToken;
+            const applyVersion = reserveThingContainerPayloadApplyVersion();
             const payload = await fetchThingContainerPayload(containerId);
+            if (
+                thingContainerSessionToken !== sessionToken
+                || !thingContainerModal
+                || thingContainerModal.hasAttribute('hidden')
+            ) {
+                return null;
+            }
+            thingContainerLastAppliedPayloadVersion = applyVersion;
             return applyThingContainerPayload(payload);
         }
 
@@ -18329,8 +18546,9 @@
             });
         }
 
-        async function requestThingContainerMove(thingIdOrIds, source) {
-            if (!currentThingContainerId) {
+        async function requestThingContainerMove(thingIdOrIds, source, { containerId = currentThingContainerId } = {}) {
+            const normalizedContainerId = typeof containerId === 'string' ? containerId.trim() : '';
+            if (!normalizedContainerId) {
                 throw new Error('No open container.');
             }
             const endpoint = source === 'player' ? 'move-in' : 'move-out';
@@ -18347,7 +18565,7 @@
             const body = thingIds.length > 0
                 ? { thingIds }
                 : { thingId: singleThingId };
-            const response = await fetch(`/api/things/${encodeURIComponent(currentThingContainerId)}/container/${endpoint}`, {
+            const response = await fetch(`/api/things/${encodeURIComponent(normalizedContainerId)}/container/${endpoint}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(body)
@@ -18366,17 +18584,24 @@
             if (!thing?.id) {
                 throw new Error('Missing item information.');
             }
-            if (thingContainerMoveInFlight) {
-                return null;
-            }
             if (source !== 'player' && source !== 'container') {
                 throw new Error(`Unsupported container move source "${source}".`);
             }
-            thingContainerMoveInFlight = true;
+            const thingId = String(thing.id).trim();
+            if (!thingId) {
+                throw new Error('Missing item information.');
+            }
+            if (thingContainerBulkMoveInFlight || thingContainerMoveInFlightIds.has(thingId)) {
+                return null;
+            }
+            const containerId = currentThingContainerId;
+            const sessionToken = thingContainerSessionToken;
+            const applyVersion = reserveThingContainerPayloadApplyVersion();
+            thingContainerMoveInFlightIds.add(thingId);
             updateThingContainerBulkButtons();
             try {
-                const payload = await requestThingContainerMove(thing.id, source);
-                applyThingContainerPayload(payload);
+                const payload = await requestThingContainerMove(thingId, source, { containerId });
+                applyThingContainerPayloadForSession(payload, { containerId, sessionToken, applyVersion });
                 if (refreshInventory) {
                     try {
                         await window.refreshInventory?.();
@@ -18386,8 +18611,15 @@
                 }
                 return payload;
             } finally {
-                thingContainerMoveInFlight = false;
+                thingContainerMoveInFlightIds.delete(thingId);
                 updateThingContainerBulkButtons();
+                if (!hasThingContainerMoveWorkInFlight()) {
+                    try {
+                        await refreshThingContainerForSession(containerId, sessionToken);
+                    } catch (error) {
+                        console.warn('Failed to refresh container after concurrent moves:', error);
+                    }
+                }
             }
         }
 
@@ -18398,7 +18630,7 @@
             if (source !== 'player' && source !== 'container') {
                 throw new Error(`Unsupported container move source "${source}".`);
             }
-            if (thingContainerMoveInFlight) {
+            if (hasThingContainerBulkWorkInFlight()) {
                 return null;
             }
 
@@ -18422,11 +18654,14 @@
                 }
             }
 
-            thingContainerMoveInFlight = true;
+            const containerId = currentThingContainerId;
+            const sessionToken = thingContainerSessionToken;
+            const applyVersion = reserveThingContainerPayloadApplyVersion();
+            thingContainerBulkMoveInFlight = true;
             updateThingContainerBulkButtons();
             try {
-                const payload = await requestThingContainerMove(visibleItems.map(item => item.id), source);
-                applyThingContainerPayload(payload);
+                const payload = await requestThingContainerMove(visibleItems.map(item => item.id), source, { containerId });
+                applyThingContainerPayloadForSession(payload, { containerId, sessionToken, applyVersion });
                 try {
                     await window.refreshInventory?.();
                 } catch (error) {
@@ -18434,7 +18669,7 @@
                 }
                 return payload;
             } finally {
-                thingContainerMoveInFlight = false;
+                thingContainerBulkMoveInFlight = false;
                 updateThingContainerBulkButtons();
             }
         }
@@ -18515,6 +18750,10 @@
             currentThingContainerVisibleContents = [];
             currentThingContainerVisiblePlayerInventory = [];
             thingContainerHistory = [];
+            thingContainerSessionToken += 1;
+            thingContainerMoveInFlightIds.clear();
+            thingContainerBulkMoveInFlight = false;
+            thingContainerRefreshInFlight = false;
             currentThingContainerDragSource = null;
             clearModalInventoryDragState();
             cancelModalInventoryTouchDrag({ suppressClick: true });
@@ -19595,7 +19834,7 @@
 
         function handleCraftingInventoryDragEnd(event) {
             event.currentTarget?.classList.remove('is-dragging');
-            clearModalInventoryDragState();
+            clearModalInventoryDragState(event.currentTarget?.dataset?.thingId || null);
         }
 
         function handleCraftingSlotDragOver(event) {
@@ -20800,11 +21039,13 @@
 
                 if (tabName === 'map') {
                     const pendingRegionId = window.__AIRPG_NEXT_REGION_MAP_ID || null;
+                    const pendingMapOptions = window.__AIRPG_NEXT_REGION_MAP_OPTIONS || {};
+                    window.__AIRPG_NEXT_REGION_MAP_OPTIONS = null;
                     if (pendingRegionId) {
                         window.__AIRPG_NEXT_REGION_MAP_ID = null;
-                        window.loadRegionMap?.(pendingRegionId);
+                        window.loadRegionMap?.(pendingRegionId, pendingMapOptions);
                     } else {
-                        window.loadRegionMap?.();
+                        window.loadRegionMap?.(null, pendingMapOptions);
                     }
                 } else if (tabName === 'world-map') {
                     window.loadWorldMap?.();
@@ -26325,9 +26566,12 @@
         });
 
         let draggedLocationThing = null;
+        const locationThingDropInFlightIds = new Set();
 
-        const resetThingDragState = () => {
-            draggedLocationThing = null;
+        const resetThingDragState = (expectedThingId = null) => {
+            if (!expectedThingId || draggedLocationThing?.id === expectedThingId) {
+                draggedLocationThing = null;
+            }
             document.querySelectorAll('.inventory-drop-target.is-drop-hover, .thing-type-drop-target.is-drop-hover').forEach(el => {
                 el.classList.remove('is-drop-hover');
             });
@@ -26340,23 +26584,27 @@
             return value.trim().toLowerCase() === 'scenery' ? 'scenery' : 'item';
         }
 
-        async function handleGiveThingToOwner({ ownerId, ownerType }) {
-            if (!draggedLocationThing || !draggedLocationThing.id || !ownerId) {
+        async function handleGiveThingToOwner({ ownerId, ownerType, dragState = draggedLocationThing }) {
+            if (!dragState || !dragState.id || !ownerId) {
                 return;
             }
+            if (locationThingDropInFlightIds.has(dragState.id)) {
+                return;
+            }
+            locationThingDropInFlightIds.add(dragState.id);
             try {
-                const draggedType = normalizeThingTypeForDrag(draggedLocationThing.thingType);
+                const draggedType = normalizeThingTypeForDrag(dragState.thingType);
                 if (draggedType !== 'item') {
                     throw new Error('Only item-type things can be moved into inventory. Drag scenery into the Items section to convert it first.');
                 }
-                const thingRecord = thingDataCache.get(draggedLocationThing.id) || draggedLocationThing.thing || { id: draggedLocationThing.id };
+                const thingRecord = thingDataCache.get(dragState.id) || dragState.thing || { id: dragState.id };
                 const result = await moveThingToInventory(thingRecord, {
                     ownerId,
                     ownerType,
-                    locationId: draggedLocationThing.locationId || null
+                    locationId: dragState.locationId || null
                 });
-                if (draggedLocationThing) {
-                    const el = draggedLocationThing.element;
+                if (dragState) {
+                    const el = dragState.element;
                     if (el && el.parentElement) {
                         el.parentElement.removeChild(el);
                     }
@@ -26366,25 +26614,31 @@
                 console.warn('Failed to move item into inventory:', error);
                 window.alert(error?.message || 'Failed to move item into inventory.');
             } finally {
-                resetThingDragState();
+                locationThingDropInFlightIds.delete(dragState.id);
+                resetThingDragState(dragState.id);
             }
         }
 
-        async function handleConvertThingType({ targetType }) {
-            if (!draggedLocationThing || !draggedLocationThing.id) {
+        async function handleConvertThingType({ targetType, dragState = draggedLocationThing }) {
+            if (!dragState || !dragState.id) {
                 return;
             }
+            if (locationThingDropInFlightIds.has(dragState.id)) {
+                return;
+            }
+            locationThingDropInFlightIds.add(dragState.id);
 
             const normalizedTargetType = normalizeThingTypeForDrag(targetType);
-            const currentType = normalizeThingTypeForDrag(draggedLocationThing.thingType);
+            const currentType = normalizeThingTypeForDrag(dragState.thingType);
             if (currentType === normalizedTargetType) {
-                resetThingDragState();
+                locationThingDropInFlightIds.delete(dragState.id);
+                resetThingDragState(dragState.id);
                 return;
             }
 
             try {
-                const thingId = draggedLocationThing.id;
-                const thingRecord = thingDataCache.get(thingId) || draggedLocationThing.thing || { id: thingId };
+                const thingId = dragState.id;
+                const thingRecord = thingDataCache.get(thingId) || dragState.thing || { id: thingId };
                 const response = await fetch(`/api/things/${encodeURIComponent(thingId)}`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
@@ -26411,7 +26665,8 @@
                 console.warn('Failed to convert thing type:', error);
                 window.alert(error?.message || 'Failed to convert thing type.');
             } finally {
-                resetThingDragState();
+                locationThingDropInFlightIds.delete(dragState.id);
+                resetThingDragState(dragState.id);
             }
         }
 
@@ -26444,7 +26699,8 @@
             element.addEventListener('drop', async (event) => {
                 event.preventDefault();
                 element.classList.remove('is-drop-hover');
-                await handleGiveThingToOwner({ ownerId, ownerType });
+                const dragState = draggedLocationThing;
+                await handleGiveThingToOwner({ ownerId, ownerType, dragState });
             });
         }
 
@@ -26480,7 +26736,8 @@
             element.addEventListener('drop', async (event) => {
                 event.preventDefault();
                 element.classList.remove('is-drop-hover');
-                await handleConvertThingType({ targetType: normalizedTargetType });
+                const dragState = draggedLocationThing;
+                await handleConvertThingType({ targetType: normalizedTargetType, dragState });
             });
         }
 

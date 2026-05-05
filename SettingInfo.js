@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const yaml = require('js-yaml');
 const fs = require('fs');
 const path = require('path');
+const { normalizeUnifiedTonalScaleSelections } = require('./UnifiedTonalScale.js');
 
 /**
  * SettingInfo class for AI RPG
@@ -38,6 +39,7 @@ class SettingInfo {
   #defaultExistingSkills;
   #defaultFactionCount;
   #defaultFactions;
+  #unifiedTonalScale;
   #createdAt;
   #lastUpdated;
   #availableClasses;
@@ -342,6 +344,7 @@ class SettingInfo {
     this.#defaultExistingSkills = SettingInfo.#normalizeExistingSkills(options.defaultExistingSkills);
     this.#defaultFactionCount = SettingInfo.#normalizeFactionCount(options.defaultFactionCount);
     this.#defaultFactions = SettingInfo.#normalizeFactions(options.defaultFactions);
+    this.#unifiedTonalScale = normalizeUnifiedTonalScaleSelections(options.unifiedTonalScale);
     this.#availableClasses = SettingInfo.#normalizeStringList(options.availableClasses);
     this.#availableRaces = SettingInfo.#normalizeStringList(options.availableRaces);
     this.#customSlopWords = SettingInfo.#normalizeStringList(options.customSlopWords);
@@ -389,6 +392,7 @@ class SettingInfo {
   get defaultExistingSkills() { return [...this.#defaultExistingSkills]; }
   get defaultFactionCount() { return this.#defaultFactionCount; }
   get defaultFactions() { return this.#defaultFactions.map(faction => JSON.parse(JSON.stringify(faction))); }
+  get unifiedTonalScale() { return JSON.parse(JSON.stringify(this.#unifiedTonalScale)); }
   get createdAt() { return this.#createdAt; }
   get lastUpdated() { return this.#lastUpdated; }
   get availableClasses() { return [...this.#availableClasses]; }
@@ -560,6 +564,11 @@ class SettingInfo {
     this.#updateTimestamp();
   }
 
+  set unifiedTonalScale(value) {
+    this.#unifiedTonalScale = normalizeUnifiedTonalScaleSelections(value);
+    this.#updateTimestamp();
+  }
+
   set availableClasses(value) {
     this.#availableClasses = SettingInfo.#normalizeStringList(value);
     this.#updateTimestamp();
@@ -629,6 +638,10 @@ class SettingInfo {
       }
 
       if (key in this) {
+        if (key === 'unifiedTonalScale') {
+          this[key] = value;
+          return;
+        }
         try {
           this[key] = value;
         } catch (error) {
@@ -671,6 +684,7 @@ class SettingInfo {
       defaultExistingSkills: [...this.#defaultExistingSkills],
       defaultFactionCount: this.#defaultFactionCount,
       defaultFactions: this.#defaultFactions.map(faction => JSON.parse(JSON.stringify(faction))),
+      unifiedTonalScale: JSON.parse(JSON.stringify(this.#unifiedTonalScale)),
       availableClasses: [...this.#availableClasses],
       availableRaces: [...this.#availableRaces],
       customSlopWords: [...this.#customSlopWords],
@@ -727,6 +741,7 @@ class SettingInfo {
       imagePromptPrefixScenery: this.#imagePromptPrefixScenery,
       playerStartingLevel: this.#playerStartingLevel,
       defaultStartingCurrency: this.#defaultStartingCurrency,
+      unifiedTonalScale: JSON.parse(JSON.stringify(this.#unifiedTonalScale)),
       settingName: this.#name,
       settingDescription: this.#description,
       availableClasses: [...this.#availableClasses],
