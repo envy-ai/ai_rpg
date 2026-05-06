@@ -97,6 +97,164 @@ function normalizeNewExitSummaryComparison(value) {
     return normalizeNewExitSummaryText(value).toLowerCase();
 }
 
+function normalizeBarterReferenceName(value) {
+    if (value === null || value === undefined) {
+        return '';
+    }
+    return String(value).trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+function buildBarterItemReferenceIndex(items = []) {
+    const byId = new Map();
+    const byName = new Map();
+    for (const item of Array.isArray(items) ? items : []) {
+        if (!item || typeof item !== 'object') {
+            continue;
+        }
+        const id = typeof item.id === 'string' ? item.id.trim() : '';
+        if (!id) {
+            continue;
+        }
+        const name = typeof item.name === 'string' ? item.name.trim() : '';
+        const record = {
+            id,
+            name,
+            source: typeof item.source === 'string' && item.source.trim()
+                ? item.source.trim()
+                : null,
+            item
+        };
+        byId.set(id, record);
+        const nameKey = normalizeBarterReferenceName(name);
+        if (nameKey) {
+            if (!byName.has(nameKey)) {
+                byName.set(nameKey, []);
+            }
+            if (!byName.get(nameKey).some(existing => existing.id === id)) {
+                byName.get(nameKey).push(record);
+            }
+        }
+    }
+    return { byId, byName };
+}
+
+function resolveBarterOfferItemReference(index, { id = '', name = '', contextLabel = 'barter item', warn = console.warn } = {}) {
+    const safeWarn = typeof warn === 'function' ? warn : () => {};
+    const normalizedId = typeof id === 'string' ? id.trim() : '';
+    const normalizedName = typeof name === 'string' ? name.trim() : '';
+    const nameKey = normalizeBarterReferenceName(normalizedName);
+    const byId = index?.byId instanceof Map ? index.byId : new Map();
+    const byName = index?.byName instanceof Map ? index.byName : new Map();
+
+    if (nameKey) {
+        const nameMatches = byName.get(nameKey) || [];
+        if (nameMatches.length === 1) {
+            const resolved = nameMatches[0];
+            if (normalizedId && normalizedId !== resolved.id) {
+                safeWarn(
+                    `[BarterPricing] ${contextLabel} returned item id "${normalizedId}" for "${normalizedName}", `
+                    + `but the exact name resolves to "${resolved.id}". Using the exact name match.`
+                );
+            }
+            return resolved;
+        }
+        if (nameMatches.length > 1) {
+            if (!normalizedId) {
+                safeWarn(
+                    `[BarterPricing] ${contextLabel} named "${normalizedName}", but multiple listed items have that name and no item id was provided. Skipping this offer.`
+                );
+                return null;
+            }
+            const idMatch = byId.get(normalizedId) || null;
+            if (!idMatch || normalizeBarterReferenceName(idMatch.name) !== nameKey) {
+                safeWarn(
+                    `[BarterPricing] ${contextLabel} named "${normalizedName}", but item id "${normalizedId}" did not match any listed item with that name. Skipping this offer.`
+                );
+                return null;
+            }
+            return idMatch;
+        }
+        safeWarn(
+            `[BarterPricing] ${contextLabel} named "${normalizedName}", but no listed item has that exact name. Skipping this offer.`
+        );
+        return null;
+    }
+
+    if (!normalizedId) {
+        safeWarn(`[BarterPricing] ${contextLabel} omitted both item name and item id. Skipping this offer.`);
+        return null;
+    }
+    const idMatch = byId.get(normalizedId) || null;
+    if (!idMatch) {
+        safeWarn(`[BarterPricing] ${contextLabel} returned unknown item id "${normalizedId}". Skipping this offer.`);
+        return null;
+    }
+    return idMatch;
+}
+
+function buildBarterCurrencySettlement({
+    netPlayerPays,
+    playerCurrency,
+    merchantCurrency,
+    merchantName = 'Merchant',
+    allowMerchantCurrencyShortfall = false
+} = {}) {
+    const net = Number(netPlayerPays);
+    const playerFunds = Number(playerCurrency);
+    const merchantFunds = Number(merchantCurrency);
+    const safeNet = Number.isFinite(net) ? net : 0;
+    const safePlayerFunds = Number.isFinite(playerFunds) ? playerFunds : 0;
+    const safeMerchantFunds = Number.isFinite(merchantFunds) ? merchantFunds : 0;
+
+    if (safeNet > 0 && safePlayerFunds < safeNet) {
+        throw new Error(`Player does not have enough currency for this trade. Need ${safeNet}.`);
+    }
+
+    if (safeNet < 0) {
+        const requiredMerchantPayment = Math.abs(safeNet);
+        if (safeMerchantFunds < requiredMerchantPayment) {
+            if (!allowMerchantCurrencyShortfall) {
+                const error = new Error(`${merchantName || 'Merchant'} does not have enough currency for this trade.`);
+                error.status = 409;
+                error.reason = 'merchant-insufficient-currency';
+                error.merchantName = merchantName || 'Merchant';
+                error.requiredMerchantPayment = requiredMerchantPayment;
+                error.merchantCurrency = safeMerchantFunds;
+                error.shortfall = requiredMerchantPayment - safeMerchantFunds;
+                throw error;
+            }
+            return {
+                netPlayerPays: safeNet,
+                playerPays: 0,
+                merchantPays: Math.max(0, safeMerchantFunds),
+                requiredMerchantPayment,
+                merchantCurrency: safeMerchantFunds,
+                shortfall: requiredMerchantPayment - Math.max(0, safeMerchantFunds),
+                merchantCurrencyShortfallAccepted: true
+            };
+        }
+        return {
+            netPlayerPays: safeNet,
+            playerPays: 0,
+            merchantPays: requiredMerchantPayment,
+            requiredMerchantPayment,
+            merchantCurrency: safeMerchantFunds,
+            shortfall: 0,
+            merchantCurrencyShortfallAccepted: false
+        };
+    }
+
+    return {
+        netPlayerPays: safeNet,
+        playerPays: safeNet > 0 ? safeNet : 0,
+        merchantPays: 0,
+        requiredMerchantPayment: 0,
+        merchantCurrency: safeMerchantFunds,
+        shortfall: 0,
+        merchantCurrencyShortfallAccepted: false
+    };
+}
+
 function selectNewExitSummaryField(entry, keys) {
     if (!entry || typeof entry !== 'object' || !Array.isArray(keys)) {
         return '';
@@ -1470,6 +1628,1216 @@ module.exports = function registerApiRoutes(scope) {
             }
             return next;
         };
+
+        const barterSessions = new Map();
+
+        function getCurrentWorldMinutesForBarter() {
+            if (typeof Globals.getTotalWorldMinutes === 'function') {
+                const value = Globals.getTotalWorldMinutes();
+                if (Number.isInteger(value)) {
+                    return value;
+                }
+            }
+            return 0;
+        }
+
+        function getBarterRuntimeConfig() {
+            const rawConfig = config.barter && typeof config.barter === 'object' ? config.barter : {};
+            const generatedStock = rawConfig.generated_stock && typeof rawConfig.generated_stock === 'object'
+                ? rawConfig.generated_stock
+                : {};
+            const dailyRefresh = rawConfig.daily_refresh && typeof rawConfig.daily_refresh === 'object'
+                ? rawConfig.daily_refresh
+                : {};
+            const parseInteger = (value, fallback, label) => {
+                if (value === undefined || value === null || value === '') {
+                    return fallback;
+                }
+                const numeric = Number(value);
+                if (!Number.isInteger(numeric) || numeric < 0) {
+                    throw new Error(`${label} must be a non-negative integer.`);
+                }
+                return numeric;
+            };
+            const parsePositiveInteger = (value, fallback, label) => {
+                const numeric = parseInteger(value, fallback, label);
+                if (numeric < 1) {
+                    throw new Error(`${label} must be at least 1.`);
+                }
+                return numeric;
+            };
+            const parseFraction = (value, fallback, label) => {
+                if (value === undefined || value === null || value === '') {
+                    return fallback;
+                }
+                const numeric = Number(value);
+                if (!Number.isFinite(numeric) || numeric < 0 || numeric > 1) {
+                    throw new Error(`${label} must be a finite number between 0 and 1.`);
+                }
+                return numeric;
+            };
+
+            const generatedStockMin = parseInteger(generatedStock.min_items, 0, 'barter.generated_stock.min_items');
+            const generatedStockMax = parseInteger(generatedStock.max_items, 15, 'barter.generated_stock.max_items');
+            if (generatedStockMin > generatedStockMax) {
+                throw new Error('barter.generated_stock.min_items must be less than or equal to barter.generated_stock.max_items.');
+            }
+            const generatedStockMaxItemsPerPrompt = parsePositiveInteger(
+                generatedStock.max_items_per_prompt,
+                15,
+                'barter.generated_stock.max_items_per_prompt'
+            );
+
+            const refreshMinFraction = parseFraction(dailyRefresh.min_fraction, 1 / 3, 'barter.daily_refresh.min_fraction');
+            const refreshMaxFraction = parseFraction(dailyRefresh.max_fraction, 2 / 3, 'barter.daily_refresh.max_fraction');
+            if (refreshMinFraction > refreshMaxFraction) {
+                throw new Error('barter.daily_refresh.min_fraction must be less than or equal to barter.daily_refresh.max_fraction.');
+            }
+
+            return {
+                generatedStockMin,
+                generatedStockMax,
+                generatedStockMaxItemsPerPrompt,
+                refreshMinFraction,
+                refreshMaxFraction,
+                refusalDurationMinutes: parsePositiveInteger(rawConfig.refusal_duration_minutes, 1440, 'barter.refusal_duration_minutes'),
+                sessionTimeoutMinutes: parsePositiveInteger(rawConfig.session_timeout_minutes, 60, 'barter.session_timeout_minutes')
+            };
+        }
+
+        function normalizeBarterText(value) {
+            if (value === null || value === undefined) {
+                return '';
+            }
+            return String(value).trim();
+        }
+
+        function getThingStandardValue(thing) {
+            const metadata = thing && typeof thing.metadata === 'object' ? thing.metadata : {};
+            const candidates = [
+                thing?.value,
+                metadata.value,
+                metadata.standardValue,
+                metadata.baseValue
+            ];
+            for (const candidate of candidates) {
+                const numeric = Number(candidate);
+                if (Number.isFinite(numeric)) {
+                    return Math.floor(numeric);
+                }
+            }
+            return 0;
+        }
+
+        function getThingCountForBarter(thing) {
+            const numeric = Number(thing?.count);
+            return Number.isInteger(numeric) && numeric > 0 ? numeric : 1;
+        }
+
+        function serializeBarterPromptItem(thing, source = '') {
+            const serialized = thing && typeof thing.toJSON === 'function'
+                ? thing.toJSON()
+                : (thing && typeof thing === 'object' ? { ...thing } : {});
+            return {
+                ...serialized,
+                source,
+                count: getThingCountForBarter(thing),
+                standardValue: getThingStandardValue(thing),
+                shortDescription: serialized.shortDescription || '',
+                description: serialized.description || ''
+            };
+        }
+
+        function directChildElements(node, tagName = null) {
+            if (!node || !node.childNodes) {
+                return [];
+            }
+            return Array.from(node.childNodes)
+                .filter(child => child && child.nodeType === 1)
+                .filter(child => !tagName || child.tagName === tagName);
+        }
+
+        function directChildElement(node, tagName) {
+            return directChildElements(node, tagName)[0] || null;
+        }
+
+        function directChildText(node, tagName) {
+            const child = directChildElement(node, tagName);
+            return child && typeof child.textContent === 'string' ? child.textContent.trim() : '';
+        }
+
+        function parseBarterBoolean(value, fieldName) {
+            const normalized = normalizeBarterText(value).toLowerCase();
+            if (normalized === 'true' || normalized === 'yes') {
+                return true;
+            }
+            if (normalized === 'false' || normalized === 'no') {
+                return false;
+            }
+            throw new Error(`${fieldName} must be true or false.`);
+        }
+
+        function parseBarterNonNegativeInteger(value, fieldName) {
+            const normalized = normalizeBarterText(value);
+            if (!/^-?\d+$/.test(normalized)) {
+                throw new Error(`${fieldName} must be an integer.`);
+            }
+            const numeric = Number(normalized);
+            if (!Number.isInteger(numeric) || numeric < 0) {
+                throw new Error(`${fieldName} must be a non-negative integer.`);
+            }
+            return numeric;
+        }
+
+        function parseBarterPositiveInteger(value, fieldName) {
+            const numeric = parseBarterNonNegativeInteger(value, fieldName);
+            if (numeric < 1) {
+                throw new Error(`${fieldName} must be at least 1.`);
+            }
+            return numeric;
+        }
+
+        function extractBarterPricesXml(responseText) {
+            const raw = normalizeBarterText(responseText);
+            if (!raw) {
+                throw new Error('Barter pricing response was empty.');
+            }
+            const closeRegex = /<\/barterPrices\s*>/ig;
+            let closeMatch = null;
+            let closeCandidate = null;
+            while ((closeCandidate = closeRegex.exec(raw)) !== null) {
+                closeMatch = closeCandidate;
+            }
+            if (!closeMatch) {
+                throw new Error('Barter pricing response missing </barterPrices>.');
+            }
+            const closeIndex = closeMatch.index + closeMatch[0].length;
+            const beforeClose = raw.slice(0, closeIndex);
+            const openRegex = /<barterPrices(?:\s[^>]*)?>/ig;
+            let openMatch = null;
+            let candidate = null;
+            while ((candidate = openRegex.exec(beforeClose)) !== null) {
+                openMatch = candidate;
+            }
+            if (!openMatch) {
+                throw new Error('Barter pricing response missing <barterPrices>.');
+            }
+            return beforeClose.slice(openMatch.index);
+        }
+
+        function parseBarterPricesResponse(responseText, {
+            playerItems = [],
+            merchantItems = [],
+            playerItemIds = new Set(),
+            merchantItemIds = new Set()
+        } = {}) {
+            const xml = extractBarterPricesXml(responseText);
+            let doc = null;
+            try {
+                doc = Utils.parseXmlDocumentStrict(xml, 'text/xml');
+            } catch (error) {
+                throw new Error(`Failed to parse barter pricing XML: ${error.message}`);
+            }
+            const root = doc?.documentElement || null;
+            if (!root || root.tagName !== 'barterPrices') {
+                throw new Error('Barter pricing XML did not parse into a <barterPrices> document.');
+            }
+
+            const normalizedPlayerItems = Array.isArray(playerItems) && playerItems.length
+                ? playerItems
+                : Array.from(playerItemIds).map(id => ({ id, name: '' }));
+            const normalizedMerchantItems = Array.isArray(merchantItems) && merchantItems.length
+                ? merchantItems
+                : Array.from(merchantItemIds).map(id => ({ id, name: '' }));
+            const playerItemIndex = buildBarterItemReferenceIndex(normalizedPlayerItems);
+            const merchantItemIndex = buildBarterItemReferenceIndex(normalizedMerchantItems);
+
+            const playerOffers = new Map();
+            const playerItemsNode = directChildElement(root, 'playerItems');
+            for (const itemNode of directChildElements(playerItemsNode, 'item')) {
+                const id = directChildText(itemNode, 'id');
+                const name = directChildText(itemNode, 'name');
+                const resolved = resolveBarterOfferItemReference(playerItemIndex, {
+                    id,
+                    name,
+                    contextLabel: 'player item offer'
+                });
+                if (!resolved) {
+                    continue;
+                }
+                if (playerOffers.has(resolved.id)) {
+                    console.warn(`[BarterPricing] Player item "${resolved.name || resolved.id}" was priced more than once. Ignoring duplicate offer.`);
+                    continue;
+                }
+                playerOffers.set(resolved.id, {
+                    itemId: resolved.id,
+                    itemName: resolved.name,
+                    willingToBuy: parseBarterBoolean(directChildText(itemNode, 'willingToBuy'), `player item ${resolved.id} willingToBuy`),
+                    unitPrice: parseBarterNonNegativeInteger(directChildText(itemNode, 'unitPrice'), `player item ${resolved.id} unitPrice`),
+                    reason: directChildText(itemNode, 'reason')
+                });
+            }
+            for (const itemId of Array.from(playerItemIndex.byId.keys())) {
+                if (!playerOffers.has(itemId)) {
+                    console.warn(`[BarterPricing] Barter pricing response did not include a usable offer for player item "${itemId}".`);
+                }
+            }
+
+            const merchantOffers = new Map();
+            const merchantItemsNode = directChildElement(root, 'merchantItems');
+            for (const itemNode of directChildElements(merchantItemsNode, 'item')) {
+                const id = directChildText(itemNode, 'id');
+                const name = directChildText(itemNode, 'name');
+                const resolved = resolveBarterOfferItemReference(merchantItemIndex, {
+                    id,
+                    name,
+                    contextLabel: 'merchant item offer'
+                });
+                if (!resolved) {
+                    continue;
+                }
+                if (merchantOffers.has(resolved.id)) {
+                    console.warn(`[BarterPricing] Merchant item "${resolved.name || resolved.id}" was priced more than once. Ignoring duplicate offer.`);
+                    continue;
+                }
+                const returnedSource = directChildText(itemNode, 'source');
+                if (returnedSource && !['inventory', 'barterInventory'].includes(returnedSource)) {
+                    console.warn(
+                        `[BarterPricing] Merchant item "${resolved.name || resolved.id}" returned invalid source "${returnedSource}". `
+                        + `Using the resolved item source instead.`
+                    );
+                }
+                const source = ['inventory', 'barterInventory'].includes(returnedSource)
+                    ? returnedSource
+                    : (resolved.source || 'barterInventory');
+                const resolvedSource = resolved.source || source;
+                if (source !== resolvedSource) {
+                    console.warn(
+                        `[BarterPricing] Merchant item "${resolved.name || resolved.id}" returned source "${source}", `
+                        + `but the resolved item source is "${resolvedSource}". Using the resolved source.`
+                    );
+                }
+                merchantOffers.set(resolved.id, {
+                    itemId: resolved.id,
+                    itemName: resolved.name,
+                    source: resolvedSource,
+                    willingToSell: parseBarterBoolean(directChildText(itemNode, 'willingToSell'), `merchant item ${resolved.id} willingToSell`),
+                    unitPrice: parseBarterNonNegativeInteger(directChildText(itemNode, 'unitPrice'), `merchant item ${resolved.id} unitPrice`),
+                    reason: directChildText(itemNode, 'reason')
+                });
+            }
+
+            const newStock = [];
+            const stockNode = directChildElement(root, 'newStock');
+            for (const itemNode of directChildElements(stockNode, 'item')) {
+                const name = directChildText(itemNode, 'name');
+                if (!name) {
+                    throw new Error('Generated barter stock item is missing <name>.');
+                }
+                newStock.push({
+                    name,
+                    count: parseBarterPositiveInteger(directChildText(itemNode, 'count') || '1', `new stock ${name} count`),
+                    value: parseBarterNonNegativeInteger(directChildText(itemNode, 'value') || '0', `new stock ${name} value`),
+                    price: parseBarterNonNegativeInteger(directChildText(itemNode, 'price') || '0', `new stock ${name} price`),
+                    description: directChildText(itemNode, 'description'),
+                    type: directChildText(itemNode, 'type'),
+                    rarity: directChildText(itemNode, 'rarity'),
+                    reason: directChildText(itemNode, 'reason')
+                });
+            }
+
+            return {
+                haggleResponse: directChildText(root, 'haggleResponse'),
+                merchantCurrency: directChildText(root, 'merchantCurrency')
+                    ? parseBarterNonNegativeInteger(directChildText(root, 'merchantCurrency'), 'merchantCurrency')
+                    : null,
+                continueTrading: parseBarterBoolean(directChildText(root, 'continueTrading') || 'true', 'continueTrading'),
+                playerOffers,
+                merchantOffers,
+                newStock,
+                rawXml: xml
+            };
+        }
+
+        function isNpcHostileToCurrentPlayer(npc) {
+            if (!npc) {
+                return true;
+            }
+            if (Boolean(npc.isHostile)) {
+                return true;
+            }
+            if (!currentPlayer || !currentPlayer.id || currentPlayer.id === npc.id) {
+                return false;
+            }
+            const dispositionDefinitions = Player.dispositionDefinitions || {};
+            const dispositionTypes = dispositionDefinitions.types || {};
+            for (const def of Object.values(dispositionTypes)) {
+                if (!def || def.hostileThreshold === null || def.hostileThreshold === undefined) {
+                    continue;
+                }
+                if (typeof npc.getDisposition !== 'function') {
+                    continue;
+                }
+                const key = def.key || def.label;
+                const value = npc.getDisposition(currentPlayer.id, key);
+                const threshold = Number(def.hostileThreshold);
+                if (Number.isFinite(value) && Number.isFinite(threshold) && value <= threshold) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        function isNpcInCurrentPlayerParty(npc) {
+            if (!npc || !currentPlayer || !currentPlayer.id) {
+                return false;
+            }
+            if (Boolean(npc.isInPlayerParty)) {
+                return true;
+            }
+            if (typeof currentPlayer.getPartyMembers === 'function') {
+                const members = currentPlayer.getPartyMembers();
+                if (Array.isArray(members)) {
+                    return members.includes(npc.id);
+                }
+                if (members && typeof members.has === 'function') {
+                    return members.has(npc.id);
+                }
+            }
+            return false;
+        }
+
+        function resolveBarterNpc(npcId, { requireWilling = true } = {}) {
+            const id = normalizeBarterText(npcId);
+            if (!id) {
+                const error = new Error('NPC ID is required.');
+                error.status = 400;
+                throw error;
+            }
+            const npc = players.get(id) || Player.getById(id);
+            if (!npc || !npc.isNPC) {
+                const error = new Error(`NPC "${id}" not found.`);
+                error.status = 404;
+                throw error;
+            }
+            if (!currentPlayer || !currentPlayer.currentLocation) {
+                const error = new Error('No current player location is available.');
+                error.status = 400;
+                throw error;
+            }
+            const isPartyMember = isNpcInCurrentPlayerParty(npc);
+            if (!isPartyMember && npc.currentLocation !== currentPlayer.currentLocation) {
+                const error = new Error(`${npc.name || 'NPC'} is not at the current location.`);
+                error.status = 409;
+                throw error;
+            }
+            if (Boolean(npc.isDead)) {
+                const error = new Error(`${npc.name || 'NPC'} is dead and cannot trade.`);
+                error.status = 409;
+                throw error;
+            }
+            if (isNpcHostileToCurrentPlayer(npc)) {
+                const error = new Error(`${npc.name || 'NPC'} is hostile and cannot trade.`);
+                error.status = 409;
+                throw error;
+            }
+            if (typeof npc.refreshTradeWillingness === 'function') {
+                npc.refreshTradeWillingness(getCurrentWorldMinutesForBarter());
+            }
+            if (requireWilling && npc.willingToTrade === false) {
+                const error = new Error(`${npc.name || 'NPC'} is not willing to trade right now.`);
+                error.status = 409;
+                throw error;
+            }
+            return npc;
+        }
+
+        function refreshNpcBarterStockIfNeeded(npc) {
+            if (!npc || typeof npc.getBarterInventoryItems !== 'function') {
+                return { removedIds: [], shouldGenerateStock: false };
+            }
+            const barterConfig = getBarterRuntimeConfig();
+            const now = getCurrentWorldMinutesForBarter();
+            const lastUpdated = Number.isInteger(npc.barterStockUpdatedAt) ? npc.barterStockUpdatedAt : null;
+            if (lastUpdated === null) {
+                npc.barterStockUpdatedAt = now;
+                return { removedIds: [], shouldGenerateStock: true };
+            }
+            if ((now - lastUpdated) < 1440) {
+                return { removedIds: [], shouldGenerateStock: false };
+            }
+            const stock = npc.getBarterInventoryItems();
+            const range = barterConfig.refreshMaxFraction - barterConfig.refreshMinFraction;
+            const fraction = barterConfig.refreshMinFraction + (Math.random() * range);
+            const removeCount = Math.floor(stock.length * fraction);
+            const shuffled = stock.slice().sort(() => Math.random() - 0.5);
+            const removed = [];
+            for (const item of shuffled.slice(0, removeCount)) {
+                if (typeof npc.removeBarterInventoryItem === 'function') {
+                    npc.removeBarterInventoryItem(item);
+                }
+                if (item && typeof item.delete === 'function') {
+                    item.delete();
+                }
+                removed.push(item?.id || null);
+            }
+            npc.barterStockUpdatedAt = now;
+            return {
+                removedIds: removed.filter(Boolean),
+                shouldGenerateStock: true
+            };
+        }
+
+        function resolveNpcLocationForBarter(npc) {
+            const locationId = normalizeBarterText(npc?.currentLocation || currentPlayer?.currentLocation);
+            if (!locationId) {
+                return null;
+            }
+            try {
+                return Location.get(locationId);
+            } catch (_) {
+                return gameLocations instanceof Map ? (gameLocations.get(locationId) || null) : null;
+            }
+        }
+
+        async function applyGeneratedBarterStock(npc, generatedStock = []) {
+            const stockEntries = Array.isArray(generatedStock) ? generatedStock : [];
+            if (!stockEntries.length) {
+                return [];
+            }
+            const location = resolveNpcLocationForBarter(npc);
+            const region = location && typeof findRegionByLocationId === 'function'
+                ? findRegionByLocationId(location.id)
+                : null;
+            const barterConfig = getBarterRuntimeConfig();
+            const maxItemsPerPrompt = barterConfig.generatedStockMaxItemsPerPrompt;
+            const generated = [];
+            for (let offset = 0; offset < stockEntries.length; offset += maxItemsPerPrompt) {
+                const batch = stockEntries.slice(offset, offset + maxItemsPerPrompt);
+                const batchItems = await generateInventoryForCharacter({
+                    character: npc,
+                    characterDescriptor: {
+                        role: npc.role || npc.class || 'merchant',
+                        class: npc.class || npc.role || 'merchant',
+                        race: npc.race || 'human'
+                    },
+                    location,
+                    region,
+                    autoEquip: false,
+                    attachToInventory: false,
+                    throwOnError: true,
+                    inventoryGeneration: {
+                        mode: 'barterStock',
+                        requestedItems: batch
+                    }
+                });
+                if (!Array.isArray(batchItems) || batchItems.length !== batch.length) {
+                    throw new Error(
+                        `Inventory generator returned ${Array.isArray(batchItems) ? batchItems.length : 0} barter stock item(s) `
+                        + `for ${npc.name || 'NPC'}; expected ${batch.length}.`
+                    );
+                }
+                generated.push(...batchItems);
+            }
+            const offers = [];
+            generated.forEach((thing, index) => {
+                if (!thing) {
+                    return;
+                }
+                const source = stockEntries[index] || stockEntries.find(entry => entry.name === thing.name) || {};
+                if (Number.isInteger(source.count) && source.count > 0) {
+                    thing.count = source.count;
+                }
+                const metadata = thing.metadata || {};
+                metadata.value = Number.isInteger(source.value) && source.value >= 0
+                    ? source.value
+                    : getThingStandardValue(thing);
+                metadata.barterGenerated = true;
+                metadata.barterReason = source.reason || '';
+                thing.metadata = metadata;
+                if (typeof npc.addBarterInventoryItem !== 'function' || !npc.addBarterInventoryItem(thing)) {
+                    throw new Error(`Failed to add generated barter stock "${thing.name || thing.id}" to ${npc.name || 'NPC'}.`);
+                }
+                offers.push({
+                    itemId: thing.id,
+                    source: 'barterInventory',
+                    willingToSell: true,
+                    unitPrice: Number.isInteger(source.price) ? source.price : getThingStandardValue(thing),
+                    reason: source.reason || ''
+                });
+            });
+            return offers;
+        }
+
+        async function runBarterPricingPrompt({
+            npc,
+            haggle = null,
+            allowGeneratedStock = true,
+            refreshMerchantCurrency = allowGeneratedStock
+        } = {}) {
+            if (!npc) {
+                throw new Error('runBarterPricingPrompt requires an NPC.');
+            }
+            if (!currentPlayer) {
+                throw new Error('runBarterPricingPrompt requires a current player.');
+            }
+            const barterConfig = getBarterRuntimeConfig();
+            const baseContext = await prepareBasePromptContext({ locationOverride: resolveNpcLocationForBarter(npc) });
+            const playerItems = currentPlayer.getInventoryItems()
+                .filter(item => item && item.thingType !== 'scenery')
+                .map(item => serializeBarterPromptItem(item, 'playerInventory'));
+            const npcInventoryItems = npc.getInventoryItems()
+                .filter(item => item && item.thingType !== 'scenery')
+                .map(item => serializeBarterPromptItem(item, 'inventory'));
+            const npcBarterItems = npc.getBarterInventoryItems()
+                .filter(item => item && item.thingType !== 'scenery')
+                .map(item => serializeBarterPromptItem(item, 'barterInventory'));
+
+            const rendered = promptEnv.render('base-context.xml.njk', {
+                ...baseContext,
+                promptType: 'barter-prices',
+                barter: {
+                    npc: {
+                        ...serializeNpcForClient(npc),
+                        currency: typeof npc.getCurrency === 'function' ? npc.getCurrency() : 0
+                    },
+                    player: {
+                        ...serializeNpcForClient(currentPlayer),
+                        currency: typeof currentPlayer.getCurrency === 'function' ? currentPlayer.getCurrency() : 0
+                    },
+                    config: {
+                        generatedStockMin: allowGeneratedStock ? barterConfig.generatedStockMin : 0,
+                        generatedStockMax: allowGeneratedStock ? barterConfig.generatedStockMax : 0,
+                        refreshingStock: Boolean(refreshMerchantCurrency)
+                    },
+                    playerItems,
+                    npcInventoryItems,
+                    npcBarterItems,
+                    haggle
+                }
+            });
+            const parsedTemplate = parseXMLTemplate(rendered);
+            if (!parsedTemplate?.systemPrompt || !parsedTemplate?.generationPrompt) {
+                throw new Error('Barter pricing template did not produce prompts.');
+            }
+
+            const requestOptions = {
+                messages: [
+                    { role: 'system', content: parsedTemplate.systemPrompt },
+                    { role: 'user', content: parsedTemplate.generationPrompt }
+                ],
+                metadataLabel: 'barter_prices',
+                requiredRegex: /<barterPrices[\s\S]*<\/barterPrices>/i,
+                validateXML: false
+            };
+            if (typeof parsedTemplate.temperature === 'number') {
+                requestOptions.temperature = parsedTemplate.temperature;
+            }
+
+            const response = await LLMClient.chatCompletion(requestOptions);
+            LLMClient.logPrompt({
+                prefix: haggle ? 'barter_haggle' : 'barter_prices',
+                metadataLabel: 'barter_prices',
+                systemPrompt: parsedTemplate.systemPrompt,
+                generationPrompt: parsedTemplate.generationPrompt,
+                response
+            });
+
+            const parsed = parseBarterPricesResponse(response, {
+                playerItems,
+                merchantItems: [
+                    ...npcInventoryItems,
+                    ...npcBarterItems
+                ]
+            });
+            if (refreshMerchantCurrency) {
+                if (!Number.isInteger(parsed.merchantCurrency)) {
+                    throw new Error('Barter pricing response did not include a valid <merchantCurrency> for refreshed merchant stock.');
+                }
+                if (typeof npc.setCurrency !== 'function') {
+                    throw new Error(`Cannot update refreshed merchant currency for ${npc.name || 'NPC'}; setCurrency is unavailable.`);
+                }
+                npc.setCurrency(parsed.merchantCurrency);
+            }
+            const generatedOffers = await applyGeneratedBarterStock(npc, parsed.newStock);
+            for (const offer of generatedOffers) {
+                parsed.merchantOffers.set(offer.itemId, offer);
+            }
+            return parsed;
+        }
+
+        function createBarterSession(npc, pricingResult, { haggleHistory = [] } = {}) {
+            const now = getCurrentWorldMinutesForBarter();
+            const barterConfig = getBarterRuntimeConfig();
+            const sessionId = `barter_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+            const session = {
+                id: sessionId,
+                npcId: npc.id,
+                createdAtWorldMinutes: now,
+                expiresAtWorldMinutes: now + barterConfig.sessionTimeoutMinutes,
+                playerOffers: pricingResult.playerOffers,
+                merchantOffers: pricingResult.merchantOffers,
+                haggleHistory: Array.isArray(haggleHistory) ? haggleHistory.slice(0) : []
+            };
+            barterSessions.set(sessionId, session);
+            return session;
+        }
+
+        function getActiveBarterSession(sessionId, npc = null) {
+            const id = normalizeBarterText(sessionId);
+            if (!id || !barterSessions.has(id)) {
+                const error = new Error('Barter session was not found or has expired.');
+                error.status = 404;
+                throw error;
+            }
+            const session = barterSessions.get(id);
+            const now = getCurrentWorldMinutesForBarter();
+            if (Number.isInteger(session.expiresAtWorldMinutes) && now > session.expiresAtWorldMinutes) {
+                barterSessions.delete(id);
+                const error = new Error('Barter session has expired.');
+                error.status = 409;
+                throw error;
+            }
+            if (npc && session.npcId !== npc.id) {
+                const error = new Error('Barter session does not belong to this NPC.');
+                error.status = 409;
+                throw error;
+            }
+            return session;
+        }
+
+        function buildBarterSessionPayload(session, npc, extra = {}) {
+            const playerInventoryById = new Map(currentPlayer.getInventoryItems().map(item => [item.id, item]));
+            const npcInventoryById = new Map(npc.getInventoryItems().map(item => [item.id, item]));
+            const npcBarterById = new Map(npc.getBarterInventoryItems().map(item => [item.id, item]));
+            const playerOffers = Array.from(session.playerOffers.values()).map(offer => {
+                const item = playerInventoryById.get(offer.itemId) || Thing.getById(offer.itemId);
+                return {
+                    ...offer,
+                    count: getThingCountForBarter(item),
+                    item: item ? serializeBarterPromptItem(item, 'playerInventory') : null
+                };
+            }).filter(offer => offer.item);
+            const merchantOffers = Array.from(session.merchantOffers.values()).map(offer => {
+                const lookup = offer.source === 'inventory' ? npcInventoryById : npcBarterById;
+                const item = lookup.get(offer.itemId) || Thing.getById(offer.itemId);
+                return {
+                    ...offer,
+                    count: getThingCountForBarter(item),
+                    item: item ? serializeBarterPromptItem(item, offer.source) : null
+                };
+            }).filter(offer => offer.item);
+            return {
+                success: true,
+                session: {
+                    id: session.id,
+                    npcId: session.npcId,
+                    expiresAtWorldMinutes: session.expiresAtWorldMinutes,
+                    playerOffers,
+                    merchantOffers,
+                    haggleHistory: session.haggleHistory.slice(0)
+                },
+                player: serializeNpcForClient(currentPlayer),
+                npc: serializeNpcForClient(npc),
+                currencyName: (typeof currentSetting !== 'undefined' && currentSetting?.currencyName) || 'coin',
+                currencyNamePlural: (typeof currentSetting !== 'undefined' && currentSetting?.currencyNamePlural) || 'coins',
+                ...extra
+            };
+        }
+
+        function getBarterEndpointStreamInfo(body = {}, prefix = 'barter') {
+            const clientId = typeof body.clientId === 'string' && body.clientId.trim()
+                ? body.clientId.trim()
+                : null;
+            const requestId = typeof body.requestId === 'string' && body.requestId.trim()
+                ? body.requestId.trim()
+                : (clientId
+                    ? `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`
+                    : null);
+            return { clientId, requestId };
+        }
+
+        function formatBarterMovedItemsForContext(items = []) {
+            const list = Array.isArray(items) ? items : [];
+            return list
+                .map(item => {
+                    if (!item || typeof item !== 'object') {
+                        return null;
+                    }
+                    const name = typeof item.name === 'string' && item.name.trim()
+                        ? item.name.trim()
+                        : (typeof item.id === 'string' && item.id.trim() ? item.id.trim() : null);
+                    if (!name) {
+                        return null;
+                    }
+                    const count = Number(item.count);
+                    return Number.isInteger(count) && count > 1 ? `${name} x${count}` : name;
+                })
+                .filter(Boolean)
+                .join(', ');
+        }
+
+        function formatBarterSummaryItem(item) {
+            if (!item || typeof item !== 'object') {
+                return null;
+            }
+            const name = typeof item.name === 'string' && item.name.trim()
+                ? item.name.trim()
+                : (typeof item.id === 'string' && item.id.trim() ? item.id.trim() : null);
+            if (!name) {
+                return null;
+            }
+            const count = Number(item.count);
+            return Number.isInteger(count) && count > 1 ? `${name} (x${count})` : name;
+        }
+
+        function buildBarterTradeSummaryEvents({ npc, transaction } = {}) {
+            if (!transaction || typeof transaction !== 'object') {
+                return [];
+            }
+            const playerName = currentPlayer?.name || 'Player';
+            const playerId = currentPlayer?.id || null;
+            const merchantName = npc?.name || 'Merchant';
+            const merchantId = npc?.id || null;
+            const actorRefs = [
+                ...summaryEntityRef('npc', { id: playerId, name: playerName }),
+                ...summaryEntityRef('npc', { id: merchantId, name: merchantName })
+            ];
+            const events = [];
+
+            const appendItemTrade = ({ item, giverName, receiverName }) => {
+                const itemName = formatBarterSummaryItem(item);
+                if (!itemName) {
+                    return;
+                }
+                events.push({
+                    icon: '⚖️',
+                    description: `${giverName} traded ${itemName} to ${receiverName}.`,
+                    category: 'inventory',
+                    severity: 'normal',
+                    sourceType: 'barter_trade',
+                    entityRefs: [
+                        ...actorRefs,
+                        ...summaryEntityRef('thing', { id: item.id || null, name: item.name || itemName })
+                    ]
+                });
+            };
+
+            const receivedByMerchant = Array.isArray(transaction.receivedByMerchant)
+                ? transaction.receivedByMerchant
+                : [];
+            const receivedByPlayer = Array.isArray(transaction.receivedByPlayer)
+                ? transaction.receivedByPlayer
+                : [];
+            receivedByMerchant.forEach(item => appendItemTrade({
+                item,
+                giverName: playerName,
+                receiverName: merchantName
+            }));
+            receivedByPlayer.forEach(item => appendItemTrade({
+                item,
+                giverName: merchantName,
+                receiverName: playerName
+            }));
+
+            const currencyTransferred = Number(transaction.currencyTransferred);
+            if (Number.isFinite(currencyTransferred) && currencyTransferred !== 0) {
+                const amount = Math.abs(Math.round(currencyTransferred));
+                const payer = currencyTransferred > 0 ? playerName : merchantName;
+                const receiver = currencyTransferred > 0 ? merchantName : playerName;
+                events.push({
+                    icon: '💰',
+                    description: `${payer} paid ${amount} ${getCurrencyLabel(amount, { setting: currentSetting || null })} to ${receiver}.`,
+                    category: 'inventory',
+                    severity: 'normal',
+                    sourceType: 'barter_currency',
+                    entityRefs: actorRefs
+                });
+            }
+
+            const shortfall = Number(transaction.merchantCurrencyShortfall);
+            if (transaction.merchantCurrencyShortfallAccepted && Number.isFinite(shortfall) && shortfall > 0) {
+                const paidAmount = Number.isFinite(currencyTransferred) && currencyTransferred < 0
+                    ? Math.abs(Math.round(currencyTransferred))
+                    : 0;
+                const owedAmount = paidAmount + Math.round(shortfall);
+                events.push({
+                    icon: '💰',
+                    description: `${playerName} accepted partial payment: ${merchantName} paid ${paidAmount} of ${owedAmount} ${getCurrencyLabel(owedAmount, { setting: currentSetting || null })}.`,
+                    category: 'inventory',
+                    severity: 'important',
+                    sourceType: 'barter_currency_shortfall',
+                    entityRefs: actorRefs
+                });
+            }
+
+            return events;
+        }
+
+        function buildBarterNpcActionContext({ npc, session = null, transaction = null, reason = 'concluded' } = {}) {
+            const merchantName = npc?.name || 'the merchant';
+            const playerName = currentPlayer?.name || 'the player';
+            const lines = [
+                `${playerName}'s barter session with ${merchantName} just ${reason === 'refused' ? 'ended because the merchant refused to continue trading' : 'concluded'}.`
+            ];
+
+            const haggleHistory = Array.isArray(session?.haggleHistory) ? session.haggleHistory : [];
+            if (haggleHistory.length) {
+                const recentHaggle = haggleHistory.slice(-4)
+                    .map(entry => {
+                        const speaker = typeof entry?.speaker === 'string' && entry.speaker.trim()
+                            ? entry.speaker.trim()
+                            : 'Unknown';
+                        const text = typeof entry?.text === 'string' && entry.text.trim()
+                            ? entry.text.trim()
+                            : '';
+                        return text ? `${speaker}: ${text}` : null;
+                    })
+                    .filter(Boolean);
+                if (recentHaggle.length) {
+                    lines.push(`Recent haggling:\n${recentHaggle.join('\n')}`);
+                }
+            }
+
+            if (transaction && typeof transaction === 'object') {
+                const receivedByMerchant = formatBarterMovedItemsForContext(transaction.receivedByMerchant);
+                const receivedByPlayer = formatBarterMovedItemsForContext(transaction.receivedByPlayer);
+                if (receivedByMerchant) {
+                    lines.push(`${merchantName} received: ${receivedByMerchant}.`);
+                }
+                if (receivedByPlayer) {
+                    lines.push(`${playerName} received: ${receivedByPlayer}.`);
+                }
+                const currencyTransferred = Number(transaction.currencyTransferred);
+                if (Number.isFinite(currencyTransferred) && currencyTransferred !== 0) {
+                    if (currencyTransferred > 0) {
+                        lines.push(`${playerName} paid ${currencyTransferred} currency to ${merchantName}.`);
+                    } else {
+                        lines.push(`${merchantName} paid ${Math.abs(currencyTransferred)} currency to ${playerName}.`);
+                    }
+                }
+                if (transaction.merchantCurrencyShortfallAccepted) {
+                    lines.push(`${playerName} accepted that ${merchantName} could not pay the full owed currency amount.`);
+                }
+            }
+
+            return lines.join('\n');
+        }
+
+        async function runBarterConclusionNpcTurn({
+            npc,
+            session = null,
+            transaction = null,
+            reason = 'concluded',
+            clientId = null,
+            requestId = null
+        } = {}) {
+            if (!npc || !npc.id) {
+                throw new Error('Cannot run barter conclusion NPC action without a merchant NPC.');
+            }
+            const locationId = npc.currentLocation || currentPlayer?.currentLocation || null;
+            if (!locationId) {
+                throw new Error(`Cannot run barter conclusion NPC action for ${npc.name || 'merchant'} without a location.`);
+            }
+            const location = gameLocations.get(locationId) || Location.get(locationId) || null;
+            if (!location) {
+                throw new Error(`Cannot run barter conclusion NPC action; location "${locationId}" was not found.`);
+            }
+
+            const entryCollector = [];
+            const stream = createStreamEmitter({ clientId, requestId });
+            const npcActionContext = buildBarterNpcActionContext({ npc, session, transaction, reason });
+            stream.status('barter:npc_turn', {
+                message: `${npc.name || 'The merchant'} reacts to the trade.`
+            });
+            const npcTurns = await executeNpcTurnsAfterPlayer({
+                location,
+                stream,
+                entryCollector,
+                maxFriendlyNpcsToAct: 1,
+                maxHostileNpcsToAct: 0,
+                forcedNpcs: [{ id: npc.id, name: npc.name || null }],
+                currentTurnLog: npcActionContext,
+                npcActionContext
+            });
+            stream.complete({
+                barterConclusion: true,
+                hasNpcTurns: npcTurns.length > 0
+            });
+
+            return {
+                npcTurns,
+                messages: filterHiddenNotesForAdventureEntries(filterOrphanedChatEntries(entryCollector)),
+                requestId: requestId || null,
+                streamMeta: requestId
+                    ? {
+                        enabled: stream.isEnabled,
+                        npcTurns: npcTurns.length,
+                        barterConclusion: true
+                    }
+                    : undefined
+            };
+        }
+
+        function queueBarterConclusionNpcTurn(options = {}) {
+            const npcName = options?.npc?.name || 'merchant';
+            Promise.resolve()
+                .then(() => runBarterConclusionNpcTurn(options))
+                .catch(error => {
+                    console.error(`Failed to run queued barter conclusion NPC action for ${npcName}:`, error);
+                    const stream = createStreamEmitter({
+                        clientId: options?.clientId || null,
+                        requestId: options?.requestId || null
+                    });
+                    stream.error({
+                        scope: 'barter',
+                        message: error?.message || 'Failed to run merchant follow-up action.'
+                    });
+                    stream.complete({
+                        aborted: true,
+                        barterConclusion: true,
+                        error: error?.message || 'Failed to run merchant follow-up action.'
+                    });
+                });
+        }
+
+        function normalizeBarterTransferEntries(value, fieldName) {
+            if (value === undefined || value === null) {
+                return [];
+            }
+            if (!Array.isArray(value)) {
+                throw new Error(`${fieldName} must be an array.`);
+            }
+            return value.map((entry, index) => {
+                if (!entry || typeof entry !== 'object') {
+                    throw new Error(`${fieldName}[${index}] must be an object.`);
+                }
+                const itemId = normalizeBarterText(entry.itemId || entry.id);
+                if (!itemId) {
+                    throw new Error(`${fieldName}[${index}] is missing itemId.`);
+                }
+                const count = Number(entry.count ?? 1);
+                if (!Number.isInteger(count) || count < 1) {
+                    throw new Error(`${fieldName}[${index}].count must be a positive integer.`);
+                }
+                return { itemId, count };
+            });
+        }
+
+        function findSourceItemForBarter(npc, offer) {
+            if (!offer) {
+                return null;
+            }
+            if (offer.source === 'inventory') {
+                return npc.getInventoryItems().find(item => item?.id === offer.itemId) || null;
+            }
+            return npc.getBarterInventoryItems().find(item => item?.id === offer.itemId) || null;
+        }
+
+        function splitThingForBarterTransfer(sourceOwner, sourceType, thing, count) {
+            if (!thing) {
+                throw new Error('Cannot transfer a missing item.');
+            }
+            const availableCount = getThingCountForBarter(thing);
+            if (count > availableCount) {
+                throw new Error(`${thing.name || 'Item'} only has ${availableCount} available.`);
+            }
+            if (count === availableCount) {
+                if (sourceType === 'playerInventory') {
+                    sourceOwner.removeInventoryItem(thing);
+                } else if (sourceType === 'npcInventory') {
+                    sourceOwner.removeInventoryItem(thing, { suppressNpcEquip: true });
+                } else if (sourceType === 'npcBarterInventory') {
+                    sourceOwner.removeBarterInventoryItem(thing);
+                } else {
+                    throw new Error(`Unknown barter source type "${sourceType}".`);
+                }
+                return thing;
+            }
+
+            const splitThing = thing.copy({ count });
+            thing.count = availableCount - count;
+            if (things instanceof Map) {
+                things.set(splitThing.id, splitThing);
+                things.set(thing.id, thing);
+            }
+            return splitThing;
+        }
+
+        function validateBarterTransaction(session, npc, playerEntries, merchantEntries, {
+            allowMerchantCurrencyShortfall = false
+        } = {}) {
+            const playerInventoryById = new Map(currentPlayer.getInventoryItems().map(item => [item.id, item]));
+            let playerSellTotal = 0;
+            let merchantSellTotal = 0;
+            const playerTransfers = [];
+            const merchantTransfers = [];
+
+            for (const entry of playerEntries) {
+                const offer = session.playerOffers.get(entry.itemId);
+                if (!offer || !offer.willingToBuy) {
+                    throw new Error(`Merchant is not willing to buy item "${entry.itemId}".`);
+                }
+                const item = playerInventoryById.get(entry.itemId);
+                if (!item) {
+                    throw new Error(`Player no longer has item "${entry.itemId}".`);
+                }
+                if (entry.count > getThingCountForBarter(item)) {
+                    throw new Error(`${item.name || 'Item'} only has ${getThingCountForBarter(item)} available.`);
+                }
+                playerSellTotal += offer.unitPrice * entry.count;
+                playerTransfers.push({ item, count: entry.count, offer });
+            }
+
+            for (const entry of merchantEntries) {
+                const offer = session.merchantOffers.get(entry.itemId);
+                if (!offer || !offer.willingToSell) {
+                    throw new Error(`Merchant is not willing to sell item "${entry.itemId}".`);
+                }
+                const item = findSourceItemForBarter(npc, offer);
+                if (!item) {
+                    throw new Error(`Merchant no longer has item "${entry.itemId}".`);
+                }
+                if (entry.count > getThingCountForBarter(item)) {
+                    throw new Error(`${item.name || 'Item'} only has ${getThingCountForBarter(item)} available.`);
+                }
+                merchantSellTotal += offer.unitPrice * entry.count;
+                merchantTransfers.push({ item, count: entry.count, offer });
+            }
+
+            const netPlayerPays = merchantSellTotal - playerSellTotal;
+            const playerCurrency = typeof currentPlayer.getCurrency === 'function' ? currentPlayer.getCurrency() : 0;
+            const merchantCurrency = typeof npc.getCurrency === 'function' ? npc.getCurrency() : 0;
+            const currencySettlement = buildBarterCurrencySettlement({
+                netPlayerPays,
+                playerCurrency,
+                merchantCurrency,
+                merchantName: npc.name || 'Merchant',
+                allowMerchantCurrencyShortfall
+            });
+
+            return {
+                playerTransfers,
+                merchantTransfers,
+                playerSellTotal,
+                merchantSellTotal,
+                netPlayerPays,
+                currencySettlement
+            };
+        }
+
+        function applyBarterTransaction(npc, validation) {
+            const receivedByMerchant = [];
+            const receivedByPlayer = [];
+
+            for (const transfer of validation.playerTransfers) {
+                const moved = splitThingForBarterTransfer(currentPlayer, 'playerInventory', transfer.item, transfer.count);
+                if (!npc.addBarterInventoryItem(moved)) {
+                    throw new Error(`Failed to transfer ${moved.name || 'item'} to merchant barter stock.`);
+                }
+                receivedByMerchant.push(moved);
+            }
+
+            for (const transfer of validation.merchantTransfers) {
+                const sourceType = transfer.offer.source === 'inventory' ? 'npcInventory' : 'npcBarterInventory';
+                const moved = splitThingForBarterTransfer(npc, sourceType, transfer.item, transfer.count);
+                if (!currentPlayer.addInventoryItem(moved, { suppressNpcEquip: true })) {
+                    throw new Error(`Failed to transfer ${moved.name || 'item'} to player inventory.`);
+                }
+                receivedByPlayer.push(moved);
+            }
+
+            const currencySettlement = validation.currencySettlement || buildBarterCurrencySettlement({
+                netPlayerPays: validation.netPlayerPays,
+                playerCurrency: typeof currentPlayer.getCurrency === 'function' ? currentPlayer.getCurrency() : 0,
+                merchantCurrency: typeof npc.getCurrency === 'function' ? npc.getCurrency() : 0,
+                merchantName: npc.name || 'Merchant'
+            });
+
+            if (currencySettlement.playerPays > 0) {
+                currentPlayer.adjustCurrency(-currencySettlement.playerPays);
+                npc.adjustCurrency(currencySettlement.playerPays);
+            } else if (currencySettlement.merchantPays > 0) {
+                currentPlayer.adjustCurrency(currencySettlement.merchantPays);
+                npc.adjustCurrency(-currencySettlement.merchantPays);
+            }
+
+            return {
+                receivedByMerchant: receivedByMerchant.map(item => item.toJSON ? item.toJSON() : { id: item.id }),
+                receivedByPlayer: receivedByPlayer.map(item => item.toJSON ? item.toJSON() : { id: item.id }),
+                netPlayerPays: validation.netPlayerPays,
+                currencyTransferred: currencySettlement.playerPays > 0
+                    ? currencySettlement.playerPays
+                    : -currencySettlement.merchantPays,
+                merchantCurrencyShortfallAccepted: Boolean(currencySettlement.merchantCurrencyShortfallAccepted),
+                merchantCurrencyShortfall: currencySettlement.shortfall || 0
+            };
+        }
+
+        function getHaggleSkillValue(actor) {
+            if (!actor || typeof actor.getSkills !== 'function') {
+                return 0;
+            }
+            const skillSource = actor.getSkills();
+            const entries = skillSource instanceof Map
+                ? Array.from(skillSource.entries())
+                : Object.entries(skillSource || {});
+            const preferredFragments = [
+                'barter',
+                'haggle',
+                'mercantile',
+                'merchant',
+                'trade',
+                'negotiation',
+                'persuasion',
+                'diplomacy',
+                'deception',
+                'charm',
+                'intimidation'
+            ];
+            let bestPreferred = null;
+            let bestAny = 0;
+            for (const [name, value] of entries) {
+                const numeric = Number(value);
+                if (!Number.isFinite(numeric)) {
+                    continue;
+                }
+                bestAny = Math.max(bestAny, numeric);
+                const lowered = normalizeBarterText(name).toLowerCase();
+                if (preferredFragments.some(fragment => lowered.includes(fragment))) {
+                    bestPreferred = bestPreferred === null ? numeric : Math.max(bestPreferred, numeric);
+                }
+            }
+            return bestPreferred === null ? bestAny : bestPreferred;
+        }
+
+        function resolveBarterHaggleCheck(npc) {
+            const playerSkill = getHaggleSkillValue(currentPlayer);
+            const npcSkill = getHaggleSkillValue(npc);
+            const playerRoll = Math.floor(Math.random() * 20) + 1;
+            const merchantRoll = Math.floor(Math.random() * 20) + 1;
+            const playerTotal = playerRoll + playerSkill;
+            const merchantTotal = merchantRoll + npcSkill;
+            const margin = playerTotal - merchantTotal;
+            let outcome = 'failure';
+            if (margin >= 10) {
+                outcome = 'major_success';
+            } else if (margin >= 0) {
+                outcome = 'success';
+            } else if (margin <= -10) {
+                outcome = 'major_failure';
+            }
+            return {
+                playerSkill,
+                merchantSkill: npcSkill,
+                playerRoll,
+                merchantRoll,
+                playerTotal,
+                merchantTotal,
+                margin,
+                outcome
+            };
+        }
 
         const SLOP_HISTORY_ENTRY_TYPES = new Set([
             'player-action',
@@ -14970,7 +16338,7 @@ module.exports = function registerApiRoutes(scope) {
             };
         }
 
-        async function runNpcPlausibilityPrompt({ npc, locationOverride = null } = {}) {
+        async function runNpcPlausibilityPrompt({ npc, locationOverride = null, npcActionContext = null } = {}) {
             if (Globals.config?.plausibility_checks?.enabled === false) {
                 console.info('NPC plausibility skipped: plausibility_checks.enabled is false.');
                 return {
@@ -14998,6 +16366,7 @@ module.exports = function registerApiRoutes(scope) {
                     ...baseContext,
                     promptType: 'npc-plausibility-check',
                     characterName: npc.name || 'Unknown NPC',
+                    npcActionContext,
                     omitGameHistory: true
                 });
 
@@ -16312,7 +17681,17 @@ module.exports = function registerApiRoutes(scope) {
             }
         }
 
-        async function executeNpcTurnsAfterPlayer({ location, stream = null, skipNpcEvents = false, entryCollector = null, maxFriendlyNpcsToAct = 1, maxHostileNpcsToAct = 0, currentTurnLog }) {
+        async function executeNpcTurnsAfterPlayer({
+            location,
+            stream = null,
+            skipNpcEvents = false,
+            entryCollector = null,
+            maxFriendlyNpcsToAct = 1,
+            maxHostileNpcsToAct = 0,
+            currentTurnLog,
+            forcedNpcs = null,
+            npcActionContext = null
+        }) {
             console.log(`Executing NPC turns after player at location: ${location?.name || 'Unknown Location'}: skipNpcEvents=${skipNpcEvents}, maxFriendlyNpcsToAct=${maxFriendlyNpcsToAct}, maxHostileNpcsToAct=${maxHostileNpcsToAct}`);
             if (skipNpcEvents) {
 
@@ -16413,29 +17792,60 @@ module.exports = function registerApiRoutes(scope) {
             let pendingNpcTurnEntry = null;
             let activeNpcTurnEntry = null;
 
+            const forcedNpcQueue = Array.isArray(forcedNpcs)
+                ? forcedNpcs
+                    .map(entry => {
+                        if (!entry || typeof entry !== 'object') {
+                            return null;
+                        }
+                        const id = typeof entry.id === 'string' && entry.id.trim()
+                            ? entry.id.trim()
+                            : (typeof entry.npcId === 'string' && entry.npcId.trim() ? entry.npcId.trim() : null);
+                        const name = typeof entry.name === 'string' && entry.name.trim()
+                            ? entry.name.trim()
+                            : null;
+                        if (!id && !name) {
+                            return null;
+                        }
+                        return { id, name };
+                    })
+                    .filter(Boolean)
+                : [];
+            const hasForcedNpcQueue = forcedNpcQueue.length > 0;
+
             try {
                 console.log("Processing NPC turns")
                 pendingNpcTurnEntry = createPendingNpcTurnEntry({ locationOverride: location });
-                const npcQueue = await runNextNpcListPrompt({ locationOverride: location, maxFriendlyNpcsToAct, maxHostileNpcsToAct, currentTurnLog });
-                const npcNames = Array.isArray(npcQueue.names) ? npcQueue.names : [];
+                const npcQueue = hasForcedNpcQueue
+                    ? { raw: '', names: forcedNpcQueue }
+                    : await runNextNpcListPrompt({ locationOverride: location, maxFriendlyNpcsToAct, maxHostileNpcsToAct, currentTurnLog });
+                const npcQueueEntries = Array.isArray(npcQueue.names) ? npcQueue.names : [];
 
-                console.log(`NPC turn queue: ${npcNames.length} NPCs to process.`);
-                if (!npcNames.length) {
+                console.log(`NPC turn queue: ${npcQueueEntries.length} NPCs to process.`);
+                if (!npcQueueEntries.length) {
                     removePendingNpcTurnEntry(pendingNpcTurnEntry);
                     pendingNpcTurnEntry = null;
                 }
 
-                if (stream && stream.isEnabled && npcNames.length) {
+                if (stream && stream.isEnabled && npcQueueEntries.length) {
                     stream.status('npc_turns:start', {
-                        message: `Processing ${npcNames.length} NPC ${npcNames.length === 1 ? 'turn' : 'turns'}.`,
-                        count: npcNames.length
+                        message: `Processing ${npcQueueEntries.length} NPC ${npcQueueEntries.length === 1 ? 'turn' : 'turns'}.`,
+                        count: npcQueueEntries.length
                     });
                 }
 
                 let npcTurnIndex = 0;
-                for (const npcName of npcNames) {
+                for (const npcQueueEntry of npcQueueEntries) {
+                    const forcedNpcId = npcQueueEntry && typeof npcQueueEntry === 'object'
+                        ? (npcQueueEntry.id || npcQueueEntry.npcId || null)
+                        : null;
+                    const npcName = typeof npcQueueEntry === 'string'
+                        ? npcQueueEntry
+                        : (npcQueueEntry?.name || forcedNpcId || 'NPC');
                     console.log(`Processing turn for NPC: ${npcName}`);
-                    const npc = typeof findActorByName === 'function' ? findActorByName(npcName) : null;
+                    const npc = forcedNpcId
+                        ? (players.get(forcedNpcId) || Player.getById(forcedNpcId) || Player.get(forcedNpcId))
+                        : (typeof findActorByName === 'function' ? findActorByName(npcName) : null);
                     if (!npc || !npc.isNPC || npc.isDead) {
                         continue;
                     }
@@ -16469,7 +17879,11 @@ module.exports = function registerApiRoutes(scope) {
 
                     console.log(`Running plausibility check for NPC: ${npc.name || npcName}`);
 
-                    const plausibilityResult = await runNpcPlausibilityPrompt({ npc, locationOverride: npcLocation });
+                    const plausibilityResult = await runNpcPlausibilityPrompt({
+                        npc,
+                        locationOverride: npcLocation,
+                        npcActionContext
+                    });
                     const plan = plausibilityResult.structured;
                     if (!plan || !plan.description) {
                         removePendingNpcTurnEntry(activeNpcTurnEntry);
@@ -16822,11 +18236,11 @@ module.exports = function registerApiRoutes(scope) {
                     */
 
                     if (stream && stream.isEnabled) {
-                        stream.npcTurn({
-                            index: npcTurnIndex,
-                            total: npcNames.length,
-                            ...npcTurnResult
-                        });
+	                        stream.npcTurn({
+	                            index: npcTurnIndex,
+	                            total: npcQueueEntries.length,
+	                            ...npcTurnResult
+	                        });
                     }
 
                     npcTurnIndex += 1;
@@ -22690,6 +24104,7 @@ module.exports = function registerApiRoutes(scope) {
                     abilities,
                     currency,
                     experience,
+                    willingToTrade,
                     isDead,
                     personalityType,
                     personalityTraits,
@@ -22994,6 +24409,27 @@ module.exports = function registerApiRoutes(scope) {
                     }
                 }
 
+                if (willingToTrade !== undefined) {
+                    if (typeof willingToTrade !== 'boolean') {
+                        return res.status(400).json({
+                            success: false,
+                            error: 'willingToTrade must be a boolean.'
+                        });
+                    }
+                    try {
+                        if (typeof npc.setWillingToTrade === 'function') {
+                            const barterConfig = getBarterRuntimeConfig();
+                            npc.setWillingToTrade(willingToTrade, {
+                                refusalExpiresAt: willingToTrade
+                                    ? null
+                                    : getCurrentWorldMinutesForBarter() + barterConfig.refusalDurationMinutes
+                            });
+                        }
+                    } catch (tradeError) {
+                        console.warn(`Failed to set trade willingness for NPC ${npcId}:`, tradeError.message);
+                    }
+                }
+
                 if (personalityType !== undefined) {
                     try {
                         npc.personalityType = typeof personalityType === 'string' ? personalityType : '';
@@ -23132,6 +24568,264 @@ module.exports = function registerApiRoutes(scope) {
             } catch (error) {
                 console.error('Error updating character equipment:', error);
                 res.status(500).json({ success: false, error: error.message || 'Failed to update character equipment' });
+            }
+        });
+
+        app.post('/api/npcs/:id/trade/session', async (req, res) => {
+            try {
+                const npc = resolveBarterNpc(req.params.id, { requireWilling: true });
+                const refreshResult = refreshNpcBarterStockIfNeeded(npc);
+                const pricing = await runBarterPricingPrompt({
+                    npc,
+                    allowGeneratedStock: refreshResult.shouldGenerateStock,
+                    refreshMerchantCurrency: refreshResult.shouldGenerateStock
+                });
+                if (pricing.continueTrading === false) {
+                    const barterConfig = getBarterRuntimeConfig();
+                    npc.setWillingToTrade(false, {
+                        refusalExpiresAt: getCurrentWorldMinutesForBarter() + barterConfig.refusalDurationMinutes
+                    });
+                    return res.status(409).json({
+                        success: false,
+                        error: `${npc.name || 'NPC'} is not willing to trade right now.`,
+                        npc: serializeNpcForClient(npc)
+                    });
+                }
+                const session = createBarterSession(npc, pricing);
+                return res.json(buildBarterSessionPayload(session, npc));
+            } catch (error) {
+                console.error('Failed to start barter session:', error);
+                return res.status(error.status || 500).json({
+                    success: false,
+                    error: error.message || 'Failed to start barter session'
+                });
+            }
+        });
+
+        app.post('/api/npcs/:id/trade/haggle', async (req, res) => {
+            const chatEntries = [];
+            try {
+                const npc = resolveBarterNpc(req.params.id, { requireWilling: true });
+                const body = req.body && typeof req.body === 'object' ? req.body : {};
+                const streamInfo = getBarterEndpointStreamInfo(body, 'barter_haggle');
+                const session = getActiveBarterSession(body.sessionId, npc);
+                const offerText = normalizeBarterText(body.offer || body.text || body.message);
+                if (!offerText) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Haggle offer text is required.'
+                    });
+                }
+
+                const check = resolveBarterHaggleCheck(npc);
+                const locationId = currentPlayer.currentLocation || npc.currentLocation;
+                const playerEntry = pushChatEntry({
+                    role: 'user',
+                    type: 'barter-haggle',
+                    content: `[Barter offer to ${npc.name || 'merchant'}] ${offerText}`,
+                    metadata: {
+                        npcId: npc.id,
+                        sessionId: session.id,
+                        haggleCheck: check
+                    }
+                }, chatEntries, locationId);
+
+                const promptHistory = [
+                    ...session.haggleHistory,
+                    {
+                        speaker: currentPlayer.name || 'Player',
+                        text: offerText
+                    }
+                ];
+                const pricing = await runBarterPricingPrompt({
+                    npc,
+                    allowGeneratedStock: false,
+                    haggle: {
+                        offer: offerText,
+                        check,
+                        history: promptHistory
+                    }
+                });
+                const responseText = pricing.haggleResponse
+                    || `${npc.name || 'The merchant'} considers the offer.`;
+                const responseEntry = pushChatEntry({
+                    role: 'assistant',
+                    type: 'barter-haggle',
+                    content: responseText,
+                    metadata: {
+                        npcId: npc.id,
+                        sessionId: session.id,
+                        haggleCheck: check,
+                        speakerName: npc.name || 'Merchant'
+                    }
+                }, chatEntries, locationId);
+
+                const nextHistory = [
+                    ...promptHistory,
+                    {
+                        speaker: npc.name || 'Merchant',
+                        text: responseText
+                    }
+                ];
+
+                if (pricing.continueTrading === false) {
+                    const barterConfig = getBarterRuntimeConfig();
+                    npc.setWillingToTrade(false, {
+                        refusalExpiresAt: getCurrentWorldMinutesForBarter() + barterConfig.refusalDurationMinutes
+                    });
+                    barterSessions.delete(session.id);
+                    const npcTurnPayload = await runBarterConclusionNpcTurn({
+                        npc,
+                        session: {
+                            ...session,
+                            haggleHistory: nextHistory
+                        },
+                        reason: 'refused',
+                        ...streamInfo
+                    });
+                    return res.json({
+                        success: true,
+                        refused: true,
+                        check,
+                        response: responseText,
+                        chatEntries,
+                        playerEntry,
+                        responseEntry,
+                        ...npcTurnPayload,
+                        player: serializeNpcForClient(currentPlayer),
+                        npc: serializeNpcForClient(npc)
+                    });
+                }
+
+                session.playerOffers = pricing.playerOffers;
+                session.merchantOffers = pricing.merchantOffers;
+                session.haggleHistory = nextHistory;
+                session.expiresAtWorldMinutes = getCurrentWorldMinutesForBarter() + getBarterRuntimeConfig().sessionTimeoutMinutes;
+                barterSessions.set(session.id, session);
+
+                return res.json(buildBarterSessionPayload(session, npc, {
+                    check,
+                    response: responseText,
+                    chatEntries,
+                    playerEntry,
+                    responseEntry
+                }));
+            } catch (error) {
+                console.error('Failed to haggle barter session:', error);
+                return res.status(error.status || 500).json({
+                    success: false,
+                    error: error.message || 'Failed to haggle'
+                });
+            }
+        });
+
+        app.post('/api/npcs/:id/trade/commit', async (req, res) => {
+            try {
+                const npc = resolveBarterNpc(req.params.id, { requireWilling: true });
+                const body = req.body && typeof req.body === 'object' ? req.body : {};
+                const streamInfo = getBarterEndpointStreamInfo(body, 'barter_commit');
+                const session = getActiveBarterSession(body.sessionId, npc);
+                const playerEntries = normalizeBarterTransferEntries(body.playerItems, 'playerItems');
+                const merchantEntries = normalizeBarterTransferEntries(body.merchantItems, 'merchantItems');
+                if (!playerEntries.length && !merchantEntries.length) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Trade must include at least one item.'
+                    });
+                }
+                const validation = validateBarterTransaction(session, npc, playerEntries, merchantEntries, {
+                    allowMerchantCurrencyShortfall: body.acceptMerchantCurrencyShortfall === true
+                });
+                const result = applyBarterTransaction(npc, validation);
+                barterSessions.delete(session.id);
+                const tradeSummaryEvents = buildBarterTradeSummaryEvents({ npc, transaction: result });
+                const tradeSummary = recordEventSummaryEntry({
+                    label: '⚖️ Trade',
+                    events: tradeSummaryEvents,
+                    locationId: currentPlayer.currentLocation || npc.currentLocation || null
+                });
+                if (streamInfo.clientId && tradeSummary?.entry?.id) {
+                    createStreamEmitter(streamInfo).emit('chat_history_updated', {
+                        reason: 'barter_trade',
+                        entryId: tradeSummary.entry.id
+                    });
+                }
+                queueBarterConclusionNpcTurn({
+                    npc,
+                    session,
+                    transaction: result,
+                    reason: 'traded',
+                    ...streamInfo
+                });
+                return res.json({
+                    success: true,
+                    transaction: result,
+                    tradeSummary: tradeSummary?.entry || null,
+                    requestId: streamInfo.requestId || null,
+                    npcTurnPending: true,
+                    player: serializeNpcForClient(currentPlayer),
+                    npc: serializeNpcForClient(npc),
+                    message: result.merchantCurrencyShortfallAccepted
+                        ? 'Trade completed with partial merchant payment.'
+                        : 'Trade completed.'
+                });
+            } catch (error) {
+                console.error('Failed to commit barter transaction:', error);
+                if (error.reason === 'merchant-insufficient-currency') {
+                    return res.status(error.status || 409).json({
+                        success: false,
+                        reason: error.reason,
+                        error: error.message || 'Merchant does not have enough currency for this trade.',
+                        merchantName: error.merchantName || req.params.id,
+                        merchantCurrency: error.merchantCurrency || 0,
+                        requiredMerchantPayment: error.requiredMerchantPayment || 0,
+                        shortfall: error.shortfall || 0
+                    });
+                }
+                return res.status(error.status || 500).json({
+                    success: false,
+                    error: error.message || 'Failed to complete trade'
+                });
+            }
+        });
+
+        app.post('/api/npcs/:id/trade/conclude', async (req, res) => {
+            try {
+                const npc = resolveBarterNpc(req.params.id, { requireWilling: false });
+                const body = req.body && typeof req.body === 'object' ? req.body : {};
+                const streamInfo = getBarterEndpointStreamInfo(body, 'barter_conclude');
+                const session = getActiveBarterSession(body.sessionId, npc);
+                const hadHaggling = Array.isArray(session.haggleHistory) && session.haggleHistory.length > 0;
+                barterSessions.delete(session.id);
+                if (!hadHaggling) {
+                    return res.json({
+                        success: true,
+                        concluded: true,
+                        npcTurnTriggered: false,
+                        player: serializeNpcForClient(currentPlayer),
+                        npc: serializeNpcForClient(npc)
+                    });
+                }
+                const npcTurnPayload = await runBarterConclusionNpcTurn({
+                    npc,
+                    session,
+                    reason: 'concluded',
+                    ...streamInfo
+                });
+                return res.json({
+                    success: true,
+                    concluded: true,
+                    npcTurnTriggered: npcTurnPayload.npcTurns.length > 0,
+                    ...npcTurnPayload,
+                    player: serializeNpcForClient(currentPlayer),
+                    npc: serializeNpcForClient(npc)
+                });
+            } catch (error) {
+                console.error('Failed to conclude barter session:', error);
+                return res.status(error.status || 500).json({
+                    success: false,
+                    error: error.message || 'Failed to conclude trade'
+                });
             }
         });
 
@@ -33603,14 +35297,6 @@ module.exports = function registerApiRoutes(scope) {
                     });
                 }
 
-                if (!shouldGenerateThingImage(thing)) {
-                    return res.status(409).json({
-                        success: false,
-                        error: 'Item images can only be generated for gear in your inventory.',
-                        thing: thing.toJSON()
-                    });
-                }
-
                 const imageResult = await generateThingImage(thing, { force: true });
 
                 if (imageResult.success) {
@@ -38855,3 +40541,6 @@ module.exports = function registerApiRoutes(scope) {
 
 module.exports.formatNewExitDiscoveredSummaryDetail = formatNewExitDiscoveredSummaryDetail;
 module.exports.buildNewExitDiscoveredSummaryMetadata = buildNewExitDiscoveredSummaryMetadata;
+module.exports.buildBarterItemReferenceIndex = buildBarterItemReferenceIndex;
+module.exports.resolveBarterOfferItemReference = resolveBarterOfferItemReference;
+module.exports.buildBarterCurrencySettlement = buildBarterCurrencySettlement;

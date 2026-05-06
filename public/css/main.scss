@@ -5420,6 +5420,56 @@ body.dark .thing-toggle-hint {
   display: none !important;
 }
 
+.npc-trade-button {
+  position: absolute;
+  right: 6px;
+  bottom: 30px;
+  z-index: 4;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #fef3c7;
+  font-family: "Segoe UI Symbol", "Noto Sans Symbols 2", "Noto Sans Symbols", sans-serif;
+  font-size: 1.05rem;
+  font-weight: 700;
+  line-height: 1;
+  opacity: 1;
+  cursor: pointer;
+  box-shadow: none;
+  text-shadow:
+    0 0 3px rgba(0, 0, 0, 0.85),
+    0 0 7px rgba(250, 204, 21, 0.55);
+  transition:
+    color 0.18s ease,
+    text-shadow 0.18s ease,
+    transform 0.18s ease;
+}
+
+.npc-trade-button:hover,
+.npc-trade-button:focus {
+  color: #fde68a;
+  opacity: 1;
+  text-shadow:
+    0 0 3px rgba(0, 0, 0, 0.95),
+    0 0 6px rgba(250, 204, 21, 0.85),
+    0 0 14px rgba(245, 158, 11, 0.75),
+    0 0 22px rgba(234, 179, 8, 0.55);
+  transform: translateY(-3px) scale(1.12);
+  outline: none;
+}
+
+.npc-trade-button:disabled,
+.npc-trade-button.is-disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
+}
+
 .chat-player-placeholder {
   font-size: 3rem;
   line-height: 1;
@@ -8886,6 +8936,257 @@ body.modal-open {
   .thing-container-modal__dropzone {
     min-height: 0;
     max-height: none;
+  }
+}
+
+.barter-modal__dialog {
+  width: min(1180px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+}
+
+.barter-modal__body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  overflow: hidden;
+}
+
+.barter-modal__currency,
+.barter-modal__status,
+.barter-modal__total,
+.barter-modal__cart,
+.barter-modal__haggle-history {
+  color: rgba(226, 232, 240, 0.86);
+  font-size: 0.9rem;
+}
+
+.barter-modal__status.is-error {
+  color: #fecaca;
+}
+
+.barter-modal__status.is-success {
+  color: #bbf7d0;
+}
+
+.barter-modal__columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 14px;
+  min-height: 0;
+}
+
+.barter-modal__panel {
+  min-width: 0;
+  min-height: 320px;
+}
+
+.barter-modal__grid {
+  min-height: 260px;
+  max-height: min(48vh, 520px);
+  overflow-y: auto;
+  align-content: flex-start;
+  padding: 10px;
+  border: 1px dashed rgba(148, 163, 184, 0.18);
+  border-radius: 12px;
+  transition:
+    border-color 0.16s ease,
+    background 0.16s ease;
+
+  &.is-drag-over {
+    border-color: rgba(250, 204, 21, 0.78);
+    background: rgba(113, 63, 18, 0.18);
+  }
+}
+
+.barter-modal__summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 0 0;
+  border-top: 1px solid rgba(148, 163, 184, 0.22);
+}
+
+.barter-modal__cart {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.barter-modal__trade-btn {
+  white-space: nowrap;
+}
+
+.barter-modal__availability-toggle {
+  margin-right: 0;
+  white-space: nowrap;
+}
+
+.barter-modal__haggle {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 8px;
+}
+
+.barter-modal__haggle-history {
+  max-height: 110px;
+  overflow-y: auto;
+  padding: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.28);
+}
+
+.barter-modal__haggle-entry + .barter-modal__haggle-entry {
+  margin-top: 8px;
+}
+
+.barter-modal__haggle-entry {
+  padding: 9px 10px;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.58);
+  box-shadow: 0 8px 18px rgba(2, 6, 23, 0.22);
+}
+
+.barter-modal__haggle-speaker {
+  margin-bottom: 5px;
+  color: rgba(165, 243, 252, 0.94);
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.barter-modal__haggle-text {
+  color: rgba(241, 245, 249, 0.94);
+  line-height: 1.35;
+  white-space: pre-wrap;
+}
+
+.barter-modal__haggle-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.barter-modal__haggle-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.barter-offer-card {
+  cursor: grab;
+
+  &:active {
+    cursor: grabbing;
+  }
+
+  &.is-origin-pending {
+    opacity: 0.42;
+    filter: brightness(0.68) saturate(0.82);
+  }
+
+  &.is-pending-copy {
+    opacity: 1;
+    border-color: rgba(250, 204, 21, 0.85);
+    box-shadow:
+      0 0 0 1px rgba(250, 204, 21, 0.5),
+      0 0 18px rgba(250, 204, 21, 0.16);
+  }
+
+  &.is-unavailable {
+    cursor: default;
+    opacity: 0.42;
+    filter: grayscale(0.85) brightness(0.72);
+  }
+}
+
+.barter-offer-card.is-origin-pending .entity-icon {
+  filter: brightness(0.65) saturate(0.82);
+}
+
+.barter-offer-card.is-pending-copy .entity-icon {
+  border-color: rgba(250, 204, 21, 0.86);
+  box-shadow:
+    0 0 0 1px rgba(250, 204, 21, 0.42),
+    0 0 18px rgba(250, 204, 21, 0.2);
+}
+
+.barter-offer-card.is-unavailable .entity-icon {
+  filter: grayscale(0.85) brightness(0.72);
+}
+
+.thing-table-row.barter-offer-card.is-origin-pending > td {
+  background: rgba(15, 23, 42, 0.48);
+}
+
+.thing-table-row.barter-offer-card.is-pending-copy > td {
+  border-color: rgba(250, 204, 21, 0.72);
+  background: rgba(113, 63, 18, 0.24);
+}
+
+.thing-table-row.barter-offer-card.is-unavailable > td {
+  background: rgba(15, 23, 42, 0.45);
+}
+
+.barter-offer-card__value-badge {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  max-width: calc(100% - 8px);
+  min-width: 28px;
+  padding: 2px 5px;
+  overflow: hidden;
+  border: 1px solid rgba(250, 204, 21, 0.7);
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.82);
+  color: #fef3c7;
+  font-size: 0.7rem;
+  font-weight: 800;
+  line-height: 1;
+  pointer-events: none;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85);
+  white-space: nowrap;
+}
+
+.thing-collection-view--small-grid .barter-offer-card__value-badge {
+  top: 2px;
+  right: 2px;
+  min-width: 22px;
+  padding: 1px 4px;
+  font-size: 0.58rem;
+}
+
+.barter-quantity-modal__dialog,
+.barter-currency-confirm-modal__dialog {
+  width: min(420px, calc(100vw - 32px));
+}
+
+.barter-quantity-modal__body,
+.barter-currency-confirm-modal__body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+@media (max-width: 760px) {
+  .barter-modal__columns,
+  .barter-modal__summary {
+    grid-template-columns: 1fr;
+  }
+
+  .barter-modal__grid {
+    max-height: 36vh;
+  }
+
+  .barter-modal__cart {
+    white-space: normal;
   }
 }
 

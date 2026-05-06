@@ -138,6 +138,8 @@ Fields:
 - `unspentAttributePoints` (number | null)
   - These are derived values computed from current level/attributes/skills and configured formulas.
 - `inventory` (array of Thing JSON with equip info: `isEquipped`, `equippedSlot`)
+- `barterInventory` (array of Thing JSON held in the NPC's separate barter stock)
+- `willingToTrade` (boolean), `tradeRefusalExpiresAt` (world minutes | null), `barterStockUpdatedAt` (world minutes | null), `barterProfile` (object | null)
 - `currency` (number | null)
 - `experience` (number | null)
 - `needBars` (array of NeedBar)
@@ -160,6 +162,7 @@ Highlights beyond `Player.toJSON()`:
 - `alive` (boolean)
 - `modifiers`, `attributeInfo`, `attributeDefinitions`, `systemConfig`
 - `inventory` is expanded into full Thing JSON (with equip flags), plus `inventoryIds`
+- `barterInventory` is expanded into full Thing JSON for NPC barter stock, plus `barterInventoryIds`
 - `partyMembers` (ids) and `partyMemberIds` (same list)
 - `dispositions`, `dispositionDefinitions`
 - `skills`, `abilities`, `unspentSkillPoints`, `unspentAttributePoints`

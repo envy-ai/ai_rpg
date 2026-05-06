@@ -19,7 +19,7 @@ This is the high-level index for every Express route registered in `api.js`. The
 - `docs/api/locations.md` - locations, exits, stubs, map data, player move
 - `docs/api/map.md` - legacy pointer to map endpoints
 - `docs/api/lorebooks.md` - lorebook management
-- `docs/api/npcs.md` - NPC CRUD and state
+- `docs/api/npcs.md` - NPC CRUD, state, equipment, teleport, and barter sessions
 - `docs/api/players.md` - player CRUD, party, gear
 - `docs/api/quests.md` - quest edits/confirmations
 - `docs/api/regions.md` - region CRUD and generation

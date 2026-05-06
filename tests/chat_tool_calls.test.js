@@ -230,6 +230,165 @@ test('runChatCompletionWithToolLoop reports tool-call debug lifecycle events', a
     assert.match(toolMessage.content, /<moreInfoResults>/);
 });
 
+test('runChatCompletionWithToolLoop returns toolError and continues after tool-call rounds are exhausted', async () => {
+    const capturedRounds = [];
+    const debugEvents = [];
+    const loggedPrompts = [];
+    const llmResponses = [
+        {
+            data: {
+                choices: [
+                    {
+                        message: {
+                            content: '',
+                            tool_calls: [
+                                {
+                                    id: 'call_allowed',
+                                    type: 'function',
+                                    function: {
+                                        name: 'moreInfo',
+                                        arguments: JSON.stringify({
+                                            name: 'Missing First Thing',
+                                            type: 'thing'
+                                        })
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            data: {
+                choices: [
+                    {
+                        message: {
+                            content: '',
+                            tool_calls: [
+                                {
+                                    id: 'call_exhausted',
+                                    type: 'function',
+                                    function: {
+                                        name: 'moreInfo',
+                                        arguments: JSON.stringify({
+                                            name: 'Missing Second Thing',
+                                            type: 'thing'
+                                        })
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            data: {
+                choices: [
+                    {
+                        message: {
+                            content: 'Finished after the tool limit.',
+                            tool_calls: []
+                        }
+                    }
+                ]
+            }
+        }
+    ];
+
+    const runtime = createChatToolRuntime({
+        getConfig: () => ({ ai: { max_tool_rounds: 1 } }),
+        getChatHistory: () => [],
+        isAssistantProseLikeEntry: () => true,
+        serializeNpcForClient: () => ({}),
+        buildLocationResponse: () => ({}),
+        getCurrentPlayer: () => ({ currentLocation: 'loc-origin' }),
+        createLocationFromEvent: async () => {
+            throw new Error('createLocationFromEvent should not be reached for this regression test.');
+        },
+        createRegionStubFromEvent: async () => {
+            throw new Error('createRegionStubFromEvent should not be reached for this regression test.');
+        },
+        generateItemsByNames: async () => [],
+        ensureExitConnection: () => {
+            throw new Error('ensureExitConnection should not be reached for this regression test.');
+        },
+        findRegionByLocationId: () => null,
+        LLMClient: {
+            chatCompletion: async (options) => {
+                capturedRounds.push({
+                    messages: structuredClone(options.messages),
+                    tools: Array.isArray(options.tools) ? structuredClone(options.tools) : options.tools,
+                    tool_choice: options.tool_choice
+                });
+                const response = llmResponses.shift();
+                assert.ok(response, 'Expected a queued LLM response for this round.');
+                options.onResponse?.(response);
+                return response.data.choices[0].message.content || '';
+            },
+            logPrompt: (payload) => {
+                loggedPrompts.push(payload);
+            },
+            formatMessagesForErrorLog: messages => JSON.stringify(messages)
+        },
+        Player: { getAll: () => [] },
+        Thing: { getAll: () => [] },
+        Location: { getAll: () => [], get: () => null },
+        Region: { getAll: () => [] },
+        getGameLocations: () => new Map(),
+        getFactions: () => [],
+        getRegionsMap: () => new Map(),
+        getPendingRegionStubs: () => new Map()
+    });
+
+    const result = await runtime.runChatCompletionWithToolLoop({
+        requestOptions: {
+            messages: [{ role: 'user', content: 'Look up two things.' }],
+            tools: CHAT_TOOL_DEFINITIONS
+        },
+        metadataLabel: 'tool_exhaustion_test',
+        onToolCallDebug: event => {
+            debugEvents.push(structuredClone(event));
+        }
+    });
+
+    assert.equal(result.aiResponse, 'Finished after the tool limit.');
+    assert.equal(result.rounds, 3);
+    assert.equal(result.toolInvocations.length, 2);
+    assert.equal(result.toolInvocations[0].metadata.error, undefined);
+    assert.equal(result.toolInvocations[1].name, 'moreInfo');
+    assert.equal(result.toolInvocations[1].metadata.error, true);
+    assert.equal(result.toolInvocations[1].metadata.code, 'tool_call_attempts_exhausted');
+    assert.match(result.toolInvocations[1].metadata.message, /exhausted its tool call attempts/i);
+
+    assert.equal(capturedRounds.length, 3);
+    assert.ok(Array.isArray(capturedRounds[0].tools), 'Expected tools to be available before exhaustion.');
+    assert.ok(Array.isArray(capturedRounds[1].tools), 'Expected the model to have one chance to finish or exceed the tool limit.');
+    assert.equal(capturedRounds[2].tools, undefined, 'Expected tools to be disabled after the exhaustion error.');
+    assert.equal(capturedRounds[2].tool_choice, 'none');
+
+    const finalRoundToolMessage = capturedRounds[2].messages.find(message => (
+        message.role === 'tool'
+        && message.tool_call_id === 'call_exhausted'
+    ));
+    assert.ok(finalRoundToolMessage, 'Expected a tool exhaustion message before the final round.');
+    assert.match(finalRoundToolMessage.content, /<toolError>/);
+    assert.match(finalRoundToolMessage.content, /tool_call_attempts_exhausted/);
+    assert.match(finalRoundToolMessage.content, /exhausted its tool call attempts/i);
+
+    const exhaustedErrorEvent = debugEvents.find(event => (
+        event.phase === 'error'
+        && event.id === 'call_exhausted'
+    ));
+    assert.ok(exhaustedErrorEvent, 'Expected a debug error event for the exhausted tool call.');
+    assert.equal(exhaustedErrorEvent.error.code, 'tool_call_attempts_exhausted');
+    assert.ok(
+        loggedPrompts.some(entry => entry?.prefix === 'tool_exhaustion_test_tool_call_error'),
+        'Expected the exhausted tool call to be logged as a tool-call error.'
+    );
+});
+
 test('getFullScene tool returns delineated actions and prose for a numbered scene', async () => {
     const chatHistory = [
         {

@@ -167,6 +167,12 @@ imagegen:
   # Increase for faster parallel processing if your image gen server supports it
   maxConcurrentJobs: 1
 
+  # Batch only the LLM prompt-writing calls used before image rendering.
+  prompt_batching:
+    enabled: true
+    delay_ms: 2000
+    max_items: 10
+
   # For Illustrious or SDXL based models, you might want to use these templates (regardless of engine):
   #prompt_generator_templates:
   #character: player-portrait-illustrious.xml.njk
@@ -396,6 +402,17 @@ prompt_uses_caching: false
 # When true, player/NPC action checks use the legacy attack/plausibility prompts
 # instead of resolving attacks and skill checks through prose-prompt tool calls.
 use_legacy_prompt_checks: false
+
+barter:
+  generated_stock:
+    min_items: 0
+    max_items: 15
+    max_items_per_prompt: 15
+  daily_refresh:
+    min_fraction: 0.3333333333
+    max_fraction: 0.6666666667
+  refusal_duration_minutes: 1440
+  session_timeout_minutes: 60
 
 # When true, prose-prompt tool calls are written to a visible prompt-excluded debug chat entry as they run.
 debug_tool_calls: false

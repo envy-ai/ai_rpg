@@ -202,5 +202,8 @@ Trigger image generation for a thing.
 Response:
 - 200: `{ success: true, thing: Thing, imageGeneration, message }`
 - 202: `{ success: false, thing: Thing, imageGeneration, message }` (existing job)
-- 409: `{ success: false, error, reason?, thing }` (not eligible or skipped)
+- 409: `{ success: false, error, reason?, thing }` (generation skipped or unavailable)
 - 404/500 with `{ success: false, error }`
+
+Notes:
+- Item image generation is not restricted to the player inventory; NPC-owned, barter-stock, container, and other known things can be requested when they are visible in the UI.

@@ -41,6 +41,73 @@ Notes:
 - `factionId` must reference an existing faction id or be `null` to clear membership.
 - If provided, `aliases` must be an array of strings.
 - If provided, `needBarApplicability` must be an object and is only accepted for NPCs; unchecked bars are removed from that actor and re-enabled bars come back at `100`.
+- If provided, `willingToTrade` must be a boolean and sets whether the NPC can open barter sessions. Setting it to `false` stamps a temporary refusal expiry using `barter.refusal_duration_minutes`; setting it to `true` clears the refusal expiry.
+
+## POST /api/npcs/:id/trade/session
+Start or refresh a barter session with a non-hostile NPC at the current location or in the player party.
+
+Request:
+- Path: `id`
+
+Behavior:
+- The target must be an NPC at the current player location or in the current player party, alive, not hostile, and currently willing to trade.
+- The route refreshes expired trade refusals, performs daily barter-stock refresh when enough world time has passed, renders the base-context `barter-prices` prompt, logs it through `LLMClient.logPrompt` with metadata label `barter_prices`, and stores a temporary quoted session.
+- The pricing prompt receives player inventory, merchant normal inventory, merchant persisted barter stock, standard item values, the merchant's current currency, and the configured generated-stock count range. Existing item offers are expected to return both exact item name and item id; the parser matches by unique exact name first and only falls back to id when the name is blank or ambiguous. Bad ids are logged as warnings and the affected offer is skipped instead of failing the whole prompt. Generated stock seeds are instantiated as Things through batched `inventory-generator` prompts capped by `barter.generated_stock.max_items_per_prompt`, then moved into the NPC's separate barter inventory.
+- When the route is doing initial or daily barter-stock generation, the prompt must also return a refreshed merchant currency value; the server applies it to the NPC before returning the session.
+
+Response:
+- 200: `{ success: true, session, npc, player, currencyName, currencyNamePlural }`
+- 400/404/500 with `{ success: false, error }`
+
+## POST /api/npcs/:id/trade/haggle
+Make a haggle offer or argument for the active barter session.
+
+Request:
+- Body: `{ sessionId: string, offer: string }`
+
+Behavior:
+- Resolves an opposed skill check using the player's best trade/social-style skill when available.
+- Adds prompt-excluded chat entries for the player's offer and the merchant's raw response text; NPC speaker labels for the trade modal are kept in session history/client rendering rather than prepended to stored response text.
+- Runs `barter-prices` again with haggle context and no generated new stock, then replaces the quoted buy/sell prices for the session.
+- If the prompt returns `<continueTrading>false</continueTrading>`, the NPC becomes unwilling to trade until `barter.refusal_duration_minutes` elapses, the session is closed, and the merchant immediately takes a normal NPC action in response to the concluded haggling.
+
+Response:
+- 200: `{ success: true, session?, closed?, refusalExpiresAt?, check, haggleResponse, chatEntries, npc, player }`
+- 400/404/500 with `{ success: false, error }`
+
+## POST /api/npcs/:id/trade/commit
+Commit selected buy/sell lines from an active barter session.
+
+Request:
+- Body: `{ sessionId: string, playerItems?: Array<{ itemId, count }>, merchantItems?: Array<{ itemId, count }>, acceptMerchantCurrencyShortfall?: boolean }`
+
+Behavior:
+- Validates the whole transaction before moving anything.
+- Player-sold items move from player inventory into the NPC's barter inventory; merchant-sold items move from the NPC's normal inventory or barter inventory into player inventory.
+- Currency moves by the net difference between selected merchant sell prices and player item buy prices.
+- If the merchant owes the player more currency than they currently have, the first commit attempt returns `409` with `reason: "merchant-insufficient-currency"` and the available/required amounts. Resubmitting with `acceptMerchantCurrencyShortfall: true` completes the item transfer but pays only the merchant's available currency.
+- Successful item trades record a standalone `⚖️ Trade` `event-summary` chat entry listing player-to-merchant items, merchant-to-player items, currency exchanged, and any accepted merchant-currency shortfall.
+- Successful item trades conclude the barter session, queue the merchant through the normal NPC action flow, and return as soon as the transaction has been applied. The queued NPC turn is streamed to the requesting client with the returned `requestId` when realtime is available.
+
+Response:
+- 200: `{ success: true, transaction, tradeSummary, npc, player, requestId, npcTurnPending, message }`
+- 409: `{ success: false, reason: "merchant-insufficient-currency", merchantCurrency, requiredMerchantPayment, shortfall, error }`
+- 400/404/500 with `{ success: false, error }`
+
+## POST /api/npcs/:id/trade/conclude
+Conclude an active barter session without committing item transfers.
+
+Request:
+- Body: `{ sessionId: string, clientId?: string, requestId?: string }`
+
+Behavior:
+- Deletes the active session.
+- If no haggling happened, no NPC action is triggered.
+- If the session had haggle history, the merchant takes a normal NPC action with the haggling context available to the NPC planning prompt.
+
+Response:
+- 200: `{ success: true, concluded: true, npcTurnTriggered: boolean, npcTurns?, messages?, player, npc }`
+- 400/404/409/500 with `{ success: false, error }`
 
 ## POST /api/npcs/:id/equipment
 Equip or unequip an item in an NPC's inventory.

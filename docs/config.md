@@ -77,6 +77,32 @@ event_checks:
 
 `event_checks.use_xml` defaults to `true` and must be a boolean when provided. When enabled, `Events.runEventChecks(...)` uses the `events-xml` prompt for ordinary event categories and parses one `<events>` block. Need bars still use the dedicated `need-bars` prompt when need-bar definitions are present, and those results are injected as ordinary `needbar_change` events before outcomes are applied. Set `event_checks.use_xml` to `false` to use the legacy grouped `event-checks` prompts plus the same dedicated `need-bars` prompt. The `/config` page exposes the same option as “XML Event Pipeline”.
 
+## Barter
+
+`barter` controls NPC trade sessions and generated merchant stock.
+
+```yaml
+barter:
+  generated_stock:
+    min_items: 0
+    max_items: 15
+    max_items_per_prompt: 15
+  daily_refresh:
+    min_fraction: 0.3333333333
+    max_fraction: 0.6666666667
+  refusal_duration_minutes: 1440
+  session_timeout_minutes: 60
+```
+
+Fields:
+- `generated_stock.min_items` / `generated_stock.max_items`: inclusive range for how many new barter-stock item seeds the `barter-prices` prompt may request when a merchant's stock is generated or refreshed.
+- `generated_stock.max_items_per_prompt`: maximum number of generated barter-stock item seeds to instantiate in one `inventory-generator` prompt batch.
+- `daily_refresh.min_fraction` / `daily_refresh.max_fraction`: fraction range for how much persisted NPC barter stock is flushed when at least one in-world day has passed since that NPC's stock was updated.
+- `refusal_duration_minutes`: how long a `willingToTrade: false` refusal lasts before the NPC automatically becomes willing to trade again.
+- `session_timeout_minutes`: in-world minutes before a quoted barter session expires and must be repriced.
+
+Validation fails loudly if item counts are not non-negative integers, `generated_stock.max_items_per_prompt` or duration fields are not positive integers, fractions are outside `0..1`, or min values exceed max values.
+
 ## AI backend selection
 
 `config.ai.backend` selects which text-generation transport the game uses.
@@ -482,6 +508,21 @@ healthRegenPercentPerMinute: 0.01736111111
 - Current health is stored internally as a float; client health readouts round displayed values upward.
 
 ## Image generation thing size overrides
+
+`imagegen.prompt_batching` controls batching for the LLM prompt-writing step that happens before image jobs are queued. It does not batch the final image-rendering jobs.
+
+```yaml
+imagegen:
+  prompt_batching:
+    enabled: true
+    delay_ms: 2000
+    max_items: 10
+```
+
+- When enabled, a new image-prompt generation request waits `delay_ms` milliseconds after the most recent queued request so compatible requests can be sent in one LLM call.
+- Compatibility is based on the rendered image-prompt system prompt. Requests with different system prompts are kept separate.
+- `max_items` is the maximum number of compatible requests in one batch. Reaching the cap flushes the queue immediately.
+- Validation fails if `enabled` is not boolean, `delay_ms` is not a non-negative integer, or `max_items` is not a positive integer.
 
 `imagegen.default_settings.image` remains the baseline size for generated item and scenery images. You can optionally override those dimensions per thing type with `imagegen.item_settings.image` and `imagegen.scenery_settings.image`.
 

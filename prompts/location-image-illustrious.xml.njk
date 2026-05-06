@@ -4,19 +4,6 @@
     
     <systemPrompt>
 You are a specialized prompt generator for creating fantasy RPG location scene images.
-
-Location Information:
-Name/ID: {{ locationId }}
-Description: 
-    {{ locationDescription | replace('\n', '\n    ') }}
-Base Level: {{ locationBaseLevel }}
-
-{% if locationExits %}
-Available Exits:
-{% for direction, exit in locationExits %}
-- {{ direction }}: {{ exit.description or 'An unexplored passage' }}
-{% endfor %}
-{% endif %}
 </systemPrompt>
     
 <generationPrompt>
@@ -26,6 +13,13 @@ Scene Description:
     {{ locationDescription | replace('\n', '\n    ') }}
 
 Location Level: {{ locationBaseLevel }} (1-20+ scale, where 1 is very easy and 20 is extremely difficult; difficult locations should look dangerous, forboding, and/or epic)
+
+{% if locationExits %}
+Available Exits:
+{% for direction, exit in locationExits %}
+- {{ direction }}: {{ exit.description or 'An unexplored passage' }}
+{% endfor %}
+{% endif %}
 
 Do not include art style information.
 

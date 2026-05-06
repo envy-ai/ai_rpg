@@ -2330,6 +2330,28 @@ async function validateConfiguration() {
         validateOptionalImageSizeOverrides('scenery', config.imagegen.scenery_settings?.image);
         validateOptionalImageSizeOverrides('location variant', config.imagegen.location_variant_settings?.image);
 
+        if (config.imagegen.prompt_batching !== undefined) {
+            const promptBatching = config.imagegen.prompt_batching;
+            if (!promptBatching || typeof promptBatching !== 'object' || Array.isArray(promptBatching)) {
+                validationErrors.push('Image generation: prompt_batching must be an object when provided');
+            } else {
+                if (promptBatching.enabled !== undefined && typeof promptBatching.enabled !== 'boolean') {
+                    validationErrors.push('Image generation: prompt_batching.enabled must be a boolean when provided');
+                }
+                const validatePromptBatchInteger = (label, value, minimum) => {
+                    if (value === undefined || value === null || value === '') {
+                        return;
+                    }
+                    const numeric = Number(value);
+                    if (!Number.isInteger(numeric) || numeric < minimum) {
+                        validationErrors.push(`Image generation: prompt_batching.${label} must be an integer greater than or equal to ${minimum} when provided`);
+                    }
+                };
+                validatePromptBatchInteger('delay_ms', promptBatching.delay_ms, 0);
+                validatePromptBatchInteger('max_items', promptBatching.max_items, 1);
+            }
+        }
+
         // Check if generated images directory exists, create if not
         const imagesDir = path.join(__dirname, 'public', 'generated-images');
         if (!fs.existsSync(imagesDir)) {
@@ -2361,6 +2383,61 @@ async function validateConfiguration() {
     }
     if (config.event_checks?.use_xml !== undefined && typeof config.event_checks.use_xml !== 'boolean') {
         validationErrors.push('event_checks.use_xml must be a boolean when provided');
+    }
+    if (config.barter !== undefined) {
+        const barterConfig = config.barter;
+        if (!barterConfig || typeof barterConfig !== 'object' || Array.isArray(barterConfig)) {
+            validationErrors.push('barter must be an object when provided');
+        } else {
+            const validateInteger = (pathLabel, minimum = null) => {
+                const segments = pathLabel.split('.');
+                let value = config;
+                for (const segment of segments) {
+                    value = value?.[segment];
+                }
+                if (value === undefined) {
+                    return;
+                }
+                const numeric = Number(value);
+                if (!Number.isInteger(numeric) || (minimum !== null && numeric < minimum)) {
+                    validationErrors.push(`${pathLabel} must be an integer${minimum !== null ? ` greater than or equal to ${minimum}` : ''} when provided`);
+                }
+            };
+            const validateFraction = (pathLabel) => {
+                const segments = pathLabel.split('.');
+                let value = config;
+                for (const segment of segments) {
+                    value = value?.[segment];
+                }
+                if (value === undefined) {
+                    return;
+                }
+                const numeric = Number(value);
+                if (!Number.isFinite(numeric) || numeric < 0 || numeric > 1) {
+                    validationErrors.push(`${pathLabel} must be a finite number between 0 and 1 when provided`);
+                }
+            };
+
+            validateInteger('barter.generated_stock.min_items', 0);
+            validateInteger('barter.generated_stock.max_items', 0);
+            validateInteger('barter.generated_stock.max_items_per_prompt', 1);
+            validateInteger('barter.refusal_duration_minutes', 1);
+            validateInteger('barter.session_timeout_minutes', 1);
+            validateFraction('barter.daily_refresh.min_fraction');
+            validateFraction('barter.daily_refresh.max_fraction');
+
+            const minItems = Number(barterConfig.generated_stock?.min_items);
+            const maxItems = Number(barterConfig.generated_stock?.max_items);
+            if (Number.isInteger(minItems) && Number.isInteger(maxItems) && minItems > maxItems) {
+                validationErrors.push('barter.generated_stock.min_items must be less than or equal to barter.generated_stock.max_items');
+            }
+
+            const minFraction = Number(barterConfig.daily_refresh?.min_fraction);
+            const maxFraction = Number(barterConfig.daily_refresh?.max_fraction);
+            if (Number.isFinite(minFraction) && Number.isFinite(maxFraction) && minFraction > maxFraction) {
+                validationErrors.push('barter.daily_refresh.min_fraction must be less than or equal to barter.daily_refresh.max_fraction');
+            }
+        }
     }
     if (config.while_you_were_away_threshold_minutes !== undefined) {
         const threshold = Number(config.while_you_were_away_threshold_minutes);
@@ -3612,80 +3689,7 @@ function shouldGenerateThingImage(thing) {
     if (!thing) {
         return false;
     }
-
-    if (getEntityJob('thing', thing.id)) {
-        return false;
-    }
-
-    if (thing.imageId && hasExistingImage(thing.imageId)) {
-        return false;
-    }
-
-    if (thing.thingType !== 'item') {
-        return true;
-    }
-
-    if (!currentPlayer) {
-        return false;
-    }
-
-    const playerHasItem = typeof currentPlayer.hasInventoryItem === 'function'
-        ? currentPlayer.hasInventoryItem(thing)
-        : false;
-    if (playerHasItem) {
-        return true;
-    }
-
-    const thingMetadata = thing.metadata || {};
-    const itemLocationId = thingMetadata.locationId || null;
-    if (itemLocationId && currentPlayer.currentLocation && itemLocationId === currentPlayer.currentLocation) {
-        return true;
-    }
-
-    const resolveCurrentVehicleOutsideLocationId = () => {
-        const playerLocationId = typeof currentPlayer?.currentLocation === 'string'
-            ? currentPlayer.currentLocation.trim()
-            : '';
-        if (!playerLocationId) {
-            return null;
-        }
-
-        const currentLocation = gameLocations.get(playerLocationId) || null;
-        if (!currentLocation) {
-            return null;
-        }
-
-        const currentRegion = currentLocation.region || findRegionByLocationId(currentLocation.id) || null;
-        const activeVehicleInfo = currentRegion?.isVehicle === true
-            ? currentRegion.vehicleInfo
-            : (currentLocation?.isVehicle === true ? currentLocation.vehicleInfo : null);
-        if (!activeVehicleInfo || typeof activeVehicleInfo !== 'object' || Array.isArray(activeVehicleInfo)) {
-            return null;
-        }
-
-        const vehicleExitId = typeof activeVehicleInfo.vehicleExitId === 'string'
-            ? activeVehicleInfo.vehicleExitId.trim()
-            : '';
-        if (!vehicleExitId) {
-            return null;
-        }
-
-        const vehicleExit = gameLocationExits.get(vehicleExitId) || null;
-        const outsideLocationId = typeof vehicleExit?.destination === 'string'
-            ? vehicleExit.destination.trim()
-            : '';
-        if (!outsideLocationId) {
-            return null;
-        }
-        return outsideLocationId;
-    };
-
-    const vehicleOutsideLocationId = resolveCurrentVehicleOutsideLocationId();
-    if (itemLocationId && vehicleOutsideLocationId && itemLocationId === vehicleOutsideLocationId) {
-        return true;
-    }
-
-    return false;
+    return true;
 }
 
 function queueNpcAssetsForLocation(location) {
@@ -3886,6 +3890,19 @@ function serializeNpcForClient(npc, options = {}) {
         inventory = [];
     }
 
+    let barterInventory = [];
+    try {
+        if (typeof npc.getBarterInventoryItems === 'function') {
+            barterInventory = npc.getBarterInventoryItems().map(item => (
+                item && typeof item.toJSON === 'function'
+                    ? item.toJSON()
+                    : (item && typeof item === 'object' ? { ...item } : item)
+            ));
+        }
+    } catch (_) {
+        barterInventory = [];
+    }
+
     let currency = null;
     try {
         if (typeof npc.getCurrency === 'function') {
@@ -4017,6 +4034,11 @@ function serializeNpcForClient(npc, options = {}) {
         unspentSkillPoints,
         unspentAttributePoints,
         inventory,
+        barterInventory,
+        willingToTrade: typeof npc.willingToTrade === 'boolean' ? npc.willingToTrade : true,
+        tradeRefusalExpiresAt: Number.isInteger(npc.tradeRefusalExpiresAt) ? npc.tradeRefusalExpiresAt : null,
+        barterStockUpdatedAt: Number.isInteger(npc.barterStockUpdatedAt) ? npc.barterStockUpdatedAt : null,
+        barterProfile: npc.barterProfile || null,
         currency,
         experience,
         needBars: typeof npc.getNeedBars === 'function' ? npc.getNeedBars({ scope: 'active' }) : [],
@@ -12051,11 +12073,69 @@ function findRegionByLocationId(locationId) {
     return null;
 }
 
-async function generateInventoryForCharacter({ character, characterDescriptor = {}, region = null, location = null, timeoutScale = 1, autoEquip = true } = {}) {
+function normalizeInventoryGenerationContext(inventoryGeneration = {}) {
+    const source = inventoryGeneration && typeof inventoryGeneration === 'object' && !Array.isArray(inventoryGeneration)
+        ? inventoryGeneration
+        : {};
+    const mode = typeof source.mode === 'string' && source.mode.trim()
+        ? source.mode.trim()
+        : 'characterInventory';
+    const requestedItems = Array.isArray(source.requestedItems)
+        ? source.requestedItems
+            .map((entry, index) => {
+                if (!entry || typeof entry !== 'object') {
+                    throw new Error(`inventoryGeneration.requestedItems[${index}] must be an object.`);
+                }
+                const name = typeof entry.name === 'string' ? entry.name.trim() : '';
+                if (mode === 'barterStock' && !name) {
+                    throw new Error(`inventoryGeneration.requestedItems[${index}] is missing a name.`);
+                }
+                const normalized = {
+                    name,
+                    count: entry.count,
+                    description: typeof entry.description === 'string' ? entry.description.trim() : '',
+                    itemOrScenery: 'item',
+                    type: typeof entry.type === 'string' ? entry.type.trim() : '',
+                    rarity: typeof entry.rarity === 'string' ? entry.rarity.trim() : '',
+                    value: entry.value,
+                    notes: typeof entry.reason === 'string'
+                        ? entry.reason.trim()
+                        : (typeof entry.notes === 'string' ? entry.notes.trim() : ''),
+                    reason: typeof entry.reason === 'string' ? entry.reason.trim() : ''
+                };
+                if (entry.relativeLevel !== undefined) {
+                    normalized.relativeLevel = entry.relativeLevel;
+                }
+                if (entry.weight !== undefined) {
+                    normalized.weight = entry.weight;
+                }
+                return normalized;
+            })
+        : [];
+    return {
+        ...source,
+        mode,
+        requestedItems,
+        expectedItemCount: requestedItems.length
+    };
+}
+
+async function generateInventoryForCharacter({
+    character,
+    characterDescriptor = {},
+    region = null,
+    location = null,
+    timeoutScale = 1,
+    autoEquip = true,
+    attachToInventory = true,
+    inventoryGeneration = {},
+    throwOnError = false
+} = {}) {
     try {
         if (config.omit_item_generation) {
             return [];
         }
+        const normalizedInventoryGeneration = normalizeInventoryGenerationContext(inventoryGeneration);
 
         const resolvedLocation = location || (character?.currentLocation ? (gameLocations.get(character.currentLocation) || null) : null);
         const resolvedRegion = region || (resolvedLocation ? findRegionByLocationId(resolvedLocation.id) : null);
@@ -12104,7 +12184,8 @@ async function generateInventoryForCharacter({ character, characterDescriptor = 
                 level: character.level || 1,
                 race: characterDescriptor.race || 'human'
             },
-            lorebookEntries
+            lorebookEntries,
+            inventoryGeneration: normalizedInventoryGeneration
         });
 
         if (!renderedTemplate) {
@@ -12143,6 +12224,15 @@ async function generateInventoryForCharacter({ character, characterDescriptor = 
             parseXMLTemplate,
             prepareBasePromptContext
         });
+        if (
+            normalizedInventoryGeneration.mode === 'barterStock'
+            && items.length !== normalizedInventoryGeneration.expectedItemCount
+        ) {
+            throw new Error(
+                `Inventory generator returned ${items.length} barter stock item(s); `
+                + `expected ${normalizedInventoryGeneration.expectedItemCount}.`
+            );
+        }
 
         const createdThings = [];
         for (const item of items) {
@@ -12222,6 +12312,16 @@ async function generateInventoryForCharacter({ character, characterDescriptor = 
                 });
                 const booleanFlags = extractThingBooleanFlags(item);
                 Object.assign(metadata, booleanFlags);
+                if (
+                    normalizedInventoryGeneration.mode === 'barterStock'
+                    && normalizedInventoryGeneration.requestedItems[createdThings.length]
+                ) {
+                    const seed = normalizedInventoryGeneration.requestedItems[createdThings.length];
+                    if (seed.reason) {
+                        metadata.barterReason = seed.reason;
+                    }
+                    metadata.barterGenerated = true;
+                }
 
                 const thing = new Thing({
                     name: item.name,
@@ -12241,11 +12341,13 @@ async function generateInventoryForCharacter({ character, characterDescriptor = 
                     ...booleanFlags
                 });
                 things.set(thing.id, thing);
-                character.addInventoryItem(thing, { suppressNpcEquip: true });
+                if (attachToInventory) {
+                    character.addInventoryItem(thing, { suppressNpcEquip: true });
+                }
                 try {
                     const metadata = thing.metadata || {};
                     let metadataChanged = false;
-                    if (character?.id && metadata.ownerId !== character.id) {
+                    if (attachToInventory && character?.id && metadata.ownerId !== character.id) {
                         metadata.ownerId = character.id;
                         metadataChanged = true;
                     }
@@ -12286,7 +12388,7 @@ async function generateInventoryForCharacter({ character, characterDescriptor = 
             response: inventoryContent || ''
         });
 
-        if (autoEquip) {
+        if (autoEquip && attachToInventory) {
             try {
                 await equipBestGearForCharacter({
                     character,
@@ -12303,7 +12405,11 @@ async function generateInventoryForCharacter({ character, characterDescriptor = 
 
         if (createdThings.length) {
             try {
-                await ensureUniqueThingNames({ things: createdThings, owner: character, location: resolvedLocation });
+                await ensureUniqueThingNames({
+                    things: createdThings,
+                    owner: attachToInventory ? character : null,
+                    location: resolvedLocation
+                });
             } catch (error) {
                 console.warn('Failed to enforce unique thing names for inventory generation:', error.message);
             }
@@ -12312,6 +12418,9 @@ async function generateInventoryForCharacter({ character, characterDescriptor = 
         return createdThings;
     } catch (error) {
         console.warn(`Inventory generation failed for character ${character?.name || 'unknown'}:`, error);
+        if (throwOnError) {
+            throw error;
+        }
         return [];
     }
 }
@@ -15256,6 +15365,9 @@ async function renderInventoryPrompt(context = {}) {
             attributeDefinitions: attributeDefinitionsForPrompt,
             attributes: attributeNames,
             lorebookEntries: Array.isArray(context.lorebookEntries) ? context.lorebookEntries : [],
+            inventoryGeneration: context.inventoryGeneration && typeof context.inventoryGeneration === 'object'
+                ? context.inventoryGeneration
+                : {},
             thingSeed: {}
         });
     } catch (error) {
@@ -24189,67 +24301,311 @@ function renderLocationFinalImagePrompt(location, promptText) {
     return finalPrompt;
 }
 
-async function generateImagePromptFromTemplate(prompts, options = {}) {
-    const { prefixType = null } = options || {};
+const imagePromptBatchQueue = [];
+let imagePromptBatchTimer = null;
+let imagePromptBatchCounter = 0;
+
+function getImagePromptBatchConfig() {
+    const rawConfig = config?.imagegen?.prompt_batching && typeof config.imagegen.prompt_batching === 'object'
+        ? config.imagegen.prompt_batching
+        : {};
+    const parseInteger = (value, fallback, label, minimum) => {
+        if (value === undefined || value === null || value === '') {
+            return fallback;
+        }
+        const numeric = Number(value);
+        if (!Number.isInteger(numeric) || numeric < minimum) {
+            throw new Error(`imagegen.prompt_batching.${label} must be an integer greater than or equal to ${minimum}.`);
+        }
+        return numeric;
+    };
+    return {
+        enabled: rawConfig.enabled !== false,
+        delayMs: parseInteger(rawConfig.delay_ms, 2000, 'delay_ms', 0),
+        maxItems: parseInteger(rawConfig.max_items, 10, 'max_items', 1)
+    };
+}
+
+function normalizeImagePromptText(responseText) {
+    return String(responseText || '')
+        .replace(/[""]/g, '"')
+        .replace(/['']/g, "'")
+        .replace(/[—–]/g, '-')
+        .trim();
+}
+
+function buildImagePromptBatchKey(prompts = {}) {
+    return String(prompts?.systemPrompt || '').trim();
+}
+
+function wrapImagePromptBatchCdata(value) {
+    return `<![CDATA[${String(value || '').replace(/]]>/g, ']]]]><![CDATA[>')}]]>`;
+}
+
+function renderImagePromptBatchGenerationPrompt(requests = []) {
+    const requestXml = requests.map(request => [
+        '    <request>',
+        `      <id>${escapeXmlText(request.id)}</id>`,
+        `      <generationPrompt>${wrapImagePromptBatchCdata(request.prompts?.generationPrompt || '')}</generationPrompt>`,
+        '    </request>'
+    ].join('\n')).join('\n');
+
+    return [
+        '<imagePromptBatchRequest>',
+        '  <task>',
+        '    Generate one final image-generation prompt for each request below. Treat each request independently.',
+        '    Preserve the request id exactly in the response. Return only the XML response block, with no commentary or markdown fence.',
+        '  </task>',
+        '  <requests>',
+        requestXml,
+        '  </requests>',
+        '</imagePromptBatchRequest>',
+        '',
+        'Return this exact shape:',
+        '<imagePrompts>',
+        '  <imagePrompt>',
+        '    <id>request id</id>',
+        '    <prompt><![CDATA[final prompt text]]></prompt>',
+        '  </imagePrompt>',
+        '</imagePrompts>'
+    ].join('\n');
+}
+
+function getDirectImagePromptBatchChildText(node, tagName) {
+    if (!node || !node.childNodes) {
+        return '';
+    }
+    for (const child of Array.from(node.childNodes)) {
+        if (child && child.nodeType === 1 && child.tagName === tagName) {
+            return typeof child.textContent === 'string' ? child.textContent.trim() : '';
+        }
+    }
+    return '';
+}
+
+function parseImagePromptBatchResponse(responseText) {
+    const rootXml = Utils.extractFinalXmlRootBlock(responseText, 'imagePrompts');
+    const doc = Utils.parseXmlDocumentStrict(rootXml, 'text/xml');
+    const root = doc?.documentElement || null;
+    if (!root || root.tagName !== 'imagePrompts') {
+        throw new Error('Image prompt batch response did not parse into <imagePrompts>.');
+    }
+
+    const results = new Map();
+    const nodes = Array.from(root.childNodes || [])
+        .filter(node => node && node.nodeType === 1 && node.tagName === 'imagePrompt');
+    for (const node of nodes) {
+        const id = getDirectImagePromptBatchChildText(node, 'id');
+        const prompt = getDirectImagePromptBatchChildText(node, 'prompt');
+        if (!id) {
+            throw new Error('Image prompt batch response contained an <imagePrompt> without an <id>.');
+        }
+        if (!prompt) {
+            throw new Error(`Image prompt batch response for "${id}" was missing prompt text.`);
+        }
+        if (results.has(id)) {
+            throw new Error(`Image prompt batch response repeated id "${id}".`);
+        }
+        results.set(id, prompt);
+    }
+    if (!results.size) {
+        throw new Error('Image prompt batch response did not include any <imagePrompt> entries.');
+    }
+    return results;
+}
+
+function logImagePromptGenerationRequest(request, finalPrompt) {
+    LLMClient.logPrompt({
+        prefix: 'image_prompt_generation',
+        metadataLabel: 'image_prompt_generation',
+        systemPrompt: request.prompts?.systemPrompt || '',
+        generationPrompt: request.prompts?.generationPrompt || '',
+        response: finalPrompt || ''
+    });
+}
+
+function finalizeImagePromptGenerationRequest(request, responseText) {
+    const normalizedPrompt = normalizeImagePromptText(responseText);
+    if (!normalizedPrompt) {
+        throw new Error('Invalid response from AI API');
+    }
+    const finalPrompt = applyImagePromptPrefix(normalizedPrompt, request.prefixType);
+    logImagePromptGenerationRequest(request, finalPrompt);
+    return {
+        prompt: finalPrompt,
+        durationSeconds: (Date.now() - request.requestStart) / 1000
+    };
+}
+
+async function executeSingleImagePromptGenerationRequest(request) {
+    const messages = [
+        {
+            role: 'system',
+            content: request.prompts?.systemPrompt || ''
+        },
+        {
+            role: 'user',
+            content: request.prompts?.generationPrompt || ''
+        }
+    ];
+
+    console.log('🤖 Requesting image prompt generation from LLM...');
+
+    const responseText = await LLMClient.chatCompletion({
+        messages,
+        metadataLabel: 'image_prompt_generation',
+        validateXML: false,
+        waitAfterError: 20,
+        runInBackground: true
+    });
+
+    return finalizeImagePromptGenerationRequest(request, responseText);
+}
+
+async function processImagePromptBatchGroup(requests) {
+    if (!requests.length) {
+        return;
+    }
+    if (requests.length === 1) {
+        try {
+            requests[0].resolve(await executeSingleImagePromptGenerationRequest(requests[0]));
+        } catch (error) {
+            requests[0].reject(error);
+        }
+        return;
+    }
+
+    const systemPrompt = [
+        requests[0].prompts?.systemPrompt || '',
+        'You are handling a batch of independent image-prompt generation requests. Return exactly one prompt per request id.'
+    ].filter(Boolean).join('\n\n');
+    const generationPrompt = renderImagePromptBatchGenerationPrompt(requests);
+    const messages = [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: generationPrompt }
+    ];
+
+    console.log(`🤖 Requesting batched image prompt generation from LLM (${requests.length} prompts)...`);
+
     try {
-        // Prepare the messages for the AI API
-        const messages = [
-            {
-                role: 'system',
-                content: prompts.systemPrompt
-            },
-            {
-                role: 'user',
-                content: prompts.generationPrompt
-            }
-        ];
-
-        console.log('🤖 Requesting image prompt generation from LLM...');
-
-        const requestStart = Date.now();
         const responseText = await LLMClient.chatCompletion({
             messages,
             metadataLabel: 'image_prompt_generation',
+            requiredRegex: /<imagePrompts[\s\S]*<\/imagePrompts>/i,
             validateXML: false,
             waitAfterError: 20,
             runInBackground: true
         });
 
-        if (!responseText || !responseText.trim()) {
-            throw new Error('Invalid response from AI API');
-        }
-
-        let generatedImagePrompt = responseText;
-        //console.log('📥 LLM Generated Image Prompt:', generatedImagePrompt);
-
-        // Clean the prompt to remove potential problematic characters
-        generatedImagePrompt = generatedImagePrompt
-            .replace(/[""]/g, '"')     // Normalize quotes
-            .replace(/['']/g, "'")     // Normalize apostrophes
-            .replace(/[—–]/g, '-')     // Normalize dashes
-            .trim();
-
-        generatedImagePrompt = applyImagePromptPrefix(generatedImagePrompt, prefixType);
-
         LLMClient.logPrompt({
-            prefix: 'image_prompt_generation',
+            prefix: 'image_prompt_generation_batch',
             metadataLabel: 'image_prompt_generation',
-            systemPrompt: prompts?.systemPrompt || '',
-            generationPrompt: prompts?.generationPrompt || '',
-            response: generatedImagePrompt || ''
+            systemPrompt,
+            generationPrompt,
+            response: responseText || ''
         });
 
-        return {
-            prompt: generatedImagePrompt,
-            durationSeconds: (Date.now() - requestStart) / 1000
+        const parsed = parseImagePromptBatchResponse(responseText);
+        for (const request of requests) {
+            const promptText = parsed.get(request.id);
+            if (!promptText) {
+                request.reject(new Error(`Image prompt batch response did not include request id "${request.id}".`));
+                continue;
+            }
+            try {
+                request.resolve(finalizeImagePromptGenerationRequest(request, promptText));
+            } catch (error) {
+                request.reject(error);
+            }
+        }
+    } catch (error) {
+        for (const request of requests) {
+            request.reject(error);
+        }
+    }
+}
+
+function flushImagePromptBatchQueue() {
+    if (imagePromptBatchTimer) {
+        clearTimeout(imagePromptBatchTimer);
+        imagePromptBatchTimer = null;
+    }
+    if (!imagePromptBatchQueue.length) {
+        return;
+    }
+
+    const { maxItems } = getImagePromptBatchConfig();
+    const pending = imagePromptBatchQueue.splice(0);
+    const groups = [];
+    for (const request of pending) {
+        let group = groups.find(entry => entry.key === request.batchKey && entry.requests.length < maxItems);
+        if (!group) {
+            group = { key: request.batchKey, requests: [] };
+            groups.push(group);
+        }
+        group.requests.push(request);
+    }
+
+    for (const group of groups) {
+        processImagePromptBatchGroup(group.requests).catch(error => {
+            for (const request of group.requests) {
+                request.reject(error);
+            }
+        });
+    }
+}
+
+function scheduleImagePromptBatchFlush() {
+    const batchConfig = getImagePromptBatchConfig();
+    if (imagePromptBatchTimer) {
+        clearTimeout(imagePromptBatchTimer);
+        imagePromptBatchTimer = null;
+    }
+    if (imagePromptBatchQueue.length >= batchConfig.maxItems) {
+        setTimeout(flushImagePromptBatchQueue, 0);
+        return;
+    }
+    imagePromptBatchTimer = setTimeout(flushImagePromptBatchQueue, batchConfig.delayMs);
+}
+
+function enqueueImagePromptGenerationRequest(prompts, options = {}) {
+    return new Promise((resolve, reject) => {
+        imagePromptBatchCounter += 1;
+        const request = {
+            id: `image_prompt_${Date.now()}_${imagePromptBatchCounter}`,
+            prompts,
+            prefixType: options.prefixType || null,
+            requestStart: Date.now(),
+            batchKey: buildImagePromptBatchKey(prompts),
+            resolve,
+            reject
         };
+        imagePromptBatchQueue.push(request);
+        scheduleImagePromptBatchFlush();
+    });
+}
+
+async function generateImagePromptFromTemplate(prompts, options = {}) {
+    const { prefixType = null } = options || {};
+    const request = {
+        id: `image_prompt_direct_${Date.now()}_${++imagePromptBatchCounter}`,
+        prompts,
+        prefixType,
+        requestStart: Date.now(),
+        batchKey: buildImagePromptBatchKey(prompts)
+    };
+    try {
+        const batchConfig = getImagePromptBatchConfig();
+        if (!batchConfig.enabled || batchConfig.maxItems <= 1) {
+            return await executeSingleImagePromptGenerationRequest(request);
+        }
+        return await enqueueImagePromptGenerationRequest(prompts, { prefixType });
 
     } catch (error) {
         const bodyError = error?.response?.data?.error;
         const message = bodyError?.message || bodyError || error.message || String(error);
         console.error('Error generating image prompt with LLM:', message);
         console.error(error)
-        // Fallback to the user prompt if LLM fails
         const fallbackPrompt = typeof prompts?.generationPrompt === 'string'
             ? prompts.generationPrompt
             : 'high quality fantasy illustration of subject';

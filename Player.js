@@ -60,6 +60,11 @@ class Player {
     #healthRegenAppliedAt = null;
     #experience;
     #currency;
+    #barterInventory;
+    #willingToTrade = true;
+    #tradeRefusalExpiresAt = null;
+    #barterStockUpdatedAt = null;
+    #barterProfile = null;
     #personalityType;
     #personalityTraits;
     #personalityNotes;
@@ -108,6 +113,9 @@ class Player {
     static #needBarMagnitudeValues;
     static #thingListViewPanelKeys = new Set([
         'npcInventory',
+        'npcBarterInventory',
+        'barterPlayerInventory',
+        'barterMerchantInventory',
         'craftingInventory',
         'locationScenery',
         'locationItems',
@@ -146,6 +154,31 @@ class Player {
             throw new Error('healthRegenPercentPerMinute must be a non-negative finite number.');
         }
         return numericValue;
+    }
+
+    static #normalizeOptionalNonNegativeInteger(value, fieldName) {
+        if (value === null || value === undefined || value === '') {
+            return null;
+        }
+        const numericValue = Number(value);
+        if (!Number.isInteger(numericValue) || numericValue < 0) {
+            throw new Error(`${fieldName} must be a non-negative integer when provided.`);
+        }
+        return numericValue;
+    }
+
+    static #normalizeBarterProfile(value) {
+        if (value === null || value === undefined) {
+            return null;
+        }
+        if (typeof value !== 'object' || Array.isArray(value)) {
+            throw new Error('barterProfile must be an object when provided.');
+        }
+        try {
+            return JSON.parse(JSON.stringify(value));
+        } catch (error) {
+            throw new Error(`barterProfile must be JSON-serializable: ${error.message}`);
+        }
     }
 
     static #rebuildIndexes() {
@@ -1987,6 +2020,18 @@ class Player {
         this.#imageId = options.imageId ?? null;
         this.#isNPC = Boolean(options.isNPC);
         this.#isHostile = this.#isNPC && Boolean(options.isHostile);
+        this.#barterInventory = new Set();
+        this.#willingToTrade = this.#isNPC ? options.willingToTrade !== false : true;
+        this.#tradeRefusalExpiresAt = Player.#normalizeOptionalNonNegativeInteger(
+            options.tradeRefusalExpiresAt,
+            'tradeRefusalExpiresAt'
+        );
+        this.#barterStockUpdatedAt = Player.#normalizeOptionalNonNegativeInteger(
+            options.barterStockUpdatedAt,
+            'barterStockUpdatedAt'
+        );
+        this.#barterProfile = Player.#normalizeBarterProfile(options.barterProfile);
+        this.#initializeBarterInventory(options.barterInventory);
         this.#factionId = Player.#normalizeFactionId(options.factionId);
         this.#factionStandings = Player.#normalizeFactionStandings(options.factionStandings);
         this.#elapsedTime = Number.isFinite(options.elapsedTime) && options.elapsedTime > 0
@@ -2164,6 +2209,15 @@ class Player {
         }
         for (const entry of items) {
             this.#addInventoryThing(entry, { updateTimestamp: false, suppressNpcEquip: true });
+        }
+    }
+
+    #initializeBarterInventory(items = []) {
+        if (!Array.isArray(items)) {
+            return;
+        }
+        for (const entry of items) {
+            this.#addBarterInventoryThing(entry, { updateTimestamp: false });
         }
     }
 
@@ -2592,7 +2646,7 @@ class Player {
                 metadata.ownerId = ownerId;
                 metadataChanged = true;
             }
-            const cleanupKeys = ['ownerID', 'owner_id', 'inventoryOwnerId'];
+            const cleanupKeys = ['ownerID', 'owner_id', 'inventoryOwnerId', 'barterOwnerId'];
             for (const key of cleanupKeys) {
                 if (metadata[key] !== undefined) {
                     delete metadata[key];
@@ -2689,6 +2743,78 @@ class Player {
             }
             if (!suppressNpcEquip) {
                 this.#checkEquipment = true;
+            }
+        }
+        return removed;
+    }
+
+    #addBarterInventoryThing(thingLike, { updateTimestamp = true } = {}) {
+        const resolved = this.#resolveThing(thingLike);
+        if (!resolved) {
+            return false;
+        }
+
+        const previousSize = this.#barterInventory.size;
+        resolved.removeFromWorld();
+        this.#barterInventory.add(resolved);
+
+        const added = this.#barterInventory.size !== previousSize;
+        if (added) {
+            const metadata = resolved.metadata || {};
+            const ownerId = typeof this.#id === 'string' ? this.#id.trim() : null;
+            let metadataChanged = false;
+            if (ownerId && metadata.barterOwnerId !== ownerId) {
+                metadata.barterOwnerId = ownerId;
+                metadataChanged = true;
+            }
+            const cleanupKeys = [
+                'owner',
+                'ownerId',
+                'ownerID',
+                'owner_id',
+                'playerId',
+                'inventoryOwnerId',
+                'locationId',
+                'locationID',
+                'location_id',
+                'containerId',
+                'containerID',
+                'container_id'
+            ];
+            for (const key of cleanupKeys) {
+                if (metadata[key] !== undefined) {
+                    delete metadata[key];
+                    metadataChanged = true;
+                }
+            }
+            if (metadataChanged) {
+                resolved.metadata = metadata;
+            }
+        }
+
+        if (updateTimestamp && added) {
+            this.#lastUpdated = new Date().toISOString();
+        }
+
+        return added;
+    }
+
+    #removeBarterInventoryThing(thingLike, { updateTimestamp = true } = {}) {
+        const resolved = this.#resolveThing(thingLike);
+        if (!resolved) {
+            return false;
+        }
+
+        const removed = this.#barterInventory.delete(resolved);
+        if (removed) {
+            const metadata = resolved.metadata || {};
+            const ownerId = typeof this.#id === 'string' ? this.#id.trim() : null;
+            if (ownerId && metadata.barterOwnerId === ownerId) {
+                delete metadata.barterOwnerId;
+                resolved.metadata = metadata;
+            }
+            if (updateTimestamp) {
+                this.#lastUpdated = new Date().toISOString();
             }
         }
         return removed;
@@ -3922,6 +4048,110 @@ class Player {
 
     getInventoryItems() {
         return Array.from(this.#inventory);
+    }
+
+    get barterInventorySize() {
+        return this.#barterInventory.size;
+    }
+
+    getBarterInventoryItems() {
+        return Array.from(this.#barterInventory);
+    }
+
+    addBarterInventoryItem(thingLike, options = {}) {
+        return this.#addBarterInventoryThing(thingLike, options);
+    }
+
+    removeBarterInventoryItem(thingLike, options = {}) {
+        return this.#removeBarterInventoryThing(thingLike, options);
+    }
+
+    hasBarterInventoryItem(thingLike) {
+        const resolved = this.#resolveThing(thingLike);
+        if (!resolved) {
+            return false;
+        }
+        return this.#barterInventory.has(resolved);
+    }
+
+    clearBarterInventory() {
+        if (this.#barterInventory.size === 0) {
+            return;
+        }
+        for (const item of Array.from(this.#barterInventory)) {
+            this.#removeBarterInventoryThing(item, { updateTimestamp: false });
+        }
+        this.#lastUpdated = new Date().toISOString();
+    }
+
+    setBarterInventory(items = []) {
+        if (!Array.isArray(items)) {
+            throw new Error('barterInventory must be an array.');
+        }
+        this.clearBarterInventory();
+        for (const entry of items) {
+            this.#addBarterInventoryThing(entry, { updateTimestamp: false });
+        }
+        this.#lastUpdated = new Date().toISOString();
+        return this.getBarterInventoryItems();
+    }
+
+    get willingToTrade() {
+        this.refreshTradeWillingness();
+        return this.#isNPC ? this.#willingToTrade : true;
+    }
+
+    set willingToTrade(value) {
+        this.setWillingToTrade(value);
+    }
+
+    get tradeRefusalExpiresAt() {
+        this.refreshTradeWillingness();
+        return this.#tradeRefusalExpiresAt;
+    }
+
+    get barterStockUpdatedAt() {
+        return this.#barterStockUpdatedAt;
+    }
+
+    set barterStockUpdatedAt(value) {
+        this.#barterStockUpdatedAt = Player.#normalizeOptionalNonNegativeInteger(value, 'barterStockUpdatedAt');
+        this.#lastUpdated = new Date().toISOString();
+    }
+
+    get barterProfile() {
+        return this.#barterProfile ? JSON.parse(JSON.stringify(this.#barterProfile)) : null;
+    }
+
+    set barterProfile(value) {
+        this.#barterProfile = Player.#normalizeBarterProfile(value);
+        this.#lastUpdated = new Date().toISOString();
+    }
+
+    setWillingToTrade(value, { refusalExpiresAt = null } = {}) {
+        this.#willingToTrade = Boolean(value);
+        this.#tradeRefusalExpiresAt = this.#willingToTrade
+            ? null
+            : Player.#normalizeOptionalNonNegativeInteger(refusalExpiresAt, 'tradeRefusalExpiresAt');
+        this.#lastUpdated = new Date().toISOString();
+        return this.#willingToTrade;
+    }
+
+    refreshTradeWillingness(currentWorldMinutes = null) {
+        if (this.#willingToTrade || this.#tradeRefusalExpiresAt === null) {
+            return this.#willingToTrade;
+        }
+        const minutes = Number.isInteger(currentWorldMinutes)
+            ? currentWorldMinutes
+            : (typeof Globals.getTotalWorldMinutes === 'function'
+                ? Globals.getTotalWorldMinutes()
+                : null);
+        if (Number.isInteger(minutes) && minutes >= this.#tradeRefusalExpiresAt) {
+            this.#willingToTrade = true;
+            this.#tradeRefusalExpiresAt = null;
+            this.#lastUpdated = new Date().toISOString();
+        }
+        return this.#willingToTrade;
     }
 
     get partyMembers() {
@@ -5800,6 +6030,11 @@ class Player {
 
             return serialized;
         });
+        const barterInventoryDetails = this.getBarterInventoryItems().map(item => (
+            item && typeof item.toJSON === 'function'
+                ? item.toJSON()
+                : (item && typeof item === 'object' ? { ...item } : item)
+        ));
 
         const status = {
             ...baseSnapshot,
@@ -5838,6 +6073,12 @@ class Player {
             systemConfig: this.systemConfig,
             inventory: inventoryDetails,
             inventoryIds,
+            barterInventory: barterInventoryDetails,
+            barterInventoryIds: Array.isArray(baseSnapshot.barterInventory) ? [...baseSnapshot.barterInventory] : [],
+            willingToTrade: this.willingToTrade,
+            tradeRefusalExpiresAt: this.#tradeRefusalExpiresAt,
+            barterStockUpdatedAt: this.#barterStockUpdatedAt,
+            barterProfile: this.barterProfile,
             partyMembers: partyMemberIds,
             partyMemberIds,
             dispositions: this.#serializeDispositions(),
@@ -5906,6 +6147,11 @@ class Player {
             factionId: this.#factionId,
             corpseCountdown: this.#corpseCountdown,
             inventory: Array.from(this.#inventory).map(thing => thing.id),
+            barterInventory: Array.from(this.#barterInventory).map(thing => thing.id),
+            willingToTrade: this.#willingToTrade,
+            tradeRefusalExpiresAt: this.#tradeRefusalExpiresAt,
+            barterStockUpdatedAt: this.#barterStockUpdatedAt,
+            barterProfile: this.barterProfile,
             partyMembers: Array.from(this.#partyMembers),
             dispositions: this.#serializeDispositions(),
             skills: Object.fromEntries(this.#skills),
@@ -6006,6 +6252,11 @@ class Player {
                 ? data.personality.goals
                 : (Array.isArray(data.goals) ? data.goals : []),
             inventory: Array.isArray(data.inventory) ? data.inventory : [],
+            barterInventory: Array.isArray(data.barterInventory) ? data.barterInventory : [],
+            willingToTrade: data.willingToTrade,
+            tradeRefusalExpiresAt: data.tradeRefusalExpiresAt,
+            barterStockUpdatedAt: data.barterStockUpdatedAt,
+            barterProfile: data.barterProfile,
             partyMembers: Array.isArray(data.partyMembers) ? data.partyMembers : [],
             dispositions: data.dispositions && typeof data.dispositions === 'object' ? data.dispositions : {},
             skills: data.skills && typeof data.skills === 'object' ? data.skills : {},

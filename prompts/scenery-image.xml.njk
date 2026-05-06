@@ -5,12 +5,6 @@
     <systemPrompt>
 You are a specialized prompt generator for creating fantasy RPG scenery images.
 
-Scenery Information:
-Name: {{ thingName }}
-Type: SCENERY
-Description: 
-    {{ thingDescription | replace('\n', '\n    ') }}
-
 This is SCENERY - a fixed environmental feature or landmark.
 Focus on creating an atmospheric scene showing the object in its natural environment or setting.
     </systemPrompt>
@@ -38,6 +32,9 @@ Focus on creating an atmospheric scene showing the object in its natural environ
 </context>
 
 <task>Create an image prompt in 1 to 3 paragraphs of prose for the following scenery.</task>
+
+Scenery Name: {{ thingName }}
+Scenery Type: SCENERY
 
 Scenery Description:
     {{ thingDescription | replace('\n', '\n    ') }}

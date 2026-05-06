@@ -162,6 +162,10 @@ const EVENT_PROMPT_ORDER = [
             prompt: `Is any physically present entity (including ones you may have listed above) that is not listed in playerParty currently leading, following, or otherwise willingly accompanying the player? If yes, list "[npc name] → joined". For anyone who began leading or following (even temporarily), also list them as "[npc name] → joined". If anyone left the party without moving to another known destination, list "[npc name] → left". Separate multiple entries with vertical bars. If no party status occurred, respond with N/A.`,
         },
         {
+            key: "trade_availability",
+            prompt: `Did an event explicitly make an NPC willing or unwilling to trade or barter with the player? If so, answer in the format "[exact NPC name] → [true|false] → [one sentence reason]". Use false for refusals, temporary trade bans, or a character deciding they will not buy/sell; use true for merchants opening trade or a character deciding they will buy/sell. Separate multiple entries with vertical bars. Otherwise, answer N/A.`,
+        },
+        {
             key: "environmental_status_damage",
             prompt: `Did any animate entities take environmental damage or damage from an ongoing status effect? Were they healed by the environment or an ongoing status effect? If so, answer in the format "[exact name] → [damage|healing] → [low|medium|high] → [1 sentence describing why damage was taken]". If there are multiple instances of damage, separate multiple entries with vertical bars. Otherwise, answer N/A.`,
         },
@@ -4505,6 +4509,15 @@ class Events {
                     key: "party_change",
                     raw: this._formatXmlLegacyRawEntry(node, ["npcName", "action"]),
                 };
+            case "tradeAvailability":
+                return {
+                    key: "trade_availability",
+                    raw: this._formatXmlLegacyRawEntry(node, [
+                        "npcName",
+                        "willingToTrade",
+                        "reason",
+                    ]),
+                };
             case "environmentalStatusDamage":
                 return {
                     key: "environmental_status_damage",
@@ -5906,6 +5919,24 @@ class Events {
                             return null;
                         }
                         return { name: name.trim(), action: action.trim().toLowerCase() };
+                    })
+                    .filter(Boolean),
+            trade_availability: (raw) =>
+                splitPipeList(raw)
+                    .map((entry) => {
+                        const [name, willingRaw, reason] = splitArrowParts(entry, 3);
+                        if (!name || !willingRaw) {
+                            return null;
+                        }
+                        const normalized = willingRaw.trim().toLowerCase();
+                        if (!["true", "false", "yes", "no"].includes(normalized)) {
+                            return null;
+                        }
+                        return {
+                            name: name.trim(),
+                            willingToTrade: normalized === "true" || normalized === "yes",
+                            reason: reason ? reason.trim() : "",
+                        };
                     })
                     .filter(Boolean),
             environmental_status_damage: (raw) =>
@@ -8824,6 +8855,40 @@ class Events {
                     } else if (entry.action === "left") {
                         player.removePartyMember(npc.id);
                     }
+                }
+            },
+            trade_availability: function (entries = [], context = {}) {
+                if (!Array.isArray(entries) || !entries.length) {
+                    return;
+                }
+                const { findActorByName } = this._deps;
+                if (typeof findActorByName !== "function") {
+                    throw new Error(
+                        "trade_availability handler requires findActorByName dependency.",
+                    );
+                }
+                const now = typeof Globals.getTotalWorldMinutes === "function"
+                    ? Globals.getTotalWorldMinutes()
+                    : 0;
+                const refusalMinutesRaw =
+                    Globals.config?.barter?.refusal_duration_minutes ?? 1440;
+                const refusalMinutes = Number(refusalMinutesRaw);
+                if (!Number.isInteger(refusalMinutes) || refusalMinutes < 1) {
+                    throw new Error(
+                        "barter.refusal_duration_minutes must be a positive integer.",
+                    );
+                }
+
+                for (const entry of entries) {
+                    const npc = findActorByName(entry.name);
+                    if (!npc || typeof npc.setWillingToTrade !== "function") {
+                        continue;
+                    }
+                    npc.setWillingToTrade(Boolean(entry.willingToTrade), {
+                        refusalExpiresAt: entry.willingToTrade
+                            ? null
+                            : now + refusalMinutes,
+                    });
                 }
             },
             disposition_check: function (entries = [], context = {}) {

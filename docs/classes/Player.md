@@ -7,12 +7,13 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
 - Identity: `#id`, `#name`, `#aliases`, `#description`, `#shortDescription`, `#imageId`, `#class`, `#race`, `#gender`, `#isNPC`.
 - Core stats: `#attributes`, `#level`, `#experience`, `#health` (finite float), `#healthAttribute`, `#healthRegenAppliedAt`.
 - Inventory/gear: `#inventory`, `#gearSlots`, `#gearSlotsByType`, `#gearSlotNameIndex`.
+- Barter: `#barterInventory`, `#willingToTrade`, `#tradeRefusalExpiresAt`, `#barterStockUpdatedAt`, `#barterProfile`.
 - Skills/abilities: `#skills`, `#abilities`, `#unspentSkillPoints`, `#unspentAttributePoints`.
 - Pending level-up ability draft state: `#pendingAbilityOptionsByLevel` (per-level generated options for player-only ability selection flow).
 - Status/needs: `#statusEffects`, `#needBars`, `#needBarApplicability`, `#needBarRatesAppliedAt`.
 - Social: `#dispositions`, `#personalityType`, `#personalityTraits`, `#personalityNotes`, `#aiNotes`, `#resistances`, `#vulnerabilities`.
 - Factions: `#factionId`, `#factionStandings` (map of `factionId -> number`).
-- UI state: `#thingListViewPreferences` (per-panel shared thing-list view modes for location/inventory/crafting panels).
+- UI state: `#thingListViewPreferences` (per-panel shared thing-list view modes for location/inventory/crafting/barter panels).
 - Party/quests: `#partyMembers`, `#quests`, `#goals`, `#characterArc`.
 - Movement/turns: `#currentLocation`, `#previousLocationId`, `#lastSeenTime` (`last_seen_time` absolute world minutes), `#lastSeenLocation` (`last_seen_location` id), `#wasInPlayerLocationPreviousRound`, `#elapsedTime` (minutes), `#lastVisitedTime` (minutes), `#inCombat`, `#lastActionWasTravel`, `#consecutiveTravelActions`.
 - Lifecycle: `#isDead`, `#persistWhenDead`, `#corpseCountdown`.
@@ -107,11 +108,15 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
   - `getNeedSentencePromptContext({ actorName, onMissingSentence })` resolves active need-bar threshold sentences with `%CHARACTER%` substitution for base-context prompt rendering.
 - Inventory/gear:
   - Inventory: `addInventoryItem(...)`, `removeInventoryItem(...)`, `hasInventoryItem(...)`, `getInventoryItems()`, `clearInventory()`, `setInventory(items)`.
+  - Barter inventory: `addBarterInventoryItem(...)`, `removeBarterInventoryItem(...)`, `hasBarterInventoryItem(...)`, `getBarterInventoryItems()`, `clearBarterInventory()`, `setBarterInventory(items)`, `barterInventorySize`.
   - Gear: `getGear()`, `getGearSlotsByType()`, `getEquippedSlotForThing(...)`, `hasEquippedThing(...)`, `getEquippedItemIdForType(slotType)`.
   - Equip flows: `equipItem(...)`, `equipItemInSlot(...)`, `unequipItemId(...)`, `unequipSlot(...)`.
   - `dropAllInventoryItems()`.
 - Currency:
   - `getCurrency()`, `setCurrency(value)`, `adjustCurrency(delta)`.
+- Trade state:
+  - `willingToTrade`, `setWillingToTrade(value, { refusalExpiresAt })`, `refreshTradeWillingness(currentWorldMinutes)`.
+  - `tradeRefusalExpiresAt`, `barterStockUpdatedAt`, `barterProfile`.
 - Movement:
   - `setLocationByName(name)`, `setLocation(location)`, `moveToLocation(direction, locationMap)`.
   - `getCurrentLocationName()`, `getCurrentLocationInfo(locationMap)`, `getAvailableExits(locationMap)`.
@@ -132,7 +137,7 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
 - Status/abilities: `#normalizeStatusEffects`, `#normalizeAbilities`, `#getIntrinsicStatusEffects`.
 - Pending draft options: `#normalizePendingAbilityOptionsByLevel`.
 - Dispositions: `#normalizeDispositionType`, `#sanitizePersonalityValue`, `#applyHostileDispositionsToCurrentPlayer`.
-- Inventory helpers: `#resolveThing`, `#addInventoryThing`, `#removeInventoryThing`, `#notifyNpcInventoryChange`.
+- Inventory helpers: `#resolveThing`, `#addInventoryThing`, `#removeInventoryThing`, `#addBarterInventoryThing`, `#removeBarterInventoryThing`, `#notifyNpcInventoryChange`.
 - XP: `#skillPointsPerLevel`, `#processExperienceOverflow`.
 - Point-pool formulas: `#buildPointPoolVariables`, `#evaluatePointPoolState`.
 
@@ -149,7 +154,9 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
 - Need bars now use explicit audience flags (`player`, `party`, `nonParty`). NPCs retain both party-only and non-party-only bar state internally so values survive party swaps. Active reads, prompt context, endpoint payloads, and per-minute drift treat `party` as “currently in the party or has ever been in the party,” while `nonParty` still means “not currently in the party,” so former party members can have both party-history bars and non-party bars active at once.
 - Per-actor need-bar minute drift now persists a `needBarRatesAppliedAt` timestamp in saves so reloads do not replay already-processed elapsed world minutes.
 - Need-bar applicability is now also persisted separately per actor in `needBarApplicability`. This is distinct from current audience activation: a bar can be defined for NPC audiences globally but still be explicitly disabled for a specific NPC. Save/load now persists the full resolved applicability map, and legacy saves missing need-bar state default storable bars to `value: 100` and `applicable: true` during hydration.
-- Shared thing-list UI view modes are now persisted per actor in `thingListViewPreferences`, keyed by the fixed panel ids `npcInventory`, `craftingInventory`, `locationScenery`, `locationItems`, `containerPlayerInventory`, and `containerContents`, so page reloads and save/load restore the same panel view selections.
+- NPC barter inventory is persisted separately from normal inventory. Barter-stock items carry `metadata.barterOwnerId` while in that stock, are serialized by id in saves, and are exposed in `getStatus()` / NPC client payloads as expanded Thing JSON. Generated barter stock is created through the shared `inventory-generator` prompt in batches, then attached to this separate barter inventory. Moving an item into ordinary inventory clears barter-owner metadata.
+- NPC trade willingness is persisted as `willingToTrade` plus optional `tradeRefusalExpiresAt` world minutes. `refreshTradeWillingness(...)` flips temporary refusals back to willing once the configured expiry time is reached.
+- Shared thing-list UI view modes are now persisted per actor in `thingListViewPreferences`, keyed by the fixed panel ids `npcInventory`, `craftingInventory`, `locationScenery`, `locationItems`, `containerPlayerInventory`, `containerContents`, `barterPlayerInventory`, and `barterMerchantInventory`, so page reloads and save/load restore the same panel view selections.
 - `setNeedBarApplicability(...)` preserves stored values for bars that stay enabled, drops bars explicitly disabled for that actor, and restores newly re-enabled bars at `100`.
 - Status-effect-driven max-health increases now raise current health by the same max-health delta. Status-effect-driven decreases do not subtract health back out; they only clamp current health if it now exceeds the reduced max.
 - `persistWhenDead` is persisted per actor. When true, dead actors never receive a corpse countdown and are skipped by corpse cleanup; missing save data defaults it to `false`.

@@ -77,6 +77,7 @@ test('XML event parser converts core camelCase tags to existing event keys', () 
   <npcArrivalDeparture><npcName>Ada</npcName><action>left</action><destinationRegion>Town</destinationRegion><destinationLocation>Market</destinationLocation></npcArrivalDeparture>
   <npcFirstAppearance><npcName>Mysterious Cat</npcName></npcFirstAppearance>
   <partyChange><npcName>Ada</npcName><action>joined</action></partyChange>
+  <tradeAvailability><npcName>Ada</npcName><willingToTrade>false</willingToTrade><reason>The offer insulted her.</reason></tradeAvailability>
   <environmentalStatusDamage><actorName>Wanderer</actorName><effect>damage</effect><severity>medium</severity><reason>Smoke inhalation.</reason></environmentalStatusDamage>
   <healRecover><characterName>Wanderer</characterName><magnitude>small</magnitude><reason>Bandaged wounds</reason></healRecover>
   <hostileToFriendly><npcName>Guard</npcName><previousDisposition>hostile</previousDisposition><newDisposition>neutral</newDisposition><reason>Accepted apology.</reason></hostileToFriendly>
@@ -117,6 +118,11 @@ test('XML event parser converts core camelCase tags to existing event keys', () 
         assert.equal(events.status_effect_change[0].level, 2);
         assert.equal(events.npc_arrival_departure[0].destinationLocation, 'Market');
         assert.deepEqual(events.party_change[0], { name: 'Ada', action: 'joined' });
+        assert.deepEqual(events.trade_availability[0], {
+            name: 'Ada',
+            willingToTrade: false,
+            reason: 'The offer insulted her.'
+        });
         assert.equal(events.environmental_status_damage[0].effect, 'damage');
         assert.equal(events.heal_recover[0].character, 'Wanderer');
         assert.equal(events.hostile_to_friendly[0].newDisposition, 'neutral');

@@ -324,6 +324,18 @@ Use this when a physically present NPC begins willingly accompanying, leading, f
 </partyChange>
 ```
 
+### `trade_availability`
+
+Use this when an event explicitly makes an NPC willing or unwilling to trade or barter with the player. Use it for refusals after bad haggling, merchants opening shop, temporary trade bans, or a character deciding they will sell or buy goods.
+
+```xml
+<tradeAvailability>
+  <npcName>Exact NPC name</npcName>
+  <willingToTrade>true|false</willingToTrade>
+  <reason>One sentence reason</reason>
+</tradeAvailability>
+```
+
 ### `environmental_status_damage`
 
 Use this when an animate entity takes damage or healing from the environment or from an ongoing status effect, rather than from an ordinary direct attack. Examples include fire, poison gas, drowning, extreme cold, lingering acid, or a regeneration aura.

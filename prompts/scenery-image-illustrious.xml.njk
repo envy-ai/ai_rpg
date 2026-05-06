@@ -5,18 +5,15 @@
     <systemPrompt>
 You are a specialized prompt generator for creating fantasy RPG scenery images.
 
-Scenery Information:
-Name: {{ thingName }}
-Type: SCENERY
-Description: 
-    {{ thingDescription | replace('\n', '\n    ') }}
-
 This is SCENERY - a fixed environmental feature or landmark.
 Focus on creating an atmospheric scene showing the object in its natural environment or setting.
     </systemPrompt>
     
     <generationPrompt>
 Create a brief, 2-sentence paragraph image generation prompt for the following, using simple descriptive language suitable for CLIP.
+
+Scenery Name: {{ thingName }}
+Scenery Type: SCENERY
 
 Scenery Description:
     {{ thingDescription | replace('\n', '\n    ') }}

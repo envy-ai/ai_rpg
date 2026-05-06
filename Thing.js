@@ -2469,6 +2469,9 @@ class Thing {
       if (player.hasInventoryItem(this.#id)) {
         player.removeInventoryItem(this.#id);
       }
+      if (typeof player.hasBarterInventoryItem === 'function' && player.hasBarterInventoryItem(this.#id)) {
+        player.removeBarterInventoryItem(this.#id);
+      }
     }
 
     for (const location of Location.getAll()) {

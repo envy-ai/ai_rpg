@@ -492,6 +492,27 @@
                             <span class="help-text">Parallel image jobs</span>
                         </div>
 
+                        <div class="form-group">
+                            <label for="imagegen-prompt-batching-enabled">Prompt Batching:</label>
+                            <div class="checkbox-wrapper">
+                                <input type="hidden" name="imagegen.prompt_batching.enabled::boolean" value="false">
+                                <input type="checkbox" id="imagegen-prompt-batching-enabled" name="imagegen.prompt_batching.enabled::boolean" value="true" {% if config.imagegen.prompt_batching.enabled %}checked{% endif %}>
+                            </div>
+                            <span class="help-text">Batch LLM image prompt generation requests</span>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="imagegen-prompt-batching-delay">Prompt Batch Delay (ms):</label>
+                            <input type="number" id="imagegen-prompt-batching-delay" name="imagegen.prompt_batching.delay_ms::int" value="{{ config.imagegen.prompt_batching.delay_ms }}" min="0" step="100">
+                            <span class="help-text">Wait after the most recent prompt request</span>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="imagegen-prompt-batching-max-items">Max Prompts per Batch:</label>
+                            <input type="number" id="imagegen-prompt-batching-max-items" name="imagegen.prompt_batching.max_items::int" value="{{ config.imagegen.prompt_batching.max_items }}" min="1" step="1">
+                            <span class="help-text">Maximum compatible prompt requests per LLM call</span>
+                        </div>
+
                         <div class="form-group full-width">
                             <label for="imagegen-default-negative-prompt">Default Negative Prompt:</label>
                             <textarea id="imagegen-default-negative-prompt" name="imagegen.default_negative_prompt::string" rows="3">{{ config.imagegen.default_negative_prompt }}</textarea>

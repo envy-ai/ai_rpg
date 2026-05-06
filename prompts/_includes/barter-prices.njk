@@ -1,0 +1,131 @@
+<barterContext>
+  <merchant>
+    <id>{{ barter.npc.id }}</id>
+    <name>{{ barter.npc.name }}</name>
+    <description>{{ barter.npc.description }}</description>
+    <class>{{ barter.npc.class }}</class>
+    <race>{{ barter.npc.race }}</race>
+    <currency>{{ barter.npc.currency | default(0, true) }}</currency>
+  </merchant>
+  <player>
+    <name>{{ barter.player.name }}</name>
+    <currency>{{ barter.player.currency | default(0, true) }}</currency>
+  </player>
+  <stockGeneration>
+    <minimumNewItems>{{ barter.config.generatedStockMin }}</minimumNewItems>
+    <maximumNewItems>{{ barter.config.generatedStockMax }}</maximumNewItems>
+    <refreshingStock>{{ "true" if barter.config.refreshingStock else "false" }}</refreshingStock>
+  </stockGeneration>
+  {% if barter.haggle %}
+  <haggle>
+    <playerOffer>{{ barter.haggle.offer }}</playerOffer>
+    <checkResult>
+      <playerTotal>{{ barter.haggle.check.playerTotal }}</playerTotal>
+      <merchantTotal>{{ barter.haggle.check.merchantTotal }}</merchantTotal>
+      <margin>{{ barter.haggle.check.margin }}</margin>
+      <outcome>{{ barter.haggle.check.outcome }}</outcome>
+    </checkResult>
+    <previousHistory>
+      {% for entry in barter.haggle.history %}
+      <entry>
+        <speaker>{{ entry.speaker }}</speaker>
+        <text>{{ entry.text }}</text>
+      </entry>
+      {% endfor %}
+    </previousHistory>
+  </haggle>
+  {% endif %}
+</barterContext>
+
+<playerInventory>
+{% for item in barter.playerItems %}
+  <item>
+    <id>{{ item.id }}</id>
+    <name>{{ item.name }}</name>
+    <count>{{ item.count | default(1, true) }}</count>
+    <standardValue>{{ item.standardValue | default(0, true) }}</standardValue>
+    <description>{{ item.shortDescription | default(item.description, true) }}</description>
+  </item>
+{% endfor %}
+</playerInventory>
+
+<merchantInventory>
+{% for item in barter.npcInventoryItems %}
+  <item>
+    <id>{{ item.id }}</id>
+    <name>{{ item.name }}</name>
+    <count>{{ item.count | default(1, true) }}</count>
+    <standardValue>{{ item.standardValue | default(0, true) }}</standardValue>
+    <description>{{ item.shortDescription | default(item.description, true) }}</description>
+  </item>
+{% endfor %}
+</merchantInventory>
+
+<merchantBarterStock>
+{% for item in barter.npcBarterItems %}
+  <item>
+    <id>{{ item.id }}</id>
+    <name>{{ item.name }}</name>
+    <count>{{ item.count | default(1, true) }}</count>
+    <standardValue>{{ item.standardValue | default(0, true) }}</standardValue>
+    <description>{{ item.shortDescription | default(item.description, true) }}</description>
+  </item>
+{% endfor %}
+</merchantBarterStock>
+
+<task>
+Assign this character's barter prices. Decide whether the character is willing to buy each player inventory item, how much they will pay per unit, which existing character inventory and barter-stock items they will sell, and how much they charge per unit.
+
+For every existing player or character item you price, copy both the exact listed <name> text and the listed <id>. Names are used as the primary item reference. The item id is only a disambiguator when the name is blank or more than one distinct listed item has the same exact name.
+
+Generate between <minimumNewItems> and <maximumNewItems> additional item seeds that this character is willing to sell. Merchants and traders should usually have more generated stock than incidental NPCs; non-merchant NPCs may have none.
+
+If <refreshingStock>true</refreshingStock>, also re-determine the merchant's current currency after the stock refresh. Base this on the character's role, wealth, recent trading activity, current situation, and the newly refreshed stock. If <refreshingStock>false</refreshingStock>, repeat the merchant's current currency value.
+
+If this is a haggle pass, react to the player's offer and the opposed check result. Reprice both sides on success or failure. A poor result can worsen prices. A major failure can make the character refuse further trade for now.
+
+Merchant type characters will tend to buy low and sell high, although they may be more flexible on prices during a haggle. Non-merchant characters may have more idiosyncratic and less profit-driven pricing, and may be more likely to refuse to buy or sell certain items at any price. Their prices will vary a lot depending on their attitude toward the player (some may be very charitable, others may be exploitative or predatory), their needs (e.g., a starving character might be willing to pay more for food and refuse to buy non-food items, while a lonely character might be willing to pay more for items that provide social interaction or emotional comfort), and the situation (e.g., a character who is desperate to escape a dangerous location might be willing to pay more for transportation or protective items). A skilled merchant, on the other hand, is more likely to base their prices on the *player's* needs than their own, although this varies based on their personality and morality as well. (Good merchants may *reduce* prices for items the player needs, while exploitative merchants might *raise* prices for those items.) In short: Use your judgement. This system is in place to make barter interesting and personal.
+
+When generating new stock items, consider the character's personality, needs, and situation. A practical and resourceful character might have useful tools, supplies, or salvaged items. A more whimsical or eccentric character might have oddities, curiosities, or handmade crafts. A wealthy and status-conscious character might have luxury goods or rare treasures. Always provide a short reason for why the character has each item in their inventory or barter stock.
+
+</task>
+
+Return only one XML block in this exact shape:
+
+<barterPrices>
+  <generalReasoning>A paragraph describing the character's general approach to pricing and haggling, based on their personality, needs, situation, recent events and conversations, and attitude toward the player. This should give an overall sense of how they are likely to price items and respond to the player's offer, even before looking at the specific prices below.</generalReasoning>
+  <merchantCurrency>Merchant current currency as a non-negative integer; re-determined only when refreshingStock is true</merchantCurrency>
+  <haggleResponse>Merchant response text if this was a haggle pass; otherwise blank.</haggleResponse>
+  <continueTrading>true|false</continueTrading>
+  <playerItems>
+    <item>
+      <name>Exact existing player item name</name>
+      <id>Existing player item id</id>
+      <willingToBuy>true|false</willingToBuy>
+      <unitPrice>Non-negative integer amount the merchant pays per unit</unitPrice>
+      <reason>Short reason</reason>
+    </item>
+  </playerItems>
+  <merchantItems>
+    <item>
+      <name>Exact existing merchant inventory or barter-stock item name</name>
+      <id>Existing merchant inventory or barter-stock item id</id>
+      <source>inventory|barterInventory</source>
+      <willingToSell>true|false</willingToSell>
+      <unitPrice>Non-negative integer amount the player pays per unit</unitPrice>
+      <reason>Short reason</reason>
+    </item>
+  </merchantItems>
+  <newStock>
+    <item>
+      <name>Generated item name</name>
+      <count>Positive integer</count>
+      <value>Standard value as a non-negative integer</value>
+      <price>Merchant sell price per unit as a non-negative integer</price>
+      <description>Brief item description</description>
+      <type>Item type</type>
+      <rarity>Rarity label</rarity>
+      <reason>Short reason this merchant has it</reason>
+    </item>
+  </newStock>
+</barterPrices>

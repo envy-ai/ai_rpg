@@ -2,6 +2,10 @@
 
 Your task is to describe this NPC's next action:
 {{ characterName }}
+{% if npcActionContext %}
+
+<recentActionContext>{{ npcActionContext }}</recentActionContext>
+{% endif %}
 
 These characters are present and aware of the action. This is not necessary an exhaustive list, but it contains no false positives:
 - {{ characterName }}

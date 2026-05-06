@@ -4727,6 +4727,14 @@ const createChatToolRuntime = ({
         return result;
     };
 
+    const buildToolCallAttemptsExhaustedResult = (functionName, maxRounds) => buildToolVisibleErrorResult(
+        functionName,
+        new ToolVisibleError(
+            `The prompt has exhausted its tool call attempts after ${maxRounds} tool-call round${maxRounds === 1 ? '' : 's'}. Do not call any more tools. Continue by writing the final response using the information already available.`,
+            { code: 'tool_call_attempts_exhausted' }
+        )
+    );
+
     const executeChatToolCall = async (toolCall, { resultCache = null, defaultActorName = null } = {}) => {
         if (!toolCall || typeof toolCall !== 'object') {
             throw new Error('Tool execution requires a tool call object.');
@@ -4855,6 +4863,9 @@ const createChatToolRuntime = ({
         let rounds = 0;
         let completed = false;
         let toolLoopActivated = false;
+        let toolRoundsUsed = 0;
+        let toolsDisabledAfterExhaustion = false;
+        let exhaustionErrorRounds = 0;
         const toolInvocations = [];
         const resultCache = normalizeToolResultCache(toolResultCache, { metadataLabel });
         const defaultActorName = normalizeOptionalString(defaultToolActor);
@@ -4903,8 +4914,8 @@ const createChatToolRuntime = ({
 
         while (!completed) {
             rounds += 1;
-            if (rounds > maxRounds) {
-                throw new Error(`Tool-call loop exceeded max rounds (${maxRounds}) for ${metadataLabel}.`);
+            if (toolsDisabledAfterExhaustion && exhaustionErrorRounds > 3) {
+                throw new Error(`Tool-call loop kept returning tool calls after attempts were exhausted for ${metadataLabel}.`);
             }
 
             let roundResponse = null;
@@ -4918,6 +4929,13 @@ const createChatToolRuntime = ({
                     }
                 }
             };
+            if (toolsDisabledAfterExhaustion) {
+                delete roundOptions.tools;
+                delete roundOptions.functions;
+                delete roundOptions.parallel_tool_calls;
+                roundOptions.tool_choice = 'none';
+                roundOptions.function_call = 'none';
+            }
 
             aiResponse = await LLMClient.chatCompletion(roundOptions);
             lastResponse = roundResponse;
@@ -4964,13 +4982,22 @@ const createChatToolRuntime = ({
                 continue;
             }
             toolLoopActivated = true;
+            const toolCallsExhausted = toolRoundsUsed >= maxRounds;
+            if (toolCallsExhausted) {
+                exhaustionErrorRounds += 1;
+                toolsDisabledAfterExhaustion = true;
+            } else {
+                toolRoundsUsed += 1;
+            }
 
             if (streamEmitter?.isEnabled) {
                 const toolStatusStage = `${metadataLabel || 'chat'}:tool_calls`;
                 streamEmitter.status(toolStatusStage, {
                     round: rounds,
                     toolCallCount: toolCalls.length,
-                    message: `Running ${toolCalls.length} tool call${toolCalls.length === 1 ? '' : 's'}...`
+                    message: toolCallsExhausted
+                        ? `Tool call attempts exhausted; returning ${toolCalls.length} tool error${toolCalls.length === 1 ? '' : 's'}...`
+                        : `Running ${toolCalls.length} tool call${toolCalls.length === 1 ? '' : 's'}...`
                 });
             }
 
@@ -5005,7 +5032,9 @@ const createChatToolRuntime = ({
 
                 let toolResult = null;
                 try {
-                    toolResult = await executeChatToolCall(toolCall, { resultCache, defaultActorName });
+                    toolResult = toolCallsExhausted
+                        ? buildToolCallAttemptsExhaustedResult(toolCall.functionName, maxRounds)
+                        : await executeChatToolCall(toolCall, { resultCache, defaultActorName });
                     if (!toolResult || typeof toolResult.content !== 'string' || !toolResult.content.trim()) {
                         throw new Error(`Tool "${toolCall.functionName}" returned empty content.`);
                     }

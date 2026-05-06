@@ -1216,6 +1216,147 @@
             </div>
         </div>
     </div>
+    <div id="barterModal" class="modal barter-modal" role="dialog" aria-modal="true" aria-hidden="true" hidden>
+        <div class="modal__dialog barter-modal__dialog">
+            <header class="modal__header">
+                <div>
+                    <h2 id="barterModalTitle">Trade</h2>
+                    <div id="barterCurrencySummary" class="barter-modal__currency"></div>
+                </div>
+                <button type="button" class="modal__close" id="barterCloseBtn" aria-label="Close trade">
+                    <span aria-hidden="true">X</span>
+                </button>
+            </header>
+            <div class="modal__body barter-modal__body">
+                <div id="barterStatus" class="barter-modal__status" role="status" aria-live="polite"></div>
+                <div class="barter-modal__columns">
+                    <section class="thing-list-panel barter-modal__panel" id="barterPlayerPanel">
+                        <div class="thing-list-panel__header">
+                            <div class="thing-list-panel__heading-group">
+                                <h3>Player Inventory</h3>
+                                <span class="inventory-count" id="barterPlayerCount">0 items</span>
+                            </div>
+                            <div class="thing-list-panel__controls">
+                                {{ thingListViewToggle("barterPlayerViewToggle", "barterPlayerView", "Change player trade view") }}
+                                {{ thingListSortToggle("barterPlayerSortToggle", "barterPlayerSort", "Sort player trade items") }}
+                                {{ thingListFiltersToggle("barterPlayerFiltersToggle", "barterPlayerFilters", "Search and filter player trade items") }}
+                            </div>
+                        </div>
+                        {{ thingListViewShell("barterPlayerView", "Change player trade view") }}
+                        {{ thingListSortShell("barterPlayerSort", "Sort player trade items") }}
+                        <div class="thing-list-filters-shell" id="barterPlayerFilters">
+                            <div class="thing-list-filters-row">
+                                <div class="npc-inventory-filter-search-wrapper">
+                                    <label class="sr-only" for="barterPlayerFilterInput">Filter player trade items</label>
+                                    <input type="search" id="barterPlayerFilterInput" class="npc-selection-filter-input" placeholder="Filter inventory" aria-label="Filter player trade items">
+                                </div>
+                                <div class="npc-inventory-filter-slot-wrapper" id="barterPlayerSlotFilterWrapper">
+                                    <label class="sr-only" for="barterPlayerSlotFilter">Filter player trade items by slot</label>
+                                    <select id="barterPlayerSlotFilter" class="npc-inventory-slot-filter" aria-label="Filter player trade items by slot">
+                                        <option value="">All slots</option>
+                                    </select>
+                                </div>
+                                <label class="npc-inventory-filter-radio barter-modal__availability-toggle" for="barterPlayerShowUnavailable">
+                                    <input type="checkbox" id="barterPlayerShowUnavailable">
+                                    <span>Show uninterested</span>
+                                </label>
+                            </div>
+                        </div>
+                        <div class="inventory-grid barter-modal__grid" id="barterPlayerGrid"></div>
+                        <div class="inventory-empty" id="barterPlayerEmpty">No player items available.</div>
+                    </section>
+                    <section class="thing-list-panel barter-modal__panel" id="barterMerchantPanel">
+                        <div class="thing-list-panel__header">
+                            <div class="thing-list-panel__heading-group">
+                                <h3 id="barterMerchantName">Merchant Stock</h3>
+                                <span class="inventory-count" id="barterMerchantCount">0 items</span>
+                            </div>
+                            <div class="thing-list-panel__controls">
+                                {{ thingListViewToggle("barterMerchantViewToggle", "barterMerchantView", "Change merchant trade view") }}
+                                {{ thingListSortToggle("barterMerchantSortToggle", "barterMerchantSort", "Sort merchant trade items") }}
+                                {{ thingListFiltersToggle("barterMerchantFiltersToggle", "barterMerchantFilters", "Search and filter merchant trade items") }}
+                            </div>
+                        </div>
+                        {{ thingListViewShell("barterMerchantView", "Change merchant trade view") }}
+                        {{ thingListSortShell("barterMerchantSort", "Sort merchant trade items") }}
+                        <div class="thing-list-filters-shell" id="barterMerchantFilters">
+                            <div class="thing-list-filters-row">
+                                <div class="npc-inventory-filter-search-wrapper">
+                                    <label class="sr-only" for="barterMerchantFilterInput">Filter merchant trade items</label>
+                                    <input type="search" id="barterMerchantFilterInput" class="npc-selection-filter-input" placeholder="Filter stock" aria-label="Filter merchant trade items">
+                                </div>
+                                <div class="npc-inventory-filter-slot-wrapper" id="barterMerchantSlotFilterWrapper">
+                                    <label class="sr-only" for="barterMerchantSlotFilter">Filter merchant trade items by slot</label>
+                                    <select id="barterMerchantSlotFilter" class="npc-inventory-slot-filter" aria-label="Filter merchant trade items by slot">
+                                        <option value="">All slots</option>
+                                    </select>
+                                </div>
+                                <label class="npc-inventory-filter-radio barter-modal__availability-toggle" for="barterMerchantShowUnavailable">
+                                    <input type="checkbox" id="barterMerchantShowUnavailable">
+                                    <span>Show unavailable</span>
+                                </label>
+                            </div>
+                        </div>
+                        <div class="inventory-grid barter-modal__grid" id="barterMerchantGrid"></div>
+                        <div class="inventory-empty" id="barterMerchantEmpty">No merchant stock available.</div>
+                    </section>
+                </div>
+                <div class="barter-modal__summary">
+                    <div id="barterCartSummary" class="barter-modal__cart"></div>
+                    <div id="barterTotalSummary" class="barter-modal__total"></div>
+                    <button type="button" class="npc-edit-add-btn barter-modal__trade-btn" id="barterCommitBtn" disabled>Trade</button>
+                </div>
+                <div class="barter-modal__haggle">
+                    <div id="barterHaggleHistory" class="barter-modal__haggle-history"></div>
+                    <div class="barter-modal__haggle-row">
+                        <label class="sr-only" for="barterHaggleInput">Haggle offer</label>
+                        <input type="text" id="barterHaggleInput" class="npc-selection-filter-input barter-modal__haggle-input" placeholder="Make an offer or argument">
+                        <button type="button" class="npc-edit-add-btn" id="barterHaggleBtn">Haggle</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div id="barterQuantityModal" class="modal barter-quantity-modal" role="dialog" aria-modal="true" aria-hidden="true" hidden>
+        <div class="modal__dialog barter-quantity-modal__dialog">
+            <header class="modal__header">
+                <h2 id="barterQuantityTitle">Choose Quantity</h2>
+                <button type="button" class="modal__close" id="barterQuantityCloseBtn" aria-label="Close quantity dialog">
+                    <span aria-hidden="true">X</span>
+                </button>
+            </header>
+            <form id="barterQuantityForm" class="modal__body barter-quantity-modal__body" novalidate>
+                <p id="barterQuantityMessage" class="modal__instruction"></p>
+                <div class="form-group">
+                    <label for="barterQuantityInput">Quantity</label>
+                    <input type="number" id="barterQuantityInput" min="1" step="1">
+                </div>
+                <div id="barterQuantityStatus" class="barter-modal__status" role="status" aria-live="polite"></div>
+            </form>
+            <footer class="modal__footer">
+                <button type="button" class="btn btn-secondary" id="barterQuantityCancelBtn">Cancel</button>
+                <button type="submit" form="barterQuantityForm" class="btn btn-primary" id="barterQuantitySubmitBtn">Apply</button>
+            </footer>
+        </div>
+    </div>
+    <div id="barterCurrencyConfirmModal" class="modal barter-currency-confirm-modal" role="dialog" aria-modal="true" aria-hidden="true" hidden>
+        <div class="modal__dialog barter-currency-confirm-modal__dialog">
+            <header class="modal__header">
+                <h2 id="barterCurrencyConfirmTitle">Merchant Currency Shortfall</h2>
+                <button type="button" class="modal__close" id="barterCurrencyConfirmCloseBtn" aria-label="Close currency confirmation">
+                    <span aria-hidden="true">X</span>
+                </button>
+            </header>
+            <div class="modal__body barter-currency-confirm-modal__body">
+                <p id="barterCurrencyConfirmMessage" class="modal__instruction"></p>
+                <div id="barterCurrencyConfirmStatus" class="barter-modal__status" role="status" aria-live="polite"></div>
+            </div>
+            <footer class="modal__footer">
+                <button type="button" class="btn btn-secondary" id="barterCurrencyConfirmCancelBtn">Cancel Trade</button>
+                <button type="button" class="btn btn-primary" id="barterCurrencyConfirmAcceptBtn">Accept Anyway</button>
+            </footer>
+        </div>
+    </div>
     <div id="npcViewModal" class="modal npc-view-modal" role="dialog" aria-modal="true" aria-hidden="true" hidden>
         <div class="modal__dialog">
             <header class="modal__header">
@@ -1753,6 +1894,12 @@
                     <div class="npc-edit-field">
                         <label for="npcEditExperience">Experience</label>
                         <input id="npcEditExperience" type="number" min="0" step="1">
+                    </div>
+                    <div class="npc-edit-field npc-edit-field--checkbox">
+                        <label class="modal-checkbox" for="npcEditWillingToTrade">
+                            <input id="npcEditWillingToTrade" type="checkbox">
+                            <span>Willing to trade</span>
+                        </label>
                     </div>
                 </div>
 
@@ -2702,6 +2849,39 @@
             element.appendChild(overlay);
         }
 
+        function renderBarterValueBadgeOverlay(element) {
+            if (!(element instanceof HTMLElement)) {
+                return;
+            }
+
+            element.querySelector('.barter-offer-card__value-badge')?.remove();
+
+            const text = typeof element.dataset.barterValueBadgeText === 'string'
+                ? element.dataset.barterValueBadgeText.trim()
+                : '';
+            if (!text) {
+                return;
+            }
+
+            const title = typeof element.dataset.barterValueBadgeTitle === 'string'
+                ? element.dataset.barterValueBadgeTitle.trim()
+                : '';
+            const ariaLabel = typeof element.dataset.barterValueBadgeAriaLabel === 'string'
+                ? element.dataset.barterValueBadgeAriaLabel.trim()
+                : '';
+
+            const badge = document.createElement('span');
+            badge.className = 'barter-offer-card__value-badge';
+            badge.textContent = text;
+            if (title) {
+                badge.title = title;
+            }
+            if (ariaLabel) {
+                badge.setAttribute('aria-label', ariaLabel);
+            }
+            element.appendChild(badge);
+        }
+
         function getGeneratedImageUrl(imageId) {
             const normalizedImageId = typeof imageId === 'string' ? imageId.trim() : '';
             if (!normalizedImageId) {
@@ -2801,6 +2981,7 @@
             const applyBadgesOverlay = () => {
                 renderImageBadgesOverlay(element, normalizedBadges.length ? normalizedBadges : null);
                 renderThingCountOverlay(element, normalizedCountBadgeText);
+                renderBarterValueBadgeOverlay(element);
             };
 
             const applyImageMarkup = (url) => {
@@ -2940,6 +3121,7 @@
             element.dataset.imageProcessing = 'true';
             renderImageBadgesOverlay(element);
             renderThingCountOverlay(element);
+            renderBarterValueBadgeOverlay(element);
         }
 
         function applyEntityImagePlaceholder(entityType, entityId) {
@@ -4901,6 +5083,9 @@
                 );
 
                 applyNpcDeathStyling(card, portrait, member);
+                if (typeof registerNpcTradeButton === 'function') {
+                    registerNpcTradeButton(card, member);
+                }
 
                 const nameEl = document.createElement('div');
                 nameEl.className = 'entity-name location-entity-name';
@@ -8278,6 +8463,7 @@
         const npcEditHealthAttributeSelect = document.getElementById('npcEditHealthAttribute');
         const npcEditCurrencyInput = document.getElementById('npcEditCurrency');
         const npcEditExperienceInput = document.getElementById('npcEditExperience');
+        const npcEditWillingToTradeInput = document.getElementById('npcEditWillingToTrade');
         const npcEditDescriptionInput = document.getElementById('npcEditDescription');
         const npcEditAliasesInput = document.getElementById('npcEditAliases');
         const npcEditResistancesInput = document.getElementById('npcEditResistances');
@@ -8367,6 +8553,58 @@
         const containerContentsShowAllRadio = document.getElementById('containerContentsShowAll');
         const containerContentsEquippableOnlyRadio = document.getElementById('containerContentsEquippableOnly');
         const containerContentsNonEquippableOnlyRadio = document.getElementById('containerContentsNonEquippableOnly');
+        const barterModal = document.getElementById('barterModal');
+        const barterModalTitle = document.getElementById('barterModalTitle');
+        const barterCloseBtn = document.getElementById('barterCloseBtn');
+        const barterCurrencySummary = document.getElementById('barterCurrencySummary');
+        const barterStatus = document.getElementById('barterStatus');
+        const barterPlayerPanel = document.getElementById('barterPlayerPanel');
+        const barterPlayerGrid = document.getElementById('barterPlayerGrid');
+        const barterPlayerCount = document.getElementById('barterPlayerCount');
+        const barterPlayerEmpty = document.getElementById('barterPlayerEmpty');
+        const barterPlayerFilterInput = document.getElementById('barterPlayerFilterInput');
+        const barterPlayerFilters = document.getElementById('barterPlayerFilters');
+        const barterPlayerView = document.getElementById('barterPlayerView');
+        const barterPlayerViewToggle = document.getElementById('barterPlayerViewToggle');
+        const barterPlayerSort = document.getElementById('barterPlayerSort');
+        const barterPlayerSortToggle = document.getElementById('barterPlayerSortToggle');
+        const barterPlayerSlotFilterWrapper = document.getElementById('barterPlayerSlotFilterWrapper');
+        const barterPlayerSlotFilter = document.getElementById('barterPlayerSlotFilter');
+        const barterPlayerShowUnavailable = document.getElementById('barterPlayerShowUnavailable');
+        const barterMerchantPanel = document.getElementById('barterMerchantPanel');
+        const barterMerchantName = document.getElementById('barterMerchantName');
+        const barterMerchantGrid = document.getElementById('barterMerchantGrid');
+        const barterMerchantCount = document.getElementById('barterMerchantCount');
+        const barterMerchantEmpty = document.getElementById('barterMerchantEmpty');
+        const barterMerchantFilterInput = document.getElementById('barterMerchantFilterInput');
+        const barterMerchantFilters = document.getElementById('barterMerchantFilters');
+        const barterMerchantView = document.getElementById('barterMerchantView');
+        const barterMerchantViewToggle = document.getElementById('barterMerchantViewToggle');
+        const barterMerchantSort = document.getElementById('barterMerchantSort');
+        const barterMerchantSortToggle = document.getElementById('barterMerchantSortToggle');
+        const barterMerchantSlotFilterWrapper = document.getElementById('barterMerchantSlotFilterWrapper');
+        const barterMerchantSlotFilter = document.getElementById('barterMerchantSlotFilter');
+        const barterMerchantShowUnavailable = document.getElementById('barterMerchantShowUnavailable');
+        const barterCartSummary = document.getElementById('barterCartSummary');
+        const barterTotalSummary = document.getElementById('barterTotalSummary');
+        const barterCommitBtn = document.getElementById('barterCommitBtn');
+        const barterHaggleHistory = document.getElementById('barterHaggleHistory');
+        const barterHaggleInput = document.getElementById('barterHaggleInput');
+        const barterHaggleBtn = document.getElementById('barterHaggleBtn');
+        const barterQuantityModal = document.getElementById('barterQuantityModal');
+        const barterQuantityTitle = document.getElementById('barterQuantityTitle');
+        const barterQuantityCloseBtn = document.getElementById('barterQuantityCloseBtn');
+        const barterQuantityForm = document.getElementById('barterQuantityForm');
+        const barterQuantityMessage = document.getElementById('barterQuantityMessage');
+        const barterQuantityInput = document.getElementById('barterQuantityInput');
+        const barterQuantityStatus = document.getElementById('barterQuantityStatus');
+        const barterQuantityCancelBtn = document.getElementById('barterQuantityCancelBtn');
+        const barterCurrencyConfirmModal = document.getElementById('barterCurrencyConfirmModal');
+        const barterCurrencyConfirmCloseBtn = document.getElementById('barterCurrencyConfirmCloseBtn');
+        const barterCurrencyConfirmMessage = document.getElementById('barterCurrencyConfirmMessage');
+        const barterCurrencyConfirmStatus = document.getElementById('barterCurrencyConfirmStatus');
+        const barterCurrencyConfirmCancelBtn = document.getElementById('barterCurrencyConfirmCancelBtn');
+        const barterCurrencyConfirmAcceptBtn = document.getElementById('barterCurrencyConfirmAcceptBtn');
         const locationSceneryPanelEl = document.getElementById('locationSceneryPanel');
         const locationSceneryViewEl = document.getElementById('locationSceneryView');
         const locationSceneryViewToggleEl = document.getElementById('locationSceneryViewToggle');
@@ -10351,6 +10589,11 @@
             containerContentsGrid?.classList.remove('is-drag-over');
         }
 
+        function clearBarterDropHighlights() {
+            barterPlayerGrid?.classList.remove('is-drag-over');
+            barterMerchantGrid?.classList.remove('is-drag-over');
+        }
+
         function cancelModalInventoryTouchDrag({ suppressClick = false } = {}) {
             const state = modalInventoryTouchDragState;
             if (!state) {
@@ -10373,7 +10616,9 @@
             state.ghost?.remove();
             document.body.classList.remove('thing-touch-drag-active');
             clearThingContainerTouchDropHighlights();
+            clearBarterDropHighlights();
             currentThingContainerDragSource = null;
+            currentBarterDragState = null;
             if (state.dragStarted) {
                 clearModalInventoryDragState(state.thing?.id || null);
             }
@@ -12130,6 +12375,10 @@
             if (npcEditExperienceInput) {
                 const numericExperience = Number.parseInt(npc.experience, 10);
                 npcEditExperienceInput.value = Number.isFinite(numericExperience) && numericExperience >= 0 ? numericExperience : '';
+            }
+            if (npcEditWillingToTradeInput) {
+                npcEditWillingToTradeInput.checked = npc.willingToTrade !== false;
+                npcEditWillingToTradeInput.disabled = !npc.isNPC;
             }
             if (npcEditDescriptionInput) {
                 npcEditDescriptionInput.value = npc.description || '';
@@ -15582,6 +15831,38 @@
             popoverShell: containerContentsSort
         });
         initializeThingListViewPopover({
+            panel: barterPlayerPanel,
+            toggleButton: barterPlayerViewToggle,
+            popoverShell: barterPlayerView
+        });
+        initializeThingListFilterPopover({
+            panel: barterPlayerPanel,
+            toggleButton: document.getElementById('barterPlayerFiltersToggle'),
+            filtersShell: barterPlayerFilters,
+            compactThreshold: 560
+        });
+        initializeThingListSortPopover({
+            panel: barterPlayerPanel,
+            toggleButton: barterPlayerSortToggle,
+            popoverShell: barterPlayerSort
+        });
+        initializeThingListViewPopover({
+            panel: barterMerchantPanel,
+            toggleButton: barterMerchantViewToggle,
+            popoverShell: barterMerchantView
+        });
+        initializeThingListFilterPopover({
+            panel: barterMerchantPanel,
+            toggleButton: document.getElementById('barterMerchantFiltersToggle'),
+            filtersShell: barterMerchantFilters,
+            compactThreshold: 560
+        });
+        initializeThingListSortPopover({
+            panel: barterMerchantPanel,
+            toggleButton: barterMerchantSortToggle,
+            popoverShell: barterMerchantSort
+        });
+        initializeThingListViewPopover({
             panel: craftingInventoryPanel,
             toggleButton: craftingInventoryViewToggle,
             popoverShell: craftingInventoryView
@@ -15664,6 +15945,28 @@
             rerender: () => renderThingContainerModal()
         });
         bindThingListSortShell({
+            panelKey: 'barterPlayerInventory',
+            sortShell: barterPlayerSort,
+            rerender: () => renderBarterModal()
+        });
+        bindThingListViewShell({
+            panel: barterPlayerPanel,
+            panelKey: 'barterPlayerInventory',
+            viewShell: barterPlayerView,
+            rerender: () => renderBarterModal()
+        });
+        bindThingListSortShell({
+            panelKey: 'barterMerchantInventory',
+            sortShell: barterMerchantSort,
+            rerender: () => renderBarterModal()
+        });
+        bindThingListViewShell({
+            panel: barterMerchantPanel,
+            panelKey: 'barterMerchantInventory',
+            viewShell: barterMerchantView,
+            rerender: () => renderBarterModal()
+        });
+        bindThingListSortShell({
             panelKey: 'craftingInventory',
             sortShell: craftingInventorySort,
             rerender: () => renderCraftingInventory()
@@ -15730,6 +16033,42 @@
         if (containerContentsSlotFilter) {
             containerContentsSlotFilter.addEventListener('change', () => {
                 renderThingContainerModal();
+            });
+        }
+
+        if (barterPlayerFilterInput) {
+            barterPlayerFilterInput.addEventListener('input', () => {
+                renderBarterModal();
+            });
+        }
+
+        if (barterPlayerSlotFilter) {
+            barterPlayerSlotFilter.addEventListener('change', () => {
+                renderBarterModal();
+            });
+        }
+
+        if (barterPlayerShowUnavailable) {
+            barterPlayerShowUnavailable.addEventListener('change', () => {
+                renderBarterModal();
+            });
+        }
+
+        if (barterMerchantFilterInput) {
+            barterMerchantFilterInput.addEventListener('input', () => {
+                renderBarterModal();
+            });
+        }
+
+        if (barterMerchantSlotFilter) {
+            barterMerchantSlotFilter.addEventListener('change', () => {
+                renderBarterModal();
+            });
+        }
+
+        if (barterMerchantShowUnavailable) {
+            barterMerchantShowUnavailable.addEventListener('change', () => {
+                renderBarterModal();
             });
         }
 
@@ -15812,6 +16151,8 @@
 
         bindThingContainerDropzone(containerPlayerInventoryGrid, 'player');
         bindThingContainerDropzone(containerContentsGrid, 'container');
+        bindBarterDropzone(barterPlayerGrid, 'player');
+        bindBarterDropzone(barterMerchantGrid, 'merchant');
 
         if (containerPlayerInventoryAddAllBtn) {
             containerPlayerInventoryAddAllBtn.addEventListener('click', async () => {
@@ -15860,6 +16201,70 @@
                     console.warn('Failed to navigate container history:', error);
                     alert(error?.message || 'Failed to open previous container.');
                 }
+            });
+        }
+
+        if (barterCloseBtn) {
+            barterCloseBtn.addEventListener('click', () => {
+                closeBarterModal();
+            });
+        }
+
+        if (barterCommitBtn) {
+            barterCommitBtn.addEventListener('click', () => {
+                submitBarterTransaction();
+            });
+        }
+
+        if (barterHaggleBtn) {
+            barterHaggleBtn.addEventListener('click', () => {
+                submitBarterHaggle();
+            });
+        }
+
+        if (barterHaggleInput) {
+            barterHaggleInput.addEventListener('keydown', (event) => {
+                if (event.key === 'Enter') {
+                    event.preventDefault();
+                    submitBarterHaggle();
+                }
+            });
+        }
+
+        if (barterQuantityForm) {
+            barterQuantityForm.addEventListener('submit', (event) => {
+                event.preventDefault();
+                submitBarterQuantityModal();
+            });
+        }
+
+        if (barterQuantityCloseBtn) {
+            barterQuantityCloseBtn.addEventListener('click', () => {
+                closeBarterQuantityModal(null);
+            });
+        }
+
+        if (barterQuantityCancelBtn) {
+            barterQuantityCancelBtn.addEventListener('click', () => {
+                closeBarterQuantityModal(null);
+            });
+        }
+
+        if (barterCurrencyConfirmCloseBtn) {
+            barterCurrencyConfirmCloseBtn.addEventListener('click', () => {
+                closeBarterCurrencyConfirmModal(false);
+            });
+        }
+
+        if (barterCurrencyConfirmCancelBtn) {
+            barterCurrencyConfirmCancelBtn.addEventListener('click', () => {
+                closeBarterCurrencyConfirmModal(false);
+            });
+        }
+
+        if (barterCurrencyConfirmAcceptBtn) {
+            barterCurrencyConfirmAcceptBtn.addEventListener('click', () => {
+                closeBarterCurrencyConfirmModal(true);
             });
         }
 
@@ -16068,6 +16473,9 @@
                 const parsedExperience = Number.parseInt(npcEditExperienceInput?.value ?? '', 10);
                 if (Number.isFinite(parsedExperience) && parsedExperience >= 0) {
                     payload.experience = parsedExperience;
+                }
+                if (npcEditWillingToTradeInput && !npcEditWillingToTradeInput.disabled) {
+                    payload.willingToTrade = Boolean(npcEditWillingToTradeInput.checked);
                 }
 
                 if (npcEditFactionSelect) {
@@ -18086,6 +18494,1070 @@
             } catch (_) {}
         }
 
+        let currentBarterNpcId = null;
+        let currentBarterSession = null;
+        let currentBarterNpc = null;
+        let currentBarterPlayer = null;
+        let currentBarterPlayerOffers = [];
+        let currentBarterMerchantOffers = [];
+        let barterPlayerCart = new Map();
+        let barterMerchantCart = new Map();
+        let barterRequestInFlight = false;
+        let barterCurrencyName = 'coin';
+        let barterCurrencyNamePlural = 'coins';
+        let currentBarterDragState = null;
+        let barterQuantityDialogState = null;
+        let barterCurrencyConfirmState = null;
+        const BARTER_CURRENCY_ICON = '🪙';
+
+        function setBarterStatus(message = '', type = null) {
+            if (!barterStatus) {
+                return;
+            }
+            barterStatus.textContent = message || '';
+            barterStatus.classList.remove('is-error', 'is-success');
+            if (type === 'error') {
+                barterStatus.classList.add('is-error');
+            } else if (type === 'success') {
+                barterStatus.classList.add('is-success');
+            }
+        }
+
+        function formatBarterCurrency(amount) {
+            const numeric = Number(amount);
+            const safeAmount = Number.isFinite(numeric) ? numeric : 0;
+            const label = Math.abs(safeAmount) === 1
+                ? (barterCurrencyName || 'coin')
+                : (barterCurrencyNamePlural || barterCurrencyName || 'coins');
+            return `${safeAmount} ${label}`;
+        }
+
+        function formatBarterValueBadge(amount) {
+            const numeric = Number(amount);
+            const safeAmount = Number.isFinite(numeric) ? Math.round(numeric) : 0;
+            return `${safeAmount} ${BARTER_CURRENCY_ICON}`;
+        }
+
+        function appendBarterChatEntries(entries = []) {
+            const chatLog = document.getElementById('chatLog');
+            if (!chatLog || !Array.isArray(entries)) {
+                return;
+            }
+            for (const entry of entries) {
+                if (!entry || typeof entry !== 'object') {
+                    continue;
+                }
+                const wrapper = document.createElement('div');
+                wrapper.className = `message ${entry.role === 'user' ? 'user-message' : 'ai-message'}`;
+                const sender = document.createElement('div');
+                sender.className = 'message-sender';
+                sender.textContent = entry.role === 'user' ? '👤 You' : '🤖 AI Game Master';
+                const content = document.createElement('div');
+                content.textContent = entry.content || '';
+                const timestamp = document.createElement('div');
+                timestamp.className = 'message-timestamp';
+                timestamp.textContent = (entry.timestamp || new Date().toISOString()).replace('T', ' ').replace('Z', '');
+                wrapper.appendChild(sender);
+                wrapper.appendChild(content);
+                wrapper.appendChild(timestamp);
+                chatLog.appendChild(wrapper);
+            }
+            chatLog.scrollTop = chatLog.scrollHeight;
+        }
+
+        function createBarterRequestId(label = 'barter') {
+            return `${label}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+        }
+
+        async function processBarterNpcTurnPayload(payload, fallbackRequestId = null) {
+            if (!payload || !Array.isArray(payload.npcTurns) || !payload.npcTurns.length) {
+                return;
+            }
+            const requestId = payload.requestId || fallbackRequestId || createBarterRequestId('barter_npc_turn');
+            const chatClient = window.AIRPG_CHAT || null;
+            if (chatClient && typeof chatClient.processChatPayload === 'function') {
+                const result = chatClient.processChatPayload(requestId, {
+                    ...payload,
+                    requestId
+                }, { fromStream: false });
+                if (result?.shouldRefreshLocation && typeof chatClient.checkLocationUpdate === 'function') {
+                    await chatClient.checkLocationUpdate();
+                }
+                if (typeof chatClient.refreshChatHistory === 'function') {
+                    await chatClient.refreshChatHistory();
+                }
+                return;
+            }
+            if (chatClient && typeof chatClient.refreshChatHistory === 'function') {
+                await chatClient.refreshChatHistory();
+            }
+        }
+
+        function getBarterHaggleChatEntries(payload) {
+            const entries = Array.isArray(payload?.chatEntries) ? payload.chatEntries : [];
+            return entries.filter(entry => entry?.type === 'barter-haggle');
+        }
+
+        function getBarterOfferCount(offer) {
+            const numeric = Number(offer?.count);
+            return Number.isInteger(numeric) && numeric > 0 ? numeric : 1;
+        }
+
+        function updateBarterActionState() {
+            const hasSelection = barterPlayerCart.size > 0 || barterMerchantCart.size > 0;
+            if (barterCommitBtn) {
+                barterCommitBtn.disabled = barterRequestInFlight || !currentBarterSession?.id || !hasSelection;
+            }
+            if (barterHaggleBtn) {
+                barterHaggleBtn.disabled = barterRequestInFlight || !currentBarterSession?.id;
+            }
+        }
+
+        function renderBarterSummary() {
+            const playerTotal = currentBarterPlayerOffers.reduce((total, offer) => {
+                const count = barterPlayerCart.get(offer.itemId) || 0;
+                return total + (count * (Number(offer.unitPrice) || 0));
+            }, 0);
+            const merchantTotal = currentBarterMerchantOffers.reduce((total, offer) => {
+                const count = barterMerchantCart.get(offer.itemId) || 0;
+                return total + (count * (Number(offer.unitPrice) || 0));
+            }, 0);
+            const netPlayerPays = merchantTotal - playerTotal;
+
+            if (barterCartSummary) {
+                const selectedNames = [];
+                for (const offer of currentBarterPlayerOffers) {
+                    const count = barterPlayerCart.get(offer.itemId);
+                    if (count) {
+                        selectedNames.push(`Sell ${offer.item?.name || 'item'} x${count}`);
+                    }
+                }
+                for (const offer of currentBarterMerchantOffers) {
+                    const count = barterMerchantCart.get(offer.itemId);
+                    if (count) {
+                        selectedNames.push(`Buy ${offer.item?.name || 'item'} x${count}`);
+                    }
+                }
+                barterCartSummary.textContent = selectedNames.length
+                    ? selectedNames.join(' | ')
+                    : 'No trade items selected.';
+            }
+
+            if (barterTotalSummary) {
+                if (netPlayerPays > 0) {
+                    barterTotalSummary.textContent = `Player pays ${formatBarterCurrency(netPlayerPays)}.`;
+                } else if (netPlayerPays < 0) {
+                    barterTotalSummary.textContent = `Merchant pays ${formatBarterCurrency(Math.abs(netPlayerPays))}.`;
+                } else {
+                    barterTotalSummary.textContent = 'Even trade.';
+                }
+            }
+
+            updateBarterActionState();
+        }
+
+        function getBarterCartForSide(side) {
+            return side === 'merchant' ? barterMerchantCart : barterPlayerCart;
+        }
+
+        function getBarterOffersForSide(side) {
+            return side === 'merchant' ? currentBarterMerchantOffers : currentBarterPlayerOffers;
+        }
+
+        function getOppositeBarterSide(side) {
+            return side === 'merchant' ? 'player' : 'merchant';
+        }
+
+        function getBarterOfferById(side, itemId) {
+            const normalizedItemId = typeof itemId === 'string' ? itemId.trim() : '';
+            if (!normalizedItemId) {
+                return null;
+            }
+            return getBarterOffersForSide(side).find(offer => offer?.itemId === normalizedItemId) || null;
+        }
+
+        function isBarterOfferUnavailable(offer, sourceSide) {
+            if (!offer) {
+                return true;
+            }
+            return sourceSide === 'merchant'
+                ? offer.willingToSell === false
+                : offer.willingToBuy === false;
+        }
+
+        function isBarterShowUnavailableEnabled(side) {
+            return side === 'merchant'
+                ? Boolean(barterMerchantShowUnavailable?.checked)
+                : Boolean(barterPlayerShowUnavailable?.checked);
+        }
+
+        function setBarterQuantityStatus(message = '', type = null) {
+            if (!barterQuantityStatus) {
+                return;
+            }
+            barterQuantityStatus.textContent = message || '';
+            barterQuantityStatus.classList.remove('is-error', 'is-success');
+            if (type === 'error') {
+                barterQuantityStatus.classList.add('is-error');
+            } else if (type === 'success') {
+                barterQuantityStatus.classList.add('is-success');
+            }
+        }
+
+        function closeBarterQuantityModal(result = null) {
+            const state = barterQuantityDialogState;
+            barterQuantityDialogState = null;
+            if (barterQuantityModal) {
+                barterQuantityModal.setAttribute('hidden', '');
+                barterQuantityModal.setAttribute('aria-hidden', 'true');
+            }
+            setBarterQuantityStatus('');
+            if (state && typeof state.resolve === 'function') {
+                state.resolve(result);
+            }
+        }
+
+        function requestBarterQuantity({ thing, offer, mode, maxCount, defaultValue }) {
+            if (!barterQuantityModal || !barterQuantityInput || !barterQuantityForm) {
+                throw new Error('Barter quantity modal is unavailable.');
+            }
+            const safeMax = Number.parseInt(maxCount, 10);
+            if (!Number.isInteger(safeMax) || safeMax <= 1) {
+                return Promise.resolve(1);
+            }
+            const safeDefault = Number.parseInt(defaultValue, 10);
+            const initialValue = Number.isInteger(safeDefault) && safeDefault >= 1 && safeDefault <= safeMax
+                ? safeDefault
+                : safeMax;
+            const itemName = thing?.name || offer?.item?.name || 'item';
+            if (barterQuantityTitle) {
+                barterQuantityTitle.textContent = mode === 'remove'
+                    ? 'Remove From Trade'
+                    : 'Add To Trade';
+            }
+            if (barterQuantityMessage) {
+                barterQuantityMessage.textContent = mode === 'remove'
+                    ? `How many ${itemName} should be moved back?`
+                    : `How many ${itemName} should be added to the trade?`;
+            }
+            barterQuantityInput.min = '1';
+            barterQuantityInput.max = String(safeMax);
+            barterQuantityInput.step = '1';
+            barterQuantityInput.value = String(initialValue);
+            setBarterQuantityStatus('');
+            barterQuantityModal.removeAttribute('hidden');
+            barterQuantityModal.setAttribute('aria-hidden', 'false');
+            window.setTimeout(() => {
+                barterQuantityInput.focus();
+                barterQuantityInput.select();
+            }, 30);
+
+            return new Promise(resolve => {
+                barterQuantityDialogState = { resolve, maxCount: safeMax };
+            });
+        }
+
+        function submitBarterQuantityModal() {
+            if (!barterQuantityDialogState || !barterQuantityInput) {
+                return;
+            }
+            const maxCount = barterQuantityDialogState.maxCount;
+            const rawValue = Number.parseInt(barterQuantityInput.value, 10);
+            if (!Number.isInteger(rawValue) || rawValue < 1 || rawValue > maxCount) {
+                setBarterQuantityStatus(`Enter a whole number from 1 to ${maxCount}.`, 'error');
+                barterQuantityInput.focus();
+                return;
+            }
+            closeBarterQuantityModal(rawValue);
+        }
+
+        function setBarterCurrencyConfirmStatus(message = '', type = null) {
+            if (!barterCurrencyConfirmStatus) {
+                return;
+            }
+            barterCurrencyConfirmStatus.textContent = message || '';
+            barterCurrencyConfirmStatus.classList.remove('is-error', 'is-success');
+            if (type === 'error') {
+                barterCurrencyConfirmStatus.classList.add('is-error');
+            } else if (type === 'success') {
+                barterCurrencyConfirmStatus.classList.add('is-success');
+            }
+        }
+
+        function closeBarterCurrencyConfirmModal(result = false) {
+            const state = barterCurrencyConfirmState;
+            barterCurrencyConfirmState = null;
+            if (barterCurrencyConfirmModal) {
+                barterCurrencyConfirmModal.setAttribute('hidden', '');
+                barterCurrencyConfirmModal.setAttribute('aria-hidden', 'true');
+            }
+            setBarterCurrencyConfirmStatus('');
+            if (state && typeof state.resolve === 'function') {
+                state.resolve(Boolean(result));
+            }
+        }
+
+        function requestBarterCurrencyShortfallConfirmation(payload = {}) {
+            if (!barterCurrencyConfirmModal || !barterCurrencyConfirmMessage) {
+                throw new Error('Barter currency confirmation modal is unavailable.');
+            }
+            const merchantName = payload.merchantName || currentBarterNpc?.name || 'The merchant';
+            const available = Number.isFinite(Number(payload.merchantCurrency))
+                ? Number(payload.merchantCurrency)
+                : 0;
+            const owed = Number.isFinite(Number(payload.requiredMerchantPayment))
+                ? Number(payload.requiredMerchantPayment)
+                : 0;
+            const shortfall = Math.max(0, owed - available);
+            barterCurrencyConfirmMessage.textContent = [
+                `${merchantName} does not have enough currency for this trade.`,
+                `They have ${formatBarterCurrency(available)} available, but would owe ${formatBarterCurrency(owed)}.`,
+                `Accept anyway and receive only ${formatBarterCurrency(available)}?`,
+                shortfall > 0 ? `Shortfall: ${formatBarterCurrency(shortfall)}.` : ''
+            ].filter(Boolean).join(' ');
+            setBarterCurrencyConfirmStatus('');
+            barterCurrencyConfirmModal.removeAttribute('hidden');
+            barterCurrencyConfirmModal.setAttribute('aria-hidden', 'false');
+            window.setTimeout(() => barterCurrencyConfirmAcceptBtn?.focus(), 30);
+            return new Promise(resolve => {
+                barterCurrencyConfirmState = { resolve };
+            });
+        }
+
+        function shouldAskForBarterQuantity(maxCount, event = null, { forcePrompt = false } = {}) {
+            if (!Number.isInteger(maxCount) || maxCount <= 1) {
+                return false;
+            }
+            return Boolean(
+                forcePrompt
+                || event?.shiftKey
+                || currentBarterDragState?.shiftKey
+                || isTouchOrCoarsePointerContext()
+            );
+        }
+
+        async function resolveBarterInteractionQuantity({
+            thing,
+            offer,
+            maxCount,
+            mode,
+            event = null,
+            forcePrompt = false
+        } = {}) {
+            const safeMax = Number.parseInt(maxCount, 10);
+            if (!Number.isInteger(safeMax) || safeMax <= 0) {
+                return null;
+            }
+            if (!shouldAskForBarterQuantity(safeMax, event, { forcePrompt })) {
+                return safeMax;
+            }
+            return requestBarterQuantity({
+                thing,
+                offer,
+                mode,
+                maxCount: safeMax,
+                defaultValue: safeMax
+            });
+        }
+
+        function applyBarterCartDelta(sourceSide, itemId, quantity, mode) {
+            const cart = getBarterCartForSide(sourceSide);
+            const normalizedItemId = typeof itemId === 'string' ? itemId.trim() : '';
+            const safeQuantity = Number.parseInt(quantity, 10);
+            if (!normalizedItemId || !Number.isInteger(safeQuantity) || safeQuantity <= 0) {
+                return;
+            }
+            if (mode === 'remove') {
+                const current = cart.get(normalizedItemId) || 0;
+                const next = current - safeQuantity;
+                if (next > 0) {
+                    cart.set(normalizedItemId, next);
+                } else {
+                    cart.delete(normalizedItemId);
+                }
+                return;
+            }
+            cart.set(normalizedItemId, safeQuantity);
+        }
+
+        async function handleBarterOfferInteraction({
+            sourceSide,
+            itemId,
+            pendingCopy = false,
+            action = 'click',
+            event = null
+        } = {}) {
+            if (barterRequestInFlight) {
+                return;
+            }
+            const offer = getBarterOfferById(sourceSide, itemId);
+            if (!offer) {
+                throw new Error('Trade offer is no longer available.');
+            }
+            const cart = getBarterCartForSide(sourceSide);
+            const selectedCount = cart.get(offer.itemId) || 0;
+            const unavailable = isBarterOfferUnavailable(offer, sourceSide);
+            if (unavailable && !pendingCopy && selectedCount <= 0) {
+                return;
+            }
+
+            const shouldRemove = pendingCopy || (action === 'click' && selectedCount > 0);
+            const maxCount = shouldRemove ? selectedCount : getBarterOfferCount(offer);
+            const quantity = await resolveBarterInteractionQuantity({
+                thing: offer.item,
+                offer,
+                maxCount,
+                mode: shouldRemove ? 'remove' : 'add',
+                event
+            });
+            if (quantity === null || quantity === undefined) {
+                return;
+            }
+            applyBarterCartDelta(sourceSide, offer.itemId, quantity, shouldRemove ? 'remove' : 'add');
+            renderBarterModal();
+        }
+
+        function appendBarterValueBadge(icon, offer) {
+            if (!(icon instanceof HTMLElement) || !offer) {
+                return;
+            }
+            const price = Number(offer.unitPrice) || 0;
+            const title = formatBarterCurrency(price);
+            icon.dataset.barterValueBadgeText = formatBarterValueBadge(price);
+            icon.dataset.barterValueBadgeTitle = title;
+            icon.dataset.barterValueBadgeAriaLabel = `Trade value ${title}`;
+            renderBarterValueBadgeOverlay(icon);
+        }
+
+        function buildBarterDisplayItem(offer, {
+            sourceSide,
+            displaySide,
+            pendingCopy = false,
+            selectedCount = 0
+        } = {}) {
+            return {
+                ...(offer.item || {}),
+                id: offer.itemId,
+                count: pendingCopy ? selectedCount : getBarterOfferCount(offer),
+                barterOffer: offer,
+                barterSourceSide: sourceSide,
+                barterDisplaySide: displaySide,
+                barterIsPendingCopy: Boolean(pendingCopy),
+                barterSelectedCount: selectedCount,
+                barterUnavailable: isBarterOfferUnavailable(offer, sourceSide)
+            };
+        }
+
+        function isValidBarterDropTarget(dragState, targetSide) {
+            if (!dragState || (targetSide !== 'player' && targetSide !== 'merchant')) {
+                return false;
+            }
+            return dragState.pendingCopy
+                ? targetSide === dragState.sourceSide
+                : targetSide !== dragState.sourceSide;
+        }
+
+        async function handleBarterDrop(targetSide, event = null) {
+            const dragState = currentBarterDragState;
+            if (!isValidBarterDropTarget(dragState, targetSide)) {
+                return;
+            }
+            await handleBarterOfferInteraction({
+                sourceSide: dragState.sourceSide,
+                itemId: dragState.itemId,
+                pendingCopy: dragState.pendingCopy,
+                action: 'drag',
+                event
+            });
+        }
+
+        function resolveBarterDragStateFromDropEvent(event) {
+            if (currentBarterDragState) {
+                return currentBarterDragState;
+            }
+            const dataTransfer = event?.dataTransfer || null;
+            const sourceSide = dataTransfer?.getData('application/x-ai-rpg-barter-source') || '';
+            const itemId = dataTransfer?.getData('application/x-ai-rpg-thing-id')
+                || dataTransfer?.getData('text/plain')
+                || '';
+            if (!sourceSide || !itemId) {
+                return null;
+            }
+            return {
+                sourceSide,
+                itemId,
+                pendingCopy: dataTransfer?.getData('application/x-ai-rpg-barter-pending-copy') === 'true',
+                shiftKey: dataTransfer?.getData('application/x-ai-rpg-barter-shift') === 'true'
+            };
+        }
+
+        function bindBarterDropzone(grid, targetSide) {
+            if (!(grid instanceof HTMLElement) || grid.dataset.barterDropzoneBound === 'true') {
+                return;
+            }
+            grid.dataset.barterDropzoneBound = 'true';
+            grid.addEventListener('dragover', (event) => {
+                const dragState = currentBarterDragState || resolveBarterDragStateFromDropEvent(event);
+                if (!isValidBarterDropTarget(dragState, targetSide)) {
+                    return;
+                }
+                event.preventDefault();
+                if (event.dataTransfer) {
+                    event.dataTransfer.dropEffect = 'move';
+                }
+                grid.classList.add('is-drag-over');
+            });
+            grid.addEventListener('dragleave', (event) => {
+                if (!grid.contains(event.relatedTarget)) {
+                    grid.classList.remove('is-drag-over');
+                }
+            });
+            grid.addEventListener('drop', async (event) => {
+                const resolvedDragState = resolveBarterDragStateFromDropEvent(event);
+                clearBarterDropHighlights();
+                if (!isValidBarterDropTarget(resolvedDragState, targetSide)) {
+                    currentBarterDragState = null;
+                    return;
+                }
+                event.preventDefault();
+                currentBarterDragState = resolvedDragState;
+                try {
+                    await handleBarterDrop(targetSide, event);
+                } catch (error) {
+                    console.warn('Failed to update dropped barter item:', error);
+                    setBarterStatus(error?.message || 'Failed to update trade selection.', 'error');
+                } finally {
+                    currentBarterDragState = null;
+                    clearBarterDropHighlights();
+                }
+            });
+        }
+
+        function decorateBarterOfferCard({ card, icon, thing, offer, side }) {
+            if (!(card instanceof HTMLElement) || !offer || !thing?.id) {
+                return;
+            }
+            const sourceSide = thing.barterSourceSide || side;
+            const pendingCopy = Boolean(thing.barterIsPendingCopy);
+            const cart = getBarterCartForSide(sourceSide);
+            const selected = cart.has(offer.itemId);
+            const unavailable = Boolean(thing.barterUnavailable);
+            card.classList.add('barter-offer-card', 'thing-container-modal__draggable-item');
+            card.classList.toggle('is-origin-pending', selected && !pendingCopy);
+            card.classList.toggle('is-pending-copy', pendingCopy);
+            card.classList.toggle('is-unavailable', unavailable);
+            card.dataset.barterSourceSide = sourceSide;
+            card.dataset.barterDisplaySide = side;
+            card.dataset.barterPendingCopy = pendingCopy ? 'true' : 'false';
+            card.title = offer.reason || '';
+
+            appendBarterValueBadge(icon, offer);
+
+            const canInteract = pendingCopy || !unavailable;
+            card.draggable = canInteract;
+            if (canInteract) {
+                card.addEventListener('dragstart', (event) => {
+                    if (!event.dataTransfer) {
+                        return;
+                    }
+                    currentBarterDragState = {
+                        sourceSide,
+                        itemId: offer.itemId,
+                        pendingCopy,
+                        shiftKey: Boolean(event.shiftKey)
+                    };
+                    event.dataTransfer.effectAllowed = 'move';
+                    event.dataTransfer.setData('application/x-ai-rpg-barter-source', sourceSide);
+                    event.dataTransfer.setData('application/x-ai-rpg-barter-pending-copy', pendingCopy ? 'true' : 'false');
+                    event.dataTransfer.setData('application/x-ai-rpg-barter-shift', event.shiftKey ? 'true' : 'false');
+                    event.dataTransfer.setData('application/x-ai-rpg-thing-id', offer.itemId);
+                    event.dataTransfer.setData('text/plain', offer.itemId);
+                });
+                card.addEventListener('dragend', () => {
+                    currentBarterDragState = null;
+                    clearBarterDropHighlights();
+                });
+                wireModalInventoryTouchDrag(card, {
+                    thing,
+                    modal: barterModal,
+                    context: 'barter',
+                    onTouchDragStart: () => {
+                        currentBarterDragState = {
+                            sourceSide,
+                            itemId: offer.itemId,
+                            pendingCopy,
+                            shiftKey: false
+                        };
+                    },
+                    onTouchDragMove: (state) => {
+                        const targetElement = document.elementFromPoint(state.currentX, state.currentY);
+                        const targetGrid = targetElement?.closest?.('#barterPlayerGrid, #barterMerchantGrid') || null;
+                        const targetSide = targetGrid === barterMerchantGrid ? 'merchant' : (targetGrid === barterPlayerGrid ? 'player' : '');
+                        barterPlayerGrid?.classList.toggle('is-drag-over', targetSide === 'player' && isValidBarterDropTarget(currentBarterDragState, targetSide));
+                        barterMerchantGrid?.classList.toggle('is-drag-over', targetSide === 'merchant' && isValidBarterDropTarget(currentBarterDragState, targetSide));
+                    },
+                    onTouchDrop: async (state) => {
+                        const targetElement = document.elementFromPoint(state.currentX, state.currentY);
+                        const targetGrid = targetElement?.closest?.('#barterPlayerGrid, #barterMerchantGrid') || null;
+                        const targetSide = targetGrid === barterMerchantGrid ? 'merchant' : (targetGrid === barterPlayerGrid ? 'player' : '');
+                        clearBarterDropHighlights();
+                        if (isValidBarterDropTarget(currentBarterDragState, targetSide)) {
+                            await handleBarterDrop(targetSide, null);
+                        }
+                        currentBarterDragState = null;
+                        return true;
+                    }
+                });
+                card.addEventListener('click', async (event) => {
+                    if (event.target?.closest?.('.entity-context-menu-button, .thing-card-menu-button, button, a, input, select, textarea')) {
+                        return;
+                    }
+                    event.preventDefault();
+                    event.stopPropagation();
+                    event.stopImmediatePropagation();
+                    try {
+                        await handleBarterOfferInteraction({
+                            sourceSide,
+                            itemId: offer.itemId,
+                            pendingCopy,
+                            action: 'click',
+                            event
+                        });
+                    } catch (error) {
+                        console.warn('Failed to update barter selection:', error);
+                        setBarterStatus(error?.message || 'Failed to update trade selection.', 'error');
+                    }
+                }, true);
+            }
+        }
+
+        function renderBarterOfferPanel(side) {
+            const isPlayerSide = side === 'player';
+            const offers = isPlayerSide ? currentBarterPlayerOffers : currentBarterMerchantOffers;
+            const grid = isPlayerSide ? barterPlayerGrid : barterMerchantGrid;
+            const empty = isPlayerSide ? barterPlayerEmpty : barterMerchantEmpty;
+            const countEl = isPlayerSide ? barterPlayerCount : barterMerchantCount;
+            const searchInput = isPlayerSide ? barterPlayerFilterInput : barterMerchantFilterInput;
+            const viewShell = isPlayerSide ? barterPlayerView : barterMerchantView;
+            const sortShell = isPlayerSide ? barterPlayerSort : barterMerchantSort;
+            const slotFilter = isPlayerSide ? barterPlayerSlotFilter : barterMerchantSlotFilter;
+            const slotFilterWrapper = isPlayerSide ? barterPlayerSlotFilterWrapper : barterMerchantSlotFilterWrapper;
+            const panelKey = isPlayerSide ? 'barterPlayerInventory' : 'barterMerchantInventory';
+            const visibleOwnOffers = offers.filter(offer => (
+                isBarterShowUnavailableEnabled(side)
+                || !isBarterOfferUnavailable(offer, side)
+                || getBarterCartForSide(side).has(offer.itemId)
+            ));
+            const items = visibleOwnOffers.map(offer => buildBarterDisplayItem(offer, {
+                sourceSide: side,
+                displaySide: side,
+                selectedCount: getBarterCartForSide(side).get(offer.itemId) || 0
+            }));
+            const oppositeSide = getOppositeBarterSide(side);
+            for (const offer of getBarterOffersForSide(oppositeSide)) {
+                const selectedCount = getBarterCartForSide(oppositeSide).get(offer.itemId) || 0;
+                if (selectedCount <= 0) {
+                    continue;
+                }
+                items.push(buildBarterDisplayItem(offer, {
+                    sourceSide: oppositeSide,
+                    displaySide: side,
+                    pendingCopy: true,
+                    selectedCount
+                }));
+            }
+            renderThingCollectionPanel({
+                items,
+                panelKey,
+                grid,
+                empty,
+                countEl,
+                searchInput,
+                viewShell,
+                sortShell,
+                slotFilter,
+                slotFilterWrapper,
+                emptyMessage: isPlayerSide ? 'No player items available.' : 'No merchant stock available.',
+                filteredEmptyMessage: 'No items match your filters.',
+                singularLabel: 'item',
+                pluralLabel: 'items',
+                enableEquipmentFilters: true,
+                tableConfig: {
+                    showHeaders: true,
+                    showLevel: true,
+                    showValue: false,
+                    showEquipment: false
+                },
+                buildCard: (item, { viewMode, tableConfig } = {}) => buildThingCollectionEntry(item, {
+                    viewMode,
+                    tableConfig,
+                    tooltipOptions: {
+                        equipmentOwner: () => isPlayerSide ? (window.currentPlayerData || null) : (currentBarterNpc || null)
+                    },
+                    decorateCard: ({ card, icon, thing }) => decorateBarterOfferCard({
+                        card,
+                        icon,
+                        thing,
+                        offer: item.barterOffer,
+                        side
+                    })
+                })
+            });
+        }
+
+        function renderBarterModal() {
+            if (!barterModal) {
+                return;
+            }
+            const merchantName = currentBarterNpc?.name || 'Merchant';
+            if (barterModalTitle) {
+                barterModalTitle.textContent = `Trade with ${merchantName}`;
+            }
+            if (barterMerchantName) {
+                barterMerchantName.textContent = `${merchantName} Stock`;
+            }
+            if (barterCurrencySummary) {
+                const playerCurrency = Number(currentBarterPlayer?.currency ?? window.currentPlayerData?.currency ?? 0);
+                const npcCurrency = Number(currentBarterNpc?.currency ?? 0);
+                barterCurrencySummary.textContent = `Player: ${formatBarterCurrency(playerCurrency)} | ${merchantName}: ${formatBarterCurrency(npcCurrency)}`;
+            }
+            if (barterHaggleHistory) {
+                barterHaggleHistory.innerHTML = '';
+                const history = Array.isArray(currentBarterSession?.haggleHistory)
+                    ? currentBarterSession.haggleHistory
+                    : [];
+                if (!history.length) {
+                    barterHaggleHistory.textContent = 'No haggling yet.';
+                } else {
+                    history.forEach(entry => {
+                        const line = document.createElement('div');
+                        line.className = 'barter-modal__haggle-entry';
+                        const speaker = document.createElement('div');
+                        speaker.className = 'barter-modal__haggle-speaker';
+                        speaker.textContent = entry.speaker || 'Unknown';
+                        const text = document.createElement('div');
+                        text.className = 'barter-modal__haggle-text';
+                        text.textContent = entry.text || '';
+                        line.appendChild(speaker);
+                        line.appendChild(text);
+                        barterHaggleHistory.appendChild(line);
+                    });
+                }
+            }
+            renderBarterOfferPanel('player');
+            renderBarterOfferPanel('merchant');
+            renderBarterSummary();
+            barterModal.removeAttribute('aria-busy');
+        }
+
+        function applyBarterPayload(payload = {}) {
+            if (!payload?.success || !payload.session) {
+                throw new Error(payload?.error || 'Trade session response was invalid.');
+            }
+            currentBarterSession = payload.session;
+            currentBarterNpc = payload.npc || currentBarterNpc;
+            currentBarterPlayer = payload.player || window.currentPlayerData || null;
+            currentBarterNpcId = currentBarterNpc?.id || currentBarterSession.npcId || currentBarterNpcId;
+            currentBarterPlayerOffers = Array.isArray(currentBarterSession.playerOffers) ? currentBarterSession.playerOffers : [];
+            currentBarterMerchantOffers = Array.isArray(currentBarterSession.merchantOffers) ? currentBarterSession.merchantOffers : [];
+            barterCurrencyName = payload.currencyName || barterCurrencyName;
+            barterCurrencyNamePlural = payload.currencyNamePlural || barterCurrencyNamePlural;
+            if (payload.player) {
+                window.currentPlayerData = cloneActorRecord(payload.player) || { ...payload.player };
+                updateChatPlayerPanel(window.currentPlayerData);
+            }
+            if (payload.npc?.id && window.currentNpcData instanceof Map) {
+                window.currentNpcData.set(payload.npc.id, cloneActorRecord(payload.npc) || { ...payload.npc });
+            }
+            renderBarterModal();
+        }
+
+        async function openBarterModal(npc) {
+            if (!barterModal || !npcModalBackdrop || !npc?.id) {
+                return;
+            }
+            try {
+                window.floatingTooltipController?.hide?.();
+            } catch (_) {}
+            currentBarterNpcId = npc.id;
+            currentBarterNpc = cloneActorRecord(npc) || { ...npc };
+            currentBarterPlayer = window.currentPlayerData || null;
+            currentBarterSession = null;
+            currentBarterPlayerOffers = [];
+            currentBarterMerchantOffers = [];
+            barterPlayerCart = new Map();
+            barterMerchantCart = new Map();
+            setBarterStatus('Loading trade prices...');
+            barterModal.removeAttribute('hidden');
+            barterModal.setAttribute('aria-hidden', 'false');
+            barterModal.setAttribute('aria-busy', 'true');
+            npcModalBackdrop.removeAttribute('hidden');
+            document.body.classList.add('modal-open');
+            scrollModalToTop(barterModal);
+
+            const response = await fetch(`/api/npcs/${encodeURIComponent(npc.id)}/trade/session`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({})
+            });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || !payload?.success) {
+                throw new Error(payload?.error || `Request failed with status ${response.status}`);
+            }
+            setBarterStatus('');
+            applyBarterPayload(payload);
+        }
+
+        function shouldConcludeBarterSessionOnClose() {
+            return Boolean(
+                currentBarterNpcId
+                && currentBarterSession?.id
+                && Array.isArray(currentBarterSession.haggleHistory)
+                && currentBarterSession.haggleHistory.length > 0
+            );
+        }
+
+        async function concludeBarterSession({ npcId, sessionId, requestId } = {}) {
+            if (!npcId || !sessionId) {
+                return;
+            }
+            const response = await fetch(`/api/npcs/${encodeURIComponent(npcId)}/trade/conclude`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    sessionId,
+                    clientId: window.AIRPG_CLIENT_ID || null,
+                    requestId: requestId || createBarterRequestId('barter_conclude')
+                })
+            });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || !payload?.success) {
+                throw new Error(payload?.error || `Request failed with status ${response.status}`);
+            }
+            await processBarterNpcTurnPayload(payload, payload.requestId || requestId || null);
+        }
+
+        function closeBarterModal({ conclude = true } = {}) {
+            if (!barterModal || !npcModalBackdrop) {
+                return;
+            }
+            const concludeOnClose = conclude && shouldConcludeBarterSessionOnClose();
+            const concludeNpcId = currentBarterNpcId;
+            const concludeSessionId = currentBarterSession?.id || null;
+            const concludeRequestId = concludeOnClose ? createBarterRequestId('barter_conclude') : null;
+            barterModal.setAttribute('hidden', '');
+            barterModal.setAttribute('aria-hidden', 'true');
+            barterModal.removeAttribute('aria-busy');
+            currentBarterNpcId = null;
+            currentBarterSession = null;
+            currentBarterNpc = null;
+            currentBarterPlayer = null;
+            currentBarterPlayerOffers = [];
+            currentBarterMerchantOffers = [];
+            barterPlayerCart = new Map();
+            barterMerchantCart = new Map();
+            closeBarterQuantityModal(null);
+            closeBarterCurrencyConfirmModal(false);
+            currentBarterDragState = null;
+            clearBarterDropHighlights();
+            setBarterStatus('');
+            closeThingListFilterPopoverForPanel(barterPlayerPanel);
+            closeThingListFilterPopoverForPanel(barterMerchantPanel);
+            closeThingListSortPopoverForPanel(barterPlayerPanel);
+            closeThingListSortPopoverForPanel(barterMerchantPanel);
+            closeThingListViewPopoverForPanel(barterPlayerPanel);
+            closeThingListViewPopoverForPanel(barterMerchantPanel);
+            hideNpcBackdropIfNoSharedModalOpen();
+            if (concludeOnClose) {
+                concludeBarterSession({
+                    npcId: concludeNpcId,
+                    sessionId: concludeSessionId,
+                    requestId: concludeRequestId
+                }).catch(error => {
+                    console.warn('Failed to conclude barter session:', error);
+                    window.AIRPG_CHAT?.addMessage?.('system', `Trade conclusion failed: ${error?.message || error}`, true);
+                });
+            }
+        }
+
+        async function submitBarterTransaction() {
+            if (!currentBarterNpcId || !currentBarterSession?.id || barterRequestInFlight) {
+                return;
+            }
+            const requestId = createBarterRequestId('barter_commit');
+            const buildCommitBody = (acceptMerchantCurrencyShortfall = false) => ({
+                sessionId: currentBarterSession.id,
+                playerItems: Array.from(barterPlayerCart.entries()).map(([itemId, count]) => ({ itemId, count })),
+                merchantItems: Array.from(barterMerchantCart.entries()).map(([itemId, count]) => ({ itemId, count })),
+                acceptMerchantCurrencyShortfall,
+                clientId: window.AIRPG_CLIENT_ID || null,
+                requestId
+            });
+            const sendCommit = async (acceptMerchantCurrencyShortfall = false) => {
+                const response = await fetch(`/api/npcs/${encodeURIComponent(currentBarterNpcId)}/trade/commit`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(buildCommitBody(acceptMerchantCurrencyShortfall))
+                });
+                const payload = await response.json().catch(() => ({}));
+                return { response, payload };
+            };
+            barterRequestInFlight = true;
+            updateBarterActionState();
+            try {
+                let { response, payload } = await sendCommit(false);
+                if (
+                    response.status === 409
+                    && payload?.reason === 'merchant-insufficient-currency'
+                ) {
+                    const accepted = await requestBarterCurrencyShortfallConfirmation(payload);
+                    if (!accepted) {
+                        setBarterStatus('Trade canceled.', null);
+                        return;
+                    }
+                    ({ response, payload } = await sendCommit(true));
+                }
+                if (!response.ok || !payload?.success) {
+                    throw new Error(payload?.error || `Request failed with status ${response.status}`);
+                }
+                if (payload.player) {
+                    window.currentPlayerData = cloneActorRecord(payload.player) || { ...payload.player };
+                    updateChatPlayerPanel(window.currentPlayerData);
+                }
+                if (payload.npc?.id && window.currentNpcData instanceof Map) {
+                    window.currentNpcData.set(payload.npc.id, cloneActorRecord(payload.npc) || { ...payload.npc });
+                }
+                setBarterStatus(payload.message || 'Trade completed.', 'success');
+                closeBarterModal({ conclude: false });
+                await window.AIRPG_CHAT?.refreshChatHistory?.();
+                await processBarterNpcTurnPayload(payload, requestId);
+                try {
+                    await window.loadCurrentLocation?.();
+                    await window.refreshParty?.();
+                } catch (_) {}
+            } catch (error) {
+                console.warn('Failed to complete trade:', error);
+                setBarterStatus(error?.message || 'Failed to complete trade.', 'error');
+            } finally {
+                barterRequestInFlight = false;
+                updateBarterActionState();
+            }
+        }
+
+        async function submitBarterHaggle() {
+            if (!currentBarterNpcId || !currentBarterSession?.id || barterRequestInFlight) {
+                return;
+            }
+            const offer = (barterHaggleInput?.value || '').trim();
+            if (!offer) {
+                setBarterStatus('Enter an offer or argument first.', 'error');
+                return;
+            }
+            barterRequestInFlight = true;
+            const requestId = createBarterRequestId('barter_haggle');
+            updateBarterActionState();
+            setBarterStatus('Haggling...');
+            try {
+                const response = await fetch(`/api/npcs/${encodeURIComponent(currentBarterNpcId)}/trade/haggle`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        sessionId: currentBarterSession.id,
+                        offer,
+                        clientId: window.AIRPG_CLIENT_ID || null,
+                        requestId
+                    })
+                });
+                const payload = await response.json().catch(() => ({}));
+                if (!response.ok || !payload?.success) {
+                    throw new Error(payload?.error || `Request failed with status ${response.status}`);
+                }
+                appendBarterChatEntries(getBarterHaggleChatEntries(payload));
+                if (payload.refused) {
+                    currentBarterSession = null;
+                    setBarterStatus(payload.response || 'The merchant refuses to continue trading.', 'error');
+                    if (payload.npc?.id && window.currentNpcData instanceof Map) {
+                        window.currentNpcData.set(payload.npc.id, cloneActorRecord(payload.npc) || { ...payload.npc });
+                    }
+                    await processBarterNpcTurnPayload(payload, requestId);
+                    await window.loadCurrentLocation?.();
+                    updateBarterActionState();
+                    return;
+                }
+                barterPlayerCart = new Map();
+                barterMerchantCart = new Map();
+                if (barterHaggleInput) {
+                    barterHaggleInput.value = '';
+                }
+                setBarterStatus(payload.response || 'Prices updated.', 'success');
+                applyBarterPayload(payload);
+            } catch (error) {
+                console.warn('Failed to haggle:', error);
+                setBarterStatus(error?.message || 'Failed to haggle.', 'error');
+            } finally {
+                barterRequestInFlight = false;
+                updateBarterActionState();
+            }
+        }
+
+        function canShowNpcTradeButton(npc) {
+            return Boolean(
+                npc
+                && npc.id
+                && npc.isNPC
+                && !npc.isPlayer
+                && !npc.isDead
+                && !npc.isHostileToPlayer
+            );
+        }
+
+        function registerNpcTradeButton(card, npc) {
+            if (!(card instanceof HTMLElement) || !npc?.id) {
+                return;
+            }
+            const existing = card.querySelector('.npc-trade-button');
+            existing?.remove();
+            if (!canShowNpcTradeButton(npc)) {
+                return;
+            }
+            const host = card.querySelector('.entity-icon')
+                || card.querySelector('.party-portrait')
+                || card;
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'npc-trade-button';
+            button.textContent = '⚖︎';
+            button.setAttribute('aria-label', `Trade with ${npc.name || 'NPC'}`);
+            button.title = npc.willingToTrade === false ? 'Not willing to trade right now' : 'Trade';
+            if (npc.willingToTrade === false) {
+                button.disabled = true;
+                button.classList.add('is-disabled');
+            }
+            button.addEventListener('click', async (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                if (button.disabled) {
+                    return;
+                }
+                button.disabled = true;
+                try {
+                    await openBarterModal(npc);
+                } catch (error) {
+                    console.warn('Failed to open trade:', error);
+                    alert(error?.message || 'Failed to open trade.');
+                    closeBarterModal();
+                } finally {
+                    if (button.isConnected && npc.willingToTrade !== false) {
+                        button.disabled = false;
+                    }
+                }
+            });
+            host.appendChild(button);
+        }
+
+        window.openBarterModal = openBarterModal;
+        window.registerNpcTradeButton = registerNpcTradeButton;
+
         function isSharedNpcBackdropModalHidden(modal) {
             return !modal || modal.hasAttribute('hidden');
         }
@@ -18097,6 +19569,9 @@
                 npcEditModal,
                 thingEditModal,
                 thingContainerModal,
+                barterModal,
+                barterQuantityModal,
+                barterCurrencyConfirmModal,
                 npcDispositionModal,
                 npcNeedsModal,
                 npcMemoriesModal,
@@ -27770,6 +29245,9 @@
                                     if (typeof registerNpcContextMenu === 'function') {
                                         registerNpcContextMenu(card, npc);
                                     }
+                                    if (typeof registerNpcTradeButton === 'function') {
+                                        registerNpcTradeButton(card, npc);
+                                    }
                                     triggerHealthChangeEffect(portrait, previous, npc);
                                     npcDataCache.set(npc.id, cloneActorRecord(npc) || { ...npc });
                                     if (typeof window.registerInventoryDropTarget === 'function') {
@@ -29941,6 +31419,9 @@
                     );
 
                     applyNpcDeathStyling(card, portrait, member);
+                    if (typeof registerNpcTradeButton === 'function') {
+                        registerNpcTradeButton(card, member);
+                    }
 
                     const name = document.createElement('div');
                     name.className = 'party-name';
