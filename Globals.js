@@ -4,6 +4,7 @@ class Globals {
   static baseDir;
   static gameLoaded = false;
   static _processedMove = false;
+  static _playerArrivalVisitStates = new Map();
   static inCombat = false;
   static #currentPlayerOverride = null;
   static realtimeHub = null;
@@ -952,6 +953,39 @@ class Globals {
   static get processedMove() {
     //console.log(`Globals.processedMove accessed, value is ${Globals._processedMove}`);
     return Globals._processedMove;
+  }
+
+  static clearPlayerArrivalVisitStates() {
+    Globals._playerArrivalVisitStates = new Map();
+  }
+
+  static recordPlayerArrivalVisitState(locationOrId, wasVisited = undefined) {
+    const locationId = typeof locationOrId === 'string'
+      ? locationOrId.trim()
+      : (typeof locationOrId?.id === 'string' ? locationOrId.id.trim() : '');
+    if (!locationId) {
+      throw new Error('recordPlayerArrivalVisitState requires a location id or Location object.');
+    }
+
+    const resolvedWasVisited = wasVisited === undefined
+      ? Boolean(locationOrId && typeof locationOrId === 'object' && locationOrId.visited)
+      : Boolean(wasVisited);
+    if (!Globals._playerArrivalVisitStates.has(locationId)) {
+      Globals._playerArrivalVisitStates.set(locationId, resolvedWasVisited);
+    }
+    return Globals._playerArrivalVisitStates.get(locationId);
+  }
+
+  static getPlayerArrivalWasVisitedBeforeMove(locationOrId) {
+    const locationId = typeof locationOrId === 'string'
+      ? locationOrId.trim()
+      : (typeof locationOrId?.id === 'string' ? locationOrId.id.trim() : '');
+    if (!locationId) {
+      return undefined;
+    }
+    return Globals._playerArrivalVisitStates.has(locationId)
+      ? Globals._playerArrivalVisitStates.get(locationId)
+      : undefined;
   }
 
   static setInCombat(value) {

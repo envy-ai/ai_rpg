@@ -589,6 +589,43 @@ test('runWhileYouWereAwayPrompt applies absolute need values, moves NPCs, and re
     assert.match(pushedEntries[1].content, /Mira waves you over and quickly fills you in before returning to the inn\./);
 });
 
+test('runWhileYouWereAwayPrompt skips unvisited arrival locations before rendering prompt', async () => {
+    const newRoom = createLocation({ id: 'new-room', name: 'New Room', regionId: 'alpha' });
+    const regions = new Map([
+        ['alpha', { id: 'alpha', name: 'Alpha', locationIds: ['new-room'], entranceLocationId: 'new-room' }]
+    ]);
+    const gameLocations = new Map([[newRoom.id, newRoom]]);
+    let prepared = false;
+    const { runWhileYouWereAwayPrompt, pushedEntries } = loadWhileYouWereAwayHelpers({
+        currentPlayer: {
+            id: 'player',
+            name: 'Baato',
+            currentLocation: 'new-room'
+        },
+        gameLocations,
+        regions,
+        prepareBasePromptContext: async () => {
+            prepared = true;
+            throw new Error('Prompt context should not be prepared for unvisited arrivals.');
+        }
+    });
+
+    const result = await runWhileYouWereAwayPrompt({
+        locationOverride: newRoom,
+        locationId: newRoom.id,
+        locationWasVisitedBeforeArrival: false,
+        returnEntries: true
+    });
+
+    assert.equal(prepared, false);
+    assert.equal(pushedEntries.length, 0);
+    assert.equal(result.hiddenEntry, null);
+    assert.equal(result.visibleEntry, null);
+    assert.equal(result.eventResult, null);
+    assert.equal(result.skipped, true);
+    assert.equal(result.skipReason, 'unvisited_location');
+});
+
 test('runWhileYouWereAwayPrompt runs scoped event checks while ignoring handled need bars and arrivals', async () => {
     const square = createLocation({ id: 'square', name: 'Town Square', regionId: 'alpha', npcIds: ['mira'] });
     const regions = new Map([

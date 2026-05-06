@@ -1215,6 +1215,9 @@ async function movePlayerToDestination(
         label,
     });
 
+    if (!player.isNPC && typeof Globals.recordPlayerArrivalVisitState === "function") {
+        Globals.recordPlayerArrivalVisitState(destinationObject);
+    }
     player.setLocation(destinationObject.id);
     // setLocation may refuse unresolved ids; treat that as move failure so we do not emit
     // downstream "move happened" effects for a move that never actually applied.

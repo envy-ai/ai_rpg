@@ -8,6 +8,7 @@ Centralized static state and helpers used across the server. Provides access to 
 - `currentSaveVersion`, `saveFileSaveVersion`.
 - `sceneSummaries`, `saveMetadata`, `currentSaveInfo`.
 - `travelHistory`, `slopWords`, `slopTrigrams`.
+- `_playerArrivalVisitStates` (transient per-request map of player movement destination ids to their pre-arrival `visited` state).
 - `worldTime`, `calendarDefinition`.
 - `#currentPlayerOverride` (private override for `currentPlayer`).
 
@@ -20,6 +21,7 @@ Centralized static state and helpers used across the server. Provides access to 
 - `getSceneSummaries()`: throws if not initialized.
 - `get currentPlayer()` / `set currentPlayer(player)`: resolves through `Player` unless overridden.
 - `set processedMove(value)` / `get processedMove()`.
+- `clearPlayerArrivalVisitStates()`, `recordPlayerArrivalVisitState(locationOrId, wasVisited?)`, `getPlayerArrivalWasVisitedBeforeMove(locationOrId)`: transient helpers used by player-movement paths to preserve whether an arrival destination was already visited before `Player.setLocation(...)` marks it visited.
 - `setInCombat(value)` / `isInCombat()`.
 - `get location()` / `get region()` / `get elapsedTime()` / `set elapsedTime(value)`.
 - Time/calendar:
@@ -48,6 +50,7 @@ Centralized static state and helpers used across the server. Provides access to 
 ## Notes
 - Many getters warn if `Globals.config` is missing to avoid silent failures.
 - `currentPlayer` setter also installs a resolver in `Player` when available.
+- Player-arrival visit-state helpers are runtime-only and are cleared at the start of player chat/direct-move/teleport flows. They let while-you-were-away logic skip first-time arrivals even though `Player.setLocation(...)` stamps the destination as visited before the arrival prompt would otherwise run.
 - Canonical world time is minute-based: `worldTime = { dayIndex, timeMinutes }`.
 - World-time init/context helpers now use an internal non-recursive path (`skipEnsure`)
   so `ensureWorldTimeInitialized()` can safely return full time context.

@@ -3822,7 +3822,8 @@ module.exports = function registerApiRoutes(scope) {
             entryCollector = null,
             parentEntryId = null,
             returnEntries = false,
-            stream = null
+            stream = null,
+            locationWasVisitedBeforeArrival = undefined
         } = {}) {
             const resolvedLocation = locationOverride
                 || (typeof currentPlayer?.currentLocation === 'string' && currentPlayer.currentLocation.trim()
@@ -3830,6 +3831,27 @@ module.exports = function registerApiRoutes(scope) {
                     : null);
             if (!resolvedLocation) {
                 throw new Error('While-you-were-away prompt requires a resolved current location.');
+            }
+
+            const resolvedLocationIdForVisitCheck = typeof resolvedLocation.id === 'string'
+                ? resolvedLocation.id.trim()
+                : (typeof locationId === 'string' ? locationId.trim() : '');
+            let resolvedWasVisitedBeforeArrival = locationWasVisitedBeforeArrival;
+            if (resolvedWasVisitedBeforeArrival === undefined
+                && resolvedLocationIdForVisitCheck
+                && typeof Globals?.getPlayerArrivalWasVisitedBeforeMove === 'function') {
+                resolvedWasVisitedBeforeArrival = Globals.getPlayerArrivalWasVisitedBeforeMove(resolvedLocationIdForVisitCheck);
+            }
+            if (resolvedWasVisitedBeforeArrival === false) {
+                return returnEntries
+                    ? {
+                        hiddenEntry: null,
+                        visibleEntry: null,
+                        eventResult: null,
+                        skipped: true,
+                        skipReason: 'unvisited_location'
+                    }
+                    : null;
             }
 
             const baseContext = await prepareBasePromptContext({ locationOverride: resolvedLocation });
@@ -11337,6 +11359,9 @@ module.exports = function registerApiRoutes(scope) {
                     }
 
                     if (!suppressPlayerMove && currentPlayer && currentPlayer.currentLocation !== destinationLocation.id) {
+                        if (typeof Globals.recordPlayerArrivalVisitState === 'function') {
+                            Globals.recordPlayerArrivalVisitState(destinationLocation);
+                        }
                         currentPlayer.setLocation(destinationLocation);
                         location = destinationLocation;
                         playerMoved = true;
@@ -16966,6 +16991,9 @@ module.exports = function registerApiRoutes(scope) {
             Globals.currentPlayer = currentPlayer;
             let corpseProcessingRan = false;
             Globals.processedMove = false;
+            if (typeof Globals.clearPlayerArrivalVisitStates === 'function') {
+                Globals.clearPlayerArrivalVisitStates();
+            }
             let currentUserMessage = null;
             let currentTurnLog = [];
             let releasePlayerMoveLock = null;
@@ -17385,12 +17413,16 @@ module.exports = function registerApiRoutes(scope) {
 
                 whileYouWereAwayProcessed = true;
                 location = arrivalLocation;
+                const locationWasVisitedBeforeArrival = typeof Globals.getPlayerArrivalWasVisitedBeforeMove === 'function'
+                    ? Globals.getPlayerArrivalWasVisitedBeforeMove(arrivalLocation.id)
+                    : undefined;
                 return runWhileYouWereAwayPrompt({
                     locationOverride: arrivalLocation,
                     locationId: arrivalLocation.id,
                     entryCollector: newChatEntries,
                     parentEntryId,
-                    stream
+                    stream,
+                    locationWasVisitedBeforeArrival
                 });
             };
 
@@ -19538,6 +19570,9 @@ module.exports = function registerApiRoutes(scope) {
                                         traveledToLocationId = resolvedLocationId;
                                     } else {
                                         if (currentPlayer && destinationLocation && currentPlayer.currentLocation !== destinationLocation.id) {
+                                            if (typeof Globals.recordPlayerArrivalVisitState === 'function') {
+                                                Globals.recordPlayerArrivalVisitState(destinationLocation);
+                                            }
                                             currentPlayer.setLocation(destinationLocation);
                                         }
                                         traveledToLocationId = destinationLocation?.id || traveledToLocationId;
@@ -23534,6 +23569,9 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 const isNpc = Boolean(npc.isNPC);
+                if (!isNpc && typeof Globals.clearPlayerArrivalVisitStates === 'function') {
+                    Globals.clearPlayerArrivalVisitStates();
+                }
 
                 const body = req.body && typeof req.body === 'object' ? req.body : {};
                 const rawLocationId = typeof body.locationId === 'string' ? body.locationId.trim() : '';
@@ -23653,6 +23691,9 @@ module.exports = function registerApiRoutes(scope) {
                     }
                 }
 
+                if (!isNpc && typeof Globals.recordPlayerArrivalVisitState === 'function') {
+                    Globals.recordPlayerArrivalVisitState(destinationLocation);
+                }
                 npc.setLocation(destinationLocation.id);
 
                 let fastTravelSummaryItem = null;
@@ -23685,7 +23726,10 @@ module.exports = function registerApiRoutes(scope) {
                     whileYouWereAwayResult = await runWhileYouWereAwayPrompt({
                         locationOverride: destinationLocation,
                         locationId: destinationLocation.id,
-                        returnEntries: true
+                        returnEntries: true,
+                        locationWasVisitedBeforeArrival: typeof Globals.getPlayerArrivalWasVisitedBeforeMove === 'function'
+                            ? Globals.getPlayerArrivalWasVisitedBeforeMove(destinationLocation.id)
+                            : undefined
                     });
 
                     Player.recordNpcSightingsForCurrentPlayer({
@@ -28744,6 +28788,9 @@ module.exports = function registerApiRoutes(scope) {
                         error: 'No current player found'
                     });
                 }
+                if (typeof Globals.clearPlayerArrivalVisitStates === 'function') {
+                    Globals.clearPlayerArrivalVisitStates();
+                }
 
                 const currentPlayerId = typeof currentPlayer.id === 'string' ? currentPlayer.id.trim() : '';
                 if (!currentPlayerId) {
@@ -28945,6 +28992,9 @@ module.exports = function registerApiRoutes(scope) {
                 const previousLocationIdForMemories = currentPlayer.currentLocation || null;
                 let exitTravelTimeAdjustment = null;
 
+                if (typeof Globals.recordPlayerArrivalVisitState === 'function') {
+                    Globals.recordPlayerArrivalVisitState(destinationLocation);
+                }
                 currentPlayer.setLocation(destinationLocation.id);
 
                 if (currentPlayer?.lastActionWasTravel) {
@@ -29029,7 +29079,10 @@ module.exports = function registerApiRoutes(scope) {
                 const whileYouWereAwayResult = await runWhileYouWereAwayPrompt({
                     locationOverride: destinationLocation,
                     locationId: destinationLocation.id,
-                    returnEntries: true
+                    returnEntries: true,
+                    locationWasVisitedBeforeArrival: typeof Globals.getPlayerArrivalWasVisitedBeforeMove === 'function'
+                        ? Globals.getPlayerArrivalWasVisitedBeforeMove(destinationLocation.id)
+                        : undefined
                 });
                 const travelSummaryParentEntry = whileYouWereAwayResult?.visibleEntry
                     || findMostRecentTravelDrawerParentEntry();
