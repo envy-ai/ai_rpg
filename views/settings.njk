@@ -219,7 +219,7 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                                         <label for="unifiedTonalScale_{{ axisKey }}_level">Level</label>
                                         <select id="unifiedTonalScale_{{ axisKey }}_level" data-tonal-axis="{{ axisKey }}">
                                             <option value="">Not set</option>
-                                            {% for level in axis.levels %}
+                                            {% for level in axis.selectionOptions or axis.levels %}
                                             <option value="{{ level.level }}">{{ level.level }} - {{ level.name }}</option>
                                             {% endfor %}
                                         </select>

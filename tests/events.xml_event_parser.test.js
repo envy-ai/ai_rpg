@@ -324,6 +324,117 @@ test('runEventChecks defaults to XML events plus dedicated need-bar prompt witho
     }
 });
 
+test('runEventChecks can suppress need-bar checks and hard-ignore selected XML event keys', async () => {
+    const previousConfig = Globals.config;
+    const previousCurrentPlayer = Globals.currentPlayer;
+    const previousChatCompletion = LLMClient.chatCompletion;
+    const previousLogPrompt = LLMClient.logPrompt;
+    const previousDeps = Events._deps;
+    const previousTimeout = Events._baseTimeout;
+    const previousParsers = Events._parsers;
+    const previousAggregators = Events._aggregators;
+    const previousHandlers = Events._handlers;
+    const capturedPromptTypes = [];
+    const renderedContexts = [];
+    const player = {
+        isNPC: false,
+        name: 'Wanderer',
+        currency: 0,
+        getCurrency() {
+            return this.currency;
+        },
+        adjustCurrency(amount) {
+            this.currency += amount;
+        }
+    };
+
+    try {
+        Globals.config = {
+            ai: {},
+            event_checks: { enabled: true },
+            quests: { enabled: false },
+            omit_npc_generation: true
+        };
+        Globals.currentPlayer = player;
+        LLMClient.chatCompletion = async (options = {}) => {
+            const message = Array.isArray(options.messages) ? options.messages[1]?.content : null;
+            const payload = typeof message === 'string' ? JSON.parse(message) : {};
+            capturedPromptTypes.push(payload.promptType || null);
+            assert.notEqual(payload.promptType, 'need-bars');
+            return `<events>
+  <currency><amount>4</amount></currency>
+  <needBarChange>
+    <characterName>Wanderer</characterName>
+    <needBarId>stamina</needBarId>
+    <direction>decrease</direction>
+    <magnitude>small</magnitude>
+    <reason>walked</reason>
+  </needBarChange>
+  <npcArrivalDeparture>
+    <npcName>Mira</npcName>
+    <action>arrived</action>
+  </npcArrivalDeparture>
+</events>`;
+        };
+        LLMClient.logPrompt = () => {};
+        Events.initialize({
+            promptEnv: {
+                render: (_template, context) => {
+                    renderedContexts.push(context);
+                    return JSON.stringify({
+                        promptType: context.promptType,
+                        ignored: context.eventCheckIgnoredEventKeys || [],
+                        ignoreInstructions: context.eventCheckIgnoreInstructions || ''
+                    });
+                }
+            },
+            parseXMLTemplate: (rendered) => ({
+                systemPrompt: 'system',
+                generationPrompt: rendered
+            }),
+            prepareBasePromptContext: async () => ({
+                needBarDefinitions: [{ id: 'stamina', name: 'Stamina' }],
+                npcs: [],
+                party: []
+            }),
+            Location: {
+                get: () => null
+            },
+            findRegionByLocationId: () => null,
+            findActorByName: () => null,
+            getCurrentPlayer: () => player,
+            getConfig: () => Globals.config
+        });
+
+        const result = await Events.runEventChecks({
+            textToCheck: 'Wanderer finds coins while Mira arrives and everyone gets tired.',
+            suppressNeedBarEventChecks: true,
+            ignoredEventKeys: ['needbar_change', 'npc_arrival_departure'],
+            eventCheckIgnoreInstructions: 'Ignore need bars and arrivals.'
+        });
+
+        assert.deepEqual(capturedPromptTypes, ['events-xml']);
+        assert.deepEqual(renderedContexts[0].eventCheckIgnoredEventKeys.sort(), ['needbar_change', 'npc_arrival_departure'].sort());
+        assert.match(renderedContexts[0].eventCheckIgnoreInstructions, /Ignore need bars and arrivals/);
+        assert.deepEqual(result.currencyChanges.map(entry => entry.amount), [4]);
+        assert.equal(result.structured.parsed.needbar_change, undefined);
+        assert.equal(result.structured.parsed.npc_arrival_departure, undefined);
+        assert.deepEqual(result.needBarChanges, []);
+        assert.deepEqual(result.npcUpdates.added, []);
+        assert.equal(player.currency, 4);
+    } finally {
+        Events._deps = previousDeps;
+        Events._baseTimeout = previousTimeout;
+        Events._parsers = previousParsers;
+        Events._aggregators = previousAggregators;
+        Events._handlers = previousHandlers;
+        LLMClient.chatCompletion = previousChatCompletion;
+        LLMClient.logPrompt = previousLogPrompt;
+        Globals.config = previousConfig;
+        Globals.currentPlayer = previousCurrentPlayer;
+    }
+});
+
 test('runEventChecks uses grouped legacy pathway when event_checks.use_xml is false', async () => {
     const previousConfig = Globals.config;
     const previousCurrentPlayer = Globals.currentPlayer;

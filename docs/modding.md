@@ -13,7 +13,7 @@ Mods can now provide `defs/*.yaml` overlays that merge into the root `defs/*.yam
 - If `enabled` is omitted in both places, the mod is treated as enabled.
 - Overlay filenames must match an existing root `defs/*.yaml` filename exactly.
 - Unknown overlay filenames fail loudly.
-- `defs/unified_tonal_scale.yaml` stores the reusable global tone-axis definitions extracted from `extra_system_instructions`. The `/settings` World Profiles `Tone Scale` tab renders this definition and persists per-story selections/comments on each `SettingInfo` as `unifiedTonalScale`; those selections are setting data rather than part of the root definition file.
+- `defs/unified_tonal_scale.yaml` stores the reusable global tone-axis definitions extracted from `extra_system_instructions`. The `/settings` World Profiles `Tone Scale` tab renders this definition and persists per-story selections/comments on each `SettingInfo` as `unifiedTonalScale`; those selections are setting data rather than part of the root definition file. The UI also generates half-step midpoint choices between adjacent defined levels, so mods do not need to add `1.5`, `2.5`, etc. rows to the defs file.
 
 ## Enable and disable
 

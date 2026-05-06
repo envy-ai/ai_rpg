@@ -135,3 +135,121 @@ test('npc_arrival_departure lets a party member leave the party and move to the 
         Events._resetTrackingSets();
     }
 });
+
+test('npc_arrival_departure keeps a party member when the player is already at the same destination', async () => {
+    const previousDeps = Events._deps;
+    const previousHandlers = Events._handlers;
+    const previousParsers = Events._parsers;
+    const previousAggregators = Events._aggregators;
+    const previousProcessedMove = Globals.processedMove;
+
+    const origin = createLocation('loc_origin', 'Farmhouse Exterior');
+    const destination = createLocation('loc_destination', 'Front Porch');
+    const locations = new Map([
+        [origin.id, origin],
+        [destination.id, destination]
+    ]);
+
+    const partyMember = {
+        id: 'npc_lina',
+        name: 'Lina',
+        currentLocation: null,
+        get location() {
+            return locations.get(this.currentLocation) || null;
+        },
+        setLocation(location) {
+            const locationId = typeof location === 'object' ? location.id : location;
+            this.currentLocation = locationId || null;
+        }
+    };
+
+    const partyMembers = new Set([partyMember.id]);
+    const player = {
+        id: 'player_baato',
+        name: 'Baato',
+        currentLocation: destination.id,
+        getPartyMembers() {
+            return Array.from(partyMembers);
+        },
+        removePartyMember(memberId) {
+            const removed = partyMembers.delete(memberId);
+            if (removed) {
+                partyMember.setLocation(origin);
+                origin.addNpcId(memberId);
+            }
+            return removed;
+        }
+    };
+
+    const actors = new Map([
+        [player.id, player],
+        [partyMember.id, partyMember]
+    ]);
+
+    Events.initialize({
+        getConfig: () => ({ omit_npc_generation: false }),
+        getCurrentPlayer: () => player,
+        players: actors,
+        ensureNpcByName: async (name) => actors.get(partyMember.id) || { id: partyMember.id, name },
+        findActorById: (id) => actors.get(id) || null,
+        findActorByName: (name) => {
+            const normalized = String(name || '').trim().toLowerCase();
+            return Array.from(actors.values()).find(actor => actor.name.toLowerCase() === normalized) || null;
+        },
+        findLocationByNameLoose: (name) => {
+            const normalized = String(name || '').trim().toLowerCase();
+            return Array.from(locations.values()).find(location => location.name.toLowerCase() === normalized) || null;
+        },
+        findRegionByNameLoose: () => null,
+        Location: {
+            get: (id) => locations.get(id) || null,
+            findByName: (name) => {
+                const normalized = String(name || '').trim().toLowerCase();
+                return Array.from(locations.values()).find(location => location.name.toLowerCase() === normalized) || null;
+            },
+            getByName: (name) => {
+                const normalized = String(name || '').trim().toLowerCase();
+                return Array.from(locations.values()).find(location => location.name.toLowerCase() === normalized) || null;
+            }
+        },
+        regions: new Map(),
+        gameLocations: locations
+    });
+    Events._resetTrackingSets();
+    Globals.processedMove = false;
+
+    const eventPayload = {
+        parsed: {
+            npc_arrival_departure: [{
+                name: 'Lina',
+                action: 'left',
+                destinationRegion: '',
+                destinationLocation: 'Front Porch'
+            }]
+        },
+        rawEntries: {
+            npc_arrival_departure: ['Lina -> left ->  -> Front Porch']
+        }
+    };
+
+    try {
+        await Events.applyEventOutcomes(eventPayload, {
+            player,
+            location: destination
+        });
+
+        assert.deepEqual(player.getPartyMembers(), [partyMember.id]);
+        assert.equal(partyMember.currentLocation, null);
+        assert.equal(origin.hasNpc(partyMember.id), false);
+        assert.equal(destination.hasNpc(partyMember.id), false);
+        assert.equal(Events.departedCharacters.has('Lina'), false);
+        assert.deepEqual(eventPayload.parsed.npc_arrival_departure, []);
+    } finally {
+        Events._deps = previousDeps;
+        Events._handlers = previousHandlers;
+        Events._parsers = previousParsers;
+        Events._aggregators = previousAggregators;
+        Globals.processedMove = previousProcessedMove;
+        Events._resetTrackingSets();
+    }
+});

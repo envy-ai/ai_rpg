@@ -30,7 +30,7 @@ class Region {
   #vehicleInfo;
   #weather;
   #weatherState;
-  #lastVisitedTime = null;  // Minutes since last visit by player.
+  #lastVisitedTime = null;  // Minute timestamp of last visit by player.
   #randomEvents = [];
   #characterConcepts = [];
   #enemyConcepts = [];
@@ -1184,12 +1184,18 @@ class Region {
     return this.#lastVisitedTime;
   }
 
-  hoursSinceLastVisit(currentTime = null) {
+  minutesSinceLastVisit(currentTime = null) {
     const lastVisited = this.#lastVisitedTime;
     if (lastVisited === null) {
       return null;
     }
-    return Globals.elapsedTime - lastVisited;
+    const referenceTime = currentTime === null || currentTime === undefined
+      ? Globals.elapsedTime
+      : Number(currentTime);
+    if (!Number.isFinite(referenceTime)) {
+      throw new Error('Region minutesSinceLastVisit reference time must be a finite number');
+    }
+    return referenceTime - lastVisited;
   }
 
   set relativeLevel(level) {

@@ -32,7 +32,7 @@ Represents a game location, including description, exits, NPCs, items/scenery, a
 - `regionId` (get/set) and `region` (get). Reassigning `regionId` now keeps region membership indexes in sync by removing the location from the old region, adding it to the new region, and repairing the old region's `entranceLocationId` if it pointed at the moved location. If the previous `regionId` is already stale/missing, reassignment logs a warning and still repairs the location into the new live region instead of failing.
 - `controllingFactionId` (get/set).
 - Basic fields: `id`, `name`, `description`, `shortDescription`, `baseLevel`, `imageId`, `imageVariants`, `createdAt`, `lastUpdated`.
-- Visit tracking: `visited` (get/set), `lastVisitedTime` (get/set, minutes), `hoursSinceLastVisit()` (legacy name; returns elapsed minutes).
+- Visit tracking: `visited` (get/set), `lastVisitedTime` (get/set, minutes), `minutesSinceLastVisit(currentTime?)`.
 - Stub metadata: `isStub`, `stubMetadata` (get/set), `hasGeneratedStubs` (get/set).
 - Vehicle metadata: `isVehicle` (derived get), `vehicleInfo` (get/set; serialized object or `null`).
 - `generationHints` (get/set).

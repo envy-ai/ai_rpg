@@ -116,10 +116,11 @@ Request:
 - Body: `{ locationId: string, accountTravelTime?: boolean, clientId?: string }`
 
 Response:
-- 200: `{ success: true, npc: NpcProfile, destination: LocationResponse, previousLocation: LocationResponse, locationIds: string[], worldTime, timeProgress, message }`
+- 200: `{ success: true, npc: NpcProfile, destination: LocationResponse, previousLocation: LocationResponse, locationIds: string[], worldTime, timeProgress, removedFromParty, message }`
 - 400/404/500 with `{ success: false, error }`
 
 Notes:
+- When the target character is an NPC in the current player's party, the route removes them from the party before applying the teleport so the old party/location state cannot leave a stale client-side presence behind.
 - When `accountTravelTime` is `true`, the route resolves the shortest directed path between the origin and destination using the location graph's stored `travelTimeMinutes`, advances world time by that total, and returns the resulting `worldTime` / `timeProgress`.
 - When the teleported character is the player and travel time advances, the route also records travel and elapsed-time event-summary rows, parent-linked to visible arrival prose when one is generated, and emits `chat_history_updated` when `clientId` is provided.
 - If no route exists, fast-travel time falls back to `0` minutes.

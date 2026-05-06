@@ -37,7 +37,7 @@ Represents a region containing multiple locations, with metadata like average le
 - `numImportantNPCs` (get/set).
 - `relativeLevel` (get/set), `averageLevel` (get) with `setAverageLevel(level)`.
 - `characterConcepts`, `enemyConcepts`, `secrets` (get/set).
-- `lastVisitedTime` (get/set, minutes), `hoursSinceLastVisit(currentTime)` (legacy name; returns elapsed minutes).
+- `lastVisitedTime` (get/set, minutes), `minutesSinceLastVisit(currentTime?)`.
 - Relationship helpers: `childRegions`, `siblingRegions`, `parentRegion`, `parentHierarchy`.
 
 ## Instance API

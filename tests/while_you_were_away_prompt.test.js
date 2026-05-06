@@ -133,12 +133,14 @@ test('while-you-were-away include renders need bar prompt notes from definitions
     }
 });
 
-test('while-you-were-away include stays empty when no NPCs are supplied', () => {
+test('while-you-were-away include still requests return prose when no NPCs are supplied', () => {
     const promptEnv = createPromptEnv();
     const rendered = promptEnv.render('_includes/while-you-were-away.njk', {
         whileYouWereAwayNpcs: []
     });
 
-    assert.doesNotMatch(rendered, /last seen/i);
+    assert.match(rendered, /No current-location NPCs require individual while-you-were-away character updates\./);
+    assert.match(rendered, /Always write proseForPlayer/);
+    assert.match(rendered, /<characterUpdates>/);
     assert.doesNotMatch(rendered, /<name>[^<]+<\/name>/);
 });

@@ -44,6 +44,6 @@ Represents a game setting/world configuration, including theme, genre, prompts, 
 ## Notes
 - Many setters normalize line endings to `\n` for prompt fields.
 - List normalization accepts string (newline-delimited) or array input.
-- `unifiedTonalScale` is stored as an object keyed by `defs/unified_tonal_scale.yaml` axis key. Each populated axis stores `{ level, comment? }`; comments require a selected numeric level.
+- `unifiedTonalScale` is stored as an object keyed by `defs/unified_tonal_scale.yaml` axis key. Each populated axis stores `{ level, comment? }`; comments require a selected numeric level. Decimal half-step values are preserved so the Tone Scale UI can store generated midpoint selections such as `3.5`.
 - Faction draft normalization validates ids/names, relation targets/statuses/notes, assets, and reputation tiers; invalid payloads throw explicit errors.
 - `baseContextPreamble` is prepended to image-generation prompts at execution time for the OpenAI and NanoGPT backends; ComfyUI skips it.

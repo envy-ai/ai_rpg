@@ -50,6 +50,16 @@ These characters are currently known by the system to be present. This is not ne
 {% endfor %}{% for member in party %}{% if member not in npcs %}- {{ member.name }} ({{ member.race }}/{{ member.class }})
 {% endif %}{% endfor %}
 
+{% if eventCheckIgnoreInstructions or (eventCheckIgnoredEventKeys and eventCheckIgnoredEventKeys | length) -%}
+Event categories to explicitly ignore for this pass:
+{% if eventCheckIgnoreInstructions %}{{ eventCheckIgnoreInstructions }}
+{% endif -%}
+{% for eventKey in eventCheckIgnoredEventKeys or [] -%}
+- {{ eventKey }}
+{% endfor %}
+Do not emit XML tags for ignored categories, even if the text mentions them.
+{% endif -%}
+
 # Events XML Event Schema
 
 ## Purpose

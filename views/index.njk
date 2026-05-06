@@ -6749,10 +6749,14 @@
                 applied = await applyTeleportLocationUpdate(result.destination) || applied;
             }
 
-            const shouldReload = (!applied && (
-                (originLocationId && originLocationId === currentLocationId)
-                || (destinationId && destinationId === currentLocationId)
-            ));
+            const isTeleportedNpc = Boolean(updatedNpc && updatedNpc.isNPC);
+            const shouldReload = isTeleportedNpc || (
+                !applied
+                && (
+                    (originLocationId && originLocationId === currentLocationId)
+                    || (destinationId && destinationId === currentLocationId)
+                )
+            );
 
             if (shouldReload && typeof window.loadCurrentLocation === 'function') {
                 try {

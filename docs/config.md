@@ -670,6 +670,7 @@ Applied world profiles can define `unifiedTonalScale` selections through the `/s
 Rules:
 - `extra_system_instructions` remains global/config-driven prompt text.
 - Setting-level tonal scale selections are persisted on `SettingInfo` and rendered from `defs/unified_tonal_scale.yaml`.
+- Tone Scale dropdowns include generated half-step midpoint values between adjacent defined levels. These values are not stored in the defs file, but prompt rendering accepts them and labels them with combined adjacent level names such as `3.5 (Hopeful/Mixed)`.
 - If the same tonal guidance is also left in `extra_system_instructions`, the prompt will contain both sections.
 
 ## Hidden player-action notes
@@ -703,18 +704,18 @@ plot_expander_prompt_frequency: 10
 - Runs use the base-context `plot-expander` include and store hidden `plot-expander` entries.
 - The latest `plot-expander` output is injected into base-context as `<plotExpander>` immediately after `<plotSummary>`.
 
-## While-you-were-away reunion threshold
+## While-you-were-away NPC update threshold
 
-`while_you_were_away_threshold_minutes` controls when the blocking `while-you-were-away` reunion prompt runs after the player arrives at a location containing NPCs they have not been with continuously.
+`while_you_were_away_threshold_minutes` controls which current-location NPCs are listed for individual updates when the blocking `while-you-were-away` prompt runs after the player arrives. The prompt itself still runs on player arrival even when no NPCs meet the threshold, so it can produce location-return prose.
 
 ```yaml
-while_you_were_away_threshold_minutes: 240
+while_you_were_away_threshold_minutes: 30
 ```
 
 Rules:
 - Must be an integer `>= 0` when present.
-- Default is `240` (`4` hours).
+- Default is `30`.
 - The prompt input includes current-location NPCs that have persisted `last_seen_time` / `last_seen_location` and were not in the same location as the player on the previous round, so already-present reunion NPCs stay in the candidate list instead of being misclassified as arrivals.
 - The prompt input includes each need-bar definition's `while_you_were_away_prompt_notes` when provided, letting need-bar defs guide how offscreen NPCs tend to satisfy or lose that bar.
-- The threshold only controls whether the prompt runs at all: it runs when at least one such NPC has been away at least this many in-game minutes.
+- The threshold controls which NPCs are listed for required `<characterUpdate>` entries. NPCs below the threshold are omitted from that required list, but the prompt still runs.
 - When it runs, it blocks the arrival flow long enough to apply returned need-bar percentage values, optional NPC travel destinations, store the hidden `while-you-were-away` internal history entry, and optionally append a visible `while-you-were-away-player` assistant chat entry when the prompt returns non-empty `<proseForPlayer>`. Need-bar values strip nonnumeric text before parsing; blank/`N/A` values are ignored for that bar. If `slop_buster` is enabled, that visible prose is run through the shared slop-removal pipeline before storage.

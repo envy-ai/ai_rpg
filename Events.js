@@ -2092,6 +2092,54 @@ class Events {
         }
     }
 
+    static _normalizeIgnoredEventKeys(ignoredEventKeys = []) {
+        const aliases = new Map([
+            ["needbarchange", "needbar_change"],
+            ["needbar_change", "needbar_change"],
+            ["npcarrivaldeparture", "npc_arrival_departure"],
+            ["npc_arrival_departure", "npc_arrival_departure"],
+        ]);
+        const sourceValues =
+            ignoredEventKeys &&
+            typeof ignoredEventKeys !== "string" &&
+            typeof ignoredEventKeys[Symbol.iterator] === "function"
+                ? Array.from(ignoredEventKeys)
+                : ensureArray(ignoredEventKeys);
+        const normalized = new Set();
+        for (const value of sourceValues) {
+            const key = typeof value === "string" ? value.trim() : "";
+            if (!key) {
+                continue;
+            }
+            const compact = key.replace(/[^a-zA-Z0-9_]/g, "").toLowerCase();
+            const snake = key
+                .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
+                .replace(/[^a-zA-Z0-9]+/g, "_")
+                .replace(/^_+|_+$/g, "")
+                .toLowerCase();
+            normalized.add(aliases.get(compact) || aliases.get(snake) || snake);
+        }
+        return normalized;
+    }
+
+    static _removeIgnoredEventKeysFromStructured(structured, ignoredEventKeys = []) {
+        const ignored = this._normalizeIgnoredEventKeys(ignoredEventKeys);
+        if (!structured || !ignored.size) {
+            return structured;
+        }
+        if (structured.rawEntries && typeof structured.rawEntries === "object") {
+            for (const key of ignored) {
+                delete structured.rawEntries[key];
+            }
+        }
+        if (structured.parsed && typeof structured.parsed === "object") {
+            for (const key of ignored) {
+                delete structured.parsed[key];
+            }
+        }
+        return structured;
+    }
+
     static async _runNeedBarEventChecks({
         baseContext,
         textToCheck,
@@ -2588,13 +2636,23 @@ class Events {
         findRegionByLocationId,
         activeFollowupQueue,
         depth,
+        ignoredEventKeys,
+        eventCheckIgnoreInstructions,
+        suppressNeedBarEventChecks,
     }) {
+        const normalizedIgnoredEventKeys =
+            this._normalizeIgnoredEventKeys(ignoredEventKeys);
         const rendered = promptEnv.render("base-context.xml.njk", {
             ...baseContext,
             promptType: "events-xml",
             textToCheck,
             actionText: normalizedActionText,
             includePlayerActionBlock,
+            eventCheckIgnoredEventKeys: Array.from(normalizedIgnoredEventKeys),
+            eventCheckIgnoreInstructions:
+                typeof eventCheckIgnoreInstructions === "string"
+                    ? eventCheckIgnoreInstructions.trim()
+                    : "",
             omitGameHistory: true,
         });
 
@@ -2605,14 +2663,16 @@ class Events {
 
         let requestPayloadForLog = null;
         let responsePayloadForLog = null;
-        const needBarEventCheckPromise = this._runNeedBarEventChecks({
-            baseContext,
-            textToCheck,
-            actionText: normalizedActionText,
-            includePlayerActionBlock,
-            promptEnv,
-            parseXMLTemplate,
-        });
+        const needBarEventCheckPromise = suppressNeedBarEventChecks
+            ? Promise.resolve({ responseText: "", entries: [] })
+            : this._runNeedBarEventChecks({
+                baseContext,
+                textToCheck,
+                actionText: normalizedActionText,
+                includePlayerActionBlock,
+                promptEnv,
+                parseXMLTemplate,
+            });
         const responseTextPromise = LLMClient.chatCompletion({
             messages: [
                 { role: "system", content: parsedTemplate.systemPrompt },
@@ -2645,7 +2705,9 @@ class Events {
             responsePayload: responsePayloadForLog,
         });
 
-        const xmlEvents = this._parseXmlEventCheckResponse(responseText);
+        const xmlEvents = this._parseXmlEventCheckResponse(responseText, {
+            ignoredEventKeys: normalizedIgnoredEventKeys,
+        });
         const needBarPromptEntries = Array.isArray(needBarEventCheck?.entries)
             ? needBarEventCheck.entries
             : [];
@@ -2784,6 +2846,9 @@ class Events {
                             suppressMoveEvents,
                             allowMoveTurnAppearances,
                             suppressTimeAdvance: true,
+                            ignoredEventKeys: Array.from(normalizedIgnoredEventKeys),
+                            eventCheckIgnoreInstructions,
+                            suppressNeedBarEventChecks: Boolean(suppressNeedBarEventChecks),
                             _depth: depth + 1,
                             followupQueue: activeFollowupQueue,
                         });
@@ -2870,6 +2935,9 @@ class Events {
         allowMoveTurnAppearances = false,
         suppressTimeAdvance = false,
         locationOverride = null,
+        ignoredEventKeys = [],
+        eventCheckIgnoreInstructions = "",
+        suppressNeedBarEventChecks = false,
         _depth = 0,
         followupQueue = null,
     } = {}) {
@@ -2892,6 +2960,8 @@ class Events {
         const normalizedActionText =
             typeof actionText === "string" ? actionText.trim() : "";
         const includePlayerActionBlock = normalizedActionText.length > 0;
+        const normalizedIgnoredEventKeys =
+            this._normalizeIgnoredEventKeys(ignoredEventKeys);
 
         this._resetTrackingSets();
         const depth = Number.isFinite(_depth) ? _depth : 0;
@@ -2989,19 +3059,24 @@ class Events {
                 findRegionByLocationId,
                 activeFollowupQueue,
                 depth,
+                ignoredEventKeys: normalizedIgnoredEventKeys,
+                eventCheckIgnoreInstructions,
+                suppressNeedBarEventChecks: Boolean(suppressNeedBarEventChecks),
             });
         }
 
         const promptGroups = EVENT_PROMPT_ORDER;
 
-        const needBarEventCheckPromise = this._runNeedBarEventChecks({
-            baseContext,
-            textToCheck,
-            actionText: normalizedActionText,
-            includePlayerActionBlock,
-            promptEnv,
-            parseXMLTemplate,
-        });
+        const needBarEventCheckPromise = suppressNeedBarEventChecks
+            ? Promise.resolve({ responseText: "", entries: [] })
+            : this._runNeedBarEventChecks({
+                baseContext,
+                textToCheck,
+                actionText: normalizedActionText,
+                includePlayerActionBlock,
+                promptEnv,
+                parseXMLTemplate,
+            });
         const groupResponsesPromise = Promise.all(
             promptGroups.map(async (group, groupIndex) => {
                 const questions = group.map((definition) => {
@@ -3021,6 +3096,11 @@ class Events {
                     actionText: normalizedActionText,
                     includePlayerActionBlock,
                     eventQuestions: questions,
+                    eventCheckIgnoredEventKeys: Array.from(normalizedIgnoredEventKeys),
+                    eventCheckIgnoreInstructions:
+                        typeof eventCheckIgnoreInstructions === "string"
+                            ? eventCheckIgnoreInstructions.trim()
+                            : "",
                     omitGameHistory: true,
                 });
 
@@ -3119,6 +3199,10 @@ class Events {
         this._injectNeedBarPromptEntriesIntoStructured(
             structured,
             needBarPromptEntries,
+        );
+        this._removeIgnoredEventKeysFromStructured(
+            structured,
+            normalizedIgnoredEventKeys,
         );
         if (!allowEnvironmentalEffects) {
             if (Array.isArray(structured.parsed.environmental_status_damage)) {
@@ -3322,6 +3406,9 @@ class Events {
                             suppressMoveEvents,
                             allowMoveTurnAppearances,
                             suppressTimeAdvance: true,
+                            ignoredEventKeys: Array.from(normalizedIgnoredEventKeys),
+                            eventCheckIgnoreInstructions,
+                            suppressNeedBarEventChecks: Boolean(suppressNeedBarEventChecks),
                             _depth: depth + 1,
                             followupQueue: activeFollowupQueue,
                         });
@@ -4696,7 +4783,10 @@ class Events {
         });
     }
 
-    static _parseXmlEventCheckResponse(responseText) {
+    static _parseXmlEventCheckResponse(responseText, options = {}) {
+        const ignoredEventKeys = this._normalizeIgnoredEventKeys(
+            options?.ignoredEventKeys || [],
+        );
         const xml = this._extractEventsXmlBlock(responseText);
         let doc;
         try {
@@ -4752,11 +4842,19 @@ class Events {
                 hasTravelBoundary = true;
                 phase = "during";
                 const { key, raw } = this._mapXmlEventNodeToLegacyRaw(child);
+                if (ignoredEventKeys.has(key)) {
+                    ignoredDuringEvents.push({ tagName, key, raw, ignored: true });
+                    continue;
+                }
                 this._appendXmlRawEvent(travelMoveRawLists, key, raw);
                 continue;
             }
 
             const { key, raw } = this._mapXmlEventNodeToLegacyRaw(child);
+            if (ignoredEventKeys.has(key)) {
+                ignoredDuringEvents.push({ tagName, key, raw, ignored: true });
+                continue;
+            }
             if (phase === "before") {
                 this._appendXmlRawEvent(beforeRawLists, key, raw);
             } else if (phase === "during") {
@@ -8316,6 +8414,35 @@ class Events {
                     return removed;
                 };
 
+                const getPartyOwnerLocationIds = () => {
+                    const locationIds = new Set();
+                    for (const owner of partyOwners) {
+                        const locationId =
+                            typeof owner?.currentLocation === "string"
+                                ? owner.currentLocation.trim()
+                                : "";
+                        if (locationId) {
+                            locationIds.add(locationId);
+                        }
+                    }
+                    return locationIds;
+                };
+
+                const isPartyMemberAlreadyWithPlayerAtDestination = (
+                    actor,
+                    targetLocation,
+                ) => {
+                    const actorId = typeof actor?.id === "string" ? actor.id.trim() : "";
+                    const targetLocationId =
+                        typeof targetLocation?.id === "string"
+                            ? targetLocation.id.trim()
+                            : "";
+                    if (!actorId || !targetLocationId || !partyMemberIds.has(actorId)) {
+                        return false;
+                    }
+                    return getPartyOwnerLocationIds().has(targetLocationId);
+                };
+
                 const lookupRegionByName = (name) => {
                     const trimmed = normalize(name);
                     if (!trimmed) {
@@ -8617,6 +8744,16 @@ class Events {
                         }
 
                         try {
+                            if (
+                                isPartyMemberAlreadyWithPlayerAtDestination(
+                                    npc,
+                                    targetLocation,
+                                )
+                            ) {
+                                suppressedIndexes.add(index);
+                                continue;
+                            }
+
                             removeDepartingPartyMember(npc);
                             const originLocation = npc.location || context.location || null;
                             if (

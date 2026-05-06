@@ -117,6 +117,7 @@ The main UI is rendered by `views/index.njk` and powered by `public/js/chat.js` 
   - On confirm, closes immediately and calls `/api/prompts/cancel-all` (`waitForDrain: false`) before issuing `/api/load`.
 - Player/NPC "Edit" opens `#npcEditModal`, which includes an `Aliases` textarea (one alias per line) plus `Resistances`/`Vulnerabilities` textareas and saves through `PUT /api/npcs/:id`.
   - NPC edit mode also shows AI notes plus per-character need-bar applicability checkboxes; the player view omits the need-bar applicability section.
+  - NPC teleport modal actions remove the NPC from the current player's party first when needed, then force a current-location and party refresh after the teleport so stale party/location cards disappear.
   - Player/NPC Inventory modal keeps active inventory filters (including slot filter selection) when equip/unequip triggers an inventory re-render, and serves as the shared thing-list card/filter implementation that location item/scenery sections and the crafting inventory now reuse.
   - Party summary list.
 - **World-time chip** (`#worldTimeIndicator`):

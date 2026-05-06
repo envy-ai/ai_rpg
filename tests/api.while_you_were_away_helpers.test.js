@@ -154,7 +154,9 @@ function loadWhileYouWereAwayHelpers({
         slopRegexes: [],
         slopNgrams: []
     }),
-    recordSlopRemovalEntry = null
+    recordSlopRemovalEntry = null,
+    eventsRunEventChecks = async () => null,
+    appendEventSummariesToChat = () => {}
 } = {}) {
     const source = fs.readFileSync(require.resolve('../api.js'), 'utf8');
     const start = source.indexOf('        function resolveRegionForLocationObject(location) {');
@@ -286,6 +288,10 @@ function loadWhileYouWereAwayHelpers({
             chatCompletion: async () => llmResponse,
             logPrompt: () => {}
         },
+        Events: {
+            runEventChecks: eventsRunEventChecks
+        },
+        appendEventSummariesToChat,
         applySlopRemoval,
         recordSlopRemovalEntry: recordSlopRemovalEntry || defaultRecordSlopRemovalEntry,
         requireLocationId: (value, label) => {
@@ -430,6 +436,21 @@ test('parseWhileYouWereAwayResponse reads optional proseForPlayer from response 
     );
 });
 
+test('parseWhileYouWereAwayResponse allows empty characterUpdates when no names are expected', () => {
+    const { parseWhileYouWereAwayResponse } = loadWhileYouWereAwayHelpers();
+    const parsed = parseWhileYouWereAwayResponse(`
+<response>
+  <characterUpdates></characterUpdates>
+  <proseForPlayer>The old room smells faintly of dust and cold ash.</proseForPlayer>
+</response>
+`, {
+        expectedNameKeys: new Set()
+    });
+
+    assert.equal(parsed.updates.length, 0);
+    assert.equal(parsed.proseForPlayer, 'The old room smells faintly of dust and cold ash.');
+});
+
 test('resolveWhileYouWereAwayDestination prefers the current region and supports region-only travel', () => {
     const square = createLocation({ id: 'square', name: 'Town Square', regionId: 'alpha' });
     const alphaInn = createLocation({ id: 'inn-alpha', name: 'Inn', regionId: 'alpha' });
@@ -566,6 +587,120 @@ test('runWhileYouWereAwayPrompt applies absolute need values, moves NPCs, and re
     assert.equal(pushedEntries[1].type, 'while-you-were-away-player');
     assert.equal(pushedEntries[1].parentId, 'parent-1');
     assert.match(pushedEntries[1].content, /Mira waves you over and quickly fills you in before returning to the inn\./);
+});
+
+test('runWhileYouWereAwayPrompt runs scoped event checks while ignoring handled need bars and arrivals', async () => {
+    const square = createLocation({ id: 'square', name: 'Town Square', regionId: 'alpha', npcIds: ['mira'] });
+    const regions = new Map([
+        ['alpha', { id: 'alpha', name: 'Alpha', locationIds: ['square'], entranceLocationId: 'square' }]
+    ]);
+    const gameLocations = new Map([[square.id, square]]);
+    const npc = {
+        id: 'mira',
+        isNPC: true,
+        name: 'Mira',
+        currentLocation: 'square',
+        _bars: [{ id: 'energy', name: 'Energy', value: 500, min: 0, max: 1000 }],
+        getNeedBars() {
+            return this._bars.map(bar => ({ ...bar }));
+        },
+        setNeedBarValue(identifier, nextValue) {
+            const bar = this._bars.find(candidate => candidate.id === identifier);
+            if (!bar) {
+                throw new Error(`Unknown need bar "${identifier}".`);
+            }
+            bar.value = nextValue;
+        }
+    };
+    const eventCheckCalls = [];
+    const summaryCalls = [];
+
+    const { runWhileYouWereAwayPrompt, pushedEntries } = loadWhileYouWereAwayHelpers({
+        currentPlayer: {
+            id: 'player',
+            name: 'Baato',
+            currentLocation: 'square'
+        },
+        players: new Map([[npc.id, npc]]),
+        gameLocations,
+        regions,
+        prepareBasePromptContext: async () => ({
+            whileYouWereAwayNpcs: [
+                {
+                    id: 'mira',
+                    name: 'Mira',
+                    lastSeenAgeMinutes: 330,
+                    lastSeenTimeAgo: '5 hours and 30 minutes ago'
+                }
+            ]
+        }),
+        llmResponse: `
+<response>
+  <characterUpdates>
+    <characterUpdate>
+      <name>Mira</name>
+      <update>Mira repaired the old notice board while waiting in the square.</update>
+      <needBarChanges>
+        <needBarEffect>
+          <needBarId>energy</needBarId>
+          <value>75%</value>
+        </needBarEffect>
+      </needBarChanges>
+    </characterUpdate>
+  </characterUpdates>
+  <proseForPlayer>The notice board has a fresh brace and Mira gestures toward it.</proseForPlayer>
+</response>
+`,
+        eventsRunEventChecks: async (options = {}) => {
+            eventCheckCalls.push(options);
+            return {
+                structured: { parsed: { alter_location: ['Town Square'] }, rawEntries: {} },
+                experienceAwards: [],
+                currencyChanges: [{ amount: 2 }],
+                environmentalDamageEvents: [],
+                needBarChanges: [{ shouldNotAppear: true }],
+                dispositionChanges: [],
+                factionReputationChanges: [],
+                timeProgress: null
+            };
+        },
+        appendEventSummariesToChat: (summaryOptions, collector) => {
+            summaryCalls.push(summaryOptions);
+            if (Array.isArray(collector)) {
+                collector.push({
+                    id: 'event-summary-1',
+                    type: 'event-summary',
+                    parentId: summaryOptions.parentId || null,
+                    locationId: summaryOptions.locationId || null
+                });
+            }
+        }
+    });
+
+    const collector = [];
+    const result = await runWhileYouWereAwayPrompt({
+        locationOverride: square,
+        locationId: square.id,
+        entryCollector: collector,
+        returnEntries: true
+    });
+
+    assert.equal(eventCheckCalls.length, 1);
+    assert.match(eventCheckCalls[0].textToCheck, /Mira repaired the old notice board/);
+    assert.match(eventCheckCalls[0].textToCheck, /The notice board has a fresh brace/);
+    assert.equal(eventCheckCalls[0].suppressNeedBarEventChecks, true);
+    assert.equal(eventCheckCalls[0].suppressMoveEvents, true);
+    assert.equal(eventCheckCalls[0].suppressTimeAdvance, true);
+    assert.deepEqual(Array.from(eventCheckCalls[0].ignoredEventKeys).sort(), ['needbar_change', 'npc_arrival_departure'].sort());
+    assert.match(eventCheckCalls[0].eventCheckIgnoreInstructions, /while-you-were-away event pass/);
+    assert.equal(result.eventResult.currencyChanges[0].amount, 2);
+    assert.equal(summaryCalls.length, 1);
+    assert.equal(summaryCalls[0].summaryLabel, '📋 Events – While You Were Away');
+    assert.equal(summaryCalls[0].statusLabel, '🌀 Status Changes – While You Were Away');
+    assert.equal(summaryCalls[0].parentId, result.visibleEntry.id);
+    assert.equal(summaryCalls[0].needBarChanges, null);
+    assert.equal(collector[collector.length - 1].type, 'event-summary');
+    assert.equal(pushedEntries[pushedEntries.length - 1].type, 'while-you-were-away-player');
 });
 
 test('runWhileYouWereAwayPrompt can return both hidden and visible entries for parent linking', async () => {
@@ -802,6 +937,10 @@ test('runWhileYouWereAwayPrompt warns and ignores nonexistent need bars returned
     };
 
     const { runWhileYouWereAwayPrompt } = loadWhileYouWereAwayHelpers({
+        config: {
+            ai: {},
+            while_you_were_away_threshold_minutes: 240
+        },
         currentPlayer: {
             id: 'player',
             name: 'Baato',
@@ -852,7 +991,7 @@ test('runWhileYouWereAwayPrompt warns and ignores nonexistent need bars returned
     }
 });
 
-test('runWhileYouWereAwayPrompt skips the prompt when everyone was seen too recently', async () => {
+test('runWhileYouWereAwayPrompt runs without NPC updates when everyone was seen too recently', async () => {
     const square = createLocation({ id: 'square', name: 'Town Square', regionId: 'alpha', npcIds: ['mira'] });
     const regions = new Map([
         ['alpha', { id: 'alpha', name: 'Alpha', locationIds: ['square'], entranceLocationId: 'square' }]
@@ -870,6 +1009,10 @@ test('runWhileYouWereAwayPrompt skips the prompt when everyone was seen too rece
     };
 
     const { runWhileYouWereAwayPrompt } = loadWhileYouWereAwayHelpers({
+        config: {
+            ai: {},
+            while_you_were_away_threshold_minutes: 240
+        },
         currentPlayer: {
             id: 'player',
             name: 'Baato',
@@ -888,15 +1031,24 @@ test('runWhileYouWereAwayPrompt skips the prompt when everyone was seen too rece
                 }
             ]
         }),
-        llmResponse: ''
+        llmResponse: `
+<response>
+  <characterUpdates></characterUpdates>
+  <proseForPlayer>The square has gone quiet since you last passed through.</proseForPlayer>
+</response>
+`
     });
 
     const result = await runWhileYouWereAwayPrompt({
         locationOverride: square,
-        locationId: square.id
+        locationId: square.id,
+        returnEntries: true
     });
 
-    assert.equal(result, null);
+    assert.equal(result.hiddenEntry.type, 'while-you-were-away');
+    assert.equal(result.hiddenEntry.content, 'No while-you-were-away character updates were returned.');
+    assert.equal(result.visibleEntry.type, 'while-you-were-away-player');
+    assert.equal(result.visibleEntry.content, 'The square has gone quiet since you last passed through.');
 });
 
 test('runWhileYouWereAwayPrompt allows arrival updates for current-location NPCs not listed as candidates', async () => {
@@ -981,7 +1133,7 @@ test('runWhileYouWereAwayPrompt allows arrival updates for current-location NPCs
     assert.match(storedEntry.content, /Toma went to Town Square in Alpha/);
 });
 
-test('runWhileYouWereAwayPrompt warns and skips arrival updates for NPCs not actually in the exact current location', async () => {
+test('runWhileYouWereAwayPrompt moves HERE arrival updates matched by existing NPC name', async () => {
     const mainRoom = createLocation({ id: 'main-room', name: 'Main Room', regionId: 'farmhouse', npcIds: ['ember', 'vervaine'] });
     const kitchen = createLocation({ id: 'kitchen', name: 'Kitchen', regionId: 'farmhouse', npcIds: ['rozalin'] });
     const regions = new Map([
@@ -1032,41 +1184,36 @@ test('runWhileYouWereAwayPrompt warns and skips arrival updates for NPCs not act
         }
     };
 
-    const warnings = [];
-    const originalWarn = console.warn;
-    console.warn = (message) => warnings.push(String(message));
-
-    try {
-        const { runWhileYouWereAwayPrompt, pushedEntries } = loadWhileYouWereAwayHelpers({
-            currentPlayer: {
-                id: 'player',
-                name: 'Exis',
-                currentLocation: 'main-room'
-            },
-            players: new Map([
-                [ember.id, ember],
-                [vervaine.id, vervaine],
-                [rozalin.id, rozalin]
-            ]),
-            gameLocations,
-            regions,
-            prepareBasePromptContext: async () => ({
-                whileYouWereAwayNpcs: [
-                    {
-                        id: 'ember',
-                        name: 'Ember',
-                        lastSeenAgeMinutes: 540,
-                        lastSeenTimeAgo: '9 hours ago'
-                    },
-                    {
-                        id: 'vervaine',
-                        name: 'Vervaine Duskweaver',
-                        lastSeenAgeMinutes: 540,
-                        lastSeenTimeAgo: '9 hours ago'
-                    }
-                ]
-            }),
-            llmResponse: `
+    const { runWhileYouWereAwayPrompt, pushedEntries } = loadWhileYouWereAwayHelpers({
+        currentPlayer: {
+            id: 'player',
+            name: 'Exis',
+            currentLocation: 'main-room'
+        },
+        players: new Map([
+            [ember.id, ember],
+            [vervaine.id, vervaine],
+            [rozalin.id, rozalin]
+        ]),
+        gameLocations,
+        regions,
+        prepareBasePromptContext: async () => ({
+            whileYouWereAwayNpcs: [
+                {
+                    id: 'ember',
+                    name: 'Ember',
+                    lastSeenAgeMinutes: 540,
+                    lastSeenTimeAgo: '9 hours ago'
+                },
+                {
+                    id: 'vervaine',
+                    name: 'Vervaine Duskweaver',
+                    lastSeenAgeMinutes: 540,
+                    lastSeenTimeAgo: '9 hours ago'
+                }
+            ]
+        }),
+        llmResponse: `
 <response>
   <characterUpdates>
     <characterUpdate>
@@ -1086,26 +1233,268 @@ test('runWhileYouWereAwayPrompt warns and skips arrival updates for NPCs not act
   <proseForPlayer>Ember and Vervaine are both here when Exis returns, while Rozalin can only be heard from the kitchen.</proseForPlayer>
 </response>
 `
+    });
+
+    const storedEntry = await runWhileYouWereAwayPrompt({
+        locationOverride: mainRoom,
+        locationId: mainRoom.id
+    });
+
+    assert.equal(storedEntry.type, 'while-you-were-away');
+    assert.equal(pushedEntries.length, 2);
+    assert.equal(pushedEntries[1].type, 'while-you-were-away-player');
+    assert.match(storedEntry.content, /Update on Ember since Exis last saw them 9 hours ago:/);
+    assert.match(storedEntry.content, /Update on Vervaine Duskweaver since Exis last saw them 9 hours ago:/);
+    assert.match(storedEntry.content, /Update on Rozalin since Exis last saw them some time ago:/);
+    assert.equal(rozalin.currentLocation, 'main-room');
+    assert.equal(kitchen.npcIds.includes('rozalin'), false);
+    assert.equal(mainRoom.npcIds.includes('rozalin'), true);
+});
+
+test('runWhileYouWereAwayPrompt matches HERE arrivals by alias', async () => {
+    const mainRoom = createLocation({ id: 'main-room', name: 'Main Room', regionId: 'farmhouse' });
+    const kitchen = createLocation({ id: 'kitchen', name: 'Kitchen', regionId: 'farmhouse', npcIds: ['suzu'] });
+    const regions = new Map([
+        ['farmhouse', { id: 'farmhouse', name: 'Farmhouse Interior', locationIds: ['main-room', 'kitchen'], entranceLocationId: 'main-room' }]
+    ]);
+    const gameLocations = new Map([
+        [mainRoom.id, mainRoom],
+        [kitchen.id, kitchen]
+    ]);
+    const suzu = {
+        id: 'suzu',
+        isNPC: true,
+        name: 'Suzu Mizuhan',
+        aliases: ['Suzu'],
+        currentLocation: 'kitchen',
+        getNeedBars() {
+            return [];
+        },
+        setLocation(nextLocationId) {
+            this.currentLocation = nextLocationId;
+        }
+    };
+
+    const { runWhileYouWereAwayPrompt } = loadWhileYouWereAwayHelpers({
+        currentPlayer: {
+            id: 'player',
+            name: 'Baato',
+            currentLocation: 'main-room'
+        },
+        players: new Map([[suzu.id, suzu]]),
+        gameLocations,
+        regions,
+        llmResponse: `
+<response>
+  <characterUpdates>
+    <characterUpdate>
+      <name>Suzu</name>
+      <update>Suzu arrived early and started breakfast.</update>
+      <travelDestination>HERE</travelDestination>
+    </characterUpdate>
+  </characterUpdates>
+  <proseForPlayer>Suzu is already in the room.</proseForPlayer>
+</response>
+`
+    });
+
+    const storedEntry = await runWhileYouWereAwayPrompt({
+        locationOverride: mainRoom,
+        locationId: mainRoom.id
+    });
+
+    assert.match(storedEntry.content, /Update on Suzu Mizuhan since Baato last saw them some time ago:/);
+    assert.equal(suzu.currentLocation, 'main-room');
+    assert.equal(kitchen.npcIds.includes('suzu'), false);
+    assert.equal(mainRoom.npcIds.includes('suzu'), true);
+});
+
+test('runWhileYouWereAwayPrompt keeps current party HERE arrivals in the party only', async () => {
+    const mainRoom = createLocation({ id: 'main-room', name: 'Main Room', regionId: 'farmhouse' });
+    const regions = new Map([
+        ['farmhouse', { id: 'farmhouse', name: 'Farmhouse Interior', locationIds: ['main-room'], entranceLocationId: 'main-room' }]
+    ]);
+    const gameLocations = new Map([[mainRoom.id, mainRoom]]);
+    const partyMemberIds = ['suzu'];
+    const suzu = {
+        id: 'suzu',
+        isNPC: true,
+        name: 'Suzu Mizuhan',
+        aliases: ['Suzu'],
+        currentLocation: null,
+        isInPlayerParty: true,
+        getNeedBars() {
+            return [];
+        },
+        setLocation() {
+            throw new Error('Current party member should not be relocated as a location NPC.');
+        }
+    };
+
+    const currentPlayer = {
+        id: 'player',
+        name: 'Baato',
+        currentLocation: 'main-room',
+        getPartyMembers() {
+            return partyMemberIds.slice();
+        }
+    };
+
+    const { runWhileYouWereAwayPrompt } = loadWhileYouWereAwayHelpers({
+        currentPlayer,
+        players: new Map([[suzu.id, suzu]]),
+        gameLocations,
+        regions,
+        llmResponse: `
+<response>
+  <characterUpdates>
+    <characterUpdate>
+      <name>Suzu</name>
+      <update>Suzu arrived with Baato and is still beside him.</update>
+      <travelDestination>HERE</travelDestination>
+    </characterUpdate>
+  </characterUpdates>
+  <proseForPlayer>Suzu steps in beside Baato.</proseForPlayer>
+</response>
+`
+    });
+
+    const storedEntry = await runWhileYouWereAwayPrompt({
+        locationOverride: mainRoom,
+        locationId: mainRoom.id
+    });
+
+    assert.match(storedEntry.content, /Update on Suzu Mizuhan since Baato last saw them some time ago:/);
+    assert.equal(suzu.currentLocation, null);
+    assert.deepEqual(currentPlayer.getPartyMembers(), ['suzu']);
+    assert.equal(mainRoom.npcIds.includes('suzu'), false);
+});
+
+test('runWhileYouWereAwayPrompt prefers a single former party member among duplicate HERE arrival matches', async () => {
+    const mainRoom = createLocation({ id: 'main-room', name: 'Main Room', regionId: 'farmhouse' });
+    const barn = createLocation({ id: 'barn', name: 'Barn', regionId: 'farmhouse', npcIds: ['farmhand-a'] });
+    const porch = createLocation({ id: 'porch', name: 'Porch', regionId: 'farmhouse', npcIds: ['farmhand-b'] });
+    const regions = new Map([
+        ['farmhouse', { id: 'farmhouse', name: 'Farmhouse Interior', locationIds: ['main-room', 'barn', 'porch'], entranceLocationId: 'main-room' }]
+    ]);
+    const gameLocations = new Map([
+        [mainRoom.id, mainRoom],
+        [barn.id, barn],
+        [porch.id, porch]
+    ]);
+    const firstFarmhand = {
+        id: 'farmhand-a',
+        isNPC: true,
+        name: 'Farmhand',
+        currentLocation: 'barn',
+        wasEverInPlayerParty: false,
+        getNeedBars() {
+            return [];
+        },
+        setLocation(nextLocationId) {
+            this.currentLocation = nextLocationId;
+        }
+    };
+    const formerPartyFarmhand = {
+        id: 'farmhand-b',
+        isNPC: true,
+        name: 'Farmhand',
+        currentLocation: 'porch',
+        wasEverInPlayerParty: true,
+        getNeedBars() {
+            return [];
+        },
+        setLocation(nextLocationId) {
+            this.currentLocation = nextLocationId;
+        }
+    };
+
+    const { runWhileYouWereAwayPrompt } = loadWhileYouWereAwayHelpers({
+        currentPlayer: {
+            id: 'player',
+            name: 'Baato',
+            currentLocation: 'main-room'
+        },
+        players: new Map([
+            [firstFarmhand.id, firstFarmhand],
+            [formerPartyFarmhand.id, formerPartyFarmhand]
+        ]),
+        gameLocations,
+        regions,
+        llmResponse: `
+<response>
+  <characterUpdates>
+    <characterUpdate>
+      <name>Farmhand</name>
+      <update>The farmhand came inside after finishing chores.</update>
+      <travelDestination>HERE</travelDestination>
+    </characterUpdate>
+  </characterUpdates>
+  <proseForPlayer>A farmhand is already here.</proseForPlayer>
+</response>
+`
+    });
+
+    await runWhileYouWereAwayPrompt({
+        locationOverride: mainRoom,
+        locationId: mainRoom.id
+    });
+
+    assert.equal(firstFarmhand.currentLocation, 'barn');
+    assert.equal(formerPartyFarmhand.currentLocation, 'main-room');
+    assert.equal(barn.npcIds.includes('farmhand-a'), true);
+    assert.equal(porch.npcIds.includes('farmhand-b'), false);
+    assert.equal(mainRoom.npcIds.includes('farmhand-b'), true);
+});
+
+test('runWhileYouWereAwayPrompt warns and skips unmatched HERE arrivals without creating NPCs', async () => {
+    const mainRoom = createLocation({ id: 'main-room', name: 'Main Room', regionId: 'farmhouse' });
+    const regions = new Map([
+        ['farmhouse', { id: 'farmhouse', name: 'Farmhouse Interior', locationIds: ['main-room'], entranceLocationId: 'main-room' }]
+    ]);
+    const gameLocations = new Map([[mainRoom.id, mainRoom]]);
+    const players = new Map();
+    const warnings = [];
+    const originalWarn = console.warn;
+    console.warn = (message) => warnings.push(String(message));
+
+    try {
+        const { runWhileYouWereAwayPrompt } = loadWhileYouWereAwayHelpers({
+            currentPlayer: {
+                id: 'player',
+                name: 'Baato',
+                currentLocation: 'main-room'
+            },
+            players,
+            gameLocations,
+            regions,
+            llmResponse: `
+<response>
+  <characterUpdates>
+    <characterUpdate>
+      <name>Unmatched NPC</name>
+      <update>No existing NPC has this name.</update>
+      <travelDestination>HERE</travelDestination>
+    </characterUpdate>
+  </characterUpdates>
+  <proseForPlayer>The room is quiet.</proseForPlayer>
+</response>
+`
         });
 
-        const storedEntry = await runWhileYouWereAwayPrompt({
+        const result = await runWhileYouWereAwayPrompt({
             locationOverride: mainRoom,
-            locationId: mainRoom.id
+            locationId: mainRoom.id,
+            returnEntries: true
         });
 
-        assert.equal(storedEntry.type, 'while-you-were-away');
-        assert.equal(pushedEntries.length, 2);
-        assert.equal(pushedEntries[1].type, 'while-you-were-away-player');
-        assert.match(storedEntry.content, /Update on Ember since Exis last saw them 9 hours ago:/);
-        assert.match(storedEntry.content, /Update on Vervaine Duskweaver since Exis last saw them 9 hours ago:/);
-        assert.doesNotMatch(storedEntry.content, /Rozalin/);
-        assert.equal(rozalin.currentLocation, 'kitchen');
-        assert.equal(kitchen.npcIds.includes('rozalin'), true);
-        assert.equal(mainRoom.npcIds.includes('rozalin'), false);
+        assert.equal(players.size, 0);
+        assert.deepEqual(mainRoom.npcIds, []);
+        assert.equal(result.hiddenEntry.content, 'No while-you-were-away character updates were returned.');
         assert.equal(warnings.length, 1);
         assert.match(
             warnings[0],
-            /Ignoring while-you-were-away arrival update "Rozalin" because no matching NPC is currently at "Main Room"\./
+            /Ignoring while-you-were-away arrival update "Unmatched NPC" because no existing NPC matched that name or alias\./
         );
     } finally {
         console.warn = originalWarn;

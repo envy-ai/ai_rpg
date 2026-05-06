@@ -1,15 +1,18 @@
-{% if whileYouWereAwayNpcs and whileYouWereAwayNpcs | length -%}
+{% set listedNpcs = whileYouWereAwayNpcs or [] -%}
+{% if listedNpcs | length -%}
 The following NPCs are currently at this location and have not been with the player continuously since the player last saw them. Here's where they were last seen and how long ago:
-{% for npc in whileYouWereAwayNpcs -%}
+{% for npc in listedNpcs -%}
 - {{ npc.name }} (last seen {{ npc.lastSeenTimeAgo }} at {{ npc.lastSeenLocationName | default(npc.last_seen_location, true) }})
 {% endfor -%}
+{% else -%}
+No current-location NPCs require individual while-you-were-away character updates.
 {% endif -%}
 
-<task>Write a paragraph-long summary for each of the above listed characters, describing what they have been up to since they last saw the player.</task>
+<task>Write a paragraph-long summary for each listed character, if any, describing what they have been up to since they last saw the player. Always write proseForPlayer describing what the player sees, learns, or experiences upon returning to this location, even when there are no listed characters.</task>
 
 If one of the above listed characters was already here when the player arrived, keep them in their listed update. Only use the optional arrival section for a character who is physically in the exact current location right now but was not listed above. Do not use it for someone who is merely nearby, elsewhere in the same building, or audible from another room.
 
-Need bar instructions:{% for bar in needBarDefinitions %}
+Need bar instructions:{% for bar in needBarDefinitions or [] %}
 - {{ bar.id }}: {{ bar.while_you_were_away_prompt_notes | eval }}
 {% endfor %}
 
@@ -19,7 +22,7 @@ Return a response in this format:
 
 <response>
   <characterUpdates>
-    {% for npc in whileYouWereAwayNpcs -%}
+    {% for npc in listedNpcs -%}
     <characterUpdate>
       <name>{{ npc.name }}</name>
       <needBarChanges>
@@ -36,6 +39,8 @@ Return a response in this format:
       <update><!-- A paragraph describing what this character has been up to since they last saw the player. Include any notable events, changes in status, or other relevant information. Characters will almost ALWAYS prioritize addressing serious/desperate/pressing needs if they have them. --></update>
     </characterUpdate>
     {% endfor -%}
+
+    <!-- If there are no listed characters and no exact-location arrivals, leave characterUpdates empty. -->
 
     <!-- Optionally, if any character who is NOT listed above ARRIVED at this location since the player was last here, you can include them here like this: -->
     <characterUpdate>

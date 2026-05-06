@@ -949,12 +949,18 @@ class Location {
     return this.#lastVisitedTime;
   }
 
-  hoursSinceLastVisit(currentTime = null) {
+  minutesSinceLastVisit(currentTime = null) {
     const lastVisited = this.#lastVisitedTime;
     if (lastVisited === null) {
       return null;
     }
-    return Globals.elapsedTime - lastVisited;
+    const referenceTime = currentTime === null || currentTime === undefined
+      ? Globals.elapsedTime
+      : Number(currentTime);
+    if (!Number.isFinite(referenceTime)) {
+      throw new Error('Location minutesSinceLastVisit reference time must be a finite number');
+    }
+    return referenceTime - lastVisited;
   }
 
   get description() {

@@ -50,6 +50,16 @@ These characters are currently known by the system to be present. This is not ne
 {% endfor %}{% for member in party %}{% if member not in npcs %}- {{ member.name }} ({{ member.race }}/{{ member.class }})
 {% endif %}{% endfor %}
 
+{% if eventCheckIgnoreInstructions or (eventCheckIgnoredEventKeys and eventCheckIgnoredEventKeys | length) -%}
+Event categories to explicitly ignore for this pass:
+{% if eventCheckIgnoreInstructions %}{{ eventCheckIgnoreInstructions }}
+{% endif -%}
+{% for eventKey in eventCheckIgnoredEventKeys or [] -%}
+- {{ eventKey }}
+{% endfor %}
+If an event-check question asks about an ignored category, answer N/A for that question.
+{% endif -%}
+
 Event Checks:
 {%- set questions = eventQuestions | default([]) %}
 {%- for q in questions %}
@@ -79,5 +89,4 @@ Did I refer to everything by its full, exact name? ...names in prose may differ 
 4. ...
 [... and so on ...]
 </final>
-
 

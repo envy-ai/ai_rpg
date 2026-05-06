@@ -20,6 +20,92 @@ function formatLevelNumber(value) {
   return Number.isInteger(numberValue) ? String(numberValue) : String(numberValue);
 }
 
+function numbersMatch(a, b) {
+  return Math.abs(Number(a) - Number(b)) < 0.000001;
+}
+
+function sortTonalScaleLevels(levels) {
+  return [...levels].sort((a, b) => Number(a.level) - Number(b.level));
+}
+
+function buildSelectionOptionsForAxisLevels(levels) {
+  const sortedLevels = sortTonalScaleLevels(levels);
+  const options = [];
+  for (let index = 0; index < sortedLevels.length; index += 1) {
+    const currentLevel = sortedLevels[index];
+    options.push({
+      level: currentLevel.level,
+      name: currentLevel.name,
+      defined: true
+    });
+
+    const nextLevel = sortedLevels[index + 1];
+    if (!nextLevel || !numbersMatch(Number(nextLevel.level) - Number(currentLevel.level), 1)) {
+      continue;
+    }
+
+    const midpointLevel = (Number(currentLevel.level) + Number(nextLevel.level)) / 2;
+    const midpointAlreadyDefined = sortedLevels.some(level => numbersMatch(level.level, midpointLevel));
+    if (midpointAlreadyDefined) {
+      continue;
+    }
+
+    options.push({
+      level: midpointLevel,
+      name: `${nextLevel.name}/${currentLevel.name}`,
+      defined: false,
+      lowerLevel: currentLevel.level,
+      upperLevel: nextLevel.level
+    });
+  }
+  return options;
+}
+
+function resolveTonalScaleLevel(axis, rawLevel) {
+  if (!axis || !Array.isArray(axis.levels)) {
+    throw new Error('resolveTonalScaleLevel requires a tonal axis with levels.');
+  }
+  const levelValue = Number(rawLevel);
+  if (!Number.isFinite(levelValue)) {
+    throw new Error(`Tonal scale level "${rawLevel}" is not numeric.`);
+  }
+
+  const sortedLevels = sortTonalScaleLevels(axis.levels);
+  const exactLevel = sortedLevels.find(level => numbersMatch(level.level, levelValue));
+  if (exactLevel) {
+    return {
+      level: exactLevel.level,
+      name: exactLevel.name,
+      description: exactLevel.description,
+      defined: true
+    };
+  }
+
+  for (let index = 0; index < sortedLevels.length - 1; index += 1) {
+    const lowerLevel = sortedLevels[index];
+    const upperLevel = sortedLevels[index + 1];
+    if (!numbersMatch(Number(upperLevel.level) - Number(lowerLevel.level), 1)) {
+      continue;
+    }
+
+    const midpointLevel = (Number(lowerLevel.level) + Number(upperLevel.level)) / 2;
+    if (!numbersMatch(midpointLevel, levelValue)) {
+      continue;
+    }
+
+    return {
+      level: levelValue,
+      name: `${upperLevel.name}/${lowerLevel.name}`,
+      description: `Between ${lowerLevel.name} and ${upperLevel.name}: ${lowerLevel.description} ${upperLevel.description}`,
+      defined: false,
+      lowerLevel: lowerLevel.level,
+      upperLevel: upperLevel.level
+    };
+  }
+
+  throw new Error(`Tonal scale level "${formatLevelNumber(levelValue)}" is not defined and is not a half-step between defined levels.`);
+}
+
 function normalizeUnifiedTonalScaleSelections(value) {
   if (value === null || value === undefined || value === '') {
     return {};
@@ -139,7 +225,8 @@ function validateUnifiedTonalScaleDefinition(definition) {
       title,
       abbreviation,
       framing,
-      levels
+      levels,
+      selectionOptions: buildSelectionOptionsForAxisLevels(levels)
     };
   }
 
@@ -194,9 +281,11 @@ function buildUnifiedTonalScalePrompt({ definition, selections }) {
 
   for (const [key, axis] of axes) {
     const selection = normalizedSelections[key];
-    const selectedLevel = axis.levels.find(level => Number(level.level) === Number(selection.level));
-    if (!selectedLevel) {
-      throw new Error(`unifiedTonalScale.${key}.level "${selection.level}" is not defined in unified_tonal_scale.yaml.`);
+    let selectedLevel = null;
+    try {
+      selectedLevel = resolveTonalScaleLevel(axis, selection.level);
+    } catch (error) {
+      throw new Error(`unifiedTonalScale.${key}.level "${selection.level}" is invalid: ${error.message}`);
     }
 
     storyNotationParts.push(`${axis.abbreviation}${formatLevelNumber(selection.level)}`);
@@ -234,5 +323,6 @@ module.exports = {
   buildUnifiedTonalScalePromptForSetting,
   loadUnifiedTonalScaleDefinition,
   normalizeUnifiedTonalScaleSelections,
+  resolveTonalScaleLevel,
   validateUnifiedTonalScaleDefinition
 };

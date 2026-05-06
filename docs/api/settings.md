@@ -15,7 +15,7 @@ Create a new setting.
 Request:
 - Body: SettingInfo fields (at minimum `name`)
   - Includes `defaultFactionCount` (non-negative integer or empty) and `defaultFactions` (array of faction drafts) for settings-scoped faction defaults.
-  - Includes `unifiedTonalScale`, an object keyed by tonal-axis id, where each selected axis is `{ level, comment? }`.
+  - Includes `unifiedTonalScale`, an object keyed by tonal-axis id, where each selected axis is `{ level, comment? }`. Levels may be defined scale values or generated half-step values such as `3.5`.
 
 Response:
 - 201: `{ success: true, setting: SettingInfo, message }`
@@ -62,7 +62,7 @@ Update a setting.
 Request:
 - Body: SettingInfo fields
   - Supports `defaultFactionCount` and `defaultFactions` updates.
-  - Supports `unifiedTonalScale` updates with numeric levels and optional comments.
+  - Supports `unifiedTonalScale` updates with numeric levels, generated half-step values, and optional comments.
 
 Response:
 - 200: `{ success: true, setting: SettingInfo, message }`

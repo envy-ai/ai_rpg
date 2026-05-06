@@ -3453,7 +3453,11 @@ module.exports = function registerApiRoutes(scope) {
                 && typeof node.nodeName === 'string'
                 && node.nodeName.toLowerCase() === 'characterupdate'
             ));
-            if (!updateNodes.length) {
+            if (
+                !updateNodes.length
+                && expectedNameKeys instanceof Set
+                && expectedNameKeys.size > 0
+            ) {
                 throw new Error('While-you-were-away response contains no <characterUpdate> entries.');
             }
 
@@ -3602,6 +3606,26 @@ module.exports = function registerApiRoutes(scope) {
             }) || null;
         }
 
+        function isCurrentPlayerPartyMemberForWhileYouWereAway(npc) {
+            const npcId = typeof npc?.id === 'string'
+                ? npc.id.trim()
+                : '';
+            if (!npcId) {
+                return false;
+            }
+            if (npc.isInPlayerParty === true) {
+                return true;
+            }
+            if (typeof currentPlayer?.getPartyMembers !== 'function') {
+                return false;
+            }
+
+            return currentPlayer.getPartyMembers()
+                .map(memberId => (typeof memberId === 'string' ? memberId.trim() : ''))
+                .filter(Boolean)
+                .includes(npcId);
+        }
+
         function moveNpcForWhileYouWereAway(npc, destination) {
             if (!npc || !npc.isNPC) {
                 throw new Error('While-you-were-away NPC relocation requires an NPC.');
@@ -3610,10 +3634,30 @@ module.exports = function registerApiRoutes(scope) {
                 throw new Error(`While-you-were-away relocation for "${npc.name}" is missing a destination.`);
             }
 
+            const destinationId = typeof destination.id === 'string'
+                ? destination.id.trim()
+                : '';
+            if (isCurrentPlayerPartyMemberForWhileYouWereAway(npc)) {
+                const playerLocationId = typeof currentPlayer?.currentLocation === 'string'
+                    ? currentPlayer.currentLocation.trim()
+                    : '';
+                if (destinationId && playerLocationId && destinationId === playerLocationId) {
+                    return {
+                        moved: false,
+                        originLocation: null,
+                        keptInParty: true
+                    };
+                }
+
+                throw new Error(
+                    `While-you-were-away cannot relocate current party member "${npc.name}" away from the player.`
+                );
+            }
+
             const originLocationId = typeof npc.currentLocation === 'string'
                 ? npc.currentLocation.trim()
                 : '';
-            if (originLocationId && originLocationId === destination.id) {
+            if (originLocationId && originLocationId === destinationId) {
                 return {
                     moved: false,
                     originLocation: originLocationId
@@ -3671,7 +3715,7 @@ module.exports = function registerApiRoutes(scope) {
 
         function buildWhileYouWereAwayHistoryContent(plannedUpdates, playerName) {
             if (!Array.isArray(plannedUpdates) || !plannedUpdates.length) {
-                throw new Error('While-you-were-away history content requires at least one update.');
+                return 'No while-you-were-away character updates were returned.';
             }
 
             const resolvedPlayerName = typeof playerName === 'string' && playerName.trim()
@@ -3713,12 +3757,72 @@ module.exports = function registerApiRoutes(scope) {
             return blocks.join('\n\n');
         }
 
+        function getWhileYouWereAwayNpcNameKeys(actor) {
+            const keys = new Set();
+            const addKey = (value) => {
+                const key = normalizeNpcNameKey(value);
+                if (key) {
+                    keys.add(key);
+                }
+            };
+
+            addKey(actor?.name);
+
+            if (actor && typeof actor.getAliases === 'function') {
+                const aliases = actor.getAliases();
+                if (Array.isArray(aliases)) {
+                    aliases.forEach(addKey);
+                }
+            }
+
+            if (actor?.aliases instanceof Set) {
+                for (const alias of actor.aliases.values()) {
+                    addKey(alias);
+                }
+            } else if (Array.isArray(actor?.aliases)) {
+                actor.aliases.forEach(addKey);
+            }
+
+            return keys;
+        }
+
+        function findExistingNpcByNameOrAlias(nameKey) {
+            if (!nameKey || !(players instanceof Map)) {
+                return null;
+            }
+
+            const matches = [];
+            for (const actor of players.values()) {
+                if (!actor || actor.isNPC !== true) {
+                    continue;
+                }
+                if (getWhileYouWereAwayNpcNameKeys(actor).has(nameKey)) {
+                    matches.push(actor);
+                }
+            }
+
+            if (!matches.length) {
+                return null;
+            }
+
+            const formerPartyMatches = matches.filter(actor => (
+                actor.wasEverInPlayerParty === true
+                && actor.isInPlayerParty !== true
+            ));
+            if (formerPartyMatches.length === 1) {
+                return formerPartyMatches[0];
+            }
+
+            return matches[0];
+        }
+
         async function runWhileYouWereAwayPrompt({
             locationOverride = null,
             locationId = null,
             entryCollector = null,
             parentEntryId = null,
-            returnEntries = false
+            returnEntries = false,
+            stream = null
         } = {}) {
             const resolvedLocation = locationOverride
                 || (typeof currentPlayer?.currentLocation === 'string' && currentPlayer.currentLocation.trim()
@@ -3729,23 +3833,21 @@ module.exports = function registerApiRoutes(scope) {
             }
 
             const baseContext = await prepareBasePromptContext({ locationOverride: resolvedLocation });
-            const candidates = Array.isArray(baseContext?.whileYouWereAwayNpcs)
+            const allCandidates = Array.isArray(baseContext?.whileYouWereAwayNpcs)
                 ? baseContext.whileYouWereAwayNpcs
                 : [];
-            if (!candidates.length) {
-                return returnEntries ? { hiddenEntry: null, visibleEntry: null } : null;
-            }
             const rawThreshold = Number(config?.while_you_were_away_threshold_minutes);
             const whileYouWereAwayThresholdMinutes = Number.isInteger(rawThreshold) && rawThreshold >= 0
                 ? rawThreshold
-                : (4 * 60);
-            const hasEligibleCandidate = candidates.some(candidate => (
+                : 30;
+            const candidates = allCandidates.filter(candidate => (
                 Number.isInteger(candidate?.lastSeenAgeMinutes)
                 && candidate.lastSeenAgeMinutes >= whileYouWereAwayThresholdMinutes
             ));
-            if (!hasEligibleCandidate) {
-                return returnEntries ? { hiddenEntry: null, visibleEntry: null } : null;
-            }
+            const promptBaseContext = {
+                ...baseContext,
+                whileYouWereAwayNpcs: candidates
+            };
 
             if (!config?.ai) {
                 throw new Error('AI configuration missing; unable to run while-you-were-away prompt.');
@@ -3764,7 +3866,7 @@ module.exports = function registerApiRoutes(scope) {
             }
 
             const renderedTemplate = promptEnv.render('base-context.xml.njk', {
-                ...baseContext,
+                ...promptBaseContext,
                 promptType: 'while-you-were-away'
             });
             const parsedTemplate = parseXMLTemplate(renderedTemplate);
@@ -3812,33 +3914,12 @@ module.exports = function registerApiRoutes(scope) {
                     ? (players.get(candidate.id) || null)
                     : null;
                 if (!npc && parsedUpdate.arrivedHere === true && players instanceof Map) {
-                    const arrivalMatches = [];
-                    for (const actor of players.values()) {
-                        if (!actor || actor.isNPC !== true) {
-                            continue;
-                        }
-                        if (normalizeNpcNameKey(actor.name) !== parsedUpdate.nameKey) {
-                            continue;
-                        }
-                        const actorLocationId = typeof actor.currentLocation === 'string'
-                            ? actor.currentLocation.trim()
-                            : '';
-                        if (!currentLocationId || actorLocationId !== currentLocationId) {
-                            continue;
-                        }
-                        arrivalMatches.push(actor);
-                    }
-                    if (arrivalMatches.length > 1) {
-                        throw new Error(
-                            `While-you-were-away arrival update "${parsedUpdate.name}" matched multiple NPCs at "${resolvedLocation.name || currentLocationId}".`
-                        );
-                    }
-                    npc = arrivalMatches[0] || null;
+                    npc = findExistingNpcByNameOrAlias(parsedUpdate.nameKey);
                 }
                 if (!npc || !npc.isNPC) {
                     if (!candidate && parsedUpdate.arrivedHere === true) {
                         console.warn(
-                            `Ignoring while-you-were-away arrival update "${parsedUpdate.name}" because no matching NPC is currently at "${resolvedLocation.name || currentLocationId}".`
+                            `Ignoring while-you-were-away arrival update "${parsedUpdate.name}" because no existing NPC matched that name or alias.`
                         );
                         continue;
                     }
@@ -3973,8 +4054,57 @@ module.exports = function registerApiRoutes(scope) {
                 }
             }
 
+            let eventResult = null;
+            const eventCheckTextParts = [];
+            if (plannedUpdates.length && historyContent && historyContent.trim()) {
+                eventCheckTextParts.push(`While-you-were-away character updates:\n${historyContent}`);
+            }
+            if (playerFacingProse) {
+                eventCheckTextParts.push(`Player-facing return prose:\n${playerFacingProse}`);
+            }
+            const eventCheckText = eventCheckTextParts.join('\n\n').trim();
+            if (eventCheckText) {
+                try {
+                    eventResult = await Events.runEventChecks({
+                        textToCheck: eventCheckText,
+                        stream,
+                        locationOverride: resolvedLocation,
+                        suppressMoveEvents: true,
+                        suppressTimeAdvance: true,
+                        suppressNeedBarEventChecks: true,
+                        ignoredEventKeys: ['needbar_change', 'npc_arrival_departure'],
+                        eventCheckIgnoreInstructions: 'This is a while-you-were-away event pass. Need-bar values and character arrivals/departures were already parsed directly from the while-you-were-away response, so ignore needbar_change and npc_arrival_departure completely.'
+                    });
+                } catch (eventCheckError) {
+                    console.warn(
+                        'Failed to apply while-you-were-away event checks:',
+                        eventCheckError?.message || eventCheckError
+                    );
+                    console.debug(eventCheckError);
+                }
+            }
+
+            if (eventResult) {
+                const summaryParentEntry = storedVisibleEntry || hiddenEntry || null;
+                appendEventSummariesToChat({
+                    summaryLabel: '📋 Events – While You Were Away',
+                    statusLabel: '🌀 Status Changes – While You Were Away',
+                    events: eventResult.structured || null,
+                    experienceAwards: eventResult.experienceAwards || null,
+                    currencyChanges: eventResult.currencyChanges || null,
+                    environmentalDamageEvents: eventResult.environmentalDamageEvents || null,
+                    needBarChanges: null,
+                    dispositionChanges: eventResult.dispositionChanges || null,
+                    factionReputationChanges: eventResult.factionReputationChanges || null,
+                    timeProgress: eventResult.timeProgress || null,
+                    timestamp: summaryParentEntry?.timestamp || new Date().toISOString(),
+                    parentId: summaryParentEntry?.id || null,
+                    locationId: resolvedLocationId
+                }, entryCollector);
+            }
+
             return returnEntries
-                ? { hiddenEntry, visibleEntry: storedVisibleEntry }
+                ? { hiddenEntry, visibleEntry: storedVisibleEntry, eventResult }
                 : hiddenEntry;
         }
 
@@ -17259,7 +17389,8 @@ module.exports = function registerApiRoutes(scope) {
                     locationOverride: arrivalLocation,
                     locationId: arrivalLocation.id,
                     entryCollector: newChatEntries,
-                    parentEntryId
+                    parentEntryId,
+                    stream
                 });
             };
 
@@ -23446,14 +23577,45 @@ module.exports = function registerApiRoutes(scope) {
                     });
                 }
 
-                const originLocationId = typeof npc.currentLocation === 'string' ? npc.currentLocation : null;
-                if (originLocationId && originLocationId === destinationLocation.id) {
+                const partyMemberIds = isNpc && currentPlayer && typeof currentPlayer.getPartyMembers === 'function'
+                    ? currentPlayer.getPartyMembers()
+                        .map(id => (typeof id === 'string' ? id.trim() : ''))
+                        .filter(Boolean)
+                    : [];
+                const isCurrentPartyMember = isNpc && partyMemberIds.includes(npcId);
+                const effectiveOriginLocationId = isCurrentPartyMember
+                    ? (typeof currentPlayer.currentLocation === 'string' ? currentPlayer.currentLocation : null)
+                    : (typeof npc.currentLocation === 'string' ? npc.currentLocation : null);
+
+                if (isCurrentPartyMember && !effectiveOriginLocationId) {
+                    throw new Error(`Cannot teleport party member '${npc.name || npc.id}': current player location is unknown.`);
+                }
+
+                if (effectiveOriginLocationId && effectiveOriginLocationId === destinationLocation.id) {
                     return res.status(400).json({
                         success: false,
                         error: `${npc.name || 'NPC'} is already at the requested location`
                     });
                 }
 
+                let removedFromParty = false;
+                if (isCurrentPartyMember) {
+                    const partyOriginLocation = resolveLocationById(effectiveOriginLocationId);
+                    if (!partyOriginLocation) {
+                        throw new Error(`Cannot teleport party member '${npc.name || npc.id}': current player location '${effectiveOriginLocationId}' was not found.`);
+                    }
+                    if (typeof currentPlayer.removePartyMember !== 'function') {
+                        throw new Error(`Cannot teleport party member '${npc.name || npc.id}': current player cannot remove party members.`);
+                    }
+                    removedFromParty = currentPlayer.removePartyMember(npcId);
+                    if (!removedFromParty) {
+                        throw new Error(`Cannot teleport party member '${npc.name || npc.id}': failed to remove them from the party.`);
+                    }
+                }
+
+                const originLocationId = typeof npc.currentLocation === 'string'
+                    ? npc.currentLocation
+                    : effectiveOriginLocationId;
                 const originLocation = resolveLocationById(originLocationId);
                 const npcIdsSharingPlayerLocationAtTurnStart = !isNpc
                     ? Player.getNpcIdsSharingPlayerLocation({
@@ -23574,6 +23736,7 @@ module.exports = function registerApiRoutes(scope) {
                     ].filter(Boolean))),
                     worldTime: fastTravelTimeAdjustment?.worldTime || null,
                     timeProgress: fastTravelTimeAdjustment?.timeProgress || null,
+                    removedFromParty,
                     message: `${npc.name || (isNpc ? 'NPC' : 'Player')} teleported successfully.`
                 };
 
