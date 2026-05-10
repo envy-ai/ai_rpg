@@ -1,12 +1,15 @@
 const Utils = require('./Utils.js');
 const LLMClient = require('./LLMClient.js');
+const IdGenerator = require('./IdGenerator.js');
 
 class StatusEffect {
-    constructor({ name, description, attributes, skills, needBars, duration, appliedAt } = {}) {
+    constructor({ id = null, name, description, attributes, skills, needBars, duration, appliedAt } = {}) {
         if (!description || typeof description !== 'string') {
             throw new Error('StatusEffect description must be a non-empty string');
         }
 
+        this.id = typeof id === 'string' && id.trim() ? id.trim() : IdGenerator.next('status');
+        IdGenerator.register('status', this.id);
         this.name = typeof name === 'string' ? name.trim() : '';
         this.description = description.trim();
         this.attributes = this.#normalizeModifiers(attributes, 'attribute');
@@ -152,6 +155,7 @@ class StatusEffect {
 
     toJSON() {
         return {
+            id: this.id,
             name: this.name,
             description: this.description,
             attributes: this.attributes,
@@ -167,6 +171,7 @@ class StatusEffect {
             throw new Error('Invalid data provided to StatusEffect.fromJSON');
         }
         return new StatusEffect({
+            id: data.id,
             name: data.name,
             description: data.description,
             attributes: data.attributes,

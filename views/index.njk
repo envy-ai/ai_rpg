@@ -1317,6 +1317,23 @@
             </div>
         </div>
     </div>
+    <div id="barterStartConfirmModal" class="modal barter-start-confirm-modal" role="dialog" aria-modal="true" aria-hidden="true" hidden>
+        <div class="modal__dialog barter-start-confirm-modal__dialog">
+            <header class="modal__header">
+                <h2 id="barterStartConfirmTitle">Start Barter</h2>
+                <button type="button" class="modal__close" id="barterStartConfirmCloseBtn" aria-label="Close barter confirmation">
+                    <span aria-hidden="true">X</span>
+                </button>
+            </header>
+            <div class="modal__body barter-start-confirm-modal__body">
+                <p id="barterStartConfirmMessage" class="modal__instruction">Barter with this character?</p>
+            </div>
+            <footer class="modal__footer">
+                <button type="button" class="btn btn-secondary" id="barterStartConfirmCancelBtn">Cancel</button>
+                <button type="button" class="btn btn-primary" id="barterStartConfirmAcceptBtn">Barter</button>
+            </footer>
+        </div>
+    </div>
     <div id="barterQuantityModal" class="modal barter-quantity-modal" role="dialog" aria-modal="true" aria-hidden="true" hidden>
         <div class="modal__dialog barter-quantity-modal__dialog">
             <header class="modal__header">
@@ -3323,6 +3340,77 @@
                 return variantResult || null;
             } catch (error) {
                 console.warn('Failed to request location weather image variant:', error?.message || error);
+                return null;
+            }
+        }
+
+        function applyVehiclePipLocationVariantIfCurrent({ locationId, sourceImageId, imageId, imageUrl, altText = '' } = {}) {
+            const resolvedLocationId = typeof locationId === 'string' ? locationId.trim() : '';
+            const resolvedSourceImageId = typeof sourceImageId === 'string' ? sourceImageId.trim() : '';
+            const resolvedImageId = typeof imageId === 'string' ? imageId.trim() : '';
+            const resolvedImageUrl = typeof imageUrl === 'string' && imageUrl.trim()
+                ? imageUrl.trim()
+                : getGeneratedImageUrl(resolvedImageId);
+            if (!resolvedLocationId || !resolvedSourceImageId || !resolvedImageId || !resolvedImageUrl) {
+                return false;
+            }
+
+            const locationVehiclePipImage = document.getElementById('locationVehiclePipImage');
+            if (!locationVehiclePipImage) {
+                return false;
+            }
+            if (
+                locationVehiclePipImage.dataset.vehiclePipLocationId !== resolvedLocationId
+                || locationVehiclePipImage.dataset.vehiclePipSourceImageId !== resolvedSourceImageId
+            ) {
+                return false;
+            }
+
+            const img = locationVehiclePipImage.querySelector('img');
+            if (!img) {
+                return false;
+            }
+
+            img.src = resolvedImageUrl;
+            if (altText) {
+                img.alt = altText;
+            }
+            locationVehiclePipImage.dataset.displayImageId = resolvedImageId;
+            rememberLocationVariantDisplay(locationVariantDisplayCache, {
+                locationId: resolvedLocationId,
+                sourceImageId: resolvedSourceImageId,
+                imageId: resolvedImageId,
+                imageUrl: resolvedImageUrl,
+                altText
+            });
+            return true;
+        }
+
+        async function requestVehiclePipLocationVariantForDisplay(location, sourceImageId, altText = '') {
+            const manager = window.AIRPG?.imageManager;
+            const locationId = typeof location?.id === 'string' ? location.id.trim() : '';
+            const resolvedSourceImageId = typeof sourceImageId === 'string' ? sourceImageId.trim() : '';
+            if (!manager || typeof manager.ensureLocationVariant !== 'function' || !locationImageGenerationEnabled || !locationId || !resolvedSourceImageId) {
+                return null;
+            }
+
+            try {
+                const variantResult = await manager.ensureLocationVariant({
+                    locationId,
+                    sourceImageId: resolvedSourceImageId
+                });
+                if (variantResult?.imageId) {
+                    applyVehiclePipLocationVariantIfCurrent({
+                        locationId,
+                        sourceImageId: resolvedSourceImageId,
+                        imageId: variantResult.imageId,
+                        imageUrl: variantResult.imageUrl,
+                        altText: altText || location?.name || 'Vehicle current location'
+                    });
+                }
+                return variantResult || null;
+            } catch (error) {
+                console.warn('Failed to request vehicle PIP location weather image variant:', error?.message || error);
                 return null;
             }
         }
@@ -8591,6 +8679,11 @@
         const barterHaggleHistory = document.getElementById('barterHaggleHistory');
         const barterHaggleInput = document.getElementById('barterHaggleInput');
         const barterHaggleBtn = document.getElementById('barterHaggleBtn');
+        const barterStartConfirmModal = document.getElementById('barterStartConfirmModal');
+        const barterStartConfirmCloseBtn = document.getElementById('barterStartConfirmCloseBtn');
+        const barterStartConfirmMessage = document.getElementById('barterStartConfirmMessage');
+        const barterStartConfirmCancelBtn = document.getElementById('barterStartConfirmCancelBtn');
+        const barterStartConfirmAcceptBtn = document.getElementById('barterStartConfirmAcceptBtn');
         const barterQuantityModal = document.getElementById('barterQuantityModal');
         const barterQuantityTitle = document.getElementById('barterQuantityTitle');
         const barterQuantityCloseBtn = document.getElementById('barterQuantityCloseBtn');
@@ -16267,6 +16360,21 @@
                 closeBarterCurrencyConfirmModal(true);
             });
         }
+        if (barterStartConfirmCloseBtn) {
+            barterStartConfirmCloseBtn.addEventListener('click', () => {
+                closeBarterStartConfirmModal(false);
+            });
+        }
+        if (barterStartConfirmCancelBtn) {
+            barterStartConfirmCancelBtn.addEventListener('click', () => {
+                closeBarterStartConfirmModal(false);
+            });
+        }
+        if (barterStartConfirmAcceptBtn) {
+            barterStartConfirmAcceptBtn.addEventListener('click', () => {
+                closeBarterStartConfirmModal(true);
+            });
+        }
 
         if (npcViewCloseBtn) {
             npcViewCloseBtn.addEventListener('click', () => {
@@ -18508,6 +18616,8 @@
         let currentBarterDragState = null;
         let barterQuantityDialogState = null;
         let barterCurrencyConfirmState = null;
+        let barterStartConfirmState = null;
+        let barterSessionLoading = false;
         const BARTER_CURRENCY_ICON = '🪙';
 
         function setBarterStatus(message = '', type = null) {
@@ -18821,6 +18931,35 @@
             window.setTimeout(() => barterCurrencyConfirmAcceptBtn?.focus(), 30);
             return new Promise(resolve => {
                 barterCurrencyConfirmState = { resolve };
+            });
+        }
+
+        function closeBarterStartConfirmModal(result = false) {
+            const state = barterStartConfirmState;
+            barterStartConfirmState = null;
+            if (barterStartConfirmModal) {
+                barterStartConfirmModal.setAttribute('hidden', '');
+                barterStartConfirmModal.setAttribute('aria-hidden', 'true');
+            }
+            hideNpcBackdropIfNoSharedModalOpen();
+            if (state && typeof state.resolve === 'function') {
+                state.resolve(Boolean(result));
+            }
+        }
+
+        function requestBarterStartConfirmation(npc) {
+            if (!barterStartConfirmModal || !barterStartConfirmMessage || !npcModalBackdrop) {
+                throw new Error('Barter confirmation modal is unavailable.');
+            }
+            const merchantName = npc?.name || 'this character';
+            barterStartConfirmMessage.textContent = `Barter with ${merchantName}?`;
+            barterStartConfirmModal.removeAttribute('hidden');
+            barterStartConfirmModal.setAttribute('aria-hidden', 'false');
+            npcModalBackdrop.removeAttribute('hidden');
+            document.body.classList.add('modal-open');
+            window.setTimeout(() => barterStartConfirmAcceptBtn?.focus(), 30);
+            return new Promise(resolve => {
+                barterStartConfirmState = { resolve };
             });
         }
 
@@ -19143,6 +19282,29 @@
             const slotFilter = isPlayerSide ? barterPlayerSlotFilter : barterMerchantSlotFilter;
             const slotFilterWrapper = isPlayerSide ? barterPlayerSlotFilterWrapper : barterMerchantSlotFilterWrapper;
             const panelKey = isPlayerSide ? 'barterPlayerInventory' : 'barterMerchantInventory';
+            if (barterSessionLoading) {
+                if (grid) {
+                    grid.innerHTML = '';
+                    const loading = document.createElement('div');
+                    loading.className = 'barter-modal__loading';
+                    const spinner = document.createElement('span');
+                    spinner.className = 'spinner barter-modal__spinner';
+                    spinner.setAttribute('role', 'status');
+                    spinner.setAttribute('aria-hidden', 'true');
+                    const text = document.createElement('span');
+                    text.textContent = 'Loading inventory...';
+                    loading.appendChild(spinner);
+                    loading.appendChild(text);
+                    grid.appendChild(loading);
+                }
+                if (empty) {
+                    empty.hidden = true;
+                }
+                if (countEl) {
+                    countEl.textContent = 'Loading...';
+                }
+                return;
+            }
             const visibleOwnOffers = offers.filter(offer => (
                 isBarterShowUnavailableEnabled(side)
                 || !isBarterOfferUnavailable(offer, side)
@@ -19247,7 +19409,11 @@
             renderBarterOfferPanel('player');
             renderBarterOfferPanel('merchant');
             renderBarterSummary();
-            barterModal.removeAttribute('aria-busy');
+            if (barterSessionLoading) {
+                barterModal.setAttribute('aria-busy', 'true');
+            } else {
+                barterModal.removeAttribute('aria-busy');
+            }
         }
 
         function applyBarterPayload(payload = {}) {
@@ -19276,6 +19442,10 @@
             if (!barterModal || !npcModalBackdrop || !npc?.id) {
                 return;
             }
+            const confirmed = await requestBarterStartConfirmation(npc);
+            if (!confirmed) {
+                return;
+            }
             try {
                 window.floatingTooltipController?.hide?.();
             } catch (_) {}
@@ -19287,25 +19457,36 @@
             currentBarterMerchantOffers = [];
             barterPlayerCart = new Map();
             barterMerchantCart = new Map();
+            barterSessionLoading = true;
+            barterRequestInFlight = true;
             setBarterStatus('Loading trade prices...');
             barterModal.removeAttribute('hidden');
             barterModal.setAttribute('aria-hidden', 'false');
             barterModal.setAttribute('aria-busy', 'true');
             npcModalBackdrop.removeAttribute('hidden');
             document.body.classList.add('modal-open');
+            renderBarterModal();
             scrollModalToTop(barterModal);
 
-            const response = await fetch(`/api/npcs/${encodeURIComponent(npc.id)}/trade/session`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({})
-            });
-            const payload = await response.json().catch(() => ({}));
-            if (!response.ok || !payload?.success) {
-                throw new Error(payload?.error || `Request failed with status ${response.status}`);
+            try {
+                const response = await fetch(`/api/npcs/${encodeURIComponent(npc.id)}/trade/session`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({})
+                });
+                const payload = await response.json().catch(() => ({}));
+                if (!response.ok || !payload?.success) {
+                    throw new Error(payload?.error || `Request failed with status ${response.status}`);
+                }
+                setBarterStatus('');
+                barterSessionLoading = false;
+                barterRequestInFlight = false;
+                applyBarterPayload(payload);
+            } catch (error) {
+                barterSessionLoading = false;
+                barterRequestInFlight = false;
+                throw error;
             }
-            setBarterStatus('');
-            applyBarterPayload(payload);
         }
 
         function shouldConcludeBarterSessionOnClose() {
@@ -19356,6 +19537,8 @@
             currentBarterMerchantOffers = [];
             barterPlayerCart = new Map();
             barterMerchantCart = new Map();
+            barterSessionLoading = false;
+            barterRequestInFlight = false;
             closeBarterQuantityModal(null);
             closeBarterCurrencyConfirmModal(false);
             currentBarterDragState = null;
@@ -19570,6 +19753,7 @@
                 thingEditModal,
                 thingContainerModal,
                 barterModal,
+                barterStartConfirmModal,
                 barterQuantityModal,
                 barterCurrencyConfirmModal,
                 npcDispositionModal,
@@ -28584,6 +28768,9 @@
                     if (locationVehiclePipImage) {
                         locationVehiclePipImage.innerHTML = '';
                         locationVehiclePipImage.removeAttribute('aria-label');
+                        delete locationVehiclePipImage.dataset.vehiclePipLocationId;
+                        delete locationVehiclePipImage.dataset.vehiclePipSourceImageId;
+                        delete locationVehiclePipImage.dataset.displayImageId;
                     }
                 };
 
@@ -28605,17 +28792,25 @@
 
                     locationVehiclePip.removeAttribute('hidden');
                     locationVehiclePipImage.setAttribute('aria-label', `Vehicle current location: ${locationDisplayName}`);
+                    locationVehiclePipImage.dataset.vehiclePipLocationId = locationId;
+                    locationVehiclePipImage.dataset.vehiclePipSourceImageId = locationImageId;
+                    const cachedPipLocationVariant = locationImageId
+                        ? getCachedLocationVariantDisplay(locationVariantDisplayCache, locationId, locationImageId)
+                        : null;
                     await renderEntityImage({
                         element: locationVehiclePipImage,
                         entityType: '',
                         entityId: '',
                         imageId: locationImageId,
+                        displayImageId: cachedPipLocationVariant?.imageId || null,
+                        displayImageUrl: cachedPipLocationVariant?.imageUrl || null,
                         altText: locationDisplayName,
                         placeholderIcon: '🏞️',
                         placeholderClass: 'location-placeholder',
                         placeholderMarkup: '<div class="location-placeholder"></div>',
                         enableLightbox: false
                     });
+                    void requestVehiclePipLocationVariantForDisplay(details, locationImageId, locationDisplayName);
                 };
 
                 const formatVehicleArrivalCountdown = (minutesValue) => {

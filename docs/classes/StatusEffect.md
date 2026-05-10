@@ -4,7 +4,8 @@
 Represents a temporary or permanent modifier applied to an entity, including attribute/skill modifiers, need bar deltas, duration semantics, and applied-time tracking.
 
 ## Construction
-- `new StatusEffect({ name, description, attributes, skills, needBars, duration, appliedAt })`
+- `new StatusEffect({ id, name, description, attributes, skills, needBars, duration, appliedAt })`
+  - `id` is optional; missing IDs are assigned through `IdGenerator` as `status_n`.
   - `description` is required and must be a non-empty string.
   - `attributes` and `skills` are arrays of `{ attribute|skill, modifier }`.
   - `needBars` is an array of `{ name, delta }`.
@@ -21,7 +22,7 @@ Represents a temporary or permanent modifier applied to an entity, including att
 
 ## Instance API
 - `update({ name, description, attributes, skills, needBars, duration, appliedAt })`: normalizes and updates fields in place.
-- `toJSON()`: returns a plain object snapshot.
+- `toJSON()`: returns a plain object snapshot, including the persisted `id`.
 
 ## Static API
 - `fromJSON(data)`: validates and constructs a StatusEffect from a plain object.
@@ -39,5 +40,5 @@ Represents a temporary or permanent modifier applied to an entity, including att
 
 ## Notes
 - All normalizers throw clear errors on invalid structures or missing data.
-- Legacy save hour-to-minute conversion is handled at load migration time (`Utils.hydrateGameState`), not in `StatusEffect.fromJSON`.
+- Legacy save hour-to-minute conversion and missing status-effect ID assignment are handled at load migration time (`Utils.hydrateGameState`), not in `StatusEffect.fromJSON`.
 - `generateFromDescriptions` fails loudly on malformed XML or missing effect elements.

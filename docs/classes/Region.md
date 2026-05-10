@@ -15,7 +15,7 @@ Represents a region containing multiple locations, with metadata like average le
 - `#lastVisitedTime` (minutes).
 
 ## Construction
-- `new Region({...})` validates name/description and normalizes blueprints, events, levels, and status effects. Adds to static indexes.
+- `new Region({...})` validates name/description, assigns a compact `region_n` id when missing, normalizes blueprints, events, levels, and status effects. Adds to static indexes.
 
 ## Static API
 - `get(id)` / `getByName(name)` / `getAll()`.

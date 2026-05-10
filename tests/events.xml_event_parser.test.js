@@ -654,6 +654,122 @@ test('XML runEventChecks applies origin, movement, and destination phases while 
     }
 });
 
+test('XML runEventChecks suppresses in-motion vehicle destination moves but keeps elapsed time', async () => {
+    const previousConfig = Globals.config;
+    const previousCurrentPlayer = Globals.currentPlayer;
+    const previousProcessedMove = Globals.processedMove;
+    const previousAdvanceTime = Globals.advanceTime;
+    const previousChatCompletion = LLMClient.chatCompletion;
+    const previousLogPrompt = LLMClient.logPrompt;
+    const previousDeps = Events._deps;
+    const previousTimeout = Events._baseTimeout;
+    const previousParsers = Events._parsers;
+    const previousAggregators = Events._aggregators;
+    const previousHandlers = Events._handlers;
+    const vehicle = {
+        id: 'vehicle',
+        name: 'Outskirts Shuttle Bus',
+        isVehicle: true,
+        vehicleInfo: {
+            isUnderway: true,
+            hasArrived: false,
+            pendingDestination: {
+                locationId: 'dest',
+                locationName: 'Main Street and Town Square',
+                regionName: 'Atomville Main Street'
+            }
+        },
+        things: []
+    };
+    const destination = {
+        id: 'dest',
+        name: 'Main Street and Town Square',
+        things: []
+    };
+    const locations = new Map([
+        ['vehicle', vehicle],
+        ['Outskirts Shuttle Bus', vehicle],
+        ['dest', destination],
+        ['Main Street and Town Square', destination]
+    ]);
+    const player = {
+        isNPC: false,
+        currentLocation: 'vehicle',
+        setLocation(locationId) {
+            this.currentLocation = locationId;
+        }
+    };
+    const timeAdvancements = [];
+
+    try {
+        Globals.config = {
+            ai: {},
+            event_checks: { enabled: true },
+            quests: { enabled: false },
+            omit_npc_generation: true
+        };
+        Globals.currentPlayer = player;
+        Globals.processedMove = false;
+        Globals.advanceTime = (minutes, options = {}) => {
+            timeAdvancements.push({ minutes, source: options.source || null });
+            return { advancedMinutes: minutes, source: options.source || null };
+        };
+        LLMClient.chatCompletion = async () => `<events>
+  <moveLocation><destinationName>Main Street and Town Square</destinationName></moveLocation>
+  <arriveAtLocation/>
+  <timePassed><reasoning>The shuttle ride finished.</reasoning><duration>8 minutes</duration></timePassed>
+</events>`;
+        LLMClient.logPrompt = () => {};
+        Events.initialize({
+            promptEnv: {
+                render: (_template, context) => JSON.stringify({ promptType: context.promptType })
+            },
+            parseXMLTemplate: (rendered) => ({
+                systemPrompt: 'system',
+                generationPrompt: rendered
+            }),
+            prepareBasePromptContext: async () => ({
+                needBarDefinitions: [],
+                npcs: [],
+                party: []
+            }),
+            Location: {
+                get: (reference) => locations.get(reference) || null,
+                findByName: (name) => locations.get(name) || null,
+                findShortestTravelTimeMinutes: () => {
+                    throw new Error('vehicle destination suppression should not calculate route time');
+                }
+            },
+            findRegionByLocationId: () => null,
+            getCurrentPlayer: () => player,
+            getConfig: () => Globals.config
+        });
+
+        const result = await Events.runEventChecks({
+            textToCheck: 'The shuttle reaches Main Street.'
+        });
+
+        assert.equal(player.currentLocation, 'vehicle');
+        assert.deepEqual(timeAdvancements, [
+            { minutes: 8, source: 'event_check' }
+        ]);
+        assert.equal(result.timeProgress.advancedMinutes, 8);
+        assert.equal(Globals.processedMove, false);
+    } finally {
+        Events._deps = previousDeps;
+        Events._baseTimeout = previousTimeout;
+        Events._parsers = previousParsers;
+        Events._aggregators = previousAggregators;
+        Events._handlers = previousHandlers;
+        LLMClient.chatCompletion = previousChatCompletion;
+        LLMClient.logPrompt = previousLogPrompt;
+        Globals.advanceTime = previousAdvanceTime;
+        Globals.config = previousConfig;
+        Globals.currentPlayer = previousCurrentPlayer;
+        Globals.processedMove = previousProcessedMove;
+    }
+});
+
 test('XML runEventChecks suppressTimeAdvance suppresses movement and timePassed advancement', async () => {
     const previousConfig = Globals.config;
     const previousCurrentPlayer = Globals.currentPlayer;

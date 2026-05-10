@@ -18,9 +18,35 @@ class RegexReplaceCommand extends SlashCommandBase {
     ];
   }
 
+  static validateArgs(providedArgs = {}) {
+    const errors = [];
+    const hasOwn = (name) => Object.prototype.hasOwnProperty.call(providedArgs, name);
+
+    const pattern = providedArgs.pattern;
+    if (pattern === undefined || pattern === null) {
+      errors.push('Missing required argument: pattern');
+    } else if (typeof pattern !== 'string') {
+      errors.push('Argument "pattern" must be a string.');
+    }
+
+    const replacement = providedArgs.replacement;
+    if (!hasOwn('replacement') || replacement === undefined) {
+      errors.push('Missing required argument: replacement');
+    } else if (replacement !== null && typeof replacement !== 'string') {
+      errors.push('Argument "replacement" must be a string or null.');
+    }
+
+    const flags = providedArgs.flags;
+    if (flags !== undefined && flags !== null && typeof flags !== 'string') {
+      errors.push('Argument "flags" must be a string.');
+    }
+
+    return errors;
+  }
+
   static async execute(interaction, args = {}) {
     const pattern = args.pattern?.trim();
-    const replacement = args.replacement?.trim();
+    const replacement = args.replacement === null ? '' : args.replacement?.trim();
     const flags = args.flags?.trim() || 'g';
 
     if (!pattern) {
@@ -31,7 +57,7 @@ class RegexReplaceCommand extends SlashCommandBase {
       return;
     }
 
-    if (!replacement) {
+    if (replacement === undefined) {
       await interaction.reply({
         content: 'Replacement is required.',
         ephemeral: true

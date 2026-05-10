@@ -1,10 +1,10 @@
-const crypto = require('crypto');
 const Utils = require('./Utils.js');
 const Globals = require('./Globals.js');
 const SanitizedStringMap = require('./SanitizedStringMap.js');
 const SanitizedStringSet = require('./SanitizedStringSet.js');
 const StatusEffect = require('./StatusEffect.js');
 const { loadMergedDefinitionFile } = require('./DefinitionLoader.js');
+const IdGenerator = require('./IdGenerator.js');
 
 /**
  * Thing class for AI RPG
@@ -536,9 +536,7 @@ class Thing {
 
   // Static private method for generating unique IDs
   static #generateId() {
-    const timestamp = Date.now();
-    const random = crypto.randomBytes(6).toString('hex');
-    return `thing_${timestamp}_${random}`;
+    return IdGenerator.next('thing');
   }
 
   /**
@@ -603,6 +601,7 @@ class Thing {
 
     // Initialize private fields
     this.#id = id || Thing.#generateId();
+    IdGenerator.register('thing', this.#id);
     this.#name = Utils.capitalizeProperNoun(name.trim());
     this.#description = description.trim();
     this.#thingType = thingType.toLowerCase();
@@ -1825,6 +1824,7 @@ class Thing {
     const duration = effect.duration !== undefined ? effect.duration : null;
 
     const statusEffect = new StatusEffect({
+      id: effect.id,
       name,
       description,
       attributes,
@@ -2093,6 +2093,7 @@ class Thing {
           : undefined;
 
         normalized.push(new StatusEffect({
+          id: entry.id,
           name,
           description: descriptionValue,
           attributes,

@@ -10,6 +10,7 @@ const VehicleInfo = require('./VehicleInfo.js');
 const FormulaEvaluator = require('./public/js/formula-evaluator.js');
 const { resolvePointPoolFormulas } = require('./utils/point-pool-formulas.js');
 const { loadMergedDefinitionFile } = require('./DefinitionLoader.js');
+const IdGenerator = require('./IdGenerator.js');
 
 const ATTRIBUTE_POOL_BASELINE_VALUE = 10;
 const SKILL_POOL_BASELINE_VALUE = 1;
@@ -1955,7 +1956,7 @@ class Player {
 
     // Static private method for ID generation
     static #generateUniqueId() {
-        return `player_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        return IdGenerator.next('character');
     }
 
     constructor(options = {}) {
@@ -1984,6 +1985,7 @@ class Player {
         this.#description = options.description ?? "A mysterious adventurer with an unknown past.";
         this.#shortDescription = options.shortDescription ?? "";
         this.#id = options.id ?? Player.#generateUniqueId();
+        IdGenerator.register('character', this.#id);
         this.#class = options.class ?? "person";
         this.#race = options.race ?? "human";
         this.#gender = options.gender ?? "unspecified";
@@ -4854,6 +4856,7 @@ class Player {
                 const appliedAt = entry.appliedAt !== undefined ? entry.appliedAt : defaultAppliedAt;
 
                 normalized.push(new StatusEffect({
+                    id: entry.id,
                     name: entry.name,
                     description: descriptionValue,
                     attributes,

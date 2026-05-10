@@ -9,6 +9,169 @@ const {
 const CHAT_TOOL_MAX_ROUNDS = 8;
 const MORE_INFO_MAX_MATCHES = 50;
 const CACHED_CHECK_TOOL_CALL_NOTE = 'You already made this tool call. Do not re-run tool calls for the same checks that you made in earlier drafts.';
+const UPDATE_CHARACTER_FIELD_NAMES = Object.freeze([
+    'name',
+    'description',
+    'shortDescription',
+    'race',
+    'class',
+    'gender',
+    'level',
+    'health',
+    'healthAttribute',
+    'currency',
+    'experience',
+    'isDead',
+    'isHostile',
+    'factionId',
+    'aliases',
+    'personalityType',
+    'personalityTraits',
+    'personalityNotes',
+    'aiNotes',
+    'resistances',
+    'vulnerabilities',
+    'attributes',
+    'skills',
+    'statusEffects',
+    'needBarApplicability',
+    'willingToTrade'
+]);
+const UPDATE_CHARACTER_FIELD_SET = new Set(UPDATE_CHARACTER_FIELD_NAMES);
+const UPDATE_OBJECT_TYPE_VALUES = Object.freeze([
+    'character',
+    'thing',
+    'location',
+    'exit',
+    'region',
+    'faction',
+    'quest',
+    'objective',
+    'statusEffect'
+]);
+const UPDATE_OBJECT_TYPE_ALIASES = Object.freeze({
+    npc: 'character',
+    character: 'character',
+    item: 'thing',
+    scenery: 'thing',
+    thing: 'thing',
+    location: 'location',
+    loc: 'location',
+    exit: 'exit',
+    locationExit: 'exit',
+    region: 'region',
+    faction: 'faction',
+    quest: 'quest',
+    objective: 'objective',
+    questObjective: 'objective',
+    status: 'statusEffect',
+    effect: 'statusEffect',
+    statusEffect: 'statusEffect'
+});
+const UPDATE_OBJECT_FIELD_NAMES_BY_TYPE = Object.freeze({
+    character: UPDATE_CHARACTER_FIELD_NAMES,
+    thing: Object.freeze([
+        'name',
+        'description',
+        'shortDescription',
+        'thingType',
+        'rarity',
+        'itemTypeDetail',
+        'slot',
+        'count',
+        'level',
+        'relativeLevel',
+        'value',
+        'isVehicle',
+        'isCraftingStation',
+        'isProcessingStation',
+        'isHarvestable',
+        'isSalvageable',
+        'isContainer',
+        'attributeBonuses',
+        'unscaledAttributeBonuses',
+        'statusEffects'
+    ]),
+    location: Object.freeze([
+        'name',
+        'description',
+        'shortDescription',
+        'baseLevel',
+        'visited',
+        'lastVisitedTime',
+        'hasGeneratedStubs',
+        'generationHints',
+        'randomEvents',
+        'controllingFactionId',
+        'statusEffects'
+    ]),
+    exit: Object.freeze([
+        'description',
+        'destination',
+        'travelTimeMinutes',
+        'bidirectional',
+        'imageId',
+        'isVehicle',
+        'vehicleType'
+    ]),
+    region: Object.freeze([
+        'name',
+        'description',
+        'shortDescription',
+        'relativeLevel',
+        'averageLevel',
+        'numImportantNPCs',
+        'characterConcepts',
+        'enemyConcepts',
+        'secrets',
+        'lastVisitedTime',
+        'parentRegionId',
+        'entranceLocationId',
+        'controllingFactionId',
+        'weather',
+        'weatherState',
+        'randomEvents',
+        'statusEffects'
+    ]),
+    faction: Object.freeze([
+        'name',
+        'description',
+        'shortDescription',
+        'tags',
+        'goals',
+        'homeRegionName',
+        'relations',
+        'assets',
+        'reputationTiers'
+    ]),
+    quest: Object.freeze([
+        'name',
+        'description',
+        'rewardItems',
+        'rewardCurrency',
+        'rewardXp',
+        'rewardFactionReputation',
+        'rewardClaimed',
+        'secretNotes',
+        'giverId',
+        'giverName',
+        'paused'
+    ]),
+    objective: Object.freeze([
+        'description',
+        'completed',
+        'optional'
+    ]),
+    statusEffect: Object.freeze([
+        'name',
+        'description',
+        'attributes',
+        'skills',
+        'needBars',
+        'duration',
+        'appliedAt'
+    ])
+});
 const CHAT_TOOL_DEFINITIONS = Object.freeze([
     {
         type: 'function',
@@ -484,6 +647,55 @@ const CHAT_TOOL_DEFINITIONS = Object.freeze([
     {
         type: 'function',
         function: {
+            name: 'updateCharacterFields',
+            description: `Directly update allowed persisted fields on an NPC without running the alter_npc event flow. Only use simple character fields from this allowlist: ${UPDATE_CHARACTER_FIELD_NAMES.join(', ')}. Do not use this for equipment, inventory, barter inventory, party membership, quests, location, dispositions, or other object-graph state.`,
+            parameters: {
+                type: 'object',
+                properties: {
+                    character: {
+                        type: 'string',
+                        description: 'NPC ID or exact name. Player characters are not valid targets.'
+                    },
+                    fields: {
+                        type: 'object',
+                        description: 'Object of allowed field names to new values, such as { "aiNotes": "...", "personalityNotes": "...", "attributes": { "Strength": 12 } }.'
+                    }
+                },
+                required: ['character', 'fields'],
+                additionalProperties: false
+            }
+        }
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'updateObjectFields',
+            description: `Directly update allowed persisted fields on a specific object without running alter prompts. Identify by exact ID when possible; names and aliases are accepted where applicable, but ambiguous names return candidate JSON and must be retried by ID. Character updates are NPC-only. Allowed object types: ${UPDATE_OBJECT_TYPE_VALUES.join(', ')}.`,
+            parameters: {
+                type: 'object',
+                properties: {
+                    objectType: {
+                        type: 'string',
+                        enum: UPDATE_OBJECT_TYPE_VALUES,
+                        description: 'Type of object to update.'
+                    },
+                    object: {
+                        type: 'string',
+                        description: 'Object ID, exact name, or exact alias where aliases apply. Use IDs after an ambiguity error.'
+                    },
+                    fields: {
+                        type: 'object',
+                        description: 'Object of allowed field names to new values. Whole ownership/equipment/inventory graph fields are rejected.'
+                    }
+                },
+                required: ['objectType', 'object', 'fields'],
+                additionalProperties: false
+            }
+        }
+    },
+    {
+        type: 'function',
+        function: {
             name: 'alterLocation',
             description: 'Alter an existing location by ID or name using the existing alter_location event flow.',
             parameters: {
@@ -644,7 +856,7 @@ const CHAT_TOOL_DEFINITIONS = Object.freeze([
                     },
                     circumstanceModifiers: {
                         type: 'array',
-                        description: 'Circumstance modifiers from -10 to 10. Use an empty array when none apply.',
+                        description: 'Circumstance modifiers. Use an empty array when none apply.',
                         items: {
                             type: 'object',
                             properties: {
@@ -699,7 +911,7 @@ const CHAT_TOOL_DEFINITIONS = Object.freeze([
                     },
                     circumstanceModifiers: {
                         type: 'array',
-                        description: 'Acting character circumstance modifiers from -10 to 10. Use an empty array when none apply.',
+                        description: 'Acting character circumstance modifiers. Use an empty array when none apply.',
                         items: {
                             type: 'object',
                             properties: {
@@ -3409,6 +3621,987 @@ const createChatToolRuntime = ({
         return Boolean(character.isNPC);
     };
 
+    const isPlainObject = (value) => (
+        value !== null
+        && typeof value === 'object'
+        && !Array.isArray(value)
+    );
+
+    const normalizeCharacterFieldString = (value, { functionName, fieldName, allowNullAsEmpty = true, requireNonEmpty = false } = {}) => {
+        if (value === null && allowNullAsEmpty) {
+            if (requireNonEmpty) {
+                throw new ToolVisibleError(
+                    `${functionName} "${fieldName}" must be a non-empty string.`,
+                    { code: 'invalid_arguments' }
+                );
+            }
+            return '';
+        }
+        if (typeof value !== 'string') {
+            throw new ToolVisibleError(
+                `${functionName} "${fieldName}" must be a string.`,
+                { code: 'invalid_arguments' }
+            );
+        }
+        if (requireNonEmpty && !value.trim()) {
+            throw new ToolVisibleError(
+                `${functionName} "${fieldName}" must be a non-empty string.`,
+                { code: 'invalid_arguments' }
+            );
+        }
+        return requireNonEmpty ? value.trim() : value;
+    };
+
+    const normalizeCharacterFieldNumber = (value, { functionName, fieldName, integer = false, min = null, max = null } = {}) => {
+        const numeric = Number(value);
+        if (!Number.isFinite(numeric) || (integer && !Number.isInteger(numeric))) {
+            throw new ToolVisibleError(
+                `${functionName} "${fieldName}" must be a finite ${integer ? 'integer' : 'number'}.`,
+                { code: 'invalid_arguments' }
+            );
+        }
+        if (min !== null && numeric < min) {
+            throw new ToolVisibleError(
+                `${functionName} "${fieldName}" must be at least ${min}.`,
+                { code: 'invalid_arguments' }
+            );
+        }
+        if (max !== null && numeric > max) {
+            throw new ToolVisibleError(
+                `${functionName} "${fieldName}" must be at most ${max}.`,
+                { code: 'invalid_arguments' }
+            );
+        }
+        return numeric;
+    };
+
+    const normalizeCharacterFieldBoolean = (value, { functionName, fieldName } = {}) => {
+        if (typeof value !== 'boolean') {
+            throw new ToolVisibleError(
+                `${functionName} "${fieldName}" must be a boolean.`,
+                { code: 'invalid_arguments' }
+            );
+        }
+        return value;
+    };
+
+    const normalizeCharacterFieldArrayOfStrings = (value, { functionName, fieldName } = {}) => {
+        if (!Array.isArray(value)) {
+            throw new ToolVisibleError(
+                `${functionName} "${fieldName}" must be an array of strings.`,
+                { code: 'invalid_arguments' }
+            );
+        }
+        const invalid = value.some(entry => typeof entry !== 'string');
+        if (invalid) {
+            throw new ToolVisibleError(
+                `${functionName} "${fieldName}" must only contain strings.`,
+                { code: 'invalid_arguments' }
+            );
+        }
+        return value;
+    };
+
+    const normalizeCharacterFieldMap = (value, { functionName, fieldName } = {}) => {
+        if (!isPlainObject(value)) {
+            throw new ToolVisibleError(
+                `${functionName} "${fieldName}" must be an object.`,
+                { code: 'invalid_arguments' }
+            );
+        }
+        return value;
+    };
+
+    const makeUpdateCharacterFieldOperations = (targetNpc, fieldsObject, { functionName } = {}) => {
+        if (!isPlainObject(fieldsObject)) {
+            throw new ToolVisibleError(
+                `${functionName} requires "fields" to be an object.`,
+                { code: 'invalid_arguments' }
+            );
+        }
+
+        const fieldEntries = Object.entries(fieldsObject);
+        if (!fieldEntries.length) {
+            throw new ToolVisibleError(
+                `${functionName} requires at least one field to update.`,
+                { code: 'invalid_arguments' }
+            );
+        }
+
+        for (const [fieldName] of fieldEntries) {
+            if (!UPDATE_CHARACTER_FIELD_SET.has(fieldName)) {
+                throw new ToolVisibleError(
+                    `${functionName} cannot update field "${fieldName}". Allowed fields: ${UPDATE_CHARACTER_FIELD_NAMES.join(', ')}.`,
+                    {
+                        code: 'unsupported_field',
+                        details: { fieldName }
+                    }
+                );
+            }
+        }
+
+        const operations = [];
+        const addOperation = (fieldName, apply) => {
+            operations.push({ fieldName, apply });
+        };
+
+        for (const [fieldName, rawValue] of fieldEntries) {
+            switch (fieldName) {
+                case 'name': {
+                    const value = normalizeCharacterFieldString(rawValue, {
+                        functionName,
+                        fieldName,
+                        requireNonEmpty: true
+                    });
+                    if (typeof targetNpc.setName !== 'function') {
+                        throw new ToolVisibleError(`${functionName} cannot update "name" on this NPC.`, { code: 'unsupported_field' });
+                    }
+                    addOperation(fieldName, () => targetNpc.setName(value));
+                    break;
+                }
+                case 'description':
+                case 'shortDescription':
+                case 'race':
+                case 'class':
+                case 'gender':
+                case 'personalityType':
+                case 'personalityTraits':
+                case 'personalityNotes':
+                case 'aiNotes':
+                case 'resistances':
+                case 'vulnerabilities': {
+                    const value = normalizeCharacterFieldString(rawValue, { functionName, fieldName });
+                    addOperation(fieldName, () => {
+                        targetNpc[fieldName] = value;
+                    });
+                    break;
+                }
+                case 'factionId': {
+                    const value = rawValue === null
+                        ? null
+                        : normalizeCharacterFieldString(rawValue, { functionName, fieldName, requireNonEmpty: false });
+                    addOperation(fieldName, () => {
+                        targetNpc.factionId = value;
+                    });
+                    break;
+                }
+                case 'level': {
+                    const value = normalizeCharacterFieldNumber(rawValue, {
+                        functionName,
+                        fieldName,
+                        integer: true,
+                        min: 1,
+                        max: 20
+                    });
+                    if (typeof targetNpc.setLevel !== 'function') {
+                        throw new ToolVisibleError(`${functionName} cannot update "level" on this NPC.`, { code: 'unsupported_field' });
+                    }
+                    addOperation(fieldName, () => targetNpc.setLevel(value));
+                    break;
+                }
+                case 'health': {
+                    const value = normalizeCharacterFieldNumber(rawValue, {
+                        functionName,
+                        fieldName,
+                        min: 0
+                    });
+                    if (typeof targetNpc.setHealth !== 'function') {
+                        throw new ToolVisibleError(`${functionName} cannot update "health" on this NPC.`, { code: 'unsupported_field' });
+                    }
+                    addOperation(fieldName, () => targetNpc.setHealth(value));
+                    break;
+                }
+                case 'healthAttribute': {
+                    const value = normalizeCharacterFieldString(rawValue, {
+                        functionName,
+                        fieldName,
+                        requireNonEmpty: true
+                    });
+                    if (typeof targetNpc.setHealthAttribute !== 'function') {
+                        throw new ToolVisibleError(`${functionName} cannot update "healthAttribute" on this NPC.`, { code: 'unsupported_field' });
+                    }
+                    addOperation(fieldName, () => targetNpc.setHealthAttribute(value));
+                    break;
+                }
+                case 'currency':
+                case 'experience': {
+                    const value = normalizeCharacterFieldNumber(rawValue, {
+                        functionName,
+                        fieldName,
+                        integer: true,
+                        min: 0
+                    });
+                    const setterName = fieldName === 'currency' ? 'setCurrency' : 'setExperience';
+                    if (typeof targetNpc[setterName] !== 'function') {
+                        throw new ToolVisibleError(`${functionName} cannot update "${fieldName}" on this NPC.`, { code: 'unsupported_field' });
+                    }
+                    addOperation(fieldName, () => targetNpc[setterName](value));
+                    break;
+                }
+                case 'isDead':
+                case 'isHostile': {
+                    const value = normalizeCharacterFieldBoolean(rawValue, { functionName, fieldName });
+                    addOperation(fieldName, () => {
+                        targetNpc[fieldName] = value;
+                    });
+                    break;
+                }
+                case 'willingToTrade': {
+                    const value = normalizeCharacterFieldBoolean(rawValue, { functionName, fieldName });
+                    addOperation(fieldName, () => {
+                        if (typeof targetNpc.setWillingToTrade === 'function') {
+                            targetNpc.setWillingToTrade(value);
+                        } else {
+                            targetNpc.willingToTrade = value;
+                        }
+                    });
+                    break;
+                }
+                case 'aliases': {
+                    const value = normalizeCharacterFieldArrayOfStrings(rawValue, { functionName, fieldName });
+                    if (typeof targetNpc.setAliases !== 'function') {
+                        throw new ToolVisibleError(`${functionName} cannot update "aliases" on this NPC.`, { code: 'unsupported_field' });
+                    }
+                    addOperation(fieldName, () => targetNpc.setAliases(value));
+                    break;
+                }
+                case 'attributes': {
+                    const attributeMap = normalizeCharacterFieldMap(rawValue, { functionName, fieldName });
+                    if (typeof targetNpc.setAttribute !== 'function') {
+                        throw new ToolVisibleError(`${functionName} cannot update "attributes" on this NPC.`, { code: 'unsupported_field' });
+                    }
+                    for (const [rawAttributeName, rawAttributeValue] of Object.entries(attributeMap)) {
+                        const attributeName = normalizeCharacterFieldString(rawAttributeName, {
+                            functionName,
+                            fieldName: 'attributes key',
+                            requireNonEmpty: true
+                        });
+                        const value = normalizeCharacterFieldNumber(rawAttributeValue, {
+                            functionName,
+                            fieldName: `attributes.${attributeName}`
+                        });
+                        if (typeof targetNpc.getAttributeDefinition === 'function' && !targetNpc.getAttributeDefinition(attributeName)) {
+                            throw new ToolVisibleError(
+                                `${functionName} cannot update unknown attribute "${attributeName}".`,
+                                { code: 'invalid_arguments' }
+                            );
+                        }
+                        addOperation(`attributes.${attributeName}`, () => targetNpc.setAttribute(attributeName, value));
+                    }
+                    break;
+                }
+                case 'skills': {
+                    const skillMap = normalizeCharacterFieldMap(rawValue, { functionName, fieldName });
+                    if (typeof targetNpc.setSkillValue !== 'function') {
+                        throw new ToolVisibleError(`${functionName} cannot update "skills" on this NPC.`, { code: 'unsupported_field' });
+                    }
+                    for (const [rawSkillName, rawSkillValue] of Object.entries(skillMap)) {
+                        const skillName = normalizeCharacterFieldString(rawSkillName, {
+                            functionName,
+                            fieldName: 'skills key',
+                            requireNonEmpty: true
+                        });
+                        const value = normalizeCharacterFieldNumber(rawSkillValue, {
+                            functionName,
+                            fieldName: `skills.${skillName}`
+                        });
+                        if (Player?.availableSkills instanceof Map && Player.availableSkills.size > 0 && !Player.availableSkills.has(skillName)) {
+                            throw new ToolVisibleError(
+                                `${functionName} cannot update unknown skill "${skillName}".`,
+                                { code: 'invalid_arguments' }
+                            );
+                        }
+                        addOperation(`skills.${skillName}`, () => {
+                            const updated = targetNpc.setSkillValue(skillName, value);
+                            if (updated === false) {
+                                throw new Error(`Failed to set skill "${skillName}".`);
+                            }
+                            return updated;
+                        });
+                    }
+                    break;
+                }
+                case 'statusEffects': {
+                    if (!Array.isArray(rawValue)) {
+                        throw new ToolVisibleError(
+                            `${functionName} "statusEffects" must be an array.`,
+                            { code: 'invalid_arguments' }
+                        );
+                    }
+                    if (typeof targetNpc.setStatusEffects !== 'function') {
+                        throw new ToolVisibleError(`${functionName} cannot update "statusEffects" on this NPC.`, { code: 'unsupported_field' });
+                    }
+                    addOperation(fieldName, () => targetNpc.setStatusEffects(rawValue));
+                    break;
+                }
+                case 'needBarApplicability': {
+                    const value = normalizeCharacterFieldMap(rawValue, { functionName, fieldName });
+                    if (typeof targetNpc.setNeedBarApplicability !== 'function') {
+                        throw new ToolVisibleError(`${functionName} cannot update "needBarApplicability" on this NPC.`, { code: 'unsupported_field' });
+                    }
+                    addOperation(fieldName, () => targetNpc.setNeedBarApplicability(value));
+                    break;
+                }
+                default:
+                    throw new ToolVisibleError(
+                        `${functionName} cannot update field "${fieldName}".`,
+                        { code: 'unsupported_field' }
+                    );
+            }
+        }
+
+        if (!operations.length) {
+            throw new ToolVisibleError(
+                `${functionName} did not receive any concrete field updates.`,
+                { code: 'invalid_arguments' }
+            );
+        }
+        return operations;
+    };
+
+    const normalizeUpdateObjectType = (rawObjectType, { functionName } = {}) => {
+        const raw = normalizeRequiredString(rawObjectType, {
+            functionName,
+            fieldName: 'objectType'
+        });
+        const lower = raw.toLowerCase();
+        const canonical = Object.entries(UPDATE_OBJECT_TYPE_ALIASES)
+            .find(([alias]) => alias.toLowerCase() === lower)?.[1] || null;
+        if (!canonical) {
+            throw new ToolVisibleError(
+                `${functionName} received unsupported objectType "${raw}". Allowed object types: ${UPDATE_OBJECT_TYPE_VALUES.join(', ')}.`,
+                { code: 'invalid_arguments' }
+            );
+        }
+        return canonical;
+    };
+
+    const serializeUpdateObjectRecord = (record) => {
+        const source = record && typeof record.toJSON === 'function'
+            ? record.toJSON()
+            : record;
+        if (source === null || source === undefined) {
+            return null;
+        }
+        try {
+            return JSON.parse(JSON.stringify(source, (key, value) => (
+                typeof value === 'function' ? undefined : value
+            )));
+        } catch {
+            return {
+                id: toTrimmedString(record?.id) || null,
+                name: toTrimmedString(record?.name) || null
+            };
+        }
+    };
+
+    const buildUpdateObjectCandidate = (target) => ({
+        objectType: target.objectType,
+        id: target.id || null,
+        name: target.name || null,
+        ownerType: target.ownerType || null,
+        ownerId: target.ownerId || null,
+        ownerName: target.ownerName || null,
+        toJSON: serializeUpdateObjectRecord(target.record)
+    });
+
+    const getRecordId = (record) => toTrimmedString(record?.id) || null;
+    const getRecordName = (record) => toTrimmedString(record?.name) || null;
+
+    const makeUpdateObjectTarget = ({
+        objectType,
+        record,
+        ownerType = null,
+        owner = null,
+        ownerName = null,
+        aliases = [],
+        applyReplacement = null
+    } = {}) => ({
+        objectType,
+        record,
+        id: getRecordId(record),
+        name: getRecordName(record),
+        ownerType,
+        ownerId: getRecordId(owner),
+        ownerName: ownerName || getRecordName(owner),
+        aliases: toSearchableValues(aliases),
+        applyReplacement
+    });
+
+    const collectExitUpdateTargets = () => {
+        const targets = [];
+        const seen = new Set();
+        for (const location of getAllLocations()) {
+            const directions = typeof location?.getAvailableDirections === 'function'
+                ? location.getAvailableDirections()
+                : Object.keys(location?.exits || {});
+            for (const direction of directions || []) {
+                const exit = typeof location?.getExit === 'function'
+                    ? location.getExit(direction)
+                    : location?.exits?.[direction];
+                if (!exit) {
+                    continue;
+                }
+                const id = getRecordId(exit) || `${getRecordId(location) || 'unknown'}:${toTrimmedString(direction)}`;
+                if (seen.has(id)) {
+                    continue;
+                }
+                seen.add(id);
+                const aliases = [direction, exit.description, exit.destination, exit.name].filter(Boolean);
+                targets.push(makeUpdateObjectTarget({
+                    objectType: 'exit',
+                    record: exit,
+                    ownerType: 'location',
+                    owner: location,
+                    aliases
+                }));
+            }
+        }
+        return targets;
+    };
+
+    const collectRegionUpdateTargets = () => {
+        const targets = [];
+        const seen = new Set();
+        const addRegion = (region) => {
+            const id = getRecordId(region);
+            if (!id || seen.has(id)) {
+                return;
+            }
+            seen.add(id);
+            targets.push(makeUpdateObjectTarget({ objectType: 'region', record: region }));
+        };
+        const regions = getRegionsMap();
+        if (regions instanceof Map) {
+            for (const region of regions.values()) {
+                addRegion(region);
+            }
+        }
+        const pendingStubs = getPendingRegionStubs();
+        if (pendingStubs instanceof Map) {
+            for (const stub of pendingStubs.values()) {
+                addRegion(stub);
+            }
+        }
+        return targets;
+    };
+
+    const collectQuestUpdateTargets = () => {
+        const targets = [];
+        const seen = new Set();
+        const currentPlayer = getCurrentPlayer();
+        const questOwners = currentPlayer
+            ? [currentPlayer]
+            : getAllCharacters().filter(character => !isNpcEntity(character));
+        for (const character of questOwners) {
+            const quests = [];
+            if (typeof character?.getCurrentQuests === 'function') {
+                quests.push(...character.getCurrentQuests());
+            }
+            if (typeof character?.getCompletedQuests === 'function') {
+                quests.push(...character.getCompletedQuests());
+            }
+            if (Array.isArray(character?.quests)) {
+                quests.push(...character.quests);
+            }
+            for (const quest of quests) {
+                const id = getRecordId(quest);
+                if (!id || seen.has(id)) {
+                    continue;
+                }
+                seen.add(id);
+                targets.push(makeUpdateObjectTarget({
+                    objectType: 'quest',
+                    record: quest,
+                    ownerType: isNpcEntity(character) ? 'npc' : 'player',
+                    owner: character
+                }));
+            }
+        }
+        return targets;
+    };
+
+    const collectObjectiveUpdateTargets = () => {
+        const targets = [];
+        const seen = new Set();
+        for (const questTarget of collectQuestUpdateTargets()) {
+            const objectives = Array.isArray(questTarget.record?.objectives)
+                ? questTarget.record.objectives
+                : [];
+            for (const objective of objectives) {
+                const id = getRecordId(objective);
+                if (!id || seen.has(id)) {
+                    continue;
+                }
+                seen.add(id);
+                targets.push(makeUpdateObjectTarget({
+                    objectType: 'objective',
+                    record: objective,
+                    ownerType: 'quest',
+                    owner: questTarget.record,
+                    ownerName: questTarget.name
+                }));
+            }
+        }
+        return targets;
+    };
+
+    const collectStatusEffectsForOwner = (ownerType, owner) => {
+        if (!owner) {
+            return [];
+        }
+        let effects = [];
+        if (typeof owner.getIntrinsicStatusEffects === 'function') {
+            effects = owner.getIntrinsicStatusEffects();
+        } else if (typeof owner.getStatusEffects === 'function') {
+            effects = owner.getStatusEffects();
+        } else if (Array.isArray(owner.statusEffects)) {
+            effects = owner.statusEffects;
+        }
+        if (!Array.isArray(effects)) {
+            return [];
+        }
+        return effects
+            .map((effect, index) => {
+                if (!effect || typeof effect !== 'object') {
+                    return null;
+                }
+                return makeUpdateObjectTarget({
+                    objectType: 'statusEffect',
+                    record: { ...effect },
+                    ownerType,
+                    owner,
+                    applyReplacement: (updatedEffect) => {
+                        const next = effects.map((entry, entryIndex) => (
+                            entryIndex === index ? { ...updatedEffect } : entry
+                        ));
+                        if (typeof owner.setStatusEffects === 'function') {
+                            owner.setStatusEffects(next);
+                        } else {
+                            owner.statusEffects = next;
+                        }
+                        effects = next;
+                    }
+                });
+            })
+            .filter(Boolean);
+    };
+
+    const collectStatusEffectUpdateTargets = () => ([
+        ...getAllCharacters().flatMap(character => collectStatusEffectsForOwner(
+            isNpcEntity(character) ? 'npc' : 'player',
+            character
+        )),
+        ...getAllThings().flatMap(thing => collectStatusEffectsForOwner('thing', thing)),
+        ...getAllLocations().flatMap(location => collectStatusEffectsForOwner('location', location)),
+        ...collectRegionUpdateTargets().flatMap(regionTarget => collectStatusEffectsForOwner('region', regionTarget.record))
+    ]);
+
+    const collectUpdateObjectTargets = (objectType) => {
+        switch (objectType) {
+            case 'character':
+                return getAllCharacters().map(character => makeUpdateObjectTarget({
+                    objectType,
+                    record: character,
+                    aliases: npcAliasesForMatching(character)
+                }));
+            case 'thing':
+                return getAllThings().map(thing => makeUpdateObjectTarget({ objectType, record: thing }));
+            case 'location':
+                return getAllLocations().map(location => makeUpdateObjectTarget({ objectType, record: location }));
+            case 'exit':
+                return collectExitUpdateTargets();
+            case 'region':
+                return collectRegionUpdateTargets();
+            case 'faction': {
+                const factions = getFactions();
+                return factions instanceof Map
+                    ? Array.from(factions.values()).filter(Boolean).map(faction => makeUpdateObjectTarget({ objectType, record: faction }))
+                    : [];
+            }
+            case 'quest':
+                return collectQuestUpdateTargets();
+            case 'objective':
+                return collectObjectiveUpdateTargets();
+            case 'statusEffect':
+                return collectStatusEffectUpdateTargets();
+            default:
+                return [];
+        }
+    };
+
+    const resolveUpdateObjectTarget = (objectType, rawQuery, { functionName } = {}) => {
+        const query = normalizeRequiredString(rawQuery, {
+            functionName,
+            fieldName: 'object'
+        });
+        const lowerQuery = query.toLowerCase();
+        const targets = collectUpdateObjectTargets(objectType);
+        const idMatches = targets.filter(target => target.id === query);
+        const matchesById = idMatches.length ? idMatches : [];
+        const exactMatches = targets.filter(target => {
+            if (toTrimmedString(target.name).toLowerCase() === lowerQuery) {
+                return true;
+            }
+            return target.aliases.some(alias => alias.toLowerCase() === lowerQuery);
+        });
+        const includesMatches = targets.filter(target => (
+            toTrimmedString(target.name).toLowerCase().includes(lowerQuery)
+        ));
+        const matches = matchesById.length
+            ? matchesById
+            : (exactMatches.length ? exactMatches : includesMatches);
+
+        if (!matches.length) {
+            throw new ToolVisibleError(
+                `No ${objectType} matches "${query}".`,
+                { code: 'object_not_found' }
+            );
+        }
+
+        if (matches.length > 1) {
+            throw new ToolVisibleError(
+                `Multiple ${objectType} matches found for "${query}". Call updateObjectFields again with the exact id from one candidate.`,
+                {
+                    code: 'ambiguous_object',
+                    candidates: matches
+                        .map(buildUpdateObjectCandidate)
+                        .sort(candidateSort)
+                }
+            );
+        }
+
+        const target = matches[0];
+        if (objectType === 'character' && !isNpcEntity(target.record)) {
+            throw new ToolVisibleError(
+                `updateObjectFields can only update NPC characters; "${target.name || query}" is not an NPC.`,
+                { code: 'invalid_target' }
+            );
+        }
+        return target;
+    };
+
+    const normalizeUpdateObjectFieldValue = (rawValue, { functionName, objectType, fieldName } = {}) => {
+        const stringFields = new Set([
+            'name',
+            'description',
+            'shortDescription',
+            'race',
+            'class',
+            'gender',
+            'healthAttribute',
+            'factionId',
+            'personalityType',
+            'personalityTraits',
+            'personalityNotes',
+            'aiNotes',
+            'resistances',
+            'vulnerabilities',
+            'thingType',
+            'rarity',
+            'itemTypeDetail',
+            'slot',
+            'controllingFactionId',
+            'parentRegionId',
+            'entranceLocationId',
+            'weather',
+            'homeRegionName',
+            'giverId',
+            'giverName',
+            'imageId',
+            'vehicleType'
+        ]);
+        const requiredStringFields = new Set(['name', 'destination']);
+        const numberFields = new Set([
+            'level',
+            'health',
+            'currency',
+            'experience',
+            'count',
+            'relativeLevel',
+            'value',
+            'baseLevel',
+            'lastVisitedTime',
+            'travelTimeMinutes',
+            'averageLevel',
+            'numImportantNPCs',
+            'rewardCurrency',
+            'rewardXp',
+            'duration',
+            'appliedAt'
+        ]);
+        const integerFields = new Set([
+            'level',
+            'currency',
+            'experience',
+            'count',
+            'baseLevel',
+            'lastVisitedTime',
+            'travelTimeMinutes',
+            'numImportantNPCs',
+            'rewardCurrency',
+            'rewardXp',
+            'duration',
+            'appliedAt'
+        ]);
+        const booleanFields = new Set([
+            'isDead',
+            'isHostile',
+            'willingToTrade',
+            'isVehicle',
+            'isCraftingStation',
+            'isProcessingStation',
+            'isHarvestable',
+            'isSalvageable',
+            'isContainer',
+            'visited',
+            'hasGeneratedStubs',
+            'bidirectional',
+            'rewardClaimed',
+            'paused',
+            'completed',
+            'optional'
+        ]);
+        const arrayFields = new Set([
+            'aliases',
+            'attributeBonuses',
+            'unscaledAttributeBonuses',
+            'statusEffects',
+            'randomEvents',
+            'characterConcepts',
+            'enemyConcepts',
+            'secrets',
+            'tags',
+            'goals',
+            'rewardItems',
+            'attributes',
+            'skills',
+            'needBars'
+        ]);
+        const objectFields = new Set([
+            'needBarApplicability',
+            'generationHints',
+            'weatherState',
+            'relations',
+            'assets',
+            'reputationTiers',
+            'rewardFactionReputation'
+        ]);
+
+        if (requiredStringFields.has(fieldName)) {
+            return normalizeCharacterFieldString(rawValue, {
+                functionName,
+                fieldName,
+                requireNonEmpty: true
+            });
+        }
+        if (stringFields.has(fieldName)) {
+            if (rawValue === null && ['factionId', 'controllingFactionId', 'parentRegionId', 'entranceLocationId', 'giverId', 'imageId', 'vehicleType'].includes(fieldName)) {
+                return null;
+            }
+            return normalizeCharacterFieldString(rawValue, { functionName, fieldName });
+        }
+        if (numberFields.has(fieldName)) {
+            if (rawValue === null && objectType === 'statusEffect' && ['duration', 'appliedAt'].includes(fieldName)) {
+                return null;
+            }
+            return normalizeCharacterFieldNumber(rawValue, {
+                functionName,
+                fieldName,
+                integer: integerFields.has(fieldName)
+            });
+        }
+        if (booleanFields.has(fieldName)) {
+            return normalizeCharacterFieldBoolean(rawValue, { functionName, fieldName });
+        }
+        if (arrayFields.has(fieldName)) {
+            if (!Array.isArray(rawValue)) {
+                throw new ToolVisibleError(
+                    `${functionName} "${fieldName}" must be an array.`,
+                    { code: 'invalid_arguments' }
+                );
+            }
+            return rawValue;
+        }
+        if (objectFields.has(fieldName)) {
+            return normalizeCharacterFieldMap(rawValue, { functionName, fieldName });
+        }
+        return rawValue;
+    };
+
+    const makeUpdateObjectFieldOperations = (target, fieldsObject, { functionName, objectType } = {}) => {
+        if (objectType === 'character') {
+            return makeUpdateCharacterFieldOperations(target.record, fieldsObject, { functionName });
+        }
+        if (!isPlainObject(fieldsObject)) {
+            throw new ToolVisibleError(
+                `${functionName} requires "fields" to be an object.`,
+                { code: 'invalid_arguments' }
+            );
+        }
+
+        const fieldEntries = Object.entries(fieldsObject);
+        if (!fieldEntries.length) {
+            throw new ToolVisibleError(
+                `${functionName} requires at least one field to update.`,
+                { code: 'invalid_arguments' }
+            );
+        }
+
+        const allowedFields = UPDATE_OBJECT_FIELD_NAMES_BY_TYPE[objectType] || [];
+        const allowedFieldSet = new Set(allowedFields);
+        for (const [fieldName] of fieldEntries) {
+            if (!allowedFieldSet.has(fieldName)) {
+                throw new ToolVisibleError(
+                    `${functionName} cannot update field "${fieldName}" on ${objectType}. Allowed fields: ${allowedFields.join(', ')}.`,
+                    {
+                        code: 'unsupported_field',
+                        details: { objectType, fieldName }
+                    }
+                );
+            }
+        }
+
+        const operations = [];
+        const addOperation = (fieldName, apply) => {
+            operations.push({ fieldName, apply });
+        };
+
+        for (const [fieldName, rawValue] of fieldEntries) {
+            const value = normalizeUpdateObjectFieldValue(rawValue, { functionName, objectType, fieldName });
+            addOperation(fieldName, () => {
+                if (objectType === 'thing' && fieldName === 'value') {
+                    const metadata = isPlainObject(target.record.metadata) ? { ...target.record.metadata } : {};
+                    metadata.value = value;
+                    target.record.metadata = metadata;
+                } else if (fieldName === 'averageLevel' && typeof target.record.setAverageLevel === 'function') {
+                    target.record.setAverageLevel(value);
+                } else if (fieldName === 'statusEffects' && typeof target.record.setStatusEffects === 'function') {
+                    target.record.setStatusEffects(value);
+                } else {
+                    target.record[fieldName] = value;
+                }
+                if (typeof target.applyReplacement === 'function') {
+                    target.applyReplacement(target.record);
+                }
+            });
+        }
+
+        return operations;
+    };
+
+    const executeUpdateObjectFieldsTool = ({
+        objectType,
+        object,
+        fields
+    } = {}) => {
+        const functionName = 'updateObjectFields';
+        const canonicalObjectType = normalizeUpdateObjectType(objectType, { functionName });
+        const target = resolveUpdateObjectTarget(canonicalObjectType, object, { functionName });
+        const operations = makeUpdateObjectFieldOperations(target, fields, {
+            functionName,
+            objectType: canonicalObjectType
+        });
+        const updatedFields = [];
+        for (const operation of operations) {
+            try {
+                operation.apply();
+                updatedFields.push(operation.fieldName);
+            } catch (error) {
+                throw new ToolVisibleError(
+                    `Failed to update "${operation.fieldName}" on ${canonicalObjectType} "${target.name || target.id || object}": ${error?.message || error}`,
+                    { code: 'field_update_failed' }
+                );
+            }
+        }
+
+        const objectId = getRecordId(target.record) || target.id;
+        const objectName = getRecordName(target.record) || target.name || object;
+        const lines = [
+            '<updateObjectFieldsResult>',
+            '  <status>success</status>',
+            `  <objectType>${xmlEscapeText(canonicalObjectType)}</objectType>`,
+            ...renderXmlNode('object', {
+                id: objectId,
+                name: objectName,
+                ownerType: target.ownerType || null,
+                ownerId: target.ownerId || null,
+                ownerName: target.ownerName || null
+            }, 1),
+            ...renderXmlNode('updatedFields', updatedFields, 1),
+            '</updateObjectFieldsResult>'
+        ];
+
+        return {
+            content: lines.join('\n'),
+            metadata: {
+                status: 'success',
+                objectType: canonicalObjectType,
+                objectId,
+                objectName,
+                ownerType: target.ownerType || null,
+                ownerId: target.ownerId || null,
+                ownerName: target.ownerName || null,
+                updatedFields
+            }
+        };
+    };
+
+    const executeUpdateCharacterFieldsTool = ({
+        character,
+        fields
+    } = {}) => {
+        const functionName = 'updateCharacterFields';
+        const characterQuery = normalizeRequiredString(character, {
+            functionName,
+            fieldName: 'character'
+        });
+        const targetNpc = resolveCharacterReference(characterQuery, { fieldName: 'character' });
+        if (!isNpcEntity(targetNpc)) {
+            throw new ToolVisibleError(
+                `updateCharacterFields can only update NPCs; "${targetNpc?.name || characterQuery}" is not an NPC.`,
+                { code: 'invalid_target' }
+            );
+        }
+
+        const operations = makeUpdateCharacterFieldOperations(targetNpc, fields, { functionName });
+        const updatedFields = [];
+        for (const operation of operations) {
+            try {
+                operation.apply();
+                updatedFields.push(operation.fieldName);
+            } catch (error) {
+                throw new ToolVisibleError(
+                    `Failed to update "${operation.fieldName}" on "${targetNpc?.name || characterQuery}": ${error?.message || error}`,
+                    { code: 'field_update_failed' }
+                );
+            }
+        }
+
+        const npcId = normalizeOptionalString(targetNpc?.id);
+        const npcName = normalizeOptionalString(targetNpc?.name) || characterQuery;
+        const lines = [
+            '<updateCharacterFieldsResult>',
+            '  <status>success</status>',
+            ...renderXmlNode('npc', {
+                id: npcId,
+                name: npcName
+            }, 1),
+            ...renderXmlNode('updatedFields', updatedFields, 1),
+            '</updateCharacterFieldsResult>'
+        ];
+
+        return {
+            content: lines.join('\n'),
+            metadata: {
+                status: 'success',
+                npcId,
+                npcName,
+                updatedFields
+            }
+        };
+    };
+
     const executeAlterNpcTool = async ({
         npc,
         alteration
@@ -3561,7 +4754,8 @@ const createChatToolRuntime = ({
     const normalizeAttackModifierArray = (value, {
         functionName,
         fieldName,
-        invertAmount = false
+        invertAmount = false,
+        enforceStandardRange = true
     } = {}) => {
         const entries = (() => {
             if (value === null || value === undefined) {
@@ -3596,7 +4790,7 @@ const createChatToolRuntime = ({
                     { code: 'invalid_arguments' }
                 );
             }
-            if (amount < -10 || amount > 10) {
+            if (enforceStandardRange && (amount < -10 || amount > 10)) {
                 throw new ToolVisibleError(
                     `${functionName} "${fieldName}[${index}].amount" must be between -10 and 10.`,
                     { code: 'invalid_arguments' }
@@ -3926,7 +5120,7 @@ const createChatToolRuntime = ({
     };
 
     const normalizePlausibilityModifierArray = (value, { functionName, fieldName } = {}) => (
-        normalizeAttackModifierArray(value, { functionName, fieldName })
+        normalizeAttackModifierArray(value, { functionName, fieldName, enforceStandardRange: false })
     );
 
     const executeResolvePlausibilityCheckTool = async ({
@@ -4784,6 +5978,10 @@ const createChatToolRuntime = ({
                 toolResult = executeAlterThingTool(argumentsObject);
             } else if (toolCall.functionName === 'alterNpc') {
                 toolResult = executeAlterNpcTool(argumentsObject);
+            } else if (toolCall.functionName === 'updateCharacterFields') {
+                toolResult = executeUpdateCharacterFieldsTool(argumentsObject);
+            } else if (toolCall.functionName === 'updateObjectFields') {
+                toolResult = executeUpdateObjectFieldsTool(argumentsObject);
             } else if (toolCall.functionName === 'alterLocation') {
                 toolResult = executeAlterLocationTool(argumentsObject);
             } else if (toolCall.functionName === 'resolveAttack') {

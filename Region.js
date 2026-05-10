@@ -1,7 +1,7 @@
-const crypto = require('crypto');
 const Utils = require('./Utils.js');
 const StatusEffect = require('./StatusEffect.js');
 const VehicleInfo = require('./VehicleInfo.js');
+const IdGenerator = require('./IdGenerator.js');
 
 let CachedLocationModule = null;
 function getLocationModule() {
@@ -39,9 +39,7 @@ class Region {
   static #indexByName = new Map();
 
   static #generateId() {
-    const timestamp = Date.now();
-    const random = crypto.randomBytes(6).toString('hex');
-    return `region_${timestamp}_${random}`;
+    return IdGenerator.next('region');
   }
 
   constructor({ name, description, shortDescription = null, locations = [], locationIds = [], entranceLocationId = null, parentRegionId = null, id = null, statusEffects = [], averageLevel = null, lastVisitedTime = null, randomEvents = [], characterConcepts = [], enemyConcepts = [], secrets = [], numImportantNPCs = null, controllingFactionId = null, vehicleInfo = null, weather = null, weatherState = null } = {}) {
@@ -62,6 +60,7 @@ class Region {
     }
 
     this.#id = id || Region.#generateId();
+    IdGenerator.register('region', this.#id);
     this.#name = name.trim();
     this.#description = description.trim();
     const normalizedShortDescription = typeof shortDescription === 'string' ? shortDescription.trim() : null;
@@ -1480,7 +1479,8 @@ class Region {
       if (typeof entry === 'string') {
         const description = entry.trim();
         if (!description) continue;
-        normalized.push({ description, duration: 1 });
+        const id = IdGenerator.next('status');
+        normalized.push({ id, description, duration: 1 });
         continue;
       }
 
@@ -1498,9 +1498,13 @@ class Region {
         }
 
         const normalizedEntry = {
+          id: typeof entry.id === 'string' && entry.id.trim()
+            ? entry.id.trim()
+            : IdGenerator.next('status'),
           description: descriptionValue,
           duration
         };
+        IdGenerator.register('status', normalizedEntry.id);
         if (Object.prototype.hasOwnProperty.call(entry, 'appliedAt')) {
           normalizedEntry.appliedAt = entry.appliedAt;
         }

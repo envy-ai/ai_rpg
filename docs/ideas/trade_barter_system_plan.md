@@ -143,7 +143,6 @@ Outputs should be strict XML:
   <playerItems>
     <item>
       <id>thing-id</id>
-      <willingToBuy>true|false</willingToBuy>
       <price>integer</price>
       <maxCount>integer</maxCount>
       <reason>short reason</reason>
@@ -153,7 +152,6 @@ Outputs should be strict XML:
     <item>
       <id>thing-id</id>
       <source>npcInventory|npcBarterInventory</source>
-      <willingToSell>true|false</willingToSell>
       <price>integer</price>
       <maxCount>integer</maxCount>
       <reason>short reason</reason>
@@ -167,6 +165,8 @@ Outputs should be strict XML:
   <profileNotes>optional durable notes about this NPC's trade preferences</profileNotes>
 </barterPrices>
 ```
+
+Only include existing player items the NPC is willing to buy and existing NPC/barter-stock items the NPC is willing to sell. Omitted existing items are treated as unavailable for trade.
 
 Rules:
 

@@ -9,6 +9,7 @@ const Location = require('./Location.js');
 const VehicleInfo = require('./VehicleInfo.js');
 const Globals = require('./Globals.js');
 const LLMClient = require('./LLMClient.js');
+const IdGenerator = require('./IdGenerator.js');
 const CodexBridgeClient = require('./CodexBridgeClient.js');
 const SlashCommandRegistry = require('./SlashCommandRegistry.js');
 const SanitizedStringSet = require('./SanitizedStringSet.js');
@@ -75,6 +76,54 @@ function isCheckResultChatToolName(value) {
     return typeof value === 'string' && CHECK_RESULT_CHAT_TOOL_NAMES.has(value);
 }
 
+function shouldIncludePlayerActionForEventChecks({
+    actionText = '',
+    plausibilityType = '',
+    actionResolution = null,
+    actionResolutions = [],
+    isPromptOnlyAction = false,
+    isForcedEventAction = false,
+    isCommentOnlyAction = false
+} = {}) {
+    const normalizedActionText = typeof actionText === 'string'
+        ? actionText.trim()
+        : '';
+    if (!normalizedActionText || isPromptOnlyAction || isForcedEventAction || isCommentOnlyAction) {
+        return false;
+    }
+
+    const normalizedPlausibilityType = typeof plausibilityType === 'string'
+        ? plausibilityType.trim().toLowerCase()
+        : '';
+    if (
+        normalizedPlausibilityType === 'rejected'
+        || normalizedPlausibilityType === 'implausible'
+        || normalizedPlausibilityType === 'impossible'
+    ) {
+        return false;
+    }
+    if (normalizedPlausibilityType === 'trivial') {
+        return true;
+    }
+
+    const resolutions = [];
+    if (actionResolution && typeof actionResolution === 'object') {
+        resolutions.push(actionResolution);
+    }
+    if (Array.isArray(actionResolutions)) {
+        resolutions.push(
+            ...actionResolutions.filter(resolution =>
+                resolution && typeof resolution === 'object'
+            )
+        );
+    }
+    if (resolutions.length) {
+        return resolutions.some(resolution => resolution.success === true);
+    }
+
+    return true;
+}
+
 function isRegularProseChatToolAllowed(functionName) {
     if (typeof functionName !== 'string' || !INFORMATION_GATHERING_CHAT_TOOL_NAMES.has(functionName)) {
         return false;
@@ -102,6 +151,23 @@ function normalizeBarterReferenceName(value) {
         return '';
     }
     return String(value).trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+function sanitizeBarterPricingXmlForParsing(value, { warn = console.warn } = {}) {
+    if (value === null || value === undefined) {
+        return '';
+    }
+    const text = String(value);
+    const replacementMatches = text.match(/\uFFFD/g);
+    if (!replacementMatches) {
+        return text;
+    }
+    if (typeof warn === 'function') {
+        warn(
+            `[BarterPricing] Removed ${replacementMatches.length} Unicode replacement character(s) from barter pricing XML before strict parsing.`
+        );
+    }
+    return text.replace(/\uFFFD/g, '');
 }
 
 function buildBarterItemReferenceIndex(items = []) {
@@ -1831,7 +1897,10 @@ module.exports = function registerApiRoutes(scope) {
             playerItemIds = new Set(),
             merchantItemIds = new Set()
         } = {}) {
-            const xml = extractBarterPricesXml(responseText);
+            const xml = sanitizeBarterPricingXmlForParsing(
+                extractBarterPricesXml(responseText),
+                { warn: console.warn }
+            );
             let doc = null;
             try {
                 doc = Utils.parseXmlDocumentStrict(xml, 'text/xml');
@@ -1872,15 +1941,10 @@ module.exports = function registerApiRoutes(scope) {
                 playerOffers.set(resolved.id, {
                     itemId: resolved.id,
                     itemName: resolved.name,
-                    willingToBuy: parseBarterBoolean(directChildText(itemNode, 'willingToBuy'), `player item ${resolved.id} willingToBuy`),
+                    willingToBuy: true,
                     unitPrice: parseBarterNonNegativeInteger(directChildText(itemNode, 'unitPrice'), `player item ${resolved.id} unitPrice`),
                     reason: directChildText(itemNode, 'reason')
                 });
-            }
-            for (const itemId of Array.from(playerItemIndex.byId.keys())) {
-                if (!playerOffers.has(itemId)) {
-                    console.warn(`[BarterPricing] Barter pricing response did not include a usable offer for player item "${itemId}".`);
-                }
             }
 
             const merchantOffers = new Map();
@@ -1921,7 +1985,7 @@ module.exports = function registerApiRoutes(scope) {
                     itemId: resolved.id,
                     itemName: resolved.name,
                     source: resolvedSource,
-                    willingToSell: parseBarterBoolean(directChildText(itemNode, 'willingToSell'), `merchant item ${resolved.id} willingToSell`),
+                    willingToSell: true,
                     unitPrice: parseBarterNonNegativeInteger(directChildText(itemNode, 'unitPrice'), `merchant item ${resolved.id} unitPrice`),
                     reason: directChildText(itemNode, 'reason')
                 });
@@ -12359,6 +12423,7 @@ module.exports = function registerApiRoutes(scope) {
                     originEventLocationName: null,
                     destinationEventLocationName: null,
                     vehicleMovement: null,
+                    vehicleStateChanged: false,
                     location,
                     destinationLocation: null,
                     traveledToLocationId
@@ -12635,11 +12700,18 @@ module.exports = function registerApiRoutes(scope) {
             const effectivePlayerDestinationText = shouldIgnorePlayerDestination
                 ? null
                 : requestedPlayerDestinationText;
-            const shouldSplitEventChecks = Boolean(effectivePlayerDestinationText);
+            const travelProseEventLocation = location || null;
+            const travelProseEventLocationRepresentsVehicle = Boolean(
+                resolveActiveVehicleLabelForLocation(location)
+            );
+            const hasEffectivePlayerDestination = Boolean(effectivePlayerDestinationText);
+            const shouldSplitEventChecks = hasEffectivePlayerDestination && !travelProseEventLocationRepresentsVehicle;
             const suppressOriginTimeAdvance = shouldSplitEventChecks && Boolean(destinationProse);
 
             let destinationLocation = null;
             let vehicleMovement = null;
+            let vehicleStateChanged = false;
+            let vehicleStartedTimedTrip = false;
             let vehicleMoved = false;
             let playerMoved = false;
 
@@ -12698,10 +12770,15 @@ module.exports = function registerApiRoutes(scope) {
                     if (vehicleMoveResult?.moved) {
                         vehicleMovement = vehicleMoveResult;
                         vehicleMoved = true;
+                        vehicleStateChanged = true;
+                    }
+                    if (vehicleMoveResult?.startedTrip) {
+                        vehicleStartedTimedTrip = true;
+                        vehicleStateChanged = true;
                     }
                 }
 
-                if (shouldSplitEventChecks) {
+                if (hasEffectivePlayerDestination) {
                     const resolvedDestination = overridePlayerDestinationLocation
                         ? {
                             location: overridePlayerDestinationLocation,
@@ -12760,9 +12837,14 @@ module.exports = function registerApiRoutes(scope) {
                             ? userInput
                             : null,
                         stream,
-                        suppressMoveEvents: Boolean(suppressPlayerMove),
+                        suppressMoveEvents: Boolean(
+                            suppressPlayerMove
+                            || (travelProseEventLocationRepresentsVehicle && hasEffectivePlayerDestination)
+                        ),
                         suppressTimeAdvance: Boolean(suppressTimeAdvance),
-                        locationOverride: location || null
+                        locationOverride: travelProseEventLocationRepresentsVehicle
+                            ? travelProseEventLocation
+                            : location || null
                     });
                 }
                 return {
@@ -12772,9 +12854,10 @@ module.exports = function registerApiRoutes(scope) {
                     originEventLocationName: null,
                     destinationEventLocationName: null,
                     vehicleMovement,
+                    vehicleStateChanged,
                     location,
-                    destinationLocation: null,
-                    traveledToLocationId
+                    destinationLocation,
+                    traveledToLocationId: destinationLocation?.id || traveledToLocationId
                 };
             }
 
@@ -12804,6 +12887,7 @@ module.exports = function registerApiRoutes(scope) {
                 originEventLocationName,
                 destinationEventLocationName,
                 vehicleMovement,
+                vehicleStateChanged,
                 location,
                 destinationLocation,
                 traveledToLocationId: destinationLocation?.id || traveledToLocationId
@@ -13591,6 +13675,7 @@ module.exports = function registerApiRoutes(scope) {
                 let originEventLocationName = null;
                 let destinationEventLocationName = null;
                 let vehicleMovement = null;
+                let randomEventLocationRefreshRequested = false;
                 try {
                     if (travelProsePayload) {
                         const travelResult = await runTravelProseEventChecks({
@@ -13604,6 +13689,9 @@ module.exports = function registerApiRoutes(scope) {
                         originEventLocationName = travelResult.originEventLocationName;
                         destinationEventLocationName = travelResult.destinationEventLocationName;
                         vehicleMovement = travelResult.vehicleMovement || null;
+                        if (travelResult.vehicleStateChanged) {
+                            randomEventLocationRefreshRequested = true;
+                        }
                         location = travelResult.location;
                     } else {
                         eventChecks = await Events.runEventChecks({
@@ -13629,6 +13717,9 @@ module.exports = function registerApiRoutes(scope) {
                     eventChecks: eventChecks?.html || null,
                     events: eventChecks?.structured || null
                 };
+                if (randomEventLocationRefreshRequested) {
+                    summary.locationRefreshRequested = true;
+                }
                 if (slopRemovalInfo) {
                     summary.slopRemoval = slopRemovalInfo;
                 }
@@ -18842,17 +18933,46 @@ module.exports = function registerApiRoutes(scope) {
 
             const respond = async (payload, statusCode = 200) => {
                 if (statusCode === 200) {
-                    await processDueVehicleArrivals();
+                    const dueVehicleArrivals = await processDueVehicleArrivals();
                     if (payload && typeof payload === 'object') {
                         const refreshedLocationId = typeof currentPlayer?.currentLocation === 'string'
                             ? currentPlayer.currentLocation.trim()
                             : '';
-                        if (payload.location
-                            && refreshedLocationId
+                        const refreshedLocation = refreshedLocationId
                             && gameLocations instanceof Map
                             && gameLocations.has(refreshedLocationId)
+                            ? gameLocations.get(refreshedLocationId)
+                            : null;
+                        const relevantDueVehicleArrivals = filterVehicleArrivalRecordsForContext(
+                            dueVehicleArrivals,
+                            { location: refreshedLocation || location || null }
+                        );
+                        if (relevantDueVehicleArrivals.length) {
+                            payload.locationRefreshRequested = true;
+                            const vehicleArrivalEventLocationId = requireLocationId(
+                                refreshedLocationId || location?.id,
+                                'vehicle arrival event entry'
+                            );
+                            relevantDueVehicleArrivals.forEach(arrival => {
+                                recordVehicleMovementEventEntry({
+                                    vehicleName: arrival.vehicleName,
+                                    vehicleIcon: arrival.vehicleIcon,
+                                    fromLocationName: arrival.fromLocationName,
+                                    toLocationName: arrival.toLocationName,
+                                    timestamp: travelAssistantEntry?.timestamp || new Date().toISOString(),
+                                    parentId: travelAssistantEntry?.id || null,
+                                    locationId: vehicleArrivalEventLocationId
+                                }, newChatEntries);
+                            });
+                            if (Object.prototype.hasOwnProperty.call(payload, 'messages')) {
+                                payload.messages = getClientMessages();
+                            }
+                        }
+                        if (payload.location
+                            && refreshedLocationId
+                            && refreshedLocation
                             && typeof buildLocationResponse === 'function') {
-                            payload.location = buildLocationResponse(gameLocations.get(refreshedLocationId));
+                            payload.location = buildLocationResponse(refreshedLocation);
                         }
                         if (Object.prototype.hasOwnProperty.call(payload, 'player') && currentPlayer) {
                             payload.player = serializeNpcForClient(currentPlayer);
@@ -20442,6 +20562,7 @@ module.exports = function registerApiRoutes(scope) {
                     const responseData = {
                         response: aiResponse
                     };
+                    let playerActionEventCheckResolutions = [];
 
                     if (toolInvocations.length) {
                         responseData.toolInvocations = toolInvocations;
@@ -20485,6 +20606,7 @@ module.exports = function registerApiRoutes(scope) {
                         const actionResolutions = plausibilityToolInvocations
                             .map(entry => entry.metadata.actionResolution)
                             .filter(resolution => resolution && typeof resolution === 'object');
+                        playerActionEventCheckResolutions = actionResolutions;
                         if (actionResolutions.length) {
                             responseData.actionResolutions = actionResolutions;
                             responseData.actionResolution = responseData.actionResolution || actionResolutions[0];
@@ -20628,14 +20750,26 @@ module.exports = function registerApiRoutes(scope) {
                     } else {
                         try {
                             stream.status('player_action:event_checks', 'Evaluating resulting events.');
-                            const shouldIncludePlayerActionForEventChecks = Boolean(
-                                plausibilityType === 'trivial'
-                                || actionResolution?.success === true
-                            );
-                            if (shouldIncludePlayerActionForEventChecks) {
+                            const playerActionEventCheckText =
+                                typeof sanitizedUserContent === 'string'
+                                    ? sanitizedUserContent
+                                    : (typeof userMessage?.content === 'string' ? userMessage.content : '');
+                            const includePlayerActionForEventChecks =
+                                shouldIncludePlayerActionForEventChecks({
+                                    actionText: playerActionEventCheckText,
+                                    plausibilityType,
+                                    actionResolution,
+                                    actionResolutions: playerActionEventCheckResolutions,
+                                    isPromptOnlyAction,
+                                    isForcedEventAction,
+                                    isCommentOnlyAction
+                                });
+                            if (includePlayerActionForEventChecks) {
                                 const historyEntry = findMostRecentHistoryEntryWithRequestId(newChatEntries, stream.requestId);
                                 if (historyEntry && typeof historyEntry.content === 'string' && historyEntry.content.trim()) {
                                     userInput = historyEntry.content.trim();
+                                } else {
+                                    userInput = playerActionEventCheckText.trim();
                                 }
                             }
 
@@ -20652,7 +20786,7 @@ module.exports = function registerApiRoutes(scope) {
                                     location,
                                     stream,
                                     userInput,
-                                    includePlayerActionForEventChecks: shouldIncludePlayerActionForEventChecks,
+                                    includePlayerActionForEventChecks,
                                     travelMetadataIsEventDriven,
                                     currentActionIsTravel,
                                     resolveTravelContext,
@@ -20670,6 +20804,9 @@ module.exports = function registerApiRoutes(scope) {
                                 originEventLocationName = travelResult.originEventLocationName;
                                 destinationEventLocationName = travelResult.destinationEventLocationName;
                                 vehicleMovement = travelResult.vehicleMovement || null;
+                                if (travelResult.vehicleStateChanged) {
+                                    responseData.locationRefreshRequested = true;
+                                }
                                 location = travelResult.location;
                                 traveledToLocationId = travelResult.traveledToLocationId || traveledToLocationId;
                                 questResult = await Events.runQuestChecks();
@@ -20681,7 +20818,7 @@ module.exports = function registerApiRoutes(scope) {
                                 [eventResult, questResult] = await Promise.all([
                                     Events.runEventChecks({
                                         textToCheck,
-                                        actionText: (shouldIncludePlayerActionForEventChecks && userInput)
+                                        actionText: (includePlayerActionForEventChecks && userInput)
                                             ? userInput
                                             : null,
                                         stream,
@@ -36886,6 +37023,7 @@ module.exports = function registerApiRoutes(scope) {
 
                 // Clear existing game state
                 Globals.gameLoaded = false;
+                IdGenerator.reset();
                 players.clear();
                 if (typeof Player.clearRuntimeRegistries === 'function') {
                     Player.clearRuntimeRegistries();
@@ -40544,3 +40682,5 @@ module.exports.buildNewExitDiscoveredSummaryMetadata = buildNewExitDiscoveredSum
 module.exports.buildBarterItemReferenceIndex = buildBarterItemReferenceIndex;
 module.exports.resolveBarterOfferItemReference = resolveBarterOfferItemReference;
 module.exports.buildBarterCurrencySettlement = buildBarterCurrencySettlement;
+module.exports.sanitizeBarterPricingXmlForParsing = sanitizeBarterPricingXmlForParsing;
+module.exports.shouldIncludePlayerActionForEventChecks = shouldIncludePlayerActionForEventChecks;

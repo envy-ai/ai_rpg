@@ -28,7 +28,7 @@ Respond in the below format, making sure that <npcInfo> is the root tag and encl
     <npcs>
         <npc>
             <name>{% if npc.name %}{{ npc.name }}<!--Name is fixed; do not change it.-->{% else %}<!--An appropriate name for this NPC. Do not use the name of an existing or deceased NPC.-->{% endif %}</name>
-            <description>{% if npc.description %}{{ npc.description | replace('\n', ' ') }}{% else %}<!--Three sentences describing appearance, personality, current goals, and how they relate to the location. Replace their name with %NAME%.--> {% endif %}</description>
+            <description>{% if npc.description %}{{ npc.description | replace('\n', ' ') }}{% else %}<!--Three sentences describing their appearance, peronality, and other pertinent details. Do not describe where they are or what they are currently doing. Replace their name with %NAME%.--> {% endif %}</description>
             <shortDescription>{% if npc.shortDescription %}{{ npc.shortDescription }}{% else %}<!--Ten words or fewer summarizing the NPC. Replace their name with %NAME%.--> {% endif %}</shortDescription>
             <role>{% if npc.role %}{{ npc.role }}{% else %}<!--Clear role, job, or niche within the location.-->{% endif %}</role>
             <class>{% if npc.class %}{{ npc.class }}{% else %}<!--RPG class, vocation, or archetype.-->{% endif %}</class>

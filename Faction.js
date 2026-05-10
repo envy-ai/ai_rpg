@@ -1,4 +1,4 @@
-const crypto = require('crypto');
+const IdGenerator = require('./IdGenerator.js');
 
 class Faction {
   #id;
@@ -19,9 +19,7 @@ class Faction {
   static #validRelations = new Set(['allied', 'neutral', 'hostile', 'rival']);
 
   static #generateId() {
-    const timestamp = Date.now();
-    const random = crypto.randomBytes(6).toString('hex');
-    return `faction_${timestamp}_${random}`;
+    return IdGenerator.next('faction');
   }
 
   static #normalizeStringList(value) {
@@ -182,6 +180,7 @@ class Faction {
     }
 
     this.#id = id || Faction.#generateId();
+    IdGenerator.register('faction', this.#id);
     this.#name = name.trim();
     if (!this.#name) {
       throw new Error('Faction name must be a non-empty string.');

@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 
 const viewSource = fs.readFileSync(path.join(__dirname, '..', 'views', 'index.njk'), 'utf8');
+const chatSource = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'chat.js'), 'utf8');
 const scssSource = fs.readFileSync(path.join(__dirname, '..', 'public', 'css', 'main.scss'), 'utf8');
 
 test('Story Tools exposes client-side search controls', () => {
@@ -35,6 +36,11 @@ test('Story Tools search keeps full history and filtered result state', () => {
     assert.match(viewSource, /storyToolsSearchDebounceMs\s*=\s*1000/);
     assert.match(viewSource, /scheduleStoryToolsSearchInput/);
     assert.match(viewSource, /clearTimeout\(storyToolsSearchDebounceTimer\)/);
+});
+
+test('normal chat completion refreshes Story Tools full history after chat history refresh', () => {
+    const pattern = /if \(!skipHistoryRefresh\) \{[\s\S]*?await this\.refreshChatHistory\(\);[\s\S]*?await window\.refreshStoryTools\?\.\(\{ preserveSelection: true \}\);[\s\S]*?\}/;
+    assert.equal(pattern.test(chatSource), true);
 });
 
 test('Story Tools search highlights matches without HTML injection', () => {

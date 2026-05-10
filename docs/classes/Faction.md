@@ -15,7 +15,7 @@ Represents a faction with goals, tags, relations to other factions, assets, and 
 - Static indexes: `#indexById`, `#indexByName`.
 
 ## Construction
-- `new Faction({ id, name, tags, goals, description, shortDescription, homeRegionName, relations, assets, reputationTiers })`.
+- `new Faction({ id, name, tags, goals, description, shortDescription, homeRegionName, relations, assets, reputationTiers })` assigns a compact `faction_n` id when missing.
 
 ## Accessors
 - Getters: `id`, `name`, `tags`, `goals`, `description`, `shortDescription`, `homeRegionName`, `relations`, `assets`, `reputationTiers`, `createdAt`, `lastUpdated`.

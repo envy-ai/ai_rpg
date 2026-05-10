@@ -3,6 +3,7 @@ const path = require('path');
 const cheerio = require('cheerio');
 const { DOMParser, XMLSerializer } = require('@xmldom/xmldom');
 const Globals = require('./Globals.js');
+const IdGenerator = require('./IdGenerator.js');
 
 let sharedDomParser = null;
 
@@ -1068,7 +1069,8 @@ class Utils {
       totalGeneratedImages: generatedImages.size,
       totalSkills: skills.size,
       currentSettingId: currentSetting?.id || null,
-      currentSettingName: currentSetting?.name || null
+      currentSettingName: currentSetting?.name || null,
+      idCounters: IdGenerator.snapshotCounters()
     };
 
     serialized.setting = null;
@@ -1501,6 +1503,282 @@ class Utils {
     return scaledFields;
   }
 
+  static #migrateLegacyDomainIdsToCounterIds(serialized) {
+    if (!serialized || typeof serialized !== 'object' || Array.isArray(serialized)) {
+      return null;
+    }
+
+    const targetSaveVersion = 1.2;
+    const metadata = serialized.metadata && typeof serialized.metadata === 'object' && !Array.isArray(serialized.metadata)
+      ? serialized.metadata
+      : {};
+    const currentSaveVersion = Number(metadata.saveFileSaveVersion);
+    if (Number.isFinite(currentSaveVersion) && currentSaveVersion >= targetSaveVersion) {
+      return null;
+    }
+
+    const prefixes = ['char', 'thing', 'loc', 'exit', 'region', 'faction', 'quest', 'obj', 'status'];
+    const counters = Object.fromEntries(prefixes.map(prefix => [prefix, 0]));
+    const replacements = new Map();
+
+    const normalizeId = value => (typeof value === 'string' && value.trim() ? value.trim() : null);
+    const allocate = (prefix, aliases = []) => {
+      if (!prefixes.includes(prefix)) {
+        throw new Error(`Unknown legacy ID migration prefix: ${prefix}`);
+      }
+      const normalizedAliases = [...new Set(
+        (Array.isArray(aliases) ? aliases : [aliases])
+          .map(normalizeId)
+          .filter(Boolean)
+      )];
+      const existing = normalizedAliases
+        .map(alias => replacements.get(alias))
+        .find(Boolean);
+      const nextId = existing || `${prefix}_${counters[prefix] + 1}`;
+      if (!existing) {
+        counters[prefix] += 1;
+      }
+      for (const alias of normalizedAliases) {
+        replacements.set(alias, nextId);
+      }
+      return nextId;
+    };
+
+    const worldData = serialized.gameWorld && typeof serialized.gameWorld === 'object'
+      ? serialized.gameWorld
+      : {};
+    const playersData = serialized.players && typeof serialized.players === 'object'
+      ? serialized.players
+      : {};
+    const thingsData = serialized.things && typeof serialized.things === 'object'
+      ? serialized.things
+      : {};
+    const locationEntries = worldData.locations && typeof worldData.locations === 'object'
+      ? worldData.locations
+      : {};
+    const exitEntries = worldData.locationExits && typeof worldData.locationExits === 'object'
+      ? worldData.locationExits
+      : {};
+    const regionEntries = worldData.regions && typeof worldData.regions === 'object'
+      ? worldData.regions
+      : {};
+    const factionsData = serialized.factions && typeof serialized.factions === 'object'
+      ? serialized.factions
+      : {};
+    const pendingEntries = serialized.pendingRegionStubs && typeof serialized.pendingRegionStubs === 'object'
+      ? serialized.pendingRegionStubs
+      : {};
+
+    const metadataPlayerId = normalizeId(metadata.playerId);
+    const playerKeys = Object.keys(playersData);
+    const orderedPlayerKeys = [];
+    if (metadataPlayerId && Object.prototype.hasOwnProperty.call(playersData, metadataPlayerId)) {
+      orderedPlayerKeys.push(metadataPlayerId);
+    }
+    for (const key of playerKeys) {
+      if (!orderedPlayerKeys.includes(key)) {
+        orderedPlayerKeys.push(key);
+      }
+    }
+    for (const key of orderedPlayerKeys) {
+      const payload = playersData[key];
+      if (!payload || typeof payload !== 'object') {
+        continue;
+      }
+      allocate('char', [key, payload.id]);
+    }
+
+    for (const [key, payload] of Object.entries(thingsData)) {
+      if (!payload || typeof payload !== 'object') {
+        continue;
+      }
+      allocate('thing', [key, payload.id]);
+    }
+
+    for (const [key, payload] of Object.entries(locationEntries)) {
+      if (!payload || typeof payload !== 'object') {
+        continue;
+      }
+      allocate('loc', [key, payload.id]);
+    }
+
+    const collectExitAliases = (key, payload) => {
+      if (!payload || typeof payload !== 'object') {
+        return;
+      }
+      allocate('exit', [key, payload.id]);
+    };
+    for (const [key, payload] of Object.entries(exitEntries)) {
+      collectExitAliases(key, payload);
+    }
+    for (const locationPayload of Object.values(locationEntries)) {
+      const exits = locationPayload && typeof locationPayload === 'object' && locationPayload.exits && typeof locationPayload.exits === 'object'
+        ? locationPayload.exits
+        : {};
+      for (const exitInfo of Object.values(exits)) {
+        if (!exitInfo || typeof exitInfo !== 'object') {
+          continue;
+        }
+        collectExitAliases(exitInfo.id, exitInfo);
+        if (exitInfo.exitObject && typeof exitInfo.exitObject === 'object') {
+          collectExitAliases(exitInfo.exitObject.id || exitInfo.id, exitInfo.exitObject);
+        }
+      }
+    }
+
+    for (const [key, payload] of Object.entries(regionEntries)) {
+      if (!payload || typeof payload !== 'object') {
+        continue;
+      }
+      allocate('region', [key, payload.id]);
+    }
+    for (const [key, payload] of Object.entries(pendingEntries)) {
+      if (!payload || typeof payload !== 'object') {
+        allocate('region', [key]);
+        continue;
+      }
+      allocate('region', [key, payload.id, payload.regionId]);
+    }
+
+    for (const [key, payload] of Object.entries(factionsData)) {
+      if (!payload || typeof payload !== 'object') {
+        continue;
+      }
+      allocate('faction', [key, payload.id]);
+    }
+
+    const assignQuestIds = (quest) => {
+      if (!quest || typeof quest !== 'object') {
+        return;
+      }
+      if (normalizeId(quest.id)) {
+        allocate('quest', [quest.id]);
+      } else {
+        quest.id = allocate('quest');
+      }
+      const objectives = Array.isArray(quest.objectives) ? quest.objectives : [];
+      for (const objective of objectives) {
+        if (!objective || typeof objective !== 'object') {
+          continue;
+        }
+        if (normalizeId(objective.id)) {
+          allocate('obj', [objective.id]);
+        } else {
+          objective.id = allocate('obj');
+        }
+      }
+    };
+    for (const payload of Object.values(playersData)) {
+      const quests = Array.isArray(payload?.quests) ? payload.quests : [];
+      for (const quest of quests) {
+        assignQuestIds(quest);
+      }
+    }
+
+    const looksLikeStatusEffect = (entry) => {
+      if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+        return false;
+      }
+      return ['description', 'text', 'name', 'attributes', 'skills', 'needBars', 'duration', 'appliedAt']
+        .some(key => Object.prototype.hasOwnProperty.call(entry, key));
+    };
+    const assignStatusId = (entry) => {
+      if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+        return;
+      }
+      if (entry.effect && typeof entry.effect === 'object' && !Array.isArray(entry.effect)) {
+        assignStatusId(entry.effect);
+      }
+      if (!looksLikeStatusEffect(entry)) {
+        return;
+      }
+      if (normalizeId(entry.id)) {
+        entry.id = allocate('status', [entry.id]);
+      } else {
+        entry.id = allocate('status');
+      }
+    };
+    const assignStatusIdsInCollection = (collection) => {
+      if (!collection) {
+        return;
+      }
+      if (Array.isArray(collection)) {
+        for (const entry of collection) {
+          assignStatusId(entry);
+        }
+        return;
+      }
+      if (typeof collection === 'object') {
+        assignStatusId(collection);
+      }
+    };
+
+    for (const payload of orderedPlayerKeys.map(key => playersData[key])) {
+      assignStatusIdsInCollection(payload?.statusEffects);
+    }
+    for (const payload of Object.values(thingsData)) {
+      assignStatusIdsInCollection(payload?.statusEffects);
+      assignStatusIdsInCollection(payload?.causeStatusEffect);
+      assignStatusIdsInCollection(payload?.causeStatusEffectOnTarget);
+      assignStatusIdsInCollection(payload?.causeStatusEffectOnEquipper);
+      assignStatusIdsInCollection(payload?.metadata?.causeStatusEffect);
+      assignStatusIdsInCollection(payload?.metadata?.causeStatusEffectOnTarget);
+      assignStatusIdsInCollection(payload?.metadata?.causeStatusEffectOnEquipper);
+    }
+    for (const payload of Object.values(locationEntries)) {
+      assignStatusIdsInCollection(payload?.statusEffects);
+    }
+    for (const payload of Object.values(regionEntries)) {
+      assignStatusIdsInCollection(payload?.statusEffects);
+    }
+
+    const replaceExactIds = (value, seen = new WeakSet()) => {
+      if (typeof value === 'string') {
+        return replacements.get(value) || value;
+      }
+      if (!value || typeof value !== 'object') {
+        return value;
+      }
+      if (seen.has(value)) {
+        return value;
+      }
+      seen.add(value);
+      if (Array.isArray(value)) {
+        for (let index = 0; index < value.length; index += 1) {
+          value[index] = replaceExactIds(value[index], seen);
+        }
+        return value;
+      }
+
+      for (const [key, childValue] of Object.entries(value)) {
+        const nextKey = replacements.get(key) || key;
+        const nextValue = replaceExactIds(childValue, seen);
+        if (nextKey !== key) {
+          if (Object.prototype.hasOwnProperty.call(value, nextKey)) {
+            throw new Error(`Cannot migrate ID key "${key}" to "${nextKey}" because that key already exists.`);
+          }
+          delete value[key];
+        }
+        value[nextKey] = nextValue;
+      }
+      return value;
+    };
+
+    replaceExactIds(serialized);
+
+    const migratedMetadata = serialized.metadata && typeof serialized.metadata === 'object' && !Array.isArray(serialized.metadata)
+      ? serialized.metadata
+      : {};
+    migratedMetadata.saveFileSaveVersion = targetSaveVersion;
+    migratedMetadata.idCounters = { ...counters };
+    serialized.metadata = migratedMetadata;
+
+    return {
+      counters: { ...counters },
+      replacements: replacements.size
+    };
+  }
+
   static hydrateGameState(serialized, context = {}) {
     if (!serialized || typeof serialized !== 'object') {
       throw new Error('hydrateGameState requires serialized data');
@@ -1515,6 +1793,14 @@ class Utils {
     if (migratedLegacyNeedBarFields !== null) {
       console.log(`🍖 Migrated legacy pre-1.1 need bar save values to current scale (${migratedLegacyNeedBarFields} field(s) updated).`);
     }
+
+    const migratedLegacyDomainIds = Utils.#migrateLegacyDomainIdsToCounterIds(serialized);
+    if (migratedLegacyDomainIds) {
+      console.log(`🆔 Migrated legacy save IDs to compact counters (${migratedLegacyDomainIds.replacements} reference(s) mapped).`);
+    }
+
+    IdGenerator.reset();
+    IdGenerator.seedCounters(serialized.metadata?.idCounters || {});
 
     const {
       gameLocations,

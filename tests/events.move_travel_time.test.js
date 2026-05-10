@@ -168,3 +168,38 @@ test('event-driven player movement inside a vehicle does not apply fast-travel t
         fixture.cleanup();
     }
 });
+
+test('event-driven player movement to an in-motion vehicle destination is suppressed while time_passed still applies', async () => {
+    const previousElapsedTime = Globals.elapsedTime;
+    Globals.elapsedTime = 75;
+    const fixture = createMoveFixture({
+        shortestTravelTimeMinutes: 17,
+        sourceRegion: {
+            id: 'vehicle_region',
+            isVehicle: true,
+            vehicleInfo: {
+                pendingDestination: {
+                    locationId: 'loc_destination',
+                    locationName: 'Destination'
+                },
+                ETA: 100,
+                departureTime: 50,
+                vehicleExitId: 'exit_vehicle'
+            }
+        }
+    });
+    try {
+        const context = await fixture.moveWithOptionalTimePassed(45);
+
+        assert.equal(fixture.player.currentLocation, fixture.originLocation.id);
+        assert.deepEqual(fixture.advances, [
+            { minutes: 45, options: { source: 'event_check' } }
+        ]);
+        assert.equal(context.timeProgress.advancedMinutes, 45);
+        assert.equal(context.suppressedActiveVehicleDestinationMove, true);
+        assert.equal(context.suppressTimeAdvance, undefined);
+    } finally {
+        fixture.cleanup();
+        Globals.elapsedTime = previousElapsedTime;
+    }
+});

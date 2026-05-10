@@ -1,10 +1,13 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('fs');
+const path = require('path');
 
 const {
     buildBarterItemReferenceIndex,
     resolveBarterOfferItemReference,
-    buildBarterCurrencySettlement
+    buildBarterCurrencySettlement,
+    sanitizeBarterPricingXmlForParsing
 } = require('../api.js');
 
 function resolve(items, reference) {
@@ -112,4 +115,37 @@ test('barter currency settlement pays only available merchant currency when acce
     assert.equal(settlement.merchantPays, 12);
     assert.equal(settlement.shortfall, 38);
     assert.equal(settlement.merchantCurrencyShortfallAccepted, true);
+});
+
+test('barter pricing prompt omits unavailable item offers instead of asking for willingness tags', () => {
+    const rootDir = path.join(__dirname, '..');
+    const apiSource = fs.readFileSync(path.join(rootDir, 'api.js'), 'utf8');
+    const promptSource = fs.readFileSync(path.join(rootDir, 'prompts/_includes/barter-prices.njk'), 'utf8');
+
+    assert.doesNotMatch(promptSource, /willingToBuy/);
+    assert.doesNotMatch(promptSource, /willingToSell/);
+    assert.match(promptSource, /omit/i);
+    assert.match(promptSource, /not willing to buy/i);
+    assert.match(promptSource, /not willing to sell/i);
+
+    assert.doesNotMatch(apiSource, /directChildText\(itemNode, 'willingToBuy'\)/);
+    assert.doesNotMatch(apiSource, /directChildText\(itemNode, 'willingToSell'\)/);
+    assert.match(apiSource, /playerOffers\.set\(resolved\.id,[\s\S]*?willingToBuy: true/);
+    assert.match(apiSource, /merchantOffers\.set\(resolved\.id,[\s\S]*?willingToSell: true/);
+    assert.doesNotMatch(apiSource, /did not include a usable offer for player item/);
+});
+
+test('barter pricing XML sanitizer removes Unicode replacement characters before strict parsing', () => {
+    const warnings = [];
+    const sanitized = sanitizeBarterPricingXmlForParsing(
+        '<barterPrices><playerItems><item><reason>broken\uFFFD\uFFFD\uFFFDtext</reason></item></playerItems></barterPrices>',
+        { warn: message => warnings.push(message) }
+    );
+
+    assert.equal(
+        sanitized,
+        '<barterPrices><playerItems><item><reason>brokentext</reason></item></playerItems></barterPrices>'
+    );
+    assert.equal(warnings.length, 1);
+    assert.match(warnings[0], /Unicode replacement character/);
 });

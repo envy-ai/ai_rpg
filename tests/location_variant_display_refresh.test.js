@@ -148,3 +148,14 @@ test('current location renderer wires cached variants into the initial image and
     assert.match(source, /displayImageUrl: cachedLocationVariant\?\.imageUrl \|\| null/);
     assert.match(source, /const imageUrl = currentCachedLocationVariant\?\.imageUrl[\s\S]+updateAdventureBackground\(imageUrl\)/);
 });
+
+test('vehicle location PIP uses cached and refreshed location weather variants', () => {
+    const source = fs.readFileSync(require.resolve('../views/index.njk'), 'utf8');
+
+    assert.match(source, /const cachedPipLocationVariant = locationImageId[\s\S]+getCachedLocationVariantDisplay\(locationVariantDisplayCache, locationId, locationImageId\)/);
+    assert.match(source, /displayImageId: cachedPipLocationVariant\?\.imageId \|\| null/);
+    assert.match(source, /displayImageUrl: cachedPipLocationVariant\?\.imageUrl \|\| null/);
+    assert.match(source, /locationVehiclePipImage\.dataset\.vehiclePipLocationId = locationId/);
+    assert.match(source, /locationVehiclePipImage\.dataset\.vehiclePipSourceImageId = locationImageId/);
+    assert.match(source, /void requestVehiclePipLocationVariantForDisplay\(details, locationImageId, locationDisplayName\)/);
+});

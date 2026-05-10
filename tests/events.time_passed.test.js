@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const Events = require('../Events.js');
+const Globals = require('../Globals.js');
 
 test('time_passed parser ignores prompt reasoning and parses final duration field', () => {
     const parser = Events._buildParsers().time_passed;
@@ -49,4 +50,24 @@ test('time_passed parser reports invalid final duration field with raw context',
         'The characters debated for an unclear stretch. -> later maybe',
     );
     assert.equal(warnings[0].details.durationText, 'later maybe');
+});
+
+test('time_passed handler treats full trip-sized durations as ordinary elapsed time', () => {
+    const handler = Events._buildHandlers().time_passed;
+    const previousPlayer = Globals.currentPlayer;
+    const previousWorldTime = Globals.worldTime ? { ...Globals.worldTime } : null;
+
+    try {
+        Globals.currentPlayer = { elapsedTime: 100 };
+        Globals.elapsedTime = 100;
+
+        const context = { suppressTimePassedAtOrAboveMinutes: 20 };
+        handler(20, context);
+
+        assert.equal(Globals.elapsedTime, 120);
+        assert.equal(context.timeProgress?.advancedMinutes, 20);
+    } finally {
+        Globals.currentPlayer = previousPlayer;
+        Globals.worldTime = previousWorldTime;
+    }
 });

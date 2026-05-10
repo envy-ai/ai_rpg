@@ -34,6 +34,7 @@ Collection of static utility helpers used across the server: set math, text simi
 - `writeSerializedGameState(saveDir, serialized)`.
 - `loadSerializedGameState(saveDir)`.
 - `hydrateGameState(serialized, context)`.
+  - On older saves, migrates persisted domain-object IDs to compact counter IDs (`char_1`, `thing_1`, `loc_1`, etc.) before object hydration and stores the resulting counters in `metadata.idCounters`.
 
 ## Pending Region Stub Maintenance
 - `rebuildPendingRegionStubs({ pendingRegionStubs, regions, gameLocations, gameLocationExits })`.
@@ -54,7 +55,8 @@ Collection of static utility helpers used across the server: set math, text simi
 ## Notes
 - `serializeGameState`/`writeSerializedGameState` also persist canonical world time and calendar definition (`worldTime.json`, `calendarDefinition.json`), and hydration restores them through `Globals.hydrateWorldTime(...)`.
 - `serializeGameState` and `hydrateGameState` coordinate `Location`, `Region`, `Thing`, `Player`, `Skill`, and stubs into a consistent save/load flow.
-- `hydrateGameState` includes legacy save migration passes that convert hour-based fields to minute-canonical data (`worldTime`, elapsed/visited timestamps, status-effect duration/appliedAt, weather duration fields, and offscreen scheduler snapshots), scale pre-`1.1` saved player/NPC need-bar values by `10`, and default missing saved exit `travelTimeMinutes` values to `0`, then bump the in-memory save metadata version to `1.1` so the migration does not reapply after the next save.
+- `serializeGameState` persists `metadata.idCounters` from `IdGenerator` so compact IDs are not reused after deleted objects disappear from the live world.
+- `hydrateGameState` includes legacy save migration passes that convert hour-based fields to minute-canonical data (`worldTime`, elapsed/visited timestamps, status-effect duration/appliedAt, weather duration fields, and offscreen scheduler snapshots), scale pre-`1.1` saved player/NPC need-bar values by `10`, migrate pre-`1.2` domain object IDs and exact structured references to compact counters, and default missing saved exit `travelTimeMinutes` values to `0`, then bump the in-memory save metadata version to `1.2` so migrations do not reapply after the next save.
 - `hydrateGameState` clears `Player` runtime registries before re-instantiating saved actors, preventing stale in-memory duplicate instances from surviving loads.
 - During `hydrateGameState`, location descriptions are loaded as-is, and non-string descriptions are normalized to an empty string so save hydration continues without placeholder substitution.
 - Legacy migration triggers when `serialized.worldTime` has `timeHours` without `timeMinutes`; migrated data is written in-memory before object hydration.

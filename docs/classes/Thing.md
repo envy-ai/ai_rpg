@@ -13,7 +13,7 @@ Represents items and scenery in the game world. Supports rarity metadata, attrib
 - Static indexes: `#indexByID`, `#indexByName`.
 
 ## Construction
-- `new Thing({...})` validates required fields, normalizes metadata, initializes status effects, and registers in indexes.
+- `new Thing({...})` validates required fields, normalizes metadata, initializes status effects, assigns a compact `thing_n` id when missing, and registers in indexes.
 
 ## Static API (Rarity)
 - `loadRarityDefinitions({ forceReload })`, `getAllRarityDefinitions()`, `generateRandomRarityDefinition()`.

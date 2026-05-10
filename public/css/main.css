@@ -8298,6 +8298,24 @@ body.modal-open {
   background: rgba(113, 63, 18, 0.18);
 }
 
+.barter-modal__loading {
+  grid-column: 1/-1;
+  min-height: 220px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: rgba(226, 232, 240, 0.82);
+  font-size: 0.9rem;
+}
+
+.barter-modal__spinner {
+  width: 34px;
+  height: 34px;
+  border-width: 4px;
+}
+
 .barter-modal__summary {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;
@@ -8455,11 +8473,13 @@ body.modal-open {
   font-size: 0.58rem;
 }
 
+.barter-start-confirm-modal__dialog,
 .barter-quantity-modal__dialog,
 .barter-currency-confirm-modal__dialog {
   width: min(420px, 100vw - 32px);
 }
 
+.barter-start-confirm-modal__body,
 .barter-quantity-modal__body,
 .barter-currency-confirm-modal__body {
   display: flex;

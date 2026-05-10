@@ -7,6 +7,7 @@ const Quest = require("./Quest.js");
 const Faction = require("./Faction.js");
 const LLMClient = require("./LLMClient.js");
 const StatusEffect = require("./StatusEffect.js");
+const VehicleInfo = require("./VehicleInfo.js");
 
 const BASE_TIMEOUT_MS = 120000;
 const DEFAULT_STATUS_DURATION = 3;
@@ -304,6 +305,10 @@ function isBlank(value) {
 
 function normalizeString(value) {
     return typeof value === "string" ? value.trim() : "";
+}
+
+function normalizeDestinationMatchKey(value) {
+    return normalizeString(value).toLowerCase().replace(/\s+/g, " ");
 }
 
 function splitPipeList(raw) {
@@ -1218,6 +1223,22 @@ async function movePlayerToDestination(
         context,
         label,
     });
+    if (
+        eventMoveTargetsActiveVehicleDestination({
+            eventsInstance,
+            Location,
+            player,
+            originLocation,
+            destinationObject,
+            destinationName,
+        })
+    ) {
+        context.suppressedActiveVehicleDestinationMove = true;
+        console.warn(
+            `[${label}] Suppressing event move to active in-motion vehicle destination "${trackingName}". Vehicle arrival must be resolved by elapsed time.`,
+        );
+        return;
+    }
 
     if (!player.isNPC && typeof Globals.recordPlayerArrivalVisitState === "function") {
         Globals.recordPlayerArrivalVisitState(destinationObject);
@@ -1293,6 +1314,273 @@ function eventLocationContextRepresentsVehicle(eventsInstance, location) {
             region.isVehicle === true ||
             (region.vehicleInfo && typeof region.vehicleInfo === "object" && !Array.isArray(region.vehicleInfo))
         )
+    );
+}
+
+function getEventLocationRegion(eventsInstance, location) {
+    if (!location || typeof location !== "object") {
+        return null;
+    }
+    if (location.region && typeof location.region === "object") {
+        return location.region;
+    }
+    const findRegionByLocationId = eventsInstance?._deps?.findRegionByLocationId;
+    if (typeof findRegionByLocationId !== "function" || !location.id) {
+        return null;
+    }
+    return findRegionByLocationId(location.id) || null;
+}
+
+function vehicleStateIsInMotion(vehicleState) {
+    if (!vehicleState || typeof vehicleState !== "object") {
+        return false;
+    }
+    const vehicleInfo =
+        vehicleState.vehicleInfo &&
+            typeof vehicleState.vehicleInfo === "object" &&
+            !Array.isArray(vehicleState.vehicleInfo)
+            ? vehicleState.vehicleInfo
+            : vehicleState;
+
+    if (vehicleState.isUnderway === true || vehicleInfo.isUnderway === true) {
+        return vehicleState.hasArrived !== true && vehicleInfo.hasArrived !== true;
+    }
+    if (vehicleState.hasArrived === true || vehicleInfo.hasArrived === true) {
+        return false;
+    }
+
+    const normalizedVehicleInfo = new VehicleInfo(vehicleInfo);
+    return normalizedVehicleInfo.isUnderway && !normalizedVehicleInfo.hasArrived;
+}
+
+function collectActiveVehicleStates(eventsInstance, player, originLocation) {
+    const states = [];
+    const currentVehicle = player?.currentVehicle;
+    if (currentVehicle && typeof currentVehicle === "object") {
+        states.push(currentVehicle);
+    }
+    if (
+        originLocation &&
+        typeof originLocation === "object" &&
+        (
+            originLocation.isVehicle === true ||
+            (originLocation.vehicleInfo && typeof originLocation.vehicleInfo === "object" && !Array.isArray(originLocation.vehicleInfo))
+        )
+    ) {
+        states.push({
+            name: originLocation.name || originLocation.id || "",
+            vehicleInfo: originLocation.vehicleInfo || {},
+        });
+    }
+
+    const originRegion = getEventLocationRegion(eventsInstance, originLocation);
+    if (
+        originRegion &&
+        (
+            originRegion.isVehicle === true ||
+            (originRegion.vehicleInfo && typeof originRegion.vehicleInfo === "object" && !Array.isArray(originRegion.vehicleInfo))
+        )
+    ) {
+        states.push({
+            name: originRegion.name || originRegion.id || "",
+            vehicleInfo: originRegion.vehicleInfo || {},
+        });
+    }
+
+    return states;
+}
+
+function buildVehicleDestinationCandidates(vehicleState, { Location, eventsInstance } = {}) {
+    const candidates = {
+        locationIds: new Set(),
+        locationNames: new Set(),
+        regionIds: new Set(),
+        regionNames: new Set(),
+    };
+    const vehicleInfo =
+        vehicleState?.vehicleInfo &&
+            typeof vehicleState.vehicleInfo === "object" &&
+            !Array.isArray(vehicleState.vehicleInfo)
+            ? vehicleState.vehicleInfo
+            : vehicleState;
+
+    const addLocationId = (value) => {
+        const id = normalizeString(value);
+        if (!id) {
+            return;
+        }
+        candidates.locationIds.add(id);
+        let location = null;
+        if (Location && typeof Location.get === "function") {
+            location = Location.get(id) || null;
+        }
+        if (location) {
+            addLocationName(location.name);
+            const region = getEventLocationRegion(eventsInstance, location);
+            addRegionId(region?.id);
+            addRegionName(region?.name);
+        }
+    };
+    const addLocationName = (value) => {
+        const key = normalizeDestinationMatchKey(value);
+        if (key) {
+            candidates.locationNames.add(key);
+        }
+    };
+    const addRegionId = (value) => {
+        const id = normalizeString(value);
+        if (id) {
+            candidates.regionIds.add(id);
+        }
+    };
+    const addRegionName = (value) => {
+        const key = normalizeDestinationMatchKey(value);
+        if (key) {
+            candidates.regionNames.add(key);
+        }
+    };
+    const addRawDestinationText = (value) => {
+        const text = normalizeString(value);
+        if (!text) {
+            return;
+        }
+        addLocationName(text);
+        for (const part of text.split("|")) {
+            addLocationName(part);
+            addRegionName(part);
+        }
+    };
+
+    addLocationName(vehicleState?.destination);
+    addRawDestinationText(vehicleState?.destination);
+    addLocationId(vehicleInfo?.currentDestination);
+
+    const pendingDestination =
+        vehicleState?.pendingDestination &&
+            typeof vehicleState.pendingDestination === "object" &&
+            !Array.isArray(vehicleState.pendingDestination)
+            ? vehicleState.pendingDestination
+            : vehicleInfo?.pendingDestination;
+    if (pendingDestination && typeof pendingDestination === "object") {
+        addLocationId(pendingDestination.locationId);
+        addLocationName(pendingDestination.locationName);
+        addRegionId(pendingDestination.regionId);
+        addRegionName(pendingDestination.regionName);
+        addRawDestinationText(pendingDestination.rawText);
+    }
+
+    return candidates;
+}
+
+function destinationMatchesVehicleDestination(
+    eventsInstance,
+    Location,
+    destinationObject,
+    destinationName,
+    candidates,
+) {
+    const destinationId = normalizeString(destinationObject?.id);
+    if (destinationId && candidates.locationIds.has(destinationId)) {
+        return true;
+    }
+    const destinationReference = normalizeString(destinationName);
+    if (
+        destinationReference &&
+        (
+            candidates.locationIds.has(destinationReference) ||
+            candidates.regionIds.has(destinationReference)
+        )
+    ) {
+        return true;
+    }
+
+    const destinationNameKey = normalizeDestinationMatchKey(
+        destinationObject?.name || destinationName,
+    );
+    if (
+        destinationNameKey &&
+        (
+            candidates.locationNames.has(destinationNameKey) ||
+            candidates.regionNames.has(destinationNameKey)
+        )
+    ) {
+        return true;
+    }
+
+    const destinationRegion = getEventLocationRegion(eventsInstance, destinationObject);
+    const destinationRegionId = normalizeString(destinationRegion?.id || destinationObject?.regionId);
+    if (destinationRegionId && candidates.regionIds.has(destinationRegionId)) {
+        return true;
+    }
+    const destinationRegionNameKey = normalizeDestinationMatchKey(destinationRegion?.name);
+    return Boolean(
+        destinationRegionNameKey &&
+        candidates.regionNames.has(destinationRegionNameKey)
+    );
+}
+
+function eventMoveTargetsActiveVehicleDestination({
+    eventsInstance,
+    Location,
+    player,
+    originLocation,
+    destinationObject = null,
+    destinationName = null,
+} = {}) {
+    const vehicleStates = collectActiveVehicleStates(eventsInstance, player, originLocation);
+    for (const vehicleState of vehicleStates) {
+        if (!vehicleStateIsInMotion(vehicleState)) {
+            continue;
+        }
+        const candidates = buildVehicleDestinationCandidates(vehicleState, {
+            Location,
+            eventsInstance,
+        });
+        if (
+            destinationMatchesVehicleDestination(
+                eventsInstance,
+                Location,
+                destinationObject,
+                destinationName,
+                candidates,
+            )
+        ) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function structuredTravelMoveTargetsActiveVehicleDestination(
+    eventsInstance,
+    structured,
+    { Location, player, originLocation } = {},
+) {
+    const parsed = structured?.parsed;
+    if (!parsed || typeof parsed !== "object") {
+        return false;
+    }
+    const destinationNames = [];
+    if (Array.isArray(parsed.move_location)) {
+        destinationNames.push(
+            ...parsed.move_location.filter((entry) => typeof entry === "string"),
+        );
+    }
+    if (Array.isArray(parsed.move_new_location)) {
+        destinationNames.push(
+            ...parsed.move_new_location
+                .map((entry) => entry?.name)
+                .filter((entry) => typeof entry === "string"),
+        );
+    }
+    return destinationNames.some((destinationName) =>
+        eventMoveTargetsActiveVehicleDestination({
+            eventsInstance,
+            Location,
+            player,
+            originLocation,
+            destinationName,
+        }),
     );
 }
 
@@ -2739,12 +3027,26 @@ class Events {
         const cleaned = xmlEvents.xml;
         const html = this.escapeHtml(cleaned).replace(/\n/g, "<br>");
         const accumulator = this._createEventCheckAccumulator();
+        const suppressActiveVehicleDestinationTravelMove =
+            Boolean(xmlEvents.hasTravelBoundary) &&
+            structuredTravelMoveTargetsActiveVehicleDestination(
+                this,
+                xmlEvents.travelMove.structured,
+                {
+                    Location,
+                    player: currentPlayer,
+                    originLocation: location,
+                },
+            );
         const commonContext = {
             player: currentPlayer,
             allowEnvironmentalEffects: Boolean(allowEnvironmentalEffects),
             isNpcTurn: Boolean(isNpcTurn),
             suppressTimeAdvance: Boolean(suppressTimeAdvance),
-            suppressTimePassedEvents: Boolean(xmlEvents.hasTravelBoundary),
+            suppressTimePassedEvents: Boolean(
+                xmlEvents.hasTravelBoundary &&
+                !suppressActiveVehicleDestinationTravelMove,
+            ),
             stream,
             followupQueue: activeFollowupQueue,
             _originatedFromEventChecks: true,
@@ -2771,7 +3073,10 @@ class Events {
                     ...commonContext,
                     location,
                     region,
-                    suppressMoveEvents: Boolean(suppressMoveEvents),
+                    suppressMoveEvents: Boolean(
+                        suppressMoveEvents ||
+                        suppressActiveVehicleDestinationTravelMove,
+                    ),
                     allowMoveTurnAppearances: Boolean(allowMoveTurnAppearances),
                 },
                 accumulator,

@@ -74,9 +74,11 @@
 </merchantBarterStock>
 
 <task>
-Assign this character's barter prices. Decide whether the character is willing to buy each player inventory item, how much they will pay per unit, which existing character inventory and barter-stock items they will sell, and how much they charge per unit.
+Assign this character's barter prices. List only player inventory items the character is willing to buy and only existing character inventory or barter-stock items the character is willing to sell. For each listed player item, include how much they will pay per unit. For each listed character item, include how much they charge per unit.
 
 For every existing player or character item you price, copy both the exact listed <name> text and the listed <id>. Names are used as the primary item reference. The item id is only a disambiguator when the name is blank or more than one distinct listed item has the same exact name.
+
+Omit player items the character is not willing to buy. Omit character inventory or barter-stock items the character is not willing to sell.
 
 Generate between <minimumNewItems> and <maximumNewItems> additional item seeds that this character is willing to sell. Merchants and traders should usually have more generated stock than incidental NPCs; non-merchant NPCs may have none.
 
@@ -101,7 +103,6 @@ Return only one XML block in this exact shape:
     <item>
       <name>Exact existing player item name</name>
       <id>Existing player item id</id>
-      <willingToBuy>true|false</willingToBuy>
       <unitPrice>Non-negative integer amount the merchant pays per unit</unitPrice>
       <reason>Short reason</reason>
     </item>
@@ -111,7 +112,6 @@ Return only one XML block in this exact shape:
       <name>Exact existing merchant inventory or barter-stock item name</name>
       <id>Existing merchant inventory or barter-stock item id</id>
       <source>inventory|barterInventory</source>
-      <willingToSell>true|false</willingToSell>
       <unitPrice>Non-negative integer amount the player pays per unit</unitPrice>
       <reason>Short reason</reason>
     </item>

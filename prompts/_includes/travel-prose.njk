@@ -38,7 +38,8 @@
   The vehicle the player is inside has arrived at the destination. Describe the vehicle arriving at the destination.
   {% endif -%}
   -->
-  <originProse><!-- The portion of the prose that contains characters, items, scenery, etc, at the origin location --></originProse>
-  <betweenProse><!-- The portion of the prose that occurs between the origin and destination (generally describing vehicle rides, etc) --></betweenProse>
-  <destinationProse><!-- The portion of the prose that contains characters, items, scenery, etc, at the destination location --></destinationProse>
+  {# Developer note: for vehicle travel, the separation between originProse, vehicleProse, and destinationProse are actually ignored when processing events. The vehicle's departure and arrival are determined by the vehicle's hasDeparted and hasArrived status, not by the presence of prose in any particular section. This is not a bug.#}
+  <originProse><!-- The portion of the prose that contains characters, items, scenery, etc, at the origin location. {% if currentVehicle %}Omit if the vehicle has already departed.{% endif %} --></originProse>
+  <betweenProse>{% if currentVehicle %}<!-- The portion of the prose that occurs after the vehicle has departed from the origin but before it arrives at the destination. The vehicle need not arrive at its destination the same turn it departs. Let the player experience the journey, interact with other characters, and observe the surroundings, but also allow them to wait out the whole ride (or the remainder of it) in one turn if they want. If the vehicle does not arrive at its destination this turn, omit the destinationProse tag.-->{% else %}<!-- The portion of the prose that occurs between the origin and destination (generally describing vehicle rides, etc) -->{% endif %}</betweenProse>
+  <destinationProse>{% if currentVehicle %}<!-- The portion of the prose that contains characters, items, scenery, etc, at the destination location. Omit if the vehicle has not arrived yet. -->{% else %}<!-- The portion of the prose that contains characters, items, scenery, etc, at the destination location -->{% endif %}</destinationProse>
 </travelProse>

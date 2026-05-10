@@ -406,8 +406,8 @@ use_legacy_prompt_checks: false
 barter:
   generated_stock:
     min_items: 0
-    max_items: 15
-    max_items_per_prompt: 15
+    max_items: 16
+    max_items_per_prompt: 8
   daily_refresh:
     min_fraction: 0.3333333333
     max_fraction: 0.6666666667

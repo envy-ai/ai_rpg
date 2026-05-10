@@ -3,6 +3,7 @@ const fs = require('fs');
 const SanitizedStringMap = require('./SanitizedStringMap.js');
 const { findPackageJSON } = require('module');
 const Globals = require('./Globals.js');
+const IdGenerator = require('./IdGenerator.js');
 
 
 class QuestObjective {
@@ -11,17 +12,18 @@ class QuestObjective {
   completed = false;
   optional = false;
 
-  constructor(description, optional = false) {
+  constructor(description, optional = false, id = null) {
     if (typeof description !== 'string' || !description.trim()) {
       throw new Error('QuestObjective description must be a non-empty string');
     }
     this.description = description;
     this.optional = Boolean(optional);
-    this.#id = QuestObjective.generateId();
+    this.#id = (typeof id === 'string' && id.trim()) ? id.trim() : QuestObjective.generateId();
+    IdGenerator.register('objective', this.#id);
   }
 
   static generateId() {
-    return `obj_${Math.random().toString(36).substr(2, 9)}`;
+    return IdGenerator.next('objective');
   }
 
   toJSON() {
@@ -34,8 +36,7 @@ class QuestObjective {
   }
 
   static fromJSON(data) {
-    const obj = new QuestObjective(data.description, data.optional);
-    obj.#id = data.id || QuestObjective.generateId();
+    const obj = new QuestObjective(data.description, data.optional, data.id || null);
     obj.completed = Boolean(data.completed);
     return obj;
   }
@@ -114,9 +115,9 @@ class Quest {
   }
 
   constructor(options = {}) {
-    const generatedId = `quest_${Math.random().toString(36).substr(2, 9)}`;
     const providedId = typeof options.id === 'string' && options.id.trim() ? options.id.trim() : null;
-    this.#id = providedId || generatedId;
+    this.#id = providedId || IdGenerator.next('quest');
+    IdGenerator.register('quest', this.#id);
 
     const rawObjectives = Array.isArray(options.objectives) ? options.objectives : [];
     this.objectives = rawObjectives

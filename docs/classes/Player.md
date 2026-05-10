@@ -20,7 +20,7 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
 - Static indexes: `#indexById`, `#indexByName`.
 
 ## Construction
-- `new Player(options)` loads definitions, validates input, initializes attributes, inventory, gear, skills, dispositions, need bars, per-actor need-bar applicability, and registers in indexes.
+- `new Player(options)` loads definitions, validates input, initializes attributes, inventory, gear, skills, dispositions, need bars, per-actor need-bar applicability, assigns a compact `char_n` id when missing, and registers in indexes.
 
 ## Static API
 - Lookup and registry:

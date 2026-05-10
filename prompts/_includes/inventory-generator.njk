@@ -44,7 +44,7 @@ Here is a list of available equipment slot types:
 {% endfor %}
 </requestedBarterStock>
 
-Generate exactly {{ requestedItems | length }} item {% if requestedItems | length == 1 %}entry{% else %}entries{% endif %} for this character's barter inventory, one for each requested item above and in the same order. These are items the character is willing to sell, not items they are currently carrying for personal use. Preserve each requested item's name, count, standard value, broad type, and rarity when those fields are provided. Improve missing or thin descriptions into concrete, setting-appropriate item descriptions. The generated XML should still be complete item XML so the game can create real inventory objects.
+Generate an <items> block containing exactly {{ requestedItems | length }} <item> {% if requestedItems | length == 1 %}entry{% else %}entries{% endif %} for this character's barter inventory, one for each requested item above and in the same order. These are items the character is willing to sell, not items they are currently carrying for personal use. Preserve each requested item's name, count, standard value, broad type, and rarity when those fields are provided. Improve missing or thin descriptions into concrete, setting-appropriate item descriptions. The generated XML should still be complete item XML so the game can create real inventory objects.
 {% else %}
 I'd like you to generate a set of 1 to 5 items that would be found in the above character's inventory in the above setting. The items should be appropriate for the setting and the character's role within it.{% if lorebookEntries and lorebookEntries.length > 0 %} Incorporate relevant elements from the world lore provided above.{% endif %} Output them in the format below:
 {% endif %}

@@ -113,10 +113,10 @@ test('Utils.hydrateGameState multiplies pre-1.1 save need bar values by 10 and b
         const context = createHydrationContext();
 
         const hydrationResult = Utils.hydrateGameState(serialized, context);
-        const player = context.players.get('legacy-save-player');
-        const npc = context.players.get('legacy-save-npc');
+        const player = context.players.get('char_1');
+        const npc = context.players.get('char_2');
 
-        assert.equal(hydrationResult.metadata.saveFileSaveVersion, 1.1);
+        assert.equal(hydrationResult.metadata.saveFileSaveVersion, 1.2);
         assert.equal(player.getNeedBarValue('food'), 70);
         assert.equal(player.getNeedBarValue('rest'), 420);
         assert.equal(npc.getNeedBarValue('stamina'), 330);
@@ -155,10 +155,10 @@ test('Utils.hydrateGameState leaves 1.1 save need bar values unchanged', () => {
         const context = createHydrationContext();
 
         const hydrationResult = Utils.hydrateGameState(serialized, context);
-        const player = context.players.get('legacy-save-player');
-        const npc = context.players.get('legacy-save-npc');
+        const player = context.players.get('char_1');
+        const npc = context.players.get('char_2');
 
-        assert.equal(hydrationResult.metadata.saveFileSaveVersion, 1.1);
+        assert.equal(hydrationResult.metadata.saveFileSaveVersion, 1.2);
         assert.equal(player.getNeedBarValue('food'), 7);
         assert.equal(player.getNeedBarValue('rest'), 42);
         assert.equal(npc.getNeedBarValue('stamina'), 33);

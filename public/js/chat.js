@@ -8655,6 +8655,11 @@ class AIRPGChat {
 
         if (!skipHistoryRefresh) {
             await this.refreshChatHistory();
+            try {
+                await window.refreshStoryTools?.({ preserveSelection: true });
+            } catch (refreshError) {
+                console.debug('Story Tools refresh skipped after chat response:', refreshError);
+            }
         }
     }
 

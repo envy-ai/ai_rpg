@@ -140,6 +140,14 @@ test('skill-check tool schemas expose separate unopposed and opposed check calls
         'opponentAttribute',
         'circumstanceModifiers'
     ]);
+    assert.doesNotMatch(
+        unopposed.parameters.properties.circumstanceModifiers.description,
+        /-10|10/
+    );
+    assert.doesNotMatch(
+        opposed.parameters.properties.circumstanceModifiers.description,
+        /-10|10/
+    );
 });
 
 test('resolveSkillCheck returns outcome content and action resolution metadata', async () => {
@@ -194,6 +202,47 @@ test('resolveSkillCheck returns outcome content and action resolution metadata',
 
     const toolMessage = capturedMessagesByRound[1].find(message => message.role === 'tool');
     assert.equal(toolMessage.content, 'major success');
+});
+
+test('resolveSkillCheck accepts finite circumstance modifiers beyond ten points', async () => {
+    const capturedMessagesByRound = [];
+    let capturedPlausibility = null;
+    const actionResolution = {
+        label: 'success',
+        degree: 'success',
+        success: true,
+        roll: { die: 12, total: 27 },
+        difficulty: { label: 'Hard', dc: 20 }
+    };
+    const runtime = makeRuntime({
+        firstResponse: toolResponse('resolveSkillCheck', {
+            actor: 'player',
+            reason: 'The current situation creates unusually strong modifiers.',
+            skill: 'Athletics',
+            attribute: 'Strength',
+            difficultyLevel: 'Hard',
+            circumstanceModifiers: [
+                { amount: 15, reason: 'Massive mechanical leverage' },
+                { amount: -12, reason: 'Severe injury' }
+            ]
+        }),
+        capturedMessagesByRound,
+        resolvePlausibilityCheck: async ({ plausibility }) => {
+            capturedPlausibility = plausibility;
+            return { actionResolution, plausibility: { raw: null, structured: plausibility } };
+        }
+    });
+
+    await runtime.runChatCompletionWithToolLoop({
+        requestOptions: { messages: [{ role: 'user', content: 'Force the stuck hatch.' }] },
+        metadataLabel: 'test_resolve_plausibility_large_modifiers'
+    });
+
+    assert.deepEqual(capturedPlausibility.skillCheck.circumstanceModifiers, [
+        { amount: 15, reason: 'Massive mechanical leverage' },
+        { amount: -12, reason: 'Severe injury' }
+    ]);
+    assert.equal(capturedPlausibility.skillCheck.circumstanceModifier, 3);
 });
 
 test('resolveSkillCheck uses the prompt default actor when actor is omitted', async () => {
@@ -276,6 +325,48 @@ test('resolveOpposedSkillCheck builds opposed check payloads', async () => {
 
     const toolMessage = capturedMessagesByRound[1].find(message => message.role === 'tool');
     assert.equal(toolMessage.content, 'barely failed');
+});
+
+test('resolveOpposedSkillCheck accepts finite circumstance modifiers beyond ten points', async () => {
+    const capturedMessagesByRound = [];
+    let capturedPlausibility = null;
+    const actionResolution = {
+        label: 'major success',
+        degree: 'major_success',
+        success: true,
+        roll: { die: 17, total: 34, opponentDie: 8, opponentTotal: 15 },
+        difficulty: { label: 'Opposed vs Guard', type: 'opposed' }
+    };
+    const runtime = makeRuntime({
+        firstResponse: toolResponse('resolveOpposedSkillCheck', {
+            reason: 'The crowd gives the actor overwhelming cover but a magical alarm cuts against them.',
+            skill: 'Stealth',
+            attribute: 'Dexterity',
+            opponent: 'Guard',
+            opponentSkill: 'Perception',
+            opponentAttribute: 'Wisdom',
+            circumstanceModifiers: [
+                { amount: 18, reason: 'Dense crowd cover' },
+                { amount: -11, reason: 'Active magical alarm' }
+            ]
+        }),
+        capturedMessagesByRound,
+        resolveOpposedPlausibilityCheck: async ({ plausibility }) => {
+            capturedPlausibility = plausibility;
+            return { actionResolution, plausibility: { raw: null, structured: plausibility } };
+        }
+    });
+
+    await runtime.runChatCompletionWithToolLoop({
+        requestOptions: { messages: [{ role: 'user', content: 'Slip past the guard.' }] },
+        metadataLabel: 'test_resolve_opposed_plausibility_large_modifiers'
+    });
+
+    assert.deepEqual(capturedPlausibility.skillCheck.circumstanceModifiers, [
+        { amount: 18, reason: 'Dense crowd cover' },
+        { amount: -11, reason: 'Active magical alarm' }
+    ]);
+    assert.equal(capturedPlausibility.skillCheck.circumstanceModifier, 7);
 });
 
 test('resolveOpposedSkillCheck uses the prompt default actor when actor is omitted', async () => {

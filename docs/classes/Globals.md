@@ -5,7 +5,7 @@ Centralized static state and helpers used across the server. Provides access to 
 
 ## Key State (Static)
 - `config`, `baseDir`, `gameLoaded`, `inCombat`, `realtimeHub`.
-- `currentSaveVersion`, `saveFileSaveVersion`.
+- `currentSaveVersion`, `saveFileSaveVersion` (`1.2` adds compact counter-ID migration for persisted domain objects).
 - `sceneSummaries`, `saveMetadata`, `currentSaveInfo`.
 - `travelHistory`, `slopWords`, `slopTrigrams`.
 - `_playerArrivalVisitStates` (transient per-request map of player movement destination ids to their pre-arrival `visited` state).

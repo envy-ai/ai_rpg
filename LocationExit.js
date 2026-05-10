@@ -1,5 +1,5 @@
-const crypto = require('crypto');
 const Globals = require('./Globals.js');
+const IdGenerator = require('./IdGenerator.js');
 
 /**
  * LocationExit class for AI RPG
@@ -23,9 +23,7 @@ class LocationExit {
 
   // Static private method for generating unique IDs
   static #generateId() {
-    const timestamp = Date.now();
-    const random = crypto.randomBytes(6).toString('hex');
-    return `exit_${timestamp}_${random}`;
+    return IdGenerator.next('exit');
   }
 
   static #captureBacktrace() {
@@ -88,6 +86,7 @@ class LocationExit {
 
     // Initialize private fields
     this.#id = id || LocationExit.#generateId();
+    IdGenerator.register('exit', this.#id);
     this.#description = typeof description === 'string' ? description.trim() : '';
     this.#destination = destination.trim();
     this.#destinationRegion = destinationRegion && typeof destinationRegion === 'string' ? destinationRegion.trim() : null;

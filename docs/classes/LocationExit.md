@@ -10,7 +10,7 @@ Represents a connection between locations (or regions), with optional vehicle se
 - Runtime-only `#backtrace`, capturing the stack at exit-object creation time for debugging.
 
 ## Construction
-- `new LocationExit({ description, destination, destinationRegion, travelTimeMinutes, bidirectional, id, imageId, isVehicle, vehicleType })`.
+- `new LocationExit({ description, destination, destinationRegion, travelTimeMinutes, bidirectional, id, imageId, isVehicle, vehicleType })` assigns a compact `exit_n` id when missing.
 
 ## Accessors
 - Getters: `id`, `description`, `destination`, `destinationRegion`, `travelTimeMinutes`, `associatedRegionStub`, `region`, `location`, `name`, `relativeName`, `bidirectional`, `isVehicle`, `vehicleType`, `createdAt`, `imageId`, `lastUpdated`, `backtrace`.

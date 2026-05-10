@@ -25,7 +25,7 @@ The main UI is rendered by `views/index.njk` and powered by `public/js/chat.js` 
   - The location-name prefix icon (`#locationNameIcon`) switches from map pin (`📍`) to a vehicle icon when the current location is a vehicle or its containing region is a vehicle; it prefers `vehicleInfo.icon` and falls back to `🚗`.
   - When in a vehicle context and the vehicle is not underway, a second header line renders under the location name as `Current location: <name>` using the active vehicle exit destination.
   - When in a vehicle context and the vehicle is underway, that header block instead renders `Enroute to <destination>`, a smaller `X days, Y hours, Z minutes to arrival` countdown line (omitting zero-value units), and a black/red progress bar with the vehicle icon positioned at the current trip progress point.
-  - When in a vehicle context and the outside location has an image, a lower-right picture-in-picture overlay (`#locationVehiclePip`) renders over the main location image at 30% size, `16:9` aspect ratio, with 3% right/bottom margin.
+  - When in a vehicle context and the outside location has an image, a lower-right picture-in-picture overlay (`#locationVehiclePip`) renders over the main location image at 30% size, `16:9` aspect ratio, with 3% right/bottom margin. The PIP uses the same current lighting/weather display variant cache and `/api/images/location-variant/request` refresh path as the main location image, so vehicle outside-location previews show the current conditions instead of only the base image when a variant is available or completes.
   - When the containing region is a vehicle, the header name is rendered as `<vehicle region>: <location>` (example: `Starship Enterprise: Captain's Quarters`).
   - Image + context menu for edit/summon/regenerate, plus `Edit Weather` for the containing region, `Edit Calendar` for the active game calendar, and `Set Last Seen`, which opens a modal for the same `H AM/PM`, `H:MM AM/PM`, or `duration ago` input accepted by `/set_last_seen` and then executes that slash command for the selected location.
   - The main location edit modal includes a `Local Weather` selector that writes `generationHints.hasWeather` as automatic, weather-exposed, weather-visible-outside, or sheltered/no local weather. Changing this hint clears cached weather/lighting display variants while leaving the base location image intact.
@@ -271,7 +271,7 @@ Inline script functions in `views/index.njk` render these tabs:
   - Filtered results keep the 250-entry paging model, preserve original `Entry #` numbers, show a matched-vs-total status, and highlight matched text with safe DOM text nodes rather than raw HTML.
 - Each entry card shows metadata (`role`, `type`, visibility, timestamp, optional `locationId`/`parentId`) and an `Edit` action.
 - `Edit` reuses the shared chat edit modal by calling `window.AIRPG_CHAT.openEditModal(entry)`.
-- `window.refreshStoryTools()` is exposed globally and is triggered on tab activation and after edit/delete/chat-history updates.
+- `window.refreshStoryTools()` is exposed globally and is triggered on tab activation, after edit/delete/chat-history updates, and after normal chat completion. That full-history refresh lets Story Tools pick up prompt-generated hidden/visible entries such as `while-you-were-away` and `while-you-were-away-player` immediately after the turn.
 
 ## Player overview sync
 

@@ -4,7 +4,7 @@
 Tracks a quest with objectives, rewards, giver info, and completion state. Maintains static indexes for lookup by id and name.
 
 ## Key State
-- `#id`: quest id (generated if not provided).
+- `#id`: compact `quest_n` id (generated if not provided).
 - `objectives`: array of QuestObjective instances.
 - `name`, `description`, `secretNotes`.
 - `rewardItems`, `rewardCurrency`, `rewardXp`, `rewardFactionReputation`, `rewardClaimed`.
@@ -29,8 +29,8 @@ Tracks a quest with objectives, rewards, giver info, and completion state. Maint
 - `filterActiveQuests(quests, { includePaused })`: filters out completed quests and optionally paused ones.
 
 ## Internal Class: QuestObjective
-- `new QuestObjective(description, optional)`: creates an objective with generated id.
-- `static generateId()`: generates objective ids.
+- `new QuestObjective(description, optional, id)`: creates an objective with a provided id or generated compact `obj_n` id.
+- `static generateId()`: generates compact objective ids.
 - `toJSON()` / `fromJSON(data)`: serialization helpers.
 - `get id()`: returns objective id.
 

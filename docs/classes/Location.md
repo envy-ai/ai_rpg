@@ -17,7 +17,7 @@ Represents a game location, including description, exits, NPCs, items/scenery, a
 - Static indexes: `#indexById`, `#indexByName`.
 
 ## Construction
-- `new Location({...})` validates required fields, links to a `Region`, initializes indexes, and normalizes status effects and hints. `visited` defaults to `false` unless explicitly provided.
+- `new Location({...})` validates required fields, links to a `Region`, assigns a compact `loc_n` id when missing, initializes indexes, and normalizes status effects and hints. `visited` defaults to `false` unless explicitly provided.
 - `static fromXMLSnippet(xmlSnippet, options)` parses XML and constructs a Location with normalized hints and events.
 
 ## Static API

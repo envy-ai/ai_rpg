@@ -1,10 +1,10 @@
-const crypto = require('crypto');
 const Player = require('./Player.js');
 const Utils = require('./Utils.js');
 const StatusEffect = require('./StatusEffect.js');
 const Region = require('./Region.js');
 const Globals = require('./Globals.js');
 const VehicleInfo = require('./VehicleInfo.js');
+const IdGenerator = require('./IdGenerator.js');
 
 
 /**
@@ -45,9 +45,7 @@ class Location {
 
   // Static private method for generating unique IDs
   static #generateId() {
-    const timestamp = Date.now();
-    const random = crypto.randomBytes(6).toString('hex');
-    return `location_${timestamp}_${random}`;
+    return IdGenerator.next('location');
   }
 
   static #normalizeWeatherExposure(value, fieldName = 'Location generationHints.hasWeather') {
@@ -312,6 +310,7 @@ class Location {
 
     // Initialize private fields
     this.#id = id || Location.#generateId();
+    IdGenerator.register('location', this.#id);
     this.#description = typeof description === 'string' ? description.trim() : null;
     const normalizedShortDescription = typeof shortDescription === 'string' ? shortDescription.trim() : null;
     let resolvedStubMetadata = creatingStub && stubMetadata
@@ -1703,6 +1702,7 @@ class Location {
           ? entry.appliedAt
           : undefined;
         normalized.push(new StatusEffect({
+          id: entry.id,
           name,
           description: descriptionValue,
           attributes,

@@ -95,7 +95,7 @@ Travel boundary elements are direct children of `<events>`. Include at most one 
 
 ### `move_location`
 
-Use this when the player or party physically travels to, or ends up in, a different existing location. Use it only for actual movement, not for talking about movement, considering movement, looking toward a route, or repositioning within the same fully visible scene.
+Use this when the player or party physically travels to, or ends up in, a different existing location. Use it only for actual movement, not for talking about movement, considering movement, looking toward a route, or repositioning within the same fully visible scene.{% if currentVehicle %} Do not assume that the player deboards a vehicle just because it has reached its destination, unless textToCheck says they deboarded.{% endif %}
 
 ```xml
 <moveLocation>
@@ -105,7 +105,8 @@ Use this when the player or party physically travels to, or ends up in, a differ
 
 ### `move_new_location`
 
-Use this when the player or party physically moves into a destination that is not already a known connected location. Use it for newly entered rooms, newly reached nearby places, new regions, or large structures that should become regions. Do not use it for an exit that was merely discovered but not traveled through.
+Use this when the player or party physically moves into a destination that is not already a known connected location. Use it for newly entered rooms, newly reached nearby places, new regions, or large structures that should become regions. Do not use it for an exit that was merely discovered but not traveled through.{% if currentVehicle %} Do not assume that the player deboards a vehicle just because it has reached its destination, unless textToCheck says they deboarded.{% endif %}
+
 
 ```xml
 <moveNewLocation>
