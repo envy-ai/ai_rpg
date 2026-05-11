@@ -65,8 +65,8 @@ Format your response as follows:
 </brainstorming>
 <npcs>
 <npc>
-<quantity>Integer number of NPCs that share this same profile. Usually 1, but can be more for groups of identical or near-identical NPCs, like a group of soldiers in the same faction wearing the same uniform and armor and sharing the same stats and role in the location. The name and description of NPCs of any quantity should always be singular, a plural entry will be expanded to individuals.</quantity>
-<name>Full name of the NPC</name>
+<quantity>Positive integer number of NPCs that share this same profile. Usually 1, but can be more for groups of identical or near-identical NPCs, like a group of soldiers in the same faction wearing the same uniform and armor and sharing the same stats and role in the location. The name and description of NPCs of any quantity should always be singular; a plural entry will be expanded to individuals.</quantity>
+<name>Full name of the NPC.  If this is part of a group of generic enemies, make the name singular.</name>
 <description>3 sentence description of the NPC, including their role in the location and any notable characteristics or behaviors. Replace their name with %NAME%.</description>
 <shortDescription>10 words or less description of the NPC. Replace their name with %NAME%.</shortDescription>
 <isHostile>true or false</isHostile>
@@ -80,7 +80,7 @@ Format your response as follows:
 <vulnerabilities><!--Any specific vulnerabilities, weaknesses, or things that can be used against them, and how vulnerable they are in parentheses ("vulnerable" or "extremely vulnerable"). "None" if none. Example: "fire (extremely vulnerable), light (vulnerable), any magic (vulnerable)" --></vulnerabilities>
 
 <gender>male, female, none, or other</gender>
-<relativeLevel>Integer from -3 to +3</relativeLevel>
+<relativeLevel>Integer from -3 to +3. Larger quantities of NPCs should typically have a lower relativeLevel to compensate for their numbers.</relativeLevel>
 <currency>Integer amount of currency the NPC has on hand, based on setting norms.</currency>
 <attributes>
 {% for attrName, attrDef in attributeDefinitions %}  <attribute name="{{ attrName }}">rating (see above)</attribute>

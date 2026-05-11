@@ -2377,6 +2377,22 @@ async function validateConfiguration() {
         }
     }
 
+    if (config.npc_generation !== undefined) {
+        const npcGeneration = config.npc_generation;
+        if (!npcGeneration || typeof npcGeneration !== 'object' || Array.isArray(npcGeneration)) {
+            validationErrors.push('NPC generation: npc_generation must be an object when provided');
+        } else if (
+            npcGeneration.max_quantity !== undefined
+            && npcGeneration.max_quantity !== null
+            && npcGeneration.max_quantity !== ''
+        ) {
+            const maxQuantity = Number(npcGeneration.max_quantity);
+            if (!Number.isInteger(maxQuantity) || maxQuantity < 1) {
+                validationErrors.push('NPC generation: npc_generation.max_quantity must be an integer greater than or equal to 1 when provided');
+            }
+        }
+    }
+
     // Validate AI configuration
     validationErrors.push(...LLMClient.getConfigurationErrors(config.ai));
 
@@ -15243,12 +15259,22 @@ async function generateNpcFromEvent({
             }
         }
 
-        if (startingHealthState?.isDead) {
-            finalizeGeneratedNpcStartingDeathState(npc, npcData?.startingHealth || null);
-        }
+        const expandedNpcs = expandGeneratedNpcQuantityGroup({
+            npc,
+            npcData,
+            targetLocation: resolvedLocation,
+            created: null,
+            npcContexts: null
+        });
 
-        if (shouldGenerateNpcImage(npc) && (!npc.imageId || !hasExistingImage(npc.imageId))) {
-            npc.imageId = null;
+        for (const generatedNpc of expandedNpcs) {
+            if (startingHealthState?.isDead) {
+                finalizeGeneratedNpcStartingDeathState(generatedNpc, npcData?.startingHealth || null);
+            }
+
+            if (shouldGenerateNpcImage(generatedNpc) && (!generatedNpc.imageId || !hasExistingImage(generatedNpc.imageId))) {
+                generatedNpc.imageId = null;
+            }
         }
 
         if (resolvedLocation) {
@@ -15774,6 +15800,273 @@ function parseIntegerFromText(value) {
     return Number.isFinite(parsed) ? parsed : null;
 }
 
+function getGeneratedNpcQuantityLimit() {
+    const rawValue = config?.npc_generation?.max_quantity;
+    if (rawValue === undefined || rawValue === null || rawValue === '') {
+        return 20;
+    }
+    const numeric = Number(rawValue);
+    if (!Number.isInteger(numeric) || numeric < 1) {
+        throw new Error('npc_generation.max_quantity must be an integer greater than or equal to 1.');
+    }
+    return numeric;
+}
+
+function parseGeneratedNpcQuantity(rawValue, { npcName = '', source = 'NPC generation' } = {}) {
+    if (rawValue === undefined || rawValue === null) {
+        return 1;
+    }
+
+    const rawText = String(rawValue).trim();
+    if (!rawText) {
+        return 1;
+    }
+
+    const isPlainInteger = /^\d+$/.test(rawText);
+    if (!isPlainInteger) {
+        const label = npcName ? ` for "${npcName}"` : '';
+        console.warn(`[${source}] NPC quantity${label} was not a plain integer: "${rawText}". Stripping non-numeric characters.`);
+    }
+
+    const digitsOnly = rawText.replace(/\D/g, '');
+    if (!digitsOnly) {
+        return 1;
+    }
+
+    const parsed = Number.parseInt(digitsOnly, 10);
+    if (!Number.isInteger(parsed)) {
+        return 1;
+    }
+
+    const maxQuantity = getGeneratedNpcQuantityLimit();
+    if (parsed > maxQuantity) {
+        const label = npcName ? ` for "${npcName}"` : '';
+        console.warn(`[${source}] NPC quantity${label} ${parsed} exceeds npc_generation.max_quantity ${maxQuantity}; clamping.`);
+    }
+
+    return Math.max(1, Math.min(maxQuantity, parsed));
+}
+
+function getDirectChildTextContent(node, tagName) {
+    if (!node || !node.childNodes || !tagName) {
+        return null;
+    }
+    for (const child of Array.from(node.childNodes)) {
+        if (child && child.nodeType === 1 && child.tagName === tagName) {
+            return typeof child.textContent === 'string' ? child.textContent : '';
+        }
+    }
+    return null;
+}
+
+function parseGeneratedNpcQuantityFromNode(node, { npcName = '', source = 'NPC generation' } = {}) {
+    const rawQuantity = getDirectChildTextContent(node, 'quantity');
+    if (rawQuantity === null) {
+        return 1;
+    }
+    return parseGeneratedNpcQuantity(rawQuantity, { npcName, source });
+}
+
+function appendGeneratedNpcQuantitySuffix(value, quantityIndex) {
+    const base = typeof value === 'string' ? value.trim() : '';
+    if (!base) {
+        return `${quantityIndex}`;
+    }
+    return `${base} ${quantityIndex}`;
+}
+
+function replaceGeneratedNpcBaseName(text, baseName, numberedName) {
+    if (typeof text !== 'string' || !text || !baseName || !numberedName || baseName === numberedName) {
+        return typeof text === 'string' ? text : '';
+    }
+    return text.split(baseName).join(numberedName);
+}
+
+function snapshotGeneratedNpcQuantityBase(npc) {
+    const inventoryItems = typeof npc?.getInventoryItems === 'function' ? npc.getInventoryItems() : [];
+    return {
+        name: typeof npc?.name === 'string' ? npc.name : '',
+        description: typeof npc?.description === 'string' ? npc.description : '',
+        shortDescription: typeof npc?.shortDescription === 'string' ? npc.shortDescription : '',
+        aliases: typeof npc?.getAliases === 'function' ? npc.getAliases() : [],
+        itemNamesById: new Map(
+            inventoryItems
+                .filter(item => item && typeof item.id === 'string')
+                .map(item => [item.id, typeof item.name === 'string' ? item.name : ''])
+        )
+    };
+}
+
+function applyGeneratedNpcQuantityIdentity(npc, baseSnapshot, quantityIndex) {
+    if (!npc || !baseSnapshot) {
+        return null;
+    }
+    const numberedName = appendGeneratedNpcQuantitySuffix(baseSnapshot.name || npc.name || 'Generated NPC', quantityIndex);
+    if (typeof npc.setName === 'function') {
+        npc.setName(numberedName);
+    }
+    if (typeof npc.description === 'string') {
+        npc.description = replaceGeneratedNpcBaseName(baseSnapshot.description, baseSnapshot.name, numberedName);
+    }
+    if (typeof npc.shortDescription === 'string') {
+        npc.shortDescription = replaceGeneratedNpcBaseName(baseSnapshot.shortDescription, baseSnapshot.name, numberedName);
+    }
+    if (typeof npc.setAliases === 'function') {
+        const numberedAliases = Array.isArray(baseSnapshot.aliases)
+            ? baseSnapshot.aliases.map(alias => appendGeneratedNpcQuantitySuffix(alias, quantityIndex))
+            : [];
+        npc.setAliases(numberedAliases);
+    }
+    return numberedName;
+}
+
+function applyGeneratedNpcQuantityItemNames(npc, baseSnapshot, quantityIndex) {
+    if (!npc || typeof npc.getInventoryItems !== 'function') {
+        return;
+    }
+    for (const item of npc.getInventoryItems()) {
+        if (!item || typeof item !== 'object' || typeof item.name !== 'string') {
+            continue;
+        }
+        const baseItemName = baseSnapshot?.itemNamesById instanceof Map && item.id
+            ? (baseSnapshot.itemNamesById.get(item.id) || item.name)
+            : item.name;
+        try {
+            item.name = appendGeneratedNpcQuantitySuffix(baseItemName, quantityIndex);
+        } catch (error) {
+            console.warn(`Failed to number generated NPC gear item "${baseItemName}":`, error.message);
+        }
+    }
+}
+
+function cloneGeneratedNpcInventoryAndGear(sourceNpc, targetNpc, baseSnapshot, quantityIndex) {
+    if (!sourceNpc || !targetNpc || typeof sourceNpc.getInventoryItems !== 'function') {
+        return;
+    }
+
+    const copiedBySourceId = new Map();
+    for (const sourceItem of sourceNpc.getInventoryItems()) {
+        if (!sourceItem || typeof sourceItem.copy !== 'function') {
+            continue;
+        }
+        const baseItemName = baseSnapshot?.itemNamesById instanceof Map && sourceItem.id
+            ? (baseSnapshot.itemNamesById.get(sourceItem.id) || sourceItem.name)
+            : sourceItem.name;
+        const copiedItem = sourceItem.copy({
+            name: appendGeneratedNpcQuantitySuffix(baseItemName, quantityIndex)
+        });
+        if (things && typeof things.set === 'function') {
+            things.set(copiedItem.id, copiedItem);
+        }
+        if (typeof targetNpc.addInventoryItem === 'function') {
+            targetNpc.addInventoryItem(copiedItem, { suppressNpcEquip: true });
+        }
+        copiedBySourceId.set(sourceItem.id, copiedItem);
+    }
+
+    const sourceGear = typeof sourceNpc.getGear === 'function' ? sourceNpc.getGear() : {};
+    for (const [slotName, slotData] of Object.entries(sourceGear || {})) {
+        const sourceItemId = slotData?.itemId || null;
+        if (!sourceItemId || !copiedBySourceId.has(sourceItemId)) {
+            continue;
+        }
+        const copiedItem = copiedBySourceId.get(sourceItemId);
+        if (copiedItem && typeof targetNpc.equipItemInSlot === 'function') {
+            const result = targetNpc.equipItemInSlot(copiedItem, slotName, { suppressTimestamp: true });
+            if (result !== true) {
+                console.warn(`Failed to equip copied generated NPC gear "${copiedItem.name}" in slot "${slotName}": ${result}`);
+            }
+        }
+    }
+}
+
+function cloneGeneratedNpcForQuantity(sourceNpc, baseSnapshot, quantityIndex) {
+    if (!sourceNpc || typeof sourceNpc.toJSON !== 'function') {
+        throw new Error('Cannot clone generated NPC quantity entry without a serializable source NPC.');
+    }
+
+    const numberedName = appendGeneratedNpcQuantitySuffix(baseSnapshot.name || sourceNpc.name || 'Generated NPC', quantityIndex);
+    const serialized = sourceNpc.toJSON();
+    delete serialized.id;
+    delete serialized.createdAt;
+    delete serialized.lastUpdated;
+    serialized.name = numberedName;
+    serialized.description = replaceGeneratedNpcBaseName(baseSnapshot.description, baseSnapshot.name, numberedName);
+    serialized.shortDescription = replaceGeneratedNpcBaseName(baseSnapshot.shortDescription, baseSnapshot.name, numberedName);
+    serialized.aliases = Array.isArray(baseSnapshot.aliases)
+        ? baseSnapshot.aliases.map(alias => appendGeneratedNpcQuantitySuffix(alias, quantityIndex))
+        : [];
+    serialized.inventory = [];
+    serialized.barterInventory = [];
+    serialized.gear = {};
+
+    const clone = Player.fromJSON(serialized);
+    cloneGeneratedNpcInventoryAndGear(sourceNpc, clone, baseSnapshot, quantityIndex);
+    return clone;
+}
+
+function expandGeneratedNpcQuantityGroup({
+    npc,
+    npcData = {},
+    targetLocation = null,
+    region = null,
+    created = null,
+    npcContexts = null
+} = {}) {
+    if (!npc) {
+        return [];
+    }
+    const quantity = Number.isInteger(npcData?.quantity) ? npcData.quantity : 1;
+    if (quantity <= 1) {
+        return [npc];
+    }
+
+    const baseSnapshot = snapshotGeneratedNpcQuantityBase(npc);
+    const originalContext = Array.isArray(npcContexts)
+        ? npcContexts.find(entry => entry && entry.npc === npc)
+        : null;
+    const expanded = [];
+
+    applyGeneratedNpcQuantityIdentity(npc, baseSnapshot, 1);
+    applyGeneratedNpcQuantityItemNames(npc, baseSnapshot, 1);
+    if (originalContext) {
+        originalContext.name = npc.name;
+    }
+    expanded.push(npc);
+
+    for (let index = 2; index <= quantity; index += 1) {
+        const clone = cloneGeneratedNpcForQuantity(npc, baseSnapshot, index);
+        if (npc.originRegionId) {
+            clone.originRegionId = npc.originRegionId;
+        }
+        if (npc.isRegionImportant) {
+            clone.isRegionImportant = true;
+        }
+        if (players && typeof players.set === 'function') {
+            players.set(clone.id, clone);
+        }
+        if (targetLocation && typeof targetLocation.addNpcId === 'function') {
+            targetLocation.addNpcId(clone.id);
+        }
+        if (region && Array.isArray(region.npcIds) && !region.npcIds.includes(clone.id)) {
+            region.npcIds.push(clone.id);
+        }
+        if (Array.isArray(created)) {
+            created.push(clone);
+        }
+        if (Array.isArray(npcContexts)) {
+            npcContexts.push({
+                ...(originalContext || {}),
+                npc: clone,
+                name: clone.name
+            });
+        }
+        expanded.push(clone);
+    }
+
+    return expanded;
+}
+
 function normalizeFactionNameForLookup(rawName, { stripWhitespace = false } = {}) {
     if (typeof rawName !== 'string') {
         return '';
@@ -16183,6 +16476,10 @@ function parseLocationNpcs(xmlContent) {
                 ? vulnerabilitiesNode.textContent
                 : '';
             const name = nameNode ? nameNode.textContent.trim() : null;
+            const quantity = parseGeneratedNpcQuantityFromNode(node, {
+                npcName: name || '',
+                source: 'Location NPC generation'
+            });
             const description = descriptionNode ? descriptionNode.textContent.trim() : '';
             const shortDescription = shortDescriptionNode ? shortDescriptionNode.textContent.trim() : '';
             const role = roleNode ? roleNode.textContent.trim() : null;
@@ -16258,6 +16555,7 @@ function parseLocationNpcs(xmlContent) {
                     vulnerabilities,
                     gender,
                     faction,
+                    quantity,
                     attributes,
                     relativeLevel: Number.isFinite(relativeLevel) ? Math.max(-10, Math.min(10, Math.round(relativeLevel))) : null,
                     healthAttribute: healthAttribute && healthAttribute.toLowerCase() !== 'n/a' ? healthAttribute : null,
@@ -16357,6 +16655,10 @@ function parseRegionNpcs(xmlContent) {
                 ? vulnerabilitiesNode.textContent
                 : '';
             const locationName = locationNode ? locationNode.textContent.trim() : null;
+            const quantity = parseGeneratedNpcQuantityFromNode(node, {
+                npcName: name || '',
+                source: 'Region NPC generation'
+            });
             const gender = genderNode ? genderNode.textContent.trim() : null;
             const faction = factionNode ? factionNode.textContent.trim() : '';
 
@@ -16431,6 +16733,7 @@ function parseRegionNpcs(xmlContent) {
                 gender,
                 location: locationName,
                 faction,
+                quantity,
                 attributes,
                 relativeLevel: Number.isFinite(relativeLevel) ? Math.max(-10, Math.min(10, Math.round(relativeLevel))) : null,
                 healthAttribute: healthAttribute && healthAttribute.toLowerCase() !== 'n/a' ? healthAttribute : null,
@@ -19635,6 +19938,7 @@ async function enforceBannedNpcNameForPlayer({
     location = null,
     region = null,
     existingNames,
+    existingNpcSummaries = null,
     conversationMessages = []
 } = {}) {
     if (!npc || typeof npc !== 'object' || typeof npc.name !== 'string') {
@@ -22858,6 +23162,7 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
                 npc,
                 descriptor,
                 name: npcData.name || npc.id,
+                quantity: Number.isInteger(npcData.quantity) ? npcData.quantity : 1,
                 startingHealth: npcData?.startingHealth || null,
                 startingHealthState
             });
@@ -22931,6 +23236,18 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
         })());
 
         await Promise.all(equipTasks);
+
+        for (const context of [...npcContexts]) {
+            expandGeneratedNpcQuantityGroup({
+                npc: context.npc,
+                npcData: {
+                    quantity: Number.isInteger(context.quantity) ? context.quantity : 1
+                },
+                targetLocation: location,
+                created,
+                npcContexts
+            });
+        }
 
         for (const { npc, startingHealth, startingHealthState } of npcContexts) {
             if (startingHealthState?.isDead) {
@@ -23300,6 +23617,7 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
                 descriptor,
                 targetLocation,
                 name: npcData.name || npc.id,
+                quantity: Number.isInteger(npcData.quantity) ? npcData.quantity : 1,
                 startingHealth: npcData?.startingHealth || null,
                 startingHealthState
             });
@@ -23373,6 +23691,19 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
         })());
 
         await Promise.all(equipTasks);
+
+        for (const context of [...npcContexts]) {
+            expandGeneratedNpcQuantityGroup({
+                npc: context.npc,
+                npcData: {
+                    quantity: Number.isInteger(context.quantity) ? context.quantity : 1
+                },
+                targetLocation: context.targetLocation || null,
+                region,
+                created,
+                npcContexts
+            });
+        }
 
         for (const { npc, name, startingHealth, startingHealthState } of npcContexts) {
             if (startingHealthState?.isDead) {

@@ -103,6 +103,17 @@ Fields:
 
 Validation fails loudly if item counts are not non-negative integers, `generated_stock.max_items_per_prompt` or duration fields are not positive integers, fractions are outside `0..1`, or min values exceed max values.
 
+## NPC Generation
+
+`npc_generation.max_quantity` caps generated NPC quantity groups.
+
+```yaml
+npc_generation:
+  max_quantity: 20
+```
+
+Location, region, and single-NPC generation prompts may return `<quantity>`. Missing or blank values default to `1`; non-integer text is warning-logged after stripping non-numeric characters; values are clamped to `1..npc_generation.max_quantity`. Quantity groups expand only after name cleanup, progression, abilities, inventory generation, and equipment assignment, so each numbered NPC receives copied numbered gear.
+
 ## AI backend selection
 
 `config.ai.backend` selects which text-generation transport the game uses.

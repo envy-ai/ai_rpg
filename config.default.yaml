@@ -441,6 +441,11 @@ client_message_history:
   max_messages: 100
   prune_to: 80
 
+# NPC generation limits. Generated quantity groups are expanded after progression,
+# inventory, and equipment are assigned.
+npc_generation:
+  max_quantity: 20
+
 # Mostly to speed up testing and development - prevent certain types of generation
 omit_npc_generation: false
 omit_item_generation: false

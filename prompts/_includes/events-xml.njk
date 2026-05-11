@@ -552,7 +552,7 @@ Use this to report how much elapsed in-world wall-clock time the concrete non-tr
 ```xml
 <timePassed>
   <reasoning>Brief breakdown of time-consuming actions</reasoning>
-  <duration>Exact duration, or 0</duration>
+  <duration>Exact duration rounded to the nearest minute, 1 minute minimum (typical for conversation and quick scenes). No time ranges, unknowns, or other nonspecific answers. Format with one of: "HH:MM", "[INTEGER] [minutes/hours]", or "[INTEGER] hours, [INTEGER] minutes".</duration>
 </timePassed>
 
 ### `in_combat` (REQUIRED FIELD, 1x ONLY)
