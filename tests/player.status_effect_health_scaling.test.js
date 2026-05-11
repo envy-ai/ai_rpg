@@ -126,6 +126,40 @@ test('removing or expiring a max-health buff does not subtract the gained health
     });
 });
 
+test('removeStatusEffect removes intrinsic status effects by exact name or exact description', () => {
+    withTempPlayerEnvironment(() => {
+        const player = new Player({
+            id: 'status-effect-removal',
+            name: 'Exis',
+            attributes: {
+                constitution: 10,
+                strength: 5
+            },
+            statusEffects: [
+                {
+                    name: 'Plasma Burn',
+                    description: 'A plasma-inflicted wound continues to smolder.',
+                    duration: 3
+                },
+                {
+                    name: 'Claw Marks on Back',
+                    description: 'Parallel scratches score the skin.',
+                    duration: 121
+                }
+            ]
+        });
+
+        assert.equal(player.removeStatusEffect('Plasma Burn'), true);
+        assert.deepEqual(
+            player.getIntrinsicStatusEffects().map(effect => effect.name),
+            ['Claw Marks on Back']
+        );
+
+        assert.equal(player.removeStatusEffect('Parallel scratches score the skin.'), true);
+        assert.deepEqual(player.getIntrinsicStatusEffects(), []);
+    });
+});
+
 test('status-effect-driven max-health decreases only clamp instead of subtracting a matching delta', () => {
     withTempPlayerEnvironment(() => {
         const player = new Player({

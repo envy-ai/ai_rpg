@@ -97,7 +97,7 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
   - `isAlive()`, `updateCorpseCountdown()`.
 - Status effects:
   - `getStatusEffects()`, `getIntrinsicStatusEffects()`.
-  - `setStatusEffects(effects)`, `addStatusEffect(effect, defaultDuration)`, `removeStatusEffect(description)`.
+  - `setStatusEffects(effects)`, `addStatusEffect(effect, defaultDuration)`, `removeStatusEffect(nameOrDescription)`.
   - `tickStatusEffects(elapsedMinutes)`, `clearExpiredStatusEffects()`.
 - Need bars:
   - `getNeedBars(options)`, `getNeedBarValue(identifier)`.
@@ -159,6 +159,7 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
 - Shared thing-list UI view modes are now persisted per actor in `thingListViewPreferences`, keyed by the fixed panel ids `npcInventory`, `craftingInventory`, `locationScenery`, `locationItems`, `containerPlayerInventory`, `containerContents`, `barterPlayerInventory`, and `barterMerchantInventory`, so page reloads and save/load restore the same panel view selections.
 - `setNeedBarApplicability(...)` preserves stored values for bars that stay enabled, drops bars explicitly disabled for that actor, and restores newly re-enabled bars at `100`.
 - Status-effect-driven max-health increases now raise current health by the same max-health delta. Status-effect-driven decreases do not subtract health back out; they only clamp current health if it now exceeds the reduced max.
+- `removeStatusEffect(...)` removes intrinsic effects by exact case-insensitive `name` or exact case-insensitive `description`, preserving legacy description removal while allowing XML event checks to clear effects by listed status-effect name.
 - `persistWhenDead` is persisted per actor. When true, dead actors never receive a corpse countdown and are skipped by corpse cleanup; missing save data defaults it to `false`.
 - `wasEverInPlayerParty` is also persisted per actor. It flips to `true` when the actor joins the player party, and load reconciliation also marks currently in-party actors as historical party members so older saves do not lose that history. Missing save data defaults it to `false`.
 - Joining the player party, leaving the player party, or dying while currently in the player party permanently flips `persistWhenDead` to `true` for that actor.

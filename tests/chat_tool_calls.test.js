@@ -221,13 +221,146 @@ test('runChatCompletionWithToolLoop reports tool-call debug lifecycle events', a
     });
     assert.equal(debugEvents[1].phase, 'completed');
     assert.equal(debugEvents[1].sequence, 1);
-    assert.match(debugEvents[1].result.content, /<moreInfoResults>/);
+    assert.doesNotMatch(debugEvents[1].result.content, /<moreInfoResults>/);
+    assert.deepEqual(JSON.parse(debugEvents[1].result.content), {
+        query: 'No Such Thing',
+        type: 'thing',
+        totalMatches: 0,
+        npcs: [],
+        things: [],
+        locations: [],
+        regions: []
+    });
     assert.equal(debugEvents[1].result.metadata.totalMatches, 0);
 
     const secondRoundMessages = capturedMessagesByRound[1];
     const toolMessage = secondRoundMessages.find((message) => message.role === 'tool');
     assert.ok(toolMessage, 'Expected a tool response message in the second round.');
-    assert.match(toolMessage.content, /<moreInfoResults>/);
+    assert.doesNotMatch(toolMessage.content, /<moreInfoResults>/);
+    assert.equal(JSON.parse(toolMessage.content).totalMatches, 0);
+});
+
+test('moreInfo returns matched entities as direct toJSON payloads', async () => {
+    const capturedMessagesByRound = [];
+    const thingJson = {
+        id: 'thing-1',
+        name: 'Copper Spindle',
+        description: 'A copper spindle.',
+        metadata: {
+            value: 12,
+            customNote: 'raw toJSON field'
+        }
+    };
+    const thing = {
+        id: 'thing-1',
+        name: 'Copper Spindle',
+        toJSON() {
+            return { ...thingJson, metadata: { ...thingJson.metadata } };
+        }
+    };
+    const llmResponses = [
+        {
+            data: {
+                choices: [
+                    {
+                        message: {
+                            content: '',
+                            tool_calls: [
+                                {
+                                    id: 'call_more_info',
+                                    type: 'function',
+                                    function: {
+                                        name: 'moreInfo',
+                                        arguments: JSON.stringify({
+                                            name: 'Copper',
+                                            type: 'thing'
+                                        })
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            data: {
+                choices: [
+                    {
+                        message: {
+                            content: 'Done.',
+                            tool_calls: []
+                        }
+                    }
+                ]
+            }
+        }
+    ];
+
+    const runtime = createChatToolRuntime({
+        getConfig: () => ({ ai: { max_tool_rounds: 4 } }),
+        getChatHistory: () => [],
+        isAssistantProseLikeEntry: () => true,
+        serializeNpcForClient: value => value,
+        buildLocationResponse: value => value,
+        getCurrentPlayer: () => ({ currentLocation: 'loc-origin' }),
+        createLocationFromEvent: async () => {
+            throw new Error('createLocationFromEvent should not be reached for this regression test.');
+        },
+        createRegionStubFromEvent: async () => {
+            throw new Error('createRegionStubFromEvent should not be reached for this regression test.');
+        },
+        generateItemsByNames: async () => [],
+        ensureExitConnection: () => {
+            throw new Error('ensureExitConnection should not be reached for this regression test.');
+        },
+        findRegionByLocationId: () => null,
+        LLMClient: {
+            chatCompletion: async (options) => {
+                capturedMessagesByRound.push(structuredClone(options.messages));
+                const response = llmResponses.shift();
+                assert.ok(response, 'Expected a queued LLM response for this round.');
+                options.onResponse?.(response);
+                return response.data.choices[0].message.content || '';
+            },
+            logPrompt: () => {},
+            formatMessagesForErrorLog: messages => JSON.stringify(messages)
+        },
+        Player: { getAll: () => [] },
+        Thing: { getAll: () => [thing] },
+        Location: { getAll: () => [], get: () => null },
+        Region: { getAll: () => [] },
+        getGameLocations: () => new Map(),
+        getFactions: () => [],
+        getRegionsMap: () => new Map(),
+        getPendingRegionStubs: () => new Map()
+    });
+
+    const result = await runtime.runChatCompletionWithToolLoop({
+        requestOptions: {
+            messages: [{ role: 'user', content: 'Look up the spindle.' }]
+        },
+        metadataLabel: 'more_info_json_test'
+    });
+
+    assert.equal(result.aiResponse, 'Done.');
+    assert.equal(result.toolInvocations[0].metadata.totalMatches, 1);
+    assert.deepEqual(result.toolInvocations[0].metadata.results.things, [thingJson]);
+
+    const secondRoundMessages = capturedMessagesByRound[1];
+    const toolMessage = secondRoundMessages.find((message) => message.role === 'tool');
+    assert.ok(toolMessage, 'Expected a tool response message in the second round.');
+    assert.doesNotMatch(toolMessage.content, /<moreInfoResults>/);
+    const payload = JSON.parse(toolMessage.content);
+    assert.deepEqual(payload, {
+        query: 'Copper',
+        type: 'thing',
+        totalMatches: 1,
+        npcs: [],
+        things: [thingJson],
+        locations: [],
+        regions: []
+    });
 });
 
 test('runChatCompletionWithToolLoop returns toolError and continues after tool-call rounds are exhausted', async () => {

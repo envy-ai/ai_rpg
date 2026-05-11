@@ -167,7 +167,8 @@ imagegen:
   # Increase for faster parallel processing if your image gen server supports it
   maxConcurrentJobs: 1
 
-  # Batch only the LLM prompt-writing calls used before image rendering.
+  # Retry and batch only the LLM prompt-writing calls used before image rendering.
+  prompt_generation_attempts: 3
   prompt_batching:
     enabled: true
     delay_ms: 2000

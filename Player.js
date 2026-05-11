@@ -5075,7 +5075,11 @@ class Player {
         const previousMaxHealth = this.maxHealth;
         const before = this.#statusEffects.length;
         const target = description.trim().toLowerCase();
-        this.#statusEffects = this.#statusEffects.filter(effect => effect.description.toLowerCase() !== target);
+        this.#statusEffects = this.#statusEffects.filter(effect => {
+            const effectName = typeof effect?.name === 'string' ? effect.name.trim().toLowerCase() : '';
+            const effectDescription = typeof effect?.description === 'string' ? effect.description.trim().toLowerCase() : '';
+            return effectName !== target && effectDescription !== target;
+        });
 
         if (this.#statusEffects.length !== before) {
             this.#reconcileHealthAfterStatusEffectChange({

@@ -2330,6 +2330,17 @@ async function validateConfiguration() {
         validateOptionalImageSizeOverrides('scenery', config.imagegen.scenery_settings?.image);
         validateOptionalImageSizeOverrides('location variant', config.imagegen.location_variant_settings?.image);
 
+        if (
+            config.imagegen.prompt_generation_attempts !== undefined
+            && config.imagegen.prompt_generation_attempts !== null
+            && config.imagegen.prompt_generation_attempts !== ''
+        ) {
+            const attempts = Number(config.imagegen.prompt_generation_attempts);
+            if (!Number.isInteger(attempts) || attempts < 1) {
+                validationErrors.push('Image generation: prompt_generation_attempts must be an integer greater than or equal to 1 when provided');
+            }
+        }
+
         if (config.imagegen.prompt_batching !== undefined) {
             const promptBatching = config.imagegen.prompt_batching;
             if (!promptBatching || typeof promptBatching !== 'object' || Array.isArray(promptBatching)) {
@@ -24123,7 +24134,15 @@ async function generatePlayerImage(player, options = {}) {
         const generationPromise = Promise.resolve().then(async () => {
             // Generate the portrait prompt
             const portraitPrompt = renderPlayerPortraitPrompt(player);
-            const { prompt: finalImagePrompt } = await generateImagePromptFromTemplate(portraitPrompt, { prefixType: 'character' });
+            let finalImagePrompt;
+            try {
+                ({ prompt: finalImagePrompt } = await generateImagePromptFromTemplate(portraitPrompt, { prefixType: 'character' }));
+            } catch (error) {
+                if (isImagePromptGenerationFailure(error)) {
+                    return buildImagePromptSkippedResult(error);
+                }
+                throw error;
+            }
 
             // Create image generation job with player-specific settings
             const jobId = generateImageId();
@@ -24326,12 +24345,94 @@ function getImagePromptBatchConfig() {
     };
 }
 
+function getImagePromptGenerationAttemptLimit() {
+    const rawValue = config?.imagegen?.prompt_generation_attempts;
+    if (rawValue === undefined || rawValue === null || rawValue === '') {
+        return 3;
+    }
+    const numeric = Number(rawValue);
+    if (!Number.isInteger(numeric) || numeric < 1) {
+        throw new Error('imagegen.prompt_generation_attempts must be an integer greater than or equal to 1.');
+    }
+    return numeric;
+}
+
 function normalizeImagePromptText(responseText) {
     return String(responseText || '')
         .replace(/[""]/g, '"')
         .replace(/['']/g, "'")
         .replace(/[—–]/g, '-')
         .trim();
+}
+
+class ImagePromptGenerationFailedError extends Error {
+    constructor(message, { cause = null, attempts = null } = {}) {
+        super(message);
+        this.name = 'ImagePromptGenerationFailedError';
+        this.code = 'image-prompt-generation-failed';
+        this.attempts = attempts;
+        if (cause) {
+            this.cause = cause;
+        }
+    }
+}
+
+function isImagePromptGenerationFailure(error) {
+    return Boolean(error && (
+        error.code === 'image-prompt-generation-failed'
+        || error.name === 'ImagePromptGenerationFailedError'
+    ));
+}
+
+function assertValidFinalImagePromptText(promptText) {
+    const normalized = normalizeImagePromptText(promptText);
+    if (!normalized) {
+        throw new Error('Invalid response from AI API');
+    }
+
+    const leakedWrapperPattern = /<\/?(?:context|setting|gameState|systemPrompt|generationPrompt|imagePromptBatchRequest|imagePrompts|requests?|task|items?|location|character|player|npc)\b/i;
+    if (
+        leakedWrapperPattern.test(normalized)
+        || /<!\[CDATA\[/i.test(normalized)
+        || /===\s*(?:SYSTEM PROMPT|GENERATION PROMPT|RESPONSE)\s*===/i.test(normalized)
+    ) {
+        throw new Error('Image prompt generation returned prompt/context XML instead of a final image prompt.');
+    }
+
+    return normalized;
+}
+
+async function runImagePromptGenerationWithRetries(label, executor) {
+    const maxAttempts = getImagePromptGenerationAttemptLimit();
+    let lastError = null;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+        try {
+            return await executor({ attempt, maxAttempts });
+        } catch (error) {
+            lastError = error;
+            const message = error?.message || String(error);
+            if (attempt < maxAttempts) {
+                console.warn(`Image prompt generation attempt ${attempt}/${maxAttempts} failed for ${label}: ${message}. Retrying...`);
+                continue;
+            }
+            console.warn(`Image prompt generation failed after ${maxAttempts} attempt(s) for ${label}: ${message}.`);
+        }
+    }
+
+    throw new ImagePromptGenerationFailedError(
+        `Image prompt generation failed after ${maxAttempts} attempt(s): ${lastError?.message || String(lastError || 'unknown error')}`,
+        { cause: lastError, attempts: maxAttempts }
+    );
+}
+
+function buildImagePromptSkippedResult(error) {
+    return {
+        success: false,
+        skipped: true,
+        reason: 'image-prompt-failed',
+        message: error?.message || 'Image prompt generation failed; image generation was skipped.'
+    };
 }
 
 function buildImagePromptBatchKey(prompts = {}) {
@@ -24425,10 +24526,7 @@ function logImagePromptGenerationRequest(request, finalPrompt) {
 }
 
 function finalizeImagePromptGenerationRequest(request, responseText) {
-    const normalizedPrompt = normalizeImagePromptText(responseText);
-    if (!normalizedPrompt) {
-        throw new Error('Invalid response from AI API');
-    }
+    const normalizedPrompt = assertValidFinalImagePromptText(responseText);
     const finalPrompt = applyImagePromptPrefix(normalizedPrompt, request.prefixType);
     logImagePromptGenerationRequest(request, finalPrompt);
     return {
@@ -24449,17 +24547,19 @@ async function executeSingleImagePromptGenerationRequest(request) {
         }
     ];
 
-    console.log('🤖 Requesting image prompt generation from LLM...');
+    return runImagePromptGenerationWithRetries(request.id || 'single request', async () => {
+        console.log('🤖 Requesting image prompt generation from LLM...');
 
-    const responseText = await LLMClient.chatCompletion({
-        messages,
-        metadataLabel: 'image_prompt_generation',
-        validateXML: false,
-        waitAfterError: 20,
-        runInBackground: true
+        const responseText = await LLMClient.chatCompletion({
+            messages,
+            metadataLabel: 'image_prompt_generation',
+            validateXML: false,
+            waitAfterError: 20,
+            runInBackground: true
+        });
+
+        return finalizeImagePromptGenerationRequest(request, responseText);
     });
-
-    return finalizeImagePromptGenerationRequest(request, responseText);
 }
 
 async function processImagePromptBatchGroup(requests) {
@@ -24488,35 +24588,38 @@ async function processImagePromptBatchGroup(requests) {
     console.log(`🤖 Requesting batched image prompt generation from LLM (${requests.length} prompts)...`);
 
     try {
-        const responseText = await LLMClient.chatCompletion({
-            messages,
-            metadataLabel: 'image_prompt_generation',
-            requiredRegex: /<imagePrompts[\s\S]*<\/imagePrompts>/i,
-            validateXML: false,
-            waitAfterError: 20,
-            runInBackground: true
+        const resolvedResults = await runImagePromptGenerationWithRetries(`batch of ${requests.length} request(s)`, async () => {
+            const responseText = await LLMClient.chatCompletion({
+                messages,
+                metadataLabel: 'image_prompt_generation',
+                requiredRegex: /<imagePrompts[\s\S]*<\/imagePrompts>/i,
+                validateXML: false,
+                waitAfterError: 20,
+                runInBackground: true
+            });
+
+            LLMClient.logPrompt({
+                prefix: 'image_prompt_generation_batch',
+                metadataLabel: 'image_prompt_generation',
+                systemPrompt,
+                generationPrompt,
+                response: responseText || ''
+            });
+
+            const parsed = parseImagePromptBatchResponse(responseText);
+            const results = new Map();
+            for (const request of requests) {
+                const promptText = parsed.get(request.id);
+                if (!promptText) {
+                    throw new Error(`Image prompt batch response did not include request id "${request.id}".`);
+                }
+                results.set(request.id, finalizeImagePromptGenerationRequest(request, promptText));
+            }
+            return results;
         });
 
-        LLMClient.logPrompt({
-            prefix: 'image_prompt_generation_batch',
-            metadataLabel: 'image_prompt_generation',
-            systemPrompt,
-            generationPrompt,
-            response: responseText || ''
-        });
-
-        const parsed = parseImagePromptBatchResponse(responseText);
         for (const request of requests) {
-            const promptText = parsed.get(request.id);
-            if (!promptText) {
-                request.reject(new Error(`Image prompt batch response did not include request id "${request.id}".`));
-                continue;
-            }
-            try {
-                request.resolve(finalizeImagePromptGenerationRequest(request, promptText));
-            } catch (error) {
-                request.reject(error);
-            }
+            request.resolve(resolvedResults.get(request.id));
         }
     } catch (error) {
         for (const request of requests) {
@@ -24594,26 +24697,17 @@ async function generateImagePromptFromTemplate(prompts, options = {}) {
         requestStart: Date.now(),
         batchKey: buildImagePromptBatchKey(prompts)
     };
+    const batchConfig = getImagePromptBatchConfig();
     try {
-        const batchConfig = getImagePromptBatchConfig();
         if (!batchConfig.enabled || batchConfig.maxItems <= 1) {
             return await executeSingleImagePromptGenerationRequest(request);
         }
         return await enqueueImagePromptGenerationRequest(prompts, { prefixType });
-
     } catch (error) {
         const bodyError = error?.response?.data?.error;
         const message = bodyError?.message || bodyError || error.message || String(error);
         console.error('Error generating image prompt with LLM:', message);
-        console.error(error)
-        const fallbackPrompt = typeof prompts?.generationPrompt === 'string'
-            ? prompts.generationPrompt
-            : 'high quality fantasy illustration of subject';
-
-        return {
-            prompt: applyImagePromptPrefix(fallbackPrompt, prefixType),
-            durationSeconds: null
-        };
+        throw error;
     }
 }
 
@@ -24712,8 +24806,16 @@ async function generateLocationImage(location, options = {}) {
         const generationPromise = Promise.resolve().then(async () => {
             // Generate the location scene prompt using LLM
             const promptTemplate = renderLocationImagePrompt(location);
-            const { prompt: generatedImagePrompt } = await generateImagePromptFromTemplate(promptTemplate, { prefixType: 'location' });
-            const finalImagePrompt = renderLocationFinalImagePrompt(location, generatedImagePrompt);
+            let finalImagePrompt;
+            try {
+                const { prompt: generatedImagePrompt } = await generateImagePromptFromTemplate(promptTemplate, { prefixType: 'location' });
+                finalImagePrompt = renderLocationFinalImagePrompt(location, generatedImagePrompt);
+            } catch (error) {
+                if (isImagePromptGenerationFailure(error)) {
+                    return buildImagePromptSkippedResult(error);
+                }
+                throw error;
+            }
 
             // Create image generation job with location-specific settings
             const jobId = generateImageId();
@@ -25156,7 +25258,15 @@ async function generateThingImage(thing, options = {}) {
         // Generate the thing image prompt using LLM
         const promptTemplate = renderThingImagePrompt(thing);
         const thingPrefixType = thing.thingType === 'item' ? 'item' : 'scenery';
-        const { prompt: finalImagePrompt } = await generateImagePromptFromTemplate(promptTemplate, { prefixType: thingPrefixType });
+        let finalImagePrompt;
+        try {
+            ({ prompt: finalImagePrompt } = await generateImagePromptFromTemplate(promptTemplate, { prefixType: thingPrefixType }));
+        } catch (error) {
+            if (isImagePromptGenerationFailure(error)) {
+                return buildImagePromptSkippedResult(error);
+            }
+            throw error;
+        }
 
         // Create image generation job with thing-specific settings
         const jobId = generateImageId();

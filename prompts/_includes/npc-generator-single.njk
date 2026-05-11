@@ -27,6 +27,7 @@ Respond in the below format, making sure that <npcInfo> is the root tag and encl
 <npcInfo>
     <npcs>
         <npc>
+            <quantity><!-- Integer number of NPCs that share this same profile. Usually 1, but can be more for groups of identical or near-identical NPCs, like a group of soldiers in the same faction wearing the same uniform and armor and sharing the same stats and role in the location. The name and description of NPCs of any quantity should always be singular, a plural entry will be expanded to individuals.--></quantity>
             <name>{% if npc.name %}{{ npc.name }}<!--Name is fixed; do not change it.-->{% else %}<!--An appropriate name for this NPC. Do not use the name of an existing or deceased NPC.-->{% endif %}</name>
             <description>{% if npc.description %}{{ npc.description | replace('\n', ' ') }}{% else %}<!--Three sentences describing their appearance, peronality, and other pertinent details. Do not describe where they are or what they are currently doing. Replace their name with %NAME%.--> {% endif %}</description>
             <shortDescription>{% if npc.shortDescription %}{{ npc.shortDescription }}{% else %}<!--Ten words or fewer summarizing the NPC. Replace their name with %NAME%.--> {% endif %}</shortDescription>

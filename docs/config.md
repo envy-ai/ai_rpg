@@ -507,22 +507,28 @@ healthRegenPercentPerMinute: 0.01736111111
 - Regeneration is applied when elapsed world-time effects are processed, and each actor persists `healthRegenAppliedAt` so reloads do not replay old elapsed minutes.
 - Current health is stored internally as a float; client health readouts round displayed values upward.
 
-## Image generation thing size overrides
+## Image prompt generation retries and batching
 
-`imagegen.prompt_batching` controls batching for the LLM prompt-writing step that happens before image jobs are queued. It does not batch the final image-rendering jobs.
+`imagegen.prompt_generation_attempts` controls how many times the server asks the LLM to write the final image prompt before giving up. If prompt generation keeps failing or returns leaked prompt/context XML instead of a final image prompt, the image request is skipped with `reason: "image-prompt-failed"` and no image-rendering job is queued.
+
+`imagegen.prompt_batching` controls batching for the same LLM prompt-writing step. It does not batch the final image-rendering jobs.
 
 ```yaml
 imagegen:
+  prompt_generation_attempts: 3
   prompt_batching:
     enabled: true
     delay_ms: 2000
     max_items: 10
 ```
 
+- `prompt_generation_attempts` defaults to `3` and must be an integer greater than or equal to `1`.
 - When enabled, a new image-prompt generation request waits `delay_ms` milliseconds after the most recent queued request so compatible requests can be sent in one LLM call.
 - Compatibility is based on the rendered image-prompt system prompt. Requests with different system prompts are kept separate.
 - `max_items` is the maximum number of compatible requests in one batch. Reaching the cap flushes the queue immediately.
-- Validation fails if `enabled` is not boolean, `delay_ms` is not a non-negative integer, or `max_items` is not a positive integer.
+- Validation fails if `prompt_generation_attempts` is not a positive integer, `enabled` is not boolean, `delay_ms` is not a non-negative integer, or `max_items` is not a positive integer.
+
+## Image generation thing size overrides
 
 `imagegen.default_settings.image` remains the baseline size for generated item and scenery images. You can optionally override those dimensions per thing type with `imagegen.item_settings.image` and `imagegen.scenery_settings.image`.
 

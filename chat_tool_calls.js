@@ -177,7 +177,7 @@ const CHAT_TOOL_DEFINITIONS = Object.freeze([
         type: 'function',
         function: {
             name: 'moreInfo',
-            description: 'Return full XML for NPCs, things, locations, and regions whose names contain the given query substring.',
+            description: 'Return direct toJSON-style JSON objects for NPCs, things, locations, and regions whose names contain the given query substring.',
             parameters: {
                 type: 'object',
                 properties: {
@@ -5484,68 +5484,18 @@ const createChatToolRuntime = ({
             throw new Error(`moreInfo("${query}") matched ${totalMatches} entities, exceeding the limit of ${MORE_INFO_MAX_MATCHES}. Provide a narrower query.`);
         }
 
-        const lines = [
-            '<moreInfoResults>',
-            `  <query>${xmlEscapeText(query)}</query>`,
-            `  <type>${xmlEscapeText(requestedType || 'any')}</type>`,
-            `  <totalMatches>${totalMatches}</totalMatches>`,
-            `  <npcs count="${matchedNpcs.length}">`
-        ];
-
-        for (const npc of matchedNpcs) {
-            const snapshot = serializeNpcForClient(npc) || npc.toJSON?.() || {};
-            const playerDisplay = buildPlayerDisplayModel(snapshot);
-            lines.push(...renderTemplatedXmlNode({
-                tagName: 'npc',
-                templateName: 'player.njk',
-                context: { player: playerDisplay },
-                level: 2,
-                attributes: { id: npc.id || '', name: npc.name || '' }
-            }));
-        }
-        lines.push('  </npcs>');
-        lines.push(`  <things count="${matchedThings.length}">`);
-        for (const thing of matchedThings) {
-            const snapshot = typeof thing.toJSON === 'function' ? thing.toJSON() : thing;
-            const thingDisplay = buildThingDisplayModel(snapshot);
-            lines.push(...renderTemplatedXmlNode({
-                tagName: 'thing',
-                templateName: 'thing.njk',
-                context: { thing: thingDisplay },
-                level: 2,
-                attributes: { id: thing.id || '', name: thing.name || '' }
-            }));
-        }
-        lines.push('  </things>');
-        lines.push(`  <locations count="${matchedLocations.length}">`);
-        for (const locationEntry of matchedLocations) {
-            const snapshot = buildLocationResponse(locationEntry) || (typeof locationEntry.toJSON === 'function' ? locationEntry.toJSON() : locationEntry);
-            const locationDisplay = buildLocationDisplayModel(snapshot);
-            lines.push(...renderTemplatedXmlNode({
-                tagName: 'location',
-                templateName: 'location.njk',
-                context: { location: locationDisplay },
-                level: 2,
-                attributes: { id: locationEntry.id || '', name: locationEntry.name || '' }
-            }));
-        }
-        lines.push('  </locations>');
-        lines.push(`  <regions count="${matchedRegions.length}">`);
-        for (const regionEntry of matchedRegions) {
-            const regionDisplay = buildRegionDisplayModel(regionEntry);
-            lines.push(...renderTemplatedXmlNode({
-                tagName: 'region',
-                templateName: 'region.njk',
-                context: { region: regionDisplay },
-                level: 2,
-                attributes: { id: regionEntry.id || '', name: regionEntry.name || '' }
-            }));
-        }
-        lines.push('  </regions>');
-        lines.push('</moreInfoResults>');
+        const results = {
+            query,
+            type: requestedType || null,
+            totalMatches,
+            npcs: matchedNpcs.map(entry => serializeUpdateObjectRecord(entry)).filter(Boolean),
+            things: matchedThings.map(entry => serializeUpdateObjectRecord(entry)).filter(Boolean),
+            locations: matchedLocations.map(entry => serializeUpdateObjectRecord(entry)).filter(Boolean),
+            regions: matchedRegions.map(entry => serializeUpdateObjectRecord(entry)).filter(Boolean)
+        };
 
         return {
-            content: lines.join('\n'),
+            content: JSON.stringify(results, null, 2),
             metadata: {
                 query,
                 type: requestedType || null,
@@ -5555,7 +5505,8 @@ const createChatToolRuntime = ({
                     things: matchedThings.length,
                     locations: matchedLocations.length,
                     regions: matchedRegions.length
-                }
+                },
+                results
             }
         };
     };

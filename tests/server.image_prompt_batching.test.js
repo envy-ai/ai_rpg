@@ -6,7 +6,9 @@ const Utils = require('../Utils.js');
 
 function loadImagePromptBatchHarness({
     promptBatching = { enabled: true, delay_ms: 2000, max_items: 10 },
-    settingSnapshot = {}
+    settingSnapshot = {},
+    promptGenerationAttempts = undefined,
+    chatCompletion = null
 } = {}) {
     const source = fs.readFileSync(require.resolve('../server.js'), 'utf8');
     const start = source.indexOf('function resolveBaseContextPreambleForImagePrompts() {');
@@ -32,7 +34,8 @@ function loadImagePromptBatchHarness({
         config: {
             imagegen: {
                 engine: 'comfyui',
-                prompt_batching: promptBatching
+                prompt_batching: promptBatching,
+                ...(promptGenerationAttempts === undefined ? {} : { prompt_generation_attempts: promptGenerationAttempts })
             }
         },
         getActiveSettingSnapshot: () => settingSnapshot,
@@ -51,6 +54,9 @@ function loadImagePromptBatchHarness({
         LLMClient: {
             chatCompletion: async ({ messages }) => {
                 calls.push(messages);
+                if (typeof chatCompletion === 'function') {
+                    return chatCompletion({ messages, calls });
+                }
                 const userPrompt = messages[1]?.content || '';
                 const ids = Array.from(userPrompt.matchAll(/<id>([^<]+)<\/id>/g))
                     .map(match => match[1]);
@@ -144,6 +150,43 @@ test('image prompt batching separates incompatible system prompts', async () => 
     assert.equal(harness.calls.length, 2);
     assert.equal(results[0].prompt, 'generated single prompt');
     assert.equal(results[1].prompt, 'generated single prompt');
+});
+
+test('image prompt generation retries leaked prompt wrappers before accepting a final prompt', async () => {
+    const responses = [
+        '<context><setting>full setting dump</setting><task>Create an image prompt.</task></context>',
+        'clean final item image prompt'
+    ];
+    const harness = loadImagePromptBatchHarness({
+        promptBatching: { enabled: false, delay_ms: 0, max_items: 10 },
+        promptGenerationAttempts: 3,
+        chatCompletion: () => responses.shift()
+    });
+
+    const result = await harness.generateImagePromptFromTemplate({
+        systemPrompt: 'item system',
+        generationPrompt: 'describe item'
+    }, { prefixType: 'item' });
+
+    assert.equal(harness.calls.length, 2);
+    assert.equal(result.prompt, 'clean final item image prompt');
+});
+
+test('image prompt generation rejects instead of falling back to the source generation prompt after retries fail', async () => {
+    const harness = loadImagePromptBatchHarness({
+        promptBatching: { enabled: false, delay_ms: 0, max_items: 10 },
+        promptGenerationAttempts: 2,
+        chatCompletion: () => '<context><setting>full setting dump</setting></context>'
+    });
+
+    await assert.rejects(
+        () => harness.generateImagePromptFromTemplate({
+            systemPrompt: 'item system',
+            generationPrompt: '<context><setting>source prompt that must not be forwarded</setting></context>'
+        }, { prefixType: 'item' }),
+        /Image prompt generation failed after 2 attempt\(s\)/
+    );
+    assert.equal(harness.calls.length, 2);
 });
 
 test('image prompt batch config defaults to two seconds and ten items', () => {
