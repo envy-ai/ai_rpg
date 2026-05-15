@@ -22,7 +22,7 @@ Rules:
 - Repeat event tags for multiple instances.
 - If no player/party travel occurred, all event elements remain direct children of `<events>` and belong to the active location.
 - The first `<moveLocation>` or `<moveNewLocation>` element is the travel boundary. Events before it happened at the origin; events after `<arriveAtLocation/>` happened after arrival at the destination. As such, it is important that events be listed in chronological order.
-- Omit any events that occur chronologically between the beginning and end of travel. If such tags are emitted anyway, the processor ignores them.
+- Omit any events that occur chronologically between the beginning and end of travel. If such tags are emitted anyway, the processor ignores them, except `thingMoveWithCharacter`, which is deferred to the after-arrival phase so objects carried, driven, or otherwise moved with a character can land at the character's destination.
 - Do not emit more than one player/party travel event in a single `<events>` block.
 - `newExitDiscovered` is a normal event and does not create a context boundary.
 - Emit one element for each observed event. Downstream processing may aggregate compatible entries later.
@@ -290,17 +290,59 @@ Use this when an animate entity gains or loses a temporary status effect that is
 </statusEffectChange>
 ```
 
-### `npc_arrival_departure`
+### `npc_arrival`
 
-Use this when an animate entity arrives at the current location from elsewhere, newly appears in the scene, or leaves the scene for another destination. For departures, include the best-known destination region and location. If a party member stops accompanying the player and goes to a destination, use this event so they can leave the party before moving there. Do not use this for party members simply remaining with the player.
+Use this when an animate entity arrives at the current location from elsewhere, or newly appears in the scene.
 
 ```xml
-<npcArrivalDeparture>
+<npcArrival>
   <npcName>Exact NPC or entity name</npcName>
-  <action>arrived|left</action>
-  <destinationRegion>Destination region, if leaving</destinationRegion>
-  <destinationLocation>Destination location, if leaving</destinationLocation>
-</npcArrivalDeparture>
+</npcArrival>
+```
+
+### `npc_departure`
+
+Use this when an animate entity leaves the scene for another destination. Include a concrete best-known destination region and destination location. The destination must not be `unknown`, blank, or the current location; if the exact destination is not established, choose the most plausible concrete region and location so the character can be tracked offscreen. If a party member stops accompanying the player and goes to a destination, use this event so they can leave the party before moving there. Do not use this for party members simply remaining with the player.
+
+```xml
+<npcDeparture>
+  <npcName>Exact NPC or entity name</npcName>
+  <destinationRegion>Destination region</destinationRegion>
+  <destinationLocation>Destination location</destinationLocation>
+</npcDeparture>
+```
+
+### `thing_arrival`
+
+Use this only when an existing, non-animate item or scenery object arrives at the current location from elsewhere. Do not use this for new items or scenery that appear in the scene for the first time; use `itemAppear` or `sceneryAppear` instead. Do not use this for animate entities; use `npcArrival` instead.
+
+```xml
+<thingArrival>
+  <thingName>Exact thing name</thingName>
+</thingArrival>
+```
+
+### `thing_departure`
+
+Use this when an existing, non-animate item or scenery object leaves the scene for another destination without being picked up, dropped, transferred, consumed, destroyed, or animated into an NPC. Include a concrete best-known destination region and destination location. The destination must not be `unknown`, blank, or the current location; if the exact destination is not established, choose the most plausible concrete region and location so the thing can be tracked offscreen.
+
+```xml
+<thingDeparture>
+  <thingName>Exact thing name</thingName>
+  <destinationRegion>Destination region</destinationRegion>
+  <destinationLocation>Destination location</destinationLocation>
+</thingDeparture>
+```
+
+### `thing_move_with_character`
+
+Use this when an existing, non-animate item or scenery object moves with a character who traveled, departed, drove it, carried it, rode it, or otherwise brought it along. Do not use this for animate entities. If the thing moves with multiple characters traveling to the same destination, pick one of those characters. This can name `player`, a party member, or an NPC; the handler resolves the thing to the listed character's destination.
+
+```xml
+<thingMoveWithCharacter>
+  <thingName>Exact thing name</thingName>
+  <characterName>Exact character name, or player</characterName>
+</thingMoveWithCharacter>
 ```
 
 ### `npc_first_appearance`

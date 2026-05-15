@@ -20984,6 +20984,13 @@
             openSalvageIntentModal({ mode: 'harvest', thingId, thing: targetThing });
         }
 
+        function isCraftingNonEmptyContainer(thing) {
+            if (!thing || !resolveThingBooleanFlag(thing, 'isContainer')) {
+                return false;
+            }
+            return Array.isArray(thing.containedThingIds) && thing.containedThingIds.length > 0;
+        }
+
         function openSalvageIntentModal({ mode = 'salvage', thingId = null, thing = null } = {}) {
             if (!salvageIntentModal || !salvageIntentBackdrop || !thingId) {
                 return;
@@ -21241,11 +21248,19 @@
                                 return;
                             }
                             const isAlreadyAssigned = isItemIdAssignedToAnySlot(thing.id);
-                            if (isAlreadyAssigned) {
+                            if (isCraftingNonEmptyContainer(thing)) {
+                                markCraftingInventoryItemUsed(thing.id, false);
+                                card.classList.add('is-non-empty-container');
+                                card.setAttribute('aria-disabled', 'true');
+                                card.draggable = false;
+                                card.title = 'Empty this container before using it for crafting.';
+                            } else if (isAlreadyAssigned) {
                                 markCraftingInventoryItemUsed(thing.id, true);
                                 card.draggable = false;
                             } else {
                                 markCraftingInventoryItemUsed(thing.id, false);
+                                card.classList.remove('is-non-empty-container');
+                                card.removeAttribute('title');
                                 card.draggable = true;
                             }
                             craftingInventoryCardRefs.set(thing.id, card);
@@ -21398,6 +21413,13 @@
                 alert(`${itemName} must be unequipped first.`);
                 return false;
             }
+            if (isCraftingNonEmptyContainer(sourceThing)) {
+                const itemName = typeof sourceThing?.name === 'string' && sourceThing.name.trim()
+                    ? sourceThing.name.trim()
+                    : 'This container';
+                alert(`${itemName} is a non-empty container. Empty this container before using it for crafting.`);
+                return false;
+            }
             const clone = cloneThingRecord(sourceThing) || { ...sourceThing };
             craftingSlotAssignments.set(slotIndex, clone);
             markCraftingInventoryItemUsed(thingId, true);
@@ -21482,6 +21504,10 @@
                 return;
             }
             const thing = craftingInventoryLookup.get(thingId) || thingDataCache.get(thingId) || { id: thingId };
+            if (isCraftingNonEmptyContainer(thing)) {
+                event.preventDefault();
+                return;
+            }
             if (!beginModalInventoryDrag(event, {
                 thing,
                 modal: craftingModal,

@@ -74,7 +74,11 @@ test('XML event parser converts core camelCase tags to existing event keys', () 
   <attackDamage><attackerName>Goblin</attackerName><targetName>Wanderer</targetName></attackDamage>
   <alterNpc><npcName>Goblin</npcName><alterationCategory>physical transformation</alterationCategory><changeDescription>The goblin turns to stone.</changeDescription></alterNpc>
   <statusEffectChange><entityName>Wanderer</entityName><statusEffectName>Poisoned</statusEffectName><action>gained</action><level>2</level></statusEffectChange>
-  <npcArrivalDeparture><npcName>Ada</npcName><action>left</action><destinationRegion>Town</destinationRegion><destinationLocation>Market</destinationLocation></npcArrivalDeparture>
+  <npcArrival><npcName>Ada</npcName></npcArrival>
+  <npcDeparture><npcName>Bram</npcName><destinationRegion>Town</destinationRegion><destinationLocation>Market</destinationLocation></npcDeparture>
+  <thingArrival><thingName>Supply Wagon</thingName></thingArrival>
+  <thingDeparture><thingName>Signal Beacon</thingName><destinationRegion>Town</destinationRegion><destinationLocation>Watchtower</destinationLocation></thingDeparture>
+  <thingMoveWithCharacter><thingName>Handcart</thingName><characterName>Wanderer</characterName></thingMoveWithCharacter>
   <npcFirstAppearance><npcName>Mysterious Cat</npcName></npcFirstAppearance>
   <partyChange><npcName>Ada</npcName><action>joined</action></partyChange>
   <tradeAvailability><npcName>Ada</npcName><willingToTrade>false</willingToTrade><reason>The offer insulted her.</reason></tradeAvailability>
@@ -116,7 +120,17 @@ test('XML event parser converts core camelCase tags to existing event keys', () 
         assert.deepEqual(events.attack_damage[0], { attacker: 'Goblin', target: 'Wanderer' });
         assert.equal(events.alter_npc[0].name, 'Goblin');
         assert.equal(events.status_effect_change[0].level, 2);
-        assert.equal(events.npc_arrival_departure[0].destinationLocation, 'Market');
+        assert.deepEqual(events.npc_arrival_departure, [
+            { name: 'Ada', action: 'arrived', destination: null, destinationRegion: null, destinationLocation: null },
+            { name: 'Bram', action: 'left', destination: 'Market', destinationRegion: 'Town', destinationLocation: 'Market' }
+        ]);
+        assert.deepEqual(events.thing_arrival_departure, [
+            { name: 'Supply Wagon', action: 'arrived', destination: null, destinationRegion: null, destinationLocation: null },
+            { name: 'Signal Beacon', action: 'left', destination: 'Watchtower', destinationRegion: 'Town', destinationLocation: 'Watchtower' }
+        ]);
+        assert.deepEqual(events.thing_move_with_character, [
+            { thingName: 'Handcart', characterName: 'Wanderer' }
+        ]);
         assert.deepEqual(events.party_change[0], { name: 'Ada', action: 'joined' });
         assert.deepEqual(events.trade_availability[0], {
             name: 'Ada',
@@ -192,6 +206,26 @@ test('XML event parser splits travel phases and ignores during-travel events', (
     assert.deepEqual(parsed.afterTravel.structured.parsed.scenery_appear, ['Gatehouse']);
     assert.deepEqual(parsed.ignoredDuringEvents.map(entry => entry.tagName), ['itemAppear']);
     assert.equal(parsed.structured.parsed.item_appear, undefined);
+});
+
+test('XML event parser applies in-transit thing moves after travel arrival', () => {
+    const parsed = Events._parseXmlEventCheckResponse(`
+<events>
+  <moveLocation><destinationName>North Gate</destinationName></moveLocation>
+  <thingMoveWithCharacter><thingName>Handcart</thingName><characterName>player</characterName></thingMoveWithCharacter>
+  <arriveAtLocation/>
+</events>
+`);
+
+    assert.equal(parsed.hasTravelBoundary, true);
+    assert.deepEqual(parsed.travelMove.structured.parsed.move_location, ['North Gate']);
+    assert.deepEqual(parsed.afterTravel.structured.parsed.thing_move_with_character, [
+        { thingName: 'Handcart', characterName: 'player' }
+    ]);
+    assert.deepEqual(parsed.ignoredDuringEvents, []);
+    assert.deepEqual(parsed.structured.parsed.thing_move_with_character, [
+        { thingName: 'Handcart', characterName: 'player' }
+    ]);
 });
 
 test('XML event parser rejects invalid travel boundaries', () => {
@@ -380,6 +414,11 @@ test('runEventChecks can suppress need-bar checks and hard-ignore selected XML e
     <npcName>Mira</npcName>
     <action>arrived</action>
   </npcArrivalDeparture>
+  <thingDeparture>
+    <thingName>Supply Wagon</thingName>
+    <destinationRegion>Town</destinationRegion>
+    <destinationLocation>Stable Yard</destinationLocation>
+  </thingDeparture>
 </events>`;
         };
         LLMClient.logPrompt = () => {};
@@ -415,16 +454,17 @@ test('runEventChecks can suppress need-bar checks and hard-ignore selected XML e
         const result = await Events.runEventChecks({
             textToCheck: 'Wanderer finds coins while Mira arrives and everyone gets tired.',
             suppressNeedBarEventChecks: true,
-            ignoredEventKeys: ['needbar_change', 'npc_arrival_departure'],
+            ignoredEventKeys: ['needbar_change', 'npc_arrival_departure', 'thing_departure'],
             eventCheckIgnoreInstructions: 'Ignore need bars and arrivals.'
         });
 
         assert.deepEqual(capturedPromptTypes, ['events-xml']);
-        assert.deepEqual(renderedContexts[0].eventCheckIgnoredEventKeys.sort(), ['needbar_change', 'npc_arrival_departure'].sort());
+        assert.deepEqual(renderedContexts[0].eventCheckIgnoredEventKeys.sort(), ['needbar_change', 'npc_arrival_departure', 'thing_arrival_departure'].sort());
         assert.match(renderedContexts[0].eventCheckIgnoreInstructions, /Ignore need bars and arrivals/);
         assert.deepEqual(result.currencyChanges.map(entry => entry.amount), [4]);
         assert.equal(result.structured.parsed.needbar_change, undefined);
         assert.equal(result.structured.parsed.npc_arrival_departure, undefined);
+        assert.equal(result.structured.parsed.thing_arrival_departure, undefined);
         assert.deepEqual(result.needBarChanges, []);
         assert.deepEqual(result.npcUpdates.added, []);
         assert.equal(player.currency, 4);

@@ -8354,6 +8354,12 @@ body.modal-open {
   filter: grayscale(0.2);
 }
 
+.crafting-inventory-card.is-non-empty-container {
+  opacity: 0.45;
+  cursor: not-allowed;
+  filter: grayscale(0.65);
+}
+
 .crafting-inventory-card.is-equipped {
   box-shadow:
     0 0 0 2px rgba(248, 113, 113, 0.9),

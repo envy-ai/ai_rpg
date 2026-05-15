@@ -34,4 +34,5 @@ Stores and manages scene summaries extracted from chat history. Tracks scene ran
 
 ## Notes
 - All validation is strict; missing fields throw explicit errors to avoid silent corruption.
+- The scene-summary prompt allows Step 1/2 prose before the XML answer. Server parsing ignores that prose and validates only the final `<scenes>...</scenes>` block, so XML-like brainstorming text cannot break summary ingestion.
 - Scene records store entry ranges and entry ids, not formatted dates. Base-context rendering looks up the scene start entry and, when that chat entry has `metadata.worldTime`, prints the scene's start time relative to the current in-game day plus the calendar date immediately after `Scene N:`.

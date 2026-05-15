@@ -118,12 +118,13 @@ function normalizeNpcNameKey(value) {
     return value.trim().toLowerCase();
 }
 
-function createLocation({ id, name, regionId, npcIds = [] }) {
+function createLocation({ id, name, regionId, npcIds = [], thingIds = [] }) {
     return {
         id,
         name,
         regionId,
         npcIds: npcIds.slice(),
+        thingIds: thingIds.slice(),
         addNpcId(npcId) {
             if (!this.npcIds.includes(npcId)) {
                 this.npcIds.push(npcId);
@@ -131,7 +132,38 @@ function createLocation({ id, name, regionId, npcIds = [] }) {
         },
         removeNpcId(npcId) {
             this.npcIds = this.npcIds.filter(id => id !== npcId);
+        },
+        addThingId(thingId) {
+            if (!this.thingIds.includes(thingId)) {
+                this.thingIds.push(thingId);
+            }
+            const thing = activeTestThings?.get?.(thingId) || null;
+            if (thing) {
+                thing.metadata = { ...(thing.metadata || {}), locationId: id };
+            }
+        },
+        removeThingId(thingId) {
+            const before = this.thingIds.length;
+            this.thingIds = this.thingIds.filter(id => id !== thingId);
+            const removed = this.thingIds.length !== before;
+            const thing = activeTestThings?.get?.(thingId) || null;
+            if (removed && thing?.metadata?.locationId === id) {
+                const metadata = { ...thing.metadata };
+                delete metadata.locationId;
+                thing.metadata = metadata;
+            }
+            return removed;
         }
+    };
+}
+
+let activeTestThings = null;
+
+function createThing({ id, name, metadata = {} }) {
+    return {
+        id,
+        name,
+        metadata: { ...metadata }
     };
 }
 
@@ -139,6 +171,7 @@ function loadWhileYouWereAwayHelpers({
     config = { ai: {} },
     currentPlayer = null,
     players = new Map(),
+    things = new Map(),
     gameLocations = new Map(),
     regions = new Map(),
     prepareBasePromptContext = async () => ({ whileYouWereAwayNpcs: [] }),
@@ -256,6 +289,7 @@ function loadWhileYouWereAwayHelpers({
         },
         currentPlayer,
         players,
+        things,
         gameLocations,
         regions,
         sanitizeForXml,
@@ -434,6 +468,25 @@ test('parseWhileYouWereAwayResponse reads optional proseForPlayer from response 
         parsed.proseForPlayer,
         'Mira looks up from the market stall and gives you a quick summary of the day.\n\nShe keeps her voice low as the lunch crowd mills around nearby.'
     );
+});
+
+test('parseWhileYouWereAwayResponse reads itemSceneryMoves from response wrapper', () => {
+    const { parseWhileYouWereAwayResponse } = loadWhileYouWereAwayHelpers();
+    const parsed = parseWhileYouWereAwayResponse(`
+<response>
+  <characterUpdates></characterUpdates>
+  <proseForPlayer>The cart is waiting beside the south gate.</proseForPlayer>
+  <itemSceneryMoves>
+    <itemName>Supply Cart</itemName>
+    <itemName> </itemName>
+    <itemName>Folding Barricade</itemName>
+  </itemSceneryMoves>
+</response>
+`, {
+        expectedNameKeys: new Set()
+    });
+
+    assert.deepEqual(Array.from(parsed.itemSceneryMoves), ['Supply Cart', 'Folding Barricade']);
 });
 
 test('parseWhileYouWereAwayResponse allows empty characterUpdates when no names are expected', () => {
@@ -728,7 +781,7 @@ test('runWhileYouWereAwayPrompt runs scoped event checks while ignoring handled 
     assert.equal(eventCheckCalls[0].suppressNeedBarEventChecks, true);
     assert.equal(eventCheckCalls[0].suppressMoveEvents, true);
     assert.equal(eventCheckCalls[0].suppressTimeAdvance, true);
-    assert.deepEqual(Array.from(eventCheckCalls[0].ignoredEventKeys).sort(), ['needbar_change', 'npc_arrival_departure'].sort());
+    assert.deepEqual(Array.from(eventCheckCalls[0].ignoredEventKeys).sort(), ['needbar_change', 'npc_arrival_departure', 'thing_move_with_character'].sort());
     assert.match(eventCheckCalls[0].eventCheckIgnoreInstructions, /while-you-were-away event pass/);
     assert.equal(result.eventResult.currencyChanges[0].amount, 2);
     assert.equal(summaryCalls.length, 1);
@@ -1086,6 +1139,85 @@ test('runWhileYouWereAwayPrompt runs without NPC updates when everyone was seen 
     assert.equal(result.hiddenEntry.content, 'No while-you-were-away character updates were returned.');
     assert.equal(result.visibleEntry.type, 'while-you-were-away-player');
     assert.equal(result.visibleEntry.content, 'The square has gone quiet since you last passed through.');
+});
+
+test('runWhileYouWereAwayPrompt moves listed origin things to the arrival location only when not inventoried', async () => {
+    const origin = createLocation({ id: 'farmyard', name: 'Farmyard', regionId: 'alpha' });
+    const destination = createLocation({ id: 'market', name: 'Market', regionId: 'alpha' });
+    const otherLocation = createLocation({ id: 'warehouse', name: 'Warehouse', regionId: 'alpha' });
+    const regions = new Map([
+        ['alpha', { id: 'alpha', name: 'Alpha', locationIds: ['farmyard', 'market', 'warehouse'], entranceLocationId: 'farmyard' }]
+    ]);
+    const gameLocations = new Map([
+        [origin.id, origin],
+        [destination.id, destination],
+        [otherLocation.id, otherLocation]
+    ]);
+    const cart = createThing({ id: 'thing-cart', name: 'Supply Cart' });
+    const crate = createThing({ id: 'thing-crate', name: 'Distant Crate' });
+    const compass = createThing({ id: 'thing-compass', name: 'Pocket Compass' });
+    const things = new Map([
+        [cart.id, cart],
+        [crate.id, crate],
+        [compass.id, compass]
+    ]);
+    activeTestThings = things;
+    origin.addThingId(cart.id);
+    origin.addThingId(compass.id);
+    compass.metadata = { ...(compass.metadata || {}), ownerId: 'player' };
+    otherLocation.addThingId(crate.id);
+
+    const currentPlayer = {
+        id: 'player',
+        name: 'Baato',
+        currentLocation: destination.id
+    };
+
+    const { runWhileYouWereAwayPrompt } = loadWhileYouWereAwayHelpers({
+        currentPlayer,
+        things,
+        gameLocations,
+        regions,
+        prepareBasePromptContext: async () => ({
+            whileYouWereAwayNpcs: []
+        }),
+        llmResponse: `
+<response>
+  <characterUpdates></characterUpdates>
+  <proseForPlayer>The supply cart rattled in behind you, but the rest of the yard stayed where it was.</proseForPlayer>
+  <itemSceneryMoves>
+    <itemName>Supply Cart</itemName>
+    <itemName>Distant Crate</itemName>
+    <itemName>Pocket Compass</itemName>
+  </itemSceneryMoves>
+</response>
+`
+    });
+
+    try {
+        const result = await runWhileYouWereAwayPrompt({
+            locationOverride: destination,
+            locationId: destination.id,
+            originLocationOverride: origin,
+            returnEntries: true
+        });
+
+        assert.equal(destination.thingIds.includes(cart.id), true);
+        assert.equal(origin.thingIds.includes(cart.id), false);
+        assert.equal(cart.metadata.locationId, destination.id);
+
+        assert.equal(otherLocation.thingIds.includes(crate.id), true);
+        assert.equal(destination.thingIds.includes(crate.id), false);
+        assert.equal(crate.metadata.locationId, otherLocation.id);
+
+        assert.equal(origin.thingIds.includes(compass.id), true);
+        assert.equal(destination.thingIds.includes(compass.id), false);
+        assert.equal(compass.metadata.ownerId, 'player');
+
+        assert.equal(result.visibleEntry.type, 'while-you-were-away-player');
+    } finally {
+        activeTestThings = null;
+    }
 });
 
 test('runWhileYouWereAwayPrompt allows arrival updates for current-location NPCs not listed as candidates', async () => {

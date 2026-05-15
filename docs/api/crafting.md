@@ -36,6 +36,7 @@ Response:
 
 Notes:
 - Craft/process can run with no selected slot items; the prompts judge the attempt from the station, current scene, player abilities, and notes.
+- Non-empty containers cannot be selected as crafting inputs; the client greys them out and the server rejects them if submitted directly. Empty the container first if the container itself should be consumed or processed.
 - Salvage/harvest require exactly one slot item.
 - When `actionType` is supplied, it overrides `mode` in some cases.
 - Inline die-roll override is supported in crafting description fields: `notes`, `salvageNotes`, and `harvestNotes`. Tokens matching `<-?\d+>` are stripped from those fields before prompt processing, and the first parsed value is used as the player d20 roll for crafting plausibility/skill-check resolution (no clamping).

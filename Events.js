@@ -119,6 +119,19 @@ const EVENT_PROMPT_ORDER = [
             prompt: `Of anything you did not list above, did any new scenery, furniture, buildings, workstations, containers, piles/stacks of things, or other non-carryable items appear (assembled, built, dropped, manifested, etc) in the scene for the first time, either as newly created items or items that were mentioned as already existing but had not been previously described in the scene context? If so, list them in the format format as "[exact thing name] → [description]" with multiple items separated by vertical bars. Otherwise, answer N/A.`,
         },
         {
+            key: "thing_arrival_departure",
+            prompt: `Did any existing, non-animate item or scenery leave the scene for another destination without being picked up, dropped, transferred, consumed, destroyed, or transformed into an NPC? If so, list it as "[exact thing name] → left → [destination region] → [destination location]". The destination must not be unknown and must not be the current location. If no existing item or scenery left this way, answer N/A.`,
+            postProcess: (entry) => ({ ...entry, action: entry?.action || "left" }),
+        },
+        {
+            key: "thing_arrival_departure",
+            prompt: `Did any existing, non-animate item or scenery arrive at the current location from elsewhere without being newly created? If so, list it as "[exact thing name] → arrived". Do not include new items or scenery appearing for the first time. If no existing item or scenery arrived this way, answer N/A.`,
+            postProcess: (entry) => ({
+                ...entry,
+                action: entry?.action || "arrived",
+            }),
+        },
+        {
             key: "harvestable_resource_appear",
             prompt: `Of anything you did not list above, did any harvestable or gatherable resources (e.g., plants, minerals, fields, planters, machines that create resources or other harvestable/gatherable scenery) appear in the scene for the first time, either as newly created scenery or scenery that was mentioned as already existing but had not been previously described in the scene context? If so, list them in the format format as "[exact thing name] → [description]" with multiple items separated by vertical bars. Otherwise, answer N/A.`,
         },
@@ -139,7 +152,7 @@ const EVENT_PROMPT_ORDER = [
         },
         {
             key: "npc_arrival_departure",
-            prompt: `Did any animate entities (NPCs, animals, monsters, robots, or anything else capable of moving on its own) leave the scene? If so, list the full names of those entities as seen in the location context (capitalized as Proper Nouns) separated by vertical bars. Decide what location they went to. If a party member stops accompanying the player and goes to a destination, list them here so they can leave the party before moving there. Use the format: "[name] → left → [destination region] → [destination location]". If you don't know exactly where they went, use what makes the most sense. Otherwise, answer N/A.`,
+            prompt: `Did any animate entities (NPCs, animals, monsters, robots, or anything else capable of moving on its own) leave the scene? If so, list the full names of those entities as seen in the location context (capitalized as Proper Nouns) separated by vertical bars. Decide what concrete location and region they went to. The destination must not be unknown and must not be the current location. If a party member stops accompanying the player and goes to a destination, list them here so they can leave the party before moving there. Use the format: "[name] → left → [destination region] → [destination location]". If you don't know exactly where they went, use what makes the most sense. Otherwise, answer N/A.`,
             postProcess: (entry) => ({ ...entry, action: entry?.action || "left" }),
         },
         {
@@ -149,6 +162,10 @@ const EVENT_PROMPT_ORDER = [
                 ...entry,
                 action: entry?.action || "arrived",
             }),
+        },
+        {
+            key: "thing_move_with_character",
+            prompt: `Did any existing, non-animate item or scenery move with a character who traveled, departed, or otherwise moved to another location? If so, list it as "[exact thing name] → [exact character name]". Use this for carried, driven, ridden, or otherwise character-moved objects, including objects that moved with the player or a party member during travel. Do not list animate entities here. If no existing item or scenery moved with a character, answer N/A.`,
         },
         {
             key: "npc_first_appearance",
@@ -2391,8 +2408,20 @@ class Events {
         const aliases = new Map([
             ["needbarchange", "needbar_change"],
             ["needbar_change", "needbar_change"],
+            ["npcarrival", "npc_arrival_departure"],
+            ["npc_arrival", "npc_arrival_departure"],
+            ["npcdeparture", "npc_arrival_departure"],
+            ["npc_departure", "npc_arrival_departure"],
             ["npcarrivaldeparture", "npc_arrival_departure"],
             ["npc_arrival_departure", "npc_arrival_departure"],
+            ["thingarrival", "thing_arrival_departure"],
+            ["thing_arrival", "thing_arrival_departure"],
+            ["thingdeparture", "thing_arrival_departure"],
+            ["thing_departure", "thing_arrival_departure"],
+            ["thingarrivaldeparture", "thing_arrival_departure"],
+            ["thing_arrival_departure", "thing_arrival_departure"],
+            ["thingmovewithcharacter", "thing_move_with_character"],
+            ["thing_move_with_character", "thing_move_with_character"],
         ]);
         const sourceValues =
             ignoredEventKeys &&
@@ -4804,6 +4833,46 @@ class Events {
                 }
                 return { key: "npc_arrival_departure", raw: parts.join(" → ") };
             }
+            case "npcArrival": {
+                const npcName = this._getXmlDirectChildText(node, "npcName");
+                return {
+                    key: "npc_arrival_departure",
+                    raw: `${npcName} → arrived`,
+                };
+            }
+            case "npcDeparture": {
+                const parts = [
+                    this._getXmlDirectChildText(node, "npcName"),
+                    "left",
+                    this._getXmlDirectChildText(node, "destinationRegion"),
+                    this._getXmlDirectChildText(node, "destinationLocation"),
+                ];
+                return { key: "npc_arrival_departure", raw: parts.join(" → ") };
+            }
+            case "thingArrival": {
+                const thingName = this._getXmlDirectChildText(node, "thingName");
+                return {
+                    key: "thing_arrival_departure",
+                    raw: `${thingName} → arrived`,
+                };
+            }
+            case "thingDeparture": {
+                const parts = [
+                    this._getXmlDirectChildText(node, "thingName"),
+                    "left",
+                    this._getXmlDirectChildText(node, "destinationRegion"),
+                    this._getXmlDirectChildText(node, "destinationLocation"),
+                ];
+                return { key: "thing_arrival_departure", raw: parts.join(" → ") };
+            }
+            case "thingMoveWithCharacter":
+                return {
+                    key: "thing_move_with_character",
+                    raw: this._formatXmlLegacyRawEntry(node, [
+                        "thingName",
+                        "characterName",
+                    ]),
+                };
             case "npcFirstAppearance":
                 return {
                     key: "npc_first_appearance",
@@ -5179,7 +5248,11 @@ class Events {
             if (phase === "before") {
                 this._appendXmlRawEvent(beforeRawLists, key, raw);
             } else if (phase === "during") {
-                ignoredDuringEvents.push({ tagName, key, raw });
+                if (key === "thing_move_with_character") {
+                    this._appendXmlRawEvent(afterRawLists, key, raw);
+                } else {
+                    ignoredDuringEvents.push({ tagName, key, raw });
+                }
             } else {
                 this._appendXmlRawEvent(afterRawLists, key, raw);
             }
@@ -6212,6 +6285,58 @@ class Events {
                         };
                     })
                     .filter(Boolean),
+            thing_arrival_departure: (raw) =>
+                splitPipeList(raw)
+                    .map((entry) => {
+                        const parts = splitArrowParts(entry);
+
+                        if (parts.length < 2) {
+                            return null;
+                        }
+
+                        const name = parts[0];
+                        const action = parts[1]?.toLowerCase();
+                        const remaining = parts.slice(2);
+
+                        if (!name || !action) {
+                            return null;
+                        }
+
+                        let destinationRegion = null;
+                        let destinationLocation = null;
+
+                        if (remaining.length === 1) {
+                            destinationLocation = remaining[0];
+                        } else if (remaining.length >= 2) {
+                            destinationRegion = remaining[0] || null;
+                            destinationLocation = remaining[1] || null;
+                        }
+
+                        const destination =
+                            destinationLocation || destinationRegion || null;
+
+                        return {
+                            name,
+                            action,
+                            destination,
+                            destinationRegion,
+                            destinationLocation,
+                        };
+                    })
+                    .filter(Boolean),
+            thing_move_with_character: (raw) =>
+                splitPipeList(raw)
+                    .map((entry) => {
+                        const [thingName, characterName] = splitArrowParts(entry, 2);
+                        if (!thingName || !characterName) {
+                            return null;
+                        }
+                        return {
+                            thingName: thingName.trim(),
+                            characterName: characterName.trim(),
+                        };
+                    })
+                    .filter(Boolean),
             npc_first_appearance: (raw) =>
                 splitPipeList(raw)
                     .map((entry) => stripAfterFirstArrow(entry))
@@ -6569,6 +6694,8 @@ class Events {
             "item_appear",
             "scenery_appear",
             "harvestable_resource_appear",
+            "thing_arrival_departure",
+            "thing_move_with_character",
         ];
 
         const addName = (name) => {
@@ -6636,6 +6763,14 @@ class Events {
                 case "scenery_appear":
                 case "harvestable_resource_appear":
                     parsedEntries.forEach(addName);
+                    break;
+                case "thing_arrival_departure":
+                case "thing_move_with_character":
+                    parsedEntries.forEach((entry) => {
+                        if (entry && typeof entry === "object") {
+                            addName(entry.name || entry.thingName);
+                        }
+                    });
                     break;
                 default:
                     break;
@@ -8400,7 +8535,7 @@ class Events {
                     return;
                 }
 
-                if (Globals.processedMove && !context.allowMoveTurnAppearances) {
+                if (Globals.processedMove && !context.allowMoveTurnAppearances && !context.isNpcTurn) {
                     // If we just processed a move, skip generating new items, as the location generator handles this
                     return;
                 }
@@ -8466,7 +8601,7 @@ class Events {
                     return;
                 }
 
-                if (Globals.processedMove && !context.allowMoveTurnAppearances) {
+                if (Globals.processedMove && !context.allowMoveTurnAppearances && !context.isNpcTurn) {
                     // If we just processed a move, skip generating new scenery, as the location generator handles this
                     return;
                 }
@@ -8583,6 +8718,319 @@ class Events {
                 }
                 await this._handleAlterNpcEvents(entries, context);
             },
+            thing_arrival_departure: async function (entries = [], context = {}) {
+                if (!Array.isArray(entries) || !entries.length) {
+                    return;
+                }
+
+                const {
+                    findThingByName,
+                    findLocationByNameLoose,
+                    findRegionByNameLoose,
+                    createLocationFromEvent,
+                    createRegionStubFromEvent,
+                    Location,
+                    regions,
+                    gameLocations,
+                    pendingRegionStubs,
+                } = this._deps;
+
+                if (typeof findThingByName !== "function") {
+                    throw new Error(
+                        "thing_arrival_departure handler requires findThingByName dependency.",
+                    );
+                }
+
+                const currentLocation = context.location || null;
+                if (!currentLocation || typeof currentLocation.id !== "string") {
+                    throw new Error(
+                        "thing_arrival_departure events require a valid current location.",
+                    );
+                }
+
+                const normalize = (value) =>
+                    typeof value === "string" ? value.trim() : "";
+                const currentLocationId = currentLocation.id.trim();
+
+                const getRegionId = (region) => {
+                    const candidates = [
+                        region?.id,
+                        region?.targetRegionId,
+                        region?.regionId,
+                        region?.stubMetadata?.targetRegionId,
+                        region?.stubMetadata?.regionId,
+                    ];
+                    for (const candidate of candidates) {
+                        const trimmed =
+                            typeof candidate === "string" ? candidate.trim() : "";
+                        if (trimmed) {
+                            return trimmed;
+                        }
+                    }
+                    return null;
+                };
+
+                const resolveThingForEvent = (name, action) => {
+                    const normalizedName = normalize(name);
+                    if (!normalizedName) {
+                        return null;
+                    }
+
+                    const candidates = this._findThingsByExactName(normalizedName);
+                    if (candidates.length) {
+                        if (action === "left") {
+                            return candidates.find(
+                                (thing) => this._thingLocationId(thing) === currentLocationId,
+                            ) || candidates[0];
+                        }
+                        if (action === "arrived") {
+                            return candidates.find(
+                                (thing) => this._thingLocationId(thing) !== currentLocationId,
+                            ) || candidates[0];
+                        }
+                        return candidates[0];
+                    }
+
+                    return findThingByName(normalizedName) || null;
+                };
+
+                const resolveCurrentThingLocation = (thing) => {
+                    const locationId = this._thingLocationId(thing);
+                    if (!locationId) {
+                        return null;
+                    }
+                    return this.resolveLocationCandidate(locationId);
+                };
+
+                const placeThingInLocation = (thing, location) => {
+                    if (!thing?.id) {
+                        throw new Error("Cannot place a thing without an id.");
+                    }
+                    if (!location || typeof location.addThingId !== "function") {
+                        throw new Error(
+                            `Cannot place thing "${thing.name || thing.id}": destination location is invalid.`,
+                        );
+                    }
+                    if (typeof thing.putInLocation === "function") {
+                        thing.putInLocation(location.id);
+                    } else {
+                        this.addThingToLocation(thing, location);
+                    }
+                };
+
+                const isCurrentLocationDestination = (destinationLocationName) => {
+                    const trimmedLocation = normalizeOptionalEventLocationField(
+                        destinationLocationName,
+                    );
+                    if (!trimmedLocation) {
+                        return false;
+                    }
+                    return (
+                        trimmedLocation.toLowerCase() === currentLocationId.toLowerCase() ||
+                        trimmedLocation.toLowerCase() ===
+                            normalize(currentLocation.name).toLowerCase()
+                    );
+                };
+
+                const createOffscreenDepartureLocation = async ({
+                    thingName,
+                    destinationRegionName,
+                    destinationLocationName,
+                    originLocation,
+                }) => {
+                    const trimmedRegion =
+                        normalizeOptionalEventLocationField(destinationRegionName);
+                    const trimmedLocation =
+                        normalizeOptionalEventLocationField(destinationLocationName);
+
+                    if (!trimmedLocation) {
+                        console.warn(
+                            `Thing departure for ${thingName} did not include a concrete destination location.`,
+                        );
+                        return null;
+                    }
+                    if (!trimmedRegion) {
+                        console.warn(
+                            `Thing departure destination not found for ${thingName}: region='', location='${trimmedLocation}'. ` +
+                            "A destination region is required before creating an offscreen tracking stub.",
+                        );
+                        return null;
+                    }
+                    if (!originLocation) {
+                        console.warn(
+                            `Thing departure for ${thingName} cannot create destination stub without an origin location.`,
+                        );
+                        return null;
+                    }
+
+                    let targetRegion = resolveEventRegionByName(
+                        { regions, pendingRegionStubs, findRegionByNameLoose },
+                        trimmedRegion,
+                    );
+
+                    if (
+                        !targetRegion &&
+                        typeof createRegionStubFromEvent === "function"
+                    ) {
+                        const regionEntryStub = await createRegionStubFromEvent({
+                            name: trimmedRegion,
+                            originLocation,
+                            description:
+                                `Offscreen destination region used to track ${thingName}.`,
+                            createOriginExit: false,
+                        });
+                        const regionId =
+                            getRegionId(regionEntryStub) ||
+                            getRegionId(regionEntryStub?.stubMetadata);
+                        targetRegion =
+                            resolveEventRegionByName(
+                                { regions, pendingRegionStubs, findRegionByNameLoose },
+                                trimmedRegion,
+                            ) ||
+                            (regionId && pendingRegionStubs instanceof Map
+                                ? pendingRegionStubs.get(regionId) || null
+                                : null) ||
+                            (regionId
+                                ? {
+                                    id: regionId,
+                                    name: trimmedRegion,
+                                    locationIds: [],
+                                }
+                                : null);
+                    }
+
+                    if (!targetRegion) {
+                        console.warn(
+                            `Thing departure destination region could not be created for ${thingName}: region='${trimmedRegion}', location='${trimmedLocation}'.`,
+                        );
+                        return null;
+                    }
+
+                    const targetRegionId = getRegionId(targetRegion);
+                    if (!targetRegionId) {
+                        console.warn(
+                            `Thing departure destination region has no id for ${thingName}: region='${trimmedRegion}', location='${trimmedLocation}'.`,
+                        );
+                        return null;
+                    }
+
+                    if (typeof createLocationFromEvent !== "function") {
+                        console.warn(
+                            `Thing departure destination location could not be created for ${thingName}: createLocationFromEvent is unavailable.`,
+                        );
+                        return null;
+                    }
+
+                    return createLocationFromEvent({
+                        name: trimmedLocation,
+                        originLocation,
+                        descriptionHint:
+                            `Offscreen destination used to track ${thingName} after leaving the scene.`,
+                        expandStub: false,
+                        targetRegionId,
+                        createOriginExit: false,
+                    });
+                };
+
+                for (const entry of entries) {
+                    const action = normalize(entry?.action).toLowerCase();
+                    const originalName = normalize(entry?.name);
+                    if (!originalName) {
+                        continue;
+                    }
+                    if (action !== "arrived" && action !== "left") {
+                        console.warn(
+                            `Ignoring thing_arrival_departure with unsupported action "${entry?.action}".`,
+                            entry,
+                        );
+                        continue;
+                    }
+
+                    const thing = resolveThingForEvent(originalName, action);
+                    if (!thing) {
+                        console.warn(
+                            `thing_arrival_departure could not find existing thing "${originalName}".`,
+                        );
+                        continue;
+                    }
+
+                    entry.name = thing.name || originalName;
+
+                    if (action === "arrived") {
+                        try {
+                            placeThingInLocation(thing, currentLocation);
+                        } catch (error) {
+                            console.warn(
+                                `Failed to place arriving thing "${entry.name}" in current location:`,
+                                error.message,
+                            );
+                        }
+                        continue;
+                    }
+
+                    const destinationLocationName =
+                        normalizeOptionalEventLocationField(entry.destinationLocation) ||
+                        normalizeOptionalEventLocationField(entry.destination);
+                    const destinationRegionName = normalizeOptionalEventLocationField(
+                        entry.destinationRegion,
+                    );
+
+                    if (isCurrentLocationDestination(destinationLocationName)) {
+                        console.warn(
+                            `Ignoring thing departure for ${entry.name}: destination is the current location.`,
+                        );
+                        continue;
+                    }
+
+                    const destinationRegion = resolveEventRegionByName(
+                        { regions, pendingRegionStubs, findRegionByNameLoose },
+                        destinationRegionName,
+                    );
+                    let targetLocation = resolveEventLocationByName({
+                        Location,
+                        gameLocations,
+                        findLocationByNameLoose,
+                        region: destinationRegion || null,
+                    }, destinationLocationName);
+
+                    if (!targetLocation) {
+                        const originLocation =
+                            resolveCurrentThingLocation(thing) || currentLocation;
+                        targetLocation = await createOffscreenDepartureLocation({
+                            thingName: entry.name,
+                            destinationRegionName,
+                            destinationLocationName,
+                            originLocation,
+                        });
+                    }
+
+                    if (!targetLocation) {
+                        console.warn(
+                            `Thing departure destination not found for ${entry.name}: region='${destinationRegionName || ""}', location='${destinationLocationName || ""}'`,
+                        );
+                        continue;
+                    }
+
+                    if (
+                        typeof targetLocation.id === "string" &&
+                        targetLocation.id.trim() === currentLocationId
+                    ) {
+                        console.warn(
+                            `Ignoring thing departure for ${entry.name}: resolved destination is the current location.`,
+                        );
+                        continue;
+                    }
+
+                    try {
+                        placeThingInLocation(thing, targetLocation);
+                    } catch (error) {
+                        console.warn(
+                            `Failed to move thing "${entry.name}" to destination '${targetLocation?.name || destinationLocationName}':`,
+                            error.message,
+                        );
+                    }
+                }
+            },
             npc_arrival_departure: async function (entries = [], context = {}) {
                 if (!Array.isArray(entries) || !entries.length) {
                     return;
@@ -8593,9 +9041,12 @@ class Events {
                     ensureNpcByName,
                     findLocationByNameLoose,
                     findRegionByNameLoose,
+                    createLocationFromEvent,
+                    createRegionStubFromEvent,
                     Location,
                     regions,
                     gameLocations,
+                    pendingRegionStubs,
                 } = this._deps;
                 const suppressedIndexes = new Set();
                 const processedNames = new SanitizedStringSet();
@@ -8787,6 +9238,13 @@ class Events {
                     if (!trimmed) {
                         return null;
                     }
+                    const resolvedRegion = resolveEventRegionByName(
+                        { regions, pendingRegionStubs, findRegionByNameLoose },
+                        trimmed,
+                    );
+                    if (resolvedRegion) {
+                        return resolvedRegion;
+                    }
                     if (typeof findRegionByNameLoose === "function") {
                         const region = findRegionByNameLoose(trimmed);
                         if (region) {
@@ -8806,6 +9264,30 @@ class Events {
                         }
                     }
                     return null;
+                };
+
+                const getRegionId = (region) => {
+                    const candidates = [
+                        region?.id,
+                        region?.targetRegionId,
+                        region?.regionId,
+                        region?.stubMetadata?.targetRegionId,
+                        region?.stubMetadata?.regionId,
+                    ];
+                    for (const candidate of candidates) {
+                        const trimmed =
+                            typeof candidate === "string" ? candidate.trim() : "";
+                        if (trimmed) {
+                            return trimmed;
+                        }
+                    }
+                    return null;
+                };
+
+                const getLocationId = (location) => {
+                    const trimmed =
+                        typeof location?.id === "string" ? location.id.trim() : "";
+                    return trimmed || null;
                 };
 
                 const lookupLocationByName = (name) => {
@@ -8911,6 +9393,123 @@ class Events {
                         }
                     }
                     return null;
+                };
+
+                const isCurrentLocationDestination = (
+                    destinationLocationName,
+                    destinationRegionName,
+                ) => {
+                    const currentLocation = context.location || null;
+                    const trimmedLocation = normalize(destinationLocationName);
+                    if (!currentLocation || !trimmedLocation) {
+                        return false;
+                    }
+                    const locationMatches =
+                        (typeof currentLocation.id === "string" &&
+                            currentLocation.id.trim().toLowerCase() ===
+                            trimmedLocation.toLowerCase()) ||
+                        (typeof currentLocation.name === "string" &&
+                            currentLocation.name.trim().toLowerCase() ===
+                            trimmedLocation.toLowerCase());
+                    if (!locationMatches) {
+                        return false;
+                    }
+                    const trimmedRegion = normalize(destinationRegionName);
+                    return !trimmedRegion ||
+                        doesLocationMatchRegion(currentLocation, trimmedRegion);
+                };
+
+                const createOffscreenDepartureLocation = async ({
+                    finalizedName,
+                    destinationRegionName,
+                    destinationLocationName,
+                    originLocation,
+                }) => {
+                    const trimmedRegion =
+                        normalizeOptionalEventLocationField(destinationRegionName);
+                    const trimmedLocation =
+                        normalizeOptionalEventLocationField(destinationLocationName);
+                    if (!trimmedLocation) {
+                        console.warn(
+                            `NPC departure for ${finalizedName} did not include a concrete destination location.`,
+                        );
+                        return null;
+                    }
+                    if (!trimmedRegion) {
+                        console.warn(
+                            `NPC departure destination not found for ${finalizedName}: region='', location='${trimmedLocation}'. ` +
+                            "A destination region is required before creating an offscreen tracking stub.",
+                        );
+                        return null;
+                    }
+                    if (!originLocation) {
+                        console.warn(
+                            `NPC departure for ${finalizedName} cannot create destination stub without an origin location.`,
+                        );
+                        return null;
+                    }
+
+                    let targetRegion = lookupRegionByName(trimmedRegion);
+
+                    if (
+                        !targetRegion &&
+                        typeof createRegionStubFromEvent === "function"
+                    ) {
+                        const regionEntryStub = await createRegionStubFromEvent({
+                            name: trimmedRegion,
+                            originLocation,
+                            description:
+                                `Offscreen destination region used to track ${finalizedName}.`,
+                            createOriginExit: false,
+                        });
+                        const regionId =
+                            getRegionId(regionEntryStub) ||
+                            getRegionId(regionEntryStub?.stubMetadata);
+                        targetRegion =
+                            lookupRegionByName(trimmedRegion) ||
+                            (regionId && pendingRegionStubs instanceof Map
+                                ? pendingRegionStubs.get(regionId) || null
+                                : null) ||
+                            (regionId
+                                ? {
+                                    id: regionId,
+                                    name: trimmedRegion,
+                                    locationIds: [],
+                                }
+                                : null);
+                    }
+
+                    if (!targetRegion) {
+                        console.warn(
+                            `NPC departure destination region could not be created for ${finalizedName}: region='${trimmedRegion}', location='${trimmedLocation}'.`,
+                        );
+                        return null;
+                    }
+
+                    const targetRegionId = getRegionId(targetRegion);
+                    if (!targetRegionId) {
+                        console.warn(
+                            `NPC departure destination region has no id for ${finalizedName}: region='${trimmedRegion}', location='${trimmedLocation}'.`,
+                        );
+                        return null;
+                    }
+
+                    if (typeof createLocationFromEvent !== "function") {
+                        console.warn(
+                            `NPC departure destination location could not be created for ${finalizedName}: createLocationFromEvent is unavailable.`,
+                        );
+                        return null;
+                    }
+
+                    return createLocationFromEvent({
+                        name: trimmedLocation,
+                        originLocation,
+                        descriptionHint:
+                            `Offscreen destination used to track ${finalizedName} after leaving the scene.`,
+                        expandStub: false,
+                        targetRegionId,
+                        createOriginExit: false,
+                    });
                 };
 
                 for (let index = 0; index < entries.length; index += 1) {
@@ -9047,9 +9646,24 @@ class Events {
                             `Processing departure of NPC: ${finalizedName} to ${entry.destination || "<unspecified>"}`,
                         );
                         const destinationLocationName =
-                            normalize(entry.destinationLocation) ||
-                            normalize(entry.destination);
-                        const destinationRegionName = normalize(entry.destinationRegion);
+                            normalizeOptionalEventLocationField(entry.destinationLocation) ||
+                            normalizeOptionalEventLocationField(entry.destination);
+                        const destinationRegionName = normalizeOptionalEventLocationField(
+                            entry.destinationRegion,
+                        );
+
+                        if (
+                            isCurrentLocationDestination(
+                                destinationLocationName,
+                                destinationRegionName,
+                            )
+                        ) {
+                            console.warn(
+                                `Ignoring NPC departure for ${finalizedName}: destination is the current location.`,
+                            );
+                            suppressedIndexes.add(index);
+                            continue;
+                        }
 
                         let targetLocation = lookupLocationByName(destinationLocationName);
                         console.log(
@@ -9076,9 +9690,30 @@ class Events {
                         }
 
                         if (!targetLocation) {
+                            targetLocation = await createOffscreenDepartureLocation({
+                                finalizedName,
+                                destinationRegionName,
+                                destinationLocationName,
+                                originLocation: npc.location || context.location || null,
+                            });
+                        }
+
+                        if (!targetLocation) {
                             console.warn(
                                 `NPC departure destination not found for ${finalizedName}: region='${destinationRegionName || ""}', location='${destinationLocationName || ""}'`,
                             );
+                            continue;
+                        }
+
+                        if (
+                            getLocationId(targetLocation) &&
+                            getLocationId(context.location) &&
+                            getLocationId(targetLocation) === getLocationId(context.location)
+                        ) {
+                            console.warn(
+                                `Ignoring NPC departure for ${finalizedName}: resolved destination is the current location.`,
+                            );
+                            suppressedIndexes.add(index);
                             continue;
                         }
 
@@ -9140,6 +9775,251 @@ class Events {
                         if (suppressedIndexes.has(i)) {
                             entries.splice(i, 1);
                         }
+                    }
+                }
+            },
+            thing_move_with_character: async function (entries = [], context = {}) {
+                if (!Array.isArray(entries) || !entries.length) {
+                    return;
+                }
+
+                const {
+                    findThingByName,
+                    findActorByName,
+                    findActorById,
+                    gameLocations,
+                } = this._deps;
+
+                if (typeof findThingByName !== "function") {
+                    throw new Error(
+                        "thing_move_with_character handler requires findThingByName dependency.",
+                    );
+                }
+
+                const normalize = (value) =>
+                    typeof value === "string" ? value.trim() : "";
+                const normalizeLower = (value) => normalize(value).toLowerCase();
+                const player = context.player || this.currentPlayer || Globals.currentPlayer || null;
+                const playerAliases = new Set([
+                    "player",
+                    "the player",
+                    "you",
+                    "self",
+                    "your character",
+                ]);
+                if (player?.name) {
+                    playerAliases.add(normalizeLower(player.name));
+                }
+
+                const resolveActorById = (id) => {
+                    const trimmedId = normalize(id);
+                    if (!trimmedId) {
+                        return null;
+                    }
+                    if (typeof findActorById === "function") {
+                        const actor = findActorById(trimmedId);
+                        if (actor) {
+                            return actor;
+                        }
+                    }
+                    if (this.players instanceof Map) {
+                        return this.players.get(trimmedId) || null;
+                    }
+                    return null;
+                };
+
+                const normalizePartyMemberList = (value) => {
+                    if (Array.isArray(value)) {
+                        return value;
+                    }
+                    if (value && typeof value.forEach === "function") {
+                        return Array.from(value);
+                    }
+                    return [];
+                };
+
+                const partyMemberIds = new Set();
+                const partyMemberNames = new SanitizedStringSet();
+                if (player && typeof player.getPartyMembers === "function") {
+                    for (const memberId of normalizePartyMemberList(player.getPartyMembers())) {
+                        const trimmedId = normalize(memberId);
+                        if (trimmedId) {
+                            partyMemberIds.add(trimmedId);
+                        }
+                        const member = resolveActorById(trimmedId);
+                        if (member?.name) {
+                            partyMemberNames.add(member.name);
+                        }
+                    }
+                }
+
+                const isPartyMember = (actor, rawName = "") => {
+                    const actorId = normalize(actor?.id);
+                    if (actorId && partyMemberIds.has(actorId)) {
+                        return true;
+                    }
+                    const actorName = normalize(actor?.name);
+                    if (actorName && partyMemberNames.has(actorName)) {
+                        return true;
+                    }
+                    return rawName && partyMemberNames.has(rawName);
+                };
+
+                const resolveActorForEvent = (rawName) => {
+                    const characterName = normalize(rawName);
+                    if (!characterName) {
+                        return null;
+                    }
+                    const lower = characterName.toLowerCase();
+                    if (playerAliases.has(lower)) {
+                        return player;
+                    }
+                    if (
+                        player?.name &&
+                        normalizeLower(player.name) === lower
+                    ) {
+                        return player;
+                    }
+                    if (typeof findActorByName === "function") {
+                        const actor = findActorByName(characterName);
+                        if (actor) {
+                            return actor;
+                        }
+                    }
+                    return null;
+                };
+
+                const resolveLocationFromCandidate = (candidate) => {
+                    if (!candidate) {
+                        return null;
+                    }
+                    const direct = this.resolveLocationCandidate(candidate);
+                    if (direct) {
+                        return direct;
+                    }
+                    const locationId = normalize(candidate?.id || candidate?.locationId);
+                    if (locationId) {
+                        const byId = this.resolveLocationCandidate(locationId);
+                        if (byId) {
+                            return byId;
+                        }
+                    }
+                    if (typeof candidate === "string" && gameLocations instanceof Map) {
+                        return gameLocations.get(candidate) || null;
+                    }
+                    return null;
+                };
+
+                const resolveActorLocation = (actor, rawName) => {
+                    if (!actor) {
+                        return null;
+                    }
+                    const isPlayerActor = actor === player || playerAliases.has(normalizeLower(rawName));
+                    if (
+                        context.location &&
+                        (isPlayerActor || isPartyMember(actor, rawName))
+                    ) {
+                        return context.location;
+                    }
+
+                    const candidates = [
+                        actor.currentLocation,
+                        actor.location,
+                        actor.locationId,
+                        actor.metadata?.locationId,
+                    ];
+                    for (const candidate of candidates) {
+                        const location = resolveLocationFromCandidate(candidate);
+                        if (location) {
+                            return location;
+                        }
+                    }
+
+                    if (isPlayerActor && context.location) {
+                        return context.location;
+                    }
+                    return null;
+                };
+
+                const resolveThingForEvent = (rawName, targetLocation) => {
+                    const thingName = normalize(rawName);
+                    if (!thingName) {
+                        return null;
+                    }
+                    const targetLocationId = normalize(targetLocation?.id);
+                    const candidates = this._findThingsByExactName(thingName);
+                    if (candidates.length) {
+                        if (targetLocationId) {
+                            return (
+                                candidates.find(
+                                    (thing) => this._thingLocationId(thing) !== targetLocationId,
+                                ) || candidates[0]
+                            );
+                        }
+                        return candidates[0];
+                    }
+                    return findThingByName(thingName) || null;
+                };
+
+                const placeThingInLocation = (thing, location) => {
+                    if (!thing?.id) {
+                        throw new Error("Cannot move a thing without an id.");
+                    }
+                    if (!location || typeof location.addThingId !== "function") {
+                        throw new Error(
+                            `Cannot move thing "${thing.name || thing.id}": destination location is invalid.`,
+                        );
+                    }
+                    if (typeof thing.putInLocation === "function") {
+                        thing.putInLocation(location.id);
+                    } else {
+                        this.addThingToLocation(thing, location);
+                    }
+                };
+
+                for (const entry of entries) {
+                    const thingName = normalize(entry?.thingName || entry?.name || entry?.thing);
+                    const characterName = normalize(
+                        entry?.characterName || entry?.character || entry?.actorName || entry?.actor,
+                    );
+                    if (!thingName || !characterName) {
+                        continue;
+                    }
+
+                    const actor = resolveActorForEvent(characterName);
+                    if (!actor) {
+                        console.warn(
+                            `thing_move_with_character could not find character "${characterName}" for thing "${thingName}".`,
+                        );
+                        continue;
+                    }
+
+                    const targetLocation = resolveActorLocation(actor, characterName);
+                    if (!targetLocation) {
+                        console.warn(
+                            `thing_move_with_character could not resolve destination location for character "${characterName}" moving thing "${thingName}".`,
+                        );
+                        continue;
+                    }
+
+                    const thing = resolveThingForEvent(thingName, targetLocation);
+                    if (!thing) {
+                        console.warn(
+                            `thing_move_with_character could not find existing thing "${thingName}".`,
+                        );
+                        continue;
+                    }
+
+                    entry.thingName = thing.name || thingName;
+                    entry.characterName = actor.name || characterName;
+
+                    try {
+                        placeThingInLocation(thing, targetLocation);
+                    } catch (error) {
+                        console.warn(
+                            `Failed to move thing "${entry.thingName}" with character "${entry.characterName}" to "${targetLocation.name || targetLocation.id}":`,
+                            error.message,
+                        );
                     }
                 }
             },

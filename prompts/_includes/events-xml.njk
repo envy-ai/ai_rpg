@@ -354,17 +354,59 @@ Use this when an animate entity gains or loses a temporary status effect that is
 </statusEffectChange>
 ```
 
-### `npc_arrival_departure`
+### `npc_arrival`
 
-Use this when an animate entity arrives at the current location from elsewhere, newly appears in the scene, or leaves the scene for another destination. For departures, include the best-known destination region and location. If a party member stops accompanying the player and goes to a destination, use this event so they can leave the party before moving there. Do not use this for party members simply remaining with the player.
+Use this when an animate entity arrives at the current location from elsewhere, or newly appears in the scene.
 
 ```xml
-<npcArrivalDeparture>
+<npcArrival>
   <npcName>Exact NPC or entity name</npcName>
-  <action>arrived|left</action>
-  <destinationRegion>Destination region, if leaving</destinationRegion>
-  <destinationLocation>Destination location, if leaving</destinationLocation>
-</npcArrivalDeparture>
+</npcArrival>
+```
+
+### `npc_departure`
+
+Use this when an animate entity leaves the scene for another destination. Include a concrete best-known destination region and destination location. The departure destination must not be `unknown`, blank, or the current location; if the exact destination is not established, choose the most plausible concrete region and location so the character can be tracked offscreen. If a party member stops accompanying the player and goes to a destination, use this event so they can leave the party before moving there. Do not use this for party members simply remaining with the player.
+
+```xml
+<npcDeparture>
+  <npcName>Exact NPC or entity name</npcName>
+  <destinationRegion>Destination region</destinationRegion>
+  <destinationLocation>Destination location</destinationLocation>
+</npcDeparture>
+```
+
+### `thing_arrival`
+
+Use this only when an existing, non-animate entity (specifically item or scenery) arrives at the current location from elsewhere. Do not use this for new items or scenery that appear in the scene for the first time; use `itemAppear` or `sceneryAppear` instead. Do not use this for animate entities; use `npcArrival` instead.
+
+```xml
+<thingArrival>
+  <thingName>Exact thing name</thingName>
+</thingArrival>
+```
+
+### `thing_departure`
+
+Use this when a non-animate entity leaves the scene for another destination (or more likely is moved or driven from the scene under someone else's power or control). Include a concrete best-known destination region and destination location. The departure destination must not be `unknown`, blank, or the current location; if the exact destination is not established, choose the most plausible concrete region and location so the thing can be tracked offscreen.
+
+```xml
+<thingDeparture>
+  <thingName>Exact thing name</thingName>
+  <destinationRegion>Destination region</destinationRegion>
+  <destinationLocation>Destination location</destinationLocation>
+</thingDeparture>
+```
+
+### `thing_move_with_character`
+
+Use this when a non-animate entity moves with a character from one location to another, such as being carried, driven, or otherwise moved by a character. Include the character's name and the destination region and location. Do not use this for animate entities; use `npcDeparture` and `npcArrival` instead. If the thing is moving with multiple characters traveling to the same location, just pick a character.
+
+```
+<thingMoveWithCharacter>
+  <thingName>Exact thing name</thingName>
+  <characterName>Exact character name</characterName>
+</thingMoveWithCharacter>
 ```
 
 ### `npc_first_appearance`
@@ -375,6 +417,17 @@ Use this as a catch-all for physically present entities mentioned or acting in t
 <npcFirstAppearance>
   <npcName>Exact physically present entity name</npcName>
 </npcFirstAppearance>
+```
+
+### `mystery_box_mention`
+
+Use this when an unexplained plot hook is mentioned in the text that should be tracked as a mystery box. The name should be a short phrase describing the hook, and the context should briefly explain what it is and why it's mysterious. Do not use this for ordinary plot points that are explained or resolved within the text; this is only for things that are explicitly unexplained or that raise questions without answers in the text. 
+
+```xml
+<mysteryBoxMention>
+  <name>Short phrase describing the hook (could be the name of a person, item, organization, event, etc.)</name>
+  <context>One sentence describing the context of the mention</context>
+</mysteryBoxMention>
 ```
 
 ### `party_change`
@@ -564,13 +617,12 @@ Use this to indicate whether the player should currently be considered in physic
   <value>true|false</value>
 </inCombat>
 ```
-```
 
 
 ## End XML schema
 
 <task>
-1. Go through the list of tags above and, for each tag, make an informal non-xml list of any events in the text that would quality. If unsure if something is an event, include it.
+1. Go through the list of tags above and, for each tag, make an informal non-xml list of any events in the text that would quality. If unsure if something is an event, include it. In some cases, events must be *inferred* from the text rather than explicitly stated. In those cases, annotate your XML for that inference with a note in <!-- XML comment --> format with a sentence or two explaining the inference and the text that supports it. The ultimate purpose of event extraction is to keep the game state up to date with the prose.
 
 2. For any events that you listed more than once, determine which is the best fit. Err on the side of keeping events rather than omitting them entirely; just remove duplicates.
 

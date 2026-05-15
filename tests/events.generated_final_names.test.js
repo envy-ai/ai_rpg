@@ -55,6 +55,42 @@ test('item_appear writes regenerated final item names back to structured events'
     assert.equal(Events.newItems.has('Bloodglass Knife'), true);
 });
 
+test('item_appear still generates items during NPC turns when player movement is locked', async () => {
+    const previousProcessedMove = Globals.processedMove;
+    let generatedItemNames = [];
+    try {
+        setupEvents({
+            generateItemsByNames: async ({ itemNames }) => {
+                generatedItemNames = itemNames.slice();
+                return itemNames.map((name, index) => ({ id: `thing-${index}`, name }));
+            }
+        });
+        Globals.processedMove = true;
+
+        const structured = {
+            parsed: {
+                item_appear: [{
+                    name: 'Military-Grade Pulse Rifle',
+                    quantity: 6,
+                    description: 'Factory-greased military pulse rifles.'
+                }]
+            },
+            rawEntries: {}
+        };
+
+        await Events.applyEventOutcomes(structured, {
+            location: createLocation(),
+            isNpcTurn: true
+        });
+
+        assert.deepEqual(generatedItemNames, ['Military-Grade Pulse Rifle']);
+        assert.equal(structured.parsed.item_appear[0].name, 'Military-Grade Pulse Rifle');
+        assert.equal(Events.newItems.has('Military-Grade Pulse Rifle'), true);
+    } finally {
+        Globals.processedMove = previousProcessedMove;
+    }
+});
+
 test('scenery_appear and harvest_gather preserve final generated names for summaries', async () => {
     const actor = {
         id: 'actor-ada',
@@ -94,6 +130,40 @@ test('scenery_appear and harvest_gather preserve final generated names for summa
     assert.equal(structured.parsed.scenery_appear[0], 'Ironwood Training Yard');
     assert.equal(structured.parsed.harvest_gather[0].item, 'Redleaf Herb');
     assert.equal(structured.parsed.harvest_gather[0].originalItem, 'Glimmering Herb');
+});
+
+test('scenery_appear still generates scenery during NPC turns when player movement is locked', async () => {
+    const previousProcessedMove = Globals.processedMove;
+    let generatedItemNames = [];
+    let generatedOptions = null;
+    try {
+        setupEvents({
+            generateItemsByNames: async ({ itemNames, options }) => {
+                generatedItemNames = itemNames.slice();
+                generatedOptions = options || null;
+                return itemNames.map((name, index) => ({ id: `scenery-${index}`, name }));
+            }
+        });
+        Globals.processedMove = true;
+
+        const structured = {
+            parsed: {
+                scenery_appear: ['Open Armory Vault']
+            },
+            rawEntries: {}
+        };
+
+        await Events.applyEventOutcomes(structured, {
+            location: createLocation(),
+            isNpcTurn: true
+        });
+
+        assert.deepEqual(generatedItemNames, ['Open Armory Vault']);
+        assert.equal(generatedOptions?.treatAsScenery, true);
+        assert.equal(Events.newItems.has('Open Armory Vault'), true);
+    } finally {
+        Globals.processedMove = previousProcessedMove;
+    }
 });
 
 test('item_to_npc tracks only the finalized generated character name', async () => {

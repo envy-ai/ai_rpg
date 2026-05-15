@@ -142,6 +142,8 @@ Loaded on the chat page:
   `.view-grid-mode`, `.view-grid-mode-large`, and `.view-grid-mode-small`.
   Crafting cards also add a red equipped-state outline via `.crafting-inventory-card.is-equipped`
   so equipped items are visually blocked from slot assignment until unequipped.
+  `.crafting-inventory-card.is-non-empty-container` greys out non-empty containers that must be emptied
+  before they can be selected as crafting inputs.
   The crafting inventory grid also carries the same `8px` top separation below filters as the
   player inventory grid for consistent spacing after the radio filter row.
 - NPC memories/goals editors share `npc-list-editor-*` base classes for modal layout,

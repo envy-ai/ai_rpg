@@ -7368,9 +7368,16 @@ function parseSceneSummaryResponse(responseText, indexMap) {
         throw new Error('Scene summary index map is missing.');
     }
 
+    // The scene-summary prompt intentionally asks for Step 1/2 prose before Step 3 XML.
+    // Parse only the final <scenes> block so XML-ish brainstorming text cannot break the parser.
+    const scenesBlock = Utils.extractFinalXmlRootBlock(responseText, 'scenes');
+    if (!scenesBlock) {
+        throw new Error('Scene summary response contained no <scenes> block.');
+    }
+
     let doc;
     try {
-        doc = Utils.parseXmlDocument(`<root>${responseText}</root>`, 'text/xml');
+        doc = Utils.parseXmlDocument(scenesBlock, 'text/xml');
         const parserError = doc.getElementsByTagName('parsererror')[0];
         if (parserError) {
             throw new Error(parserError.textContent || 'Scene summary response contained parser errors.');
@@ -7592,6 +7599,9 @@ async function summarizeScenesForHistoryRange({ chatHistory, startIndex, endInde
             messages,
             metadataLabel: 'scene_summarize',
             runInBackground: true,
+            // Scene summaries include deliberate non-XML reasoning before the final <scenes> block.
+            // parseSceneSummaryResponse extracts and validates that block after the model returns.
+            validateXML: false,
             maxTokens: 20000
         };
 
@@ -11876,6 +11886,42 @@ imagePromptEnv.addFilter('json', function (str) {
     return JSON.stringify(str).slice(1, -1);
 });
 
+function splitUnsafeCdataTerminatorsForTag(xmlContent, tagName) {
+    const openerPattern = new RegExp(`(<\\s*${tagName}\\b[^>]*>\\s*<!\\[CDATA\\[)`, 'gi');
+    let output = '';
+    let cursor = 0;
+    let openerMatch = null;
+
+    while ((openerMatch = openerPattern.exec(xmlContent)) !== null) {
+        const bodyStart = openerMatch.index + openerMatch[0].length;
+        const closingPattern = new RegExp(`\\]\\]>\\s*<\\/\\s*${tagName}\\s*>`, 'gi');
+        closingPattern.lastIndex = bodyStart;
+        const closingMatch = closingPattern.exec(xmlContent);
+        if (!closingMatch) {
+            break;
+        }
+
+        output += xmlContent.slice(cursor, bodyStart);
+        const body = xmlContent.slice(bodyStart, closingMatch.index);
+        // CDATA cannot contain the literal "]]>" sequence. Dynamic story/game text can,
+        // so split only interior occurrences into adjacent CDATA sections while preserving
+        // the exact text content returned by Utils.extractXmlNodeContent(...).
+        output += body.replace(/]]>/g, ']]]]><![CDATA[>');
+        output += xmlContent.slice(closingMatch.index, closingPattern.lastIndex);
+        cursor = closingPattern.lastIndex;
+        openerPattern.lastIndex = cursor;
+    }
+
+    return output + xmlContent.slice(cursor);
+}
+
+function sanitizeXmlTemplateCdataSections(xmlContent) {
+    return ['generationPrompt', 'systemPrompt'].reduce(
+        (content, tagName) => splitUnsafeCdataTerminatorsForTag(content, tagName),
+        xmlContent
+    );
+}
+
 // Function to parse XML template and extract prompts
 function parseXMLTemplate(xmlContent) {
     try {
@@ -11887,7 +11933,7 @@ function parseXMLTemplate(xmlContent) {
             xmlContent = String(xmlContent);
         }
 
-        const doc = Utils.parseXmlDocument(xmlContent, 'text/xml');
+        const doc = Utils.parseXmlDocument(sanitizeXmlTemplateCdataSections(xmlContent), 'text/xml');
 
         // Check for parsing errors
         const errorNode = doc.getElementsByTagName('parsererror')[0];
