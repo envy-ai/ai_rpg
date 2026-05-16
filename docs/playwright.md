@@ -87,7 +87,7 @@ npm run playwright:settings:screenshot
 This captures desktop/mobile screenshots and writes `tmp/playwright_settings_capture/result.json`.
 The script fails if the redesigned settings layout is not present.
 
-Settings persistence regression (create -> rename-as-new-id -> delete original -> refresh verification):
+Settings persistence regression (create -> rename-as-new-id -> delete original -> refresh verification, plus Calendar tab saved-calendar persistence):
 
 ```bash
 npm run test:e2e:headless -- tests/e2e/settings.persistence.spec.js
@@ -96,6 +96,7 @@ npm run test:e2e:headless -- tests/e2e/settings.persistence.spec.js
 Notes:
 - The test uses the selected-setting action panel (`Edit` / `Delete`) rather than deprecated inline row action buttons.
 - It validates API-level persistence state in addition to UI interactions.
+- It also verifies the Worlds editor Calendar tab can load the explicit Gregorian default and save it as `SettingInfo.calendarDefinition`.
 
 Headed Chromium with virtual display (Linux servers/containers):
 

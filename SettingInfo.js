@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const yaml = require('js-yaml');
 const fs = require('fs');
 const path = require('path');
+const Globals = require('./Globals.js');
 const { normalizeUnifiedTonalScaleSelections } = require('./UnifiedTonalScale.js');
 
 /**
@@ -39,6 +40,7 @@ class SettingInfo {
   #defaultExistingSkills;
   #defaultFactionCount;
   #defaultFactions;
+  #calendarDefinition;
   #unifiedTonalScale;
   #createdAt;
   #lastUpdated;
@@ -264,6 +266,31 @@ class SettingInfo {
     }));
   }
 
+  static #normalizeCalendarDefinition(value) {
+    if (value === null || value === undefined || value === '') {
+      return null;
+    }
+
+    let source = value;
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (!trimmed) {
+        return null;
+      }
+      try {
+        source = JSON.parse(trimmed);
+      } catch (error) {
+        throw new Error(`calendarDefinition must be valid JSON: ${error.message}`);
+      }
+    }
+
+    try {
+      return Globals.normalizeCalendarDefinition(source);
+    } catch (error) {
+      throw new Error(`calendarDefinition is invalid: ${error.message}`);
+    }
+  }
+
   // Static private method for generating unique IDs
   static #generateId() {
     const timestamp = Date.now();
@@ -344,6 +371,7 @@ class SettingInfo {
     this.#defaultExistingSkills = SettingInfo.#normalizeExistingSkills(options.defaultExistingSkills);
     this.#defaultFactionCount = SettingInfo.#normalizeFactionCount(options.defaultFactionCount);
     this.#defaultFactions = SettingInfo.#normalizeFactions(options.defaultFactions);
+    this.#calendarDefinition = SettingInfo.#normalizeCalendarDefinition(options.calendarDefinition);
     this.#unifiedTonalScale = normalizeUnifiedTonalScaleSelections(options.unifiedTonalScale);
     this.#availableClasses = SettingInfo.#normalizeStringList(options.availableClasses);
     this.#availableRaces = SettingInfo.#normalizeStringList(options.availableRaces);
@@ -392,6 +420,11 @@ class SettingInfo {
   get defaultExistingSkills() { return [...this.#defaultExistingSkills]; }
   get defaultFactionCount() { return this.#defaultFactionCount; }
   get defaultFactions() { return this.#defaultFactions.map(faction => JSON.parse(JSON.stringify(faction))); }
+  get calendarDefinition() {
+    return this.#calendarDefinition
+      ? JSON.parse(JSON.stringify(this.#calendarDefinition))
+      : null;
+  }
   get unifiedTonalScale() { return JSON.parse(JSON.stringify(this.#unifiedTonalScale)); }
   get createdAt() { return this.#createdAt; }
   get lastUpdated() { return this.#lastUpdated; }
@@ -564,6 +597,11 @@ class SettingInfo {
     this.#updateTimestamp();
   }
 
+  set calendarDefinition(value) {
+    this.#calendarDefinition = SettingInfo.#normalizeCalendarDefinition(value);
+    this.#updateTimestamp();
+  }
+
   set unifiedTonalScale(value) {
     this.#unifiedTonalScale = normalizeUnifiedTonalScaleSelections(value);
     this.#updateTimestamp();
@@ -638,7 +676,7 @@ class SettingInfo {
       }
 
       if (key in this) {
-        if (key === 'unifiedTonalScale') {
+        if (key === 'unifiedTonalScale' || key === 'calendarDefinition') {
           this[key] = value;
           return;
         }
@@ -684,6 +722,9 @@ class SettingInfo {
       defaultExistingSkills: [...this.#defaultExistingSkills],
       defaultFactionCount: this.#defaultFactionCount,
       defaultFactions: this.#defaultFactions.map(faction => JSON.parse(JSON.stringify(faction))),
+      calendarDefinition: this.#calendarDefinition
+        ? JSON.parse(JSON.stringify(this.#calendarDefinition))
+        : null,
       unifiedTonalScale: JSON.parse(JSON.stringify(this.#unifiedTonalScale)),
       availableClasses: [...this.#availableClasses],
       availableRaces: [...this.#availableRaces],
@@ -741,6 +782,9 @@ class SettingInfo {
       imagePromptPrefixScenery: this.#imagePromptPrefixScenery,
       playerStartingLevel: this.#playerStartingLevel,
       defaultStartingCurrency: this.#defaultStartingCurrency,
+      calendarDefinition: this.#calendarDefinition
+        ? JSON.parse(JSON.stringify(this.#calendarDefinition))
+        : null,
       unifiedTonalScale: JSON.parse(JSON.stringify(this.#unifiedTonalScale)),
       settingName: this.#name,
       settingDescription: this.#description,

@@ -4,6 +4,9 @@ const assert = require('node:assert/strict');
 const Events = require('../Events.js');
 const Globals = require('../Globals.js');
 const LLMClient = require('../LLMClient.js');
+const IdGenerator = require('../IdGenerator.js');
+const MysteryBox = require('../MysteryBox.js');
+const MysteryThread = require('../MysteryThread.js');
 
 test('XML event parser aggregates repeated tags through legacy parser shapes', () => {
     const parsed = Events._parseXmlEventCheckResponse(`
@@ -80,6 +83,7 @@ test('XML event parser converts core camelCase tags to existing event keys', () 
   <thingDeparture><thingName>Signal Beacon</thingName><destinationRegion>Town</destinationRegion><destinationLocation>Watchtower</destinationLocation></thingDeparture>
   <thingMoveWithCharacter><thingName>Handcart</thingName><characterName>Wanderer</characterName></thingMoveWithCharacter>
   <npcFirstAppearance><npcName>Mysterious Cat</npcName></npcFirstAppearance>
+  <mysteryBoxMention><name>Captain Ellison</name><context>Siggy's recovered protocol phrase points to Ellison's hidden plan.</context></mysteryBoxMention>
   <partyChange><npcName>Ada</npcName><action>joined</action></partyChange>
   <tradeAvailability><npcName>Ada</npcName><willingToTrade>false</willingToTrade><reason>The offer insulted her.</reason></tradeAvailability>
   <environmentalStatusDamage><actorName>Wanderer</actorName><effect>damage</effect><severity>medium</severity><reason>Smoke inhalation.</reason></environmentalStatusDamage>
@@ -130,6 +134,12 @@ test('XML event parser converts core camelCase tags to existing event keys', () 
         ]);
         assert.deepEqual(events.thing_move_with_character, [
             { thingName: 'Handcart', characterName: 'Wanderer' }
+        ]);
+        assert.deepEqual(events.mystery_box_mention, [
+            {
+                name: 'Captain Ellison',
+                context: "Siggy's recovered protocol phrase points to Ellison's hidden plan."
+            }
         ]);
         assert.deepEqual(events.party_change[0], { name: 'Ada', action: 'joined' });
         assert.deepEqual(events.trade_availability[0], {
@@ -241,6 +251,358 @@ test('XML event parser rejects invalid travel boundaries', () => {
         () => Events._parseXmlEventCheckResponse('<events><moveLocation><destinationName>A</destinationName></moveLocation><arriveAtLocation/><moveLocation><destinationName>B</destinationName></moveLocation></events>'),
         /multiple travel boundaries/i
     );
+});
+
+test('mystery_box_mention event runs update prompt and creates a mystery box', async () => {
+    const previousChatCompletion = LLMClient.chatCompletion;
+    const previousLogPrompt = LLMClient.logPrompt;
+    const previousDeps = Events._deps;
+    const previousTimeout = Events._baseTimeout;
+    const previousParsers = Events._parsers;
+    const previousAggregators = Events._aggregators;
+    const previousHandlers = Events._handlers;
+    const renderedContexts = [];
+    const loggedPrefixes = [];
+
+    IdGenerator.reset();
+    MysteryBox.clear();
+    MysteryThread.clear();
+
+    try {
+        LLMClient.chatCompletion = async () => `<mysteryBoxUpdate>
+  <action>create</action>
+  <thread>
+    <name>Ellison Conspiracy</name>
+    <status>active</status>
+    <summary>Ellison used ELLISON-SEVEN as an evidence trigger.</summary>
+    <constraints>
+      <constraint>ELLISON-SEVEN is tied to Ellison.</constraint>
+    </constraints>
+  </thread>
+  <name>Captain Ellison</name>
+  <keys>
+    <key>Captain Ellison</key>
+    <key>ELLISON-SEVEN</key>
+  </keys>
+  <text>Ellison used ELLISON-SEVEN as a private verification protocol and evidence trigger.</text>
+</mysteryBoxUpdate>`;
+        LLMClient.logPrompt = (entry) => {
+            loggedPrefixes.push(entry?.prefix || null);
+        };
+        Events.initialize({
+            promptEnv: {
+                render: (_template, context) => {
+                    renderedContexts.push(context);
+                    return JSON.stringify(context);
+                }
+            },
+            parseXMLTemplate: (rendered) => ({
+                systemPrompt: 'system',
+                generationPrompt: rendered
+            }),
+            prepareBasePromptContext: async () => ({
+                setting: { name: 'Test Setting' }
+            }),
+            getConfig: () => ({ ai: {} }),
+            getCurrentPlayer: () => ({ name: 'Wanderer' }),
+            findActorByName: () => null,
+            ensureNpcByName: async () => null
+        });
+
+        await Events.applyEventOutcomes({
+            rawEntries: {
+                mystery_box_mention: "Captain Ellison → Siggy's recovered protocol phrase points to Ellison."
+            },
+            parsed: {
+                mystery_box_mention: [
+                    {
+                        name: 'Captain Ellison',
+                        context: "Siggy's recovered protocol phrase points to Ellison."
+                    }
+                ]
+            }
+        }, {
+            textToCheck: 'Siggy says the phrase ELLISON-SEVEN unlocked the vault.',
+            actionText: 'Ask Siggy what Ellison wanted him to remember.',
+            sourceEntryId: 'entry_7'
+        });
+
+        const box = MysteryBox.getByKey('ELLISON SEVEN');
+        assert.ok(box);
+        assert.equal(box.name, 'Captain Ellison');
+        assert.match(box.text, /private verification protocol/);
+        assert.equal(box.mentions.length, 1);
+        assert.equal(box.mentions[0].sourceEntryId, 'entry_7');
+        const thread = MysteryThread.getByKey('Ellison Conspiracy');
+        assert.ok(thread);
+        assert.equal(thread.status, 'active');
+        assert.deepEqual(thread.boxIds, [box.id]);
+        assert.match(thread.summary, /evidence trigger/);
+        assert.equal(renderedContexts[0].promptType, 'mystery-box-update');
+        assert.equal(renderedContexts[0].mysteryBoxMention.name, 'Captain Ellison');
+        assert.equal(renderedContexts[0].mysteryThreadMaxActive, 2);
+        assert.equal(loggedPrefixes.includes('mystery_box_update'), true);
+    } finally {
+        Events._deps = previousDeps;
+        Events._baseTimeout = previousTimeout;
+        Events._parsers = previousParsers;
+        Events._aggregators = previousAggregators;
+        Events._handlers = previousHandlers;
+        LLMClient.chatCompletion = previousChatCompletion;
+        LLMClient.logPrompt = previousLogPrompt;
+        MysteryBox.clear();
+        MysteryThread.clear();
+    }
+});
+
+test('mystery box update parser requires name as canonical key', () => {
+    assert.throws(
+        () => Events._parseMysteryBoxUpdateResponse(`<mysteryBoxUpdate>
+  <action>create</action>
+  <keys>
+    <key>ELLISON-SEVEN</key>
+  </keys>
+  <text>Ellison used ELLISON-SEVEN as a private verification protocol.</text>
+</mysteryBoxUpdate>`),
+        /requires non-empty <name>/i
+    );
+});
+
+test('mystery box update parser accepts skip without creating a box', () => {
+    const parsed = Events._parseMysteryBoxUpdateResponse(`<mysteryBoxUpdate>
+  <action>skip</action>
+  <reason>Active mystery threads are full and this does not belong to one.</reason>
+</mysteryBoxUpdate>`);
+
+    assert.equal(parsed.action, 'skip');
+    assert.match(parsed.reason, /threads are full/);
+});
+
+test('mystery_box_mention update prompt can use mystery box search tool', async () => {
+    const previousChatCompletion = LLMClient.chatCompletion;
+    const previousLogPrompt = LLMClient.logPrompt;
+    const previousDeps = Events._deps;
+    const previousTimeout = Events._baseTimeout;
+    const previousParsers = Events._parsers;
+    const previousAggregators = Events._aggregators;
+    const previousHandlers = Events._handlers;
+    const toolNamesByRound = [];
+
+    IdGenerator.reset();
+    MysteryBox.clear();
+    MysteryThread.clear();
+    const existingBox = new MysteryBox({
+        name: 'Captain Ellison',
+        keys: ['ELLISON-SEVEN'],
+        text: 'Initial private note.'
+    });
+    new MysteryThread({
+        name: 'Ellison Conspiracy',
+        status: 'active',
+        summary: 'Ellison used ELLISON-SEVEN.',
+        constraints: ['ELLISON-SEVEN belongs to Ellison.'],
+        boxIds: [existingBox.id]
+    });
+
+    const responses = [
+        {
+            data: {
+                choices: [
+                    {
+                        message: {
+                            content: '',
+                            tool_calls: [
+                                {
+                                    id: 'call_find_mystery',
+                                    type: 'function',
+                                    function: {
+                                        name: 'findMysteryBoxes',
+                                        arguments: JSON.stringify({ query: 'Ellison' })
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            data: {
+                choices: [
+                    {
+                        message: {
+                            content: `<mysteryBoxUpdate>
+  <action>update</action>
+  <thread>
+    <name>Ellison Conspiracy</name>
+    <status>active</status>
+    <summary>Ellison used ELLISON-SEVEN as a private verification protocol and evidence trigger.</summary>
+    <constraints>
+      <constraint>ELLISON-SEVEN belongs to Ellison.</constraint>
+    </constraints>
+  </thread>
+  <name>Captain Ellison</name>
+  <keys>
+    <key>ELLISON-SEVEN</key>
+    <key>Omega-7 captain</key>
+  </keys>
+  <text>Ellison used ELLISON-SEVEN as a private verification protocol and evidence trigger.</text>
+</mysteryBoxUpdate>`,
+                            tool_calls: []
+                        }
+                    }
+                ]
+            }
+        }
+    ];
+
+    try {
+        LLMClient.chatCompletion = async (options) => {
+            toolNamesByRound.push((options.tools || []).map((tool) => tool?.function?.name).filter(Boolean));
+            const response = responses.shift();
+            assert.ok(response, 'Expected a queued LLM response.');
+            options.onResponse?.(response);
+            return response.data.choices[0].message.content || '';
+        };
+        LLMClient.logPrompt = () => {};
+        Events.initialize({
+            promptEnv: {
+                render: (_template, context) => JSON.stringify(context)
+            },
+            parseXMLTemplate: (rendered) => ({
+                systemPrompt: 'system',
+                generationPrompt: rendered
+            }),
+            prepareBasePromptContext: async () => ({
+                setting: { name: 'Test Setting' }
+            }),
+            getConfig: () => ({ ai: {} }),
+            getCurrentPlayer: () => ({ name: 'Wanderer' }),
+            findActorByName: () => null,
+            ensureNpcByName: async () => null
+        });
+
+        await Events.applyEventOutcomes({
+            rawEntries: {
+                mystery_box_mention: "Captain Ellison → Siggy's recovered protocol phrase points to Ellison."
+            },
+            parsed: {
+                mystery_box_mention: [
+                    {
+                        name: 'Captain Ellison',
+                        context: "Siggy's recovered protocol phrase points to Ellison."
+                    }
+                ]
+            }
+        }, {
+            textToCheck: 'Siggy says the phrase ELLISON-SEVEN unlocked the vault.',
+            actionText: 'Ask Siggy what Ellison wanted him to remember.',
+            sourceEntryId: 'entry_8'
+        });
+
+        assert.ok(toolNamesByRound[0].includes('findMysteryBoxes'));
+        assert.ok(toolNamesByRound[0].includes('getMysteryBox'));
+        assert.ok(toolNamesByRound[0].includes('listMysteryBoxes'));
+        const box = MysteryBox.getByKey('Omega-7 captain');
+        assert.ok(box);
+        assert.equal(box.name, 'Captain Ellison');
+        assert.match(box.text, /evidence trigger/);
+        assert.equal(box.mentions[0].sourceEntryId, 'entry_8');
+        const thread = MysteryThread.getByKey('Ellison Conspiracy');
+        assert.ok(thread);
+        assert.equal(thread.boxIds.includes(box.id), true);
+        assert.match(thread.summary, /evidence trigger/);
+    } finally {
+        Events._deps = previousDeps;
+        Events._baseTimeout = previousTimeout;
+        Events._parsers = previousParsers;
+        Events._aggregators = previousAggregators;
+        Events._handlers = previousHandlers;
+        LLMClient.chatCompletion = previousChatCompletion;
+        LLMClient.logPrompt = previousLogPrompt;
+        MysteryBox.clear();
+        MysteryThread.clear();
+    }
+});
+
+test('mystery_box_mention skips unrelated mentions when active thread capacity is full', async () => {
+    const previousChatCompletion = LLMClient.chatCompletion;
+    const previousLogPrompt = LLMClient.logPrompt;
+    const previousDeps = Events._deps;
+    const previousTimeout = Events._baseTimeout;
+    const previousParsers = Events._parsers;
+    const previousAggregators = Events._aggregators;
+    const previousHandlers = Events._handlers;
+    const renderedContexts = [];
+
+    IdGenerator.reset();
+    MysteryBox.clear();
+    MysteryThread.clear();
+    new MysteryThread({
+        name: 'Existing Active Thread',
+        status: 'active',
+        summary: 'A different active mystery.',
+        constraints: ['Only this thread is active.']
+    });
+
+    try {
+        LLMClient.chatCompletion = async () => `<mysteryBoxUpdate>
+  <action>skip</action>
+  <reason>Active mystery thread capacity is full and this unrelated mention does not belong to any active thread.</reason>
+</mysteryBoxUpdate>`;
+        LLMClient.logPrompt = () => {};
+        Events.initialize({
+            promptEnv: {
+                render: (_template, context) => {
+                    renderedContexts.push(context);
+                    return JSON.stringify(context);
+                }
+            },
+            parseXMLTemplate: (rendered) => ({
+                systemPrompt: 'system',
+                generationPrompt: rendered
+            }),
+            prepareBasePromptContext: async () => ({
+                setting: { name: 'Test Setting' }
+            }),
+            getConfig: () => ({ ai: {}, mystery_threads: { max_active: 1 } }),
+            getCurrentPlayer: () => ({ name: 'Wanderer' }),
+            findActorByName: () => null,
+            ensureNpcByName: async () => null
+        });
+
+        await Events.applyEventOutcomes({
+            rawEntries: {
+                mystery_box_mention: 'Unrelated Clue → A new unrelated mystery appears.'
+            },
+            parsed: {
+                mystery_box_mention: [
+                    {
+                        name: 'Unrelated Clue',
+                        context: 'A new unrelated mystery appears.'
+                    }
+                ]
+            }
+        }, {
+            textToCheck: 'A new unrelated clue appears.',
+            sourceEntryId: 'entry_skip'
+        });
+
+        assert.equal(MysteryBox.getAll().length, 0);
+        assert.equal(MysteryThread.getAll().length, 1);
+        assert.equal(renderedContexts[0].mysteryThreadCapacityFull, true);
+        assert.equal(renderedContexts[0].mysteryThreadMaxActive, 1);
+    } finally {
+        Events._deps = previousDeps;
+        Events._baseTimeout = previousTimeout;
+        Events._parsers = previousParsers;
+        Events._aggregators = previousAggregators;
+        Events._handlers = previousHandlers;
+        LLMClient.chatCompletion = previousChatCompletion;
+        LLMClient.logPrompt = previousLogPrompt;
+        MysteryBox.clear();
+        MysteryThread.clear();
+    }
 });
 
 test('runEventChecks defaults to XML events plus dedicated need-bar prompt without grouped prompts', async () => {

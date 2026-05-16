@@ -114,6 +114,17 @@ npc_generation:
 
 Location, region, and single-NPC generation prompts may return `<quantity>`. Missing or blank values default to `1`; non-integer text is warning-logged after stripping non-numeric characters; values are clamped to `1..npc_generation.max_quantity`. Quantity groups expand only after name cleanup, progression, abilities, inventory generation, and equipment assignment, so each numbered NPC receives copied numbered gear.
 
+## Mystery Threads
+
+`mystery_threads.max_active` caps how many active private mystery threads are injected into base-context prompts and how many automatic mystery threads the reactive mystery-box flow can keep active.
+
+```yaml
+mystery_threads:
+  max_active: 2
+```
+
+Validation requires a non-negative integer. `0` disables active mystery-thread base-context injection and forces automatic mystery tracking to skip rather than create new active mystery continuity.
+
 ## AI backend selection
 
 `config.ai.backend` selects which text-generation transport the game uses.

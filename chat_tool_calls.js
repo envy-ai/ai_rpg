@@ -5,10 +5,36 @@ const {
     getSceneSummaryIndexText,
     shouldIncludeEntryInSceneSummaryIndex
 } = require('./scene_summary_index.js');
+const MysteryBox = require('./MysteryBox.js');
+const MysteryThread = require('./MysteryThread.js');
 
 const CHAT_TOOL_MAX_ROUNDS = 8;
 const MORE_INFO_MAX_MATCHES = 50;
 const CACHED_CHECK_TOOL_CALL_NOTE = 'You already made this tool call. Do not re-run tool calls for the same checks that you made in earlier drafts.';
+const MORE_INFO_COMPACT_OMITTED_FIELDS = new Set([
+    'needBars',
+    'needBarRatesAppliedAt',
+    'healthRegenAppliedAt',
+    'partyMemoryHistorySegments',
+    'partyMembershipChangedThisTurn',
+    'partyMembersAddedThisTurn',
+    'partyMembersRemovedThisTurn',
+    'turnsSincePartyMemoryGeneration',
+    'previousLocationId',
+    'lastActionWasTravel',
+    'consecutiveTravelActions',
+    'elapsedTime',
+    'pendingAbilityOptionsByLevel',
+    'thingListViewPreferences',
+    'locationBlueprints',
+    'randomEvents',
+    'characterConcepts',
+    'enemyConcepts',
+    'weatherState',
+    'imageVariants',
+    'stubMetadata',
+    'generationHints'
+]);
 const UPDATE_CHARACTER_FIELD_NAMES = Object.freeze([
     'name',
     'description',
@@ -177,7 +203,7 @@ const CHAT_TOOL_DEFINITIONS = Object.freeze([
         type: 'function',
         function: {
             name: 'moreInfo',
-            description: 'Return direct toJSON-style JSON objects for NPCs, things, locations, and regions whose names contain the given query substring.',
+            description: 'Return compact JSON objects for NPCs, things, locations, and regions whose names contain the given query substring. Use includeFullState only for debugging raw persisted/runtime fields.',
             parameters: {
                 type: 'object',
                 properties: {
@@ -189,6 +215,10 @@ const CHAT_TOOL_DEFINITIONS = Object.freeze([
                         type: 'string',
                         enum: ['character', 'thing', 'location', 'region'],
                         description: 'Optional info category filter. Omit to search all categories.'
+                    },
+                    includeFullState: {
+                        type: 'boolean',
+                        description: 'Optional. Defaults to false. When true, returns raw full toJSON payloads including bulky runtime fields; otherwise returns compact JSON for prompt use.'
                     }
                 },
                 required: ['name'],
@@ -241,6 +271,94 @@ const CHAT_TOOL_DEFINITIONS = Object.freeze([
                     }
                 },
                 required: ['sceneNumber'],
+                additionalProperties: false
+            }
+        }
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'listMysteryBoxes',
+            description: 'List tracked private mystery boxes. Optionally filters by a phrase contained in the mystery box id, name, keys, aliases, or private note text. Does not return full private notes.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    query: {
+                        type: 'string',
+                        description: 'Optional phrase to search for. Omit or leave blank to list all mystery boxes.'
+                    }
+                },
+                additionalProperties: false
+            }
+        }
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'findMysteryBoxes',
+            description: 'Search private GM-only mystery box notes by id, name, key, or alias. Returns all matching mystery boxes.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    query: {
+                        type: 'string',
+                        description: 'Mystery box id, name, key, alias, or partial normalized query. Example: "Ellison" or "ELLISON-SEVEN".'
+                    }
+                },
+                required: ['query'],
+                additionalProperties: false
+            }
+        }
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'getMysteryBox',
+            description: 'Return private GM-only notes for a tracked mystery box by key, alias, or name.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    key: {
+                        type: 'string',
+                        description: 'Mystery box key, alias, or name. Example: "Captain Ellison" or "ELLISON-SEVEN".'
+                    }
+                },
+                required: ['key'],
+                additionalProperties: false
+            }
+        }
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'listMysteryThreads',
+            description: 'List tracked GM-only mystery threads. Optionally filters by phrase. Returns lightweight thread summaries and contained box ids/names, not full box text.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    query: {
+                        type: 'string',
+                        description: 'Optional phrase to search for. Omit or leave blank to list all mystery threads.'
+                    }
+                },
+                additionalProperties: false
+            }
+        }
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'getMysteryThread',
+            description: 'Return full private GM-only continuity for a mystery thread by id, key, alias, or name, including contained mystery boxes.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    key: {
+                        type: 'string',
+                        description: 'Mystery thread id, key, alias, or name. Example: "Skyhawk Furnace Siphoning".'
+                    }
+                },
+                required: ['key'],
                 additionalProperties: false
             }
         }
@@ -1165,6 +1283,16 @@ const normalizeMoreInfoType = (value) => {
         throw new Error('moreInfo "type" must be one of: character, thing, location, region.');
     }
     return normalized;
+};
+
+const normalizeMoreInfoIncludeFullState = (value) => {
+    if (value === null || value === undefined) {
+        return false;
+    }
+    if (typeof value !== 'boolean') {
+        throw new Error('moreInfo "includeFullState" must be a boolean when provided.');
+    }
+    return value;
 };
 
 const toTrimmedString = (value) => (typeof value === 'string' ? value.trim() : '');
@@ -3995,6 +4123,32 @@ const createChatToolRuntime = ({
         }
     };
 
+    const compactMoreInfoRecord = (value) => {
+        if (Array.isArray(value)) {
+            return value.map(entry => compactMoreInfoRecord(entry));
+        }
+        if (!value || typeof value !== 'object') {
+            return value;
+        }
+
+        const compacted = {};
+        for (const [key, entryValue] of Object.entries(value)) {
+            if (MORE_INFO_COMPACT_OMITTED_FIELDS.has(key)) {
+                continue;
+            }
+            compacted[key] = compactMoreInfoRecord(entryValue);
+        }
+        return compacted;
+    };
+
+    const serializeMoreInfoRecord = (record, { includeFullState = false } = {}) => {
+        const serialized = serializeUpdateObjectRecord(record);
+        if (!serialized || includeFullState) {
+            return serialized;
+        }
+        return compactMoreInfoRecord(serialized);
+    };
+
     const buildUpdateObjectCandidate = (target) => ({
         objectType: target.objectType,
         id: target.id || null,
@@ -5430,12 +5584,13 @@ const createChatToolRuntime = ({
         };
     };
 
-    const executeMoreInfoTool = ({ name, type = null }) => {
+    const executeMoreInfoTool = ({ name, type = null, includeFullState = false }) => {
         if (typeof name !== 'string' || !name.trim()) {
             throw new Error('moreInfo requires a non-empty "name" string.');
         }
         const query = name.trim();
         const requestedType = normalizeMoreInfoType(type);
+        const shouldIncludeFullState = normalizeMoreInfoIncludeFullState(includeFullState);
         const includeCharacters = requestedType === null || requestedType === 'character';
         const includeThings = requestedType === null || requestedType === 'thing';
         const includeLocations = requestedType === null || requestedType === 'location';
@@ -5488,10 +5643,10 @@ const createChatToolRuntime = ({
             query,
             type: requestedType || null,
             totalMatches,
-            npcs: matchedNpcs.map(entry => serializeUpdateObjectRecord(entry)).filter(Boolean),
-            things: matchedThings.map(entry => serializeUpdateObjectRecord(entry)).filter(Boolean),
-            locations: matchedLocations.map(entry => serializeUpdateObjectRecord(entry)).filter(Boolean),
-            regions: matchedRegions.map(entry => serializeUpdateObjectRecord(entry)).filter(Boolean)
+            npcs: matchedNpcs.map(entry => serializeMoreInfoRecord(entry, { includeFullState: shouldIncludeFullState })).filter(Boolean),
+            things: matchedThings.map(entry => serializeMoreInfoRecord(entry, { includeFullState: shouldIncludeFullState })).filter(Boolean),
+            locations: matchedLocations.map(entry => serializeMoreInfoRecord(entry, { includeFullState: shouldIncludeFullState })).filter(Boolean),
+            regions: matchedRegions.map(entry => serializeMoreInfoRecord(entry, { includeFullState: shouldIncludeFullState })).filter(Boolean)
         };
 
         return {
@@ -5499,6 +5654,7 @@ const createChatToolRuntime = ({
             metadata: {
                 query,
                 type: requestedType || null,
+                includeFullState: shouldIncludeFullState,
                 totalMatches,
                 counts: {
                     npcs: matchedNpcs.length,
@@ -5857,6 +6013,225 @@ const createChatToolRuntime = ({
         };
     };
 
+    const buildMysteryBoxXmlLines = (box, level = 0) => {
+        const data = box.toJSON();
+        const indent = (extra = 0) => xmlIndent(level + extra);
+        const lines = [
+            `${indent()}<mysteryBox>`,
+            `${indent(1)}<id>${xmlEscapeText(data.id)}</id>`,
+            `${indent(1)}<name>${xmlEscapeText(data.name)}</name>`,
+            `${indent(1)}<keys>`
+        ];
+        for (const entry of data.keys) {
+            lines.push(`${indent(2)}<key>${xmlEscapeText(entry)}</key>`);
+        }
+        lines.push(`${indent(1)}</keys>`);
+        lines.push(`${indent(1)}<text>${xmlEscapeText(data.text)}</text>`);
+        lines.push(`${indent(1)}<mentions>`);
+        for (const mention of data.mentions) {
+            lines.push(`${indent(2)}<mention>`);
+            if (mention.name) {
+                lines.push(`${indent(3)}<name>${xmlEscapeText(mention.name)}</name>`);
+            }
+            if (mention.context) {
+                lines.push(`${indent(3)}<context>${xmlEscapeText(mention.context)}</context>`);
+            }
+            if (mention.sourceEntryId) {
+                lines.push(`${indent(3)}<sourceEntryId>${xmlEscapeText(mention.sourceEntryId)}</sourceEntryId>`);
+            }
+            lines.push(`${indent(2)}</mention>`);
+        }
+        lines.push(`${indent(1)}</mentions>`);
+        lines.push(`${indent()}</mysteryBox>`);
+        return { lines, data };
+    };
+
+    const buildMysteryBoxSummaryXmlLines = (box, level = 0) => {
+        const data = box.toJSON();
+        const indent = (extra = 0) => xmlIndent(level + extra);
+        const lines = [
+            `${indent()}<mysteryBox>`,
+            `${indent(1)}<id>${xmlEscapeText(data.id)}</id>`,
+            `${indent(1)}<name>${xmlEscapeText(data.name)}</name>`,
+            `${indent(1)}<keys>`
+        ];
+        for (const entry of data.keys) {
+            lines.push(`${indent(2)}<key>${xmlEscapeText(entry)}</key>`);
+        }
+        lines.push(`${indent(1)}</keys>`);
+        if (data.updatedAt) {
+            lines.push(`${indent(1)}<updatedAt>${xmlEscapeText(data.updatedAt)}</updatedAt>`);
+        }
+        lines.push(`${indent()}</mysteryBox>`);
+        return lines;
+    };
+
+    const executeListMysteryBoxesTool = ({ query = '' } = {}) => {
+        if (query !== undefined && query !== null && typeof query !== 'string') {
+            throw new Error('listMysteryBoxes "query" must be a string when provided.');
+        }
+        const trimmedQuery = typeof query === 'string' ? query.trim() : '';
+        const matches = MysteryBox.listBySearchPhrase(trimmedQuery);
+        const lines = [
+            '<mysteryBoxList>',
+            `  <query>${xmlEscapeText(trimmedQuery)}</query>`,
+            `  <count>${matches.length}</count>`
+        ];
+        for (const box of matches) {
+            lines.push(...buildMysteryBoxSummaryXmlLines(box, 1));
+        }
+        lines.push('</mysteryBoxList>');
+        return {
+            content: lines.join('\n'),
+            metadata: {
+                query: trimmedQuery,
+                matchCount: matches.length,
+                ids: matches.map((box) => box.id),
+                names: matches.map((box) => box.name)
+            }
+        };
+    };
+
+    const executeFindMysteryBoxesTool = ({ query }) => {
+        if (typeof query !== 'string' || !query.trim()) {
+            throw new Error('findMysteryBoxes requires a non-empty "query" string.');
+        }
+        const trimmedQuery = query.trim();
+        const matches = MysteryBox.findByNameOrKey(trimmedQuery);
+        const lines = [
+            '<mysteryBoxMatches>',
+            `  <query>${xmlEscapeText(trimmedQuery)}</query>`,
+            `  <count>${matches.length}</count>`
+        ];
+        for (const box of matches) {
+            lines.push(...buildMysteryBoxXmlLines(box, 1).lines);
+        }
+        lines.push('</mysteryBoxMatches>');
+        return {
+            content: lines.join('\n'),
+            metadata: {
+                query: trimmedQuery,
+                matchCount: matches.length,
+                ids: matches.map((box) => box.id),
+                names: matches.map((box) => box.name)
+            }
+        };
+    };
+
+    const executeGetMysteryBoxTool = ({ key }) => {
+        if (typeof key !== 'string' || !key.trim()) {
+            throw new Error('getMysteryBox requires a non-empty "key" string.');
+        }
+        const query = key.trim();
+        const box = MysteryBox.getByKey(query) || MysteryBox.getById(query);
+        if (!box) {
+            throw new Error(`No mystery box matches "${query}".`);
+        }
+        const { lines, data } = buildMysteryBoxXmlLines(box);
+        return {
+            content: lines.join('\n'),
+            metadata: {
+                id: data.id,
+                name: data.name,
+                keys: data.keys,
+                query
+            }
+        };
+    };
+
+    const buildMysteryThreadXmlLines = (thread, level = 0, { includeBoxText = true } = {}) => {
+        const data = thread.toJSON();
+        const indent = (extra = 0) => xmlIndent(level + extra);
+        const lines = [
+            `${indent()}<mysteryThread>`,
+            `${indent(1)}<id>${xmlEscapeText(data.id)}</id>`,
+            `${indent(1)}<name>${xmlEscapeText(data.name)}</name>`,
+            `${indent(1)}<status>${xmlEscapeText(data.status)}</status>`,
+            `${indent(1)}<keys>`
+        ];
+        for (const entry of data.keys) {
+            lines.push(`${indent(2)}<key>${xmlEscapeText(entry)}</key>`);
+        }
+        lines.push(`${indent(1)}</keys>`);
+        if (data.summary) {
+            lines.push(`${indent(1)}<summary>${xmlEscapeText(data.summary)}</summary>`);
+        }
+        lines.push(`${indent(1)}<constraints>`);
+        for (const constraint of data.constraints) {
+            lines.push(`${indent(2)}<constraint>${xmlEscapeText(constraint)}</constraint>`);
+        }
+        lines.push(`${indent(1)}</constraints>`);
+        lines.push(`${indent(1)}<mysteryBoxes>`);
+        for (const boxId of data.boxIds) {
+            const box = MysteryBox.getById(boxId);
+            lines.push(`${indent(2)}<mysteryBox>`);
+            lines.push(`${indent(3)}<id>${xmlEscapeText(boxId)}</id>`);
+            if (box) {
+                lines.push(`${indent(3)}<name>${xmlEscapeText(box.name)}</name>`);
+                if (includeBoxText) {
+                    lines.push(`${indent(3)}<text>${xmlEscapeText(box.text)}</text>`);
+                }
+            }
+            lines.push(`${indent(2)}</mysteryBox>`);
+        }
+        lines.push(`${indent(1)}</mysteryBoxes>`);
+        if (data.updatedAt) {
+            lines.push(`${indent(1)}<updatedAt>${xmlEscapeText(data.updatedAt)}</updatedAt>`);
+        }
+        lines.push(`${indent()}</mysteryThread>`);
+        return { lines, data };
+    };
+
+    const executeListMysteryThreadsTool = ({ query = '' } = {}) => {
+        if (query !== undefined && query !== null && typeof query !== 'string') {
+            throw new Error('listMysteryThreads "query" must be a string when provided.');
+        }
+        const trimmedQuery = typeof query === 'string' ? query.trim() : '';
+        const matches = MysteryThread.listBySearchPhrase(trimmedQuery);
+        const lines = [
+            '<mysteryThreadList>',
+            `  <query>${xmlEscapeText(trimmedQuery)}</query>`,
+            `  <count>${matches.length}</count>`
+        ];
+        for (const thread of matches) {
+            lines.push(...buildMysteryThreadXmlLines(thread, 1, { includeBoxText: false }).lines);
+        }
+        lines.push('</mysteryThreadList>');
+        return {
+            content: lines.join('\n'),
+            metadata: {
+                query: trimmedQuery,
+                matchCount: matches.length,
+                ids: matches.map((thread) => thread.id),
+                names: matches.map((thread) => thread.name)
+            }
+        };
+    };
+
+    const executeGetMysteryThreadTool = ({ key }) => {
+        if (typeof key !== 'string' || !key.trim()) {
+            throw new Error('getMysteryThread requires a non-empty "key" string.');
+        }
+        const query = key.trim();
+        const thread = MysteryThread.getById(query)
+            || MysteryThread.getByKey(query)
+            || MysteryThread.findByNameOrKey(query)[0];
+        if (!thread) {
+            throw new Error(`No mystery thread matches "${query}".`);
+        }
+        const { lines, data } = buildMysteryThreadXmlLines(thread, 0, { includeBoxText: true });
+        return {
+            content: lines.join('\n'),
+            metadata: {
+                id: data.id,
+                name: data.name,
+                status: data.status,
+                boxIds: data.boxIds,
+                query
+            }
+        };
+    };
+
     const buildToolExecutionErrorResult = (functionName, error) => {
         const visibleError = error instanceof ToolVisibleError
             ? error
@@ -5909,6 +6284,16 @@ const createChatToolRuntime = ({
                 toolResult = executeGetHistoryTool(argumentsObject);
             } else if (toolCall.functionName === 'getFullScene') {
                 toolResult = executeGetFullSceneTool(argumentsObject);
+            } else if (toolCall.functionName === 'listMysteryBoxes') {
+                toolResult = executeListMysteryBoxesTool(argumentsObject);
+            } else if (toolCall.functionName === 'findMysteryBoxes') {
+                toolResult = executeFindMysteryBoxesTool(argumentsObject);
+            } else if (toolCall.functionName === 'getMysteryBox') {
+                toolResult = executeGetMysteryBoxTool(argumentsObject);
+            } else if (toolCall.functionName === 'listMysteryThreads') {
+                toolResult = executeListMysteryThreadsTool(argumentsObject);
+            } else if (toolCall.functionName === 'getMysteryThread') {
+                toolResult = executeGetMysteryThreadTool(argumentsObject);
             } else if (toolCall.functionName === 'teleportCharacterToLocation') {
                 toolResult = executeTeleportCharacterToLocationTool(argumentsObject);
             } else if (toolCall.functionName === 'teleportThingToLocation') {

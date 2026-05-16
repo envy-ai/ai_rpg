@@ -27,6 +27,7 @@ Centralized static state and helpers used across the server. Provides access to 
 - Time/calendar:
   - `getTimeConfig()`
   - `generateCalendarDefinition({ settingName })`
+  - `normalizeCalendarDefinition(calendarDefinition)`
   - `ensureWorldTimeInitialized({ settingName })`
   - `resetWorldTime({ settingName, calendarDefinition })`
   - `hydrateWorldTime({ worldTime, calendarDefinition, settingName })`
@@ -56,6 +57,8 @@ Centralized static state and helpers used across the server. Provides access to 
   so `ensureWorldTimeInitialized()` can safely return full time context.
 - Built-in calendar generation is Gregorian (no leap-year/day handling) and acts as
   fallback when LLM calendar generation fails.
+- `normalizeCalendarDefinition(calendarDefinition)` validates and returns a normalized
+  deep clone without mutating active `Globals.calendarDefinition` or `worldTime`.
 - `setCalendarDefinition(calendarDefinition)` validates and normalizes a replacement
   calendar before assigning it, preserves the current minute-based `worldTime`, and
   throws without mutating state when the calendar is invalid.

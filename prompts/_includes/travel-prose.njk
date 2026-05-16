@@ -9,7 +9,7 @@
 <travelProse>
   <!-- The rationale for this section is so that events can be processed separately at the origin and destination locations. betweenProse may be necessary for the flow of the story, is not processed for events. -->
   {% if currentVehicle -%}
-  <!-- If the player is moving inside the vehicle (or disembarking) while the vehicle is moving toward its planned destination, omit it as well. If the player isn't moving inside the vehicle and the vehicle isn't stopping or changing destinations, you should be using <finalProse> instead. -->
+  <!-- If the player is moving inside the vehicle (or disembarking), OMIT the <vehicleInfo> block. If the player isn't moving inside the vehicle and the vehicle isn't stopping or changing destinations, you should be using <finalProse> instead. If a whole region vehicle is about to move inside one of its own locations, you probably shouldn't be pasing vehicleInfo-->
   <vehicleInfo>
     <name><!-- Exact name of the vehicle, for example: "Bob's Car", "The Starship Intrepid","The Shuttlecraft Hermes", etc. --></name>
     <travelTime><!-- If you included the vehicleInfo tag, specify the travel time in the format: 

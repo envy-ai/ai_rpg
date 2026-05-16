@@ -518,6 +518,39 @@ The below context is an account of the current game state, including the setting
   {% if plotExpander and plotExpander | trim %}
   <plotExpander>{{ plotExpander }}</plotExpander>
   {% endif %}
+  {% if activeMysteryThreads and activeMysteryThreads.length %}
+  <activeMysteryThreads max="{{ mysteryThreadMaxActive | default(activeMysteryThreads.length, true) }}">
+    <instructions>GM-private continuity. Preserve these mystery facts and constraints when generating new material, but do not directly reveal hidden truth unless the player discovers it through play.</instructions>
+    {% for thread in activeMysteryThreads %}
+    <mysteryThread id="{{ thread.id }}">
+      <name>{{ thread.name }}</name>
+      <status>{{ thread.status }}</status>
+      {% if thread.keys and thread.keys.length %}
+      <keys>{% for key in thread.keys %}<key>{{ key }}</key>{% endfor %}</keys>
+      {% endif %}
+      {% if thread.summary %}
+      <summary>{{ thread.summary }}</summary>
+      {% endif %}
+      {% if thread.constraints and thread.constraints.length %}
+      <constraints>{% for constraint in thread.constraints %}<constraint>{{ constraint }}</constraint>{% endfor %}</constraints>
+      {% endif %}
+      {% if thread.mysteryBoxes and thread.mysteryBoxes.length %}
+      <mysteryBoxes>
+        {% for box in thread.mysteryBoxes %}
+        <mysteryBox id="{{ box.id }}">
+          <name>{{ box.name }}</name>
+          {% if box.keys and box.keys.length %}
+          <keys>{% for key in box.keys %}<key>{{ key }}</key>{% endfor %}</keys>
+          {% endif %}
+          <text>{{ box.text }}</text>
+        </mysteryBox>
+        {% endfor %}
+      </mysteryBoxes>
+      {% endif %}
+    </mysteryThread>
+    {% endfor %}
+  </activeMysteryThreads>
+  {% endif %}
   <recentStoryHistory>{{ recentGameHistory }}</recentStoryHistory>
 </gameState>
 <currentConditions>

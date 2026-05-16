@@ -100,6 +100,19 @@ Use this when the current location's visual or environmental description changes
 </alterLocation>
 ```
 
+### `mystery_box_mention`
+
+Use this when the text introduces or materially adds to a significant unresolved mystery, hidden offscreen actor, secret motive, conspiracy, unexplained artifact, suspicious discrepancy, or private background thread that may matter later. This does not reveal anything to the player by itself. It triggers a separate private continuity prompt that creates or updates a persisted `MysteryBox`.
+
+Do not emit this for every unanswered question, ordinary flavor detail, routine clue, or player speculation. Use it when future scenes would benefit from a stable hidden truth or motive instead of improvising vague mystery later.
+
+```xml
+<mysteryBoxMention>
+  <name>Short stable name for the mystery, actor, clue, or thread</name>
+  <context>One sentence describing what was introduced or added in this text</context>
+</mysteryBoxMention>
+```
+
 ### `currency`
 
 Use this when the player gains currency, pays currency, or otherwise has currency directly added or removed. Currency is tracked separately from items, so do not represent money as `itemAppear`, `pickUpItem`, `consumeItem`, or `transferItem`.

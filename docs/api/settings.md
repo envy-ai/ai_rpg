@@ -15,6 +15,7 @@ Create a new setting.
 Request:
 - Body: SettingInfo fields (at minimum `name`)
   - Includes `defaultFactionCount` (non-negative integer or empty) and `defaultFactions` (array of faction drafts) for settings-scoped faction defaults.
+  - Includes optional `calendarDefinition`, the same calendar object shape used by `/api/calendar`. `null` or omitted means the profile has no pre-generated calendar.
   - Includes `unifiedTonalScale`, an object keyed by tonal-axis id, where each selected axis is `{ level, comment? }`. Levels may be defined scale values or generated half-step values such as `3.5`.
 
 Response:
@@ -37,6 +38,7 @@ Notes:
 - `customSlopWords` is accepted as a list (or newline-delimited string) and round-trips through autofill as `<customSlopWords><word>...</word></customSlopWords>`.
 - `defaultFactionCount` and `defaultFactions` are accepted in the payload and preserved through merge behavior; setting autofill does not currently synthesize faction drafts directly.
 - `unifiedTonalScale` is accepted and preserved through merge behavior; setting autofill does not currently synthesize tonal-scale selections.
+- `calendarDefinition` is accepted and preserved through merge behavior; setting autofill does not currently synthesize calendar drafts.
 
 Response:
 - 200: `{ success: true, setting, raw }` (merged setting values and raw AI XML)
@@ -62,6 +64,7 @@ Update a setting.
 Request:
 - Body: SettingInfo fields
   - Supports `defaultFactionCount` and `defaultFactions` updates.
+  - Supports `calendarDefinition`; invalid calendar JSON/shape is rejected with `400`.
   - Supports `unifiedTonalScale` updates with numeric levels, generated half-step values, and optional comments.
 
 Response:
@@ -162,6 +165,32 @@ Response:
 
 Notes:
 - Returns faction drafts (plain objects with ids/relations/tiers), not live world factions.
+
+## GET /api/settings/calendar/default
+Return the built-in Gregorian-style calendar definition used as an explicit default draft for a world profile.
+
+Request:
+- Query:
+  - `settingName` (optional string)
+
+Response:
+- 200: `{ success: true, calendarDefinition }`
+- 500 with `{ success: false, error }`
+
+## POST /api/settings/calendar/generate
+Generate a world-profile calendar draft through the existing `calendar_generation` prompt.
+
+Request:
+- Body:
+  - `setting` (required object): current setting fields used as prompt context. Existing `calendarDefinition` is ignored for generation.
+
+Response:
+- 200: `{ success: true, calendarDefinition }`
+- 400/500 with `{ success: false, error }`
+
+Notes:
+- This route is for the Worlds editor Calendar tab. It logs the prompt through `LLMClient.logPrompt()` via the shared calendar generation helper.
+- Unlike new-game setup, this route returns an error if AI calendar generation fails; the UI has a separate explicit Gregorian default button.
 
 ## DELETE /api/settings/current
 Clear the current setting.

@@ -253,7 +253,8 @@ Inline script functions in `views/index.njk` render these tabs:
 
 ## Story Tools tab
 
-- `initStoryToolsPanel()` renders an editor-friendly history view for all chat entries.
+- `initStoryToolsPanel()` renders a tabbed editor-friendly Story Tools area. The first inner tab is the existing full-history entry view; the second inner tab is `Mystery Boxes`.
+- The `Mystery Boxes` inner tab is now thread-scoped. It uses `GET /api/mystery-threads` for the left-side thread list, `GET /api/mystery-threads/:id` to load the selected thread plus contained boxes, `PUT /api/mystery-threads/:id` to edit thread name/status/summary/constraints, and `PUT /api/mystery-boxes/:id` to edit the selected contained box. Box API responses include computed `threadId` / `threadName`, and mention history remains read-only in a right-hand column beside the editable box fields.
 - Uses `GET /api/chat/history?includeAllEntries=true` to include hidden entries and entries that are normally omitted from client chat history; player-action `<hidden>` note blocks appear there only when `show_hidden_notes` is true.
 - Paging:
   - Entries are ordered oldest-first.

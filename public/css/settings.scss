@@ -426,6 +426,50 @@
   gap: 0.5rem;
 }
 
+.settings-calendar-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+#settingsCalendarJson {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  min-height: 360px;
+  line-height: 1.42;
+  white-space: pre;
+}
+
+.settings-calendar-summary,
+.settings-calendar-status {
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.24);
+  padding: 0.75rem;
+  color: $white-80;
+  line-height: 1.35;
+}
+
+.settings-calendar-status {
+  margin-top: 0.65rem;
+  min-height: 2.75rem;
+
+  &:empty {
+    display: none;
+  }
+
+  &.is-success {
+    border-color: rgba(52, 168, 83, 0.5);
+    background: rgba(52, 168, 83, 0.16);
+    color: #9be6aa;
+  }
+
+  &.is-error {
+    border-color: rgba(234, 67, 53, 0.5);
+    background: rgba(234, 67, 53, 0.16);
+    color: #ffb2ad;
+  }
+}
+
 .tone-scale-grid {
   gap: 0.9rem;
 }

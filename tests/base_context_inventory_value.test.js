@@ -275,3 +275,35 @@ test('base-context current location NPC list omits party members', () => {
     assert.doesNotMatch(currentLocationNpcBlock, /<name>Mira<\/name>/);
     assert.match(currentLocationNpcBlock, /<name>Tessa<\/name>/);
 });
+
+test('base-context includes active mystery threads and contained boxes only', () => {
+    const promptEnv = createPromptEnv();
+    const context = buildRenderContext();
+    context.activeMysteryThreads = [
+        {
+            id: 'mthread_1',
+            name: 'Skyhawk Furnace Siphoning',
+            status: 'active',
+            summary: 'Drask is stealing vitality from the furnace.',
+            constraints: ['Drask is the siphoner.'],
+            mysteryBoxes: [
+                {
+                    id: 'mystery_1',
+                    name: 'Siphon Saboteur Identity',
+                    keys: ['Drask'],
+                    text: 'Kellen Drask is the siphoner.'
+                }
+            ]
+        }
+    ];
+    context.mysteryThreadMaxActive = 2;
+
+    const rendered = promptEnv.render('base-context.xml.njk', context);
+
+    assert.match(rendered, /<activeMysteryThreads max="2">/);
+    assert.match(rendered, /<name>Skyhawk Furnace Siphoning<\/name>/);
+    assert.match(rendered, /<summary>Drask is stealing vitality from the furnace\.<\/summary>/);
+    assert.match(rendered, /<constraint>Drask is the siphoner\.<\/constraint>/);
+    assert.match(rendered, /<name>Siphon Saboteur Identity<\/name>/);
+    assert.match(rendered, /<text>Kellen Drask is the siphoner\.<\/text>/);
+});

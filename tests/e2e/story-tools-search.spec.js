@@ -164,3 +164,159 @@ test('Story Tools case-sensitive toggle affects all search modes', async ({ page
     await page.uncheck('#storyToolsSearchCaseSensitive');
     await expect(page.locator('.story-tools-entry-title')).toHaveText(['Entry #2', 'Entry #5']);
 });
+
+test('Story Tools Mystery Boxes tab lists, loads, and saves mystery notes', async ({ page }) => {
+    await page.route('**/api/chat/history?includeAllEntries=true', async (route) => {
+        await route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify(historyPayload)
+        });
+    });
+
+    const mysterySummaries = [
+        {
+            id: 'mystery_velikka',
+            name: 'Velikka Photo',
+            keys: ['Velikka Photo'],
+            mentionCount: 1,
+            updatedAt: '2026-04-24T00:08:00.000Z'
+        },
+        {
+            id: 'mystery_ellison',
+            name: 'Captain Ellison',
+            keys: ['Captain Ellison', 'ELLISON-SEVEN'],
+            mentionCount: 2,
+            updatedAt: '2026-04-24T00:09:00.000Z'
+        }
+    ];
+    let ellisonDetail = {
+        id: 'mystery_ellison',
+        name: 'Captain Ellison',
+        keys: ['Captain Ellison', 'ELLISON-SEVEN'],
+        text: 'Ellison has a coherent private plan.',
+        mentions: [
+            {
+                name: 'ELLISON-SEVEN',
+                context: 'Siggy remembered the protocol.',
+                createdAt: '2026-04-24T00:06:00.000Z'
+            }
+        ],
+        createdAt: '2026-04-24T00:05:00.000Z',
+        updatedAt: '2026-04-24T00:09:00.000Z'
+    };
+    let savedPayload = null;
+
+    const getThreadBoxes = () => [mysterySummaries[1], mysterySummaries[0]];
+    const buildThreadSummary = () => ({
+        id: 'mthread_ellison',
+        name: 'Captain Ellison Conspiracy',
+        status: 'active',
+        keys: ['Captain Ellison'],
+        summary: 'Ellison has a coherent private plan.',
+        constraints: ['Ellison is not random mysterious noise.'],
+        boxIds: ['mystery_ellison', 'mystery_velikka'],
+        boxes: getThreadBoxes(),
+        boxCount: mysterySummaries.length,
+        updatedAt: '2026-04-24T00:09:00.000Z'
+    });
+
+    await page.route('**/api/mystery-threads', async (route) => {
+        await route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({
+                success: true,
+                mysteryThreads: [buildThreadSummary()],
+                count: 1,
+                maxActive: 2
+            })
+        });
+    });
+
+    await page.route('**/api/mystery-threads/mthread_ellison', async (route) => {
+        await route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({
+                success: true,
+                mysteryThread: {
+                    ...buildThreadSummary(),
+                    boxes: getThreadBoxes()
+                }
+            })
+        });
+    });
+
+    await page.route('**/api/mystery-boxes', async (route) => {
+        await route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({
+                success: true,
+                mysteryBoxes: mysterySummaries,
+                count: mysterySummaries.length
+            })
+        });
+    });
+
+    await page.route('**/api/mystery-boxes/mystery_ellison', async (route) => {
+        if (route.request().method() === 'PUT') {
+            savedPayload = route.request().postDataJSON();
+            ellisonDetail = {
+                ...ellisonDetail,
+                name: savedPayload.name,
+                keys: savedPayload.keys,
+                text: savedPayload.text,
+                updatedAt: '2026-04-24T00:10:00.000Z'
+            };
+            await route.fulfill({
+                status: 200,
+                contentType: 'application/json',
+                body: JSON.stringify({
+                    success: true,
+                    mysteryBox: ellisonDetail,
+                    persisted: true
+                })
+            });
+            return;
+        }
+
+        await route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({
+                success: true,
+                mysteryBox: ellisonDetail
+            })
+        });
+    });
+
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    await page.locator('#tab-story-tools-tab').click();
+    await page.locator('#storyToolsMysteryBoxesTab').click();
+
+    await expect(page.locator('.mystery-box-list-name')).toHaveText([
+        'Captain Ellison',
+        'Velikka Photo'
+    ]);
+    await expect(page.locator('#mysteryBoxNameInput')).toHaveValue('Captain Ellison');
+    await expect(page.locator('#mysteryBoxTextInput')).toHaveValue('Ellison has a coherent private plan.');
+    await expect(page.locator('#mysteryBoxMentions')).toContainText('Siggy remembered the protocol.');
+
+    const noteBox = await page.locator('#mysteryBoxTextInput').boundingBox();
+    const mentionsColumn = await page.locator('.mystery-box-mentions-column').boundingBox();
+    expect(noteBox).not.toBeNull();
+    expect(mentionsColumn).not.toBeNull();
+    expect(mentionsColumn.x).toBeGreaterThan(noteBox.x + noteBox.width);
+
+    await page.fill('#mysteryBoxTextInput', 'Ellison has a coherent private plan and a hidden escape route.');
+    await page.locator('#mysteryBoxSaveButton').click();
+
+    await expect(page.locator('#mysteryBoxStatus')).toHaveText('Saved.');
+    expect(savedPayload).toEqual({
+        name: 'Captain Ellison',
+        keys: ['Captain Ellison', 'ELLISON-SEVEN'],
+        text: 'Ellison has a coherent private plan and a hidden escape route.'
+    });
+});

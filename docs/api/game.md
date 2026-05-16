@@ -81,6 +81,7 @@ Response:
 Notes:
 - Successful saves now emit a server-console line in the shared save path (`performGameSave`), so this applies to both manual saves and autosaves.
 - Save metadata now includes `npcAliasesGenerated` (boolean). It is set to `true` after alias-generation prompts run.
+- Save metadata now includes `totalMysteryBoxes` and `totalMysteryThreads`, and the save payload includes `mysteryBoxes.json` plus `mysteryThreads.json` for persisted private mystery continuity.
 - Saves now also persist the current per-game YAML override as `gameConfigOverride.yaml`.
 
 ## POST /api/load
@@ -98,10 +99,11 @@ Notes:
 - `/api/load` reapplies the save's `gameConfigOverride.yaml` through the same merged-config reload path used by `/reload_config` before the world is hydrated.
 - `/api/load` also runs strict need-bar prompt-sentence validation before hydration, so saves do not load into a runtime where base-context need summaries would be missing prose.
 - `/api/load` migrates old saves during hydration, including pre-`1.1` need-bar scale upgrades and pre-`1.2` compact domain-object ID upgrades (`char_n`, `thing_n`, `loc_n`, etc.), then bumps the in-memory save metadata version to the current save version so later saves persist the upgraded data.
-- If a save has no persisted `calendarDefinition`, the server generates one from the active setting via LLM (`calendar_generation`) using the same Earth-like => Gregorian prompt rule, then falls back to Gregorian if generation fails.
+- If a save has no persisted `calendarDefinition`, the server first uses the active setting's saved `calendarDefinition` when present. Otherwise it generates one from the active setting via LLM (`calendar_generation`) using the same Earth-like => Gregorian prompt rule, then falls back to Gregorian if generation fails.
 - `/api/load` now runs faction-reference reconciliation before restoring the current player: invalid faction ids are cleared from player `factionId`, player faction standings, location/region/pending-stub controlling faction ids, and faction relation edges that target missing/self factions.
 - `/api/load` now also resolves pending player level-up ability draft state for the loaded player (`player_ability_options_per_level` / `player_abilities_per_level`) without generating options yet; option generation runs when the client requests `/api/player/ability-selection` with generation enabled.
 - `metadata.npcAliasesGenerated` is normalized to a boolean on load (`true` only when explicitly set `true` in the save metadata).
+- `metadata.totalMysteryBoxes` and `metadata.totalMysteryThreads` are refreshed after hydration from the loaded mystery continuity registries.
 
 ## GET /api/calendar
 Return the active in-game calendar definition and current world-time payload.

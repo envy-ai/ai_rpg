@@ -14,6 +14,8 @@ let cachedThingModule = null;
 let cachedPlayerModule = null;
 let cachedSkillModule = null;
 let cachedFactionModule = null;
+let cachedMysteryBoxModule = null;
+let cachedMysteryThreadModule = null;
 const chatSummaryStore = new Map();
 const chatSummaryQueue = [];
 const COMMON_WORDS = new Set([
@@ -959,6 +961,20 @@ class Utils {
     return cachedFactionModule;
   }
 
+  static #getMysteryBoxModule() {
+    if (!cachedMysteryBoxModule) {
+      cachedMysteryBoxModule = require('./MysteryBox.js');
+    }
+    return cachedMysteryBoxModule;
+  }
+
+  static #getMysteryThreadModule() {
+    if (!cachedMysteryThreadModule) {
+      cachedMysteryThreadModule = require('./MysteryThread.js');
+    }
+    return cachedMysteryThreadModule;
+  }
+
   static serializeGameState(context = {}) {
     const {
       currentPlayer = null,
@@ -1044,6 +1060,18 @@ class Utils {
       })
     );
 
+    const MysteryBox = this.#getMysteryBoxModule();
+    if (!MysteryBox || typeof MysteryBox.serializeAll !== 'function') {
+      throw new Error('MysteryBox serialization is unavailable.');
+    }
+    serialized.mysteryBoxes = MysteryBox.serializeAll();
+
+    const MysteryThread = this.#getMysteryThreadModule();
+    if (!MysteryThread || typeof MysteryThread.serializeAll !== 'function') {
+      throw new Error('MysteryThread serialization is unavailable.');
+    }
+    serialized.mysteryThreads = MysteryThread.serializeAll();
+
     const availableSkills = Array.from(skills.values()).map(skill => {
       if (skill && typeof skill.toJSON === 'function') {
         return skill.toJSON();
@@ -1066,6 +1094,8 @@ class Utils {
       totalLocationExits: gameLocationExits.size,
       totalRegions: regions.size,
       totalFactions: factions.size,
+      totalMysteryBoxes: Object.keys(serialized.mysteryBoxes || {}).length,
+      totalMysteryThreads: Object.keys(serialized.mysteryThreads || {}).length,
       totalGeneratedImages: generatedImages.size,
       totalSkills: skills.size,
       currentSettingId: currentSetting?.id || null,
@@ -1127,6 +1157,8 @@ class Utils {
     ensureFile('things.json', serialized.things || {});
     ensureFile('allPlayers.json', serialized.players || {});
     ensureFile('factions.json', serialized.factions || {});
+    ensureFile('mysteryBoxes.json', serialized.mysteryBoxes || {});
+    ensureFile('mysteryThreads.json', serialized.mysteryThreads || {});
     ensureFile('skills.json', serialized.skills || []);
     ensureFile('metadata.json', serialized.metadata || {});
     ensureFile('pendingRegionStubs.json', serialized.pendingRegionStubs || {});
@@ -1181,6 +1213,8 @@ class Utils {
       things: readJson('things.json', {}),
       players: readJson('allPlayers.json', {}),
       factions: readJson('factions.json', {}),
+      mysteryBoxes: readJson('mysteryBoxes.json', {}),
+      mysteryThreads: readJson('mysteryThreads.json', {}),
       skills: readJson('skills.json', []),
       metadata: readJson('metadata.json', {}),
       setting: readJson('setting.json', null),
@@ -1832,6 +1866,8 @@ class Utils {
     const Player = this.#getPlayerModule();
     const Skill = this.#getSkillModule();
     const Faction = this.#getFactionModule();
+    const MysteryBox = this.#getMysteryBoxModule();
+    const MysteryThread = this.#getMysteryThreadModule();
 
     this.loadChatSummaries(serialized.chatSummaries || {});
     const sceneSummaries = Globals.getSceneSummaries();
@@ -1890,6 +1926,18 @@ class Utils {
       } catch (error) {
         console.warn('Skipping invalid faction entry:', error.message);
       }
+    }
+
+    if (!MysteryBox || typeof MysteryBox.loadAll !== 'function') {
+      throw new Error('MysteryBox hydration is unavailable.');
+    }
+    MysteryBox.loadAll(serialized.mysteryBoxes || {});
+    if (!MysteryThread || typeof MysteryThread.loadAll !== 'function') {
+      throw new Error('MysteryThread hydration is unavailable.');
+    }
+    MysteryThread.loadAll(serialized.mysteryThreads || {});
+    if (MysteryThread.getAll().length === 0 && MysteryBox.getAll().length > 0) {
+      MysteryThread.ensureLegacyThreadForBoxes(MysteryBox.getAll());
     }
 
     if (things?.clear) {

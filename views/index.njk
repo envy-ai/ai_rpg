@@ -763,33 +763,117 @@
                             <h2>Story Tools</h2>
                             <span class="story-tools-count" id="storyToolsCount">0 entries</span>
                         </header>
-                        <div class="story-tools-search" role="search" aria-label="Search story entries">
-                            <div class="story-tools-search-row">
-                                <label class="sr-only" for="storyToolsSearchInput">Search story entries</label>
-                                <input type="search" id="storyToolsSearchInput" class="story-tools-search-input" placeholder="Search entries" aria-label="Search story entries" autocomplete="off">
-                                <button type="button" class="story-tools-search-clear" id="storyToolsSearchClear" aria-label="Clear story search" title="Clear search" hidden>&times;</button>
-                            </div>
-                            <div class="story-tools-search-options">
-                                <label class="sr-only" for="storyToolsSearchMode">Story search mode</label>
-                                <select id="storyToolsSearchMode" class="story-tools-search-mode" aria-label="Story search mode">
-                                    <option value="allWords" selected>All words</option>
-                                    <option value="substring">Substring</option>
-                                    <option value="regex">Regex</option>
-                                </select>
-                                <label class="story-tools-search-case-toggle" for="storyToolsSearchCaseSensitive" title="Case-sensitive search">
-                                    <input type="checkbox" id="storyToolsSearchCaseSensitive" aria-label="Case-sensitive story search">
-                                    <span aria-hidden="true">Aa</span>
-                                </label>
-                            </div>
-                            <span class="story-tools-search-status" id="storyToolsSearchStatus" aria-live="polite">0 entries</span>
+                        <div class="story-tools-tab-list" role="tablist" aria-label="Story Tools sections">
+                            <button type="button" class="story-tools-tab-button active" id="storyToolsHistoryTab" role="tab" aria-selected="true" aria-controls="storyToolsHistoryPanel">Story Entries</button>
+                            <button type="button" class="story-tools-tab-button" id="storyToolsMysteryBoxesTab" role="tab" aria-selected="false" aria-controls="storyToolsMysteryBoxesPanel">Mystery Boxes</button>
                         </div>
-                        <div class="story-tools-layout">
-                            <aside class="story-tools-page-nav" aria-label="Story entry pages">
-                                <div class="story-tools-page-list" id="storyToolsPageList"></div>
-                            </aside>
-                            <div class="story-tools-entries-wrap">
-                                <div class="story-tools-empty" id="storyToolsEmpty" hidden>No story entries found.</div>
-                                <div class="story-tools-entries" id="storyToolsEntries"></div>
+                        <div class="story-tools-subpanel active" id="storyToolsHistoryPanel" role="tabpanel" aria-labelledby="storyToolsHistoryTab">
+                            <div class="story-tools-search" role="search" aria-label="Search story entries">
+                                <div class="story-tools-search-row">
+                                    <label class="sr-only" for="storyToolsSearchInput">Search story entries</label>
+                                    <input type="search" id="storyToolsSearchInput" class="story-tools-search-input" placeholder="Search entries" aria-label="Search story entries" autocomplete="off">
+                                    <button type="button" class="story-tools-search-clear" id="storyToolsSearchClear" aria-label="Clear story search" title="Clear search" hidden>&times;</button>
+                                </div>
+                                <div class="story-tools-search-options">
+                                    <label class="sr-only" for="storyToolsSearchMode">Story search mode</label>
+                                    <select id="storyToolsSearchMode" class="story-tools-search-mode" aria-label="Story search mode">
+                                        <option value="allWords" selected>All words</option>
+                                        <option value="substring">Substring</option>
+                                        <option value="regex">Regex</option>
+                                    </select>
+                                    <label class="story-tools-search-case-toggle" for="storyToolsSearchCaseSensitive" title="Case-sensitive search">
+                                        <input type="checkbox" id="storyToolsSearchCaseSensitive" aria-label="Case-sensitive story search">
+                                        <span aria-hidden="true">Aa</span>
+                                    </label>
+                                </div>
+                                <span class="story-tools-search-status" id="storyToolsSearchStatus" aria-live="polite">0 entries</span>
+                            </div>
+                            <div class="story-tools-layout">
+                                <aside class="story-tools-page-nav" aria-label="Story entry pages">
+                                    <div class="story-tools-page-list" id="storyToolsPageList"></div>
+                                </aside>
+                                <div class="story-tools-entries-wrap">
+                                    <div class="story-tools-empty" id="storyToolsEmpty" hidden>No story entries found.</div>
+                                    <div class="story-tools-entries" id="storyToolsEntries"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="story-tools-subpanel" id="storyToolsMysteryBoxesPanel" role="tabpanel" aria-labelledby="storyToolsMysteryBoxesTab" hidden>
+                            <div class="mystery-boxes-layout">
+                                <aside class="mystery-boxes-list-pane" aria-label="Mystery threads">
+                                    <div class="mystery-boxes-list-header">
+                                        <h3>Mystery Threads</h3>
+                                        <span class="mystery-boxes-count" id="mysteryBoxesCount">0 boxes</span>
+                                    </div>
+                                    <div class="mystery-boxes-empty" id="mysteryBoxesEmpty" hidden>No mystery threads found.</div>
+                                    <div class="mystery-threads-list" id="mysteryThreadsList"></div>
+                                    <div class="mystery-boxes-list" id="mysteryBoxesList" hidden></div>
+                                </aside>
+                                <section class="mystery-box-detail-pane" aria-label="Mystery box detail">
+                                    <div class="mystery-thread-detail-empty" id="mysteryThreadDetailEmpty">No mystery thread selected.</div>
+                                    <form class="mystery-thread-form" id="mysteryThreadForm" hidden>
+                                        <div class="mystery-thread-fields">
+                                            <div class="mystery-box-form-row">
+                                                <label for="mysteryThreadNameInput">Thread Name</label>
+                                                <input type="text" id="mysteryThreadNameInput" autocomplete="off">
+                                            </div>
+                                            <div class="mystery-box-form-row">
+                                                <label for="mysteryThreadStatusSelect">Status</label>
+                                                <select id="mysteryThreadStatusSelect">
+                                                    <option value="active">Active</option>
+                                                    <option value="inactive">Inactive</option>
+                                                    <option value="concluded">Concluded</option>
+                                                </select>
+                                            </div>
+                                            <div class="mystery-box-form-row">
+                                                <label for="mysteryThreadSummaryInput">Summary</label>
+                                                <textarea id="mysteryThreadSummaryInput" rows="4"></textarea>
+                                            </div>
+                                            <div class="mystery-box-form-row">
+                                                <label for="mysteryThreadConstraintsInput">Constraints</label>
+                                                <textarea id="mysteryThreadConstraintsInput" rows="4" spellcheck="false"></textarea>
+                                            </div>
+                                        </div>
+                                        <div class="mystery-box-form-actions">
+                                            <span class="mystery-box-status" id="mysteryThreadStatus" aria-live="polite"></span>
+                                            <button type="submit" class="story-tools-entry-edit" id="mysteryThreadSaveButton">Save Thread</button>
+                                        </div>
+                                    </form>
+                                    <div class="mystery-thread-boxes" aria-label="Contained mystery boxes">
+                                        <div class="mystery-boxes-list-header">
+                                            <h3>Contained Boxes</h3>
+                                            <span class="mystery-boxes-count" id="mysteryThreadBoxesCount">0 boxes</span>
+                                        </div>
+                                        <div class="mystery-thread-boxes-list" id="mysteryThreadBoxesList"></div>
+                                    </div>
+                                    <div class="mystery-box-detail-empty" id="mysteryBoxDetailEmpty">No mystery box selected.</div>
+                                    <form class="mystery-box-form" id="mysteryBoxForm" hidden>
+                                        <div class="mystery-box-detail-layout">
+                                            <div class="mystery-box-edit-column">
+                                                <div class="mystery-box-form-row">
+                                                    <label for="mysteryBoxNameInput">Name</label>
+                                                    <input type="text" id="mysteryBoxNameInput" autocomplete="off">
+                                                </div>
+                                                <div class="mystery-box-form-row">
+                                                    <label for="mysteryBoxKeysInput">Keys</label>
+                                                    <textarea id="mysteryBoxKeysInput" rows="4" spellcheck="false"></textarea>
+                                                </div>
+                                                <div class="mystery-box-form-row mystery-box-form-row--wide">
+                                                    <label for="mysteryBoxTextInput">Private Note</label>
+                                                    <textarea id="mysteryBoxTextInput" rows="14"></textarea>
+                                                </div>
+                                                <div class="mystery-box-meta" id="mysteryBoxMeta"></div>
+                                                <div class="mystery-box-form-actions">
+                                                    <span class="mystery-box-status" id="mysteryBoxStatus" aria-live="polite"></span>
+                                                    <button type="submit" class="story-tools-entry-edit" id="mysteryBoxSaveButton">Save</button>
+                                                </div>
+                                            </div>
+                                            <aside class="mystery-box-mentions-column" aria-label="Mystery box mentions">
+                                                <div class="mystery-box-mentions" id="mysteryBoxMentions"></div>
+                                            </aside>
+                                        </div>
+                                    </form>
+                                </section>
                             </div>
                         </div>
                     </div>
@@ -31759,8 +31843,45 @@
             const pageList = document.getElementById('storyToolsPageList');
             const entriesContainer = document.getElementById('storyToolsEntries');
             const emptyState = document.getElementById('storyToolsEmpty');
+            const historyTab = document.getElementById('storyToolsHistoryTab');
+            const mysteryBoxesTab = document.getElementById('storyToolsMysteryBoxesTab');
+            const historyPanel = document.getElementById('storyToolsHistoryPanel');
+            const mysteryBoxesPanel = document.getElementById('storyToolsMysteryBoxesPanel');
+            const mysteryBoxesCount = document.getElementById('mysteryBoxesCount');
+            const mysteryBoxesList = document.getElementById('mysteryBoxesList');
+            const mysteryBoxesEmpty = document.getElementById('mysteryBoxesEmpty');
+            const mysteryThreadsList = document.getElementById('mysteryThreadsList');
+            const mysteryThreadDetailEmpty = document.getElementById('mysteryThreadDetailEmpty');
+            const mysteryThreadForm = document.getElementById('mysteryThreadForm');
+            const mysteryThreadNameInput = document.getElementById('mysteryThreadNameInput');
+            const mysteryThreadStatusSelect = document.getElementById('mysteryThreadStatusSelect');
+            const mysteryThreadSummaryInput = document.getElementById('mysteryThreadSummaryInput');
+            const mysteryThreadConstraintsInput = document.getElementById('mysteryThreadConstraintsInput');
+            const mysteryThreadBoxesCount = document.getElementById('mysteryThreadBoxesCount');
+            const mysteryThreadBoxesList = document.getElementById('mysteryThreadBoxesList');
+            const mysteryThreadStatus = document.getElementById('mysteryThreadStatus');
+            const mysteryThreadSaveButton = document.getElementById('mysteryThreadSaveButton');
+            const mysteryBoxDetailEmpty = document.getElementById('mysteryBoxDetailEmpty');
+            const mysteryBoxForm = document.getElementById('mysteryBoxForm');
+            const mysteryBoxNameInput = document.getElementById('mysteryBoxNameInput');
+            const mysteryBoxKeysInput = document.getElementById('mysteryBoxKeysInput');
+            const mysteryBoxTextInput = document.getElementById('mysteryBoxTextInput');
+            const mysteryBoxMeta = document.getElementById('mysteryBoxMeta');
+            const mysteryBoxMentions = document.getElementById('mysteryBoxMentions');
+            const mysteryBoxStatus = document.getElementById('mysteryBoxStatus');
+            const mysteryBoxSaveButton = document.getElementById('mysteryBoxSaveButton');
 
-            if (!countLabel || !searchInput || !searchClearButton || !searchModeSelect || !searchCaseSensitiveInput || !searchStatus || !pageList || !entriesContainer || !emptyState) {
+            if (
+                !countLabel || !searchInput || !searchClearButton || !searchModeSelect || !searchCaseSensitiveInput
+                || !searchStatus || !pageList || !entriesContainer || !emptyState
+                || !historyTab || !mysteryBoxesTab || !historyPanel || !mysteryBoxesPanel
+                || !mysteryBoxesCount || !mysteryBoxesList || !mysteryBoxesEmpty || !mysteryThreadsList
+                || !mysteryThreadDetailEmpty || !mysteryThreadForm || !mysteryThreadNameInput || !mysteryThreadStatusSelect
+                || !mysteryThreadSummaryInput || !mysteryThreadConstraintsInput || !mysteryThreadBoxesCount
+                || !mysteryThreadBoxesList || !mysteryThreadStatus || !mysteryThreadSaveButton || !mysteryBoxDetailEmpty
+                || !mysteryBoxForm || !mysteryBoxNameInput || !mysteryBoxKeysInput || !mysteryBoxTextInput
+                || !mysteryBoxMeta || !mysteryBoxMentions || !mysteryBoxStatus || !mysteryBoxSaveButton
+            ) {
                 return;
             }
 
@@ -31788,6 +31909,16 @@
                 searchRegex: null,
                 searchError: null
             };
+            const mysteryState = {
+                threads: [],
+                boxes: [],
+                selectedThreadId: null,
+                selectedThread: null,
+                selectedId: null,
+                selectedBox: null,
+                loaded: false,
+                isSaving: false
+            };
 
             const formatTimestamp = (timestamp) => {
                 if (!timestamp) {
@@ -31798,6 +31929,22 @@
                     return chatClient.formatTimestamp(timestamp);
                 }
                 return String(timestamp).replace('T', ' ').replace('Z', '');
+            };
+
+            const setStoryToolsSection = (sectionName) => {
+                const isMysteryBoxes = sectionName === 'mysteryBoxes';
+                historyTab.classList.toggle('active', !isMysteryBoxes);
+                mysteryBoxesTab.classList.toggle('active', isMysteryBoxes);
+                historyTab.setAttribute('aria-selected', isMysteryBoxes ? 'false' : 'true');
+                mysteryBoxesTab.setAttribute('aria-selected', isMysteryBoxes ? 'true' : 'false');
+                historyPanel.hidden = isMysteryBoxes;
+                mysteryBoxesPanel.hidden = !isMysteryBoxes;
+                historyPanel.classList.toggle('active', !isMysteryBoxes);
+                mysteryBoxesPanel.classList.toggle('active', isMysteryBoxes);
+                countLabel.hidden = isMysteryBoxes;
+                if (isMysteryBoxes && !mysteryState.loaded) {
+                    window.refreshMysteryThreads?.({ preserveSelection: true });
+                }
             };
 
             const getPageCount = () => Math.ceil(state.filteredEntries.length / state.pageSize);
@@ -32271,6 +32418,482 @@
                 searchInput.focus();
             });
 
+            const setMysteryBoxStatus = (message = '', tone = '') => {
+                mysteryBoxStatus.textContent = message;
+                mysteryBoxStatus.classList.toggle('is-error', tone === 'error');
+                mysteryBoxStatus.classList.toggle('is-success', tone === 'success');
+            };
+
+            const setMysteryThreadStatus = (message = '', tone = '') => {
+                mysteryThreadStatus.textContent = message;
+                mysteryThreadStatus.classList.toggle('is-error', tone === 'error');
+                mysteryThreadStatus.classList.toggle('is-success', tone === 'success');
+            };
+
+            const setMysteryBoxCount = () => {
+                const threadCount = mysteryState.threads.length;
+                const boxCount = mysteryState.threads.reduce((sum, thread) => sum + (Number.isInteger(thread?.boxCount) ? thread.boxCount : 0), 0);
+                mysteryBoxesCount.textContent = `${threadCount} ${threadCount === 1 ? 'thread' : 'threads'} · ${boxCount} ${boxCount === 1 ? 'box' : 'boxes'}`;
+                const selectedBoxCount = Array.isArray(mysteryState.selectedThread?.boxes) ? mysteryState.selectedThread.boxes.length : 0;
+                mysteryThreadBoxesCount.textContent = `${selectedBoxCount} ${selectedBoxCount === 1 ? 'box' : 'boxes'}`;
+            };
+
+            const sortMysteryBoxSummaries = (boxes) => {
+                return [...boxes].sort((a, b) => {
+                    const nameCompare = String(a?.name || '').localeCompare(String(b?.name || ''), undefined, { sensitivity: 'base' });
+                    if (nameCompare !== 0) {
+                        return nameCompare;
+                    }
+                    return String(a?.id || '').localeCompare(String(b?.id || ''), undefined, { sensitivity: 'base' });
+                });
+            };
+
+            const sortMysteryThreadSummaries = (threads) => {
+                return [...threads].sort((a, b) => {
+                    const nameCompare = String(a?.name || '').localeCompare(String(b?.name || ''), undefined, { sensitivity: 'base' });
+                    if (nameCompare !== 0) {
+                        return nameCompare;
+                    }
+                    return String(a?.id || '').localeCompare(String(b?.id || ''), undefined, { sensitivity: 'base' });
+                });
+            };
+
+            const getMysteryBoxTimestampLabel = (box) => {
+                const updatedAt = typeof box?.updatedAt === 'string' && box.updatedAt.trim() ? box.updatedAt.trim() : '';
+                const createdAt = typeof box?.createdAt === 'string' && box.createdAt.trim() ? box.createdAt.trim() : '';
+                if (updatedAt) {
+                    return `Updated ${formatTimestamp(updatedAt)}`;
+                }
+                if (createdAt) {
+                    return `Created ${formatTimestamp(createdAt)}`;
+                }
+                return '';
+            };
+
+            const renderMysteryThreadsList = () => {
+                mysteryThreadsList.replaceChildren();
+                setMysteryBoxCount();
+
+                if (!mysteryState.threads.length) {
+                    mysteryBoxesEmpty.hidden = false;
+                    return;
+                }
+
+                mysteryBoxesEmpty.hidden = true;
+                mysteryState.threads.forEach((thread) => {
+                    if (!thread || typeof thread.id !== 'string') {
+                        return;
+                    }
+                    const button = document.createElement('button');
+                    button.type = 'button';
+                    button.className = 'mystery-thread-list-button';
+                    if (thread.id === mysteryState.selectedThreadId) {
+                        button.classList.add('active');
+                    }
+                    button.dataset.mysteryThreadId = thread.id;
+
+                    const name = document.createElement('span');
+                    name.className = 'mystery-thread-list-name';
+                    name.textContent = typeof thread.name === 'string' && thread.name.trim() ? thread.name.trim() : thread.id;
+                    button.appendChild(name);
+
+                    const metaParts = [];
+                    if (typeof thread.status === 'string' && thread.status) {
+                        metaParts.push(thread.status);
+                    }
+                    if (Number.isInteger(thread.boxCount)) {
+                        metaParts.push(`${thread.boxCount} ${thread.boxCount === 1 ? 'box' : 'boxes'}`);
+                    }
+                    const meta = document.createElement('span');
+                    meta.className = 'mystery-thread-list-meta';
+                    meta.textContent = metaParts.join(' · ');
+                    button.appendChild(meta);
+
+                    button.addEventListener('click', () => {
+                        selectMysteryThread(thread.id);
+                    });
+                    mysteryThreadsList.appendChild(button);
+                });
+            };
+
+            const renderMysteryThreadBoxes = () => {
+                mysteryThreadBoxesList.replaceChildren();
+                const boxes = Array.isArray(mysteryState.selectedThread?.boxes)
+                    ? sortMysteryBoxSummaries(mysteryState.selectedThread.boxes)
+                    : [];
+                mysteryState.boxes = boxes;
+                setMysteryBoxCount();
+
+                boxes.forEach((box) => {
+                    if (!box || typeof box.id !== 'string') {
+                        return;
+                    }
+                    const button = document.createElement('button');
+                    button.type = 'button';
+                    button.className = 'mystery-box-list-button';
+                    if (box.id === mysteryState.selectedId) {
+                        button.classList.add('active');
+                    }
+                    button.dataset.mysteryBoxId = box.id;
+
+                    const name = document.createElement('span');
+                    name.className = 'mystery-box-list-name';
+                    name.textContent = typeof box.name === 'string' && box.name.trim() ? box.name.trim() : box.id;
+                    button.appendChild(name);
+
+                    const metaParts = [];
+                    if (Array.isArray(box.keys) && box.keys.length) {
+                        metaParts.push(`${box.keys.length} ${box.keys.length === 1 ? 'key' : 'keys'}`);
+                    }
+                    if (Number.isInteger(box.mentionCount) && box.mentionCount > 0) {
+                        metaParts.push(`${box.mentionCount} ${box.mentionCount === 1 ? 'mention' : 'mentions'}`);
+                    }
+                    const meta = document.createElement('span');
+                    meta.className = 'mystery-box-list-meta';
+                    meta.textContent = metaParts.join(' · ');
+                    button.appendChild(meta);
+
+                    button.addEventListener('click', () => {
+                        selectMysteryBox(box.id);
+                    });
+                    mysteryThreadBoxesList.appendChild(button);
+                });
+            };
+
+            const renderMysteryBoxMentions = (mentions) => {
+                mysteryBoxMentions.replaceChildren();
+                const entries = Array.isArray(mentions) ? mentions : [];
+                const heading = document.createElement('h4');
+                heading.textContent = 'Mentions';
+                mysteryBoxMentions.appendChild(heading);
+
+                if (!entries.length) {
+                    const empty = document.createElement('div');
+                    empty.className = 'mystery-box-mentions-empty';
+                    empty.textContent = 'No mentions recorded.';
+                    mysteryBoxMentions.appendChild(empty);
+                    return;
+                }
+
+                entries.forEach((mention) => {
+                    if (!mention || typeof mention !== 'object') {
+                        return;
+                    }
+                    const row = document.createElement('div');
+                    row.className = 'mystery-box-mention';
+
+                    const title = document.createElement('div');
+                    title.className = 'mystery-box-mention-title';
+                    const name = typeof mention.name === 'string' && mention.name.trim() ? mention.name.trim() : 'Mention';
+                    const createdAt = typeof mention.createdAt === 'string' && mention.createdAt.trim()
+                        ? ` · ${formatTimestamp(mention.createdAt)}`
+                        : '';
+                    title.textContent = `${name}${createdAt}`;
+                    row.appendChild(title);
+
+                    if (typeof mention.context === 'string' && mention.context.trim()) {
+                        const context = document.createElement('div');
+                        context.className = 'mystery-box-mention-context';
+                        context.textContent = mention.context.trim();
+                        row.appendChild(context);
+                    }
+                    mysteryBoxMentions.appendChild(row);
+                });
+            };
+
+            const renderMysteryBoxDetail = (box) => {
+                mysteryState.selectedBox = box || null;
+                setMysteryBoxStatus('');
+                if (!box) {
+                    mysteryBoxForm.hidden = true;
+                    mysteryBoxDetailEmpty.hidden = false;
+                    mysteryBoxDetailEmpty.textContent = 'No mystery box selected.';
+                    return;
+                }
+
+                mysteryBoxDetailEmpty.hidden = true;
+                mysteryBoxForm.hidden = false;
+                mysteryBoxNameInput.value = typeof box.name === 'string' ? box.name : '';
+                mysteryBoxKeysInput.value = Array.isArray(box.keys) ? box.keys.join('\n') : '';
+                mysteryBoxTextInput.value = typeof box.text === 'string' ? box.text : '';
+
+                const metaParts = [
+                    typeof box.id === 'string' ? `ID: ${box.id}` : '',
+                    getMysteryBoxTimestampLabel(box)
+                ].filter(Boolean);
+                mysteryBoxMeta.textContent = metaParts.join(' · ');
+                renderMysteryBoxMentions(box.mentions);
+            };
+
+            const renderMysteryThreadDetail = (thread) => {
+                mysteryState.selectedThread = thread || null;
+                setMysteryThreadStatus('');
+                if (!thread) {
+                    mysteryThreadForm.hidden = true;
+                    mysteryThreadDetailEmpty.hidden = false;
+                    mysteryThreadDetailEmpty.textContent = 'No mystery thread selected.';
+                    mysteryState.boxes = [];
+                    mysteryState.selectedId = null;
+                    renderMysteryThreadBoxes();
+                    renderMysteryBoxDetail(null);
+                    return;
+                }
+
+                mysteryThreadDetailEmpty.hidden = true;
+                mysteryThreadForm.hidden = false;
+                mysteryThreadNameInput.value = typeof thread.name === 'string' ? thread.name : '';
+                mysteryThreadStatusSelect.value = ['active', 'inactive', 'concluded'].includes(thread.status)
+                    ? thread.status
+                    : 'inactive';
+                mysteryThreadSummaryInput.value = typeof thread.summary === 'string' ? thread.summary : '';
+                mysteryThreadConstraintsInput.value = Array.isArray(thread.constraints) ? thread.constraints.join('\n') : '';
+                renderMysteryThreadBoxes();
+            };
+
+            const selectMysteryBox = async (boxId) => {
+                if (typeof boxId !== 'string' || !boxId.trim()) {
+                    renderMysteryBoxDetail(null);
+                    return;
+                }
+
+                const normalizedId = boxId.trim();
+                mysteryState.selectedId = normalizedId;
+                renderMysteryThreadBoxes();
+                mysteryBoxForm.hidden = true;
+                mysteryBoxDetailEmpty.hidden = false;
+                mysteryBoxDetailEmpty.textContent = 'Loading mystery box...';
+                setMysteryBoxStatus('');
+
+                try {
+                    const response = await fetch(`/api/mystery-boxes/${encodeURIComponent(boxId)}`, { cache: 'no-store' });
+                    const data = await response.json().catch(() => ({}));
+                    if (!response.ok || !data.success) {
+                        throw new Error(data?.error || `HTTP ${response.status}`);
+                    }
+                    renderMysteryBoxDetail(data.mysteryBox || null);
+                } catch (error) {
+                    mysteryBoxForm.hidden = true;
+                    mysteryBoxDetailEmpty.hidden = false;
+                    mysteryBoxDetailEmpty.textContent = `Failed to load mystery box: ${error?.message || error}`;
+                }
+            };
+
+            const selectMysteryThread = async (threadId) => {
+                if (typeof threadId !== 'string' || !threadId.trim()) {
+                    mysteryState.selectedThreadId = null;
+                    renderMysteryThreadDetail(null);
+                    renderMysteryThreadsList();
+                    return;
+                }
+
+                const normalizedId = threadId.trim();
+                mysteryState.selectedThreadId = normalizedId;
+                renderMysteryThreadsList();
+                mysteryThreadForm.hidden = true;
+                mysteryThreadDetailEmpty.hidden = false;
+                mysteryThreadDetailEmpty.textContent = 'Loading mystery thread...';
+                renderMysteryBoxDetail(null);
+
+                try {
+                    const response = await fetch(`/api/mystery-threads/${encodeURIComponent(threadId)}`, { cache: 'no-store' });
+                    const data = await response.json().catch(() => ({}));
+                    if (!response.ok || !data.success) {
+                        throw new Error(data?.error || `HTTP ${response.status}`);
+                    }
+                    const thread = data.mysteryThread || null;
+                    renderMysteryThreadDetail(thread);
+                    const boxes = Array.isArray(thread?.boxes) ? sortMysteryBoxSummaries(thread.boxes) : [];
+                    const selectedBoxStillPresent = mysteryState.selectedId
+                        && boxes.some(box => box?.id === mysteryState.selectedId);
+                    mysteryState.selectedId = selectedBoxStillPresent
+                        ? mysteryState.selectedId
+                        : (boxes[0]?.id || null);
+                    renderMysteryThreadBoxes();
+                    if (mysteryState.selectedId) {
+                        await selectMysteryBox(mysteryState.selectedId);
+                    } else {
+                        renderMysteryBoxDetail(null);
+                    }
+                } catch (error) {
+                    mysteryThreadForm.hidden = true;
+                    mysteryThreadDetailEmpty.hidden = false;
+                    mysteryThreadDetailEmpty.textContent = `Failed to load mystery thread: ${error?.message || error}`;
+                }
+            };
+
+            const refreshMysteryThreads = async ({ preserveSelection = false } = {}) => {
+                const previousSelectedThreadId = mysteryState.selectedThreadId;
+                try {
+                    const response = await fetch('/api/mystery-threads', { cache: 'no-store' });
+                    const data = await response.json().catch(() => ({}));
+                    if (!response.ok || !data.success) {
+                        throw new Error(data?.error || `HTTP ${response.status}`);
+                    }
+
+                    mysteryState.threads = sortMysteryThreadSummaries(Array.isArray(data.mysteryThreads) ? data.mysteryThreads : []);
+                    mysteryState.loaded = true;
+                    const stillSelected = preserveSelection
+                        && previousSelectedThreadId
+                        && mysteryState.threads.some(thread => thread?.id === previousSelectedThreadId);
+                    mysteryState.selectedThreadId = stillSelected
+                        ? previousSelectedThreadId
+                        : (mysteryState.threads[0]?.id || null);
+                    renderMysteryThreadsList();
+
+                    if (mysteryState.selectedThreadId) {
+                        await selectMysteryThread(mysteryState.selectedThreadId);
+                    } else {
+                        renderMysteryThreadDetail(null);
+                    }
+                } catch (error) {
+                    console.warn('Failed to refresh mystery threads:', error);
+                    mysteryState.threads = [];
+                    mysteryState.loaded = false;
+                    mysteryState.selectedThreadId = null;
+                    renderMysteryThreadsList();
+                    mysteryThreadForm.hidden = true;
+                    mysteryThreadDetailEmpty.hidden = false;
+                    mysteryThreadDetailEmpty.textContent = `Failed to load mystery threads: ${error?.message || error}`;
+                    renderMysteryBoxDetail(null);
+                }
+            };
+
+            const refreshMysteryBoxes = async ({ preserveSelection = false } = {}) => {
+                const previousSelectedId = mysteryState.selectedId;
+                try {
+                    const response = await fetch('/api/mystery-boxes', { cache: 'no-store' });
+                    const data = await response.json().catch(() => ({}));
+                    if (!response.ok || !data.success) {
+                        throw new Error(data?.error || `HTTP ${response.status}`);
+                    }
+
+                    mysteryState.boxes = sortMysteryBoxSummaries(Array.isArray(data.mysteryBoxes) ? data.mysteryBoxes : []);
+                    const stillSelected = preserveSelection
+                        && previousSelectedId
+                        && mysteryState.boxes.some(box => box?.id === previousSelectedId);
+                    mysteryState.selectedId = stillSelected ? previousSelectedId : mysteryState.selectedId;
+                    await refreshMysteryThreads({ preserveSelection: true });
+                } catch (error) {
+                    console.warn('Failed to refresh mystery boxes:', error);
+                    mysteryState.boxes = [];
+                    mysteryState.loaded = false;
+                    mysteryState.selectedId = null;
+                    renderMysteryThreadBoxes();
+                    mysteryBoxForm.hidden = true;
+                    mysteryBoxDetailEmpty.hidden = false;
+                    mysteryBoxDetailEmpty.textContent = `Failed to load mystery boxes: ${error?.message || error}`;
+                }
+            };
+
+            historyTab.addEventListener('click', () => {
+                setStoryToolsSection('history');
+            });
+
+            mysteryBoxesTab.addEventListener('click', () => {
+                setStoryToolsSection('mysteryBoxes');
+            });
+
+            mysteryThreadForm.addEventListener('submit', async (event) => {
+                event.preventDefault();
+                const selectedThreadId = mysteryState.selectedThreadId;
+                if (!selectedThreadId || mysteryState.isSaving) {
+                    return;
+                }
+
+                const name = mysteryThreadNameInput.value.trim();
+                if (!name) {
+                    setMysteryThreadStatus('Name is required.', 'error');
+                    mysteryThreadNameInput.focus();
+                    return;
+                }
+
+                mysteryState.isSaving = true;
+                mysteryThreadSaveButton.disabled = true;
+                setMysteryThreadStatus('Saving...');
+                try {
+                    const response = await fetch(`/api/mystery-threads/${encodeURIComponent(selectedThreadId)}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            name,
+                            status: mysteryThreadStatusSelect.value,
+                            summary: mysteryThreadSummaryInput.value,
+                            constraints: mysteryThreadConstraintsInput.value
+                                .split(/\r?\n/)
+                                .map(entry => entry.trim())
+                                .filter(Boolean)
+                        })
+                    });
+                    const data = await response.json().catch(() => ({}));
+                    if (!response.ok || !data.success) {
+                        throw new Error(data?.error || `HTTP ${response.status}`);
+                    }
+
+                    const updatedThread = data.mysteryThread || null;
+                    if (updatedThread) {
+                        mysteryState.selectedThreadId = updatedThread.id || selectedThreadId;
+                        renderMysteryThreadDetail(updatedThread);
+                    }
+                    await refreshMysteryThreads({ preserveSelection: true });
+                    setMysteryThreadStatus(data.persisted ? 'Saved.' : 'Saved in memory.', 'success');
+                } catch (error) {
+                    setMysteryThreadStatus(`Save failed: ${error?.message || error}`, 'error');
+                } finally {
+                    mysteryState.isSaving = false;
+                    mysteryThreadSaveButton.disabled = false;
+                }
+            });
+
+            mysteryBoxForm.addEventListener('submit', async (event) => {
+                event.preventDefault();
+                const selectedId = mysteryState.selectedId;
+                if (!selectedId || mysteryState.isSaving) {
+                    return;
+                }
+
+                const name = mysteryBoxNameInput.value.trim();
+                if (!name) {
+                    setMysteryBoxStatus('Name is required.', 'error');
+                    mysteryBoxNameInput.focus();
+                    return;
+                }
+
+                mysteryState.isSaving = true;
+                mysteryBoxSaveButton.disabled = true;
+                setMysteryBoxStatus('Saving...');
+                try {
+                    const response = await fetch(`/api/mystery-boxes/${encodeURIComponent(selectedId)}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            name,
+                            keys: mysteryBoxKeysInput.value
+                                .split(/\r?\n/)
+                                .map(entry => entry.trim())
+                                .filter(Boolean),
+                            text: mysteryBoxTextInput.value
+                        })
+                    });
+                    const data = await response.json().catch(() => ({}));
+                    if (!response.ok || !data.success) {
+                        throw new Error(data?.error || `HTTP ${response.status}`);
+                    }
+
+                    const updatedBox = data.mysteryBox || null;
+                    if (updatedBox) {
+                        mysteryState.selectedId = updatedBox.id || selectedId;
+                        renderMysteryBoxDetail(updatedBox);
+                    }
+                    await refreshMysteryThreads({ preserveSelection: true });
+                    setMysteryBoxStatus(data.persisted ? 'Saved.' : 'Saved in memory.', 'success');
+                } catch (error) {
+                    setMysteryBoxStatus(`Save failed: ${error?.message || error}`, 'error');
+                } finally {
+                    mysteryState.isSaving = false;
+                    mysteryBoxSaveButton.disabled = false;
+                }
+            });
+
             const refreshStoryTools = async ({ preserveSelection = false, scrollToLatest = false } = {}) => {
                 const previousPageIndex = state.selectedPageIndex;
 
@@ -32300,6 +32923,9 @@
                         && (scrollToLatest || (!preserveSelection && pageCount > 0))
                     );
                     renderEntryPage({ scrollToBottom: shouldScrollToBottom });
+                    if (!mysteryBoxesPanel.hidden) {
+                        await refreshMysteryThreads({ preserveSelection: true });
+                    }
                 } catch (error) {
                     console.warn('Failed to refresh Story Tools entries:', error);
                     state.entries = [];
@@ -32315,6 +32941,8 @@
             };
 
             window.refreshStoryTools = refreshStoryTools;
+            window.refreshMysteryThreads = refreshMysteryThreads;
+            window.refreshMysteryBoxes = refreshMysteryBoxes;
             refreshStoryTools({ preserveSelection: false, scrollToLatest: true });
         }
 

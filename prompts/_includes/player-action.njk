@@ -150,6 +150,8 @@ Follow these steps:
 
 1d. NPCs should take initiative actions based on their desires, needs, and emotional state, and not just react to the player. If an NPC has a pressing need, they should act on it. If an NPC has a desire that fits with the current situation (even if it's not a need bar), they should take the initiative to pursue it.
 
+1e. Did the player actually indicate that they are traveling, or just say something about traveling? If they just *said* something about traveling, don't have them actually travel.
+
 {% if config.use_legacy_prompt_checks %}
 2. Draft Response: Generate a preliminary but full draft that continues the story based on the current context, strictly adhering to this degree of success/failure: "{{ success_or_failure }}" regardless of how hard the action is. This is just a first attempt. Use no more than {{ config.prose_length }}.
 {% else %}
@@ -221,7 +223,7 @@ Use this format:
 5. ...
 <finalProse>...</finalProse>
 
-OR, if the player travels to a place that would constitute a different location or region (even if that location or region doesn't exist yet), indicate that this happened by answering instead with a <travelProse>...</travelProse> block, as follows:
+OR, if the player travels to a place that would constitute a different location or region (even if that location or region doesn't exist yet), indicate that this happened by answering instead with a <travelProse>...</travelProse> block, as follows (note that talking about traveling is NOT the same as actually traveling, so if the player just discusses traveling, that should be in the finalProse block, not the travelProse block):
 
 1a. ...
 1b. ...

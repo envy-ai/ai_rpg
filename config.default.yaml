@@ -425,6 +425,12 @@ show_hidden_notes: false
 # Set to 0 to disable automatic plot-expander runs.
 plot_expander_prompt_frequency: 10
 
+# Maximum number of active mystery threads included in base-context prompts and
+# available for automatic mystery tracking. Set to 0 to keep all mystery thread
+# continuity out of base context and force automatic tracking to skip.
+mystery_threads:
+  max_active: 2
+
 # Minimum in-game time separation, in minutes, before the blocking while-you-were-away
 # reunion prompt runs when the player arrives at an NPC's location.
 while_you_were_away_threshold_minutes: 30

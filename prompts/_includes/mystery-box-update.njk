@@ -1,0 +1,82 @@
+<task>
+Create or update one private mystery-box note for the event mention below.
+</task>
+
+<rules>
+- This is GM-only continuity tracking. Do not write player-facing prose.
+- Do not advance offscreen events, reveal consequences, or add new scenes.
+- Use this only to preserve the concrete hidden explanation and useful future-reference notes for the mentioned mystery.
+- Mystery boxes must belong to a mystery thread. A thread is the broader continuity problem; a box is one private note inside that problem.
+- At most {{ mysteryThreadMaxActive | default(2, true) }} active mystery thread(s) may be used for automatic tracking.
+- If active mystery thread capacity is not full, you may create a new active thread when this is genuinely a new unresolved mystery, or attach/update a box inside an existing active thread when it fits.
+- If active mystery thread capacity is full, you may only create or update a mystery box inside an existing active thread when the mention is directly related and consistent with that thread. If it is unrelated, return <action>skip</action>.
+- If the active thread capacity is 0, return <action>skip</action> for all mentions.
+- Before updating or attaching a box to a thread, check the active thread summary, constraints, and contained boxes for plot consistency. Do not create a second incompatible explanation for the same clue.
+- Whenever a mystery box changes canonical truth, update the parent thread summary and constraints to keep the broader thread coherent.
+- If the mention matches an existing mystery box by name, key, alias, or obvious normalized variant, update that box instead of creating a duplicate.
+- If the mention introduces a new unresolved mystery, create a new box and decide the private truth now. When creating a new entry, it's usually not necessary to go into a huge amount of detail. You can always expand the note later if needed.
+- If the mystery box is a person, capture their motivations, goals, and the truth about their identity and role in the story. If it's an object, location, organization, or event, capture the truth about what it is, why it matters, and any important details that are not revealed to the player. Figure out the important hidden truth now and write it in the note, even if it's not revealed in the text. This is for your reference as GM to maintain consistency and continuity.
+- Keep the note concise but concrete. Avoid "unknown", "unclear", "to be revealed", and similar placeholders in the private text.
+</rules>
+
+<mention>
+  <name>{{ mysteryBoxMention.name }}</name>
+  <context>{{ mysteryBoxMention.context }}</context>
+</mention>
+
+<sourceText>{{ mysteryBoxEventText }}</sourceText>
+{% if mysteryBoxActionText %}
+<playerAction>{{ mysteryBoxActionText }}</playerAction>
+{% endif %}
+
+Mystery Thread Capacity:
+- active: {{ mysteryThreadActiveCount | default(0, true) }} / {{ mysteryThreadMaxActive | default(2, true) }}
+- full: {{ mysteryThreadCapacityFull | default(false, true) }}
+
+Active Mystery Threads:
+{%- for thread in activeMysteryThreads %}
+- {{ thread.name }} (id: {{ thread.id }}, status: {{ thread.status }}, keys: {{ thread.keys | join(', ') }})
+  Summary: {{ thread.summary }}
+  Constraints: {{ thread.constraints | join(' | ') }}
+  Boxes:
+  {%- for box in thread.mysteryBoxes %}
+  - {{ box.name }} (id: {{ box.id }}, keys: {{ box.keys | join(', ') }}): {{ box.text }}
+  {%- endfor %}
+{% else %}
+- None
+{% endfor %}
+
+All Mystery Thread TOC:
+{%- for thread in mysteryThreads %} - {{ thread.name }} (id: {{ thread.id }}, status: {{ thread.status }}, boxes: {{ thread.boxIds.length }})
+{% else %} - None
+{% endfor -%}
+
+Mystery Box TOC:
+{%- for box in mysteryBoxes %} - {{ box.name }} (keys: {{ box.keys | join(', ') }})
+{% endfor -%}
+
+Phase 1: Free text planning. Identify the core hidden truth that the mention implies, the correct mystery thread, and any consistency risks with existing active threads. Decide if this matches an existing mystery box or if a new one should be created. Use tool calls to query other information (including existing mystery boxes and mystery threads) if needed. Do not include XML tags in this phase.
+
+Phase 2: Write the mystery box update XML precisely according to the format below:
+<mysteryBoxUpdate>
+  <action>create|update|skip</action>
+  <reason>Only for skip: why no mystery box should be created or updated.</reason>
+  <thread>
+    <id>Existing thread id if known; omit when creating a new thread</id>
+    <name>Canonical mystery thread name</name>
+    <status>active</status>
+    <keys>
+      <key>Useful thread alias</key>
+    </keys>
+    <summary>Compact private summary of the whole thread after this update.</summary>
+    <constraints>
+      <constraint>Canonical fact or consistency rule the GM must preserve.</constraint>
+    </constraints>
+  </thread>
+  <name>Exact, unique name for the mystery box</name>
+  <keys>
+    <key>Useful alias or related term</key>
+    <key>more keys as necessary</key>
+  </keys>
+  <text>Private GM note for this mystery box with necessary details.</text>
+</mysteryBoxUpdate>

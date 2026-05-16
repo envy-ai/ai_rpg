@@ -421,12 +421,14 @@ Use this as a catch-all for physically present entities mentioned or acting in t
 
 ### `mystery_box_mention`
 
-Use this when an unexplained plot hook is mentioned in the text that should be tracked as a mystery box. The name should be a short phrase describing the hook, and the context should briefly explain what it is and why it's mysterious. Do not use this for ordinary plot points that are explained or resolved within the text; this is only for things that are explicitly unexplained or that raise questions without answers in the text. 
+Use this when the text introduces or materially adds to a significant unresolved mystery, hidden offscreen actor, secret motive, conspiracy, unexplained artifact, suspicious discrepancy, or private background thread that may matter later. This does not reveal anything to the player by itself; it triggers a separate private continuity prompt that creates or updates a persisted mystery box.
+
+Do not emit this for every unanswered question, ordinary flavor detail, routine clue, or player speculation. Use it when future scenes would benefit from a stable hidden truth or motive instead of improvising vague mystery later.
 
 ```xml
 <mysteryBoxMention>
-  <name>Short phrase describing the hook (could be the name of a person, item, organization, event, etc.)</name>
-  <context>One sentence describing the context of the mention</context>
+  <name>Short stable name for the mystery, actor, clue, or thread</name>
+  <context>One sentence describing what was introduced or added in this text</context>
 </mysteryBoxMention>
 ```
 

@@ -277,6 +277,10 @@ class Globals {
     };
   }
 
+  static normalizeCalendarDefinition(definition) {
+    return Globals.#normalizeCalendarDefinition(Globals.#deepClone(definition));
+  }
+
   static generateCalendarDefinition({ settingName = null } = {}) {
     const monthNames = [
       'January',

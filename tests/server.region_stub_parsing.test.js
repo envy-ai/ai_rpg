@@ -36,7 +36,7 @@ function loadParseRegionExitsResponse() {
     return context.parseRegionExitsResponse;
 }
 
-function loadGenerateRegionExitStubs() {
+function loadGenerateRegionExitStubs(options = {}) {
     const source = fs.readFileSync(require.resolve('../server.js'), 'utf8');
     const start = source.indexOf('async function generateRegionExitStubs({');
     const end = source.indexOf('\nasync function generateVehicleStubs({', start);
@@ -63,17 +63,17 @@ function loadGenerateRegionExitStubs() {
     }
 
     const context = {
-        console,
+        console: options.console || console,
         getBannedLocationNameSet: () => new Set(),
         isLocationNameBanned: () => false,
-        Region: { getByName: () => null },
+        Region: { getByName: options.getRegionByName || (() => null) },
         regenerateRegionNames: async () => {},
         normalizeRegionLocationName: (value) => String(value || '').trim().toLowerCase(),
         gameLocations,
         resolveFactionNameToId: () => ({ id: null }),
-        connectExistingRegion: async () => {
+        connectExistingRegion: options.connectExistingRegion || (async () => {
             throw new Error('connectExistingRegion should not be called in this test');
-        },
+        }),
         Location: StubLocation,
         generateRegionStubId: () => 'region_stub_test',
         clampLevel: (value) => value,
@@ -129,7 +129,7 @@ function loadConnectExistingRegion() {
     };
 }
 
-function loadRegionInstantiationHelpers() {
+function loadRegionInstantiationHelpers(options = {}) {
     const source = fs.readFileSync(require.resolve('../server.js'), 'utf8');
     const rollbackStart = source.indexOf('function rollbackFailedRegionInstantiation({');
     const rollbackEnd = source.indexOf('\nfunction parseRegionVehicleDefinitions(xmlSnippet) {', rollbackStart);
@@ -198,7 +198,7 @@ function loadRegionInstantiationHelpers() {
     }
 
     const context = {
-        console,
+        console: options.console || console,
         gameLocations,
         gameLocationExits,
         pendingLocationImages: new Map(),
@@ -466,6 +466,63 @@ test('generateRegionExitStubs applies parsed travel time to new pending region e
     assert.equal(Object.prototype.hasOwnProperty.call(pendingStub, 'travelTimeMinutes'), false);
 });
 
+test('generateRegionExitStubs ignores connected-region definitions that point at the current region', async () => {
+    const warnings = [];
+    const region = {
+        id: 'region_skyhawk',
+        name: 'The Skyhawk Express',
+        locationIds: ['loc_engine'],
+        parentRegionId: null,
+        entranceLocationId: 'loc_engine',
+    };
+    const {
+        generateRegionExitStubs,
+        ensureCalls,
+        pendingRegionStubs,
+        gameLocations
+    } = loadGenerateRegionExitStubs({
+        console: {
+            ...console,
+            warn: (...args) => warnings.push(args.join(' '))
+        },
+        getRegionByName: (name) => name === region.name ? region : null
+    });
+
+    const sourceLocation = {
+        id: 'loc_engine',
+        name: 'Engine Room',
+        getAvailableDirections: () => [],
+        getExit: () => null
+    };
+    gameLocations.set(sourceLocation.id, sourceLocation);
+    const stubMap = new Map([
+        ['engine room', sourceLocation]
+    ]);
+
+    await generateRegionExitStubs({
+        region,
+        stubMap,
+        settingDescription: 'A train-like atompunk airship',
+        regionAverageLevel: 5,
+        predefinedDefinitions: [
+            {
+                name: 'The Skyhawk Express',
+                description: 'The same vehicle-region, mistakenly listed as a connected region.',
+                relativeLevel: 0,
+                relationship: 'Adjacent',
+                exitLocation: 'Engine Room',
+                exitVehicle: null,
+                controllingFaction: null,
+                travelTimeMinutes: 1
+            }
+        ]
+    });
+
+    assert.equal(ensureCalls.length, 0);
+    assert.equal(pendingRegionStubs.size, 0);
+    assert.ok(warnings.some(message => /self-referential region exit/i.test(message)));
+});
+
 test('connectExistingRegion mirrors parsed travel time onto both directions for existing regions', async () => {
     const {
         connectExistingRegion,
@@ -611,6 +668,50 @@ test('instantiateRegionLocations preserves pending-region locations omitted by g
     assert.equal(stubMap.get('hidden garden'), preserved);
     assert.equal(region.locationIds.includes('loc_hidden_garden'), true);
     assert.equal(gameLocations.has('loc_hidden_garden'), true);
+});
+
+test('instantiateRegionLocations warns and skips self-referential location blueprint exits', async () => {
+    const warnings = [];
+    const {
+        instantiateRegionLocations,
+        gameLocations
+    } = loadRegionInstantiationHelpers({
+        console: {
+            ...console,
+            warn: (...args) => warnings.push(args.join(' '))
+        }
+    });
+    const region = {
+        id: 'region_skyhawk',
+        name: 'The Skyhawk Express',
+        averageLevel: 5,
+        locationBlueprints: [
+            {
+                name: 'Engine Room',
+                description: 'A rattling engine room.',
+                shortDescription: 'A rattling engine room.',
+                exits: [{ target: 'Engine Room', travelTimeMinutes: 1 }],
+                relativeLevel: 0
+            }
+        ],
+        locationIds: [],
+        addLocationId(id) {
+            if (!this.locationIds.includes(id)) {
+                this.locationIds.push(id);
+            }
+        }
+    };
+
+    const stubMap = await instantiateRegionLocations({
+        region,
+        regionAverageLevel: 5,
+    });
+
+    const engineRoom = stubMap.get('engine room');
+    assert.ok(engineRoom);
+    assert.equal(engineRoom.getAvailableDirections().length, 0);
+    assert.equal(gameLocations.size, 1);
+    assert.ok(warnings.some(message => /self-referential location exit/i.test(message)));
 });
 
 test('rollbackFailedRegionInstantiation does not delete preserved pending-region locations', () => {

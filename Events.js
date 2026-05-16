@@ -8,10 +8,23 @@ const Faction = require("./Faction.js");
 const LLMClient = require("./LLMClient.js");
 const StatusEffect = require("./StatusEffect.js");
 const VehicleInfo = require("./VehicleInfo.js");
+const MysteryBox = require("./MysteryBox.js");
+const MysteryThread = require("./MysteryThread.js");
+const { CHAT_TOOL_DEFINITIONS, createChatToolRuntime } = require("./chat_tool_calls.js");
 
 const BASE_TIMEOUT_MS = 120000;
 const DEFAULT_STATUS_DURATION = 3;
 const MAJOR_STATUS_DURATION = 5;
+const MYSTERY_BOX_UPDATE_TOOL_NAMES = new Set([
+    "listMysteryBoxes",
+    "findMysteryBoxes",
+    "getMysteryBox",
+    "listMysteryThreads",
+    "getMysteryThread",
+]);
+const MYSTERY_BOX_UPDATE_CHAT_TOOLS = CHAT_TOOL_DEFINITIONS.filter((toolDefinition) =>
+    MYSTERY_BOX_UPDATE_TOOL_NAMES.has(toolDefinition?.function?.name)
+);
 
 const EVENT_PROMPT_ORDER = [
     // Location stuff
@@ -3069,6 +3082,8 @@ class Events {
             );
         const commonContext = {
             player: currentPlayer,
+            textToCheck,
+            actionText: normalizedActionText,
             allowEnvironmentalEffects: Boolean(allowEnvironmentalEffects),
             isNpcTurn: Boolean(isNpcTurn),
             suppressTimeAdvance: Boolean(suppressTimeAdvance),
@@ -3587,6 +3602,8 @@ class Events {
                 suppressMoveEvents: Boolean(suppressMoveEvents),
                 allowMoveTurnAppearances: Boolean(allowMoveTurnAppearances),
                 suppressTimeAdvance: Boolean(suppressTimeAdvance),
+                textToCheck,
+                actionText: normalizedActionText,
                 stream,
                 followupQueue: activeFollowupQueue,
                 _originatedFromEventChecks: true,
@@ -4877,6 +4894,11 @@ class Events {
                 return {
                     key: "npc_first_appearance",
                     raw: this._getXmlDirectChildText(node, "npcName"),
+                };
+            case "mysteryBoxMention":
+                return {
+                    key: "mystery_box_mention",
+                    raw: this._formatXmlLegacyRawEntry(node, ["name", "context"]),
                 };
             case "partyChange":
                 return {
@@ -6341,6 +6363,19 @@ class Events {
                 splitPipeList(raw)
                     .map((entry) => stripAfterFirstArrow(entry))
                     .filter(Boolean),
+            mystery_box_mention: (raw) =>
+                splitPipeList(raw)
+                    .map((entry) => {
+                        const [name, context] = splitArrowParts(entry, 2);
+                        if (!name || !context) {
+                            return null;
+                        }
+                        return {
+                            name: name.trim(),
+                            context: context.trim(),
+                        };
+                    })
+                    .filter(Boolean),
             party_change: (raw) =>
                 splitPipeList(raw)
                     .map((entry) => {
@@ -6870,6 +6905,374 @@ class Events {
                 return normalized;
             },
         };
+    }
+
+    static _getMysteryBoxIndexForPrompt() {
+        return MysteryBox.getAll().map((box) => ({
+            id: box.id,
+            name: box.name,
+            keys: [...box.keys],
+            text: box.text,
+        }));
+    }
+
+    static _resolveMysteryThreadMaxActive(config = this.config || {}) {
+        const configured = Number(config?.mystery_threads?.max_active);
+        if (Number.isInteger(configured) && configured >= 0) {
+            return configured;
+        }
+        return 2;
+    }
+
+    static _serializeMysteryThreadForPrompt(thread, { includeBoxes = true } = {}) {
+        const serialized = {
+            id: thread.id,
+            name: thread.name,
+            status: thread.status,
+            keys: [...thread.keys],
+            summary: thread.summary,
+            constraints: [...thread.constraints],
+            boxIds: [...thread.boxIds],
+        };
+        if (includeBoxes) {
+            serialized.mysteryBoxes = thread.boxIds
+                .map((boxId) => MysteryBox.getById(boxId))
+                .filter(Boolean)
+                .map((box) => ({
+                    id: box.id,
+                    name: box.name,
+                    keys: [...box.keys],
+                    text: box.text,
+                }));
+        }
+        return serialized;
+    }
+
+    static _getMysteryThreadIndexForPrompt() {
+        return MysteryThread.getAll().map((thread) => this._serializeMysteryThreadForPrompt(thread, {
+            includeBoxes: false,
+        }));
+    }
+
+    static _getActiveMysteryThreadsForPrompt(maxActive) {
+        return MysteryThread.getActive({ max: maxActive }).map((thread) =>
+            this._serializeMysteryThreadForPrompt(thread, { includeBoxes: true })
+        );
+    }
+
+    static _parseMysteryBoxUpdateResponse(responseText) {
+        const xml = Utils.extractFinalXmlRootBlock(responseText || "", "mysteryBoxUpdate");
+        if (!xml) {
+            throw new Error("Mystery box update response missing <mysteryBoxUpdate> root.");
+        }
+
+        let doc;
+        try {
+            doc = Utils.parseXmlDocumentStrict(xml, "text/xml");
+        } catch (error) {
+            throw new Error(`Failed to parse mystery box update XML: ${error.message}`);
+        }
+
+        const root = doc?.documentElement;
+        if (!root || root.tagName !== "mysteryBoxUpdate") {
+            throw new Error("Mystery box update response did not parse into <mysteryBoxUpdate>.");
+        }
+
+        const action = this._getXmlDirectChildText(root, "action").trim().toLowerCase();
+        if (action !== "create" && action !== "update" && action !== "skip") {
+            throw new Error('Mystery box update <action> must be "create", "update", or "skip".');
+        }
+
+        if (action === "skip") {
+            return {
+                action,
+                reason: normalizeString(this._getXmlDirectChildText(root, "reason")),
+            };
+        }
+
+        const name = normalizeString(this._getXmlDirectChildText(root, "name"));
+        if (!name) {
+            throw new Error("Mystery box update requires non-empty <name> as the canonical key.");
+        }
+        const text = normalizeString(this._getXmlDirectChildText(root, "text"));
+        if (!text) {
+            throw new Error("Mystery box update requires non-empty <text>.");
+        }
+
+        const keysNode = this._getXmlDirectChildNode(root, "keys");
+        const keys = keysNode
+            ? this._getXmlElementChildren(keysNode)
+                .filter((child) => child.tagName === "key")
+                .map((child) => normalizeString(child.textContent))
+                .filter(Boolean)
+            : [];
+
+        const threadNode = this._getXmlDirectChildNode(root, "thread");
+        let thread = null;
+        if (threadNode) {
+            const threadKeysNode = this._getXmlDirectChildNode(threadNode, "keys");
+            const threadConstraintsNode = this._getXmlDirectChildNode(threadNode, "constraints");
+            thread = {
+                id: normalizeString(this._getXmlDirectChildText(threadNode, "id")),
+                name: normalizeString(this._getXmlDirectChildText(threadNode, "name")),
+                status: normalizeString(this._getXmlDirectChildText(threadNode, "status")),
+                keys: threadKeysNode
+                    ? this._getXmlElementChildren(threadKeysNode)
+                        .filter((child) => child.tagName === "key")
+                        .map((child) => normalizeString(child.textContent))
+                        .filter(Boolean)
+                    : [],
+                summary: normalizeString(this._getXmlDirectChildText(threadNode, "summary")),
+                constraints: threadConstraintsNode
+                    ? this._getXmlElementChildren(threadConstraintsNode)
+                        .filter((child) => child.tagName === "constraint")
+                        .map((child) => normalizeString(child.textContent))
+                        .filter(Boolean)
+                    : [],
+            };
+        }
+
+        return {
+            action,
+            name,
+            keys,
+            text,
+            thread,
+        };
+    }
+
+    static _applyMysteryBoxUpdate(update, mention = {}, context = {}) {
+        if (!update || typeof update !== "object") {
+            throw new Error("Cannot apply empty mystery box update.");
+        }
+
+        if (update.action === "skip") {
+            return null;
+        }
+
+        const mentionName = normalizeString(mention?.name);
+        const canonicalName = normalizeString(update.name);
+        if (!canonicalName) {
+            throw new Error("Mystery box update requires a non-empty canonical name.");
+        }
+        const lookupKeys = [
+            canonicalName,
+            mentionName,
+            ...(Array.isArray(update.keys) ? update.keys : []),
+        ].filter(Boolean);
+
+        let box = null;
+        for (const key of lookupKeys) {
+            box = MysteryBox.getByKey(key);
+            if (box) {
+                break;
+            }
+        }
+
+        const mentionRecord = {
+            name: mentionName || canonicalName,
+            context: normalizeString(mention?.context),
+            sourceEntryId: normalizeString(context?.sourceEntryId),
+            worldTime: context?.worldTime || Globals.getSerializedWorldTime?.() || null,
+        };
+
+        const updateKeys = [
+            mentionName,
+            ...(Array.isArray(update.keys) ? update.keys : []),
+        ].filter(Boolean);
+
+        if (update.action === "update") {
+            if (!box) {
+                throw new Error(`Mystery box update targeted "${canonicalName}" but no matching mystery box exists.`);
+            }
+            box = box.applyUpdate({
+                name: canonicalName,
+                keys: updateKeys,
+                text: update.text,
+                mention: mentionRecord,
+            });
+        } else if (box) {
+            box = box.applyUpdate({
+                name: canonicalName,
+                keys: updateKeys,
+                text: update.text,
+                mention: mentionRecord,
+            });
+        } else {
+            box = new MysteryBox({
+                name: canonicalName,
+                keys: updateKeys,
+                text: update.text,
+                mentions: [mentionRecord],
+            });
+        }
+
+        this._applyMysteryThreadUpdateForBox(update.thread, box, {
+            action: update.action,
+            canonicalName,
+            config: this.config || {},
+        });
+
+        return box;
+    }
+
+    static _applyMysteryThreadUpdateForBox(threadUpdate, box, { action = "update", canonicalName = "", config = {} } = {}) {
+        if (!box) {
+            throw new Error("Cannot attach mystery thread update without a mystery box.");
+        }
+
+        let thread = null;
+        const threadLookupKeys = [
+            threadUpdate?.id,
+            threadUpdate?.name,
+            ...(Array.isArray(threadUpdate?.keys) ? threadUpdate.keys : []),
+        ].filter(Boolean);
+        for (const key of threadLookupKeys) {
+            thread = MysteryThread.getById(key) || MysteryThread.getByKey(key);
+            if (thread) {
+                break;
+            }
+        }
+        if (!thread) {
+            thread = MysteryThread.getContainingBox(box.id);
+        }
+
+        const maxActive = this._resolveMysteryThreadMaxActive(config);
+        const activeThreadCount = MysteryThread.getActive({ max: Number.MAX_SAFE_INTEGER }).length;
+        const requestedStatus = normalizeString(threadUpdate?.status);
+        const newThreadStatus = requestedStatus || "active";
+
+        if (!thread) {
+            const threadName = normalizeString(threadUpdate?.name) || canonicalName;
+            if (!threadName) {
+                throw new Error("Mystery box update requires a parent mystery thread name.");
+            }
+            if (newThreadStatus === "active" && activeThreadCount >= maxActive) {
+                throw new Error(`Cannot create active mystery thread "${threadName}"; mystery_threads.max_active is ${maxActive}.`);
+            }
+            thread = new MysteryThread({
+                name: threadName,
+                status: newThreadStatus,
+                keys: Array.isArray(threadUpdate?.keys) ? threadUpdate.keys : [],
+                summary: normalizeString(threadUpdate?.summary),
+                constraints: Array.isArray(threadUpdate?.constraints) ? threadUpdate.constraints : [],
+                boxIds: [box.id],
+            });
+            return thread;
+        }
+
+        if (requestedStatus === "active" && thread.status !== "active" && activeThreadCount >= maxActive) {
+            throw new Error(`Cannot activate mystery thread "${thread.name}"; mystery_threads.max_active is ${maxActive}.`);
+        }
+
+        thread.applyUpdate({
+            name: normalizeString(threadUpdate?.name) || null,
+            keys: Array.isArray(threadUpdate?.keys) ? threadUpdate.keys : [],
+            status: requestedStatus || null,
+            summary: typeof threadUpdate?.summary === "string" ? threadUpdate.summary : null,
+            constraints: Array.isArray(threadUpdate?.constraints) ? threadUpdate.constraints : null,
+            boxId: box.id,
+        });
+
+        return thread;
+    }
+
+    static _createMysteryBoxToolRuntime() {
+        const unavailable = (name) => () => {
+            throw new Error(`${name} is not available in mystery-box-update tool scope.`);
+        };
+        return createChatToolRuntime({
+            getConfig: () => this.config || {},
+            getChatHistory: () => [],
+            isAssistantProseLikeEntry: () => true,
+            serializeNpcForClient: () => ({}),
+            buildLocationResponse: () => ({}),
+            getCurrentPlayer: () => this.currentPlayer || {},
+            createLocationFromEvent: unavailable("createLocationFromEvent"),
+            createRegionStubFromEvent: unavailable("createRegionStubFromEvent"),
+            generateItemsByNames: unavailable("generateItemsByNames"),
+            ensureExitConnection: unavailable("ensureExitConnection"),
+            findRegionByLocationId: () => null,
+            LLMClient,
+            Player,
+            Thing,
+            Location: this._deps.Location || {},
+            Region: this._deps.Region || {},
+            getGameLocations: () => new Map(),
+            getFactions: () => [],
+            getRegionsMap: () => new Map(),
+            getPendingRegionStubs: () => new Map(),
+        });
+    }
+
+    static async _runMysteryBoxUpdatePrompt(mention, context = {}) {
+        const promptEnv = this._deps.promptEnv;
+        const parseXMLTemplate = this._deps.parseXMLTemplate;
+        const prepareBasePromptContext = this._deps.prepareBasePromptContext;
+        if (!promptEnv || typeof promptEnv.render !== "function") {
+            throw new Error("promptEnv.render dependency is not configured.");
+        }
+        if (typeof parseXMLTemplate !== "function") {
+            throw new Error("parseXMLTemplate dependency is not configured.");
+        }
+        if (typeof prepareBasePromptContext !== "function") {
+            throw new Error("prepareBasePromptContext dependency is not configured.");
+        }
+
+        const baseContext = await prepareBasePromptContext({
+            locationOverride: context?.location || null,
+        });
+        const config = this.config || {};
+        const mysteryThreadMaxActive = this._resolveMysteryThreadMaxActive(config);
+        const activeMysteryThreads = this._getActiveMysteryThreadsForPrompt(mysteryThreadMaxActive);
+        const activeThreadCount = MysteryThread.getActive({ max: Number.MAX_SAFE_INTEGER }).length;
+        const rendered = promptEnv.render("base-context.xml.njk", {
+            ...baseContext,
+            promptType: "mystery-box-update",
+            mysteryBoxMention: mention,
+            mysteryBoxEventText: typeof context?.textToCheck === "string" ? context.textToCheck : "",
+            mysteryBoxActionText: typeof context?.actionText === "string" ? context.actionText : "",
+            mysteryBoxes: this._getMysteryBoxIndexForPrompt(),
+            mysteryThreads: this._getMysteryThreadIndexForPrompt(),
+            activeMysteryThreads,
+            mysteryThreadMaxActive,
+            mysteryThreadActiveCount: activeThreadCount,
+            mysteryThreadCapacityFull: activeThreadCount >= mysteryThreadMaxActive,
+            omitGameHistory: true,
+        });
+        const parsedTemplate = parseXMLTemplate(rendered);
+        if (!parsedTemplate?.systemPrompt || !parsedTemplate?.generationPrompt) {
+            throw new Error("Mystery box update template did not produce prompts.");
+        }
+
+        const toolRuntime = this._createMysteryBoxToolRuntime();
+        const toolLoopResult = await toolRuntime.runChatCompletionWithToolLoop({
+            requestOptions: {
+                messages: [
+                    { role: "system", content: parsedTemplate.systemPrompt },
+                    { role: "user", content: parsedTemplate.generationPrompt },
+                ],
+                metadataLabel: "mystery_box_update",
+                errorLogLabel: "mystery-box-update",
+                timeoutMs: this._baseTimeout,
+                temperature: 0,
+                validateXML: false,
+                tools: MYSTERY_BOX_UPDATE_CHAT_TOOLS,
+            },
+            metadataLabel: "mystery_box_update",
+        });
+        const responseText = toolLoopResult.aiResponse || "";
+
+        LLMClient.logPrompt({
+            prefix: "mystery_box_update",
+            metadataLabel: "mystery_box_update",
+            systemPrompt: parsedTemplate.systemPrompt || "",
+            generationPrompt: parsedTemplate.generationPrompt || "",
+            response: responseText || "",
+        });
+
+        const update = this._parseMysteryBoxUpdateResponse(responseText);
+        return this._applyMysteryBoxUpdate(update, mention, context);
     }
 
     static _buildHandlers() {
@@ -10020,6 +10423,20 @@ class Events {
                             `Failed to move thing "${entry.thingName}" with character "${entry.characterName}" to "${targetLocation.name || targetLocation.id}":`,
                             error.message,
                         );
+                    }
+                }
+            },
+            mystery_box_mention: async function (entries = [], context = {}) {
+                if (!Array.isArray(entries) || !entries.length) {
+                    return;
+                }
+                context.mysteryBoxUpdates = Array.isArray(context.mysteryBoxUpdates)
+                    ? context.mysteryBoxUpdates
+                    : [];
+                for (const entry of entries) {
+                    const box = await this._runMysteryBoxUpdatePrompt(entry, context);
+                    if (box) {
+                        context.mysteryBoxUpdates.push(box);
                     }
                 }
             },

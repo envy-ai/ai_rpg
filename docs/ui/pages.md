@@ -78,7 +78,7 @@ This page maps routes to templates and the client scripts/styles they load.
 - Notes: the global nav labels this route as `Worlds`, while the page title is `World Profiles`. The underlying API and internal ids still use `settings`.
 - Notes: uses a master-detail layout with a left world-profile library and a right editor panel.
 - Notes: the left panel includes search (`name/theme/genre/tone/difficulty`), sort controls, and selection-scoped actions (`Edit`, `Apply`, `Clone`, `Delete`), instead of per-row action buttons.
-- Notes: editor fields are grouped into tabbed sections (`Basics`, `New Game Defaults`, `Tone Scale`, `Factions`, `Character Options`, `Prompt Guidance`, `Image Prefixes`) and a sticky action bar keeps `Clear`, `Create/Update`, and `Auto-Fill Blank Fields` visible while scrolling.
+- Notes: editor fields are grouped into tabbed sections (`Basics`, `New Game Defaults`, `Tone Scale`, `Factions`, `Character Options`, `Prompt Guidance`, `Calendar`, `Image Prefixes`) and a sticky action bar keeps `Clear`, `Create/Update`, and `Auto-Fill Blank Fields` visible while scrolling.
 - Notes: the `Tone Scale` tab renders axes from `defs/unified_tonal_scale.yaml`; dropdowns include defined levels plus generated half-step midpoint choices such as `3.5 - Hopeful/Mixed`. If any tonal axis is selected, every axis must have a numeric level, and optional comments are saved in `setting.unifiedTonalScale`.
 - Notes: the `Factions` tab includes:
   - `Number of Factions` input (`defaultFactionCount`) for new-game faction target count.
@@ -89,6 +89,7 @@ This page maps routes to templates and the client scripts/styles they load.
 - Notes: library/editor scrolling is container-scoped within the settings workspace (instead of raw viewport-height caps) so bottom actions stay reachable.
 - Notes: the default Starting Location Generation Instructions field mirrors the multiline placeholder used on the New Game form.
 - Notes: the Default Existing Skills field is prefilled from `defs/default_skills.yaml` when creating a new (blank) setting.
+- Notes: the `Calendar` tab is second from the right, stores optional `setting.calendarDefinition` JSON with the world profile, can pre-generate a calendar through `/api/settings/calendar/generate`, can load the explicit Gregorian default through `/api/settings/calendar/default`, and leaves the field blank to let new-game setup generate the calendar later.
 - Notes: the auto-fill button can append up to ~10 setting-specific skills when the skills list is empty or baseline-only.
 - Notes: Prompt Guidance includes `Custom Slop Words` (one per line); single-word entries feed slop-word checks and multi-word entries feed configured ngram checks.
 - Notes: editing a setting and changing its name creates a new setting id (the original setting remains available).

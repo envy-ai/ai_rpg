@@ -13,6 +13,8 @@ Central allocator for compact persisted domain-object IDs. It replaces timestamp
 - `quest`: quests.
 - `obj`: quest objectives.
 - `status`: status effects.
+- `mystery`: mystery boxes.
+- `mthread`: mystery threads.
 
 Operational IDs such as chat message IDs, prompt/session IDs, generated-image request IDs, and similar transient runtime identifiers are not allocated here.
 

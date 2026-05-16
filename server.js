@@ -94,6 +94,8 @@ const SettingInfo = require('./SettingInfo.js');
 const Region = require('./Region.js');
 // Import Faction class
 const Faction = require('./Faction.js');
+const MysteryBox = require('./MysteryBox.js');
+const MysteryThread = require('./MysteryThread.js');
 
 // Import image generation clients
 const ComfyUIClient = require('./ComfyUIClient.js');
@@ -2411,6 +2413,17 @@ async function validateConfiguration() {
     if (config.event_checks?.use_xml !== undefined && typeof config.event_checks.use_xml !== 'boolean') {
         validationErrors.push('event_checks.use_xml must be a boolean when provided');
     }
+    if (config.mystery_threads !== undefined) {
+        const mysteryThreadsConfig = config.mystery_threads;
+        if (!mysteryThreadsConfig || typeof mysteryThreadsConfig !== 'object' || Array.isArray(mysteryThreadsConfig)) {
+            validationErrors.push('mystery_threads must be an object when provided');
+        } else if (mysteryThreadsConfig.max_active !== undefined) {
+            const maxActive = Number(mysteryThreadsConfig.max_active);
+            if (!Number.isInteger(maxActive) || maxActive < 0) {
+                validationErrors.push('mystery_threads.max_active must be an integer greater than or equal to 0 when provided');
+            }
+        }
+    }
     if (config.barter !== undefined) {
         const barterConfig = config.barter;
         if (!barterConfig || typeof barterConfig !== 'object' || Array.isArray(barterConfig)) {
@@ -2935,6 +2948,39 @@ function scrubGeneratedBrackets(text, options = null) {
 }
 
 Globals.scrubGeneratedBrackets = scrubGeneratedBrackets;
+
+function resolveMysteryThreadMaxActive(sourceConfig = config) {
+    const configured = Number(sourceConfig?.mystery_threads?.max_active);
+    if (Number.isInteger(configured) && configured >= 0) {
+        return configured;
+    }
+    return 2;
+}
+
+function buildActiveMysteryThreadsForPrompt(sourceConfig = config) {
+    const maxActive = resolveMysteryThreadMaxActive(sourceConfig);
+    if (maxActive <= 0) {
+        return [];
+    }
+
+    return MysteryThread.getActive({ max: maxActive }).map(thread => ({
+        id: thread.id,
+        name: thread.name,
+        status: thread.status,
+        keys: [...thread.keys],
+        summary: thread.summary,
+        constraints: [...thread.constraints],
+        mysteryBoxes: thread.boxIds
+            .map(boxId => MysteryBox.getById(boxId))
+            .filter(Boolean)
+            .map(box => ({
+                id: box.id,
+                name: box.name,
+                keys: [...box.keys],
+                text: box.text
+            }))
+    }));
+}
 
 function shouldShowHiddenNotes(sourceConfig = config) {
     return sourceConfig?.show_hidden_notes === true;
@@ -6926,6 +6972,8 @@ function buildBasePromptContext({
         fullGameHistory,
         plotSummary: latestPlotSummary,
         plotExpander: latestPlotExpander,
+        mysteryThreadMaxActive: resolveMysteryThreadMaxActive(config),
+        activeMysteryThreads: buildActiveMysteryThreadsForPrompt(config),
         currentRegion: currentRegionContext,
         currentLocation: currentLocationContext,
         currentPlayer: currentPlayerContext,
@@ -27472,6 +27520,13 @@ async function generateRegionExitStubs({
 
         const existingRegion = Region.getByName(definition.name);
         if (existingRegion) {
+            const isCurrentRegion = existingRegion === region
+                || (existingRegion.id && region.id && existingRegion.id === region.id);
+            if (isCurrentRegion) {
+                const sourceLabel = `${sourceLocation.name || sourceLocation.id || 'unknown'} (${sourceLocation.id || 'no-id'})`;
+                console.warn(`Ignoring self-referential region exit for "${region.name || region.id || 'unknown region'}" from ${sourceLabel}: target region "${definition.name}" resolves to the region currently being created.`);
+                continue;
+            }
             await connectExistingRegion({
                 region,
                 sourceLocation,
@@ -28379,7 +28434,16 @@ async function instantiateRegionLocations({
     }
 
     const addStubExit = (fromStub, toStub, label, travelTimeMinutes = 0) => {
-        if (!fromStub || !toStub || fromStub.id === toStub.id) {
+        if (!fromStub || !toStub) {
+            return;
+        }
+
+        const isSelfReference = fromStub === toStub
+            || (fromStub.id && toStub.id && fromStub.id === toStub.id);
+        if (isSelfReference) {
+            const sourceLabel = `${fromStub.name || fromStub.id || 'unknown'} (${fromStub.id || 'no-id'})`;
+            const targetLabel = typeof label === 'string' && label.trim() ? label.trim() : (toStub.name || toStub.id || 'unknown');
+            console.warn(`Ignoring self-referential location exit for ${sourceLabel} in generated region "${region.name || region.id || 'unknown region'}": target "${targetLabel}" resolves to the source location.`);
             return;
         }
 

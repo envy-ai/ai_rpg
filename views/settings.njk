@@ -79,12 +79,14 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                     <button type="button" class="editor-tab-btn" data-editor-tab="factions" aria-selected="false">Factions</button>
                     <button type="button" class="editor-tab-btn" data-editor-tab="characters" aria-selected="false">Character Options</button>
                     <button type="button" class="editor-tab-btn" data-editor-tab="prompts" aria-selected="false">Prompt Guidance</button>
+                    <button type="button" class="editor-tab-btn" data-editor-tab="calendar" aria-selected="false">Calendar</button>
                     <button type="button" class="editor-tab-btn" data-editor-tab="images" aria-selected="false">Image Prefixes</button>
                 </div>
 
                 <form id="settingForm">
                     <input type="hidden" id="settingId" name="id">
                     <input type="hidden" id="defaultFactions" name="defaultFactions" value="[]">
+                    <input type="hidden" id="calendarDefinition" name="calendarDefinition" value="">
 
                     <section class="editor-tab-panel is-active" data-editor-panel="basics">
                         <div class="field-grid">
@@ -384,6 +386,31 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                                 <label for="customSlopWords">Custom Slop Words (one per line)</label>
                                 <textarea id="customSlopWords" name="customSlopWords" rows="5" placeholder="echoing silence\nstarlight protocol"></textarea>
                                 <div class="help-text">Single-word entries are checked as slop words. Multi-word entries are checked as ngrams.</div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section class="editor-tab-panel" data-editor-panel="calendar">
+                        <div class="field-grid">
+                            <div class="form-group full-width">
+                                <div class="settings-calendar-toolbar">
+                                    <button type="button" class="btn btn-secondary small" id="settingsCalendarGenerateBtn">Pre-Generate Calendar</button>
+                                    <button type="button" class="btn btn-secondary small" id="settingsCalendarUseDefaultBtn">Use Gregorian Default</button>
+                                    <button type="button" class="btn btn-secondary small" id="settingsCalendarFormatBtn">Format JSON</button>
+                                    <button type="button" class="btn btn-danger small" id="settingsCalendarClearBtn">Clear Calendar</button>
+                                </div>
+                                <div class="help-text">Saved calendars are used when starting a new game from this world profile. Leave blank to generate a calendar during new-game setup.</div>
+                            </div>
+
+                            <div class="form-group full-width">
+                                <label for="settingsCalendarJson">Calendar Definition JSON</label>
+                                <textarea id="settingsCalendarJson" rows="20" spellcheck="false" placeholder="Pre-generate or paste a calendar definition JSON object..."></textarea>
+                                <div class="help-text">Calendar definitions use yearName, months, weekdays, seasons, and holidays. Invalid JSON or invalid calendar fields will block saving.</div>
+                            </div>
+
+                            <div class="form-group full-width">
+                                <div id="settingsCalendarSummary" class="settings-calendar-summary">No calendar saved for this world profile.</div>
+                                <div id="settingsCalendarStatus" class="settings-calendar-status" role="status" aria-live="polite"></div>
                             </div>
                         </div>
                     </section>
@@ -1045,6 +1072,7 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
             assignValue('characterGenInstructions', setting.characterGenInstructions || '');
             assignValue('customSlopWords', joinLines(setting.customSlopWords));
             applyUnifiedTonalScaleToForm(setting.unifiedTonalScale);
+            applyCalendarDefinitionToForm(setting.calendarDefinition || null);
             assignValue('imagePromptPrefixCharacter', setting.imagePromptPrefixCharacter || '');
             assignValue('imagePromptPrefixLocation', setting.imagePromptPrefixLocation || '');
             assignValue('imagePromptPrefixItem', setting.imagePromptPrefixItem || '');
@@ -1253,6 +1281,7 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                 defaultFactionsField.value = '[]';
             }
             clearUnifiedTonalScaleForm();
+            applyCalendarDefinitionToForm(null);
             if (settingsFactionEditor) {
                 settingsFactionEditor.clear();
             }
@@ -1304,7 +1333,11 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
             if (toneScaleNotation) {
                 extraLines.push(`Tone Scale: ${toneScaleNotation}`);
             }
-            
+            const calendarText = document.getElementById('settingsCalendarJson')?.value?.trim() || '';
+            if (calendarText) {
+                extraLines.push('Calendar: saved');
+            }
+	            
             content.innerHTML = `
                 <strong>${escapeHtml(name)}</strong><br>
                 <small>${escapeHtml(theme)}/${escapeHtml(genre)} world profile with ${escapeHtml(tone)} tone and ${escapeHtml(difficulty)} difficulty</small><br>
@@ -1317,6 +1350,180 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                 .split(/\r?\n/)
                 .map(line => line.trim())
                 .filter(line => line.length > 0);
+        }
+
+        function setSettingsCalendarStatus(message = '', type = null) {
+            const statusEl = document.getElementById('settingsCalendarStatus');
+            if (!statusEl) {
+                return;
+            }
+            statusEl.textContent = message || '';
+            statusEl.classList.remove('is-error', 'is-success');
+            if (type === 'error') {
+                statusEl.classList.add('is-error');
+            } else if (type === 'success') {
+                statusEl.classList.add('is-success');
+            }
+        }
+
+        function summarizeCalendarDefinition(calendarDefinition) {
+            if (!calendarDefinition || typeof calendarDefinition !== 'object') {
+                return 'No calendar saved for this world profile.';
+            }
+            const months = Array.isArray(calendarDefinition.months) ? calendarDefinition.months.length : 0;
+            const weekdays = Array.isArray(calendarDefinition.weekdays) ? calendarDefinition.weekdays.length : 0;
+            const seasons = Array.isArray(calendarDefinition.seasons) ? calendarDefinition.seasons.length : 0;
+            const holidays = Array.isArray(calendarDefinition.holidays) ? calendarDefinition.holidays.length : 0;
+            const yearName = typeof calendarDefinition.yearName === 'string' && calendarDefinition.yearName.trim()
+                ? calendarDefinition.yearName.trim()
+                : 'Unnamed year';
+            return `${yearName}: ${months} month(s), ${weekdays} weekday(s), ${seasons} season(s), ${holidays} holiday(s).`;
+        }
+
+        function updateCalendarSummary(calendarDefinition = null) {
+            const summaryEl = document.getElementById('settingsCalendarSummary');
+            if (!summaryEl) {
+                return;
+            }
+            summaryEl.textContent = summarizeCalendarDefinition(calendarDefinition);
+        }
+
+        function applyCalendarDefinitionToForm(calendarDefinition = null) {
+            const hiddenInput = document.getElementById('calendarDefinition');
+            const jsonInput = document.getElementById('settingsCalendarJson');
+            const hasCalendar = calendarDefinition && typeof calendarDefinition === 'object' && !Array.isArray(calendarDefinition);
+            const serialized = hasCalendar ? JSON.stringify(calendarDefinition, null, 2) : '';
+            if (hiddenInput) {
+                hiddenInput.value = hasCalendar ? JSON.stringify(calendarDefinition) : '';
+            }
+            if (jsonInput) {
+                jsonInput.value = serialized;
+            }
+            updateCalendarSummary(hasCalendar ? calendarDefinition : null);
+            setSettingsCalendarStatus('', null);
+        }
+
+        function collectCalendarDefinitionFromForm({ allowBlank = true } = {}) {
+            const hiddenInput = document.getElementById('calendarDefinition');
+            const jsonInput = document.getElementById('settingsCalendarJson');
+            const rawValue = (jsonInput?.value || '').trim();
+            if (!rawValue) {
+                if (!allowBlank) {
+                    throw new Error('Calendar definition JSON is required.');
+                }
+                if (hiddenInput) {
+                    hiddenInput.value = '';
+                }
+                updateCalendarSummary(null);
+                return null;
+            }
+
+            let parsed;
+            try {
+                parsed = JSON.parse(rawValue);
+            } catch (error) {
+                throw new Error(`Calendar definition JSON is invalid: ${error.message}`);
+            }
+            if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+                throw new Error('Calendar definition JSON must decode to an object.');
+            }
+            if (hiddenInput) {
+                hiddenInput.value = JSON.stringify(parsed);
+            }
+            updateCalendarSummary(parsed);
+            return parsed;
+        }
+
+        function buildCalendarGenerationSettingPayload() {
+            return {
+                name: document.getElementById('name')?.value?.trim() || '',
+                description: document.getElementById('description')?.value?.trim() || '',
+                theme: document.getElementById('theme')?.value?.trim() || '',
+                genre: document.getElementById('genre')?.value?.trim() || '',
+                startingLocationType: document.getElementById('startingLocationType')?.value?.trim() || '',
+                magicLevel: document.getElementById('magicLevel')?.value?.trim() || '',
+                techLevel: document.getElementById('techLevel')?.value?.trim() || '',
+                tone: document.getElementById('tone')?.value?.trim() || '',
+                difficulty: document.getElementById('difficulty')?.value?.trim() || ''
+            };
+        }
+
+        async function preGenerateSettingsCalendar() {
+            const button = document.getElementById('settingsCalendarGenerateBtn');
+            if (!button || button.disabled) {
+                return;
+            }
+            button.disabled = true;
+            const originalText = button.textContent;
+            button.textContent = 'Generating...';
+            setSettingsCalendarStatus('Generating calendar...', null);
+            try {
+                const response = await fetch('/api/settings/calendar/generate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        setting: buildCalendarGenerationSettingPayload()
+                    })
+                });
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok || !data?.success || !data?.calendarDefinition) {
+                    throw new Error(data?.error || 'Failed to generate calendar.');
+                }
+                applyCalendarDefinitionToForm(data.calendarDefinition);
+                setSettingsCalendarStatus('Calendar generated. Save the world profile to persist it.', 'success');
+                updatePreview();
+            } catch (error) {
+                setSettingsCalendarStatus(error?.message || 'Failed to generate calendar.', 'error');
+                showMessage(error?.message || 'Failed to generate calendar.', 'error');
+            } finally {
+                button.disabled = false;
+                button.textContent = originalText;
+            }
+        }
+
+        async function useDefaultSettingsCalendar() {
+            const button = document.getElementById('settingsCalendarUseDefaultBtn');
+            if (!button || button.disabled) {
+                return;
+            }
+            button.disabled = true;
+            const originalText = button.textContent;
+            button.textContent = 'Loading...';
+            setSettingsCalendarStatus('Loading Gregorian default...', null);
+            try {
+                const settingName = document.getElementById('name')?.value?.trim() || '';
+                const params = settingName ? `?settingName=${encodeURIComponent(settingName)}` : '';
+                const response = await fetch(`/api/settings/calendar/default${params}`);
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok || !data?.success || !data?.calendarDefinition) {
+                    throw new Error(data?.error || 'Failed to load default calendar.');
+                }
+                applyCalendarDefinitionToForm(data.calendarDefinition);
+                setSettingsCalendarStatus('Gregorian default loaded. Save the world profile to persist it.', 'success');
+                updatePreview();
+            } catch (error) {
+                setSettingsCalendarStatus(error?.message || 'Failed to load default calendar.', 'error');
+                showMessage(error?.message || 'Failed to load default calendar.', 'error');
+            } finally {
+                button.disabled = false;
+                button.textContent = originalText;
+            }
+        }
+
+        function formatSettingsCalendarJson() {
+            try {
+                const calendarDefinition = collectCalendarDefinitionFromForm({ allowBlank: false });
+                applyCalendarDefinitionToForm(calendarDefinition);
+                setSettingsCalendarStatus('Calendar JSON formatted.', 'success');
+            } catch (error) {
+                setSettingsCalendarStatus(error?.message || 'Calendar JSON is invalid.', 'error');
+            }
+        }
+
+        function clearSettingsCalendar() {
+            applyCalendarDefinitionToForm(null);
+            setSettingsCalendarStatus('Calendar cleared. Save the world profile to persist the cleared value.', 'success');
+            updatePreview();
         }
 
         function parseDefaultFactionsValue(rawValue) {
@@ -2011,12 +2218,20 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
             const selectedApplyBtn = document.getElementById('selectedApplyBtn');
             const selectedCloneBtn = document.getElementById('selectedCloneBtn');
             const selectedDeleteBtn = document.getElementById('selectedDeleteBtn');
+            const settingsCalendarGenerateBtn = document.getElementById('settingsCalendarGenerateBtn');
+            const settingsCalendarUseDefaultBtn = document.getElementById('settingsCalendarUseDefaultBtn');
+            const settingsCalendarFormatBtn = document.getElementById('settingsCalendarFormatBtn');
+            const settingsCalendarClearBtn = document.getElementById('settingsCalendarClearBtn');
+            const settingsCalendarJson = document.getElementById('settingsCalendarJson');
 
             if (!settingsListEl || !settingsSearchEl || !settingsSortEl || !newSettingBtn) {
                 throw new Error('Library controls are missing from the settings page.');
             }
             if (!selectedEditBtn || !selectedApplyBtn || !selectedCloneBtn || !selectedDeleteBtn) {
                 throw new Error('Selected-setting action controls are missing from the settings page.');
+            }
+            if (!settingsCalendarGenerateBtn || !settingsCalendarUseDefaultBtn || !settingsCalendarFormatBtn || !settingsCalendarClearBtn || !settingsCalendarJson) {
+                throw new Error('Settings calendar controls are missing from the settings page.');
             }
 
             settingForm.addEventListener('submit', async function(e) {
@@ -2064,7 +2279,15 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                     showMessage(error?.message || 'Tone scale selections are invalid.', 'error');
                     return;
                 }
-                
+                try {
+                    settingData.calendarDefinition = collectCalendarDefinitionFromForm();
+                } catch (error) {
+                    showMessage(error?.message || 'Calendar definition is invalid.', 'error');
+                    setActiveEditorTab('calendar');
+                    setSettingsCalendarStatus(error?.message || 'Calendar definition is invalid.', 'error');
+                    return;
+                }
+	                
                 try {
                     let response;
                     let requestSettingId = null;
@@ -2203,6 +2426,19 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                     return;
                 }
                 await deleteSetting(selected.id);
+            });
+
+            settingsCalendarGenerateBtn.addEventListener('click', preGenerateSettingsCalendar);
+            settingsCalendarUseDefaultBtn.addEventListener('click', useDefaultSettingsCalendar);
+            settingsCalendarFormatBtn.addEventListener('click', formatSettingsCalendarJson);
+            settingsCalendarClearBtn.addEventListener('click', clearSettingsCalendar);
+            settingsCalendarJson.addEventListener('input', () => {
+                const rawValue = settingsCalendarJson.value.trim();
+                if (!rawValue) {
+                    applyCalendarDefinitionToForm(null);
+                } else {
+                    setSettingsCalendarStatus('', null);
+                }
             });
 
             document.querySelectorAll('.editor-tab-btn').forEach((button) => {
@@ -2363,6 +2599,7 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                     : '';
                 settingPayload.defaultFactions = parseDefaultFactionsValue(settingPayload.defaultFactions);
                 settingPayload.unifiedTonalScale = collectUnifiedTonalScaleFromForm();
+                settingPayload.calendarDefinition = collectCalendarDefinitionFromForm();
 
                 const requestBody = {
                     setting: settingPayload,
@@ -2435,6 +2672,9 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                 }).forEach(([fieldId, value]) => applyText(fieldId, value));
                 if (settingsFactionEditor && Array.isArray(filled.defaultFactions)) {
                     settingsFactionEditor.load(filled.defaultFactions);
+                }
+                if (Object.prototype.hasOwnProperty.call(filled, 'calendarDefinition')) {
+                    applyCalendarDefinitionToForm(filled.calendarDefinition || null);
                 }
 
                 showMessage('Blank fields populated successfully.', 'success');

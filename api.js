@@ -16,6 +16,8 @@ const SanitizedStringSet = require('./SanitizedStringSet.js');
 const Events = require('./Events.js');
 const Quest = require('./Quest.js');
 const Faction = require('./Faction.js');
+const MysteryBox = require('./MysteryBox.js');
+const MysteryThread = require('./MysteryThread.js');
 const FormulaEvaluator = require('./public/js/formula-evaluator.js');
 const { resolvePointPoolFormulas } = require('./utils/point-pool-formulas.js');
 const {
@@ -35,6 +37,11 @@ const INFORMATION_GATHERING_CHAT_TOOL_NAMES = new Set([
     'moreInfo',
     'getHistory',
     'getFullScene',
+    'listMysteryBoxes',
+    'findMysteryBoxes',
+    'getMysteryBox',
+    'listMysteryThreads',
+    'getMysteryThread',
     'listLocationEntities',
     'resolveAttack',
     'resolveSkillCheck',
@@ -22208,6 +22215,454 @@ module.exports = function registerApiRoutes(scope) {
             }
         });
 
+        const serializeMysteryBoxSummaryForClient = (box) => {
+            const data = typeof box?.toJSON === 'function' ? box.toJSON() : box;
+            if (!data || typeof data !== 'object') {
+                return null;
+            }
+            const thread = MysteryThread.getContainingBox(data.id);
+            return {
+                id: typeof data.id === 'string' ? data.id : null,
+                name: typeof data.name === 'string' ? data.name : '',
+                keys: Array.isArray(data.keys) ? data.keys.filter(entry => typeof entry === 'string') : [],
+                threadId: thread?.id || null,
+                threadName: thread?.name || null,
+                createdAt: typeof data.createdAt === 'string' ? data.createdAt : null,
+                updatedAt: typeof data.updatedAt === 'string' ? data.updatedAt : null,
+                mentionCount: Array.isArray(data.mentions) ? data.mentions.length : 0
+            };
+        };
+
+        const serializeMysteryBoxForClient = (box) => {
+            const data = typeof box?.toJSON === 'function' ? box.toJSON() : box;
+            if (!data || typeof data !== 'object') {
+                return null;
+            }
+            const thread = MysteryThread.getContainingBox(data.id);
+            return {
+                id: typeof data.id === 'string' ? data.id : null,
+                name: typeof data.name === 'string' ? data.name : '',
+                keys: Array.isArray(data.keys) ? data.keys.filter(entry => typeof entry === 'string') : [],
+                threadId: thread?.id || null,
+                threadName: thread?.name || null,
+                text: typeof data.text === 'string' ? data.text : '',
+                mentions: Array.isArray(data.mentions) ? data.mentions : [],
+                createdAt: typeof data.createdAt === 'string' ? data.createdAt : null,
+                updatedAt: typeof data.updatedAt === 'string' ? data.updatedAt : null
+            };
+        };
+
+        const serializeMysteryThreadSummaryForClient = (thread) => {
+            const data = typeof thread?.toJSON === 'function' ? thread.toJSON() : thread;
+            if (!data || typeof data !== 'object') {
+                return null;
+            }
+            const boxes = Array.isArray(data.boxIds)
+                ? data.boxIds
+                    .map(boxId => MysteryBox.getById(boxId))
+                    .filter(Boolean)
+                    .map(serializeMysteryBoxSummaryForClient)
+                    .filter(Boolean)
+                : [];
+            return {
+                id: typeof data.id === 'string' ? data.id : null,
+                name: typeof data.name === 'string' ? data.name : '',
+                status: typeof data.status === 'string' ? data.status : 'inactive',
+                keys: Array.isArray(data.keys) ? data.keys.filter(entry => typeof entry === 'string') : [],
+                summary: typeof data.summary === 'string' ? data.summary : '',
+                constraints: Array.isArray(data.constraints) ? data.constraints.filter(entry => typeof entry === 'string') : [],
+                boxIds: Array.isArray(data.boxIds) ? data.boxIds.filter(entry => typeof entry === 'string') : [],
+                boxes,
+                boxCount: boxes.length,
+                createdAt: typeof data.createdAt === 'string' ? data.createdAt : null,
+                updatedAt: typeof data.updatedAt === 'string' ? data.updatedAt : null
+            };
+        };
+
+        const serializeMysteryThreadForClient = (thread) => {
+            const summary = serializeMysteryThreadSummaryForClient(thread);
+            if (!summary) {
+                return null;
+            }
+            return {
+                ...summary,
+                boxes: summary.boxIds
+                    .map(boxId => MysteryBox.getById(boxId))
+                    .filter(Boolean)
+                    .map(serializeMysteryBoxForClient)
+                    .filter(Boolean)
+            };
+        };
+
+        const sortMysteryBoxSummaries = (boxes) => boxes.sort((a, b) => {
+            const nameCompare = (a.name || '').localeCompare((b.name || ''), undefined, { sensitivity: 'base' });
+            if (nameCompare !== 0) {
+                return nameCompare;
+            }
+            return (a.id || '').localeCompare((b.id || ''), undefined, { sensitivity: 'base' });
+        });
+
+        const sortMysteryThreadSummaries = (threads) => threads.sort((a, b) => {
+            const nameCompare = (a.name || '').localeCompare((b.name || ''), undefined, { sensitivity: 'base' });
+            if (nameCompare !== 0) {
+                return nameCompare;
+            }
+            return (a.id || '').localeCompare((b.id || ''), undefined, { sensitivity: 'base' });
+        });
+
+        const normalizeMysteryTextListForApi = (value, label) => {
+            if (value === undefined || value === null) {
+                return [];
+            }
+            if (Array.isArray(value)) {
+                return value.map((entry, index) => {
+                    if (typeof entry !== 'string') {
+                        throw new Error(`${label} at index ${index} must be a string.`);
+                    }
+                    return entry.trim();
+                }).filter(Boolean);
+            }
+            if (typeof value === 'string') {
+                return value
+                    .split(/\r?\n/)
+                    .map(entry => entry.trim())
+                    .filter(Boolean);
+            }
+            throw new Error(`${label} must be an array of strings or newline-delimited string.`);
+        };
+
+        const normalizeMysteryBoxKeysForApi = (value) => {
+            return normalizeMysteryTextListForApi(value, 'Mystery box key');
+        };
+
+        const persistMysteryBoxesToCurrentSave = () => {
+            const saveInfo = typeof Globals.getCurrentSaveInfo === 'function'
+                ? Globals.getCurrentSaveInfo()
+                : Globals.currentSaveInfo;
+            if (!saveInfo || typeof saveInfo !== 'object') {
+                return false;
+            }
+            const saveDir = typeof saveInfo.saveDir === 'string' ? saveInfo.saveDir.trim() : '';
+            if (!saveDir) {
+                return false;
+            }
+            if (!fs.existsSync(saveDir)) {
+                throw new Error(`Save directory does not exist: ${saveDir}`);
+            }
+
+            fs.writeFileSync(
+                path.join(saveDir, 'mysteryBoxes.json'),
+                JSON.stringify(MysteryBox.serializeAll(), null, 2)
+            );
+            fs.writeFileSync(
+                path.join(saveDir, 'mysteryThreads.json'),
+                JSON.stringify(MysteryThread.serializeAll(), null, 2)
+            );
+
+            const metadata = {
+                ...((typeof Globals.getSaveMetadata === 'function' ? Globals.getSaveMetadata() : Globals.saveMetadata) || {})
+            };
+            metadata.totalMysteryBoxes = MysteryBox.getAll().length;
+            metadata.totalMysteryThreads = MysteryThread.getAll().length;
+            Globals.setSaveMetadata(metadata);
+            fs.writeFileSync(path.join(saveDir, 'metadata.json'), JSON.stringify(metadata, null, 2));
+            return true;
+        };
+
+        const getMysteryThreadMaxActiveForApi = () => {
+            const configured = Number(config?.mystery_threads?.max_active);
+            if (Number.isInteger(configured) && configured >= 0) {
+                return configured;
+            }
+            return 2;
+        };
+
+        const validateMysteryThreadStatusChange = (thread, nextStatus) => {
+            if (nextStatus !== 'active' || thread.status === 'active') {
+                return;
+            }
+            const maxActive = getMysteryThreadMaxActiveForApi();
+            const activeCount = MysteryThread.getActive({ max: Number.MAX_SAFE_INTEGER }).length;
+            if (activeCount >= maxActive) {
+                throw new Error(`Cannot activate mystery thread "${thread.name}"; mystery_threads.max_active is ${maxActive}. Deactivate or conclude another active thread first.`);
+            }
+        };
+
+        app.get('/api/mystery-threads', (req, res) => {
+            try {
+                const query = typeof req.query?.query === 'string' ? req.query.query.trim() : '';
+                const source = query ? MysteryThread.listBySearchPhrase(query) : MysteryThread.getAll();
+                const mysteryThreads = sortMysteryThreadSummaries(
+                    source
+                        .map(serializeMysteryThreadSummaryForClient)
+                        .filter(Boolean)
+                );
+                res.json({
+                    success: true,
+                    mysteryThreads,
+                    count: mysteryThreads.length,
+                    maxActive: getMysteryThreadMaxActiveForApi()
+                });
+            } catch (error) {
+                console.error('Failed to list mystery threads:', error);
+                res.status(500).json({
+                    success: false,
+                    error: error?.message || 'Failed to list mystery threads.'
+                });
+            }
+        });
+
+        app.get('/api/mystery-threads/:id', (req, res) => {
+            try {
+                const mysteryThreadId = typeof req.params.id === 'string' ? req.params.id.trim() : '';
+                if (!mysteryThreadId) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Mystery thread id is required.'
+                    });
+                }
+
+                const thread = MysteryThread.getById(mysteryThreadId) || MysteryThread.getByKey(mysteryThreadId);
+                if (!thread) {
+                    return res.status(404).json({
+                        success: false,
+                        error: `Mystery thread "${mysteryThreadId}" not found.`
+                    });
+                }
+
+                return res.json({
+                    success: true,
+                    mysteryThread: serializeMysteryThreadForClient(thread)
+                });
+            } catch (error) {
+                console.error('Failed to load mystery thread:', error);
+                return res.status(500).json({
+                    success: false,
+                    error: error?.message || 'Failed to load mystery thread.'
+                });
+            }
+        });
+
+        app.put('/api/mystery-threads/:id', (req, res) => {
+            try {
+                const mysteryThreadId = typeof req.params.id === 'string' ? req.params.id.trim() : '';
+                if (!mysteryThreadId) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Mystery thread id is required.'
+                    });
+                }
+
+                const thread = MysteryThread.getById(mysteryThreadId);
+                if (!thread) {
+                    return res.status(404).json({
+                        success: false,
+                        error: `Mystery thread "${mysteryThreadId}" not found.`
+                    });
+                }
+
+                const body = req.body || {};
+                const name = typeof body.name === 'string' ? body.name.trim() : '';
+                if (!name) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Mystery thread name is required.'
+                    });
+                }
+
+                const status = typeof body.status === 'string' ? body.status.trim() : '';
+                validateMysteryThreadStatusChange(thread, status);
+
+                thread.applyManualEdit({
+                    name,
+                    status,
+                    keys: normalizeMysteryTextListForApi(body.keys, 'Mystery thread key'),
+                    summary: typeof body.summary === 'string' ? body.summary : '',
+                    constraints: normalizeMysteryTextListForApi(body.constraints, 'Mystery thread constraint'),
+                    boxIds: thread.boxIds
+                });
+
+                const persisted = persistMysteryBoxesToCurrentSave();
+                return res.json({
+                    success: true,
+                    mysteryThread: serializeMysteryThreadForClient(thread),
+                    persisted
+                });
+            } catch (error) {
+                const message = error?.message || 'Failed to update mystery thread.';
+                console.error('Failed to update mystery thread:', error);
+                return res.status(400).json({
+                    success: false,
+                    error: message
+                });
+            }
+        });
+
+        app.put('/api/mystery-threads/:id/boxes', (req, res) => {
+            try {
+                const mysteryThreadId = typeof req.params.id === 'string' ? req.params.id.trim() : '';
+                if (!mysteryThreadId) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Mystery thread id is required.'
+                    });
+                }
+
+                const thread = MysteryThread.getById(mysteryThreadId);
+                if (!thread) {
+                    return res.status(404).json({
+                        success: false,
+                        error: `Mystery thread "${mysteryThreadId}" not found.`
+                    });
+                }
+
+                const boxIds = normalizeMysteryTextListForApi(req.body?.boxIds, 'Mystery thread box id');
+                for (const boxId of boxIds) {
+                    if (!MysteryBox.getById(boxId)) {
+                        return res.status(400).json({
+                            success: false,
+                            error: `Mystery box "${boxId}" not found.`
+                        });
+                    }
+                }
+
+                const assignedIds = new Set(boxIds);
+                for (const otherThread of MysteryThread.getAll()) {
+                    if (otherThread.id === thread.id) {
+                        continue;
+                    }
+                    const filteredBoxIds = otherThread.boxIds.filter(boxId => !assignedIds.has(boxId));
+                    if (filteredBoxIds.length !== otherThread.boxIds.length) {
+                        otherThread.replaceBoxIds(filteredBoxIds);
+                    }
+                }
+                thread.replaceBoxIds(boxIds);
+
+                const persisted = persistMysteryBoxesToCurrentSave();
+                return res.json({
+                    success: true,
+                    mysteryThread: serializeMysteryThreadForClient(thread),
+                    persisted
+                });
+            } catch (error) {
+                const message = error?.message || 'Failed to update mystery thread boxes.';
+                console.error('Failed to update mystery thread boxes:', error);
+                return res.status(400).json({
+                    success: false,
+                    error: message
+                });
+            }
+        });
+
+        app.get('/api/mystery-boxes', (req, res) => {
+            try {
+                const mysteryBoxes = sortMysteryBoxSummaries(
+                    MysteryBox.getAll()
+                        .map(serializeMysteryBoxSummaryForClient)
+                        .filter(Boolean)
+                );
+                res.json({
+                    success: true,
+                    mysteryBoxes,
+                    count: mysteryBoxes.length
+                });
+            } catch (error) {
+                console.error('Failed to list mystery boxes:', error);
+                res.status(500).json({
+                    success: false,
+                    error: error?.message || 'Failed to list mystery boxes.'
+                });
+            }
+        });
+
+        app.get('/api/mystery-boxes/:id', (req, res) => {
+            try {
+                const mysteryBoxId = typeof req.params.id === 'string' ? req.params.id.trim() : '';
+                if (!mysteryBoxId) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Mystery box id is required.'
+                    });
+                }
+
+                const box = MysteryBox.getById(mysteryBoxId);
+                if (!box) {
+                    return res.status(404).json({
+                        success: false,
+                        error: `Mystery box "${mysteryBoxId}" not found.`
+                    });
+                }
+
+                return res.json({
+                    success: true,
+                    mysteryBox: serializeMysteryBoxForClient(box)
+                });
+            } catch (error) {
+                console.error('Failed to load mystery box:', error);
+                return res.status(500).json({
+                    success: false,
+                    error: error?.message || 'Failed to load mystery box.'
+                });
+            }
+        });
+
+        app.put('/api/mystery-boxes/:id', (req, res) => {
+            try {
+                const mysteryBoxId = typeof req.params.id === 'string' ? req.params.id.trim() : '';
+                if (!mysteryBoxId) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Mystery box id is required.'
+                    });
+                }
+
+                const box = MysteryBox.getById(mysteryBoxId);
+                if (!box) {
+                    return res.status(404).json({
+                        success: false,
+                        error: `Mystery box "${mysteryBoxId}" not found.`
+                    });
+                }
+
+                const body = req.body || {};
+                const name = typeof body.name === 'string' ? body.name.trim() : '';
+                if (!name) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Mystery box name is required.'
+                    });
+                }
+                if (body.text !== undefined && body.text !== null && typeof body.text !== 'string') {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Mystery box text must be a string.'
+                    });
+                }
+
+                const text = Object.prototype.hasOwnProperty.call(body, 'text') ? body.text : undefined;
+                box.applyManualEdit({
+                    name,
+                    keys: normalizeMysteryBoxKeysForApi(body.keys),
+                    text
+                });
+
+                const persisted = persistMysteryBoxesToCurrentSave();
+                const mysteryBox = serializeMysteryBoxForClient(box);
+                return res.json({
+                    success: true,
+                    mysteryBox,
+                    persisted
+                });
+            } catch (error) {
+                const message = error?.message || 'Failed to update mystery box.';
+                console.error('Failed to update mystery box:', error);
+                return res.status(400).json({
+                    success: false,
+                    error: message
+                });
+            }
+        });
+
         // Clear chat history API endpoint (for testing/reset)
         app.delete('/api/chat/history', (req, res) => {
             chatHistory = [];
@@ -35863,6 +36318,25 @@ module.exports = function registerApiRoutes(scope) {
                 return parsed;
             };
 
+            const toNullableCalendarDefinition = (value) => {
+                if (value === null || value === undefined || value === '') {
+                    return null;
+                }
+                let source = value;
+                if (typeof value === 'string') {
+                    const trimmed = value.trim();
+                    if (!trimmed) {
+                        return null;
+                    }
+                    try {
+                        source = JSON.parse(trimmed);
+                    } catch (error) {
+                        throw new Error(`calendarDefinition must be valid JSON: ${error.message}`);
+                    }
+                }
+                return Globals.normalizeCalendarDefinition(source);
+            };
+	
             return {
                 name: toStringValue(raw.name),
                 description: toStringValue(raw.description),
@@ -35891,6 +36365,7 @@ module.exports = function registerApiRoutes(scope) {
                 defaultExistingSkills: toStringArray(raw.defaultExistingSkills),
                 defaultFactionCount: toNumberString(raw.defaultFactionCount),
                 defaultFactions: toFactionArray(raw.defaultFactions),
+                calendarDefinition: toNullableCalendarDefinition(raw.calendarDefinition),
                 unifiedTonalScale: normalizeUnifiedTonalScaleSelections(raw.unifiedTonalScale),
                 availableClasses: toStringArray(raw.availableClasses),
                 availableRaces: toStringArray(raw.availableRaces),
@@ -36336,6 +36811,54 @@ module.exports = function registerApiRoutes(scope) {
             }
         });
 
+        app.get('/api/settings/calendar/default', (req, res) => {
+            try {
+                const settingName = typeof req.query?.settingName === 'string' && req.query.settingName.trim()
+                    ? req.query.settingName.trim()
+                    : null;
+                const calendarDefinition = Globals.generateCalendarDefinition({ settingName });
+                res.json({
+                    success: true,
+                    calendarDefinition
+                });
+            } catch (error) {
+                res.status(500).json({
+                    success: false,
+                    error: error.message || 'Failed to build default calendar'
+                });
+            }
+        });
+
+        app.post('/api/settings/calendar/generate', async (req, res) => {
+            try {
+                const incomingSetting = req.body?.setting;
+                if (!incomingSetting || typeof incomingSetting !== 'object' || Array.isArray(incomingSetting)) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Request body must include a setting object'
+                    });
+                }
+
+                const settingSnapshot = normalizeSettingPayload({
+                    ...incomingSetting,
+                    calendarDefinition: null
+                });
+                const calendarDefinition = Globals.normalizeCalendarDefinition(
+                    await generateCalendarDefinitionWithAi({ settingSnapshot })
+                );
+                res.json({
+                    success: true,
+                    calendarDefinition
+                });
+            } catch (error) {
+                console.error('Failed to generate setting calendar:', error);
+                res.status(500).json({
+                    success: false,
+                    error: error.message || 'Failed to generate setting calendar'
+                });
+            }
+        });
+	
         // Get current applied setting
         app.get('/api/settings/current', (req, res) => {
             try {
@@ -37138,6 +37661,10 @@ module.exports = function registerApiRoutes(scope) {
         }
 
         async function resolveCalendarDefinitionForSetting({ settingSnapshot = null, report = null } = {}) {
+            if (settingSnapshot?.calendarDefinition !== null && settingSnapshot?.calendarDefinition !== undefined) {
+                return Globals.normalizeCalendarDefinition(settingSnapshot.calendarDefinition);
+            }
+
             const fallback = Globals.generateCalendarDefinition({
                 settingName: settingSnapshot?.name || null
             });
@@ -37309,6 +37836,8 @@ module.exports = function registerApiRoutes(scope) {
                 if (typeof Faction?.clear === 'function') {
                     Faction.clear();
                 }
+                MysteryBox.clear();
+                MysteryThread.clear();
                 stubExpansionPromises.clear();
                 chatHistory.length = 0;
                 skills.clear();
@@ -38011,6 +38540,8 @@ module.exports = function registerApiRoutes(scope) {
             metadata.totalLocationExits = gameLocationExits.size;
             metadata.totalRegions = regions.size;
             metadata.totalFactions = factions.size;
+            metadata.totalMysteryBoxes = MysteryBox.getAll().length;
+            metadata.totalMysteryThreads = MysteryThread.getAll().length;
             metadata.chatHistoryLength = Array.isArray(serialized.chatHistory)
                 ? serialized.chatHistory.length
                 : (metadata.chatHistoryLength || 0);
@@ -38538,6 +39069,8 @@ module.exports = function registerApiRoutes(scope) {
             metadata.totalLocationExits = gameLocationExits.size;
             metadata.totalRegions = regions.size;
             metadata.totalFactions = factions.size;
+            metadata.totalMysteryBoxes = MysteryBox.getAll().length;
+            metadata.totalMysteryThreads = MysteryThread.getAll().length;
             metadata.chatHistoryLength = Array.isArray(chatHistory)
                 ? chatHistory.length
                 : (metadata.chatHistoryLength || 0);

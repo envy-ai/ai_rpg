@@ -86,3 +86,41 @@ test('renaming creates new id and delete persists across refresh', async ({ page
         }
     }
 });
+
+test('calendar tab saves a generated calendar with the world profile', async ({ page, request }) => {
+    const stamp = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const settingName = `PW Calendar Profile ${stamp}`;
+    const cleanupIds = [];
+
+    try {
+        const response = await page.goto('/settings');
+        expect(response && response.ok()).toBeTruthy();
+
+        await page.fill('#name', settingName);
+        await page.fill('#theme', 'Fantasy');
+        await page.fill('#genre', 'Adventure');
+
+        await page.click('[data-editor-tab="calendar"]');
+        await expect(page.locator('[data-editor-panel="calendar"]')).toHaveClass(/is-active/);
+        await page.click('#settingsCalendarUseDefaultBtn');
+        await expect(page.locator('#settingsCalendarSummary')).toContainText('Common Era');
+        await expect(page.locator('#settingsCalendarJson')).toHaveValue(/"yearName": "Common Era"/);
+
+        await page.click('#submitBtn');
+
+        const savedSetting = await waitForSettingName(page, settingName, true);
+        expect(savedSetting).toBeTruthy();
+        cleanupIds.push(savedSetting.id);
+        expect(savedSetting.calendarDefinition).toBeTruthy();
+        expect(savedSetting.calendarDefinition.yearName).toBe('Common Era');
+        expect(savedSetting.calendarDefinition.months.length).toBeGreaterThan(0);
+    } finally {
+        for (const id of cleanupIds) {
+            try {
+                await request.delete(`/api/settings/${id}`);
+            } catch (error) {
+                console.warn(`Failed cleanup delete for setting ${id}:`, error?.message || error);
+            }
+        }
+    }
+});
