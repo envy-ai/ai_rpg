@@ -418,6 +418,37 @@ test('parseWhileYouWereAwayResponse strips nonnumeric need bar value text and sk
     assert.equal(parsed.updates[0].needBarChanges[0].valuePercent, 80);
 });
 
+test('parseWhileYouWereAwayResponse clamps out-of-range need bar value percentages', () => {
+    const { parseWhileYouWereAwayResponse } = loadWhileYouWereAwayHelpers();
+    const parsed = parseWhileYouWereAwayResponse(`
+<characterUpdates>
+  <characterUpdate>
+    <name>Mira</name>
+    <update>Mira pushed herself past exhaustion and then recovered with help.</update>
+    <needBarChanges>
+      <needBarEffect>
+        <needBarId>energy</needBarId>
+        <value>125%</value>
+      </needBarEffect>
+      <needBarEffect>
+        <needBarId>social</needBarId>
+        <value>-25%</value>
+      </needBarEffect>
+    </needBarChanges>
+  </characterUpdate>
+</characterUpdates>
+`, {
+        expectedNameKeys: new Set(['mira'])
+    });
+
+    assert.equal(parsed.updates.length, 1);
+    assert.equal(parsed.updates[0].needBarChanges.length, 2);
+    assert.equal(parsed.updates[0].needBarChanges[0].needBarId, 'energy');
+    assert.equal(parsed.updates[0].needBarChanges[0].valuePercent, 100);
+    assert.equal(parsed.updates[0].needBarChanges[1].needBarId, 'social');
+    assert.equal(parsed.updates[0].needBarChanges[1].valuePercent, 0);
+});
+
 test('parseWhileYouWereAwayResponse allows additional arriving characters marked with HERE', () => {
     const { parseWhileYouWereAwayResponse } = loadWhileYouWereAwayHelpers();
     const parsed = parseWhileYouWereAwayResponse(`

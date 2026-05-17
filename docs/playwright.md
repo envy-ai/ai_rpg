@@ -96,7 +96,7 @@ npm run test:e2e:headless -- tests/e2e/settings.persistence.spec.js
 Notes:
 - The test uses the selected-setting action panel (`Edit` / `Delete`) rather than deprecated inline row action buttons.
 - It validates API-level persistence state in addition to UI interactions.
-- It also verifies the Worlds editor Calendar tab can load the explicit Gregorian default and save it as `SettingInfo.calendarDefinition`.
+- It also verifies the Worlds editor Calendar tab can load the explicit Gregorian default into structured fields and save it as `SettingInfo.calendarDefinition`.
 
 Headed Chromium with virtual display (Linux servers/containers):
 

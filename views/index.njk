@@ -285,6 +285,13 @@
                                     {% endif %}
                                 </div>
 
+                                <div id="promptProgressDock" class="prompt-progress-dock prompt-progress-dock--one-line" aria-live="polite" aria-label="AI prompt activity"></div>
+
+                                <div id="chatSpinnerStatusBar" class="chat-spinner-status-bar" role="status" aria-live="polite" aria-busy="false" hidden>
+                                    <span id="chatSpinnerStatusSpinner" class="chat-spinner-status-bar__spinner" aria-hidden="true"></span>
+                                    <span id="chatSpinnerStatusText" class="chat-spinner-status-bar__text">Loading...</span>
+                                </div>
+
                                 <div class="input-area">
                                     <textarea class="message-input" id="messageInput" placeholder="Type your message here..." rows="2"></textarea>
                                     <div class="send-controls">
@@ -781,6 +788,10 @@
                                         <option value="substring">Substring</option>
                                         <option value="regex">Regex</option>
                                     </select>
+                                    <label class="sr-only" for="storyToolsTypeFilter">Story entry type filter</label>
+                                    <select id="storyToolsTypeFilter" class="story-tools-type-filter" aria-label="Story entry type filter">
+                                        <option value="" selected>All types</option>
+                                    </select>
                                     <label class="story-tools-search-case-toggle" for="storyToolsSearchCaseSensitive" title="Case-sensitive search">
                                         <input type="checkbox" id="storyToolsSearchCaseSensitive" aria-label="Case-sensitive story search">
                                         <span aria-hidden="true">Aa</span>
@@ -879,13 +890,6 @@
                     </div>
                 </section>
             </div>
-        </div>
-    </div>
-
-    <div id="locationOverlay" class="overlay-backdrop" aria-live="polite" aria-busy="false" aria-label="Loading location">
-        <div class="overlay-content">
-            <div class="spinner" role="status" aria-hidden="true"></div>
-            <div class="overlay-text" id="locationOverlayText">Exploring...</div>
         </div>
     </div>
 
@@ -23112,8 +23116,8 @@
         function shouldPromptBypassMove(exit) {
             return isUnexploredLocationExit(exit);
         }
-            const locationOverlay = document.getElementById('locationOverlay');
-            const locationOverlayText = document.getElementById('locationOverlayText');
+            const chatSpinnerStatusBar = document.getElementById('chatSpinnerStatusBar');
+            const chatSpinnerStatusText = document.getElementById('chatSpinnerStatusText');
             const locationNPCs = document.getElementById('locationNPCs');
             const locationSceneryPanel = document.getElementById('locationSceneryPanel');
             const locationScenery = document.getElementById('locationScenery');
@@ -23701,19 +23705,24 @@
                 } catch (_) {
                     // Tooltip controller may not be initialized yet.
                 }
-                if (locationOverlay) {
-                    locationOverlay.classList.add('show');
-                    locationOverlay.setAttribute('aria-busy', 'true');
-                    if (locationOverlayText && message) {
-                        locationOverlayText.textContent = message;
+                if (chatSpinnerStatusBar) {
+                    if (chatSpinnerStatusText && message) {
+                        chatSpinnerStatusText.textContent = message;
                     }
+                    chatSpinnerStatusBar.hidden = false;
+                    chatSpinnerStatusBar.classList.add('is-visible');
+                    chatSpinnerStatusBar.setAttribute('aria-busy', 'true');
                 }
             }
 
             function hideLocationOverlay() {
-                if (locationOverlay) {
-                    locationOverlay.classList.remove('show');
-                    locationOverlay.setAttribute('aria-busy', 'false');
+                if (chatSpinnerStatusBar) {
+                    chatSpinnerStatusBar.classList.remove('is-visible');
+                    chatSpinnerStatusBar.setAttribute('aria-busy', 'false');
+                    chatSpinnerStatusBar.hidden = true;
+                    if (chatSpinnerStatusText) {
+                        chatSpinnerStatusText.textContent = '';
+                    }
                 }
             }
 
@@ -31838,6 +31847,7 @@
             const searchInput = document.getElementById('storyToolsSearchInput');
             const searchClearButton = document.getElementById('storyToolsSearchClear');
             const searchModeSelect = document.getElementById('storyToolsSearchMode');
+            const typeFilterSelect = document.getElementById('storyToolsTypeFilter');
             const searchCaseSensitiveInput = document.getElementById('storyToolsSearchCaseSensitive');
             const searchStatus = document.getElementById('storyToolsSearchStatus');
             const pageList = document.getElementById('storyToolsPageList');
@@ -31872,8 +31882,8 @@
             const mysteryBoxSaveButton = document.getElementById('mysteryBoxSaveButton');
 
             if (
-                !countLabel || !searchInput || !searchClearButton || !searchModeSelect || !searchCaseSensitiveInput
-                || !searchStatus || !pageList || !entriesContainer || !emptyState
+                !countLabel || !searchInput || !searchClearButton || !searchModeSelect || !typeFilterSelect
+                || !searchCaseSensitiveInput || !searchStatus || !pageList || !entriesContainer || !emptyState
                 || !historyTab || !mysteryBoxesTab || !historyPanel || !mysteryBoxesPanel
                 || !mysteryBoxesCount || !mysteryBoxesList || !mysteryBoxesEmpty || !mysteryThreadsList
                 || !mysteryThreadDetailEmpty || !mysteryThreadForm || !mysteryThreadNameInput || !mysteryThreadStatusSelect
@@ -31905,6 +31915,8 @@
                 searchTerms: [],
                 searchQuery: '',
                 searchMode: 'allWords',
+                typeFilter: '',
+                typeOptions: [],
                 caseSensitive: false,
                 searchRegex: null,
                 searchError: null
@@ -32018,6 +32030,10 @@
 
             const hasActiveStoryToolsSearch = () => Boolean(state.searchQuery);
 
+            const hasActiveStoryToolsTypeFilter = () => Boolean(state.typeFilter);
+
+            const hasActiveStoryToolsFilters = () => hasActiveStoryToolsSearch() || hasActiveStoryToolsTypeFilter();
+
             const getStoryToolsSearchTerms = () => {
                 return normalizeStoryToolsComparableText(state.searchQuery)
                     .split(' ')
@@ -32036,6 +32052,41 @@
                     getEntryContentForDisplay(entry)
                 ];
                 return normalizeStoryToolsSearchText(parts.filter(Boolean).join(' '));
+            };
+
+            const getStoryToolsTypeOptions = () => {
+                const typeSet = new Set();
+                state.entries.forEach(entry => {
+                    const type = getTypeLabel(entry);
+                    if (type) {
+                        typeSet.add(type);
+                    }
+                });
+                return Array.from(typeSet).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+            };
+
+            const refreshStoryToolsTypeFilter = () => {
+                const previousTypeFilter = state.typeFilter || typeFilterSelect.value || '';
+                const typeOptions = getStoryToolsTypeOptions();
+                const selectedType = typeOptions.includes(previousTypeFilter) ? previousTypeFilter : '';
+                state.typeOptions = typeOptions;
+                state.typeFilter = selectedType;
+
+                typeFilterSelect.replaceChildren();
+
+                const allOption = document.createElement('option');
+                allOption.value = '';
+                allOption.textContent = 'All types';
+                typeFilterSelect.appendChild(allOption);
+
+                typeOptions.forEach(type => {
+                    const option = document.createElement('option');
+                    option.value = type;
+                    option.textContent = type;
+                    typeFilterSelect.appendChild(option);
+                });
+
+                typeFilterSelect.value = selectedType;
             };
 
             const createStoryToolsRegex = (pattern, { caseSensitive = false, global = false } = {}) => {
@@ -32079,7 +32130,18 @@
                     searchStatus.textContent = `${filtered} of ${total} ${totalLabel} match`;
                     return;
                 }
+                if (hasActiveStoryToolsTypeFilter()) {
+                    searchStatus.textContent = `${filtered} of ${total} ${totalLabel} match`;
+                    return;
+                }
                 searchStatus.textContent = `${total} ${totalLabel}`;
+            };
+
+            const getStoryToolsTypeFilterMatcher = () => {
+                if (!hasActiveStoryToolsTypeFilter()) {
+                    return () => true;
+                }
+                return (entry) => getTypeLabel(entry) === state.typeFilter;
             };
 
             const getStoryToolsSearchMatcher = () => {
@@ -32119,14 +32181,16 @@
             const applyStoryToolsSearch = () => {
                 state.searchQuery = normalizeStoryToolsSearchText(searchInput.value);
                 state.searchMode = getStoryToolsSearchMode();
+                state.typeFilter = typeof typeFilterSelect.value === 'string' ? typeFilterSelect.value : '';
                 state.caseSensitive = Boolean(searchCaseSensitiveInput.checked);
                 state.searchTerms = [];
                 state.searchRegex = null;
                 state.searchError = null;
                 const indexedEntries = state.entries.map((entry, originalIndex) => ({ entry, originalIndex }));
+                const matchesTypeFilter = getStoryToolsTypeFilterMatcher();
 
                 if (!hasActiveStoryToolsSearch()) {
-                    state.filteredEntries = indexedEntries;
+                    state.filteredEntries = indexedEntries.filter(({ entry }) => matchesTypeFilter(entry));
                     updateStoryToolsSearchStatus();
                     return;
                 }
@@ -32139,7 +32203,7 @@
                 }
 
                 state.filteredEntries = indexedEntries.filter(({ entry }) => {
-                    return matchesSearch(buildStoryToolsSearchText(entry));
+                    return matchesTypeFilter(entry) && matchesSearch(buildStoryToolsSearchText(entry));
                 });
                 updateStoryToolsSearchStatus();
             };
@@ -32262,9 +32326,11 @@
                 if (!pageEntries.length) {
                     emptyState.textContent = state.searchError
                         ? state.searchError
-                        : (hasActiveStoryToolsSearch()
+                        : (hasActiveStoryToolsSearch() && !hasActiveStoryToolsTypeFilter()
                             ? `No story entries match "${state.searchQuery}".`
-                            : 'No entries on this page.');
+                            : (hasActiveStoryToolsFilters()
+                                ? 'No story entries match the current filters.'
+                                : 'No entries on this page.'));
                     emptyState.hidden = false;
                     entriesContainer.hidden = true;
                     return;
@@ -32378,7 +32444,7 @@
                 const pageCount = getPageCount();
                 if (!pageCount) {
                     state.selectedPageIndex = 0;
-                } else if (hasActiveStoryToolsSearch()) {
+                } else if (hasActiveStoryToolsFilters()) {
                     state.selectedPageIndex = 0;
                 } else {
                     state.selectedPageIndex = pageCount - 1;
@@ -32410,6 +32476,7 @@
 
             searchInput.addEventListener('input', scheduleStoryToolsSearchInput);
             searchModeSelect.addEventListener('change', handleStoryToolsSearchControlsChangedNow);
+            typeFilterSelect.addEventListener('change', handleStoryToolsSearchControlsChangedNow);
             searchCaseSensitiveInput.addEventListener('change', handleStoryToolsSearchControlsChangedNow);
 
             searchClearButton.addEventListener('click', () => {
@@ -32906,12 +32973,13 @@
 
                     state.entries = Array.isArray(data.history) ? data.history : [];
                     setCountLabel();
+                    refreshStoryToolsTypeFilter();
                     applyStoryToolsSearch();
 
                     const pageCount = getPageCount();
                     if (!pageCount) {
                         state.selectedPageIndex = 0;
-                    } else if (preserveSelection || hasActiveStoryToolsSearch()) {
+                    } else if (preserveSelection || hasActiveStoryToolsFilters()) {
                         state.selectedPageIndex = Math.min(Math.max(previousPageIndex, 0), pageCount - 1);
                     } else {
                         state.selectedPageIndex = pageCount - 1;
@@ -32919,7 +32987,7 @@
 
                     renderPageList();
                     const shouldScrollToBottom = Boolean(
-                        !hasActiveStoryToolsSearch()
+                        !hasActiveStoryToolsFilters()
                         && (scrollToLatest || (!preserveSelection && pageCount > 0))
                     );
                     renderEntryPage({ scrollToBottom: shouldScrollToBottom });
@@ -32931,6 +32999,7 @@
                     state.entries = [];
                     state.filteredEntries = [];
                     setCountLabel();
+                    refreshStoryToolsTypeFilter();
                     updateStoryToolsSearchStatus();
                     renderPageList();
                     entriesContainer.replaceChildren();

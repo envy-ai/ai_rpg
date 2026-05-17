@@ -432,11 +432,197 @@
   gap: 0.55rem;
 }
 
-#settingsCalendarJson {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
-  min-height: 360px;
-  line-height: 1.42;
-  white-space: pre;
+.settings-calendar-editor-shell {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.settings-calendar-overview {
+  display: grid;
+  grid-template-columns: minmax(180px, 260px) minmax(0, 1fr);
+  gap: 0.75rem;
+  align-items: stretch;
+}
+
+.settings-calendar-subtabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.16);
+  padding-bottom: 0.55rem;
+}
+
+.settings-calendar-subtab {
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.08);
+  color: $white-80;
+  min-height: 36px;
+  padding: 0.42rem 0.7rem;
+  font-weight: 700;
+  cursor: pointer;
+  @include transition();
+
+  &:hover,
+  &:focus {
+    border-color: rgba(74, 144, 226, 0.55);
+    color: $white;
+  }
+
+  &.is-active {
+    background: rgba(74, 144, 226, 0.26);
+    border-color: rgba(74, 144, 226, 0.75);
+    color: $white;
+  }
+}
+
+.settings-calendar-panel {
+  display: grid;
+  gap: 0.75rem;
+
+  &[hidden] {
+    display: none;
+  }
+}
+
+.settings-calendar-section-header,
+.settings-calendar-time-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+
+  h3,
+  h4 {
+    margin: 0;
+    color: $white;
+  }
+
+  h3 {
+    font-size: 1rem;
+  }
+
+  h4 {
+    font-size: 0.88rem;
+  }
+
+  p {
+    margin: 0.16rem 0 0;
+    color: $white-60;
+    font-size: 0.82rem;
+    line-height: 1.35;
+  }
+}
+
+.settings-calendar-list {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.settings-calendar-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(120px, 1fr)) auto;
+  gap: 0.6rem;
+  align-items: end;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.2);
+  padding: 0.7rem;
+}
+
+.settings-calendar-weekday-row {
+  grid-template-columns: minmax(180px, 1fr) auto;
+}
+
+.settings-calendar-season-row {
+  grid-template-columns: 1fr auto;
+  align-items: start;
+}
+
+.settings-calendar-holiday-row {
+  grid-template-columns: minmax(140px, 1fr) minmax(130px, 0.8fr) minmax(90px, 0.55fr) minmax(180px, 1.5fr) auto;
+}
+
+.settings-calendar-time-row {
+  grid-template-columns: minmax(90px, 0.45fr) minmax(180px, 1fr) auto;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.settings-calendar-season-basics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(110px, 1fr));
+  gap: 0.6rem;
+}
+
+.settings-calendar-time-section {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 0.55rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  padding-top: 0.65rem;
+}
+
+.settings-calendar-field {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.3rem;
+
+  label {
+    color: $white-70;
+    font-size: 0.78rem;
+    font-weight: 700;
+  }
+
+  input,
+  select,
+  textarea {
+    width: 100%;
+    min-width: 0;
+  }
+
+  select.is-stale {
+    border-color: rgba(234, 67, 53, 0.8);
+    background: rgba(234, 67, 53, 0.16);
+  }
+}
+
+.settings-calendar-field-wide {
+  grid-column: span 2;
+}
+
+.settings-calendar-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.35rem;
+}
+
+.settings-calendar-row-action {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  color: $white-80;
+  min-height: 32px;
+  padding: 0.28rem 0.48rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+
+  &:hover,
+  &:focus {
+    border-color: rgba(74, 144, 226, 0.65);
+    color: $white;
+  }
+}
+
+.settings-calendar-row-action-danger {
+  color: #ffb2ad;
+
+  &:hover,
+  &:focus {
+    border-color: rgba(234, 67, 53, 0.65);
+  }
 }
 
 .settings-calendar-summary,
@@ -702,6 +888,34 @@
 
   .tone-scale-axis-fields {
     grid-template-columns: 1fr;
+  }
+
+  .settings-calendar-overview,
+  .settings-calendar-row,
+  .settings-calendar-weekday-row,
+  .settings-calendar-season-row,
+  .settings-calendar-holiday-row,
+  .settings-calendar-time-row,
+  .settings-calendar-season-basics {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-calendar-field-wide {
+    grid-column: auto;
+  }
+
+  .settings-calendar-section-header,
+  .settings-calendar-time-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .settings-calendar-row-actions {
+    justify-content: stretch;
+
+    .settings-calendar-row-action {
+      flex: 1;
+    }
   }
 
   .selected-setting-actions {

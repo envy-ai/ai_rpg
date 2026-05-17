@@ -34,6 +34,10 @@ Slash Commands Quick Guide
   - `/api/slash-command` responses also include `executionOptions.showExecutionOverlay`; the chat client clears the pending execution overlay timer before processing reply actions when this is `false`.
   - Return value is ignored; send one or multiple replies; empty replies produce a generic success message client-side.
 
+- Prompt stats
+  - `/promptstats` shows the persistent output-character averages recorded in `logs/prompt-output-character-stats.json` as a markdown table.
+  - `/promptstats clear` clears all stored prompt output-character averages through `LLMClient.clearPromptOutputCharacterStats()`.
+
 - Best practices
   - Fail loudly with clear errors (throw or reply with `ephemeral: true`).
   - Normalize string inputs (trim/strip quotes) before lookups; validate types and existence.

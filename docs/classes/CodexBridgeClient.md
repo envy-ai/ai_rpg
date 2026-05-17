@@ -40,6 +40,6 @@ Bridges the game's text-generation requests into the local Codex CLI when `confi
 ## Notes
 - The bridge intentionally fails loudly on invalid config, empty final messages, invalid JSON, malformed tool-call objects, and missing `resume_id` session ids.
 - Non-system message content arrays are flattened into text for the user-message conversation payload; inline image data URLs are replaced with an explicit unsupported marker instead of being silently passed through.
-- Abort signals from `LLMClient` terminate the spawned app-server child process, which lets the existing `/api/prompts/:id/cancel` and `/api/prompts/:id/retry` paths work for Codex-backed prompts through the standard prompt-progress popup.
+- Abort signals from `LLMClient` terminate the spawned app-server child process, which lets the existing `/api/prompts/:id/cancel` and `/api/prompts/:id/retry` paths work for Codex-backed prompts through the standard docked prompt tracker.
 - The same Codex app-server transport is used for both chat turns and auxiliary rate-limit reads. Query failures are surfaced to `LLMClient` as explicit errors so logging can warn clearly without pretending the quota snapshot succeeded.
 - Fresh-mode parallelism is intentionally isolated from resumed-session traffic: `resume_last` remains serialized per Codex home, and `resume_id` remains serialized per home + session id.

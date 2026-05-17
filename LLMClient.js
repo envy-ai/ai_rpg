@@ -12,7 +12,17 @@ const CodexBridgeClient = require('./CodexBridgeClient.js');
 let sharpModule = null;
 
 const PROMPT_PROGRESS_BROADCAST_INTERVAL_MS = 500;
+const PROMPT_PROGRESS_COMPLETION_HOLD_MS = 250;
 const OAUTH_REFRESH_THRESHOLD_SECONDS = 300;
+const PROMPT_OUTPUT_CHARACTER_STATS_FILENAME = 'prompt-output-character-stats.json';
+const PROMPT_OUTPUT_CHARACTER_STATS_VERSION = 1;
+const PROMPT_OUTPUT_CHARACTER_STATS_BASE_LABEL_PREFIXES = Object.freeze([
+    'inventory_generation',
+    'npc_memories',
+    'npc_progression_assignments',
+    'npc_ability_assignments',
+    'npc_alias_assignments'
+]);
 
 class Semaphore {
     constructor(maxConcurrent = 1) {
@@ -127,6 +137,8 @@ class LLMClient {
     static #codexQuotaTurnKeyQueue = [];
     static #oauthStates = new Map();
     static #oauthRefreshPromises = new Map();
+    static #promptOutputCharacterStats = null;
+    static #promptOutputCharacterStatsPath = null;
 
     static #isInteractive() {
         return process.stdout && process.stdout.isTTY;
@@ -213,23 +225,32 @@ class LLMClient {
         }, 1000);
     }
 
-    static #trackStreamStart(label, { startTimeoutMs = null, continueTimeoutMs = null, isBackground = false, model = null, promptText = '', receivedUnit = 'bytes' } = {}) {
+    static #trackStreamStart(label, { startTimeoutMs = null, continueTimeoutMs = null, isBackground = false, model = null, promptText = '', receivedUnit = 'characters' } = {}) {
         if (!LLMClient.#shouldTrackPromptProgress()) {
             return null;
         }
         const idNum = ++LLMClient.#streamCounter;
-        const id = `${label || 'chat'}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+        const promptLabel = typeof label === 'string' && label.trim() ? label.trim() : 'chat';
+        const normalizedPromptLabel = LLMClient.#normalizePromptLabel(promptLabel) || 'chat';
+        const characterStats = LLMClient.getPromptOutputCharacterStats(promptLabel);
+        const targetCharacters = LLMClient.#resolvePromptProgressTargetForRun(promptLabel, characterStats);
+        const id = `${promptLabel}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
         const startTs = Date.now();
-        const labelWithCounter = `${label || 'chat'}[${idNum}]`;
+        const labelWithCounter = `${promptLabel}[${idNum}]`;
         const startDeadline = Number.isFinite(startTimeoutMs) ? startTs + startTimeoutMs : null;
         const continueDeadline = null; // set after first received data arrives
-        const normalizedReceivedUnit = receivedUnit === 'characters' ? 'characters' : 'bytes';
+        const normalizedReceivedUnit = receivedUnit === 'bytes' ? 'bytes' : 'characters';
         LLMClient.#streamProgress.active.set(id, {
             label: labelWithCounter,
+            promptLabel,
+            normalizedPromptLabel,
             model: model || null,
             bytes: 0,
             receivedCount: 0,
             receivedUnit: normalizedReceivedUnit,
+            targetCharacters,
+            runCount: characterStats.runs,
+            averageOutputCharacters: characterStats.averageOutputCharacters,
             countedPreviewText: '',
             promptText: typeof promptText === 'string' ? promptText : '',
             previewText: '',
@@ -256,8 +277,8 @@ class LLMClient {
         const entry = LLMClient.#streamProgress.active.get(id);
         if (!entry) return;
         const numericCount = Number(count);
-        if (!Number.isFinite(numericCount)) {
-            throw new Error('Stream received count must be a finite number.');
+        if (!Number.isFinite(numericCount) || numericCount < 0) {
+            throw new Error('Stream received count must be a finite number >= 0.');
         }
         const now = Date.now();
         if (!entry.firstByteTs) {
@@ -277,6 +298,10 @@ class LLMClient {
         } else {
             entry.continueDeadline = now;
         }
+    }
+
+    static #trackStreamCharacters(id, characters, continueTimeoutMs = null, previewDelta = '') {
+        LLMClient.#trackStreamReceived(id, characters, continueTimeoutMs, previewDelta);
     }
 
     static #trackStreamBytes(id, bytes, continueTimeoutMs = null, previewDelta = '') {
@@ -366,7 +391,7 @@ class LLMClient {
             return;
         }
         const separator = entry.previewText && !entry.previewText.endsWith('\n') ? '\n' : '';
-        LLMClient.#trackStreamBytes(id, 0, continueTimeoutMs, `${separator}${trimmed}\n`);
+        LLMClient.#trackStreamCharacters(id, 0, continueTimeoutMs, `${separator}${trimmed}\n`);
     }
 
     static #clearPendingProgressBroadcast() {
@@ -948,13 +973,32 @@ class LLMClient {
         if (LLMClient.#streamProgress.broadcastTimer) {
             LLMClient.#broadcastProgress(false, { force: true });
         }
-        LLMClient.#streamProgress.active.delete(id);
+        const entry = LLMClient.#streamProgress.active.get(id);
         LLMClient.#abortControllers.delete(id);
-        if (!LLMClient.#streamProgress.active.size) {
-            LLMClient.#streamProgress.lastBroadcastHadEntries = false;
+        if (!entry) {
+            if (!LLMClient.#streamProgress.active.size) {
+                LLMClient.#streamProgress.lastBroadcastHadEntries = false;
+                LLMClient.#broadcastProgress(true);
+            }
+            return;
         }
-        // Emit a final progress update so clients can clear any in-flight UI.
-        LLMClient.#broadcastProgress(true);
+        entry.isComplete = true;
+        entry.startDeadline = null;
+        entry.continueDeadline = null;
+        entry.completedAt = Date.now();
+        LLMClient.#broadcastProgress(false, { force: true });
+        setTimeout(() => {
+            const currentEntry = LLMClient.#streamProgress.active.get(id);
+            if (currentEntry !== entry || currentEntry?.isComplete !== true) {
+                return;
+            }
+            LLMClient.#streamProgress.active.delete(id);
+            const allDone = LLMClient.#streamProgress.active.size === 0;
+            if (allDone) {
+                LLMClient.#streamProgress.lastBroadcastHadEntries = false;
+            }
+            LLMClient.#broadcastProgress(allDone, { force: true });
+        }, PROMPT_PROGRESS_COMPLETION_HOLD_MS);
     }
 
     static cancelPrompt(streamId, reason = 'Prompt canceled by user') {
@@ -1096,6 +1140,13 @@ class LLMClient {
             const receivedCount = Number.isFinite(entry.receivedCount) ? entry.receivedCount : entry.bytes;
             const receivedUnit = entry.receivedUnit === 'characters' ? 'characters' : 'bytes';
             const avgReceivedPerSecond = elapsedAfterFirst ? Math.round(receivedCount / elapsedAfterFirst) : null;
+            const targetCharacters = Number.isFinite(entry.targetCharacters) ? entry.targetCharacters : null;
+            const isComplete = entry.isComplete === true;
+            const progressFraction = isComplete
+                ? 1
+                : targetCharacters === null
+                ? null
+                : LLMClient.calculatePromptProgressFraction(receivedCount, targetCharacters);
             return {
                 id,
                 label: entry.label,
@@ -1103,6 +1154,13 @@ class LLMClient {
                 bytes: entry.bytes,
                 receivedCount,
                 receivedUnit,
+                targetCharacters,
+                progressFraction,
+                isComplete,
+                runCount: Number.isInteger(entry.runCount) ? entry.runCount : 0,
+                averageOutputCharacters: Number.isFinite(entry.averageOutputCharacters)
+                    ? entry.averageOutputCharacters
+                    : null,
                 promptText: typeof entry.promptText === 'string' ? entry.promptText : '',
                 previewText: typeof entry.previewText === 'string' ? entry.previewText : '',
                 seconds: Math.round((now - entry.startTs) / 1000),
@@ -1755,6 +1813,7 @@ class LLMClient {
         const outputConsole = resolvedOutput === 'stderr'
             ? new Console({ stdout: process.stderr, stderr: process.stderr })
             : new Console({ stdout: process.stdout, stderr: process.stdout });
+        const statsHeaderLines = LLMClient.#buildPromptOutputCharacterStatsHeader(metadataLabel);
         try {
             const fs = require('fs');
             const path = require('path');
@@ -1771,6 +1830,7 @@ class LLMClient {
             const filePath = path.join(logDir, `${timestamp}_${prefix}_${safeLabel}.log`);
 
             const lines = [];
+            lines.push(...statsHeaderLines);
 
             const resolveModelAndEndpoint = () => {
                 const globalConfig = Globals?.config || {};
@@ -1909,6 +1969,465 @@ class LLMClient {
             .toLowerCase()
             .replace(/[^a-z0-9]+/g, '_')
             .replace(/^_+|_+$/g, '');
+    }
+
+    static #normalizePromptProgressTargetPatternKey(pattern) {
+        if (typeof pattern !== 'string') {
+            return { wildcard: false, key: '' };
+        }
+        const trimmed = pattern.trim().toLowerCase();
+        if (!trimmed) {
+            return { wildcard: false, key: '' };
+        }
+        const wildcard = trimmed.endsWith('*');
+        const body = wildcard ? trimmed.slice(0, -1) : trimmed;
+        let normalized = body
+            .replace(/[^a-z0-9]+/g, '_')
+            .replace(/_+/g, '_')
+            .replace(/^_+/, '');
+        if (!wildcard) {
+            normalized = normalized.replace(/_+$/g, '');
+        }
+        return { wildcard, key: normalized };
+    }
+
+    static #getPromptProgressCharacterTargets(config = Globals?.config) {
+        const promptProgressConfig = config?.prompt_progress;
+        if (promptProgressConfig === undefined || promptProgressConfig === null) {
+            return null;
+        }
+        if (!promptProgressConfig || typeof promptProgressConfig !== 'object' || Array.isArray(promptProgressConfig)) {
+            throw new Error('config.prompt_progress must be an object when configured.');
+        }
+        const targets = promptProgressConfig.character_targets;
+        if (targets === undefined || targets === null) {
+            return null;
+        }
+        if (!targets || typeof targets !== 'object' || Array.isArray(targets)) {
+            throw new Error('config.prompt_progress.character_targets must be an object.');
+        }
+        return targets;
+    }
+
+    static #hasPromptProgressCharacterTargetsConfigured(config = Globals?.config) {
+        return LLMClient.#getPromptProgressCharacterTargets(config) !== null;
+    }
+
+    static resolvePromptProgressCharacterTarget(label, config = Globals?.config) {
+        const normalizedLabel = LLMClient.#normalizePromptLabel(label);
+        if (!normalizedLabel) {
+            throw new Error('Prompt progress character target resolution requires a prompt label.');
+        }
+
+        const targets = LLMClient.#getPromptProgressCharacterTargets(config);
+        if (!targets) {
+            throw new Error('config.prompt_progress.character_targets is required for prompt progress tracking.');
+        }
+
+        const exactTargets = new Map();
+        const prefixTargets = [];
+        for (const [rawPattern, rawTarget] of Object.entries(targets)) {
+            const numericTarget = Number(rawTarget);
+            if (!Number.isFinite(numericTarget) || numericTarget <= 0) {
+                throw new Error(`Prompt progress character target "${rawPattern}" must be a finite number > 0.`);
+            }
+            const { wildcard, key } = LLMClient.#normalizePromptProgressTargetPatternKey(rawPattern);
+            if (!key) {
+                throw new Error(`Prompt progress character target "${rawPattern}" has an empty label pattern.`);
+            }
+            if (wildcard) {
+                prefixTargets.push({ prefix: key, target: numericTarget, rawPattern });
+            } else {
+                exactTargets.set(key, numericTarget);
+            }
+        }
+
+        if (exactTargets.has(normalizedLabel)) {
+            return exactTargets.get(normalizedLabel);
+        }
+
+        let match = null;
+        for (const candidate of prefixTargets) {
+            if (!normalizedLabel.startsWith(candidate.prefix)) {
+                continue;
+            }
+            if (!match || candidate.prefix.length > match.prefix.length) {
+                match = candidate;
+            }
+        }
+        if (match) {
+            return match.target;
+        }
+
+        throw new Error(`Missing prompt_progress.character_targets character target for prompt label "${normalizedLabel}".`);
+    }
+
+    static #resolvePromptProgressTargetForRun(label, characterStats) {
+        const configuredTarget = LLMClient.#hasPromptProgressCharacterTargetsConfigured()
+            ? LLMClient.resolvePromptProgressCharacterTarget(label)
+            : null;
+        const averageOutputCharacters = Number(characterStats?.averageOutputCharacters);
+        if (Number.isFinite(averageOutputCharacters) && averageOutputCharacters > 0) {
+            return averageOutputCharacters;
+        }
+        return configuredTarget;
+    }
+
+    static calculatePromptProgressFraction(receivedCharacters, targetCharacters) {
+        const received = Number(receivedCharacters);
+        if (!Number.isFinite(received) || received < 0) {
+            throw new Error('Prompt progress received characters must be a finite number >= 0.');
+        }
+        const target = Number(targetCharacters);
+        if (!Number.isFinite(target) || target <= 0) {
+            throw new Error('Prompt progress target characters must be a finite number > 0.');
+        }
+        if (received <= target) {
+            return 0.75 * (received / target);
+        }
+        return 0.75 + 0.25 * (1 - (0.5 ** ((received - target) / target)));
+    }
+
+    static #getPromptOutputCharacterStatsPath() {
+        const baseDir = Globals?.baseDir || process.cwd();
+        return path.join(baseDir, 'logs', PROMPT_OUTPUT_CHARACTER_STATS_FILENAME);
+    }
+
+    static #createEmptyPromptOutputCharacterStatsFile() {
+        return {
+            version: PROMPT_OUTPUT_CHARACTER_STATS_VERSION,
+            updatedAt: null,
+            prompts: {}
+        };
+    }
+
+    static #assertPromptOutputCharacterStatNumber(value, pathLabel, { integer = true, allowNull = false } = {}) {
+        if (value === null && allowNull) {
+            return;
+        }
+        if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+            throw new Error(`Prompt output character stats invalid numeric value at ${pathLabel}.`);
+        }
+        if (integer && !Number.isInteger(value)) {
+            throw new Error(`Prompt output character stats invalid numeric value at ${pathLabel}; expected an integer.`);
+        }
+    }
+
+    static #validatePromptOutputCharacterStatsFile(stats, statsPath) {
+        if (!stats || typeof stats !== 'object' || Array.isArray(stats)) {
+            throw new Error(`Prompt output character stats file must contain an object: ${statsPath}`);
+        }
+        if (stats.version !== PROMPT_OUTPUT_CHARACTER_STATS_VERSION) {
+            throw new Error(
+                `Prompt output character stats file has unsupported version at ${statsPath}; `
+                + `expected ${PROMPT_OUTPUT_CHARACTER_STATS_VERSION}.`
+            );
+        }
+        if (!(stats.updatedAt === null || typeof stats.updatedAt === 'string')) {
+            throw new Error(`Prompt output character stats updatedAt must be a string or null: ${statsPath}`);
+        }
+        if (!stats.prompts || typeof stats.prompts !== 'object' || Array.isArray(stats.prompts)) {
+            throw new Error(`Prompt output character stats prompts must be an object: ${statsPath}`);
+        }
+        for (const [rawLabel, entry] of Object.entries(stats.prompts)) {
+            const normalizedLabel = LLMClient.#normalizePromptLabel(rawLabel);
+            if (!normalizedLabel || rawLabel !== normalizedLabel) {
+                throw new Error(`Prompt output character stats prompt key "${rawLabel}" must be a normalized prompt label.`);
+            }
+            if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+                throw new Error(`Prompt output character stats entry for "${rawLabel}" must be an object.`);
+            }
+            LLMClient.#assertPromptOutputCharacterStatNumber(entry.runs, `prompts.${rawLabel}.runs`);
+            LLMClient.#assertPromptOutputCharacterStatNumber(
+                entry.totalOutputCharacters,
+                `prompts.${rawLabel}.totalOutputCharacters`
+            );
+            LLMClient.#assertPromptOutputCharacterStatNumber(
+                entry.averageOutputCharacters,
+                `prompts.${rawLabel}.averageOutputCharacters`,
+                { integer: false, allowNull: true }
+            );
+            LLMClient.#assertPromptOutputCharacterStatNumber(
+                entry.lastOutputCharacters,
+                `prompts.${rawLabel}.lastOutputCharacters`,
+                { allowNull: true }
+            );
+            if (!(entry.updatedAt === null || typeof entry.updatedAt === 'string')) {
+                throw new Error(`Prompt output character stats updatedAt for "${rawLabel}" must be a string or null.`);
+            }
+            if (entry.runs === 0) {
+                if (
+                    entry.totalOutputCharacters !== 0
+                    || entry.averageOutputCharacters !== null
+                    || entry.lastOutputCharacters !== null
+                    || entry.updatedAt !== null
+                ) {
+                    throw new Error(`Prompt output character stats entry for "${rawLabel}" is inconsistent for zero runs.`);
+                }
+            } else if (entry.averageOutputCharacters === null || entry.lastOutputCharacters === null) {
+                throw new Error(`Prompt output character stats entry for "${rawLabel}" is missing run values.`);
+            }
+        }
+    }
+
+    static #loadPromptOutputCharacterStats() {
+        const statsPath = LLMClient.#getPromptOutputCharacterStatsPath();
+        if (
+            LLMClient.#promptOutputCharacterStats
+            && LLMClient.#promptOutputCharacterStatsPath === statsPath
+        ) {
+            return LLMClient.#promptOutputCharacterStats;
+        }
+
+        let stats;
+        if (!fs.existsSync(statsPath)) {
+            stats = LLMClient.#createEmptyPromptOutputCharacterStatsFile();
+        } else {
+            const raw = fs.readFileSync(statsPath, 'utf8');
+            try {
+                stats = JSON.parse(raw);
+            } catch (error) {
+                throw new Error(`Prompt output character stats invalid JSON at ${statsPath}: ${error.message}`);
+            }
+            LLMClient.#validatePromptOutputCharacterStatsFile(stats, statsPath);
+        }
+        stats = LLMClient.#canonicalizePromptOutputCharacterStatsFile(stats);
+        LLMClient.#validatePromptOutputCharacterStatsFile(stats, statsPath);
+
+        LLMClient.#promptOutputCharacterStats = stats;
+        LLMClient.#promptOutputCharacterStatsPath = statsPath;
+        return stats;
+    }
+
+    static #writePromptOutputCharacterStats(stats) {
+        const statsPath = LLMClient.#getPromptOutputCharacterStatsPath();
+        const logDir = path.dirname(statsPath);
+        fs.mkdirSync(logDir, { recursive: true });
+        LLMClient.#validatePromptOutputCharacterStatsFile(stats, statsPath);
+        const tmpPath = `${statsPath}.${process.pid}.${Date.now()}.tmp`;
+        fs.writeFileSync(tmpPath, `${JSON.stringify(stats, null, 2)}\n`, 'utf8');
+        fs.renameSync(tmpPath, statsPath);
+        LLMClient.#promptOutputCharacterStats = stats;
+        LLMClient.#promptOutputCharacterStatsPath = statsPath;
+    }
+
+    static #emptyPromptOutputCharacterStatsEntry() {
+        return {
+            runs: 0,
+            totalOutputCharacters: 0,
+            averageOutputCharacters: null,
+            lastOutputCharacters: null,
+            updatedAt: null
+        };
+    }
+
+    static #resolvePromptOutputCharacterStatsLabel(label) {
+        const normalizedLabel = LLMClient.#normalizePromptLabel(label);
+        if (!normalizedLabel) {
+            return '';
+        }
+        for (const baseLabel of PROMPT_OUTPUT_CHARACTER_STATS_BASE_LABEL_PREFIXES) {
+            if (normalizedLabel === baseLabel || normalizedLabel.startsWith(`${baseLabel}_`)) {
+                return baseLabel;
+            }
+        }
+        return normalizedLabel;
+    }
+
+    static #mergePromptOutputCharacterStatsEntry(existingEntry, nextEntry) {
+        if (!existingEntry) {
+            return { ...nextEntry };
+        }
+        const runs = existingEntry.runs + nextEntry.runs;
+        const totalOutputCharacters = existingEntry.totalOutputCharacters + nextEntry.totalOutputCharacters;
+        let latest = existingEntry;
+        const existingUpdatedAt = typeof existingEntry.updatedAt === 'string' ? existingEntry.updatedAt : '';
+        const nextUpdatedAt = typeof nextEntry.updatedAt === 'string' ? nextEntry.updatedAt : '';
+        if (nextUpdatedAt && (!existingUpdatedAt || nextUpdatedAt >= existingUpdatedAt)) {
+            latest = nextEntry;
+        }
+
+        return {
+            runs,
+            totalOutputCharacters,
+            averageOutputCharacters: runs > 0 ? totalOutputCharacters / runs : null,
+            lastOutputCharacters: runs > 0 ? latest.lastOutputCharacters : null,
+            updatedAt: runs > 0 ? latest.updatedAt : null
+        };
+    }
+
+    static #canonicalizePromptOutputCharacterStatsFile(stats) {
+        const canonicalPrompts = {};
+        for (const [rawLabel, entry] of Object.entries(stats.prompts)) {
+            const statsLabel = LLMClient.#resolvePromptOutputCharacterStatsLabel(rawLabel);
+            if (!statsLabel) {
+                throw new Error(`Prompt output character stats prompt key "${rawLabel}" must resolve to a prompt label.`);
+            }
+            canonicalPrompts[statsLabel] = LLMClient.#mergePromptOutputCharacterStatsEntry(
+                canonicalPrompts[statsLabel],
+                entry
+            );
+        }
+        return {
+            ...stats,
+            prompts: canonicalPrompts
+        };
+    }
+
+    static #normalizePromptProgressTargetPatternDisplay(pattern) {
+        const { wildcard, key } = LLMClient.#normalizePromptProgressTargetPatternKey(pattern);
+        if (!key) {
+            throw new Error(`Prompt progress character target "${pattern}" has an empty label pattern.`);
+        }
+        if (wildcard) {
+            for (const baseLabel of PROMPT_OUTPUT_CHARACTER_STATS_BASE_LABEL_PREFIXES) {
+                if (key === baseLabel || key === `${baseLabel}_`) {
+                    return baseLabel;
+                }
+            }
+        }
+        return wildcard ? `${key}*` : key;
+    }
+
+    static getPromptOutputCharacterStats(label) {
+        const normalizedLabel = LLMClient.#normalizePromptLabel(label);
+        if (!normalizedLabel) {
+            throw new Error('Prompt output character stats require a prompt label.');
+        }
+        const statsLabel = LLMClient.#resolvePromptOutputCharacterStatsLabel(normalizedLabel);
+        const stats = LLMClient.#loadPromptOutputCharacterStats();
+        const entry = stats.prompts[statsLabel];
+        if (!entry) {
+            return LLMClient.#emptyPromptOutputCharacterStatsEntry();
+        }
+        return { ...entry };
+    }
+
+    static listPromptOutputCharacterStats({ includeConfiguredTargets = true } = {}) {
+        const stats = LLMClient.#loadPromptOutputCharacterStats();
+        const rowsByLabel = new Map();
+
+        const addRow = (label, entry, targetCharacters = null) => {
+            const promptLabel = typeof label === 'string' ? label.trim() : '';
+            if (!promptLabel) {
+                throw new Error('Prompt output character stats list encountered an empty prompt label.');
+            }
+            const sourceEntry = entry || LLMClient.#emptyPromptOutputCharacterStatsEntry();
+            rowsByLabel.set(promptLabel, {
+                prompt: promptLabel,
+                runs: sourceEntry.runs,
+                totalOutputCharacters: sourceEntry.totalOutputCharacters,
+                averageOutputCharacters: sourceEntry.averageOutputCharacters,
+                lastOutputCharacters: sourceEntry.lastOutputCharacters,
+                updatedAt: sourceEntry.updatedAt,
+                targetCharacters
+            });
+        };
+
+        for (const [label, entry] of Object.entries(stats.prompts)) {
+            addRow(label, entry);
+        }
+
+        if (includeConfiguredTargets) {
+            const targets = LLMClient.#getPromptProgressCharacterTargets();
+            if (targets) {
+                for (const [rawPattern, rawTarget] of Object.entries(targets)) {
+                    const targetCharacters = Number(rawTarget);
+                    if (!Number.isFinite(targetCharacters) || targetCharacters <= 0) {
+                        throw new Error(`Prompt progress character target "${rawPattern}" must be a finite number > 0.`);
+                    }
+                    const displayLabel = LLMClient.#normalizePromptProgressTargetPatternDisplay(rawPattern);
+                    if (rowsByLabel.has(displayLabel)) {
+                        rowsByLabel.get(displayLabel).targetCharacters = targetCharacters;
+                    } else {
+                        addRow(displayLabel, LLMClient.#emptyPromptOutputCharacterStatsEntry(), targetCharacters);
+                    }
+                }
+            }
+        }
+
+        return Array.from(rowsByLabel.values())
+            .sort((a, b) => a.prompt.localeCompare(b.prompt));
+    }
+
+    static clearPromptOutputCharacterStats() {
+        const currentStats = LLMClient.#loadPromptOutputCharacterStats();
+        const clearedPromptCount = Object.keys(currentStats.prompts).length;
+        const stats = LLMClient.#createEmptyPromptOutputCharacterStatsFile();
+        stats.updatedAt = new Date().toISOString();
+        LLMClient.#writePromptOutputCharacterStats(stats);
+        return {
+            clearedPromptCount,
+            updatedAt: stats.updatedAt
+        };
+    }
+
+    static recordPromptOutputCharacters(label, outputCharacters) {
+        const normalizedLabel = LLMClient.#normalizePromptLabel(label);
+        if (!normalizedLabel) {
+            throw new Error('Prompt output character stats require a prompt label.');
+        }
+        if (LLMClient.#hasPromptProgressCharacterTargetsConfigured()) {
+            LLMClient.resolvePromptProgressCharacterTarget(normalizedLabel);
+        }
+        const characterCount = Number(outputCharacters);
+        if (!Number.isFinite(characterCount) || characterCount < 0 || !Number.isInteger(characterCount)) {
+            throw new Error('Prompt output character count must be a finite integer >= 0.');
+        }
+
+        const stats = LLMClient.#loadPromptOutputCharacterStats();
+        const statsLabel = LLMClient.#resolvePromptOutputCharacterStatsLabel(normalizedLabel);
+        const previous = stats.prompts[statsLabel] || LLMClient.#emptyPromptOutputCharacterStatsEntry();
+        const updatedAt = new Date().toISOString();
+        const runs = previous.runs + 1;
+        const totalOutputCharacters = previous.totalOutputCharacters + characterCount;
+        stats.prompts[statsLabel] = {
+            runs,
+            totalOutputCharacters,
+            averageOutputCharacters: totalOutputCharacters / runs,
+            lastOutputCharacters: characterCount,
+            updatedAt
+        };
+        stats.updatedAt = updatedAt;
+        LLMClient.#writePromptOutputCharacterStats(stats);
+        return { ...stats.prompts[statsLabel] };
+    }
+
+    static resetPromptOutputCharacterStatsForTests() {
+        LLMClient.#promptOutputCharacterStats = null;
+        LLMClient.#promptOutputCharacterStatsPath = null;
+    }
+
+    static #buildPromptOutputCharacterStatsHeader(metadataLabel) {
+        const normalizedLabel = LLMClient.#normalizePromptLabel(metadataLabel) || 'unknown';
+        const statsLabel = LLMClient.#resolvePromptOutputCharacterStatsLabel(normalizedLabel) || normalizedLabel;
+        const stats = LLMClient.getPromptOutputCharacterStats(normalizedLabel);
+        const lines = [
+            '=== PROMPT OUTPUT CHARACTER STATS ===',
+            `Prompt: ${statsLabel}`,
+            `Runs: ${stats.runs}`,
+            `Average Output Characters: ${stats.averageOutputCharacters === null ? 'null' : stats.averageOutputCharacters}`
+        ];
+        if (statsLabel !== normalizedLabel) {
+            lines.push(`Source Prompt: ${normalizedLabel}`);
+        }
+        if (stats.lastOutputCharacters !== null) {
+            lines.push(`Latest Output Characters: ${stats.lastOutputCharacters}`);
+        }
+        lines.push('');
+        return lines;
+    }
+
+    static #recordSuccessfulCompletionOutputCharacters(metadataLabel, responseContent, { toolCalls = [] } = {}) {
+        const normalizedLabel = LLMClient.#normalizePromptLabel(metadataLabel);
+        if (!normalizedLabel) {
+            return null;
+        }
+        const outputCharacters = LLMClient.#countTextCharacters(responseContent);
+        if (outputCharacters === 0 && Array.isArray(toolCalls) && toolCalls.length > 0) {
+            return null;
+        }
+        return LLMClient.recordPromptOutputCharacters(normalizedLabel, outputCharacters);
     }
 
     static resetForcedOutputState() {
@@ -3303,6 +3822,7 @@ class LLMClient {
             let streamTrackerId = null;
             let startTimer = null;
             let lastTotalTokens = null;
+            let finalResponseToolCalls = [];
             const shouldLogStreamChunks = logStreamChunksToConsole === true;
             const hasForcedOutput = resolvedForcedOutput !== null && resolvedForcedOutput !== undefined;
             let oauthForcedRefreshRetries = 0;
@@ -3427,7 +3947,7 @@ class LLMClient {
                                 isBackground: Boolean(runInBackground),
                                 model: resolvedModel,
                                 promptText: LLMClient.formatMessagesForErrorLog(payload.messages),
-                                receivedUnit: resolvedBackend === CodexBridgeClient.backendName ? 'characters' : 'bytes'
+                                receivedUnit: 'characters'
                             })
                             : null;
                         if (streamTrackerId) {
@@ -3577,8 +4097,8 @@ class LLMClient {
                                         resetTimer(streamContinueTimeoutMs);
                                         assembled += delta;
                                         responseContent = assembled;
-                                        const deltaBytes = Buffer.byteLength(delta, 'utf8');
-                                        LLMClient.#trackStreamBytes(streamId, deltaBytes, streamContinueTimeoutMs, delta);
+                                        const deltaCharacters = LLMClient.#countTextCharacters(delta);
+                                        LLMClient.#trackStreamCharacters(streamId, deltaCharacters, streamContinueTimeoutMs, delta);
                                     }
                                 } catch (parseError) {
                                     // ignore malformed chunks, but log for visibility
@@ -3684,6 +4204,7 @@ class LLMClient {
                     responseContent = responseContent.replace(thinkTagPattern, '').trim();
 
                     const hasToolCalls = responseToolCalls.length > 0;
+                    finalResponseToolCalls = responseToolCalls;
 
                     if (responseContent.trim() === '' && !hasToolCalls) {
                         errorLog(`Empty response content received (attempt ${attempt + 1}).`);
@@ -3921,6 +4442,9 @@ class LLMClient {
             const tokensNote = Number.isFinite(lastTotalTokens) ? ` | tokens=${lastTotalTokens}` : '';
             const label = metadataLabel || 'unknown';
             log(`Prompt '${label}' completed after ${attempt} retries in ${totalTime / 1000} seconds.${receivedNote}${tokensNote}`);
+            LLMClient.#recordSuccessfulCompletionOutputCharacters(metadataLabel, responseContent, {
+                toolCalls: finalResponseToolCalls
+            });
             return responseContent;
         } finally {
             // per-attempt resources are released inside the retry loop.

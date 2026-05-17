@@ -13,6 +13,10 @@ short_description:
   # Max items to include per short-description prompt
   max_items_per_prompt: 80
 
+dispositions:
+  # Multiplies the first disposition delta applied to an NPC with no existing nonzero disposition toward the current player.
+  first_impression_multiplier: 3
+
 # OpenAI-compatible API configuration
 ai:
   # Text generation backend:
@@ -128,6 +132,82 @@ ai_multimodal:
 #     prompts:
 #       - event_checks
 #       - quest_check
+prompt_progress:
+  # Character-count targets used by the docked prompt tracker progress bars.
+  # Labels are normalized like prompt metadata labels; entries ending in "*" match
+  # prompt-label prefixes, while exact labels win over prefix matches.
+  character_targets:
+    # Region-related prompts
+    region_*: 20000
+    existing_region_exit: 20000
+
+    # Location-related and NPC generation prompts
+    alter_location: 10000
+    location_*: 10000
+    npc_generation_*: 10000
+    location_npc_generation: 10000
+    region_npc_generation: 10000
+    npc_progression_assignments*: 10000
+    npc_ability_assignments*: 10000
+    npc_alias_assignments*: 10000
+    npc_name_regen*: 10000
+    next_npc_list: 10000
+    alter_npc: 10000
+
+    # Other known prompt families
+    action*: 5000
+    alter_thing: 5000
+    attack_*: 5000
+    barter_prices: 5000
+    bridge_*: 5000
+    calendar_generation: 5000
+    chat*: 5000
+    choose_important_memories: 5000
+    codex_*: 5000
+    config_test: 5000
+    craft_*: 5000
+    disposition_check: 5000
+    equip_best: 5000
+    event_*: 5000
+    faction_*: 5000
+    game_intro: 5000
+    generic_prompt*: 5000
+    get_*: 5000
+    image_prompt_generation: 5000
+    inventory_generation_*: 5000
+    item_image: 5000
+    levelup_abilities: 5000
+    list_*: 5000
+    more_info_*: 5000
+    mystery_box_update: 5000
+    need_bar_event_checks: 5000
+    npc_action*: 5000
+    npc_memories*: 5000
+    npc_plausibility*: 5000
+    offscreen_npc_activity_*: 5000
+    only_once: 5000
+    plausibility_*: 5000
+    player_ability_options: 5000
+    player_action*: 5000
+    plot_*: 5000
+    quest_*: 5000
+    question*: 5000
+    random_event*: 5000
+    run_prompts: 5000
+    scene_summarize: 5000
+    separate_thing: 5000
+    setting_*: 5000
+    short_description_*: 5000
+    skill_*: 5000
+    slop_remover: 5000
+    status_effect_generate: 5000
+    summarize_batch: 5000
+    supplemental_story_info: 5000
+    test_*: 5000
+    thing_*: 5000
+    tool_*: 5000
+    while_you_were_away: 5000
+    xml_fix: 5000
 model_swap_options:
   - "zai-org/glm-4.7"
   - "z-ai/glm-4.6"
@@ -429,7 +509,7 @@ plot_expander_prompt_frequency: 10
 # available for automatic mystery tracking. Set to 0 to keep all mystery thread
 # continuity out of base context and force automatic tracking to skip.
 mystery_threads:
-  max_active: 2
+  max_active: 3
 
 # Minimum in-game time separation, in minutes, before the blocking while-you-were-away
 # reunion prompt runs when the player arrives at an NPC's location.

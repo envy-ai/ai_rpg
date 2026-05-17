@@ -65,6 +65,17 @@ Rules:
 - Disabled mods are skipped for `mod.js` loading, defs overlays, and `public/` asset serving.
 - The active mod set is frozen at startup, so changing mod enablement on disk still requires a server restart to apply. `/reload_config` reports drift but does not hot-toggle mods.
 
+## Dispositions
+
+`dispositions.first_impression_multiplier` controls how strongly the first disposition delta is applied for an NPC that has no existing nonzero disposition toward the current player.
+
+```yaml
+dispositions:
+  first_impression_multiplier: 3
+```
+
+Disposition types, ranges, icons, and threshold labels still live in `defs/dispositions.yaml` plus mod defs overlays. The multiplier is loaded from merged config instead, so `config.yaml`, `--config-override`, and per-game YAML overrides can tune it without editing defs. The value must be a finite number when provided.
+
 ## Event Checks
 
 `event_checks.enabled` controls whether narrative event processing runs at all. When it is `false`, prose does not mutate world state through event checks and quest completion checks are skipped.
@@ -212,6 +223,23 @@ Behavior notes:
 - The bridge uses the shared `ai.model` field as the Codex thread/turn model override.
 - The bridge forwards its wrapper instructions and all incoming chat `system` messages through Codex `developer_instructions`; only non-system messages are flattened into the user-message conversation transcript.
 - Prompt-progress live preview now streams real assistant `content` text from Codex app-server message deltas, rather than waiting for the old `codex exec --json` final-message file path.
+
+## Prompt Progress Targets
+
+`prompt_progress.character_targets` configures the character-count target used by the docked prompt tracker progress bars.
+
+```yaml
+prompt_progress:
+  character_targets:
+    region_*: 20000
+    location_*: 10000
+    npc_generation_*: 10000
+    player_action*: 5000
+```
+
+Prompt labels are normalized the same way as `metadataLabel`; keys ending in `*` match prefixes, and exact labels win over prefix matches. Missing target coverage for a tracked prompt label throws a clear error instead of falling back to a placeholder. The default config gives region-related prompts `20000`, location-related and NPC-generation prompts `10000`, and other known prompt families `5000`. Once `logs/prompt-output-character-stats.json` has a positive average output-character count for a label, that average becomes the prompt's progress target instead of the configured value; the config value remains the cold-start target before a usable average exists. Character-appended labels for inventory generation, NPC memories, NPC progression, NPC abilities, and NPC alias assignment use the base prompt label's average. Use `/promptstats` to inspect stored averages and `/promptstats clear` to clear them.
+
+Progress uses decoded JavaScript characters, not tokens or UTF-8 bytes. Up to the target `X`, the bar advances linearly through 75% of its width. After `X`, it approaches the end asymptotically: each additional `X` characters consumes half of the remaining 25%.
 
 ## AI custom args
 
@@ -787,4 +815,4 @@ Rules:
 - The prompt input includes current-location NPCs that have persisted `last_seen_time` / `last_seen_location` and were not in the same location as the player on the previous round, so already-present reunion NPCs stay in the candidate list instead of being misclassified as arrivals.
 - The prompt input includes each need-bar definition's `while_you_were_away_prompt_notes` when provided, letting need-bar defs guide how offscreen NPCs tend to satisfy or lose that bar.
 - The threshold controls which NPCs are listed for required `<characterUpdate>` entries. NPCs below the threshold are omitted from that required list, but the prompt still runs for previously visited arrivals.
-- When it runs, it blocks the arrival flow long enough to apply returned need-bar percentage values, optional NPC travel destinations, optional `<itemSceneryMoves>` item/scenery relocation entries, store the hidden `while-you-were-away` internal history entry, and optionally append a visible `while-you-were-away-player` assistant chat entry when the prompt returns non-empty `<proseForPlayer>`. Need-bar values strip nonnumeric text before parsing; blank/`N/A` values are ignored for that bar. Item/scenery relocation only moves existing things that are at the pre-arrival origin location and not in a character inventory; other listed names warn and are ignored. If `slop_buster` is enabled, that visible prose is run through the shared slop-removal pipeline before storage.
+- When it runs, it blocks the arrival flow long enough to apply returned need-bar percentage values, optional NPC travel destinations, optional `<itemSceneryMoves>` item/scenery relocation entries, store the hidden `while-you-were-away` internal history entry, and optionally append a visible `while-you-were-away-player` assistant chat entry when the prompt returns non-empty `<proseForPlayer>`. Need-bar values strip nonnumeric text before parsing, clamp parsed out-of-range percentages to `0..100`, and ignore blank/`N/A` values for that bar. Item/scenery relocation only moves existing things that are at the pre-arrival origin location and not in a character inventory; other listed names warn and are ignored. If `slop_buster` is enabled, that visible prose is run through the shared slop-removal pipeline before storage.

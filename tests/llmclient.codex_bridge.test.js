@@ -1238,7 +1238,12 @@ test('LLMClient.chatCompletion throttles high-frequency prompt_progress received
 
         const activeProgressEvents = emittedEvents
             .filter(event => event.type === 'prompt_progress')
-            .filter(event => Array.isArray(event.payload?.entries) && event.payload.entries.length > 0);
+            .filter(event => Array.isArray(event.payload?.entries) && event.payload.entries.length > 0)
+            .filter(event => event.payload.entries.some(entry => entry?.isComplete !== true));
+        const completionProgressEvent = emittedEvents
+            .filter(event => event.type === 'prompt_progress')
+            .find(event => event.payload?.entries?.some(entry => entry?.isComplete === true));
+        assert.ok(completionProgressEvent, 'expected immediate completion progress event outside streaming throttle');
         assert.ok(
             activeProgressEvents.length <= 2,
             `expected throttled active prompt_progress events, got ${activeProgressEvents.length}`,

@@ -1838,7 +1838,28 @@ class Player {
         }
     }
 
+    static #resolveDispositionFirstImpressionMultiplier() {
+        const dispositionsConfig = Globals.config?.dispositions;
+        if (dispositionsConfig === undefined || dispositionsConfig === null) {
+            return null;
+        }
+        if (typeof dispositionsConfig !== 'object' || Array.isArray(dispositionsConfig)) {
+            throw new Error('dispositions config must be an object when provided.');
+        }
+
+        const rawValue = dispositionsConfig.first_impression_multiplier;
+        if (rawValue === undefined || rawValue === null || rawValue === '') {
+            return null;
+        }
+        const numericValue = Number(rawValue);
+        if (!Number.isFinite(numericValue)) {
+            throw new Error('dispositions.first_impression_multiplier must be a finite number when provided.');
+        }
+        return numericValue;
+    }
+
     static #loadDispositionDefinitions() {
+        const firstImpressionMultiplier = this.#resolveDispositionFirstImpressionMultiplier();
         try {
             const { value } = loadMergedDefinitionFile({
                 baseDir: Globals.baseDir || __dirname,
@@ -1853,9 +1874,6 @@ class Player {
                 typicalStep: Number.isFinite(Number(rangeSource.typical_step)) ? Number(rangeSource.typical_step) : null,
                 typicalBigStep: Number.isFinite(Number(rangeSource.typical_big_step)) ? Number(rangeSource.typical_big_step) : null
             };
-            const firstImpressionMultiplier = Number.isFinite(Number(data.first_impression_multiplier))
-                ? Number(data.first_impression_multiplier)
-                : null;
 
             const dispositionSource = typeof data.dispositions === 'object' && data.dispositions !== null
                 ? data.dispositions

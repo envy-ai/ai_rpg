@@ -4754,7 +4754,7 @@ module.exports = function registerApiRoutes(scope) {
                 return null;
             }
 
-            const normalized = raw.replace(/[^\d.]/g, '');
+            const normalized = raw.replace(/[^\d.-]/g, '');
             if (!normalized) {
                 return null;
             }
@@ -4763,7 +4763,7 @@ module.exports = function registerApiRoutes(scope) {
                 throw new Error(`${fieldLabel} "${raw}" is not a finite number.`);
             }
             if (numeric < 0 || numeric > 100) {
-                throw new Error(`${fieldLabel} "${raw}" must be between 0 and 100.`);
+                return Math.max(0, Math.min(100, numeric));
             }
             return numeric;
         }

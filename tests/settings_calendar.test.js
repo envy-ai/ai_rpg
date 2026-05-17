@@ -69,6 +69,7 @@ test('settings editor exposes a Calendar tab second from the right', () => {
   assert.match(rendered, /id="calendarDefinition"/);
   assert.match(rendered, /id="settingsCalendarGenerateBtn"/);
   assert.match(rendered, /id="settingsCalendarUseDefaultBtn"/);
+  assert.match(rendered, /id="settingsCalendarClearBtn"/);
 });
 
 test('settings page can generate and save profile calendar definitions', () => {
@@ -77,6 +78,35 @@ test('settings page can generate and save profile calendar definitions', () => {
   assert.ok(/settingData\.calendarDefinition/.test(source), 'settings form submission should include calendarDefinition');
   assert.ok(/applyCalendarDefinitionToForm/.test(source), 'settings page should render calendar definitions into the editor');
   assert.ok(/collectCalendarDefinitionFromForm/.test(source), 'settings page should collect calendar definitions from the editor');
+});
+
+test('settings calendar tab uses structured fields instead of raw JSON editing', () => {
+  const env = nunjucks.configure(path.join(baseDir, 'views'), { autoescape: false });
+  const rendered = env.render('settings.njk', {
+    title: 'World Profiles',
+    unifiedTonalScaleDefinition: {},
+    unifiedTonalScaleError: ''
+  });
+  const source = fs.readFileSync(path.join(baseDir, 'views', 'settings.njk'), 'utf8');
+
+  assert.doesNotMatch(rendered, /id="settingsCalendarJson"/);
+  assert.doesNotMatch(rendered, /id="settingsCalendarFormatBtn"/);
+  assert.match(rendered, /id="settingsCalendarYearName"/);
+  assert.match(rendered, /id="settingsCalendarSubTabMonths"/);
+  assert.match(rendered, /id="settingsCalendarSubTabWeekdays"/);
+  assert.match(rendered, /id="settingsCalendarSubTabSeasons"/);
+  assert.match(rendered, /id="settingsCalendarSubTabHolidays"/);
+  assert.match(rendered, /id="settingsCalendarMonthsList"/);
+  assert.match(rendered, /id="settingsCalendarWeekdaysList"/);
+  assert.match(rendered, /id="settingsCalendarSeasonsList"/);
+  assert.match(rendered, /id="settingsCalendarHolidaysList"/);
+  assert.match(rendered, /id="settingsCalendarAddMonthBtn"/);
+  assert.match(rendered, /id="settingsCalendarAddWeekdayBtn"/);
+  assert.match(rendered, /id="settingsCalendarAddSeasonBtn"/);
+  assert.match(rendered, /id="settingsCalendarAddHolidayBtn"/);
+  assert.match(source, /refreshCalendarReferenceControls/);
+  assert.match(source, /createSettingsCalendarMonthSelect/);
+  assert.match(source, /populateSettingsCalendarDaySelect/);
 });
 
 test('settings API exposes calendar generation and new game prefers saved profile calendars', () => {

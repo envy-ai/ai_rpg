@@ -2,18 +2,21 @@
 
 Most modals live in `views/index.njk` and are wired up by the inline script or `public/js/chat.js`.
 
-## Global overlays
+## Global overlays and status
 
-- `#locationOverlay` (class `overlay-backdrop`): travel/generation spinner while location updates.
-- Prompt-progress overlay (`.prompt-progress-overlay`, created by `public/js/chat.js`):
+- `#chatSpinnerStatusBar`: non-modal inline status strip rendered in the chat column between `#promptProgressDock` and `.input-area`. It is hidden when idle, shows the same text that the old play-page spinner overlay would have shown, and uses a small spinner to the left of italicized status text. `window.showLocationOverlay(message)` and `window.hideLocationOverlay()` now update this strip instead of showing a blocking backdrop, so normal interface interaction remains available.
+- Prompt-progress dock (`#promptProgressDock`, rendered in `views/index.njk` between `#chatLog` and `.input-area`, controlled by `public/js/chat.js`):
   - Auto-closes `#loadGameModal` before showing prompt activity.
-  - Renders in the upper modal layer so prompt activity stays visible above the full interface.
-  - Auto-anchors below the top header/tab controls by default so top navigation remains clickable.
+  - Persists its state in `localStorage` under `airpg:promptProgressDockState`, defaulting to `one-line`.
+  - Supports `collapsed` (4px glowing aggregate progress bar), `one-line` (longest-running prompt row), and `table` (full prompt table with sticky header and three visible body rows before vertical scrolling).
+  - The dock remains visible when idle; the one-line empty state shows only an italic translucent `no prompts running` label plus mode controls.
+  - The one-line state uses the prompt progress fill as the whole row background and shows prompt actions, prompt name, received characters, floored approximate percent text such as `~42%`, and right-aligned mode controls.
+  - The mode controls use white `assets/material-icons/misc/compress.svg` and `assets/material-icons/misc/expand.svg`: clicking the collapsed bar opens one-line, one-line compress returns to the bar, one-line expand opens the table, and table compress returns to one-line.
+  - Completed prompts hold at 100% for 250 ms with a slightly brighter single pulse glow before clearing.
+  - Each dock row includes progress fraction, target characters, run count, average output characters, received characters, elapsed/timeout/latency/rate, retries, and eye/cancel/retry actions.
   - Each prompt row includes an eye action that opens a separate floating viewer window with one combined text pane: the full prompt appears first in a differently styled inline span, followed by the live streamed response text, and the viewer header includes a `Copy Prompt` button plus a `Follow` checkbox.
   - The viewer supports header dragging, native resize, and an internal vertical scrollbar when the combined text pane overflows. When `Follow` is checked, the combined prompt/response pane stays scrolled to the bottom as throttled stream updates render.
-  - Received-count and average-rate cells are displayed without byte/character unit labels; the `Avg/s` column header provides the rate context.
-  - Supports drag/resize/contract; manual drag disables auto-anchoring for that session.
-  - While the overlay is visible, the progress table keeps the same wrapper/table/header DOM and replaces only body rows on rerender. It also remembers the widest rendered row/table width and applies that as a runtime-only minimum width so rows disappearing do not shrink the table. The remembered width is cleared after the empty overlay hides.
+  - Received-count and average-rate cells are character based and displayed without a unit label; the `Avg/s` column header provides the rate context.
 - `#npcModalBackdrop`, `#questEditBackdrop`, `#craftingModalBackdrop`, `#salvageIntentBackdrop`:
   shared backdrops used to dim the page for certain modals.
 

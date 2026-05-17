@@ -114,6 +114,31 @@ test('Story Tools search matches metadata, requires all terms, and clears cleanl
     await expect(page.locator('#storyToolsSearchStatus')).toHaveText('5 entries');
 });
 
+test('Story Tools type filter is populated from loaded entry types and combines with search', async ({ page }) => {
+    await openStoryToolsWithMockHistory(page);
+
+    await expect(page.locator('#storyToolsTypeFilter option')).toHaveText([
+        'All types',
+        'assistant',
+        'event-summary',
+        'player-action',
+        'plot-summary'
+    ]);
+
+    await page.selectOption('#storyToolsTypeFilter', 'assistant');
+    await expect(page.locator('.story-tools-entry')).toHaveCount(2);
+    await expect(page.locator('.story-tools-entry-title')).toHaveText(['Entry #2', 'Entry #5']);
+    await expect(page.locator('#storyToolsSearchStatus')).toHaveText('2 of 5 entries match');
+
+    await page.fill('#storyToolsSearchInput', 'Mara');
+    await expect(page.locator('.story-tools-entry')).toHaveCount(1);
+    await expect(page.locator('.story-tools-entry-title')).toHaveText('Entry #2');
+
+    await page.selectOption('#storyToolsTypeFilter', '');
+    await expect(page.locator('.story-tools-entry')).toHaveCount(3);
+    await expect(page.locator('.story-tools-entry-title')).toHaveText(['Entry #1', 'Entry #2', 'Entry #3']);
+});
+
 test('Story Tools substring mode matches the exact typed phrase only', async ({ page }) => {
     await openStoryToolsWithMockHistory(page);
 

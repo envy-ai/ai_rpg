@@ -4,9 +4,6 @@ The following NPCs are currently at this location and have not been with the pla
 {% for npc in listedNpcs -%}
 - {{ npc.name }} (last seen {{ npc.lastSeenTimeAgo }} at {{ npc.lastSeenLocationName | default(npc.last_seen_location, true) }})
 {% endfor -%}
-{% else -%}
-No current-location NPCs require individual while-you-were-away character updates.
-{% endif -%}
 
 <task>Write a paragraph-long summary for each listed character, if any, describing what they have been up to since they last saw the player. Always write proseForPlayer describing what the player sees, learns, or experiences upon returning to this location, even when there are no listed characters.</task>
 
@@ -17,6 +14,9 @@ Need bar instructions:{% for bar in needBarDefinitions or [] %}
 {% endfor %}
 
 These instructions take precedence over existing game state descriptions, which described the characters at the time they were last seen and are not intended to lock characters in that state. Even if a character is narratively 'starving,' if food is available in the scene, their food bar should be at least 50%, etc.
+{% endif -%}
+
+
 
 Return a response in this format:
 
@@ -40,9 +40,7 @@ Return a response in this format:
     </characterUpdate>
     {% endfor -%}
 
-    <!-- If there are no listed characters and no exact-location arrivals, leave characterUpdates empty. -->
-
-    <!-- Optionally, if any character who is NOT listed above ARRIVED at this location since the player was last here, you can include them here like this: -->
+    {% if listedNpcs | length -%}<!-- Optionally, if any character who is NOT listed above ARRIVED at this location since the player was last here, you can include them here like this: -->{% else %}<!-- If any character not already in the party ARRIVED at this location since the player was last here, include them here as below. OMIT all party current party members. -->{% endif -%}
     <characterUpdate>
       <name><!-- The exact name of the arriving character --></name>
       <needBarChanges>
@@ -57,6 +55,8 @@ Return a response in this format:
     </characterUpdate>
 
     <!-- Repeat as necessary for arriving characters -->
+    
+    <!-- If there are no listed characters and no exact-location arrivals, leave characterUpdates empty. -->
   </characterUpdates>
   <proseForPlayer>
     <!-- Story purpose describing what the player sees, learns, or experiences upon returning to this location after being away. The player is not omniscient, so describe events and changes from their perspective. -->

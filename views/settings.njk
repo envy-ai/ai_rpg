@@ -391,27 +391,74 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                     </section>
 
                     <section class="editor-tab-panel" data-editor-panel="calendar">
-                        <div class="field-grid">
-                            <div class="form-group full-width">
-                                <div class="settings-calendar-toolbar">
-                                    <button type="button" class="btn btn-secondary small" id="settingsCalendarGenerateBtn">Pre-Generate Calendar</button>
-                                    <button type="button" class="btn btn-secondary small" id="settingsCalendarUseDefaultBtn">Use Gregorian Default</button>
-                                    <button type="button" class="btn btn-secondary small" id="settingsCalendarFormatBtn">Format JSON</button>
-                                    <button type="button" class="btn btn-danger small" id="settingsCalendarClearBtn">Clear Calendar</button>
+                        <div class="settings-calendar-editor-shell">
+                            <div class="settings-calendar-toolbar">
+                                <button type="button" class="btn btn-secondary small" id="settingsCalendarGenerateBtn">Pre-Generate Calendar</button>
+                                <button type="button" class="btn btn-secondary small" id="settingsCalendarUseDefaultBtn">Use Gregorian Default</button>
+                                <button type="button" class="btn btn-danger small" id="settingsCalendarClearBtn">Clear Calendar</button>
+                            </div>
+                            <div class="help-text">Saved calendars are used when starting a new game from this world profile. Leave every calendar field blank to generate a calendar during new-game setup.</div>
+
+                            <div class="settings-calendar-overview">
+                                <div class="form-group">
+                                    <label for="settingsCalendarYearName">Year Name</label>
+                                    <input type="text" id="settingsCalendarYearName" autocomplete="off" placeholder="Common Era">
                                 </div>
-                                <div class="help-text">Saved calendars are used when starting a new game from this world profile. Leave blank to generate a calendar during new-game setup.</div>
-                            </div>
-
-                            <div class="form-group full-width">
-                                <label for="settingsCalendarJson">Calendar Definition JSON</label>
-                                <textarea id="settingsCalendarJson" rows="20" spellcheck="false" placeholder="Pre-generate or paste a calendar definition JSON object..."></textarea>
-                                <div class="help-text">Calendar definitions use yearName, months, weekdays, seasons, and holidays. Invalid JSON or invalid calendar fields will block saving.</div>
-                            </div>
-
-                            <div class="form-group full-width">
                                 <div id="settingsCalendarSummary" class="settings-calendar-summary">No calendar saved for this world profile.</div>
-                                <div id="settingsCalendarStatus" class="settings-calendar-status" role="status" aria-live="polite"></div>
                             </div>
+
+                            <div class="settings-calendar-subtabs" role="tablist" aria-label="Calendar editor sections">
+                                <button type="button" class="settings-calendar-subtab is-active" id="settingsCalendarSubTabMonths" data-settings-calendar-tab="months" role="tab" aria-selected="true" aria-controls="settingsCalendarPanelMonths">Months</button>
+                                <button type="button" class="settings-calendar-subtab" id="settingsCalendarSubTabWeekdays" data-settings-calendar-tab="weekdays" role="tab" aria-selected="false" aria-controls="settingsCalendarPanelWeekdays">Weekdays</button>
+                                <button type="button" class="settings-calendar-subtab" id="settingsCalendarSubTabSeasons" data-settings-calendar-tab="seasons" role="tab" aria-selected="false" aria-controls="settingsCalendarPanelSeasons">Seasons</button>
+                                <button type="button" class="settings-calendar-subtab" id="settingsCalendarSubTabHolidays" data-settings-calendar-tab="holidays" role="tab" aria-selected="false" aria-controls="settingsCalendarPanelHolidays">Holidays</button>
+                            </div>
+
+                            <section class="settings-calendar-panel is-active" id="settingsCalendarPanelMonths" data-settings-calendar-panel="months" role="tabpanel" aria-labelledby="settingsCalendarSubTabMonths">
+                                <div class="settings-calendar-section-header">
+                                    <div>
+                                        <h3>Months</h3>
+                                        <p>Ordered month names, lengths, and optional season labels.</p>
+                                    </div>
+                                    <button type="button" class="btn btn-secondary small" id="settingsCalendarAddMonthBtn">Add Month</button>
+                                </div>
+                                <div id="settingsCalendarMonthsList" class="settings-calendar-list"></div>
+                            </section>
+
+                            <section class="settings-calendar-panel" id="settingsCalendarPanelWeekdays" data-settings-calendar-panel="weekdays" role="tabpanel" aria-labelledby="settingsCalendarSubTabWeekdays" hidden>
+                                <div class="settings-calendar-section-header">
+                                    <div>
+                                        <h3>Weekdays</h3>
+                                        <p>Ordered weekday cycle used by world-time labels.</p>
+                                    </div>
+                                    <button type="button" class="btn btn-secondary small" id="settingsCalendarAddWeekdayBtn">Add Weekday</button>
+                                </div>
+                                <div id="settingsCalendarWeekdaysList" class="settings-calendar-list"></div>
+                            </section>
+
+                            <section class="settings-calendar-panel" id="settingsCalendarPanelSeasons" data-settings-calendar-panel="seasons" role="tabpanel" aria-labelledby="settingsCalendarSubTabSeasons" hidden>
+                                <div class="settings-calendar-section-header">
+                                    <div>
+                                        <h3>Seasons</h3>
+                                        <p>Season boundaries, optional day length notes, and light descriptions by time of day.</p>
+                                    </div>
+                                    <button type="button" class="btn btn-secondary small" id="settingsCalendarAddSeasonBtn">Add Season</button>
+                                </div>
+                                <div id="settingsCalendarSeasonsList" class="settings-calendar-list settings-calendar-seasons-list"></div>
+                            </section>
+
+                            <section class="settings-calendar-panel" id="settingsCalendarPanelHolidays" data-settings-calendar-panel="holidays" role="tabpanel" aria-labelledby="settingsCalendarSubTabHolidays" hidden>
+                                <div class="settings-calendar-section-header">
+                                    <div>
+                                        <h3>Holidays</h3>
+                                        <p>Named calendar dates shown to prompts and calendar summaries.</p>
+                                    </div>
+                                    <button type="button" class="btn btn-secondary small" id="settingsCalendarAddHolidayBtn">Add Holiday</button>
+                                </div>
+                                <div id="settingsCalendarHolidaysList" class="settings-calendar-list"></div>
+                            </section>
+
+                            <div id="settingsCalendarStatus" class="settings-calendar-status" role="status" aria-live="polite"></div>
                         </div>
                     </section>
 
@@ -1333,8 +1380,7 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
             if (toneScaleNotation) {
                 extraLines.push(`Tone Scale: ${toneScaleNotation}`);
             }
-            const calendarText = document.getElementById('settingsCalendarJson')?.value?.trim() || '';
-            if (calendarText) {
+            if (hasSettingsCalendarEditorContent()) {
                 extraLines.push('Calendar: saved');
             }
 	            
@@ -1366,18 +1412,84 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
             }
         }
 
-        function summarizeCalendarDefinition(calendarDefinition) {
+        function createSettingsCalendarValidationError(message, focusTarget = null) {
+            const error = new Error(message);
+            error.focusTarget = focusTarget;
+            return error;
+        }
+
+        function markSettingsCalendarEdited() {
+            const hiddenInput = document.getElementById('calendarDefinition');
+            if (hiddenInput) {
+                hiddenInput.value = '';
+            }
+            setSettingsCalendarStatus('', null);
+        }
+
+        function summarizeCalendarDefinition(calendarDefinition = null) {
             if (!calendarDefinition || typeof calendarDefinition !== 'object') {
                 return 'No calendar saved for this world profile.';
             }
-            const months = Array.isArray(calendarDefinition.months) ? calendarDefinition.months.length : 0;
-            const weekdays = Array.isArray(calendarDefinition.weekdays) ? calendarDefinition.weekdays.length : 0;
-            const seasons = Array.isArray(calendarDefinition.seasons) ? calendarDefinition.seasons.length : 0;
-            const holidays = Array.isArray(calendarDefinition.holidays) ? calendarDefinition.holidays.length : 0;
+            const months = Array.isArray(calendarDefinition.months) ? calendarDefinition.months : [];
+            const weekdays = Array.isArray(calendarDefinition.weekdays) ? calendarDefinition.weekdays : [];
+            const seasons = Array.isArray(calendarDefinition.seasons) ? calendarDefinition.seasons : [];
+            const holidays = Array.isArray(calendarDefinition.holidays) ? calendarDefinition.holidays : [];
+            const totalDays = months.reduce((total, month) => {
+                const length = Number(month?.lengthDays);
+                return total + (Number.isInteger(length) && length > 0 ? length : 0);
+            }, 0);
             const yearName = typeof calendarDefinition.yearName === 'string' && calendarDefinition.yearName.trim()
                 ? calendarDefinition.yearName.trim()
                 : 'Unnamed year';
-            return `${yearName}: ${months} month(s), ${weekdays} weekday(s), ${seasons} season(s), ${holidays} holiday(s).`;
+            return `${yearName}: ${months.length} month(s), ${totalDays} day(s), ${weekdays.length} weekday(s), ${seasons.length} season(s), ${holidays.length} holiday(s).`;
+        }
+
+        function getSettingsCalendarRows(selector) {
+            return Array.from(document.querySelectorAll(selector));
+        }
+
+        function readSettingsCalendarDraft() {
+            const yearName = document.getElementById('settingsCalendarYearName')?.value?.trim() || '';
+            const months = getSettingsCalendarRows('.settings-calendar-month-row').map((row) => ({
+                name: row.querySelector('.settings-calendar-month-name')?.value?.trim() || '',
+                lengthDays: row.querySelector('.settings-calendar-month-length')?.value?.trim() || '',
+                seasonName: row.querySelector('.settings-calendar-month-season')?.value?.trim() || ''
+            }));
+            const weekdays = getSettingsCalendarRows('.settings-calendar-weekday-row')
+                .map(row => row.querySelector('.settings-calendar-weekday-name')?.value?.trim() || '');
+            const seasons = getSettingsCalendarRows('.settings-calendar-season-row').map((row) => ({
+                name: row.querySelector('.settings-calendar-season-name')?.value?.trim() || '',
+                startMonth: row.querySelector('.settings-calendar-season-start-month')?.value?.trim() || '',
+                startDay: row.querySelector('.settings-calendar-season-start-day')?.value?.trim() || '',
+                dayLengthMinutes: row.querySelector('.settings-calendar-season-day-length')?.value?.trim() || '',
+                description: row.querySelector('.settings-calendar-season-description')?.value?.trim() || '',
+                timeDescriptions: Array.from(row.querySelectorAll('.settings-calendar-time-row')).map(timeRow => ({
+                    timeOfDay: timeRow.querySelector('.settings-calendar-time-of-day')?.value?.trim() || '',
+                    description: timeRow.querySelector('.settings-calendar-time-description')?.value?.trim() || ''
+                }))
+            }));
+            const holidays = getSettingsCalendarRows('.settings-calendar-holiday-row').map((row) => ({
+                name: row.querySelector('.settings-calendar-holiday-name')?.value?.trim() || '',
+                month: row.querySelector('.settings-calendar-holiday-month')?.value?.trim() || '',
+                day: row.querySelector('.settings-calendar-holiday-day')?.value?.trim() || '',
+                description: row.querySelector('.settings-calendar-holiday-description')?.value?.trim() || ''
+            }));
+            return { yearName, months, weekdays, seasons, holidays };
+        }
+
+        function hasSettingsCalendarEditorContent() {
+            const hiddenInput = document.getElementById('calendarDefinition');
+            if (hiddenInput?.value?.trim()) {
+                return true;
+            }
+            const draft = readSettingsCalendarDraft();
+            return Boolean(
+                draft.yearName
+                || draft.months.length
+                || draft.weekdays.length
+                || draft.seasons.length
+                || draft.holidays.length
+            );
         }
 
         function updateCalendarSummary(calendarDefinition = null) {
@@ -1385,31 +1497,445 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
             if (!summaryEl) {
                 return;
             }
-            summaryEl.textContent = summarizeCalendarDefinition(calendarDefinition);
+            summaryEl.textContent = calendarDefinition
+                ? summarizeCalendarDefinition(calendarDefinition)
+                : summarizeCalendarDefinition(hasSettingsCalendarEditorContent() ? readSettingsCalendarDraft() : null);
+        }
+
+        function setSettingsCalendarSubTab(targetTab = 'months') {
+            const normalizedTab = typeof targetTab === 'string' && targetTab.trim()
+                ? targetTab.trim()
+                : 'months';
+            document.querySelectorAll('[data-settings-calendar-tab]').forEach((button) => {
+                const isActive = button.dataset.settingsCalendarTab === normalizedTab;
+                button.classList.toggle('is-active', isActive);
+                button.setAttribute('aria-selected', isActive ? 'true' : 'false');
+            });
+            document.querySelectorAll('[data-settings-calendar-panel]').forEach((panel) => {
+                const isActive = panel.dataset.settingsCalendarPanel === normalizedTab;
+                panel.classList.toggle('is-active', isActive);
+                panel.toggleAttribute('hidden', !isActive);
+            });
+        }
+
+        function createSettingsCalendarField(labelText, className, value = '', options = {}) {
+            const field = document.createElement('div');
+            field.className = `settings-calendar-field ${options.fieldClass || ''}`.trim();
+            const label = document.createElement('label');
+            label.textContent = labelText;
+            const input = options.textarea
+                ? document.createElement('textarea')
+                : document.createElement(options.select ? 'select' : 'input');
+            input.className = className;
+            if (options.textarea) {
+                input.rows = options.rows || 2;
+            } else if (!options.select) {
+                input.type = options.type || 'text';
+                if (options.step) {
+                    input.step = options.step;
+                }
+                if (options.placeholder) {
+                    input.placeholder = options.placeholder;
+                }
+            }
+            input.value = value === null || value === undefined ? '' : String(value);
+            input.addEventListener('input', () => {
+                markSettingsCalendarEdited();
+                updateCalendarSummary(null);
+                updatePreview();
+            });
+            input.addEventListener('change', () => {
+                markSettingsCalendarEdited();
+                updateCalendarSummary(null);
+                updatePreview();
+            });
+            field.append(label, input);
+            return { field, input };
+        }
+
+        function getSettingsCalendarMonthDefinitions() {
+            return getSettingsCalendarRows('.settings-calendar-month-row').map((row) => {
+                const name = row.querySelector('.settings-calendar-month-name')?.value?.trim() || '';
+                const lengthDays = Number(row.querySelector('.settings-calendar-month-length')?.value);
+                return {
+                    name,
+                    lengthDays: Number.isInteger(lengthDays) && lengthDays > 0 ? lengthDays : null
+                };
+            }).filter(month => month.name);
+        }
+
+        function getSettingsCalendarSeasonNames() {
+            return getSettingsCalendarRows('.settings-calendar-season-row')
+                .map(row => row.querySelector('.settings-calendar-season-name')?.value?.trim() || '')
+                .filter(Boolean);
+        }
+
+        function populateSettingsCalendarSelect(select, values, selectedValue = '', placeholder = 'Select') {
+            if (!select) {
+                return;
+            }
+            const normalizedValue = selectedValue === null || selectedValue === undefined ? '' : String(selectedValue);
+            const uniqueValues = Array.from(new Set(values.filter(Boolean)));
+            select.innerHTML = '';
+            const blank = document.createElement('option');
+            blank.value = '';
+            blank.textContent = placeholder;
+            select.appendChild(blank);
+            if (normalizedValue && !uniqueValues.includes(normalizedValue)) {
+                const stale = document.createElement('option');
+                stale.value = normalizedValue;
+                stale.textContent = `${normalizedValue} (missing)`;
+                stale.dataset.stale = 'true';
+                select.appendChild(stale);
+            }
+            uniqueValues.forEach((value) => {
+                const option = document.createElement('option');
+                option.value = value;
+                option.textContent = value;
+                select.appendChild(option);
+            });
+            select.value = normalizedValue;
+            const selected = select.selectedOptions?.[0];
+            select.classList.toggle('is-stale', Boolean(selected?.dataset?.stale));
+        }
+
+        function createSettingsCalendarMonthSelect(labelText, className, value = '') {
+            const field = createSettingsCalendarField(labelText, className, value, { select: true });
+            populateSettingsCalendarSelect(
+                field.input,
+                getSettingsCalendarMonthDefinitions().map(month => month.name),
+                value,
+                'No month'
+            );
+            return field;
+        }
+
+        function createSettingsCalendarSeasonSelect(labelText, className, value = '') {
+            const field = createSettingsCalendarField(labelText, className, value, { select: true });
+            populateSettingsCalendarSelect(field.input, getSettingsCalendarSeasonNames(), value, 'No season');
+            return field;
+        }
+
+        function populateSettingsCalendarDaySelect(select, monthName = '', selectedValue = '') {
+            if (!select) {
+                return;
+            }
+            const normalizedValue = selectedValue === null || selectedValue === undefined ? '' : String(selectedValue);
+            const month = getSettingsCalendarMonthDefinitions().find(candidate => candidate.name === monthName);
+            select.innerHTML = '';
+            const blank = document.createElement('option');
+            blank.value = '';
+            blank.textContent = 'No day';
+            select.appendChild(blank);
+            const dayCount = month?.lengthDays || 0;
+            const parsedValue = Number(normalizedValue);
+            const valueIsInRange = Number.isInteger(parsedValue) && parsedValue >= 1 && parsedValue <= dayCount;
+            if (normalizedValue && !valueIsInRange) {
+                const stale = document.createElement('option');
+                stale.value = normalizedValue;
+                stale.textContent = `${normalizedValue} (outside month)`;
+                stale.dataset.stale = 'true';
+                select.appendChild(stale);
+            }
+            for (let day = 1; day <= dayCount; day += 1) {
+                const option = document.createElement('option');
+                option.value = String(day);
+                option.textContent = String(day);
+                select.appendChild(option);
+            }
+            select.value = normalizedValue;
+            const selected = select.selectedOptions?.[0];
+            select.classList.toggle('is-stale', Boolean(selected?.dataset?.stale));
+        }
+
+        function appendSettingsCalendarRowActions(row, { removeLabel = 'Remove' } = {}) {
+            const actions = document.createElement('div');
+            actions.className = 'settings-calendar-row-actions';
+
+            const moveUp = document.createElement('button');
+            moveUp.type = 'button';
+            moveUp.className = 'settings-calendar-row-action';
+            moveUp.textContent = 'Up';
+            moveUp.addEventListener('click', () => {
+                if (row.previousElementSibling) {
+                    row.parentElement.insertBefore(row, row.previousElementSibling);
+                    markSettingsCalendarEdited();
+                    refreshCalendarReferenceControls();
+                    updateCalendarSummary(null);
+                    updatePreview();
+                }
+            });
+
+            const moveDown = document.createElement('button');
+            moveDown.type = 'button';
+            moveDown.className = 'settings-calendar-row-action';
+            moveDown.textContent = 'Down';
+            moveDown.addEventListener('click', () => {
+                if (row.nextElementSibling) {
+                    row.parentElement.insertBefore(row.nextElementSibling, row);
+                    markSettingsCalendarEdited();
+                    refreshCalendarReferenceControls();
+                    updateCalendarSummary(null);
+                    updatePreview();
+                }
+            });
+
+            const remove = document.createElement('button');
+            remove.type = 'button';
+            remove.className = 'settings-calendar-row-action settings-calendar-row-action-danger';
+            remove.textContent = removeLabel;
+            remove.addEventListener('click', () => {
+                row.remove();
+                markSettingsCalendarEdited();
+                refreshCalendarReferenceControls();
+                updateCalendarSummary(null);
+                updatePreview();
+            });
+
+            actions.append(moveUp, moveDown, remove);
+            row.appendChild(actions);
+        }
+
+        function createSettingsCalendarMonthRow(month = {}) {
+            const list = document.getElementById('settingsCalendarMonthsList');
+            const row = document.createElement('div');
+            row.className = 'settings-calendar-row settings-calendar-month-row';
+            const name = createSettingsCalendarField('Name', 'settings-calendar-month-name', month.name || '');
+            const lengthDays = createSettingsCalendarField('Length Days', 'settings-calendar-month-length', month.lengthDays ?? '', {
+                type: 'number'
+            });
+            const seasonName = createSettingsCalendarSeasonSelect('Season', 'settings-calendar-month-season', month.seasonName || '');
+            name.input.addEventListener('input', refreshCalendarReferenceControls);
+            lengthDays.input.addEventListener('input', refreshCalendarReferenceControls);
+            seasonName.input.addEventListener('change', refreshCalendarReferenceControls);
+            row.append(name.field, lengthDays.field, seasonName.field);
+            appendSettingsCalendarRowActions(row, { removeLabel: 'Remove' });
+            list?.appendChild(row);
+            return row;
+        }
+
+        function createSettingsCalendarWeekdayRow(weekday = '') {
+            const list = document.getElementById('settingsCalendarWeekdaysList');
+            const row = document.createElement('div');
+            row.className = 'settings-calendar-row settings-calendar-weekday-row';
+            const name = createSettingsCalendarField('Weekday', 'settings-calendar-weekday-name', weekday || '');
+            row.append(name.field);
+            appendSettingsCalendarRowActions(row, { removeLabel: 'Remove' });
+            list?.appendChild(row);
+            return row;
+        }
+
+        function createSettingsCalendarTimeDescriptionRow(list, timeDescription = {}) {
+            const row = document.createElement('div');
+            row.className = 'settings-calendar-row settings-calendar-time-row';
+            const timeOfDay = createSettingsCalendarField('Time', 'settings-calendar-time-of-day', timeDescription.timeOfDay ?? '', {
+                type: 'number',
+                step: '0.25',
+                placeholder: '6'
+            });
+            const description = createSettingsCalendarField('Light Description', 'settings-calendar-time-description', timeDescription.description || '', {
+                textarea: true,
+                rows: 2,
+                fieldClass: 'settings-calendar-field-wide'
+            });
+            row.append(timeOfDay.field, description.field);
+            appendSettingsCalendarRowActions(row, { removeLabel: 'Remove' });
+            list?.appendChild(row);
+            return row;
+        }
+
+        function createSettingsCalendarSeasonRow(season = {}) {
+            const list = document.getElementById('settingsCalendarSeasonsList');
+            const row = document.createElement('div');
+            row.className = 'settings-calendar-row settings-calendar-season-row';
+
+            const basics = document.createElement('div');
+            basics.className = 'settings-calendar-season-basics';
+            const name = createSettingsCalendarField('Name', 'settings-calendar-season-name', season.name || '');
+            const startMonth = createSettingsCalendarMonthSelect('Start Month', 'settings-calendar-season-start-month', season.startMonth || '');
+            const startDay = createSettingsCalendarField('Start Day', 'settings-calendar-season-start-day', season.startDay ?? 1, { select: true });
+            const dayLength = createSettingsCalendarField('Day Length Minutes', 'settings-calendar-season-day-length', season.dayLengthMinutes ?? '', {
+                type: 'number',
+                placeholder: 'Optional'
+            });
+            const description = createSettingsCalendarField('Description', 'settings-calendar-season-description', season.description || '', {
+                textarea: true,
+                rows: 2,
+                fieldClass: 'settings-calendar-field-wide'
+            });
+            name.input.addEventListener('input', refreshCalendarReferenceControls);
+            startMonth.input.addEventListener('change', () => {
+                populateSettingsCalendarDaySelect(startDay.input, startMonth.input.value, startDay.input.value);
+            });
+            populateSettingsCalendarDaySelect(startDay.input, startMonth.input.value, season.startDay ?? 1);
+            basics.append(name.field, startMonth.field, startDay.field, dayLength.field, description.field);
+
+            const timeSection = document.createElement('div');
+            timeSection.className = 'settings-calendar-time-section';
+            const timeHeader = document.createElement('div');
+            timeHeader.className = 'settings-calendar-time-header';
+            const timeTitle = document.createElement('h4');
+            timeTitle.textContent = 'Light Descriptions';
+            const addTime = document.createElement('button');
+            addTime.type = 'button';
+            addTime.className = 'btn btn-secondary small';
+            addTime.textContent = 'Add Time';
+            const timeList = document.createElement('div');
+            timeList.className = 'settings-calendar-list settings-calendar-time-list';
+            addTime.addEventListener('click', () => {
+                markSettingsCalendarEdited();
+                const newRow = createSettingsCalendarTimeDescriptionRow(timeList, { timeOfDay: 0, description: '' });
+                newRow.querySelector('.settings-calendar-time-of-day')?.focus();
+                updateCalendarSummary(null);
+                updatePreview();
+            });
+            timeHeader.append(timeTitle, addTime);
+            const timeDescriptions = Array.isArray(season.timeDescriptions) ? season.timeDescriptions : [];
+            timeDescriptions.forEach(entry => createSettingsCalendarTimeDescriptionRow(timeList, entry));
+            timeSection.append(timeHeader, timeList);
+
+            row.append(basics, timeSection);
+            appendSettingsCalendarRowActions(row, { removeLabel: 'Remove Season' });
+            list?.appendChild(row);
+            return row;
+        }
+
+        function createSettingsCalendarHolidayRow(holiday = {}) {
+            const list = document.getElementById('settingsCalendarHolidaysList');
+            const row = document.createElement('div');
+            row.className = 'settings-calendar-row settings-calendar-holiday-row';
+            const name = createSettingsCalendarField('Name', 'settings-calendar-holiday-name', holiday.name || '');
+            const month = createSettingsCalendarMonthSelect('Month', 'settings-calendar-holiday-month', holiday.month || '');
+            const day = createSettingsCalendarField('Day', 'settings-calendar-holiday-day', holiday.day ?? '', { select: true });
+            const description = createSettingsCalendarField('Description', 'settings-calendar-holiday-description', holiday.description || '', {
+                textarea: true,
+                rows: 2,
+                fieldClass: 'settings-calendar-field-wide'
+            });
+            month.input.addEventListener('change', () => {
+                populateSettingsCalendarDaySelect(day.input, month.input.value, day.input.value);
+            });
+            populateSettingsCalendarDaySelect(day.input, month.input.value, holiday.day ?? '');
+            row.append(name.field, month.field, day.field, description.field);
+            appendSettingsCalendarRowActions(row, { removeLabel: 'Remove' });
+            list?.appendChild(row);
+            return row;
+        }
+
+        function refreshCalendarReferenceControls() {
+            const monthNames = getSettingsCalendarMonthDefinitions().map(month => month.name);
+            const seasonNames = getSettingsCalendarSeasonNames();
+            document.querySelectorAll('.settings-calendar-month-season').forEach((select) => {
+                populateSettingsCalendarSelect(select, seasonNames, select.value, 'No season');
+            });
+            document.querySelectorAll('.settings-calendar-season-start-month, .settings-calendar-holiday-month').forEach((select) => {
+                populateSettingsCalendarSelect(select, monthNames, select.value, 'No month');
+            });
+            document.querySelectorAll('.settings-calendar-season-row').forEach((row) => {
+                const monthSelect = row.querySelector('.settings-calendar-season-start-month');
+                const daySelect = row.querySelector('.settings-calendar-season-start-day');
+                populateSettingsCalendarDaySelect(daySelect, monthSelect?.value || '', daySelect?.value || '');
+            });
+            document.querySelectorAll('.settings-calendar-holiday-row').forEach((row) => {
+                const monthSelect = row.querySelector('.settings-calendar-holiday-month');
+                const daySelect = row.querySelector('.settings-calendar-holiday-day');
+                populateSettingsCalendarDaySelect(daySelect, monthSelect?.value || '', daySelect?.value || '');
+            });
+            updateCalendarSummary(null);
+        }
+
+        function clearSettingsCalendarEditorRows() {
+            ['settingsCalendarMonthsList', 'settingsCalendarWeekdaysList', 'settingsCalendarSeasonsList', 'settingsCalendarHolidaysList'].forEach((id) => {
+                const el = document.getElementById(id);
+                if (el) {
+                    el.innerHTML = '';
+                }
+            });
         }
 
         function applyCalendarDefinitionToForm(calendarDefinition = null) {
             const hiddenInput = document.getElementById('calendarDefinition');
-            const jsonInput = document.getElementById('settingsCalendarJson');
+            const yearInput = document.getElementById('settingsCalendarYearName');
             const hasCalendar = calendarDefinition && typeof calendarDefinition === 'object' && !Array.isArray(calendarDefinition);
-            const serialized = hasCalendar ? JSON.stringify(calendarDefinition, null, 2) : '';
             if (hiddenInput) {
                 hiddenInput.value = hasCalendar ? JSON.stringify(calendarDefinition) : '';
             }
-            if (jsonInput) {
-                jsonInput.value = serialized;
+            if (yearInput) {
+                yearInput.value = hasCalendar ? (calendarDefinition.yearName || '') : '';
             }
+            clearSettingsCalendarEditorRows();
+            if (hasCalendar) {
+                (Array.isArray(calendarDefinition.seasons) ? calendarDefinition.seasons : [])
+                    .forEach(season => createSettingsCalendarSeasonRow(season));
+                (Array.isArray(calendarDefinition.months) ? calendarDefinition.months : [])
+                    .forEach(month => createSettingsCalendarMonthRow(month));
+                (Array.isArray(calendarDefinition.weekdays) ? calendarDefinition.weekdays : [])
+                    .forEach(weekday => createSettingsCalendarWeekdayRow(weekday));
+                (Array.isArray(calendarDefinition.holidays) ? calendarDefinition.holidays : [])
+                    .forEach(holiday => createSettingsCalendarHolidayRow(holiday));
+            }
+            refreshCalendarReferenceControls();
             updateCalendarSummary(hasCalendar ? calendarDefinition : null);
             setSettingsCalendarStatus('', null);
+            setSettingsCalendarSubTab('months');
+        }
+
+        function parseSettingsCalendarPositiveInteger(input, message) {
+            const raw = input?.value?.trim() || '';
+            const parsed = Number(raw);
+            if (!Number.isInteger(parsed) || parsed <= 0) {
+                throw createSettingsCalendarValidationError(message, input);
+            }
+            return parsed;
+        }
+
+        function parseSettingsCalendarOptionalNumber(input, message) {
+            const raw = input?.value?.trim() || '';
+            if (!raw) {
+                return null;
+            }
+            const parsed = Number(raw);
+            if (!Number.isFinite(parsed)) {
+                throw createSettingsCalendarValidationError(message, input);
+            }
+            return parsed;
+        }
+
+        function parseSettingsCalendarRequiredNonNegativeNumber(input, message) {
+            const raw = input?.value?.trim() || '';
+            const parsed = Number(raw);
+            if (!raw || !Number.isFinite(parsed) || parsed < 0) {
+                throw createSettingsCalendarValidationError(message, input);
+            }
+            return parsed;
+        }
+
+        function assertSettingsCalendarReference(select, allowedValues, message) {
+            const value = select?.value?.trim() || '';
+            if (value && !allowedValues.includes(value)) {
+                throw createSettingsCalendarValidationError(message, select);
+            }
+            return value;
+        }
+
+        function assertSettingsCalendarDay(select, monthName, message) {
+            const raw = select?.value?.trim() || '';
+            if (!raw) {
+                return null;
+            }
+            const month = getSettingsCalendarMonthDefinitions().find(candidate => candidate.name === monthName);
+            const parsed = Number(raw);
+            if (!month || !Number.isInteger(parsed) || parsed < 1 || parsed > month.lengthDays) {
+                throw createSettingsCalendarValidationError(message, select);
+            }
+            return parsed;
         }
 
         function collectCalendarDefinitionFromForm({ allowBlank = true } = {}) {
             const hiddenInput = document.getElementById('calendarDefinition');
-            const jsonInput = document.getElementById('settingsCalendarJson');
-            const rawValue = (jsonInput?.value || '').trim();
-            if (!rawValue) {
+            if (!hasSettingsCalendarEditorContent()) {
                 if (!allowBlank) {
-                    throw new Error('Calendar definition JSON is required.');
+                    throw new Error('Calendar definition is required.');
                 }
                 if (hiddenInput) {
                     hiddenInput.value = '';
@@ -1418,20 +1944,125 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                 return null;
             }
 
-            let parsed;
-            try {
-                parsed = JSON.parse(rawValue);
-            } catch (error) {
-                throw new Error(`Calendar definition JSON is invalid: ${error.message}`);
+            const monthRows = getSettingsCalendarRows('.settings-calendar-month-row');
+            const weekdayRows = getSettingsCalendarRows('.settings-calendar-weekday-row');
+            if (!monthRows.length) {
+                throw createSettingsCalendarValidationError('Calendar must include at least one month.', document.getElementById('settingsCalendarAddMonthBtn'));
             }
-            if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-                throw new Error('Calendar definition JSON must decode to an object.');
+            if (!weekdayRows.length) {
+                throw createSettingsCalendarValidationError('Calendar must include at least one weekday.', document.getElementById('settingsCalendarAddWeekdayBtn'));
             }
+
+            const months = monthRows.map((row, index) => {
+                const nameInput = row.querySelector('.settings-calendar-month-name');
+                const lengthInput = row.querySelector('.settings-calendar-month-length');
+                const name = nameInput?.value?.trim() || '';
+                if (!name) {
+                    throw createSettingsCalendarValidationError(`Calendar month ${index + 1} is missing a name.`, nameInput);
+                }
+                return {
+                    name,
+                    lengthDays: parseSettingsCalendarPositiveInteger(lengthInput, `Calendar month "${name}" must have a positive integer length.`),
+                    seasonName: row.querySelector('.settings-calendar-month-season')?.value?.trim() || null
+                };
+            });
+            const monthNames = months.map(month => month.name);
+
+            const weekdays = weekdayRows.map((row, index) => {
+                const input = row.querySelector('.settings-calendar-weekday-name');
+                const value = input?.value?.trim() || '';
+                if (!value) {
+                    throw createSettingsCalendarValidationError(`Calendar weekday ${index + 1} is missing a name.`, input);
+                }
+                return value;
+            });
+
+            const seasons = getSettingsCalendarRows('.settings-calendar-season-row').map((row, index) => {
+                const nameInput = row.querySelector('.settings-calendar-season-name');
+                const name = nameInput?.value?.trim() || '';
+                if (!name) {
+                    throw createSettingsCalendarValidationError(`Calendar season ${index + 1} is missing a name.`, nameInput);
+                }
+                const startMonthSelect = row.querySelector('.settings-calendar-season-start-month');
+                const startMonth = assertSettingsCalendarReference(
+                    startMonthSelect,
+                    monthNames,
+                    `Calendar season "${name}" references a missing start month.`
+                ) || null;
+                const startDay = assertSettingsCalendarDay(
+                    row.querySelector('.settings-calendar-season-start-day'),
+                    startMonth,
+                    `Calendar season "${name}" has a start day outside its start month.`
+                ) || 1;
+                const timeDescriptions = Array.from(row.querySelectorAll('.settings-calendar-time-row')).map((timeRow, timeIndex) => {
+                    const descriptionInput = timeRow.querySelector('.settings-calendar-time-description');
+                    const description = descriptionInput?.value?.trim() || '';
+                    if (!description) {
+                        throw createSettingsCalendarValidationError(`Calendar season "${name}" time description ${timeIndex + 1} is missing light description text.`, descriptionInput);
+                    }
+                    return {
+                        timeOfDay: parseSettingsCalendarRequiredNonNegativeNumber(
+                            timeRow.querySelector('.settings-calendar-time-of-day'),
+                            `Calendar season "${name}" time description ${timeIndex + 1} needs a non-negative time.`
+                        ),
+                        description
+                    };
+                });
+                return {
+                    name,
+                    description: row.querySelector('.settings-calendar-season-description')?.value?.trim() || null,
+                    startMonth,
+                    startDay,
+                    dayLengthMinutes: parseSettingsCalendarOptionalNumber(
+                        row.querySelector('.settings-calendar-season-day-length'),
+                        `Calendar season "${name}" day length must be a number when provided.`
+                    ),
+                    timeDescriptions
+                };
+            });
+            const seasonNames = seasons.map(season => season.name);
+            months.forEach((month, index) => {
+                if (month.seasonName && !seasonNames.includes(month.seasonName)) {
+                    const row = monthRows[index];
+                    throw createSettingsCalendarValidationError(`Calendar month "${month.name}" references a missing season.`, row.querySelector('.settings-calendar-month-season'));
+                }
+            });
+
+            const holidays = getSettingsCalendarRows('.settings-calendar-holiday-row').map((row, index) => {
+                const nameInput = row.querySelector('.settings-calendar-holiday-name');
+                const name = nameInput?.value?.trim() || '';
+                if (!name) {
+                    throw createSettingsCalendarValidationError(`Calendar holiday ${index + 1} is missing a name.`, nameInput);
+                }
+                const month = assertSettingsCalendarReference(
+                    row.querySelector('.settings-calendar-holiday-month'),
+                    monthNames,
+                    `Calendar holiday "${name}" references a missing month.`
+                ) || null;
+                return {
+                    name,
+                    description: row.querySelector('.settings-calendar-holiday-description')?.value?.trim() || null,
+                    month,
+                    day: assertSettingsCalendarDay(
+                        row.querySelector('.settings-calendar-holiday-day'),
+                        month,
+                        `Calendar holiday "${name}" has a day outside its month.`
+                    )
+                };
+            });
+
+            const calendarDefinition = {
+                yearName: document.getElementById('settingsCalendarYearName')?.value?.trim() || '',
+                months,
+                weekdays,
+                seasons,
+                holidays
+            };
             if (hiddenInput) {
-                hiddenInput.value = JSON.stringify(parsed);
+                hiddenInput.value = JSON.stringify(calendarDefinition);
             }
-            updateCalendarSummary(parsed);
-            return parsed;
+            updateCalendarSummary(calendarDefinition);
+            return calendarDefinition;
         }
 
         function buildCalendarGenerationSettingPayload() {
@@ -1507,16 +2138,6 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
             } finally {
                 button.disabled = false;
                 button.textContent = originalText;
-            }
-        }
-
-        function formatSettingsCalendarJson() {
-            try {
-                const calendarDefinition = collectCalendarDefinitionFromForm({ allowBlank: false });
-                applyCalendarDefinitionToForm(calendarDefinition);
-                setSettingsCalendarStatus('Calendar JSON formatted.', 'success');
-            } catch (error) {
-                setSettingsCalendarStatus(error?.message || 'Calendar JSON is invalid.', 'error');
             }
         }
 
@@ -2220,9 +2841,12 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
             const selectedDeleteBtn = document.getElementById('selectedDeleteBtn');
             const settingsCalendarGenerateBtn = document.getElementById('settingsCalendarGenerateBtn');
             const settingsCalendarUseDefaultBtn = document.getElementById('settingsCalendarUseDefaultBtn');
-            const settingsCalendarFormatBtn = document.getElementById('settingsCalendarFormatBtn');
             const settingsCalendarClearBtn = document.getElementById('settingsCalendarClearBtn');
-            const settingsCalendarJson = document.getElementById('settingsCalendarJson');
+            const settingsCalendarYearName = document.getElementById('settingsCalendarYearName');
+            const settingsCalendarAddMonthBtn = document.getElementById('settingsCalendarAddMonthBtn');
+            const settingsCalendarAddWeekdayBtn = document.getElementById('settingsCalendarAddWeekdayBtn');
+            const settingsCalendarAddSeasonBtn = document.getElementById('settingsCalendarAddSeasonBtn');
+            const settingsCalendarAddHolidayBtn = document.getElementById('settingsCalendarAddHolidayBtn');
 
             if (!settingsListEl || !settingsSearchEl || !settingsSortEl || !newSettingBtn) {
                 throw new Error('Library controls are missing from the settings page.');
@@ -2230,7 +2854,9 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
             if (!selectedEditBtn || !selectedApplyBtn || !selectedCloneBtn || !selectedDeleteBtn) {
                 throw new Error('Selected-setting action controls are missing from the settings page.');
             }
-            if (!settingsCalendarGenerateBtn || !settingsCalendarUseDefaultBtn || !settingsCalendarFormatBtn || !settingsCalendarClearBtn || !settingsCalendarJson) {
+            if (!settingsCalendarGenerateBtn || !settingsCalendarUseDefaultBtn || !settingsCalendarClearBtn
+                || !settingsCalendarYearName || !settingsCalendarAddMonthBtn || !settingsCalendarAddWeekdayBtn
+                || !settingsCalendarAddSeasonBtn || !settingsCalendarAddHolidayBtn) {
                 throw new Error('Settings calendar controls are missing from the settings page.');
             }
 
@@ -2285,6 +2911,7 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                     showMessage(error?.message || 'Calendar definition is invalid.', 'error');
                     setActiveEditorTab('calendar');
                     setSettingsCalendarStatus(error?.message || 'Calendar definition is invalid.', 'error');
+                    error?.focusTarget?.focus?.();
                     return;
                 }
 	                
@@ -2430,15 +3057,44 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
 
             settingsCalendarGenerateBtn.addEventListener('click', preGenerateSettingsCalendar);
             settingsCalendarUseDefaultBtn.addEventListener('click', useDefaultSettingsCalendar);
-            settingsCalendarFormatBtn.addEventListener('click', formatSettingsCalendarJson);
             settingsCalendarClearBtn.addEventListener('click', clearSettingsCalendar);
-            settingsCalendarJson.addEventListener('input', () => {
-                const rawValue = settingsCalendarJson.value.trim();
-                if (!rawValue) {
-                    applyCalendarDefinitionToForm(null);
-                } else {
-                    setSettingsCalendarStatus('', null);
-                }
+            settingsCalendarYearName.addEventListener('input', () => {
+                markSettingsCalendarEdited();
+                updateCalendarSummary(null);
+                updatePreview();
+            });
+            settingsCalendarAddMonthBtn.addEventListener('click', () => {
+                markSettingsCalendarEdited();
+                const row = createSettingsCalendarMonthRow({ name: '', lengthDays: '', seasonName: '' });
+                refreshCalendarReferenceControls();
+                row.querySelector('.settings-calendar-month-name')?.focus();
+                updatePreview();
+            });
+            settingsCalendarAddWeekdayBtn.addEventListener('click', () => {
+                markSettingsCalendarEdited();
+                const row = createSettingsCalendarWeekdayRow('');
+                updateCalendarSummary(null);
+                row.querySelector('.settings-calendar-weekday-name')?.focus();
+                updatePreview();
+            });
+            settingsCalendarAddSeasonBtn.addEventListener('click', () => {
+                markSettingsCalendarEdited();
+                const row = createSettingsCalendarSeasonRow({ name: '', startMonth: '', startDay: 1, timeDescriptions: [] });
+                refreshCalendarReferenceControls();
+                row.querySelector('.settings-calendar-season-name')?.focus();
+                updatePreview();
+            });
+            settingsCalendarAddHolidayBtn.addEventListener('click', () => {
+                markSettingsCalendarEdited();
+                const row = createSettingsCalendarHolidayRow({});
+                refreshCalendarReferenceControls();
+                row.querySelector('.settings-calendar-holiday-name')?.focus();
+                updatePreview();
+            });
+            document.querySelectorAll('[data-settings-calendar-tab]').forEach((button) => {
+                button.addEventListener('click', () => {
+                    setSettingsCalendarSubTab(button.dataset.settingsCalendarTab || 'months');
+                });
             });
 
             document.querySelectorAll('.editor-tab-btn').forEach((button) => {

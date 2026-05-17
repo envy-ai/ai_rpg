@@ -372,7 +372,6 @@ class AIRPGChat {
         this.latestPlayerActionEntryKey = null;
         this.pendingRedoStorageKey = 'airpg:pendingRedoPlayerAction';
         this.pendingRedoInProgress = false;
-        this.emergencyResetInProgress = false;
         this.shortDescriptionPrompted = false;
         this.pendingSlashUploadRequest = null;
         this.slashUploadSubmitting = false;
@@ -395,7 +394,21 @@ class AIRPGChat {
         this.loadExistingHistory();
 
         window.AIRPG_CHAT = this;
-        this.promptProgressMessage = null;
+        this.promptProgressDock = document.getElementById('promptProgressDock');
+        this.promptProgressDockStateStorageKey = 'airpg:promptProgressDockState';
+        this.promptProgressDockStates = ['collapsed', 'one-line', 'table'];
+        this.promptProgressDockStateClassMap = {
+            collapsed: 'prompt-progress-dock--collapsed',
+            'one-line': 'prompt-progress-dock--one-line',
+            table: 'prompt-progress-dock--table'
+        };
+        this.promptProgressModeIconPaths = {
+            compress: '/assets/material-icons/misc/compress.svg',
+            expand: '/assets/material-icons/misc/expand.svg'
+        };
+        this.promptProgressDockState = this.loadPromptProgressDockState();
+        this.promptProgressDockBound = false;
+        this.promptProgressMessage = this.promptProgressDock;
         this.promptProgressEntries = [];
         this.promptProgressHideTimer = null;
         this.promptProgressRenderThrottleMs = 500;
@@ -428,6 +441,7 @@ class AIRPGChat {
         this.worldTimeIndicatorLightLevel = document.getElementById('worldTimeIndicatorLightLevel');
         this.worldTimeIndicatorWeather = document.getElementById('worldTimeIndicatorWeather');
         this.lastWorldTimeIndicatorState = null;
+        this.renderPromptProgress([]);
     }
 
     setupQuestConfirmationModal() {
@@ -2996,33 +3010,6 @@ class AIRPGChat {
         return data;
     }
 
-    async cancelAllPromptsAndLoadLatestAutosave({ triggerButton = null } = {}) {
-        if (this.emergencyResetInProgress) {
-            throw new Error('Prompt reset already in progress.');
-        }
-
-        this.emergencyResetInProgress = true;
-        const originalLabel = triggerButton ? triggerButton.textContent : null;
-        if (triggerButton) {
-            triggerButton.disabled = true;
-            triggerButton.textContent = 'Resetting...';
-        }
-
-        try {
-            await this.cancelAllPrompts({ waitForDrain: true, timeoutMs: 12000 });
-            const autosaveName = await this.fetchLatestAutosaveName();
-            await this.loadAutosave(autosaveName);
-        } finally {
-            this.emergencyResetInProgress = false;
-            if (triggerButton && triggerButton.isConnected) {
-                triggerButton.disabled = false;
-                if (originalLabel !== null) {
-                    triggerButton.textContent = originalLabel;
-                }
-            }
-        }
-    }
-
     async fetchLatestAutosaveName() {
         const response = await fetch('/api/saves?type=autosaves', { cache: 'no-store' });
         const data = await response.json().catch(() => ({}));
@@ -3062,9 +3049,6 @@ class AIRPGChat {
     async handleRedoPlayerAction(entry) {
         if (this.pendingRedoInProgress) {
             throw new Error('Redo already in progress.');
-        }
-        if (this.emergencyResetInProgress) {
-            throw new Error('Prompt reset already in progress.');
         }
         if (!this.shouldShowRedoAction(entry)) {
             throw new Error('Only the most recent player action can be redone.');
@@ -3853,6 +3837,115 @@ class AIRPGChat {
         overlay.dataset.autoAnchored = 'true';
     }
 
+    loadPromptProgressDockState() {
+        const defaultState = 'one-line';
+        try {
+            const stored = window.localStorage?.getItem(this.promptProgressDockStateStorageKey);
+            if (this.promptProgressDockStates.includes(stored)) {
+                return stored;
+            }
+        } catch (error) {
+            console.warn('Failed to load prompt progress dock state:', error);
+        }
+        return defaultState;
+    }
+
+    ensurePromptProgressDock() {
+        if (!this.promptProgressDock) {
+            this.promptProgressDock = document.getElementById('promptProgressDock');
+        }
+        if (!this.promptProgressDock) {
+            throw new Error('Prompt progress dock host #promptProgressDock is missing.');
+        }
+        if (!this.promptProgressDockBound) {
+            this.promptProgressDock.addEventListener('click', (event) => {
+                if (event.target && event.target.closest('button, a, input, textarea, select')) {
+                    return;
+                }
+                if (this.promptProgressDockState === 'collapsed') {
+                    this.setPromptProgressDockState('one-line');
+                }
+            });
+            this.promptProgressDock.addEventListener('keydown', (event) => {
+                if (this.promptProgressDockState !== 'collapsed') {
+                    return;
+                }
+                if (event.key !== 'Enter' && event.key !== ' ') {
+                    return;
+                }
+                event.preventDefault();
+                this.setPromptProgressDockState('one-line');
+            });
+            this.promptProgressDockBound = true;
+        }
+        this.updatePromptProgressDockStateClasses();
+        return this.promptProgressDock;
+    }
+
+    updatePromptProgressDockStateClasses() {
+        const dock = this.promptProgressDock;
+        if (!dock) {
+            return;
+        }
+        Object.values(this.promptProgressDockStateClassMap).forEach(className => {
+            dock.classList.remove(className);
+        });
+        dock.classList.add(this.promptProgressDockStateClassMap[this.promptProgressDockState] || 'prompt-progress-dock--one-line');
+        dock.tabIndex = this.promptProgressDockState === 'collapsed' ? 0 : -1;
+        dock.setAttribute('aria-expanded', this.promptProgressDockState === 'collapsed' ? 'false' : 'true');
+    }
+
+    setPromptProgressDockState(state, { persist = true } = {}) {
+        const nextState = this.promptProgressDockStates.includes(state) ? state : 'one-line';
+        this.promptProgressDockState = nextState;
+        if (persist) {
+            try {
+                window.localStorage?.setItem(this.promptProgressDockStateStorageKey, nextState);
+            } catch (error) {
+                console.warn('Failed to persist prompt progress dock state:', error);
+            }
+        }
+        this.updatePromptProgressDockStateClasses();
+        if (Array.isArray(this.promptProgressEntries)) {
+            this.renderPromptProgress(this.promptProgressEntries);
+        }
+    }
+
+    cyclePromptProgressDockState() {
+        const currentIndex = this.promptProgressDockStates.indexOf(this.promptProgressDockState);
+        const nextIndex = currentIndex < 0 ? 0 : (currentIndex + 1) % this.promptProgressDockStates.length;
+        this.setPromptProgressDockState(this.promptProgressDockStates[nextIndex]);
+    }
+
+    getLongestRunningPromptProgressEntry(entries = this.promptProgressEntries) {
+        if (!Array.isArray(entries) || !entries.length) {
+            return null;
+        }
+        return entries.reduce((longest, entry) => {
+            if (!longest) {
+                return entry;
+            }
+            const entrySeconds = Number(entry?.seconds);
+            const longestSeconds = Number(longest?.seconds);
+            const safeEntrySeconds = Number.isFinite(entrySeconds) ? entrySeconds : 0;
+            const safeLongestSeconds = Number.isFinite(longestSeconds) ? longestSeconds : 0;
+            return safeEntrySeconds > safeLongestSeconds ? entry : longest;
+        }, null);
+    }
+
+    getPromptProgressAggregateFraction(entries = this.promptProgressEntries) {
+        if (!Array.isArray(entries) || !entries.length) {
+            return null;
+        }
+        const fractions = entries
+            .map(entry => Number(entry?.progressFraction))
+            .filter(value => Number.isFinite(value));
+        if (!fractions.length) {
+            return null;
+        }
+        return Math.max(...fractions);
+    }
+
     getPromptProgressEntry(promptId) {
         const resolvedId = typeof promptId === 'string' ? promptId.trim() : '';
         if (!resolvedId || !Array.isArray(this.promptProgressEntries)) {
@@ -4223,6 +4316,46 @@ class AIRPGChat {
         return average.toLocaleString();
     }
 
+    formatPromptProgressPercent(entry) {
+        const progressFraction = Number(entry?.progressFraction);
+        if (!Number.isFinite(progressFraction)) {
+            return '-';
+        }
+        return `${(Math.floor(progressFraction * 1000) / 10).toFixed(1)}%`;
+    }
+
+    formatPromptProgressApproxPercent(entry) {
+        const progressFraction = Number(entry?.progressFraction);
+        if (!Number.isFinite(progressFraction)) {
+            return '~0%';
+        }
+        return `~${Math.floor(progressFraction * 100)}%`;
+    }
+
+    formatPromptProgressTarget(entry) {
+        const targetCharacters = Number(entry?.targetCharacters);
+        if (!Number.isFinite(targetCharacters)) {
+            return '-';
+        }
+        return targetCharacters.toLocaleString();
+    }
+
+    formatPromptProgressRunCount(entry) {
+        const runCount = Number(entry?.runCount);
+        if (!Number.isFinite(runCount)) {
+            return '0';
+        }
+        return Math.trunc(runCount).toLocaleString();
+    }
+
+    formatPromptProgressOutputAverage(entry) {
+        const averageOutputCharacters = Number(entry?.averageOutputCharacters);
+        if (!Number.isFinite(averageOutputCharacters)) {
+            return 'null';
+        }
+        return Math.round(averageOutputCharacters).toLocaleString();
+    }
+
     clearPendingPromptProgressRender() {
         if (this.promptProgressRenderTimer) {
             clearTimeout(this.promptProgressRenderTimer);
@@ -4296,6 +4429,8 @@ class AIRPGChat {
             const thead = document.createElement('thead');
             thead.innerHTML = tableHeaderHtml;
             this.promptProgressTable.insertBefore(thead, this.promptProgressTable.firstChild);
+        } else {
+            this.promptProgressTable.tHead.innerHTML = tableHeaderHtml;
         }
         if (!this.promptProgressTableBody.parentNode) {
             this.promptProgressTable.appendChild(this.promptProgressTableBody);
@@ -4325,7 +4460,7 @@ class AIRPGChat {
             : [];
         this.promptProgressPendingEntries = normalizedEntries;
 
-        if (force || !this.promptProgressMessage || !this.promptProgressLastRenderTs) {
+        if (force || !this.promptProgressDock || !this.promptProgressLastRenderTs) {
             this.flushPromptProgressRender(normalizedEntries);
             return;
         }
@@ -4345,230 +4480,346 @@ class AIRPGChat {
         }
     }
 
+    createPromptProgressBar(entryOrFraction = null, { aggregate = false } = {}) {
+        const bar = document.createElement('div');
+        bar.className = aggregate ? 'prompt-progress-bar prompt-progress-bar--aggregate' : 'prompt-progress-bar';
+        if (!aggregate && entryOrFraction?.isComplete === true) {
+            bar.classList.add('prompt-progress-bar--complete');
+        }
+        const fill = document.createElement('div');
+        fill.className = 'prompt-progress-bar__fill';
+        const fraction = typeof entryOrFraction === 'number'
+            ? entryOrFraction
+            : Number(entryOrFraction?.progressFraction);
+        fill.style.width = Number.isFinite(fraction) ? `${fraction * 100}%` : '0%';
+        bar.appendChild(fill);
+        return bar;
+    }
+
+    createPromptProgressModeButton({ state, icon, label }) {
+        const targetState = this.promptProgressDockStates.includes(state) ? state : 'one-line';
+        const iconName = icon === 'expand' ? 'expand' : 'compress';
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = `prompt-progress-dock__mode-button prompt-progress-dock__mode-button--${iconName}`;
+        button.title = label;
+        button.setAttribute('aria-label', label);
+
+        const image = document.createElement('img');
+        image.className = 'prompt-progress-dock__mode-icon';
+        image.src = this.promptProgressModeIconPaths[iconName];
+        image.alt = '';
+        image.setAttribute('aria-hidden', 'true');
+
+        button.appendChild(image);
+        button.addEventListener('click', () => this.setPromptProgressDockState(targetState));
+        return button;
+    }
+
+    createPromptProgressActions(entry, row = null) {
+        const isViewerActive = this.promptProgressViewerPromptId === entry.id;
+        const isComplete = entry?.isComplete === true;
+        const actionWrap = document.createElement('div');
+        actionWrap.className = 'prompt-progress-actions';
+
+        const viewButton = document.createElement('button');
+        viewButton.type = 'button';
+        viewButton.className = 'prompt-progress-view prompt-progress-action';
+        viewButton.textContent = '👁';
+        viewButton.setAttribute('aria-label', `${isViewerActive ? 'Hide' : 'View'} streamed response for ${entry.label || 'prompt'}`);
+        viewButton.title = isViewerActive ? 'Hide streamed response' : 'View streamed response';
+
+        const cancelButton = document.createElement('button');
+        cancelButton.type = 'button';
+        cancelButton.className = 'prompt-progress-cancel prompt-progress-action';
+        cancelButton.textContent = '🗙';
+        cancelButton.setAttribute('aria-label', `Cancel prompt ${entry.label || 'prompt'}`);
+        cancelButton.title = 'Cancel prompt';
+
+        const retryButton = document.createElement('button');
+        retryButton.type = 'button';
+        retryButton.className = 'prompt-progress-retry prompt-progress-action';
+        retryButton.textContent = '⟳';
+        retryButton.setAttribute('aria-label', `Retry prompt ${entry.label || 'prompt'}`);
+        retryButton.title = 'Retry prompt attempt';
+
+        if (!entry.id || isComplete) {
+            viewButton.disabled = true;
+            cancelButton.disabled = true;
+            retryButton.disabled = true;
+        } else {
+            if (isViewerActive) {
+                viewButton.classList.add('is-active');
+            }
+            viewButton.addEventListener('click', () => {
+                this.togglePromptProgressViewer(entry.id);
+            });
+            cancelButton.addEventListener('click', () => {
+                this.cancelPromptProgress(entry.id, entry.label || 'prompt', {
+                    cancelButton,
+                    retryButton,
+                    row
+                });
+            });
+            retryButton.addEventListener('click', () => {
+                this.retryPromptProgress(entry.id, entry.label || 'prompt', {
+                    cancelButton,
+                    retryButton,
+                    row
+                });
+            });
+        }
+
+        actionWrap.appendChild(viewButton);
+        actionWrap.appendChild(cancelButton);
+        actionWrap.appendChild(retryButton);
+        return actionWrap;
+    }
+
+    createPromptProgressTableRow(entry, { compact = false } = {}) {
+        const row = document.createElement('tr');
+        const isViewerActive = this.promptProgressViewerPromptId === entry.id;
+        if (isViewerActive) {
+            row.classList.add('prompt-progress-row-viewing');
+        }
+        if (compact) {
+            row.classList.add('prompt-progress-row-compact');
+        }
+        if (entry?.isComplete === true) {
+            row.classList.add('prompt-progress-row-complete');
+        }
+
+        const actionCell = document.createElement('td');
+        actionCell.appendChild(this.createPromptProgressActions(entry, row));
+
+        const labelCell = document.createElement('td');
+        labelCell.textContent = entry.label || 'prompt';
+
+        const progressCell = document.createElement('td');
+        progressCell.className = 'prompt-progress-progress-cell';
+        progressCell.appendChild(this.createPromptProgressBar(entry));
+        const progressLabel = document.createElement('span');
+        progressLabel.className = 'prompt-progress-bar-label';
+        progressLabel.textContent = this.formatPromptProgressPercent(entry);
+        progressCell.appendChild(progressLabel);
+
+        const modelCell = document.createElement('td');
+        modelCell.textContent = entry.model || '-';
+
+        const receivedCell = document.createElement('td');
+        receivedCell.textContent = this.formatPromptProgressReceived(entry);
+
+        const targetCell = document.createElement('td');
+        targetCell.textContent = this.formatPromptProgressTarget(entry);
+
+        const runCountCell = document.createElement('td');
+        runCountCell.textContent = this.formatPromptProgressRunCount(entry);
+
+        const averageOutputCell = document.createElement('td');
+        averageOutputCell.textContent = this.formatPromptProgressOutputAverage(entry);
+
+        const secondsCell = document.createElement('td');
+        secondsCell.textContent = Number.isFinite(entry.seconds) ? `${Math.round(entry.seconds)}s` : '-';
+
+        const timeoutCell = document.createElement('td');
+        timeoutCell.textContent = Number.isFinite(entry.timeoutSeconds) ? `${Math.round(entry.timeoutSeconds)}s` : '-';
+
+        const latencyCell = document.createElement('td');
+        latencyCell.textContent = Number.isFinite(entry.latencyMs) ? `${(entry.latencyMs / 1000).toFixed(1)}s` : '-';
+
+        const avgCell = document.createElement('td');
+        avgCell.textContent = this.formatPromptProgressAverage(entry);
+
+        const retryCell = document.createElement('td');
+        retryCell.textContent = Number.isFinite(entry.retries) ? `${entry.retries}` : '0';
+
+        row.appendChild(actionCell);
+        row.appendChild(labelCell);
+        row.appendChild(progressCell);
+        row.appendChild(modelCell);
+        row.appendChild(receivedCell);
+        row.appendChild(targetCell);
+        row.appendChild(runCountCell);
+        row.appendChild(averageOutputCell);
+        row.appendChild(secondsCell);
+        row.appendChild(timeoutCell);
+        row.appendChild(latencyCell);
+        row.appendChild(avgCell);
+        row.appendChild(retryCell);
+        return row;
+    }
+
+    createPromptProgressHeader(renderTimestamp) {
+        const headerDiv = document.createElement('div');
+        headerDiv.className = 'prompt-progress-dock__header';
+
+        const metaDiv = document.createElement('div');
+        metaDiv.className = 'prompt-progress-dock__meta';
+
+        const titleDiv = document.createElement('div');
+        titleDiv.className = 'prompt-progress-dock__title';
+        titleDiv.textContent = 'AI Prompts';
+
+        const timestampDiv = document.createElement('div');
+        timestampDiv.className = 'prompt-progress-dock__timestamp';
+        timestampDiv.textContent = renderTimestamp();
+
+        const actionDiv = document.createElement('div');
+        actionDiv.className = 'prompt-progress-dock__actions';
+
+        actionDiv.appendChild(this.createPromptProgressModeButton({
+            state: 'one-line',
+            icon: 'compress',
+            label: 'Show compact prompt tracker'
+        }));
+
+        metaDiv.appendChild(titleDiv);
+        metaDiv.appendChild(timestampDiv);
+        headerDiv.appendChild(metaDiv);
+        headerDiv.appendChild(actionDiv);
+        return headerDiv;
+    }
+
+    createPromptProgressOneLine(entry) {
+        const row = document.createElement('div');
+        row.className = 'prompt-progress-dock__one-line-row';
+        const isIdle = !entry?.id;
+        const isComplete = entry?.isComplete === true;
+        row.classList.toggle('prompt-progress-dock__one-line-row--idle', isIdle);
+        row.classList.toggle('prompt-progress-dock__one-line-row--complete', isComplete);
+
+        const progressFraction = Number(entry?.progressFraction);
+        const fill = document.createElement('div');
+        fill.className = 'prompt-progress-dock__one-line-fill';
+        fill.style.width = Number.isFinite(progressFraction) ? `${progressFraction * 100}%` : '0%';
+        row.appendChild(fill);
+
+        const content = document.createElement('div');
+        content.className = 'prompt-progress-dock__one-line-content';
+
+        const modeControls = document.createElement('div');
+        modeControls.className = 'prompt-progress-dock__mode-controls';
+        modeControls.appendChild(this.createPromptProgressModeButton({
+            state: 'collapsed',
+            icon: 'compress',
+            label: 'Show prompt tracker as progress bar'
+        }));
+        modeControls.appendChild(this.createPromptProgressModeButton({
+            state: 'table',
+            icon: 'expand',
+            label: 'Show full prompt tracker table'
+        }));
+
+        const label = document.createElement('span');
+        label.className = 'prompt-progress-dock__one-line-label';
+        label.textContent = isIdle ? 'no prompts running' : (entry?.label || 'prompt');
+
+        const received = document.createElement('span');
+        received.className = 'prompt-progress-dock__one-line-stat';
+        received.textContent = `${this.formatPromptProgressReceived(entry)} chars`;
+
+        const percent = document.createElement('span');
+        percent.className = 'prompt-progress-dock__one-line-percent';
+        percent.textContent = this.formatPromptProgressApproxPercent(entry);
+
+        content.appendChild(label);
+        if (!isIdle) {
+            content.appendChild(this.createPromptProgressActions(entry || {}, null));
+            content.appendChild(received);
+            content.appendChild(percent);
+        }
+        content.appendChild(modeControls);
+        row.appendChild(content);
+        return row;
+    }
+
+    createIdlePromptProgressEntry() {
+        return {
+            id: '',
+            label: 'no prompts running',
+            receivedCount: 0,
+            bytes: 0,
+            progressFraction: 0,
+            targetCharacters: null,
+            runCount: 0,
+            averageOutputCharacters: null,
+            seconds: 0,
+            timeoutSeconds: null,
+            latencyMs: null,
+            avgReceivedPerSecond: null,
+            retries: 0
+        };
+    }
+
+    renderPromptProgressCollapsed(dock, entries = this.promptProgressEntries) {
+        const aggregateProgress = this.getPromptProgressAggregateFraction(entries) || 0;
+        const aggregateBar = this.createPromptProgressBar(aggregateProgress, { aggregate: true });
+        dock.replaceChildren(aggregateBar);
+    }
+
+    renderPromptProgressOneLine(dock, entries = this.promptProgressEntries) {
+        const contentDiv = document.createElement('div');
+        contentDiv.className = 'prompt-progress-dock__content';
+        const longestEntry = this.getLongestRunningPromptProgressEntry(entries) || this.createIdlePromptProgressEntry();
+        contentDiv.appendChild(this.createPromptProgressOneLine(longestEntry));
+        dock.replaceChildren(contentDiv);
+    }
+
+    renderPromptProgressTable(dock, entries = this.promptProgressEntries, tableHeaderHtml, renderTimestamp) {
+        const headerDiv = this.createPromptProgressHeader(renderTimestamp);
+        const contentDiv = document.createElement('div');
+        contentDiv.className = 'prompt-progress-dock__content';
+
+        const { table, tableWrap, tbody } = this.ensurePromptProgressTable(tableHeaderHtml);
+        const rowsFragment = document.createDocumentFragment();
+        const rows = entries.length ? entries : [this.createIdlePromptProgressEntry()];
+        rows.forEach(entry => {
+            const row = this.createPromptProgressTableRow(entry);
+            if (!entries.length) {
+                row.classList.add('prompt-progress-row-idle');
+            }
+            rowsFragment.appendChild(row);
+        });
+        tbody.replaceChildren(rowsFragment);
+        contentDiv.appendChild(tableWrap);
+        dock.replaceChildren(headerDiv, contentDiv);
+        this.updatePromptProgressMinTableWidth(table);
+    }
+
     renderPromptProgress(entries = []) {
         if (!Array.isArray(entries)) {
             return;
         }
         this.promptProgressEntries = entries.filter(entry => entry && typeof entry === 'object');
-        const tableHeaderHtml = '<tr><th class="prompt-progress-cancel-header">Actions</th><th>Prompt</th><th>Model</th><th>Received</th><th>Seconds</th><th>Timeout In</th><th>Latency</th><th>Avg/s</th><th>Retries</th></tr>';
+        const dock = this.ensurePromptProgressDock();
+        this.promptProgressMessage = dock;
+        const tableHeaderHtml = '<tr><th class="prompt-progress-cancel-header">Actions</th><th>Prompt</th><th>Progress</th><th>Model</th><th>Received</th><th>Target</th><th>Runs</th><th>Avg Out</th><th>Seconds</th><th>Timeout In</th><th>Latency</th><th>Avg/s</th><th>Retries</th></tr>';
         const renderTimestamp = () => new Date().toISOString().replace('T', ' ').replace('Z', '');
-
-        if (!this.promptProgressEntries.length) {
-            this.syncPromptProgressViewer();
-            if (this.promptProgressMessage) {
-                const contentDiv = this.promptProgressMessage.querySelector('.prompt-progress-overlay__content');
-                if (contentDiv) {
-                    const { tbody } = this.ensurePromptProgressTable(tableHeaderHtml);
-                    const placeholderRow = document.createElement('tr');
-                    placeholderRow.className = 'prompt-progress-placeholder-row';
-                    placeholderRow.setAttribute('hidden', '');
-                    placeholderRow.setAttribute('aria-hidden', 'true');
-                    tbody.replaceChildren(placeholderRow);
-                    this.attachPromptProgressTable(contentDiv);
-                }
-                if (!this.promptProgressHideTimer) {
-                    this.promptProgressHideTimer = setTimeout(() => {
-                        if (!this.promptProgressMessage) {
-                            this.promptProgressHideTimer = null;
-                            return;
-                        }
-                        const livePlaceholderRow = this.promptProgressMessage.querySelector('tr.prompt-progress-placeholder-row');
-                        if (livePlaceholderRow && livePlaceholderRow.parentNode) {
-                            livePlaceholderRow.parentNode.removeChild(livePlaceholderRow);
-                        }
-                        this.promptProgressMinTableWidth = null;
-                        this.promptProgressHideTimer = null;
-                    }, 3500);
-                }
-            } else {
-                this.promptProgressMinTableWidth = null;
-            }
-            return;
-        }
 
         if (this.promptProgressHideTimer) {
             clearTimeout(this.promptProgressHideTimer);
             this.promptProgressHideTimer = null;
         }
 
-        this.closeLoadGameModalIfOpen();
-
-        const { table, tableWrap, tbody } = this.ensurePromptProgressTable(tableHeaderHtml);
-        const rowsFragment = document.createDocumentFragment();
-        this.promptProgressEntries.forEach(entry => {
-            const row = document.createElement('tr');
-            const isViewerActive = this.promptProgressViewerPromptId === entry.id;
-            if (isViewerActive) {
-                row.classList.add('prompt-progress-row-viewing');
-            }
-            const cancelCell = document.createElement('td');
-            const actionWrap = document.createElement('div');
-            actionWrap.className = 'prompt-progress-actions';
-            const viewButton = document.createElement('button');
-            viewButton.type = 'button';
-            viewButton.className = 'prompt-progress-view prompt-progress-action';
-            viewButton.textContent = '👁';
-            viewButton.setAttribute('aria-label', `${isViewerActive ? 'Hide' : 'View'} streamed response for ${entry.label || 'prompt'}`);
-            viewButton.title = isViewerActive ? 'Hide streamed response' : 'View streamed response';
-            const cancelButton = document.createElement('button');
-            cancelButton.type = 'button';
-            cancelButton.className = 'prompt-progress-cancel prompt-progress-action';
-            cancelButton.textContent = '🗙';
-            cancelButton.setAttribute('aria-label', `Cancel prompt ${entry.label || 'prompt'}`);
-            cancelButton.title = 'Cancel prompt';
-            const retryButton = document.createElement('button');
-            retryButton.type = 'button';
-            retryButton.className = 'prompt-progress-retry prompt-progress-action';
-            retryButton.textContent = '⟳';
-            retryButton.setAttribute('aria-label', `Retry prompt ${entry.label || 'prompt'}`);
-            retryButton.title = 'Retry prompt attempt';
-            if (!entry.id) {
-                viewButton.disabled = true;
-                cancelButton.disabled = true;
-                retryButton.disabled = true;
-            } else {
-                if (isViewerActive) {
-                    viewButton.classList.add('is-active');
-                }
-                viewButton.addEventListener('click', () => {
-                    this.togglePromptProgressViewer(entry.id);
-                });
-                cancelButton.addEventListener('click', () => {
-                    this.cancelPromptProgress(entry.id, entry.label || 'prompt', {
-                        cancelButton,
-                        retryButton,
-                        row
-                    });
-                });
-                retryButton.addEventListener('click', () => {
-                    this.retryPromptProgress(entry.id, entry.label || 'prompt', {
-                        cancelButton,
-                        retryButton,
-                        row
-                    });
-                });
-            }
-            actionWrap.appendChild(viewButton);
-            actionWrap.appendChild(cancelButton);
-            actionWrap.appendChild(retryButton);
-            cancelCell.appendChild(actionWrap);
-            const labelCell = document.createElement('td');
-            labelCell.textContent = entry.label || 'prompt';
-            const modelCell = document.createElement('td');
-            modelCell.textContent = entry.model || '-';
-            const receivedCell = document.createElement('td');
-            receivedCell.textContent = this.formatPromptProgressReceived(entry);
-            const secondsCell = document.createElement('td');
-            secondsCell.textContent = Number.isFinite(entry.seconds) ? `${Math.round(entry.seconds)}s` : '-';
-            const timeoutCell = document.createElement('td');
-            timeoutCell.textContent = Number.isFinite(entry.timeoutSeconds) ? `${Math.max(0, Math.round(entry.timeoutSeconds))}s` : '-';
-            const latencyCell = document.createElement('td');
-            latencyCell.textContent = Number.isFinite(entry.latencyMs) ? `${(entry.latencyMs / 1000).toFixed(1)}s` : '-';
-            const avgCell = document.createElement('td');
-            avgCell.textContent = this.formatPromptProgressAverage(entry);
-            const retryCell = document.createElement('td');
-            retryCell.textContent = Number.isFinite(entry.retries) ? `${entry.retries}` : '0';
-            row.appendChild(cancelCell);
-            row.appendChild(labelCell);
-            row.appendChild(modelCell);
-            row.appendChild(receivedCell);
-            row.appendChild(secondsCell);
-            row.appendChild(timeoutCell);
-            row.appendChild(latencyCell);
-            row.appendChild(avgCell);
-            row.appendChild(retryCell);
-            rowsFragment.appendChild(row);
-        });
-        tbody.replaceChildren(rowsFragment);
-
-        if (!this.promptProgressMessage) {
-            const overlay = document.createElement('aside');
-            overlay.className = 'prompt-progress-overlay';
-            overlay.setAttribute('aria-live', 'polite');
-            overlay.setAttribute('aria-label', 'AI prompt activity');
-            overlay.dataset.autoAnchored = 'true';
-
-            const headerDiv = document.createElement('div');
-            headerDiv.className = 'prompt-progress-overlay__header';
-
-            const metaDiv = document.createElement('div');
-            metaDiv.className = 'prompt-progress-overlay__meta';
-
-            const titleDiv = document.createElement('div');
-            titleDiv.className = 'prompt-progress-overlay__title';
-            titleDiv.textContent = '⏳ AI Prompts';
-
-            const timestampDiv = document.createElement('div');
-            timestampDiv.className = 'prompt-progress-overlay__timestamp';
-            timestampDiv.textContent = renderTimestamp();
-
-            const actionDiv = document.createElement('div');
-            actionDiv.className = 'prompt-progress-overlay__actions';
-
-            const resetButton = document.createElement('button');
-            resetButton.type = 'button';
-            resetButton.className = 'prompt-progress-overlay__reset';
-            resetButton.textContent = 'Abort + Reload';
-            resetButton.title = 'Cancel all prompts and reload latest autosave';
-            resetButton.setAttribute('aria-label', 'Cancel all prompts and reload latest autosave');
-            resetButton.addEventListener('click', async () => {
-                if (resetButton.disabled) {
-                    return;
-                }
-                try {
-                    await this.cancelAllPromptsAndLoadLatestAutosave({ triggerButton: resetButton });
-                } catch (error) {
-                    const message = error?.message || String(error);
-                    this.addMessage('system', `Cancel/reload failed: ${message}`, true);
-                }
-            });
-
-            const toggleButton = document.createElement('button');
-            toggleButton.type = 'button';
-            toggleButton.className = 'prompt-progress-overlay__toggle';
-            toggleButton.textContent = '−';
-            toggleButton.title = 'Contract prompt activity panel';
-            toggleButton.setAttribute('aria-label', 'Contract prompt activity panel');
-            toggleButton.setAttribute('aria-expanded', 'true');
-            toggleButton.addEventListener('click', () => {
-                const contracted = overlay.classList.toggle('is-contracted');
-                toggleButton.textContent = contracted ? '+' : '−';
-                toggleButton.title = contracted ? 'Expand prompt activity panel' : 'Contract prompt activity panel';
-                toggleButton.setAttribute('aria-label', toggleButton.title);
-                toggleButton.setAttribute('aria-expanded', contracted ? 'false' : 'true');
-            });
-
-            const contentDiv = document.createElement('div');
-            contentDiv.className = 'prompt-progress-overlay__content';
-            contentDiv.appendChild(tableWrap);
-
-            metaDiv.appendChild(titleDiv);
-            metaDiv.appendChild(timestampDiv);
-            headerDiv.appendChild(metaDiv);
-            actionDiv.appendChild(resetButton);
-            actionDiv.appendChild(toggleButton);
-            headerDiv.appendChild(actionDiv);
-            overlay.appendChild(headerDiv);
-            overlay.appendChild(contentDiv);
-            this.bindPromptProgressOverlayInteractions(overlay, headerDiv, toggleButton);
-            document.body.appendChild(overlay);
-            this.promptProgressMessage = overlay;
-            this.applyPromptProgressAutoAnchor(overlay);
-        } else {
-            if (!this.promptProgressMessage.isConnected) {
-                document.body.appendChild(this.promptProgressMessage);
-            }
-            const contentDiv = this.promptProgressMessage.querySelector('.prompt-progress-overlay__content');
-            if (contentDiv) {
-                this.attachPromptProgressTable(contentDiv);
-            }
-            const tsDiv = this.promptProgressMessage.querySelector('.prompt-progress-overlay__timestamp');
-            if (tsDiv) {
-                tsDiv.textContent = renderTimestamp();
-            }
-            this.applyPromptProgressAutoAnchor(this.promptProgressMessage);
+        dock.hidden = false;
+        this.updatePromptProgressDockStateClasses();
+        if (this.promptProgressEntries.length) {
+            this.closeLoadGameModalIfOpen();
         }
-        this.updatePromptProgressMinTableWidth(table);
+
+        if (this.promptProgressDockState === 'collapsed') {
+            this.renderPromptProgressCollapsed(dock, this.promptProgressEntries);
+            this.syncPromptProgressViewer();
+            return;
+        }
+
+        if (this.promptProgressDockState === 'one-line') {
+            this.renderPromptProgressOneLine(dock, this.promptProgressEntries);
+            this.syncPromptProgressViewer();
+            return;
+        }
+
+        this.renderPromptProgressTable(dock, this.promptProgressEntries, tableHeaderHtml, renderTimestamp);
         this.syncPromptProgressViewer();
     }
 

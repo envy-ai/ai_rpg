@@ -104,7 +104,12 @@ test('calendar tab saves a generated calendar with the world profile', async ({ 
         await expect(page.locator('[data-editor-panel="calendar"]')).toHaveClass(/is-active/);
         await page.click('#settingsCalendarUseDefaultBtn');
         await expect(page.locator('#settingsCalendarSummary')).toContainText('Common Era');
-        await expect(page.locator('#settingsCalendarJson')).toHaveValue(/"yearName": "Common Era"/);
+        await expect(page.locator('#settingsCalendarYearName')).toHaveValue('Common Era');
+        await expect(page.locator('.settings-calendar-month-row')).toHaveCount(12);
+        await expect(page.locator('.settings-calendar-weekday-row')).toHaveCount(7);
+        await expect(page.locator('.settings-calendar-season-row')).toHaveCount(4);
+        await expect(page.locator('.settings-calendar-holiday-row')).toHaveCount(10);
+        await expect(page.locator('#settingsCalendarJson')).toHaveCount(0);
 
         await page.click('#submitBtn');
 

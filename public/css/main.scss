@@ -4322,7 +4322,8 @@ body.dark .thing-toggle-hint {
   min-width: 0;
 }
 
-.story-tools-search-mode {
+.story-tools-search-mode,
+.story-tools-type-filter {
   min-height: 38px;
   max-width: 150px;
   border: 1px solid rgba(148, 163, 184, 0.35);
@@ -4909,7 +4910,8 @@ body.dark .thing-toggle-hint {
     width: 100%;
   }
 
-  .story-tools-search-mode {
+  .story-tools-search-mode,
+  .story-tools-type-filter {
     flex: 1 1 auto;
     max-width: none;
   }
@@ -6545,6 +6547,42 @@ body.dark .thing-toggle-hint {
   font-style: italic;
 }
 
+.chat-spinner-status-bar {
+  display: none;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  padding: 6px 20px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(15, 23, 42, 0.52);
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 0.82rem;
+  font-style: italic;
+  line-height: 1.25;
+  pointer-events: none;
+}
+
+.chat-spinner-status-bar.is-visible {
+  display: flex;
+}
+
+.chat-spinner-status-bar__spinner {
+  width: 12px;
+  height: 12px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.32);
+  border-top-color: rgba(255, 255, 255, 0.9);
+  animation: spin 0.8s linear infinite;
+}
+
+.chat-spinner-status-bar__text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 // Input area
 .input-area {
   padding: 20px;
@@ -6866,6 +6904,246 @@ body.dark .thing-toggle-hint {
   }
 }
 
+.prompt-progress-dock {
+  --prompt-progress-table-body-rows: 3;
+  --prompt-progress-table-row-height: 34px;
+  --prompt-progress-table-header-height: 32px;
+  flex: 0 0 auto;
+  min-height: 0;
+  border-top: 1px solid rgba(234, 179, 8, 0.28);
+  border-bottom: 1px solid rgba(15, 23, 42, 0.85);
+  background: rgba(15, 23, 42, 0.94);
+  color: #f8fafc;
+  overflow: hidden;
+
+  &[hidden] {
+    display: none;
+  }
+}
+
+.prompt-progress-dock__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 34px;
+  padding: 5px 10px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.prompt-progress-dock__meta {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+
+.prompt-progress-dock__title {
+  color: #fef3c7;
+  font-size: 0.78rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.prompt-progress-dock__timestamp {
+  color: rgba(226, 232, 240, 0.76);
+  font-size: 0.68rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.prompt-progress-dock__actions,
+.prompt-progress-dock__mode-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.prompt-progress-dock__mode-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid rgba(148, 163, 184, 0.42);
+  border-radius: 6px;
+  background: rgba(30, 41, 59, 0.82);
+  cursor: pointer;
+  @include transition(background);
+
+  &:hover {
+    background: rgba(71, 85, 105, 0.86);
+  }
+}
+
+.prompt-progress-dock__mode-icon {
+  width: 14px;
+  height: 14px;
+  filter: brightness(0) invert(1);
+  pointer-events: none;
+}
+
+.prompt-progress-dock__content {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.prompt-progress-dock--collapsed {
+  height: 4px;
+  min-height: 4px;
+  border-top: 0;
+  border-bottom: 0;
+  cursor: pointer;
+}
+
+.prompt-progress-dock--one-line {
+  height: 40px;
+  min-height: 40px;
+}
+
+.prompt-progress-dock--one-line .prompt-progress-dock__content {
+  height: 100%;
+}
+
+.prompt-progress-dock__one-line-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 100%;
+  min-width: 0;
+  padding: 4px 8px;
+  overflow: hidden;
+  white-space: nowrap;
+  background: rgba(30, 41, 59, 0.78);
+}
+
+.prompt-progress-dock__one-line-fill {
+  position: absolute;
+  inset: 0;
+  width: 0;
+  background: linear-gradient(90deg, rgba(253, 224, 71, 0.42), rgba(250, 204, 21, 0.52) 52%, rgba(249, 115, 22, 0.45));
+  box-shadow: 0 0 18px rgba(250, 204, 21, 0.55);
+  pointer-events: none;
+}
+
+.prompt-progress-dock__one-line-row--complete .prompt-progress-dock__one-line-fill {
+  animation: prompt-progress-complete-pulse 250ms ease-out;
+}
+
+.prompt-progress-dock__one-line-content {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+
+.prompt-progress-dock__one-line-content > .prompt-progress-dock__mode-controls {
+  margin-left: auto;
+}
+
+.prompt-progress-dock__one-line-label {
+  flex: 1 1 auto;
+  max-width: 220px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #f8fafc;
+  font-weight: 700;
+}
+
+.prompt-progress-dock__one-line-row--idle .prompt-progress-dock__one-line-label {
+  color: rgba(248, 250, 252, 0.58);
+  font-style: italic;
+  font-weight: 400;
+}
+
+.prompt-progress-dock__one-line-stat {
+  flex: 0 0 auto;
+  color: rgba(226, 232, 240, 0.82);
+  font-size: 0.72rem;
+}
+
+.prompt-progress-dock__one-line-percent {
+  flex: 0 0 auto;
+  color: #fef3c7;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.prompt-progress-dock--table .prompt-progress-table-wrap {
+  max-height: calc(
+    var(--prompt-progress-table-header-height) +
+    (var(--prompt-progress-table-row-height) * var(--prompt-progress-table-body-rows))
+  );
+  overflow-y: auto;
+}
+
+.prompt-progress-bar {
+  position: relative;
+  width: 100%;
+  height: 7px;
+  min-width: 84px;
+  border-radius: 999px;
+  background: rgba(30, 41, 59, 0.9);
+  overflow: hidden;
+}
+
+.prompt-progress-bar--aggregate {
+  height: 4px;
+  min-width: 0;
+  border-radius: 0;
+  background: rgba(113, 63, 18, 0.54);
+}
+
+.prompt-progress-bar__fill {
+  height: 100%;
+  background: linear-gradient(90deg, #fde047, #facc15 48%, #f97316);
+  box-shadow: 0 0 10px rgba(250, 204, 21, 0.9);
+}
+
+.prompt-progress-bar--complete .prompt-progress-bar__fill {
+  animation: prompt-progress-complete-pulse 250ms ease-out;
+}
+
+@keyframes prompt-progress-complete-pulse {
+  0% {
+    filter: brightness(1.2);
+    box-shadow: 0 0 18px rgba(250, 204, 21, 1);
+  }
+
+  100% {
+    filter: brightness(1);
+    box-shadow: 0 0 10px rgba(250, 204, 21, 0.75);
+  }
+}
+
+.prompt-progress-progress-cell {
+  min-width: 132px;
+}
+
+.prompt-progress-bar-label {
+  display: inline-block;
+  margin-top: 2px;
+  color: rgba(254, 243, 199, 0.92);
+  font-size: 0.68rem;
+  line-height: 1;
+}
+
+.prompt-progress-table-wrap {
+  overflow-x: auto;
+  @include themed-scrollbar();
+}
+
+.prompt-progress-table-wrap--one-line {
+  overflow-y: hidden;
+}
+
 .prompt-progress-table {
   width: 100%;
   border-collapse: collapse;
@@ -6879,6 +7157,9 @@ body.dark .thing-toggle-hint {
   }
 
   th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
     background: rgba(59, 130, 246, 0.1);
     color: #bfdbfe;
     text-transform: uppercase;
@@ -6891,6 +7172,10 @@ body.dark .thing-toggle-hint {
   }
 
   tbody {
+    tr {
+      height: var(--prompt-progress-table-row-height);
+    }
+
     tr:nth-child(odd) {
       background: rgba(255, 255, 255, 0.02);
     }

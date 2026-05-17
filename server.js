@@ -2413,6 +2413,21 @@ async function validateConfiguration() {
     if (config.event_checks?.use_xml !== undefined && typeof config.event_checks.use_xml !== 'boolean') {
         validationErrors.push('event_checks.use_xml must be a boolean when provided');
     }
+    if (config.dispositions !== undefined) {
+        const dispositionsConfig = config.dispositions;
+        if (!dispositionsConfig || typeof dispositionsConfig !== 'object' || Array.isArray(dispositionsConfig)) {
+            validationErrors.push('dispositions must be an object when provided');
+        } else if (
+            dispositionsConfig.first_impression_multiplier !== undefined
+            && dispositionsConfig.first_impression_multiplier !== null
+            && dispositionsConfig.first_impression_multiplier !== ''
+        ) {
+            const firstImpressionMultiplier = Number(dispositionsConfig.first_impression_multiplier);
+            if (!Number.isFinite(firstImpressionMultiplier)) {
+                validationErrors.push('dispositions.first_impression_multiplier must be a finite number when provided');
+            }
+        }
+    }
     if (config.mystery_threads !== undefined) {
         const mysteryThreadsConfig = config.mystery_threads;
         if (!mysteryThreadsConfig || typeof mysteryThreadsConfig !== 'object' || Array.isArray(mysteryThreadsConfig)) {

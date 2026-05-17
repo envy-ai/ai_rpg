@@ -1,7 +1,7 @@
 # Player
 
 ## Purpose
-Represents a player or NPC with attributes, skills, inventory, gear, status effects, need bars, dispositions, party membership, quests, progression, and optional alias names. Maintains static indexes and shared definitions (gear slots, dispositions, need bars), all loaded from root `defs/*.yaml` plus any matching mod defs overlays.
+Represents a player or NPC with attributes, skills, inventory, gear, status effects, need bars, dispositions, party membership, quests, progression, and optional alias names. Maintains static indexes and shared definitions (gear slots, disposition types, need bars), loaded from root `defs/*.yaml` plus any matching mod defs overlays, with the disposition first-impression multiplier loaded from merged config.
 
 ## Key State
 - Identity: `#id`, `#name`, `#aliases`, `#description`, `#shortDescription`, `#imageId`, `#class`, `#race`, `#gender`, `#isNPC`.
@@ -31,7 +31,7 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
 - Current player helpers:
   - `setCurrentPlayerResolver(resolver)`, `getCurrentPlayer()`, `getCurrentPlayerId()`.
 - Definitions:
-  - `getDispositionDefinitions()`, `getDispositionDefinition(name)`, `resolveDispositionIntensity(type, value)`; disposition definitions include the configured display `icon`.
+  - `getDispositionDefinitions()`, `getDispositionDefinition(name)`, `resolveDispositionIntensity(type, value)`; disposition definitions include the configured display `icon` and the merged-config `dispositions.first_impression_multiplier`.
   - `getNeedBarDefinitionsForContext()` (prompt/UI-safe need-bar definitions including icon/color metadata, `while_you_were_away_prompt_notes`, plus `small`/`medium`/`large`/`fill` and `small`/`medium`/`large`/`empty` trigger lists).
   - `validateNeedBarPromptSentences({ onError })` preflights `effect_thresholds.*.sentence` coverage for prompt-facing need summaries.
   - `reloadDefinitionCaches({ refreshInstances })` clears shared defs caches and can reapply merged need-bar definitions to already loaded actors.
@@ -154,6 +154,7 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
 - Need bars now use explicit audience flags (`player`, `party`, `nonParty`). NPCs retain both party-only and non-party-only bar state internally so values survive party swaps. Active reads, prompt context, endpoint payloads, and per-minute drift treat `party` as “currently in the party or has ever been in the party,” while `nonParty` still means “not currently in the party,” so former party members can have both party-history bars and non-party bars active at once.
 - Per-actor need-bar minute drift now persists a `needBarRatesAppliedAt` timestamp in saves so reloads do not replay already-processed elapsed world minutes.
 - Need-bar applicability is now also persisted separately per actor in `needBarApplicability`. This is distinct from current audience activation: a bar can be defined for NPC audiences globally but still be explicitly disabled for a specific NPC. Save/load now persists the full resolved applicability map, and legacy saves missing need-bar state default storable bars to `value: 100` and `applicable: true` during hydration.
+- Disposition types/ranges/icons load from `defs/dispositions.yaml`, while the first-impression delta multiplier comes from merged config at `dispositions.first_impression_multiplier`; invalid multiplier values throw before disposition definitions are returned.
 - NPC barter inventory is persisted separately from normal inventory. Barter-stock items carry `metadata.barterOwnerId` while in that stock, are serialized by id in saves, and are exposed in `getStatus()` / NPC client payloads as expanded Thing JSON. Generated barter stock is created through the shared `inventory-generator` prompt in batches, then attached to this separate barter inventory. Moving an item into ordinary inventory clears barter-owner metadata.
 - NPC trade willingness is persisted as `willingToTrade` plus optional `tradeRefusalExpiresAt` world minutes. `refreshTradeWillingness(...)` flips temporary refusals back to willing once the configured expiry time is reached.
 - Shared thing-list UI view modes are now persisted per actor in `thingListViewPreferences`, keyed by the fixed panel ids `npcInventory`, `craftingInventory`, `locationScenery`, `locationItems`, `containerPlayerInventory`, `containerContents`, `barterPlayerInventory`, and `barterMerchantInventory`, so page reloads and save/load restore the same panel view selections.

@@ -51,5 +51,18 @@ Here is some information about the quest:
       </faction>
       ... more factions as needed ...
     </factionReputation>
+    <npcDispositions>
+      <npc>
+        <name><!-- exact NPC name --></name>
+        <dispositionsTowardsPlayer>
+          <disposition>        
+            <type><!-- disposition type from list. --></type>
+            <intensity><!-- one of: +3, +2, +1, -1, -2, -3, or -10 (in case the player makes an enemy of someone) --></intensity>
+          </disposition>
+          ... repeat for each disposition change for this NPC ...
+        </dispositionsTowardsPlayer>
+      </npc>
+      ... repeat for each NPC whose disposition will change as a result of this quest ...
+    </npcDispositions>
   </rewards>
 </quest>
