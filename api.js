@@ -9142,6 +9142,72 @@ module.exports = function registerApiRoutes(scope) {
             };
         }
 
+        function collectLocationCraftingThingIds(location, { thingLookup = null } = {}) {
+            const collectedThingIds = new Set();
+            const queuedContainerIds = [];
+            const queuedContainerIdSet = new Set();
+            const visitedContainerIds = new Set();
+
+            const normalizeThingId = (value) => (typeof value === 'string' ? value.trim() : '');
+            const resolveThing = (thingId) => {
+                const normalizedThingId = normalizeThingId(thingId);
+                if (!normalizedThingId) {
+                    return null;
+                }
+                if (typeof thingLookup === 'function') {
+                    return thingLookup(normalizedThingId) || null;
+                }
+                return (things instanceof Map ? things.get(normalizedThingId) : null)
+                    || (typeof Thing.getById === 'function' ? Thing.getById(normalizedThingId) : null)
+                    || null;
+            };
+            const queueContainer = (thing) => {
+                const thingId = normalizeThingId(thing?.id);
+                if (!thingId || !thing?.isContainer || queuedContainerIdSet.has(thingId) || visitedContainerIds.has(thingId)) {
+                    return;
+                }
+                queuedContainerIds.push(thingId);
+                queuedContainerIdSet.add(thingId);
+            };
+            const addThingId = (thingId) => {
+                const normalizedThingId = normalizeThingId(thingId);
+                if (!normalizedThingId) {
+                    return;
+                }
+                collectedThingIds.add(normalizedThingId);
+                queueContainer(resolveThing(normalizedThingId));
+            };
+
+            const directThingIds = Array.isArray(location?.thingIds)
+                ? location.thingIds
+                : (typeof location?.thingIds === 'function' ? location.thingIds() : []);
+            for (const thingId of directThingIds) {
+                addThingId(thingId);
+            }
+
+            while (queuedContainerIds.length) {
+                const containerId = queuedContainerIds.shift();
+                queuedContainerIdSet.delete(containerId);
+                if (visitedContainerIds.has(containerId)) {
+                    continue;
+                }
+                visitedContainerIds.add(containerId);
+
+                const container = resolveThing(containerId);
+                if (!container?.isContainer) {
+                    continue;
+                }
+                const containedThingIds = Array.isArray(container.containedThingIds)
+                    ? container.containedThingIds
+                    : [];
+                for (const containedThingId of containedThingIds) {
+                    addThingId(containedThingId);
+                }
+            }
+
+            return collectedThingIds;
+        }
+
         function isNonEmptyCraftingContainer(thing) {
             if (!thing || !thing.isContainer) {
                 return false;
@@ -32677,7 +32743,7 @@ module.exports = function registerApiRoutes(scope) {
                     ? (gameLocations.get(locationId) || (typeof Location.get === 'function' ? Location.get(locationId) : null))
                     : null;
                 const resolvedLocationId = requireLocationId(locationRecord?.id || locationId, 'crafting action');
-                const locationThingIds = new Set(Array.isArray(locationRecord?.thingIds) ? locationRecord.thingIds : []);
+                const locationThingIds = collectLocationCraftingThingIds(locationRecord);
                 const isThingInCurrentPlayerInventory = (thing) => (
                     Boolean(thing)
                     && typeof currentPlayer.hasInventoryItem === 'function'
@@ -32701,7 +32767,7 @@ module.exports = function registerApiRoutes(scope) {
                     if (!inPlayerInventory && !inCurrentLocation) {
                         return res.status(400).json({
                             success: false,
-                            error: `${thing.name || thing.id} is not in the current player's inventory or current location.`
+                            error: `${thing.name || thing.id} is not in the current player's inventory, current location, or a container in the current location.`
                         });
                     }
                     if (inPlayerInventory && Boolean(thing?.isEquipped || thing?.equippedSlot)) {
@@ -35916,7 +35982,34 @@ module.exports = function registerApiRoutes(scope) {
             });
         }
 
-        function validateContainerMoveInItems(container, items) {
+        function isContainerMoveItemInLocation(item, location) {
+            if (!item?.id || !location) {
+                return false;
+            }
+
+            const locationId = typeof location.id === 'string' ? location.id.trim() : '';
+            const directThingIds = Array.isArray(location.thingIds)
+                ? location.thingIds
+                : (typeof location.thingIds === 'function' ? location.thingIds() : []);
+            if (Array.isArray(directThingIds) && directThingIds.includes(item.id)) {
+                return true;
+            }
+
+            const locationThings = Array.isArray(location.things)
+                ? location.things
+                : [];
+            if (locationThings.some(thing => thing && thing.id === item.id)) {
+                return true;
+            }
+
+            const metadataLocationId = typeof item.metadata?.locationId === 'string'
+                ? item.metadata.locationId.trim()
+                : '';
+            return Boolean(locationId && metadataLocationId && metadataLocationId === locationId);
+        }
+
+        function validateContainerMoveInItems(container, items, { source = 'player', location = null } = {}) {
+            const normalizedSource = source === 'location' ? 'location' : 'player';
             for (const item of items) {
                 if (item.thingType !== 'item') {
                     throw createContainerMoveError('Only item-type things can be placed in containers.', 400);
@@ -35924,7 +36017,13 @@ module.exports = function registerApiRoutes(scope) {
                 if (item.id === container.id) {
                     throw createContainerMoveError('A container cannot contain itself.', 400);
                 }
-                if (!currentPlayer.hasInventoryItem(item.id)) {
+                if (normalizedSource === 'location' && !isContainerMoveItemInLocation(item, location)) {
+                    throw createContainerMoveError(`${item.name || 'Item'} is not in the current location.`, 409);
+                }
+                if (
+                    normalizedSource === 'player'
+                    && (!currentPlayer || typeof currentPlayer.hasInventoryItem !== 'function' || !currentPlayer.hasInventoryItem(item.id))
+                ) {
                     throw createContainerMoveError(`${item.name || 'Item'} is not in the current player's inventory.`, 409);
                 }
                 if (item.isEquipped) {
@@ -35953,7 +36052,7 @@ module.exports = function registerApiRoutes(scope) {
             }
         }
 
-        function buildContainerInventoryPayload(container) {
+        function buildContainerInventoryPayload(container, { location = null } = {}) {
             if (!currentPlayer) {
                 const error = new Error('No current player found');
                 error.status = 404;
@@ -35968,7 +36067,8 @@ module.exports = function registerApiRoutes(scope) {
                 container: typeof container.toJSON === 'function' ? container.toJSON() : { id: container.id },
                 contents,
                 player: playerPayload,
-                playerInventory: Array.isArray(playerPayload?.inventory) ? playerPayload.inventory : []
+                playerInventory: Array.isArray(playerPayload?.inventory) ? playerPayload.inventory : [],
+                location: location && typeof buildLocationResponse === 'function' ? buildLocationResponse(location) : null
             };
         }
 
@@ -35994,9 +36094,25 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 const container = resolveRequestContainer(req.params.id);
+                const requestBody = req.body && typeof req.body === 'object' ? req.body : {};
+                const rawSource = typeof requestBody.source === 'string' ? requestBody.source.trim().toLowerCase() : '';
+                const source = rawSource === 'location' ? 'location' : 'player';
+                const requestedLocationId = typeof requestBody.locationId === 'string' ? requestBody.locationId.trim() : '';
+                const sourceLocation = source === 'location'
+                    ? (
+                        (requestedLocationId ? resolveThingLocationById(requestedLocationId) : null)
+                        || (currentPlayer?.currentLocation ? resolveThingLocationById(currentPlayer.currentLocation) : null)
+                    )
+                    : null;
+                if (source === 'location' && !sourceLocation) {
+                    throw createContainerMoveError('Current location could not be resolved for container move.', 404);
+                }
                 const thingIds = resolveContainerMoveThingIds(req.body);
                 const itemsToMove = resolveContainerMoveItems(thingIds);
-                validateContainerMoveInItems(container, itemsToMove);
+                validateContainerMoveInItems(container, itemsToMove, {
+                    source,
+                    location: sourceLocation
+                });
 
                 for (const item of itemsToMove) {
                     container.addInventoryItem(item);
@@ -36007,7 +36123,7 @@ module.exports = function registerApiRoutes(scope) {
                     }
                     things.set(container.id, container);
                 }
-                return res.json(buildContainerInventoryPayload(container));
+                return res.json(buildContainerInventoryPayload(container, { location: sourceLocation }));
             } catch (error) {
                 return res.status(error.status || 500).json({
                     success: false,

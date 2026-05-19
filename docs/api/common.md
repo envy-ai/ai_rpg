@@ -151,6 +151,7 @@ Fields:
 - `personalityType`, `personalityTraits`, `personalityNotes`, `aiNotes`
 - `createdAt`, `lastUpdated`
 - `dispositionsTowardPlayer` (object map)
+- `dispositionDefinitions` (configured disposition range/type definitions) for the current player profile; the quest editor uses these to populate NPC disposition reward type dropdowns.
 - `quests` (array of Quest) when available
 - `completedQuests` (array of Quest) when available
 - `partyMembers` (array of NpcProfile) **only** when `includePartyMembers` is true

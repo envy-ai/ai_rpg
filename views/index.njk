@@ -6341,6 +6341,65 @@
             return request;
         }
 
+        async function fetchContainedThingDetailsForContainers(rootThings = []) {
+            const safeRootThings = Array.isArray(rootThings) ? rootThings.filter(Boolean) : [];
+            const containedItems = [];
+            const seenIds = new Set(
+                safeRootThings
+                    .map(thing => (typeof thing?.id === 'string' ? thing.id.trim() : ''))
+                    .filter(Boolean)
+            );
+            const queuedContainers = [];
+            const queuedContainerIds = new Set();
+            const visitedContainerIds = new Set();
+
+            const queueContainer = (thing) => {
+                const thingId = typeof thing?.id === 'string' ? thing.id.trim() : '';
+                if (!thingId || !resolveThingBooleanFlag(thing, 'isContainer') || queuedContainerIds.has(thingId) || visitedContainerIds.has(thingId)) {
+                    return;
+                }
+                queuedContainers.push(thing);
+                queuedContainerIds.add(thingId);
+            };
+
+            safeRootThings.forEach(queueContainer);
+
+            while (queuedContainers.length) {
+                const container = queuedContainers.shift();
+                const containerId = typeof container?.id === 'string' ? container.id.trim() : '';
+                queuedContainerIds.delete(containerId);
+                if (!containerId || visitedContainerIds.has(containerId)) {
+                    continue;
+                }
+                visitedContainerIds.add(containerId);
+
+                const containedThingIds = Array.isArray(container.containedThingIds)
+                    ? container.containedThingIds
+                        .map(thingId => (typeof thingId === 'string' ? thingId.trim() : ''))
+                        .filter(Boolean)
+                    : [];
+                if (!containedThingIds.length) {
+                    continue;
+                }
+
+                const containedThings = await Promise.all(containedThingIds.map(fetchThingDetails));
+                containedThings.filter(Boolean).forEach(thing => {
+                    const thingId = typeof thing?.id === 'string' ? thing.id.trim() : '';
+                    if (!thingId) {
+                        return;
+                    }
+                    if (!seenIds.has(thingId)) {
+                        const clone = cloneThingRecord(thing) || { ...thing };
+                        containedItems.push(clone);
+                        seenIds.add(thingId);
+                    }
+                    queueContainer(thing);
+                });
+            }
+
+            return containedItems;
+        }
+
         const thingMenuState = {
             openMenu: null,
             trigger: null,
@@ -11158,6 +11217,9 @@
             if (!isModalInventoryDragOutsideSourceModal(event)) {
                 return;
             }
+            if (event.target instanceof Element && event.target.closest('.thing-container-drop-target')) {
+                return;
+            }
 
             event.preventDefault();
             event.stopPropagation();
@@ -11202,7 +11264,8 @@
         let currentLocationThingCollections = {
             locationId: null,
             items: [],
-            scenery: []
+            scenery: [],
+            containerContents: []
         };
         let currentThingEditId = null;
         let currentThingEditContext = null;
@@ -20333,13 +20396,13 @@
             });
         }
 
-        async function requestThingContainerMove(thingIdOrIds, source, { containerId = currentThingContainerId } = {}) {
+        async function requestThingContainerMove(thingIdOrIds, source, { containerId = currentThingContainerId, locationId = null } = {}) {
             const normalizedContainerId = typeof containerId === 'string' ? containerId.trim() : '';
             if (!normalizedContainerId) {
                 throw new Error('No open container.');
             }
-            const endpoint = source === 'player' ? 'move-in' : 'move-out';
-            if (source !== 'player' && source !== 'container') {
+            const endpoint = source === 'container' ? 'move-out' : 'move-in';
+            if (source !== 'player' && source !== 'container' && source !== 'location') {
                 throw new Error(`Unsupported container move source "${source}".`);
             }
             const thingIds = Array.isArray(thingIdOrIds)
@@ -20352,6 +20415,12 @@
             const body = thingIds.length > 0
                 ? { thingIds }
                 : { thingId: singleThingId };
+            if (source !== 'container') {
+                body.source = source;
+            }
+            if (source === 'location') {
+                body.locationId = locationId || lastRenderedLocation?.id || window.lastRenderedLocation?.id || null;
+            }
             const response = await fetch(`/api/things/${encodeURIComponent(normalizedContainerId)}/container/${endpoint}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -21126,6 +21195,17 @@
                 : [];
         }
 
+        function getCurrentLocationContainerCraftingItems() {
+            const activeLocation = lastRenderedLocation || window.lastRenderedLocation || null;
+            const activeLocationId = activeLocation?.id || null;
+            if (!activeLocationId || currentLocationThingCollections?.locationId !== activeLocationId) {
+                return [];
+            }
+            return Array.isArray(currentLocationThingCollections.containerContents)
+                ? currentLocationThingCollections.containerContents
+                : [];
+        }
+
         function buildCraftingAvailableItems(playerInventoryItems = []) {
             const mergedItems = [];
             const seenIds = new Set();
@@ -21150,6 +21230,7 @@
 
             appendItems(playerInventoryItems, 'player');
             appendItems(getCurrentLocationCraftingItems(), 'location');
+            appendItems(getCurrentLocationContainerCraftingItems(), 'location');
             return mergedItems;
         }
 
@@ -28601,6 +28682,182 @@
             });
         }
 
+        function canModalInventoryDragMoveIntoLocationContainer(dragState) {
+            if (!dragState?.thingId) {
+                return false;
+            }
+            const currentPlayerId = typeof window.currentPlayerData?.id === 'string'
+                ? window.currentPlayerData.id
+                : null;
+            if (dragState.context === 'container-player-inventory') {
+                return true;
+            }
+            if (dragState.context === 'npc-inventory') {
+                return !dragState.npcId || !currentPlayerId || dragState.npcId === currentPlayerId;
+            }
+            return false;
+        }
+
+        function resolveThingContainerDropSource(containerThing) {
+            const containerId = typeof containerThing?.id === 'string' ? containerThing.id.trim() : '';
+            if (!containerId) {
+                return null;
+            }
+
+            if (draggedLocationThing?.id && draggedLocationThing.id !== containerId) {
+                const draggedType = normalizeThingTypeForDrag(draggedLocationThing.thingType);
+                if (draggedType === 'item') {
+                    return {
+                        source: 'location',
+                        thingId: draggedLocationThing.id,
+                        dragState: draggedLocationThing,
+                        modalDragState: null
+                    };
+                }
+            }
+
+            if (
+                modalInventoryDragState?.thingId
+                && modalInventoryDragState.thingId !== containerId
+                && canModalInventoryDragMoveIntoLocationContainer(modalInventoryDragState)
+            ) {
+                return {
+                    source: 'player',
+                    thingId: modalInventoryDragState.thingId,
+                    dragState: null,
+                    modalDragState: modalInventoryDragState
+                };
+            }
+
+            return null;
+        }
+
+        async function handleMoveThingIntoContainer({ containerThing, dragState = null, modalDragState = null, locationId = null } = {}) {
+            const containerId = typeof containerThing?.id === 'string' ? containerThing.id.trim() : '';
+            const thingId = dragState?.id || modalDragState?.thingId || '';
+            if (!containerId || !thingId || thingId === containerId) {
+                return;
+            }
+            if (locationThingDropInFlightIds.has(thingId)) {
+                return;
+            }
+
+            const source = dragState ? 'location' : 'player';
+            locationThingDropInFlightIds.add(thingId);
+            try {
+                if (dragState && normalizeThingTypeForDrag(dragState.thingType) !== 'item') {
+                    throw new Error('Only item-type things can be placed in containers.');
+                }
+                if (modalDragState && !canModalInventoryDragMoveIntoLocationContainer(modalDragState)) {
+                    throw new Error('Only current player inventory items can be dragged directly into room containers.');
+                }
+                if (modalDragState) {
+                    clearModalInventoryDragState(thingId);
+                }
+
+                const payload = await requestThingContainerMove(thingId, source, {
+                    containerId,
+                    locationId
+                });
+
+                if (payload?.container) {
+                    cacheThingData(payload.container);
+                }
+                if (Array.isArray(payload?.contents)) {
+                    payload.contents.forEach(cacheThingData);
+                }
+                if (
+                    currentThingContainerId
+                    && payload?.container?.id === currentThingContainerId
+                    && thingContainerModal
+                    && !thingContainerModal.hasAttribute('hidden')
+                ) {
+                    applyThingContainerPayload(payload);
+                }
+                if (payload?.player?.id) {
+                    window.currentPlayerData = {
+                        ...(window.currentPlayerData || {}),
+                        ...payload.player
+                    };
+                }
+
+                if (payload?.location) {
+                    await window.updateLocationDisplay?.(payload.location);
+                    window.lastRenderedLocation = JSON.parse(JSON.stringify(payload.location));
+                } else {
+                    await window.loadCurrentLocation?.();
+                }
+
+                if (source === 'player') {
+                    await window.refreshInventory?.();
+                }
+                document.dispatchEvent(new Event('inventory:updated'));
+            } catch (error) {
+                console.warn('Failed to move item into container:', error);
+                window.alert(error?.message || 'Failed to move item into container.');
+            } finally {
+                locationThingDropInFlightIds.delete(thingId);
+                if (dragState) {
+                    resetThingDragState(thingId);
+                }
+                if (modalDragState) {
+                    clearModalInventoryDragState(thingId);
+                }
+            }
+        }
+
+        function registerThingContainerDropTarget(card, thing, { locationId = null } = {}) {
+            if (!(card instanceof HTMLElement) || !thing?.id || !resolveThingBooleanFlag(thing, 'isContainer')) {
+                return;
+            }
+            card.classList.add('thing-container-drop-target');
+
+            card.addEventListener('dragover', (event) => {
+                const dropSource = resolveThingContainerDropSource(thing);
+                if (!dropSource) {
+                    return;
+                }
+                event.preventDefault();
+                event.stopPropagation();
+                if (event.dataTransfer) {
+                    event.dataTransfer.dropEffect = 'move';
+                }
+                card.classList.add('is-drop-hover');
+            });
+
+            card.addEventListener('dragenter', (event) => {
+                const dropSource = resolveThingContainerDropSource(thing);
+                if (!dropSource) {
+                    return;
+                }
+                event.preventDefault();
+                event.stopPropagation();
+                card.classList.add('is-drop-hover');
+            });
+
+            card.addEventListener('dragleave', (event) => {
+                if (!card.contains(event.relatedTarget)) {
+                    card.classList.remove('is-drop-hover');
+                }
+            });
+
+            card.addEventListener('drop', async (event) => {
+                const dropSource = resolveThingContainerDropSource(thing);
+                if (!dropSource) {
+                    return;
+                }
+                event.preventDefault();
+                event.stopPropagation();
+                card.classList.remove('is-drop-hover');
+                await handleMoveThingIntoContainer({
+                    containerThing: thing,
+                    dragState: dropSource.dragState,
+                    modalDragState: dropSource.modalDragState,
+                    locationId
+                });
+            });
+        }
+
         window.registerInventoryDropTarget = registerInventoryDropTarget;
 
         function renderLocationThingCollections(location, things = []) {
@@ -28612,11 +28869,21 @@
             const itemThings = safeThings
                 .filter(thing => thing && thing.thingType !== 'scenery')
                 .map(thing => cloneThingRecord(thing) || { ...thing });
+            const containerContents = Array.isArray(safeLocation?.workbenchContainerContents)
+                ? safeLocation.workbenchContainerContents
+                    .filter(thing => thing && thing.thingType !== 'scenery')
+                    .map(thing => cloneThingRecord(thing) || { ...thing })
+                : (
+                    currentLocationThingCollections?.locationId === safeLocation?.id && Array.isArray(currentLocationThingCollections.containerContents)
+                        ? currentLocationThingCollections.containerContents.map(thing => cloneThingRecord(thing) || { ...thing })
+                        : []
+                );
 
             currentLocationThingCollections = {
                 locationId: safeLocation?.id || null,
                 items: itemThings,
-                scenery: sceneryThings
+                scenery: sceneryThings,
+                containerContents
             };
 
             renderThingCollectionPanel({
@@ -28664,6 +28931,7 @@
                         card.addEventListener('dragend', () => {
                             card.classList.remove('is-dragging');
                         });
+                        registerThingContainerDropTarget(card, thing, { locationId: safeLocation?.id || null });
                     }
                 })
             });
@@ -28713,6 +28981,7 @@
                         card.addEventListener('dragend', () => {
                             card.classList.remove('is-dragging');
                         });
+                        registerThingContainerDropTarget(card, thing, { locationId: safeLocation?.id || null });
                     }
                 })
             });
@@ -28770,6 +29039,7 @@
                             loc.things = resolvedThings;
                         }
                     }
+                    loc.workbenchContainerContents = await fetchContainedThingDetailsForContainers(resolvedThings);
                     return resolvedThings;
                 };
 
@@ -29727,7 +29997,8 @@
                     currentLocationThingCollections = {
                         locationId: null,
                         items: [],
-                        scenery: []
+                        scenery: [],
+                        containerContents: []
                     };
                     if (locationExitsList) {
                         locationExitsList.innerHTML = '<div class="no-exits">No exits discovered yet.</div>';
@@ -30329,9 +30600,7 @@
             );
 
             const getQuestDispositionTypeOptions = () => {
-                const definitions = questDispositionDefinitionsCache
-                    || window.currentPlayerData?.dispositionDefinitions
-                    || {};
+                const definitions = getQuestDispositionDefinitions();
                 const typeMap = definitions?.types && typeof definitions.types === 'object'
                     ? definitions.types
                     : {};
@@ -30362,6 +30631,102 @@
                     .filter(Boolean)
                     .sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }));
             };
+
+            function getQuestDispositionDefinitions() {
+                return questDispositionDefinitionsCache
+                    || window.currentPlayerData?.dispositionDefinitions
+                    || {};
+            }
+
+            function getQuestDispositionTypeDefinition(type) {
+                const normalizedType = normalizeQuestDispositionTypeKey(type);
+                if (!normalizedType) {
+                    return null;
+                }
+                const definitions = getQuestDispositionDefinitions();
+                const typeMap = definitions?.types && typeof definitions.types === 'object'
+                    ? definitions.types
+                    : {};
+                if (typeMap[normalizedType]) {
+                    return typeMap[normalizedType];
+                }
+                return Object.values(typeMap).find(typeDef => {
+                    if (!typeDef || typeof typeDef !== 'object') {
+                        return false;
+                    }
+                    const key = normalizeQuestDispositionTypeKey(typeDef.key);
+                    const label = normalizeQuestDispositionTypeKey(typeDef.label);
+                    return key === normalizedType || label === normalizedType;
+                }) || null;
+            }
+
+            function resolveQuestDispositionRewardDelta(intensityValue) {
+                if (!Number.isFinite(intensityValue) || intensityValue === 0) {
+                    return null;
+                }
+
+                const definitions = getQuestDispositionDefinitions();
+                const range = definitions?.range && typeof definitions.range === 'object'
+                    ? definitions.range
+                    : {};
+                const typicalStep = Number.isFinite(Number(range.typicalStep))
+                    ? Number(range.typicalStep)
+                    : null;
+                const typicalBigStep = Number.isFinite(Number(range.typicalBigStep))
+                    ? Number(range.typicalBigStep)
+                    : null;
+
+                if (intensityValue === -10) {
+                    if (!Number.isFinite(typicalBigStep)) {
+                        console.warn('Quest disposition reward preview could not resolve typicalBigStep; skipping reward pill.');
+                        return null;
+                    }
+                    return -typicalBigStep;
+                }
+
+                if (!Number.isFinite(typicalStep)) {
+                    console.warn('Quest disposition reward preview could not resolve typicalStep; skipping reward pill.');
+                    return null;
+                }
+
+                if (intensityValue >= -3 && intensityValue <= 3) {
+                    const scaled = intensityValue * typicalStep;
+                    const rounded = Math.round(scaled);
+                    return rounded !== 0
+                        ? rounded
+                        : Math.sign(intensityValue) * Math.max(1, Math.round(Math.abs(scaled)) || 1);
+                }
+
+                const scaled = (intensityValue / 2) * typicalStep;
+                const rounded = Math.round(scaled);
+                return rounded !== 0
+                    ? rounded
+                    : Math.sign(intensityValue) * Math.max(1, Math.round(Math.abs(scaled)) || 1);
+            }
+
+            function createQuestDispositionRewardPill(disposition) {
+                const intensity = Number(disposition?.intensity);
+                const delta = resolveQuestDispositionRewardDelta(intensity);
+                if (!Number.isFinite(delta) || delta === 0) {
+                    return null;
+                }
+
+                const typeDefinition = getQuestDispositionTypeDefinition(disposition?.type);
+                const typeLabel = typeof typeDefinition?.label === 'string' && typeDefinition.label.trim()
+                    ? typeDefinition.label.trim()
+                    : (typeof disposition?.type === 'string' && disposition.type.trim()
+                        ? disposition.type.trim()
+                        : 'Disposition');
+                const icon = typeof typeDefinition?.icon === 'string' && typeDefinition.icon.trim()
+                    ? typeDefinition.icon.trim()
+                    : '💞';
+                const pill = document.createElement('span');
+                pill.className = 'disposition-summary-row__pill quest-disposition-reward__pill';
+                pill.title = typeLabel;
+                const sign = delta > 0 ? '+' : '';
+                pill.textContent = `${icon}${sign}${Math.round(delta)}`;
+                return pill;
+            }
 
             function populateQuestDispositionTypeSelect(selectEl, selectedType = '') {
                 if (!selectEl) {
@@ -31016,13 +31381,26 @@
                         list.appendChild(item);
                     });
                     rewardNpcDispositions.forEach(entry => {
+                        const item = document.createElement('li');
+                        item.className = 'quest-disposition-reward';
+                        const npcName = document.createElement('strong');
+                        npcName.className = 'disposition-summary-row__name quest-disposition-reward__name';
+                        npcName.textContent = entry.npcName || 'NPC';
+                        item.appendChild(npcName);
+                        item.appendChild(document.createTextNode(': '));
+
+                        const pills = document.createElement('span');
+                        pills.className = 'disposition-summary-row__pills quest-disposition-reward__pills';
                         entry.dispositions.forEach(disposition => {
-                            const item = document.createElement('li');
-                            const signed = disposition.intensity > 0 ? `+${disposition.intensity}` : `${disposition.intensity}`;
-                            const reason = disposition.reason ? ` - ${disposition.reason}` : '';
-                            item.textContent = `${entry.npcName}: ${disposition.type} ${signed}${reason}`;
-                            list.appendChild(item);
+                            const pill = createQuestDispositionRewardPill(disposition);
+                            if (pill) {
+                                pills.appendChild(pill);
+                            }
                         });
+                        if (pills.childElementCount) {
+                            item.appendChild(pills);
+                            list.appendChild(item);
+                        }
                     });
 
                     rewardSection.appendChild(list);

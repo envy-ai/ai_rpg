@@ -18,7 +18,7 @@ For a full reference of non-dummy event type keys, payloads, and application beh
     - When `event_checks.use_xml === false`, renders the legacy grouped event-check prompts plus a dedicated parallel need-bar prompt, calls `LLMClient.chatCompletion`, parses `<final>` and `<characters>` responses, and applies results through the same handler pipeline. `locationOverride` lets split travel-prose checks run destination prose against the destination location even before the player is mechanically moved.
 - `runQuestChecks({ allowWithoutEventChecks })`: LLM check for quest objective completion, including per-objective prompt `statusReason` text for completed objectives.
 - `applyEventOutcomes(parsedEvents, context)`: applies structured changes to world state.
-- `processQuestObjectiveCompletionEntries(entries, context)`: applies quest objective completion and rewards (items/xp/currency, per-faction reputation deltas, and per-NPC disposition deltas when configured on the quest), preserving the prompt-supplied completion reason on emitted objective updates.
+- `processQuestObjectiveCompletionEntries(entries, context)`: applies quest objective completion and rewards (items/xp/currency, per-faction reputation deltas, and per-NPC disposition deltas when configured on the quest), preserving the prompt-supplied completion reason on emitted objective updates. Quest NPC disposition reward intensities are converted through disposition `typicalStep` / `typicalBigStep`; the first-impression multiplier may further multiply the applied delta when the target NPC has no existing nonzero disposition toward the player.
 - `mergeQuestOutcomesIntoStructured(parsedEvents, questOutcomes)`.
 - `extractItemAndSceneryNames(rawEvents)`.
 - `resolveLocationCandidate(candidate)`.

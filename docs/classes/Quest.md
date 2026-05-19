@@ -38,4 +38,4 @@ Tracks a quest with objectives, rewards, NPC/faction relationship rewards, giver
 ## Notes
 - `Quest.QuestObjective` is assigned for external access to the helper class.
 - The class uses `SanitizedStringMap` for case-insensitive name lookups.
-- `rewardNpcDispositions` persists entries as `{ npcId, npcName, dispositions: [{ type, intensity, reason }] }`; quest completion resolves the NPC again, skips missing NPCs with a console warning, and emits normal `dispositionChanges` rows.
+- `rewardNpcDispositions` persists entries as `{ npcId, npcName, dispositions: [{ type, intensity, reason }] }`; quest completion resolves the NPC again, converts intensity to a disposition delta through the configured disposition range, skips missing NPCs with a console warning, and emits normal `dispositionChanges` rows. The quest list renders the resolved preview delta as a disposition icon pill and does not print the stored reason text.

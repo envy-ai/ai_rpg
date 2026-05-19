@@ -6,7 +6,7 @@ const vm = require('vm');
 function loadContainerMoveHelpers() {
     const source = fs.readFileSync(require.resolve('../api.js'), 'utf8');
     const start = source.indexOf('        function createContainerMoveError(message, status = 400) {');
-    const end = source.indexOf('\n        function buildContainerInventoryPayload(container) {', start);
+    const end = source.indexOf('\n        function buildContainerInventoryPayload', start);
     if (start < 0 || end < 0) {
         throw new Error('Unable to locate container move helpers in api.js');
     }
@@ -75,6 +75,39 @@ test('container move-in validation checks the full requested set before mutation
         isContainer: true,
         containsThingRecursive: () => true
     }]), /own descendants/);
+});
+
+test('container move-in validation accepts current-location loose items when requested', () => {
+    const context = loadContainerMoveHelpers();
+    context.currentPlayer = {
+        hasInventoryItem: () => false
+    };
+    const container = {
+        id: 'container-id',
+        name: 'Crate',
+        hasInventoryItem: () => false
+    };
+    const location = {
+        id: 'loc-1',
+        thingIds: ['loose-id', 'container-id']
+    };
+    const looseItem = {
+        id: 'loose-id',
+        name: 'Loose Gear',
+        thingType: 'item',
+        isEquipped: false,
+        isContainer: false,
+        metadata: { locationId: 'loc-1' }
+    };
+
+    assert.doesNotThrow(() => context.validateContainerMoveInItems(container, [looseItem], {
+        source: 'location',
+        location
+    }));
+    assert.throws(() => context.validateContainerMoveInItems(container, [{ ...looseItem, id: 'elsewhere-id', metadata: { locationId: 'other-loc' } }], {
+        source: 'location',
+        location
+    }), /not in the current location/);
 });
 
 test('container move-out validation rejects missing and duplicate player-owned contents', () => {

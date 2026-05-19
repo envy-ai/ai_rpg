@@ -36,7 +36,8 @@ Response:
 
 Notes:
 - Craft/process can run with no selected slot items; the prompts judge the attempt from the station, current scene, player abilities, and notes.
-- Selected inputs may come from the active player inventory or the current location. Player-owned selected inputs must be unequipped; offscreen/nonlocal thing ids are rejected.
+- Selected inputs may come from the active player inventory, loose current-location items, or item contents inside containers in the current location. Player-owned selected inputs must be unequipped; offscreen/nonlocal thing ids are rejected.
+- Current-location container contents are available even when the container itself is scenery. Scenery containers themselves are not shown in the workbench picker, while non-empty item containers remain visible but disabled until emptied.
 - Non-empty containers cannot be selected as crafting inputs; the client greys them out and the server rejects them if submitted directly. Empty the container first if the container itself should be consumed or processed.
 - Salvage/harvest require exactly one slot item.
 - When `actionType` is supplied, it overrides `mode` in some cases.

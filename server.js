@@ -4162,6 +4162,9 @@ function serializeNpcForClient(npc, options = {}) {
     if (factionStandings && typeof factionStandings === 'object') {
         serialized.factionStandings = factionStandings;
     }
+    if (!Boolean(npc.isNPC)) {
+        serialized.dispositionDefinitions = dispositionDefinitions;
+    }
 
     if (typeof npc.getCurrentQuests === 'function') {
         try {

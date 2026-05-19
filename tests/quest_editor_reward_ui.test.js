@@ -6,6 +6,7 @@ const path = require('path');
 const rootDir = path.join(__dirname, '..');
 const viewSource = fs.readFileSync(path.join(rootDir, 'views', 'index.njk'), 'utf8');
 const scssSource = fs.readFileSync(path.join(rootDir, 'public', 'css', 'main.scss'), 'utf8');
+const serverSource = fs.readFileSync(path.join(rootDir, 'server.js'), 'utf8');
 
 test('quest editor reward sections use row editors instead of multiline reward textareas', () => {
     assert.doesNotMatch(viewSource, /<textarea id="questEditRewardItems"/);
@@ -54,4 +55,9 @@ test('NPC disposition reward type uses a configured disposition dropdown', () =>
     assert.match(viewSource, /populateQuestDispositionTypeSelect\(typeSelect, typeof reward\.type === 'string' \? reward\.type : ''\);/);
     assert.match(viewSource, /unknownOption\.textContent = `\$\{selectedType\} \(custom\)`;/);
     assert.doesNotMatch(viewSource, /const typeInput = document\.createElement\('input'\);[\s\S]*typeInput\.type = 'text';[\s\S]*typeInput\.className = 'quest-edit-reward-disposition-type';/);
+});
+
+test('current player payload exposes disposition definitions for quest reward dropdowns', () => {
+    assert.match(serverSource, /serialized\.dispositionDefinitions = dispositionDefinitions;/);
+    assert.match(viewSource, /rememberQuestDispositionDefinitions\(data\.player\);/);
 });

@@ -113,18 +113,20 @@ Notes:
 - `contents` contains item-type things held by the container; scenery containers can hold items, but scenery itself cannot be contained.
 
 ## POST /api/things/:containerId/container/move-in
-Move a whole item stack from the current player's unequipped inventory into a container.
+Move a whole item stack from the current player's unequipped inventory or a loose current-location item into a container.
 
 Request:
 - Body: `{ thingId: string }` or `{ thingIds: string[] }`
+- Optional `source`: `"player"` (default) or `"location"`.
+- Optional `locationId`: required for `source: "location"` unless the current player location can be resolved.
 
 Response:
-- 200: `{ success: true, container: Thing, contents: Thing[], player: NpcProfile, playerInventory: Thing[] }`
+- 200: `{ success: true, container: Thing, contents: Thing[], player: NpcProfile, playerInventory: Thing[], location?: LocationResponse }`
 - 400/404/409/500 with `{ success: false, error }`
 
 Notes:
 - When `thingIds` is provided, the route validates the full list before moving anything and returns one refreshed container payload.
-- Rejects non-container destinations, missing items, non-item contents, equipped items, duplicate containment, self-containment, descendant cycles, and missing current player state.
+- Rejects non-container destinations, missing items, non-item contents, equipped items, duplicate containment, self-containment, descendant cycles, missing current player state, player-source items outside the current player's inventory, and location-source items that are not loose in the current location.
 - Partial movement is handled by splitting the stack first, then moving the split stack.
 
 ## POST /api/things/:containerId/container/move-out

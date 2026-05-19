@@ -10606,6 +10606,18 @@ body.modal-open {
   background: rgba(251, 191, 36, 0.1);
 }
 
+.thing-container-drop-target {
+  position: relative;
+  transition: outline-color 120ms ease, background-color 120ms ease, box-shadow 120ms ease;
+}
+
+.thing-container-drop-target.is-drop-hover {
+  outline: 2px dashed rgba(34, 197, 94, 0.82);
+  outline-offset: 2px;
+  background: rgba(34, 197, 94, 0.12);
+  box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.16);
+}
+
 .party-drop-target {
   position: relative;
   transition: outline-color 120ms ease, background-color 120ms ease;
