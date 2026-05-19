@@ -15,7 +15,7 @@ Manages async quest confirmation prompts and responses per client. Emits request
 - `rejectAllForClient(clientId, reason)`: rejects all pending confirmations for a client (e.g. disconnect).
 
 ## Private Helpers
-- `#normalizeQuestPayload(quest)`: sanitizes quest fields into a safe, minimal payload for the client.
+- `#normalizeQuestPayload(quest)`: sanitizes quest fields into a safe, minimal payload for the client, including item/currency/XP rewards and NPC disposition rewards.
 
 ## Notes
 - The manager stores pending confirmations as `{ resolve, reject, timeout, clientId }` keyed by a UUID.

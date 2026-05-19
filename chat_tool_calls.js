@@ -177,6 +177,7 @@ const UPDATE_OBJECT_FIELD_NAMES_BY_TYPE = Object.freeze({
         'rewardCurrency',
         'rewardXp',
         'rewardFactionReputation',
+        'rewardNpcDispositions',
         'rewardClaimed',
         'secretNotes',
         'giverId',
@@ -4528,6 +4529,7 @@ const createChatToolRuntime = ({
             'tags',
             'goals',
             'rewardItems',
+            'rewardNpcDispositions',
             'attributes',
             'skills',
             'needBars'

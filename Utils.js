@@ -178,7 +178,7 @@ class Utils {
         .replace(/\s+/g, ' ')
         .trim();
 
-      const unitPattern = /(\d+(?:\.\d+)?)\s*(days?|d|hours?|hrs?|hr|h|minutes?|mins?|min|m|rounds?|rnds?|rnd)(?=$|\s|\d)/g;
+      const unitPattern = /(\d+(?:\.\d+)?)\s*(days?|d|hours?|hrs?|hr|h|minutes?|mins?|min|m|seconds?|secs?|sec|s|rounds?|rnds?|rnd)(?=$|\s|\d)/g;
       let cursor = 0;
       let matched = false;
       let totalMinutes = 0;
@@ -203,6 +203,8 @@ class Utils {
           totalMinutes += amount * 60;
         } else if (unit === 'minute' || unit === 'minutes' || unit === 'min' || unit === 'mins' || unit === 'm') {
           totalMinutes += amount;
+        } else if (unit === 'second' || unit === 'seconds' || unit === 'sec' || unit === 'secs' || unit === 's') {
+          totalMinutes += amount / 60;
         } else if (unit === 'round' || unit === 'rounds' || unit === 'rnd' || unit === 'rnds') {
           totalMinutes += amount;
         } else {

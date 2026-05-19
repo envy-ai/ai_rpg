@@ -217,6 +217,49 @@ test('set_last_seen parses trailing relative durations with numbered location na
     assert.match(replies[0].content, /Resolved "1 day 2 hours ago" to 7:00 AM on .*January 5, Common Era 1\./);
 }));
 
+test('set_last_seen relative durations accept seconds rounded to minutes', async () => withCommandTestState(async ({ registerLocation }) => {
+    const region = new Region({
+        id: 'set-last-seen-region-seconds',
+        name: 'Clockwork Yard',
+        description: 'A yard of precise instruments.'
+    });
+
+    const yard = registerLocation(new Location({
+        id: 'set-last-seen-clockwork-yard',
+        name: 'Clockwork Yard',
+        description: 'A yard under a bright clock.',
+        regionId: region.id
+    }));
+
+    Globals.hydrateWorldTime({
+        worldTime: {
+            dayIndex: 1,
+            timeMinutes: 12 * 60
+        }
+    });
+
+    const observer = new Player({
+        id: 'set-last-seen-observer',
+        name: 'Observer',
+        isNPC: true,
+        location: yard.id
+    });
+
+    const replies = [];
+    await SetLastSeenCommand.execute({
+        argsText: 'Clockwork Yard 90 seconds ago',
+        reply: async (payload) => {
+            replies.push(payload);
+        }
+    });
+
+    assert.equal(observer.last_seen_time, (1 * 1440) + (12 * 60) - 2);
+    assert.equal(observer.last_seen_location, yard.id);
+    assert.equal(observer.was_in_player_location_previous_round, false);
+    assert.equal(replies.length, 1);
+    assert.match(replies[0].content, /Resolved "90 seconds ago" to 11:58 AM on .*January 2, Common Era 1\./);
+}));
+
 test('set_last_seen accepts exact times without minutes and treats them as top-of-hour', async () => withCommandTestState(async ({ registerLocation }) => {
     const region = new Region({
         id: 'set-last-seen-region-4',

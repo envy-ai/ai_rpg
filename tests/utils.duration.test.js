@@ -19,6 +19,16 @@ test('parseDurationToMinutes accepts compact adjacent unit forms and abbreviatio
     assert.equal(Utils.parseDurationToMinutes('90m'), 90);
 });
 
+test('parseDurationToMinutes accepts seconds and rounds them to the nearest minute', () => {
+    assert.equal(Utils.parseDurationToMinutes('29 seconds'), 0);
+    assert.equal(Utils.parseDurationToMinutes('30 seconds'), 1);
+    assert.equal(Utils.parseDurationToMinutes('89 sec'), 1);
+    assert.equal(Utils.parseDurationToMinutes('90 secs'), 2);
+    assert.equal(Utils.parseDurationToMinutes('1m30s'), 2);
+    assert.equal(Utils.parseDurationToMinutes('1 minute, 29 seconds'), 1);
+    assert.equal(Utils.parseDurationToMinutes('1 minute, 30 seconds'), 2);
+});
+
 test('parseDurationToMinutes rounds decimal numeric minute inputs', () => {
     assert.equal(Utils.parseDurationToMinutes(2.4), 2);
     assert.equal(Utils.parseDurationToMinutes(2.5), 3);
@@ -43,6 +53,10 @@ test('parseDurationToMinutes can accept an optional unary sign when allowSigned 
     assert.equal(
         Utils.parseDurationToMinutes('- 1d5h', { allowSigned: true }),
         -1740
+    );
+    assert.equal(
+        Utils.parseDurationToMinutes('-90 seconds', { allowSigned: true }),
+        -2
     );
 });
 

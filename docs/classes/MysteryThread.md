@@ -32,3 +32,4 @@
 - Saves persist threads to `mysteryThreads.json`; metadata includes `totalMysteryThreads`.
 - Only `active` threads are included in base context, capped by `mystery_threads.max_active`.
 - Inactive/concluded threads remain editable and searchable but are not injected into base-context prompts.
+- The reactive `mysteryBoxMention` flow runs a private `mystery-thread-check` prompt before `mystery-box-update`; matching returned active thread names are marked `inactive`, while names that do not resolve to an active thread are console-warned and ignored.

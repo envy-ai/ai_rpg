@@ -6,6 +6,30 @@ const path = require('path');
 const rootDir = path.join(__dirname, '..');
 const viewSource = fs.readFileSync(path.join(rootDir, 'views', 'index.njk'), 'utf8');
 const scssSource = fs.readFileSync(path.join(rootDir, 'public', 'css', 'main.scss'), 'utf8');
+const chatSource = fs.readFileSync(path.join(rootDir, 'public', 'js', 'chat.js'), 'utf8');
+
+function extractMethod(source, signature) {
+    const start = source.indexOf(signature);
+    assert.notEqual(start, -1, `${signature} should exist`);
+    const bodyOpenMarker = source.indexOf(') {', start);
+    assert.notEqual(bodyOpenMarker, -1, `${signature} should have a body`);
+    const bodyStart = bodyOpenMarker + 2;
+
+    let depth = 0;
+    for (let index = bodyStart; index < source.length; index += 1) {
+        const char = source[index];
+        if (char === '{') {
+            depth += 1;
+        } else if (char === '}') {
+            depth -= 1;
+            if (depth === 0) {
+                return source.slice(start, index + 1);
+            }
+        }
+    }
+
+    assert.fail(`${signature} body should close`);
+}
 
 test('chat spinner status bar is placed between prompt progress dock and input area', () => {
     const dockIndex = viewSource.indexOf('id="promptProgressDock"');
@@ -44,4 +68,18 @@ test('spinner status bar styling is compact and non-blocking', () => {
     assert.match(scssSource, /font-style:\s*italic/);
     assert.match(scssSource, /\.chat-spinner-status-bar__spinner\s*\{/);
     assert.match(scssSource, /animation:\s*spin 0\.8s linear infinite/);
+});
+
+test('request-scoped chat status messages render in the spinner status bar', () => {
+    const updateStatusMessageSource = extractMethod(chatSource, 'updateStatusMessage(requestId, message');
+    const showLoadingSource = extractMethod(chatSource, 'showLoading(requestId, message');
+    const removeStatusMessageSource = extractMethod(chatSource, 'removeStatusMessage(requestId)');
+
+    assert.match(chatSource, /showRequestStatusSpinner\(requestId, message/);
+    assert.match(updateStatusMessageSource, /this\.showRequestStatusSpinner\(requestId, message, \{\s*stage,\s*scope\s*\}\)/);
+    assert.doesNotMatch(updateStatusMessageSource, /createStatusElement/);
+    assert.doesNotMatch(chatSource, /status-update/);
+    assert.doesNotMatch(chatSource, /streamingStatusElements/);
+    assert.match(showLoadingSource, /this\.updateStatusMessage\(requestId, message, \{ stage: 'loading' \}\)/);
+    assert.match(removeStatusMessageSource, /this\.hideRequestStatusSpinner\(requestId\)/);
 });

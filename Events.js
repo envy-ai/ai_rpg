@@ -3945,6 +3945,22 @@ class Events {
                         }))
                         .filter((entry) => entry.amount !== 0)
                     : [],
+                npcDispositions: Array.isArray(reward.npcDispositions)
+                    ? reward.npcDispositions
+                        .map((entry) => ({
+                            npcId: entry?.npcId || null,
+                            npcName: entry?.npcName || null,
+                            typeKey: entry?.typeKey || null,
+                            typeLabel: entry?.typeLabel || null,
+                            typeIcon: entry?.typeIcon || null,
+                            intensity: Number.isFinite(entry?.intensity) ? entry.intensity : null,
+                            delta: Number.isFinite(entry?.delta) ? entry.delta : null,
+                            previousValue: Number.isFinite(entry?.previousValue) ? entry.previousValue : null,
+                            newValue: Number.isFinite(entry?.newValue) ? entry.newValue : null,
+                            reason: entry?.reason || null,
+                        }))
+                        .filter((entry) => Number.isFinite(entry.delta) && entry.delta !== 0)
+                    : [],
                 message: reward.message || null,
             }));
             if (Array.isArray(parsedContainer.quest_rewards)) {
@@ -4129,6 +4145,9 @@ class Events {
         }
         if (!Array.isArray(context.factionStandingChanges)) {
             context.factionStandingChanges = [];
+        }
+        if (!Array.isArray(context.dispositionChanges)) {
+            context.dispositionChanges = [];
         }
         if (!Array.isArray(context.followupQueue)) {
             context.followupQueue = [];
@@ -4360,6 +4379,11 @@ class Events {
                 context.factionStandingChanges.push(...appliedFactionStandingChanges);
             }
 
+            const appliedNpcDispositionRewards = Events._applyQuestNpcDispositionRewards(
+                quest,
+                context,
+            );
+
             const rewardLines = [];
             grantedItems.filter(Boolean).forEach((itemName) => {
                 rewardLines.push(itemName);
@@ -4374,6 +4398,16 @@ class Events {
                 const amount = Number(change.amount);
                 const signed = amount > 0 ? `+${amount}` : `${amount}`;
                 rewardLines.push(`${signed} reputation with ${change.factionName}`);
+            }
+            for (const change of appliedNpcDispositionRewards) {
+                const amount = Number(change.delta);
+                if (!Number.isFinite(amount) || amount === 0) {
+                    continue;
+                }
+                const signed = amount > 0 ? `+${Math.round(amount)}` : `${Math.round(amount)}`;
+                const typeLabel = change.typeLabel || change.typeKey || "disposition";
+                const npcName = change.npcName || change.npcId || "NPC";
+                rewardLines.push(`${signed} ${typeLabel} disposition with ${npcName}`);
             }
 
             if (!rewardLines.length) {
@@ -4461,6 +4495,18 @@ class Events {
                     amount: entry.amount,
                     before: entry.before,
                     after: entry.after
+                })),
+                npcDispositions: appliedNpcDispositionRewards.map((entry) => ({
+                    npcId: entry.npcId || null,
+                    npcName: entry.npcName || null,
+                    typeKey: entry.typeKey || null,
+                    typeLabel: entry.typeLabel || null,
+                    typeIcon: entry.typeIcon || null,
+                    intensity: Number.isFinite(entry.intensity) ? entry.intensity : null,
+                    delta: Number.isFinite(entry.delta) ? entry.delta : null,
+                    previousValue: Number.isFinite(entry.previousValue) ? entry.previousValue : null,
+                    newValue: Number.isFinite(entry.newValue) ? entry.newValue : null,
+                    reason: entry.reason || null
                 })),
                 message: rewardProse,
                 rewards: rewardLines.slice(),
@@ -7041,6 +7087,71 @@ class Events {
         };
     }
 
+    static _parseMysteryThreadCheckResponse(responseText) {
+        const xml = Utils.extractFinalXmlRootBlock(responseText || "", "resolvedMysteryThreads");
+        if (!xml) {
+            throw new Error("Mystery thread check response missing <resolvedMysteryThreads> root.");
+        }
+
+        let doc;
+        try {
+            doc = Utils.parseXmlDocumentStrict(xml, "text/xml");
+        } catch (error) {
+            throw new Error(`Failed to parse mystery thread check XML: ${error.message}`);
+        }
+
+        const root = doc?.documentElement;
+        if (!root || root.tagName !== "resolvedMysteryThreads") {
+            throw new Error("Mystery thread check response did not parse into <resolvedMysteryThreads>.");
+        }
+
+        return this._getXmlElementChildren(root)
+            .filter((child) => child.tagName === "mysteryThread")
+            .map((child) => ({
+                name: normalizeString(this._getXmlDirectChildText(child, "name")),
+                reasoning: normalizeString(this._getXmlDirectChildText(child, "reasoning")),
+            }))
+            .filter((entry) => {
+                if (entry.name) {
+                    return true;
+                }
+                console.warn("Mystery thread check returned a resolved mysteryThread entry without a name; ignoring it.");
+                return false;
+            });
+    }
+
+    static _markResolvedMysteryThreadsInactive(resolvedThreads = []) {
+        if (!Array.isArray(resolvedThreads) || !resolvedThreads.length) {
+            return [];
+        }
+
+        const inactivated = [];
+        for (const resolved of resolvedThreads) {
+            const name = normalizeString(resolved?.name);
+            if (!name) {
+                console.warn("Mystery thread check returned a resolved thread without a name; ignoring it.");
+                continue;
+            }
+
+            const thread = MysteryThread.getById(name)
+                || MysteryThread.getByKey(name)
+                || MysteryThread.findByNameOrKey(name).find((candidate) => candidate.status === "active");
+            if (!thread || thread.status !== "active") {
+                console.warn(`Mystery thread check returned resolved thread "${name}", but it does not match any active thread; continuing.`);
+                continue;
+            }
+
+            thread.applyUpdate({ status: "inactive" });
+            inactivated.push({
+                id: thread.id,
+                name: thread.name,
+                reasoning: normalizeString(resolved?.reasoning),
+            });
+        }
+
+        return inactivated;
+    }
+
     static _applyMysteryBoxUpdate(update, mention = {}, context = {}) {
         if (!update || typeof update !== "object") {
             throw new Error("Cannot apply empty mystery box update.");
@@ -7203,6 +7314,69 @@ class Events {
             getRegionsMap: () => new Map(),
             getPendingRegionStubs: () => new Map(),
         });
+    }
+
+    static async _runMysteryThreadCheckPrompt(context = {}) {
+        const promptEnv = this._deps.promptEnv;
+        const parseXMLTemplate = this._deps.parseXMLTemplate;
+        const prepareBasePromptContext = this._deps.prepareBasePromptContext;
+        if (!promptEnv || typeof promptEnv.render !== "function") {
+            throw new Error("promptEnv.render dependency is not configured.");
+        }
+        if (typeof parseXMLTemplate !== "function") {
+            throw new Error("parseXMLTemplate dependency is not configured.");
+        }
+        if (typeof prepareBasePromptContext !== "function") {
+            throw new Error("prepareBasePromptContext dependency is not configured.");
+        }
+
+        const activeMysteryThreads = MysteryThread.getActive({ max: Number.MAX_SAFE_INTEGER })
+            .map((thread) => this._serializeMysteryThreadForPrompt(thread, { includeBoxes: true }));
+        if (!activeMysteryThreads.length) {
+            return [];
+        }
+
+        const baseContext = await prepareBasePromptContext({
+            locationOverride: context?.location || null,
+        });
+        const config = this.config || {};
+        const mysteryThreadMaxActive = this._resolveMysteryThreadMaxActive(config);
+        const rendered = promptEnv.render("base-context.xml.njk", {
+            ...baseContext,
+            promptType: "mystery-thread-check",
+            activeMysteryThreads,
+            mysteryThreadMaxActive,
+            mysteryThreadCheckText: typeof context?.textToCheck === "string" ? context.textToCheck : "",
+            mysteryThreadCheckActionText: typeof context?.actionText === "string" ? context.actionText : "",
+            omitGameHistory: true,
+        });
+        const parsedTemplate = parseXMLTemplate(rendered);
+        if (!parsedTemplate?.systemPrompt || !parsedTemplate?.generationPrompt) {
+            throw new Error("Mystery thread check template did not produce prompts.");
+        }
+
+        const responseText = await LLMClient.chatCompletion({
+            messages: [
+                { role: "system", content: parsedTemplate.systemPrompt },
+                { role: "user", content: parsedTemplate.generationPrompt },
+            ],
+            metadataLabel: "mystery_thread_check",
+            timeoutMs: this._baseTimeout,
+            temperature: 0,
+            validateXML: false,
+            requiredRegex: /<resolvedMysteryThreads[\s>]/,
+        });
+
+        LLMClient.logPrompt({
+            prefix: "mystery_thread_check",
+            metadataLabel: "mystery_thread_check",
+            systemPrompt: parsedTemplate.systemPrompt || "",
+            generationPrompt: parsedTemplate.generationPrompt || "",
+            response: responseText || "",
+        });
+
+        const resolvedThreads = this._parseMysteryThreadCheckResponse(responseText);
+        return this._markResolvedMysteryThreadsInactive(resolvedThreads);
     }
 
     static async _runMysteryBoxUpdatePrompt(mention, context = {}) {
@@ -7884,6 +8058,14 @@ class Events {
                     const rewardFactionReputation = Events._resolveQuestFactionRewardMap(
                         questData.rewardFactionReputation,
                     );
+                    const rewardNpcDispositions = Events._resolveQuestNpcDispositionRewards(
+                        questData.rewardNpcDispositions || [],
+                        {
+                            findActorByName,
+                            warn: console.warn,
+                            contextLabel: `Generated quest "${questName}" NPC disposition reward`
+                        },
+                    );
 
                     const questOptions = {
                         name: questName,
@@ -7893,6 +8075,7 @@ class Events {
                         rewardCurrency,
                         rewardXp,
                         rewardFactionReputation,
+                        rewardNpcDispositions,
                     };
 
                     const effectiveGiverName = questData.giver || questGiverName;
@@ -7941,6 +8124,9 @@ class Events {
                         existingQuest.rewardFactionReputation = {
                             ...rewardFactionReputation,
                         };
+                        existingQuest.rewardNpcDispositions = Quest.normalizeRewardNpcDispositions(
+                            rewardNpcDispositions,
+                        );
                         if (questOptions.giver) {
                             existingQuest.giver = questOptions.giver;
                         } else if (questOptions.giverName) {
@@ -8083,6 +8269,7 @@ class Events {
                         rewardFactionReputation: Events._toQuestFactionRewardPreviewEntries(
                             rewardFactionReputation,
                         ),
+                        rewardNpcDispositions,
                         objectives: Array.isArray(quest.objectives)
                             ? quest.objectives
                                 .map((entry) => ({
@@ -10433,6 +10620,13 @@ class Events {
                 context.mysteryBoxUpdates = Array.isArray(context.mysteryBoxUpdates)
                     ? context.mysteryBoxUpdates
                     : [];
+                const inactivatedThreads = await this._runMysteryThreadCheckPrompt(context);
+                if (inactivatedThreads.length) {
+                    context.inactivatedMysteryThreads = Array.isArray(context.inactivatedMysteryThreads)
+                        ? context.inactivatedMysteryThreads
+                        : [];
+                    context.inactivatedMysteryThreads.push(...inactivatedThreads);
+                }
                 for (const entry of entries) {
                     const box = await this._runMysteryBoxUpdatePrompt(entry, context);
                     if (box) {
@@ -12078,6 +12272,243 @@ class Events {
             .filter(Boolean);
     }
 
+    static _resolveQuestNpcDispositionRewards(rawRewards, {
+        findActorByName = null,
+        warn = console.warn,
+        contextLabel = "Quest NPC disposition reward"
+    } = {}) {
+        const normalizedRewards = Quest.normalizeRewardNpcDispositions(rawRewards);
+        const resolvedRewards = [];
+        const safeWarn = typeof warn === "function" ? warn : () => {};
+
+        const resolveActor = (entry) => {
+            const npcId = typeof entry?.npcId === "string" ? entry.npcId.trim() : "";
+            if (npcId && typeof Player.getById === "function") {
+                const byId = Player.getById(npcId);
+                if (byId) {
+                    return byId;
+                }
+            }
+
+            const npcName = typeof entry?.npcName === "string" ? entry.npcName.trim() : "";
+            if (npcName && typeof findActorByName === "function") {
+                const byName = findActorByName(npcName);
+                if (byName) {
+                    return byName;
+                }
+            }
+            if (npcName && typeof Player.getByName === "function") {
+                return Player.getByName(npcName);
+            }
+            return null;
+        };
+
+        const currentPlayer = this.currentPlayer || Globals.currentPlayer || null;
+        for (const entry of normalizedRewards) {
+            const actor = resolveActor(entry);
+            if (!actor || actor === currentPlayer) {
+                safeWarn(
+                    `${contextLabel} references unknown NPC "${entry.npcName || entry.npcId || "unknown"}"; skipping disposition reward.`,
+                );
+                continue;
+            }
+
+            resolvedRewards.push({
+                npcId: actor.id || entry.npcId || null,
+                npcName: actor.name || entry.npcName || entry.npcId || null,
+                dispositions: entry.dispositions.map(disposition => ({ ...disposition }))
+            });
+        }
+
+        return resolvedRewards;
+    }
+
+    static _resolveQuestDispositionDelta(intensityValue, definitions) {
+        const range = definitions?.range || {};
+        const typicalStep = Number.isFinite(Number(range.typicalStep))
+            ? Number(range.typicalStep)
+            : null;
+        const typicalBigStep = Number.isFinite(Number(range.typicalBigStep))
+            ? Number(range.typicalBigStep)
+            : null;
+
+        if (intensityValue === -10) {
+            if (!Number.isFinite(typicalBigStep)) {
+                return null;
+            }
+            return -typicalBigStep;
+        }
+
+        if (intensityValue >= -3 && intensityValue <= 3) {
+            if (!Number.isFinite(typicalStep)) {
+                return null;
+            }
+            const scaled = intensityValue * typicalStep;
+            const rounded = Math.round(scaled);
+            return rounded !== 0
+                ? rounded
+                : Math.sign(intensityValue) * Math.max(1, Math.round(Math.abs(scaled)) || 1);
+        }
+
+        if (!Number.isFinite(typicalStep)) {
+            return null;
+        }
+        const scaled = (intensityValue / 2) * typicalStep;
+        const rounded = Math.round(scaled);
+        return rounded !== 0
+            ? rounded
+            : Math.sign(intensityValue) * Math.max(1, Math.round(Math.abs(scaled)) || 1);
+    }
+
+    static _applyQuestNpcDispositionRewards(quest, context = {}) {
+        const rewards = Array.isArray(quest?.rewardNpcDispositions)
+            ? quest.rewardNpcDispositions
+            : [];
+        if (!rewards.length) {
+            return [];
+        }
+
+        const player = context.player || this.currentPlayer || Globals.currentPlayer || null;
+        if (!player || typeof player.id !== "string" || !player.id.trim()) {
+            throw new Error("Quest NPC disposition rewards require a player with an id.");
+        }
+
+        const resolvedRewards = this._resolveQuestNpcDispositionRewards(rewards, {
+            findActorByName: this._deps?.findActorByName,
+            warn: console.warn,
+            contextLabel: `Quest "${quest?.name || "unknown"}" NPC disposition reward`
+        });
+        if (!resolvedRewards.length) {
+            return [];
+        }
+
+        const definitions = Player.getDispositionDefinitions();
+        const range = definitions?.range || {};
+        const minRange = Number.isFinite(Number(range.min)) ? Number(range.min) : null;
+        const maxRange = Number.isFinite(Number(range.max)) ? Number(range.max) : null;
+        const firstImpressionMultiplier = Number.isFinite(Number(definitions?.firstImpressionMultiplier))
+            ? Number(definitions.firstImpressionMultiplier)
+            : null;
+        const typeDefinitions = definitions?.types || {};
+        const appliedChanges = [];
+
+        const getDispositionValue = (npc, typeKey) => {
+            if (typeof npc.getDisposition === "function") {
+                return Number(npc.getDisposition(player.id, typeKey)) || 0;
+            }
+            if (typeof npc.getDispositionTowardsCurrentPlayer === "function") {
+                return Number(npc.getDispositionTowardsCurrentPlayer(typeKey)) || 0;
+            }
+            throw new Error(`NPC "${npc.name || npc.id || "unknown"}" cannot read dispositions.`);
+        };
+
+        const setDispositionValue = (npc, typeKey, value) => {
+            if (typeof npc.setDisposition === "function") {
+                return npc.setDisposition(player.id, typeKey, value);
+            }
+            if (typeof npc.setDispositionTowardsCurrentPlayer === "function") {
+                return npc.setDispositionTowardsCurrentPlayer(typeKey, value);
+            }
+            throw new Error(`NPC "${npc.name || npc.id || "unknown"}" cannot write dispositions.`);
+        };
+
+        for (const npcEntry of resolvedRewards) {
+            const npc = (npcEntry.npcId && typeof Player.getById === "function"
+                ? Player.getById(npcEntry.npcId)
+                : null)
+                || (typeof this._deps?.findActorByName === "function"
+                    ? this._deps.findActorByName(npcEntry.npcName)
+                    : null)
+                || (typeof Player.getByName === "function" ? Player.getByName(npcEntry.npcName) : null);
+            if (!npc || npc === player) {
+                console.warn(
+                    `Quest "${quest?.name || "unknown"}" NPC disposition reward references unknown NPC "${npcEntry.npcName || npcEntry.npcId || "unknown"}"; skipping disposition reward.`,
+                );
+                continue;
+            }
+
+            let applyFirstImpression = false;
+            if (firstImpressionMultiplier && firstImpressionMultiplier !== 1) {
+                let hasNonZeroDisposition = false;
+                for (const def of Object.values(typeDefinitions)) {
+                    const key = def?.key || def?.label;
+                    if (!key) {
+                        continue;
+                    }
+                    const existingValue = getDispositionValue(npc, key);
+                    if (Number(existingValue) !== 0) {
+                        hasNonZeroDisposition = true;
+                        break;
+                    }
+                }
+                applyFirstImpression = !hasNonZeroDisposition;
+            }
+
+            for (const dispositionReward of npcEntry.dispositions) {
+                const typeDefinition = Player.getDispositionDefinition(dispositionReward.type);
+                if (!typeDefinition || !typeDefinition.key) {
+                    console.warn(
+                        `Quest "${quest?.name || "unknown"}" NPC disposition reward references unknown disposition type "${dispositionReward.type}"; skipping.`,
+                    );
+                    continue;
+                }
+
+                const intensityValue = Number(dispositionReward.intensity);
+                if (!Number.isFinite(intensityValue) || intensityValue === 0) {
+                    continue;
+                }
+
+                let delta = Events._resolveQuestDispositionDelta(intensityValue, definitions);
+                if (!Number.isFinite(delta) || delta === 0) {
+                    console.warn(
+                        `Quest "${quest?.name || "unknown"}" could not resolve disposition delta for "${dispositionReward.type}" intensity ${intensityValue}; skipping.`,
+                    );
+                    continue;
+                }
+
+                if (applyFirstImpression) {
+                    const multiplied = delta * firstImpressionMultiplier;
+                    if (Number.isFinite(multiplied) && multiplied !== 0) {
+                        delta = Math.round(multiplied);
+                    }
+                }
+
+                const previousValue = getDispositionValue(npc, typeDefinition.key);
+                let newValue = previousValue + delta;
+                if (Number.isFinite(minRange)) {
+                    newValue = Math.max(minRange, newValue);
+                }
+                if (Number.isFinite(maxRange)) {
+                    newValue = Math.min(maxRange, newValue);
+                }
+                setDispositionValue(npc, typeDefinition.key, newValue);
+
+                const applied = {
+                    npcId: npc.id || npcEntry.npcId || null,
+                    npcName: npc.name || npcEntry.npcName,
+                    typeKey: typeDefinition.key,
+                    typeLabel: typeDefinition.label || typeDefinition.key,
+                    typeIcon: typeDefinition.icon || null,
+                    intensity: intensityValue,
+                    delta,
+                    previousValue,
+                    newValue,
+                    reason: dispositionReward.reason || null
+                };
+                appliedChanges.push(applied);
+            }
+        }
+
+        if (appliedChanges.length) {
+            if (!Array.isArray(context.dispositionChanges)) {
+                context.dispositionChanges = [];
+            }
+            context.dispositionChanges.push(...appliedChanges);
+        }
+
+        return appliedChanges;
+    }
+
     static _parseQuestXml(xmlContent) {
         if (typeof xmlContent !== "string" || !xmlContent.trim()) {
             return null;
@@ -12181,6 +12612,57 @@ class Events {
                 }
             }
 
+            const rewardNpcDispositions = [];
+            if (rewardsNode) {
+                const npcDispositionsNode = rewardsNode.getElementsByTagName("npcDispositions")[0] || null;
+                const npcRewardNodes = npcDispositionsNode
+                    ? Array.from(npcDispositionsNode.getElementsByTagName("npc"))
+                    : [];
+
+                for (const npcNode of npcRewardNodes) {
+                    const npcName = npcNode.getElementsByTagName("name")[0]?.textContent?.trim() || "";
+                    if (!npcName) {
+                        console.warn("Quest reward NPC disposition entry missing <name>; skipping.");
+                        continue;
+                    }
+
+                    const dispositionContainer = npcNode.getElementsByTagName("dispositionsTowardsPlayer")[0] || null;
+                    const dispositionNodes = dispositionContainer
+                        ? Array.from(dispositionContainer.getElementsByTagName("disposition"))
+                        : Array.from(npcNode.getElementsByTagName("disposition"));
+                    const dispositions = [];
+
+                    for (const dispositionNode of dispositionNodes) {
+                        const type = dispositionNode.getElementsByTagName("type")[0]?.textContent?.trim() || "";
+                        if (!type) {
+                            console.warn(`Quest reward NPC disposition for "${npcName}" missing <type>; skipping.`);
+                            continue;
+                        }
+
+                        const intensityText = dispositionNode.getElementsByTagName("intensity")[0]?.textContent?.trim() || "";
+                        const intensity = Number.parseInt(intensityText, 10);
+                        if (!Number.isFinite(intensity) || intensity === 0) {
+                            console.warn(`Quest reward NPC disposition for "${npcName}" ${type} missing numeric intensity; skipping.`);
+                            continue;
+                        }
+
+                        const reason = dispositionNode.getElementsByTagName("reason")[0]?.textContent?.trim() || null;
+                        dispositions.push({
+                            type,
+                            intensity,
+                            reason
+                        });
+                    }
+
+                    if (dispositions.length) {
+                        rewardNpcDispositions.push({
+                            npcName,
+                            dispositions
+                        });
+                    }
+                }
+            }
+
             const objectives = Array.from(questNode.getElementsByTagName("objective"))
                 .map((node) => {
                     const descriptionNode = node.getElementsByTagName("description")[0];
@@ -12212,6 +12694,7 @@ class Events {
                 rewardCurrency,
                 rewardXp,
                 rewardFactionReputation,
+                rewardNpcDispositions,
             };
         } catch (error) {
             console.warn("Failed to parse quest XML:", error.message);

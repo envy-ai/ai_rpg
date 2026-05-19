@@ -7,7 +7,7 @@ const defaultConfigSource = fs.readFileSync(path.join(__dirname, '..', 'config.d
 const serverSource = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
 
 test('default config defines active mystery thread capacity', () => {
-    assert.match(defaultConfigSource, /mystery_threads:\s*\n\s+max_active:\s*2\b/);
+    assert.match(defaultConfigSource, /mystery_threads:\s*\n\s+max_active:\s*3\b/);
 });
 
 test('server validates mystery_threads.max_active as a nonnegative integer', () => {

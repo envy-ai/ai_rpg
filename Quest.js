@@ -55,6 +55,7 @@ class Quest {
   rewardCurrency = 0;
   rewardXp = 0;
   rewardFactionReputation = {};
+  rewardNpcDispositions = [];
   rewardClaimed = false;
   secretNotes = '';
   giverId = null;
@@ -114,6 +115,92 @@ class Quest {
     return normalized;
   }
 
+  static normalizeRewardNpcDispositions(value) {
+    if (value === null || value === undefined || value === '') {
+      return [];
+    }
+    if (!Array.isArray(value)) {
+      throw new Error('rewardNpcDispositions must be an array.');
+    }
+
+    const normalizeDispositionEntries = (rawDispositions, npcLabel) => {
+      let dispositionEntries = null;
+      if (Array.isArray(rawDispositions)) {
+        dispositionEntries = rawDispositions;
+      } else if (rawDispositions && typeof rawDispositions === 'object') {
+        dispositionEntries = Object.entries(rawDispositions).map(([type, intensity]) => ({
+          type,
+          intensity
+        }));
+      } else {
+        throw new Error(`rewardNpcDispositions for "${npcLabel}" must include dispositions.`);
+      }
+
+      return dispositionEntries
+        .map((entry) => {
+          if (!entry || typeof entry !== 'object') {
+            throw new Error(`rewardNpcDispositions for "${npcLabel}" contains a non-object disposition.`);
+          }
+          const type = typeof entry.type === 'string' ? entry.type.trim() : '';
+          if (!type) {
+            throw new Error(`rewardNpcDispositions for "${npcLabel}" contains a disposition without a type.`);
+          }
+
+          const intensity = Number(entry.intensity ?? entry.amount ?? entry.delta ?? entry.value);
+          if (!Number.isFinite(intensity) || !Number.isInteger(intensity)) {
+            throw new Error(`rewardNpcDispositions for "${npcLabel}" ${type} intensity must be an integer.`);
+          }
+          if (intensity === 0) {
+            return null;
+          }
+
+          const reason = typeof entry.reason === 'string' && entry.reason.trim()
+            ? entry.reason.trim()
+            : null;
+
+          return {
+            type,
+            intensity,
+            reason
+          };
+        })
+        .filter(Boolean);
+    };
+
+    return value
+      .map((entry) => {
+        if (!entry || typeof entry !== 'object') {
+          throw new Error('rewardNpcDispositions entries must be objects.');
+        }
+
+        const npcId = typeof entry.npcId === 'string' && entry.npcId.trim()
+          ? entry.npcId.trim()
+          : (typeof entry.id === 'string' && entry.id.trim() ? entry.id.trim() : null);
+        const npcName = typeof entry.npcName === 'string' && entry.npcName.trim()
+          ? entry.npcName.trim()
+          : (typeof entry.name === 'string' && entry.name.trim()
+            ? entry.name.trim()
+            : (typeof entry.npc === 'string' && entry.npc.trim() ? entry.npc.trim() : null));
+
+        if (!npcId && !npcName) {
+          throw new Error('rewardNpcDispositions entries must include npcId or npcName.');
+        }
+
+        const npcLabel = npcName || npcId;
+        const dispositions = normalizeDispositionEntries(entry.dispositions, npcLabel);
+        if (!dispositions.length) {
+          return null;
+        }
+
+        return {
+          npcId,
+          npcName,
+          dispositions
+        };
+      })
+      .filter(Boolean);
+  }
+
   constructor(options = {}) {
     const providedId = typeof options.id === 'string' && options.id.trim() ? options.id.trim() : null;
     this.#id = providedId || IdGenerator.next('quest');
@@ -166,6 +253,9 @@ class Quest {
     this.rewardXp = Number.isFinite(xpValue) ? Math.max(0, Math.floor(xpValue)) : 0;
     this.rewardFactionReputation = Quest.#normalizeRewardFactionReputation(
       options.rewardFactionReputation,
+    );
+    this.rewardNpcDispositions = Quest.normalizeRewardNpcDispositions(
+      options.rewardNpcDispositions,
     );
 
     this.rewardClaimed = Boolean(options.rewardClaimed);
@@ -255,6 +345,7 @@ class Quest {
       rewardCurrency: this.rewardCurrency,
       rewardXp: this.rewardXp,
       rewardFactionReputation: { ...this.rewardFactionReputation },
+      rewardNpcDispositions: Quest.normalizeRewardNpcDispositions(this.rewardNpcDispositions),
       secretNotes: this.secretNotes || null,
       rewardClaimed: Boolean(this.rewardClaimed),
       paused: Boolean(this.paused),
@@ -296,6 +387,7 @@ class Quest {
       rewardCurrency: data.rewardCurrency,
       rewardXp: data.rewardXp,
       rewardFactionReputation: data.rewardFactionReputation,
+      rewardNpcDispositions: data.rewardNpcDispositions,
       secretNotes: typeof data.secretNotes === 'string' ? data.secretNotes : '',
       giverId,
       giverName,

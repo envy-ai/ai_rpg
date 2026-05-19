@@ -81,7 +81,7 @@ function parseRelativeTimeCandidate(rawValue) {
 function classifyDurationToken(rawToken) {
   const trimmed = String(rawToken ?? '').trim();
   const normalized = trimmed.replace(/^[,]+|[,]+$/g, '');
-  const supportedUnitPattern = /^(days?|d|hours?|hrs?|hr|h|minutes?|mins?|min|m|rounds?|rnds?|rnd)$/i;
+  const supportedUnitPattern = /^(days?|d|hours?|hrs?|hr|h|minutes?|mins?|min|m|seconds?|secs?|sec|s|rounds?|rnds?|rnd)$/i;
   if (!normalized) {
     return null;
   }

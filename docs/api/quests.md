@@ -25,12 +25,14 @@ Edit a quest on the current player.
 Request:
 - Body:
   - `questId` (required)
-  - Optional: `name`, `description`, `secretNotes`, `rewardCurrency`, `rewardXp`, `rewardItems`, `rewardFactionReputation`, `objectives`, `rewardClaimed`, `paused`, `giverName`
+  - Optional: `name`, `description`, `secretNotes`, `rewardCurrency`, `rewardXp`, `rewardItems`, `rewardFactionReputation`, `rewardNpcDispositions`, `objectives`, `rewardClaimed`, `paused`, `giverName`
   - `rewardFactionReputation` accepts:
     - object map (`{ factionIdOrName: integerDelta }`)
     - array entries (`{ factionId|faction|name, amount|delta|points|value }`)
     - formatted string lines (`Faction Name or ID: +/-points`)
   - reputation deltas must be integers and may be negative.
+  - `rewardNpcDispositions` accepts formatted string lines (`NPC Name: disposition type +/-intensity - reason`) or normalized array entries (`{ npcId?, npcName|name, dispositions: [{ type, intensity, reason? }] }`).
+  - Unknown NPCs in disposition rewards are skipped with a console warning; valid entries continue to save.
   - `objectives` entries must include `{ description }` and may include `id`, `completed`, `optional`
 
 Response:

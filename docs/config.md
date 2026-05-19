@@ -131,7 +131,7 @@ Location, region, and single-NPC generation prompts may return `<quantity>`. Mis
 
 ```yaml
 mystery_threads:
-  max_active: 2
+  max_active: 3
 ```
 
 Validation requires a non-negative integer. `0` disables active mystery-thread base-context injection and forces automatic mystery tracking to skip rather than create new active mystery continuity.

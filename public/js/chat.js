@@ -343,7 +343,6 @@ class AIRPGChat {
         this.ws = null;
         this.wsReconnectDelay = 1000;
         this.wsReconnectTimer = null;
-        this.streamingStatusElements = new Map();
         this.wsReadyWaiters = [];
         this.wsReady = false;
         this.chatCompletionAudio = null;
@@ -405,6 +404,11 @@ class AIRPGChat {
         this.promptProgressModeIconPaths = {
             compress: '/assets/material-icons/misc/compress.svg',
             expand: '/assets/material-icons/misc/expand.svg'
+        };
+        this.promptProgressActionIconPaths = {
+            view: '/assets/material-icons/misc/view_prompt.svg',
+            cancel: '/assets/material-icons/misc/cancel.svg',
+            restart: '/assets/material-icons/misc/restart.svg'
         };
         this.promptProgressDockState = this.loadPromptProgressDockState();
         this.promptProgressDockBound = false;
@@ -947,6 +951,40 @@ class AIRPGChat {
             }
             return [];
         })();
+        const rewardNpcDispositions = Array.isArray(questSource.rewardNpcDispositions)
+            ? questSource.rewardNpcDispositions
+                .map(entry => {
+                    if (!entry || typeof entry !== 'object') {
+                        return null;
+                    }
+                    const npcName = safeText(entry.npcName || entry.name || entry.npcId || entry.id);
+                    if (!npcName || !Array.isArray(entry.dispositions)) {
+                        return null;
+                    }
+                    const dispositions = entry.dispositions
+                        .map(disposition => {
+                            if (!disposition || typeof disposition !== 'object') {
+                                return null;
+                            }
+                            const type = safeText(disposition.type);
+                            const intensity = Number(disposition.intensity ?? disposition.amount ?? disposition.delta ?? disposition.value);
+                            if (!type || !Number.isFinite(intensity) || !Number.isInteger(intensity) || intensity === 0) {
+                                return null;
+                            }
+                            return {
+                                type,
+                                intensity,
+                                reason: safeText(disposition.reason) || null
+                            };
+                        })
+                        .filter(Boolean);
+                    if (!dispositions.length) {
+                        return null;
+                    }
+                    return { npcName, dispositions };
+                })
+                .filter(Boolean)
+            : [];
 
         return {
             confirmationId,
@@ -960,7 +998,8 @@ class AIRPGChat {
                 rewardItems,
                 rewardCurrency,
                 rewardXp,
-                rewardFactionReputation
+                rewardFactionReputation,
+                rewardNpcDispositions
             }
         };
     }
@@ -1136,6 +1175,21 @@ class AIRPGChat {
                     }
                     const signed = points > 0 ? `+${points}` : `${points}`;
                     rewardLines.push(`${signed} reputation with ${entry.factionName}`);
+                });
+            }
+            if (Array.isArray(quest.rewardNpcDispositions) && quest.rewardNpcDispositions.length) {
+                quest.rewardNpcDispositions.forEach(entry => {
+                    const npcName = entry?.npcName || 'NPC';
+                    const dispositions = Array.isArray(entry?.dispositions) ? entry.dispositions : [];
+                    dispositions.forEach(disposition => {
+                        const intensity = Number(disposition?.intensity);
+                        if (!Number.isFinite(intensity) || !Number.isInteger(intensity) || intensity === 0) {
+                            return;
+                        }
+                        const signed = intensity > 0 ? `+${intensity}` : `${intensity}`;
+                        const reason = disposition.reason ? ` - ${disposition.reason}` : '';
+                        rewardLines.push(`${npcName}: ${disposition.type} ${signed}${reason}`);
+                    });
                 });
             }
             if (!rewardLines.length) {
@@ -4516,6 +4570,18 @@ class AIRPGChat {
         return button;
     }
 
+    createPromptProgressActionIcon(iconName) {
+        const normalizedIconName = Object.prototype.hasOwnProperty.call(this.promptProgressActionIconPaths, iconName)
+            ? iconName
+            : 'view';
+        const image = document.createElement('img');
+        image.className = 'prompt-progress-action__icon';
+        image.src = this.promptProgressActionIconPaths[normalizedIconName];
+        image.alt = '';
+        image.setAttribute('aria-hidden', 'true');
+        return image;
+    }
+
     createPromptProgressActions(entry, row = null) {
         const isViewerActive = this.promptProgressViewerPromptId === entry.id;
         const isComplete = entry?.isComplete === true;
@@ -4525,21 +4591,21 @@ class AIRPGChat {
         const viewButton = document.createElement('button');
         viewButton.type = 'button';
         viewButton.className = 'prompt-progress-view prompt-progress-action';
-        viewButton.textContent = '👁';
+        viewButton.appendChild(this.createPromptProgressActionIcon('view'));
         viewButton.setAttribute('aria-label', `${isViewerActive ? 'Hide' : 'View'} streamed response for ${entry.label || 'prompt'}`);
         viewButton.title = isViewerActive ? 'Hide streamed response' : 'View streamed response';
 
         const cancelButton = document.createElement('button');
         cancelButton.type = 'button';
         cancelButton.className = 'prompt-progress-cancel prompt-progress-action';
-        cancelButton.textContent = '🗙';
+        cancelButton.appendChild(this.createPromptProgressActionIcon('cancel'));
         cancelButton.setAttribute('aria-label', `Cancel prompt ${entry.label || 'prompt'}`);
         cancelButton.title = 'Cancel prompt';
 
         const retryButton = document.createElement('button');
         retryButton.type = 'button';
         retryButton.className = 'prompt-progress-retry prompt-progress-action';
-        retryButton.textContent = '⟳';
+        retryButton.appendChild(this.createPromptProgressActionIcon('restart'));
         retryButton.setAttribute('aria-label', `Retry prompt ${entry.label || 'prompt'}`);
         retryButton.title = 'Retry prompt attempt';
 
@@ -4571,8 +4637,8 @@ class AIRPGChat {
         }
 
         actionWrap.appendChild(viewButton);
-        actionWrap.appendChild(cancelButton);
         actionWrap.appendChild(retryButton);
+        actionWrap.appendChild(cancelButton);
         return actionWrap;
     }
 
@@ -4680,7 +4746,15 @@ class AIRPGChat {
         return headerDiv;
     }
 
-    createPromptProgressOneLine(entry) {
+    formatPromptProgressOneLineLabel(entry, runningCount = 0) {
+        const baseLabel = entry?.label || 'prompt';
+        const extraCount = Math.max(0, Number.isInteger(runningCount) ? runningCount - 1 : 0);
+        return extraCount > 0
+            ? `${baseLabel} (and ${extraCount} more)`
+            : baseLabel;
+    }
+
+    createPromptProgressOneLine(entry, { runningCount = 0 } = {}) {
         const row = document.createElement('div');
         row.className = 'prompt-progress-dock__one-line-row';
         const isIdle = !entry?.id;
@@ -4712,7 +4786,7 @@ class AIRPGChat {
 
         const label = document.createElement('span');
         label.className = 'prompt-progress-dock__one-line-label';
-        label.textContent = isIdle ? 'no prompts running' : (entry?.label || 'prompt');
+        label.textContent = isIdle ? 'no prompts running' : this.formatPromptProgressOneLineLabel(entry, runningCount);
 
         const received = document.createElement('span');
         received.className = 'prompt-progress-dock__one-line-stat';
@@ -4722,9 +4796,11 @@ class AIRPGChat {
         percent.className = 'prompt-progress-dock__one-line-percent';
         percent.textContent = this.formatPromptProgressApproxPercent(entry);
 
-        content.appendChild(label);
         if (!isIdle) {
             content.appendChild(this.createPromptProgressActions(entry || {}, null));
+        }
+        content.appendChild(label);
+        if (!isIdle) {
             content.appendChild(received);
             content.appendChild(percent);
         }
@@ -4761,7 +4837,9 @@ class AIRPGChat {
         const contentDiv = document.createElement('div');
         contentDiv.className = 'prompt-progress-dock__content';
         const longestEntry = this.getLongestRunningPromptProgressEntry(entries) || this.createIdlePromptProgressEntry();
-        contentDiv.appendChild(this.createPromptProgressOneLine(longestEntry));
+        contentDiv.appendChild(this.createPromptProgressOneLine(longestEntry, {
+            runningCount: entries.length
+        }));
         dock.replaceChildren(contentDiv);
     }
 
@@ -4948,7 +5026,6 @@ class AIRPGChat {
                 streamed: {
                     playerAction: false
                 },
-                statusElement: null,
                 httpResolved: false,
                 streamComplete: false,
                 streamMeta: null,
@@ -4956,7 +5033,10 @@ class AIRPGChat {
                 suppressTravelCompletionSound: false,
                 travelCompletionSoundSource: null,
                 travelCompletionReady: false,
-                travelCompletionPlayed: false
+                travelCompletionPlayed: false,
+                requestStatusSpinnerActive: false,
+                requestStatusSpinnerMessage: '',
+                requestStatusSpinnerUpdatedAt: 0
             };
             this.pendingRequests.set(requestId, context);
         }
@@ -4970,27 +5050,6 @@ class AIRPGChat {
         return this.pendingRequests.get(requestId) || null;
     }
 
-    createStatusElement(requestId) {
-        const element = document.createElement('div');
-        element.className = 'message ai-message loading status-update';
-        element.dataset.requestId = requestId;
-
-        const senderDiv = document.createElement('div');
-        senderDiv.className = 'message-sender';
-        senderDiv.textContent = '🤖 AI Game Master';
-
-        const contentDiv = document.createElement('div');
-        contentDiv.className = 'message-content';
-        this.setMessageContent(contentDiv, 'Processing...', { allowMarkdown: true });
-
-        element.appendChild(senderDiv);
-        element.appendChild(contentDiv);
-        this.chatLog.appendChild(element);
-        this.streamingStatusElements.set(requestId, element);
-        this.scrollToBottom();
-        return element;
-    }
-
     updateStatusMessage(requestId, message, { stage = null, scope = 'chat' } = {}) {
         if (!requestId) {
             return;
@@ -5000,21 +5059,79 @@ class AIRPGChat {
             return;
         }
 
-        let element = context.statusElement;
-        if (!element) {
-            element = this.createStatusElement(requestId);
-            context.statusElement = element;
+        this.showRequestStatusSpinner(requestId, message, { stage, scope });
+    }
+
+    showRequestStatusSpinner(requestId, message, { stage = null, scope = 'chat' } = {}) {
+        if (!requestId) {
+            return;
+        }
+        const context = this.ensureRequestContext(requestId);
+        if (!context) {
+            return;
         }
 
-        if (element) {
-            element.dataset.stage = stage || '';
-            element.dataset.scope = scope;
-            const contentDiv = element.querySelector('.message-content');
-            if (contentDiv) {
-                this.setMessageContent(contentDiv, message, { allowMarkdown: true });
+        const statusMessage = typeof message === 'string' && message.trim()
+            ? message.trim()
+            : 'Processing...';
+        context.requestStatusSpinnerActive = true;
+        context.requestStatusSpinnerMessage = statusMessage;
+        context.requestStatusSpinnerStage = stage || '';
+        context.requestStatusSpinnerScope = scope || 'chat';
+        context.requestStatusSpinnerUpdatedAt = Date.now();
+
+        try {
+            window.showLocationOverlay?.(statusMessage);
+        } catch (error) {
+            console.debug('Failed to show chat status spinner:', error);
+        }
+    }
+
+    getActiveRequestStatusSpinnerContext() {
+        let activeContext = null;
+        for (const context of this.pendingRequests.values()) {
+            if (!context?.requestStatusSpinnerActive) {
+                continue;
             }
-            this.chatLog.appendChild(element);
-            this.scrollToBottom();
+            if (!activeContext
+                || (context.requestStatusSpinnerUpdatedAt || 0) > (activeContext.requestStatusSpinnerUpdatedAt || 0)) {
+                activeContext = context;
+            }
+        }
+        return activeContext;
+    }
+
+    hideRequestStatusSpinner(requestId) {
+        if (!requestId) {
+            return;
+        }
+        const context = this.pendingRequests.get(requestId);
+        if (context) {
+            context.requestStatusSpinnerActive = false;
+            context.requestStatusSpinnerMessage = '';
+            context.requestStatusSpinnerStage = '';
+            context.requestStatusSpinnerScope = '';
+            context.requestStatusSpinnerUpdatedAt = 0;
+        }
+
+        if (this.pendingMoveOverlay) {
+            return;
+        }
+
+        const activeContext = this.getActiveRequestStatusSpinnerContext();
+        if (activeContext?.requestStatusSpinnerMessage) {
+            try {
+                window.showLocationOverlay?.(activeContext.requestStatusSpinnerMessage);
+            } catch (error) {
+                console.debug('Failed to restore chat status spinner:', error);
+            }
+            return;
+        }
+
+        try {
+            window.hideLocationOverlay?.();
+        } catch (error) {
+            console.debug('Failed to hide chat status spinner:', error);
         }
     }
 
@@ -5022,15 +5139,7 @@ class AIRPGChat {
         if (!requestId) {
             return;
         }
-        const element = this.streamingStatusElements.get(requestId);
-        if (element) {
-            element.remove();
-            this.streamingStatusElements.delete(requestId);
-        }
-        const context = this.pendingRequests.get(requestId);
-        if (context) {
-            context.statusElement = null;
-        }
+        this.hideRequestStatusSpinner(requestId);
     }
 
     init() {

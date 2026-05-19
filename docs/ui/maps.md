@@ -19,6 +19,7 @@ Rendered inside `#mapContainer` in the Map tab.
 - Region exits are rendered as separate "exit nodes" with an icon and dashed styling.
   - Only inbound vehicle region-exit nodes get a centered vehicle emoji overlay.
   - Outbound vehicle exits (leaving a vehicle context) keep the standard region-exit symbol and do not get a fallback car overlay when icon metadata is missing.
+  - Ordinary exits between locations inside the current vehicle region suppress the containing region vehicle icon, matching the Adventure exit list.
 - `loadRegionMap(regionId, options)` accepts focus options such as `destinationId` or `exitId`; after layout, the map centers the matching location node or `region-exit-<exitId>` bubble and applies the `map-focus` Cytoscape class.
 
 ### Interactions

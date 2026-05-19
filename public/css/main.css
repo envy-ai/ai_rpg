@@ -1,4 +1,5 @@
 @charset "UTF-8";
+@import url("https://fonts.googleapis.com/css2?family=Roboto:ital,wdth,wght@0,75..100,100..900;1,75..100,100..900&display=swap");
 * {
   margin: 0;
   padding: 0;
@@ -24,7 +25,9 @@
 }
 
 body {
-  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  font-family: "Roboto", "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  font-weight: 400;
+  font-variation-settings: "wdth" 100;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   height: 100vh;
   padding: 20px;
@@ -1105,7 +1108,7 @@ p:not(:last-child) {
   border: 1px solid transparent;
   border-radius: var(--app-header-control-radius);
   color: var(--app-header-text);
-  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  font-family: "Roboto", "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
   font-size: 0.88rem;
   font-weight: 700;
   letter-spacing: 0;
@@ -6093,7 +6096,7 @@ body.dark .thing-toggle-hint {
   resize: none;
   min-height: 50px;
   max-height: 150px;
-  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  font-family: "Roboto", "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
   transition: background 0.3s ease;
 }
 .message-input::placeholder {
@@ -6114,7 +6117,7 @@ body.dark .thing-toggle-hint {
   font-weight: bold;
   transition: background 0.3s ease;
   align-self: flex-end;
-  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  font-family: "Roboto", "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -6197,7 +6200,7 @@ body.dark .thing-toggle-hint {
   color: #ffffff;
   padding: 12px;
   border-radius: 8px;
-  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  font-family: "Roboto", "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
   resize: vertical;
 }
 .chat-edit-modal__footer {
@@ -6525,13 +6528,13 @@ body.dark .thing-toggle-hint {
 }
 
 .prompt-progress-dock__one-line-label {
-  flex: 1 1 auto;
-  max-width: 220px;
+  flex: 0 1 60%;
+  max-width: 60%;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   color: #f8fafc;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .prompt-progress-dock__one-line-row--idle .prompt-progress-dock__one-line-label {
@@ -6553,6 +6556,12 @@ body.dark .thing-toggle-hint {
   font-weight: 800;
 }
 
+@media (max-width: 900px) {
+  .prompt-progress-dock__one-line-label {
+    flex: 1 1 auto;
+    max-width: none;
+  }
+}
 .prompt-progress-dock--table .prompt-progress-table-wrap {
   max-height: calc(var(--prompt-progress-table-header-height) + var(--prompt-progress-table-row-height) * var(--prompt-progress-table-body-rows));
   overflow-y: auto;
@@ -6678,68 +6687,45 @@ body.dark .thing-toggle-hint {
 .prompt-progress-table .prompt-progress-cancel-header {
   width: 96px;
 }
-.prompt-progress-table .prompt-progress-actions {
+
+.prompt-progress-actions {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
 }
-.prompt-progress-table .prompt-progress-action:disabled {
+
+.prompt-progress-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  cursor: pointer;
+  line-height: 1;
+  transition: opacity 0.3s ease;
+}
+.prompt-progress-action:hover, .prompt-progress-action.is-active {
+  opacity: 1;
+}
+.prompt-progress-action:hover:not(:disabled) .prompt-progress-action__icon, .prompt-progress-action.is-active .prompt-progress-action__icon {
+  filter: brightness(0) invert(1) drop-shadow(0 0 4px rgba(255, 255, 255, 0.85));
+}
+.prompt-progress-action:disabled {
   cursor: not-allowed;
-  opacity: 0.45;
+  opacity: 0.35;
 }
-.prompt-progress-table .prompt-progress-cancel {
-  width: 22px;
-  height: 22px;
-  border-radius: 999px;
-  border: 1px solid rgba(248, 113, 113, 0.6);
-  background: transparent;
-  color: #f87171;
-  font-weight: bold;
-  cursor: pointer;
-  line-height: 1;
-  transition: background 0.3s ease;
-}
-.prompt-progress-table .prompt-progress-cancel:hover {
-  background: rgba(248, 113, 113, 0.15);
-  color: #fecaca;
-}
-.prompt-progress-table .prompt-progress-view {
-  width: 22px;
-  height: 22px;
-  border-radius: 999px;
-  border: 1px solid rgba(125, 211, 252, 0.65);
-  background: transparent;
-  color: #bae6fd;
-  font-size: 0.8rem;
-  cursor: pointer;
-  line-height: 1;
-  transition: background 0.3s ease;
-}
-.prompt-progress-table .prompt-progress-view:hover {
-  background: rgba(56, 189, 248, 0.16);
-  color: #e0f2fe;
-}
-.prompt-progress-table .prompt-progress-view.is-active {
-  background: rgba(14, 116, 144, 0.4);
-  border-color: rgba(103, 232, 249, 0.85);
-  color: #ecfeff;
-}
-.prompt-progress-table .prompt-progress-retry {
-  height: 22px;
-  padding: 0 8px;
-  border-radius: 999px;
-  border: 1px solid rgba(147, 197, 253, 0.7);
-  background: transparent;
-  color: #93c5fd;
-  font-size: 0.72rem;
-  font-weight: 600;
-  cursor: pointer;
-  line-height: 1;
-  transition: background 0.3s ease;
-}
-.prompt-progress-table .prompt-progress-retry:hover {
-  background: rgba(147, 197, 253, 0.14);
-  color: #dbeafe;
+
+.prompt-progress-action__icon {
+  width: 16px;
+  height: 16px;
+  display: block;
+  filter: brightness(0) invert(1);
+  transition: filter 140ms ease;
+  pointer-events: none;
 }
 
 .factions-panel {
@@ -7395,7 +7381,7 @@ body.dark .thing-toggle-hint {
   text-align: center;
   cursor: pointer;
   transition: background 0.3s ease;
-  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  font-family: "Roboto", "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
   display: inline-flex;
   align-items: center;
   gap: 8px;

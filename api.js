@@ -21976,11 +21976,9 @@ module.exports = function registerApiRoutes(scope) {
                         console.warn('Failed to schedule offscreen NPC activity prompt:', offscreenScheduleError.message);
                     }
 
-                    try {
-                        await summarizePendingEntriesIfThresholdReached();
-                    } catch (summaryBatchError) {
+                    void summarizePendingEntriesIfThresholdReached().catch((summaryBatchError) => {
                         console.warn('Failed to summarize pending chat entries:', summaryBatchError.message);
-                    }
+                    });
 
                     console.log(`Finalizing turns for all players (count: ${Globals.playersById.size})`);
                     Player.recordNpcSightingsForCurrentPlayer({
@@ -23038,6 +23036,69 @@ module.exports = function registerApiRoutes(scope) {
             });
         });
 
+        function parseQuestNpcDispositionRewardsInput(source) {
+            if (source === null || source === undefined || source === '') {
+                return [];
+            }
+
+            const parseStringSource = (text) => {
+                const lines = String(text)
+                    .split(/\r?\n/)
+                    .map(line => line.trim())
+                    .filter(Boolean);
+                const rewards = [];
+                for (const line of lines) {
+                    const lineMatch = line.match(/^(.+?)\s*[:=]\s*(.+)$/);
+                    if (!lineMatch) {
+                        throw new Error(
+                            `Invalid rewardNpcDispositions line "${line}". Use "NPC name: disposition type +/-intensity - reason".`,
+                        );
+                    }
+
+                    const npcName = lineMatch[1].trim();
+                    const dispositionParts = lineMatch[2]
+                        .split(';')
+                        .map(part => part.trim())
+                        .filter(Boolean);
+                    if (!npcName || !dispositionParts.length) {
+                        throw new Error(
+                            `Invalid rewardNpcDispositions line "${line}". Use "NPC name: disposition type +/-intensity - reason".`,
+                        );
+                    }
+
+                    const dispositions = dispositionParts.map(part => {
+                        const match = part.match(/^(.+?)\s+([+-]?\d+)(?:\s*(?:-|–|—)\s*(.+))?$/);
+                        if (!match) {
+                            throw new Error(
+                                `Invalid rewardNpcDispositions entry "${part}". Use "disposition type +/-intensity - reason".`,
+                            );
+                        }
+                        return {
+                            type: match[1].trim(),
+                            intensity: Number.parseInt(match[2], 10),
+                            reason: match[3] ? match[3].trim() : null
+                        };
+                    });
+
+                    rewards.push({
+                        npcName,
+                        dispositions
+                    });
+                }
+                return rewards;
+            };
+
+            const rawRewards = typeof source === 'string'
+                ? parseStringSource(source)
+                : source;
+
+            return Events._resolveQuestNpcDispositionRewards(rawRewards, {
+                findActorByName,
+                warn: console.warn,
+                contextLabel: 'Quest editor NPC disposition reward'
+            });
+        }
+
         app.post('/api/quest/edit', (req, res) => {
             if (!currentPlayer) {
                 return res.status(404).json({
@@ -23200,6 +23261,13 @@ module.exports = function registerApiRoutes(scope) {
 
                     throw new Error('rewardFactionReputation must be an object, array, map, or formatted string.');
                 })();
+                const rewardNpcDispositions = (() => {
+                    const hasInput = Object.prototype.hasOwnProperty.call(payload, 'rewardNpcDispositions');
+                    if (!hasInput) {
+                        return Quest.normalizeRewardNpcDispositions(quest.rewardNpcDispositions || []);
+                    }
+                    return parseQuestNpcDispositionRewardsInput(payload.rewardNpcDispositions);
+                })();
 
                 let updatedPaused = quest.paused;
                 if (Object.prototype.hasOwnProperty.call(payload, 'paused')) {
@@ -23239,6 +23307,7 @@ module.exports = function registerApiRoutes(scope) {
                 quest.rewardXp = updatedRewardXp;
                 quest.rewardItems = rewardItems;
                 quest.rewardFactionReputation = rewardFactionReputation;
+                quest.rewardNpcDispositions = rewardNpcDispositions;
                 if (updatedObjectives !== null) {
                     quest.objectives = updatedObjectives;
                 }
@@ -23781,6 +23850,49 @@ module.exports = function registerApiRoutes(scope) {
             return payload;
         }
 
+        function normalizeVehicleRegionIdForIconSuppression(value) {
+            if (typeof value !== 'string') {
+                return null;
+            }
+            const trimmed = value.trim();
+            return trimmed || null;
+        }
+
+        function shouldSuppressCurrentRegionVehicleIconCandidate({
+            sourceRegionId = null,
+            sourceRegionRepresentsVehicle = false,
+            destinationRegionId = null
+        } = {}) {
+            const normalizedSourceRegionId = normalizeVehicleRegionIdForIconSuppression(sourceRegionId);
+            const normalizedDestinationRegionId = normalizeVehicleRegionIdForIconSuppression(destinationRegionId);
+            return Boolean(
+                sourceRegionRepresentsVehicle
+                && normalizedSourceRegionId
+                && normalizedDestinationRegionId
+                && normalizedSourceRegionId === normalizedDestinationRegionId
+            );
+        }
+
+        function shouldSuppressCurrentRegionVehicleDestinationIcon({
+            sourceRegionId = null,
+            sourceRegionRepresentsVehicle = false,
+            destinationRegionId = null,
+            destinationLocationRepresentsVehicle = false,
+            pendingRegionRepresentsVehicle = false,
+            destinationStubRepresentsVehicle = false
+        } = {}) {
+            return Boolean(
+                shouldSuppressCurrentRegionVehicleIconCandidate({
+                    sourceRegionId,
+                    sourceRegionRepresentsVehicle,
+                    destinationRegionId
+                })
+                && !destinationLocationRepresentsVehicle
+                && !pendingRegionRepresentsVehicle
+                && !destinationStubRepresentsVehicle
+            );
+        }
+
         function getVehicleExitAvailabilityState(vehicleInfo, { contextLabel = 'Vehicle' } = {}) {
             if (!vehicleInfo || typeof vehicleInfo !== 'object' || Array.isArray(vehicleInfo)) {
                 return {
@@ -24239,6 +24351,19 @@ module.exports = function registerApiRoutes(scope) {
                                 ? destinationRegionRepresentsVehicle
                                 : (pendingRegionRepresentsVehicle || destinationStubRepresentsVehicle))
                             : destinationStubRepresentsVehicle);
+                    const suppressCurrentRegionVehicleIconCandidate = shouldSuppressCurrentRegionVehicleIconCandidate({
+                        sourceRegionId: resolvedRegionId,
+                        sourceRegionRepresentsVehicle: regionRepresentsVehicle,
+                        destinationRegionId
+                    });
+                    const suppressDestinationVehicleIcon = shouldSuppressCurrentRegionVehicleDestinationIcon({
+                        sourceRegionId: resolvedRegionId,
+                        sourceRegionRepresentsVehicle: regionRepresentsVehicle,
+                        destinationRegionId,
+                        destinationLocationRepresentsVehicle,
+                        pendingRegionRepresentsVehicle,
+                        destinationStubRepresentsVehicle
+                    });
                     const destinationVehicleType = (() => {
                         if (!destinationRepresentsVehicle) {
                             return null;
@@ -24309,9 +24434,12 @@ module.exports = function registerApiRoutes(scope) {
                     exit.destinationVehicleType = destinationVehicleType;
 
                     let vehicleIcon = null;
-                    if (destinationRepresentsVehicle) {
+                    if (destinationRepresentsVehicle && !suppressDestinationVehicleIcon) {
                         vehicleIcon = resolveVehicleIconFromInfo(destinationLocation?.vehicleInfo);
-                        if (!vehicleIcon && destinationRegionId && regions.has(destinationRegionId)) {
+                        if (!vehicleIcon
+                            && destinationRegionId
+                            && regions.has(destinationRegionId)
+                            && !suppressCurrentRegionVehicleIconCandidate) {
                             const destinationRegion = regions.get(destinationRegionId);
                             vehicleIcon = resolveVehicleIconFromInfo(destinationRegion?.vehicleInfo);
                         }
@@ -24337,7 +24465,7 @@ module.exports = function registerApiRoutes(scope) {
                         || isLocationVehicleOutbound
                     );
                     const isVehicleInbound = Boolean(exit.isVehicle && !sourceContextIsVehicle);
-                    if (!vehicleIcon && destinationRepresentsVehicle) {
+                    if (!vehicleIcon && destinationRepresentsVehicle && !suppressDestinationVehicleIcon) {
                         vehicleIcon = '🚗';
                     }
                     exit.vehicleIcon = vehicleIcon;
@@ -24357,7 +24485,9 @@ module.exports = function registerApiRoutes(scope) {
                             pendingRegionHasVehicleInfo: Boolean(pendingStub?.vehicleInfo),
                             destinationStubHasVehicleInfo: Boolean(destinationLocation?.stubMetadata?.vehicleInfo),
                             destinationRepresentsVehicle,
-                            destinationVehicleType: destinationVehicleType || null
+                            destinationVehicleType: destinationVehicleType || null,
+                            suppressCurrentRegionVehicleIconCandidate,
+                            suppressDestinationVehicleIcon
                         });
                     }
 
@@ -31878,6 +32008,19 @@ module.exports = function registerApiRoutes(scope) {
                             ? destinationRegionRepresentsVehicle
                             : (pendingRegionRepresentsVehicle || destinationStubRepresentsVehicle))
                         : destinationStubRepresentsVehicle);
+                const suppressCurrentRegionVehicleIconCandidate = shouldSuppressCurrentRegionVehicleIconCandidate({
+                    sourceRegionId,
+                    sourceRegionRepresentsVehicle,
+                    destinationRegionId
+                });
+                const suppressDestinationVehicleIcon = shouldSuppressCurrentRegionVehicleDestinationIcon({
+                    sourceRegionId,
+                    sourceRegionRepresentsVehicle,
+                    destinationRegionId,
+                    destinationLocationRepresentsVehicle,
+                    pendingRegionRepresentsVehicle,
+                    destinationStubRepresentsVehicle
+                });
                 const isLocationVehicleOutbound = Boolean(
                     locationRepresentsVehicle
                     && !sourceRegionRepresentsVehicle
@@ -31889,9 +32032,9 @@ module.exports = function registerApiRoutes(scope) {
                 );
                 isVehicleOutbound = Boolean(isVehicleOutbound || isLocationVehicleOutbound);
 
-                if (destinationRepresentsVehicle) {
+                if (destinationRepresentsVehicle && !suppressDestinationVehicleIcon) {
                     vehicleIcon = resolveVehicleIconFromInfoForMap(destinationLocation?.vehicleInfo);
-                    if (!vehicleIcon && destinationRegion) {
+                    if (!vehicleIcon && destinationRegion && !suppressCurrentRegionVehicleIconCandidate) {
                         vehicleIcon = resolveVehicleIconFromInfoForMap(destinationRegion?.vehicleInfo);
                     }
                     if (!vehicleIcon && destinationRegionId && pendingRegion) {
@@ -31901,7 +32044,7 @@ module.exports = function registerApiRoutes(scope) {
                         vehicleIcon = resolveVehicleIconFromInfoForMap(destinationLocation?.stubMetadata?.vehicleInfo);
                     }
                 }
-                if (!vehicleIcon && destinationRepresentsVehicle) {
+                if (!vehicleIcon && destinationRepresentsVehicle && !suppressDestinationVehicleIcon) {
                     vehicleIcon = '🚗';
                 }
 
@@ -31914,7 +32057,9 @@ module.exports = function registerApiRoutes(scope) {
                         destinationRegionId,
                         isVehicleOutbound,
                         isVehicleInbound,
-                        vehicleIcon: vehicleIcon || null
+                        vehicleIcon: vehicleIcon || null,
+                        suppressCurrentRegionVehicleIconCandidate,
+                        suppressDestinationVehicleIcon
                     });
                 }
 

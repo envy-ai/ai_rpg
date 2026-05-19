@@ -1112,6 +1112,10 @@
                         <textarea id="questEditRewardFactionReputation" name="rewardFactionReputation" rows="3"></textarea>
                     </div>
                     <div class="form-group">
+                        <label for="questEditRewardNpcDispositions">NPC Disposition Rewards (one per line: NPC name: disposition +/-intensity - reason)</label>
+                        <textarea id="questEditRewardNpcDispositions" name="rewardNpcDispositions" rows="3"></textarea>
+                    </div>
+                    <div class="form-group">
                         <div class="quest-edit-objective-header">
                             <label>Objectives</label>
                             <button type="button" id="questEditAddObjective" class="btn btn-secondary btn-sm">Add Objective</button>
@@ -10344,7 +10348,7 @@
             }
         }
 
-        function populateThingSlotOptions(selectedSlot = '') {
+        function populateThingSlotOptions(selectedSlot = '', { mode = 'edit' } = {}) {
             if (!thingEditSlotSelect) {
                 return;
             }
@@ -10364,7 +10368,7 @@
 
             const emptyOption = document.createElement('option');
             emptyOption.value = '';
-            emptyOption.textContent = 'Not equippable';
+            emptyOption.textContent = mode === 'create' ? 'Not specified' : 'Not equippable';
             thingEditSlotSelect.appendChild(emptyOption);
 
             slotTypes.forEach(slotType => {
@@ -10468,7 +10472,7 @@
                 thingEditItemDetailInput.value = detail;
             }
 
-            populateThingSlotOptions(thing?.slot || thing?.metadata?.slot || '');
+            populateThingSlotOptions(thing?.slot || thing?.metadata?.slot || '', { mode });
 
             if (thingEditLevelInput) {
                 const numericLevel = Number.parseInt(thing?.level, 10);
@@ -30152,6 +30156,7 @@
             const questEditRewardXp = document.getElementById('questEditRewardXp');
             const questEditRewardItems = document.getElementById('questEditRewardItems');
             const questEditRewardFactionReputation = document.getElementById('questEditRewardFactionReputation');
+            const questEditRewardNpcDispositions = document.getElementById('questEditRewardNpcDispositions');
             const questEditObjectives = document.getElementById('questEditObjectives');
             const questEditAddObjective = document.getElementById('questEditAddObjective');
             const questEditCancel = document.getElementById('questEditCancel');
@@ -30180,6 +30185,64 @@
                     })
                     .filter(Boolean);
             };
+
+            const normalizeQuestNpcDispositionRewards = (rawRewards) => {
+                if (!Array.isArray(rawRewards)) {
+                    return [];
+                }
+                return rawRewards
+                    .map(entry => {
+                        if (!entry || typeof entry !== 'object') {
+                            return null;
+                        }
+                        const npcName = typeof entry.npcName === 'string' && entry.npcName.trim()
+                            ? entry.npcName.trim()
+                            : (typeof entry.name === 'string' && entry.name.trim()
+                                ? entry.name.trim()
+                                : (typeof entry.npcId === 'string' && entry.npcId.trim() ? entry.npcId.trim() : ''));
+                        if (!npcName || !Array.isArray(entry.dispositions)) {
+                            return null;
+                        }
+                        const dispositions = entry.dispositions
+                            .map(disposition => {
+                                if (!disposition || typeof disposition !== 'object') {
+                                    return null;
+                                }
+                                const type = typeof disposition.type === 'string' ? disposition.type.trim() : '';
+                                const intensity = Number(disposition.intensity ?? disposition.amount ?? disposition.delta ?? disposition.value);
+                                if (!type || !Number.isFinite(intensity) || !Number.isInteger(intensity) || intensity === 0) {
+                                    return null;
+                                }
+                                return {
+                                    type,
+                                    intensity,
+                                    reason: typeof disposition.reason === 'string' && disposition.reason.trim()
+                                        ? disposition.reason.trim()
+                                        : null
+                                };
+                            })
+                            .filter(Boolean);
+                        if (!dispositions.length) {
+                            return null;
+                        }
+                        return {
+                            npcName,
+                            dispositions
+                        };
+                    })
+                    .filter(Boolean);
+            };
+
+            const formatQuestNpcDispositionRewards = (rawRewards) => normalizeQuestNpcDispositionRewards(rawRewards)
+                .map(entry => {
+                    const parts = entry.dispositions.map(disposition => {
+                        const signed = disposition.intensity > 0 ? `+${disposition.intensity}` : `${disposition.intensity}`;
+                        const reason = disposition.reason ? ` - ${disposition.reason}` : '';
+                        return `${disposition.type} ${signed}${reason}`;
+                    });
+                    return `${entry.npcName}: ${parts.join('; ')}`;
+                })
+                .join('\n');
 
             const resolveQuestFactionRewardName = (factionId) => {
                 const normalizedFactionId = normalizeFactionId(factionId);
@@ -30372,6 +30435,9 @@
                         .map(entry => `${entry.factionId}: ${entry.amount}`)
                         .join('\n');
                 }
+                if (questEditRewardNpcDispositions) {
+                    questEditRewardNpcDispositions.value = formatQuestNpcDispositionRewards(quest.rewardNpcDispositions || []);
+                }
 
                 if (questEditObjectives) {
                     questEditObjectives.innerHTML = '';
@@ -30424,11 +30490,13 @@
                 const rewardXp = Number.isFinite(quest.rewardXp) ? Math.max(0, quest.rewardXp) : 0;
                 const rewardItems = Array.isArray(quest.rewardItems) ? quest.rewardItems.filter(Boolean) : [];
                 const rewardFactionReputation = normalizeQuestFactionRewards(quest.rewardFactionReputation || {});
+                const rewardNpcDispositions = normalizeQuestNpcDispositionRewards(quest.rewardNpcDispositions || []);
                 const rewardParts = [];
                 if (rewardCurrency > 0) rewardParts.push(`${rewardCurrency} gold`);
                 if (rewardXp > 0) rewardParts.push(`${rewardXp} XP`);
                 if (rewardItems.length) rewardParts.push(`${rewardItems.length} item${rewardItems.length === 1 ? '' : 's'}`);
                 if (rewardFactionReputation.length) rewardParts.push(`${rewardFactionReputation.length} faction rep`);
+                if (rewardNpcDispositions.length) rewardParts.push(`${rewardNpcDispositions.length} NPC disposition${rewardNpcDispositions.length === 1 ? '' : 's'}`);
 
                 if (rewardParts.length) {
                     const rewardChip = document.createElement('span');
@@ -30502,7 +30570,7 @@
                     content.appendChild(objectiveSection);
                 }
 
-                if (rewardParts.length || rewardItems.length || rewardFactionReputation.length) {
+                if (rewardParts.length || rewardItems.length || rewardFactionReputation.length || rewardNpcDispositions.length) {
                     const rewardSection = document.createElement('div');
                     rewardSection.className = 'quest-rewards';
                     const heading = document.createElement('h4');
@@ -30531,6 +30599,15 @@
                         const signed = entry.amount > 0 ? `+${entry.amount}` : `${entry.amount}`;
                         item.textContent = `${signed} reputation (${resolveQuestFactionRewardName(entry.factionId)})`;
                         list.appendChild(item);
+                    });
+                    rewardNpcDispositions.forEach(entry => {
+                        entry.dispositions.forEach(disposition => {
+                            const item = document.createElement('li');
+                            const signed = disposition.intensity > 0 ? `+${disposition.intensity}` : `${disposition.intensity}`;
+                            const reason = disposition.reason ? ` - ${disposition.reason}` : '';
+                            item.textContent = `${entry.npcName}: ${disposition.type} ${signed}${reason}`;
+                            list.appendChild(item);
+                        });
                     });
 
                     rewardSection.appendChild(list);
@@ -30702,6 +30779,13 @@
                     .filter(Boolean);
             };
 
+            const gatherQuestNpcDispositionRewards = () => {
+                if (!questEditRewardNpcDispositions) {
+                    return questBeingEdited?.rewardNpcDispositions || [];
+                }
+                return questEditRewardNpcDispositions.value;
+            };
+
             if (questEditAddObjective) {
                 questEditAddObjective.addEventListener('click', (event) => {
                     event.preventDefault();
@@ -30746,6 +30830,7 @@
                         rewardFactionReputation: questEditRewardFactionReputation
                             ? questEditRewardFactionReputation.value
                             : (questBeingEdited.rewardFactionReputation || {}),
+                        rewardNpcDispositions: gatherQuestNpcDispositionRewards(),
                         objectives
                     };
 

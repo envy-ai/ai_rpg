@@ -7,6 +7,7 @@ const rootDir = path.join(__dirname, '..');
 const viewSource = fs.readFileSync(path.join(rootDir, 'views', 'index.njk'), 'utf8');
 const chatSource = fs.readFileSync(path.join(rootDir, 'public', 'js', 'chat.js'), 'utf8');
 const scssSource = fs.readFileSync(path.join(rootDir, 'public', 'css', 'main.scss'), 'utf8');
+const globalsSource = fs.readFileSync(path.join(rootDir, 'public', 'css', '_globals.scss'), 'utf8');
 
 test('prompt progress dock host is placed between chat log and input area', () => {
     const chatLogIndex = viewSource.indexOf('id="chatLog"');
@@ -42,6 +43,23 @@ test('prompt progress dock mode controls use compress and expand icons without a
     assert.doesNotMatch(chatSource, /cancelAllPromptsAndLoadLatestAutosave\(\{ triggerButton/);
 });
 
+test('prompt progress action buttons use white SVG icons on transparent chrome', () => {
+    assert.match(chatSource, /view:\s*'\/assets\/material-icons\/misc\/view_prompt\.svg'/);
+    assert.match(chatSource, /cancel:\s*'\/assets\/material-icons\/misc\/cancel\.svg'/);
+    assert.match(chatSource, /restart:\s*'\/assets\/material-icons\/misc\/restart\.svg'/);
+    assert.match(chatSource, /createPromptProgressActionIcon/);
+    assert.match(chatSource, /prompt-progress-action__icon/);
+    assert.doesNotMatch(chatSource, /viewButton\.textContent = '👁'/);
+    assert.doesNotMatch(chatSource, /cancelButton\.textContent = '🗙'/);
+    assert.doesNotMatch(chatSource, /retryButton\.textContent = '⟳'/);
+    assert.match(scssSource, /\.prompt-progress-action\s*\{[\s\S]*border:\s*0/);
+    assert.match(scssSource, /\.prompt-progress-action\s*\{[\s\S]*background:\s*transparent/);
+    assert.match(scssSource, /\.prompt-progress-actions\s*\{[\s\S]*gap:\s*2px/);
+    assert.match(scssSource, /\.prompt-progress-action\s*\{[\s\S]*&:hover,[\s\S]*&\.is-active\s*\{[\s\S]*opacity:\s*1/);
+    assert.match(scssSource, /\.prompt-progress-action__icon\s*\{[\s\S]*filter:\s*brightness\(0\) invert\(1\)/);
+    assert.match(scssSource, /&:hover:not\(:disabled\) \.prompt-progress-action__icon,[\s\S]*&\.is-active \.prompt-progress-action__icon\s*\{[\s\S]*drop-shadow\(0 0 4px rgba\(255, 255, 255, 0\.85\)\)/);
+});
+
 test('one-line prompt tracker uses the progress fill as row background with compact stats', () => {
     assert.match(chatSource, /prompt-progress-dock__one-line-fill/);
     assert.match(chatSource, /formatPromptProgressApproxPercent/);
@@ -63,6 +81,32 @@ test('one-line prompt tracker right-aligns white mode icons and softens idle sta
     assert.match(scssSource, /filter:\s*brightness\(0\) invert\(1\)/);
     assert.match(scssSource, /\.prompt-progress-dock__one-line-row--idle \.prompt-progress-dock__one-line-label/);
     assert.match(scssSource, /font-style:\s*italic/);
+});
+
+test('one-line prompt tracker puts prompt actions before the prompt label and shows additional prompt count', () => {
+    assert.match(chatSource, /createPromptProgressOneLine\(entry,\s*\{\s*runningCount = 0\s*\} = \{\}\)/);
+    assert.match(chatSource, /formatPromptProgressOneLineLabel\(entry,\s*runningCount\)/);
+    assert.match(chatSource, /\(and \$\{extraCount\} more\)/);
+    assert.ok(
+        chatSource.indexOf('content.appendChild(this.createPromptProgressActions(entry || {}, null));')
+            < chatSource.indexOf('content.appendChild(label);'),
+        'one-line prompt action buttons should render before the prompt label'
+    );
+});
+
+test('one-line prompt label uses a 60 percent desktop width with medium-bold weight', () => {
+    assert.match(scssSource, /\.prompt-progress-dock__one-line-label\s*\{[\s\S]*flex:\s*0 1 60%/);
+    assert.match(scssSource, /\.prompt-progress-dock__one-line-label\s*\{[\s\S]*max-width:\s*60%/);
+    assert.match(scssSource, /\.prompt-progress-dock__one-line-label\s*\{[\s\S]*font-weight:\s*600/);
+    assert.match(scssSource, /@media \(max-width: 900px\)[\s\S]*\.prompt-progress-dock__one-line-label\s*\{[\s\S]*flex:\s*1 1 auto/);
+});
+
+test('main styles import Roboto and use it as the default font at normal width and weight', () => {
+    assert.match(scssSource, /@import url\('https:\/\/fonts\.googleapis\.com\/css2\?family=Roboto:ital,wdth,wght@0,75\.\.100,100\.\.900;1,75\.\.100,100\.\.900&display=swap'\);/);
+    assert.match(globalsSource, /\$font-family:\s*"Roboto",/);
+    assert.match(scssSource, /body\s*\{[\s\S]*font-family:\s*\$font-family/);
+    assert.match(scssSource, /body\s*\{[\s\S]*font-weight:\s*400/);
+    assert.match(scssSource, /body\s*\{[\s\S]*font-variation-settings:\s*"wdth" 100/);
 });
 
 test('prompt progress dock styles completed entries with a single pulse', () => {

@@ -26227,7 +26227,7 @@ async function generateLocationFromPrompt(options = {}) {
 
         const npcsPromise = (async () => {
             try {
-                Globals.updateSpinnerText({ message: `Generating NPCs for location ${location.name || location.id}...` });
+                Globals.updateSpinnerText({ message: `Generating location ${location.name || location.id}...` });
                 return await generateLocationNPCs({
                     location,
                     systemPrompt,

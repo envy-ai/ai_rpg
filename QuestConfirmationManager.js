@@ -168,6 +168,38 @@ class QuestConfirmationManager {
 
         const rewardCurrency = Number.isFinite(quest.rewardCurrency) ? quest.rewardCurrency : 0;
         const rewardXp = Number.isFinite(quest.rewardXp) ? quest.rewardXp : 0;
+        const rewardNpcDispositions = mapArray(quest.rewardNpcDispositions, entry => {
+            if (!entry || typeof entry !== 'object') {
+                return null;
+            }
+            const npcName = safeString(entry.npcName || entry.name || entry.npcId || entry.id);
+            if (!npcName) {
+                return null;
+            }
+            const dispositions = mapArray(entry.dispositions, disposition => {
+                if (!disposition || typeof disposition !== 'object') {
+                    return null;
+                }
+                const type = safeString(disposition.type);
+                const intensity = Number(disposition.intensity ?? disposition.amount ?? disposition.delta ?? disposition.value);
+                if (!type || !Number.isFinite(intensity) || !Number.isInteger(intensity) || intensity === 0) {
+                    return null;
+                }
+                const reason = safeString(disposition.reason);
+                return {
+                    type,
+                    intensity,
+                    reason: reason || null
+                };
+            });
+            if (!dispositions.length) {
+                return null;
+            }
+            return {
+                npcName,
+                dispositions
+            };
+        });
 
         return {
             id: safeString(quest.id),
@@ -178,6 +210,7 @@ class QuestConfirmationManager {
             rewardCurrency,
             rewardXp,
             rewardItems,
+            rewardNpcDispositions,
             objectives
         };
     }

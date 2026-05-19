@@ -1,6 +1,8 @@
 // include _globals.scss
 @use "globals" as *;
 
+@import url('https://fonts.googleapis.com/css2?family=Roboto:ital,wdth,wght@0,75..100,100..900;1,75..100,100..900&display=swap');
+
 // Base styles
 * {
   margin: 0;
@@ -11,6 +13,8 @@
 
 body {
   font-family: $font-family;
+  font-weight: 400;
+  font-variation-settings: "wdth" 100;
   background: $primary-gradient;
   height: 100vh;
   padding: 20px;
@@ -7048,13 +7052,13 @@ body.dark .thing-toggle-hint {
 }
 
 .prompt-progress-dock__one-line-label {
-  flex: 1 1 auto;
-  max-width: 220px;
+  flex: 0 1 60%;
+  max-width: 60%;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   color: #f8fafc;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .prompt-progress-dock__one-line-row--idle .prompt-progress-dock__one-line-label {
@@ -7074,6 +7078,13 @@ body.dark .thing-toggle-hint {
   color: #fef3c7;
   font-size: 0.72rem;
   font-weight: 800;
+}
+
+@media (max-width: 900px) {
+  .prompt-progress-dock__one-line-label {
+    flex: 1 1 auto;
+    max-width: none;
+  }
 }
 
 .prompt-progress-dock--table .prompt-progress-table-wrap {
@@ -7196,80 +7207,51 @@ body.dark .thing-toggle-hint {
   .prompt-progress-cancel-header {
     width: 96px;
   }
+}
 
-  .prompt-progress-actions {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
+.prompt-progress-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.prompt-progress-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  cursor: pointer;
+  line-height: 1;
+  @include transition(opacity);
+
+  &:hover,
+  &.is-active {
+    opacity: 1;
   }
 
-  .prompt-progress-action {
-    &:disabled {
-      cursor: not-allowed;
-      opacity: 0.45;
-    }
+  &:hover:not(:disabled) .prompt-progress-action__icon,
+  &.is-active .prompt-progress-action__icon {
+    filter: brightness(0) invert(1) drop-shadow(0 0 4px rgba(255, 255, 255, 0.85));
   }
 
-  .prompt-progress-cancel {
-    width: 22px;
-    height: 22px;
-    border-radius: 999px;
-    border: 1px solid rgba(248, 113, 113, 0.6);
-    background: transparent;
-    color: #f87171;
-    font-weight: bold;
-    cursor: pointer;
-    line-height: 1;
-    @include transition(background);
-
-    &:hover {
-      background: rgba(248, 113, 113, 0.15);
-      color: #fecaca;
-    }
+  &:disabled {
+    cursor: not-allowed;
+    opacity: 0.35;
   }
+}
 
-  .prompt-progress-view {
-    width: 22px;
-    height: 22px;
-    border-radius: 999px;
-    border: 1px solid rgba(125, 211, 252, 0.65);
-    background: transparent;
-    color: #bae6fd;
-    font-size: 0.8rem;
-    cursor: pointer;
-    line-height: 1;
-    @include transition(background);
-
-    &:hover {
-      background: rgba(56, 189, 248, 0.16);
-      color: #e0f2fe;
-    }
-
-    &.is-active {
-      background: rgba(14, 116, 144, 0.4);
-      border-color: rgba(103, 232, 249, 0.85);
-      color: #ecfeff;
-    }
-  }
-
-  .prompt-progress-retry {
-    height: 22px;
-    padding: 0 8px;
-    border-radius: 999px;
-    border: 1px solid rgba(147, 197, 253, 0.7);
-    background: transparent;
-    color: #93c5fd;
-    font-size: 0.72rem;
-    font-weight: 600;
-    cursor: pointer;
-    line-height: 1;
-    @include transition(background);
-
-    &:hover {
-      background: rgba(147, 197, 253, 0.14);
-      color: #dbeafe;
-    }
-  }
+.prompt-progress-action__icon {
+  width: 16px;
+  height: 16px;
+  display: block;
+  filter: brightness(0) invert(1);
+  transition: filter 140ms ease;
+  pointer-events: none;
 }
 
 .factions-panel {

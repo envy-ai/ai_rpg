@@ -1,0 +1,32 @@
+Can any of the following mystery threads be considered resolved for now?
+
+Active mystery threads:
+{%- for thread in activeMysteryThreads %}
+- {{ thread.name }}
+{%- else %}
+- None
+{%- endfor %}
+
+{% if mysteryThreadCheckText %}
+<sourceText>{{ mysteryThreadCheckText }}</sourceText>
+{% endif %}
+{% if mysteryThreadCheckActionText %}
+<playerAction>{{ mysteryThreadCheckActionText }}</playerAction>
+{% endif %}
+
+Only name mystery threads from the active mystery thread list above. Use the exact listed name.
+
+If so, respond as follows:
+
+<resolvedMysteryThreads>
+  <mysteryThread>
+    <name><!-- exact name of the mystery thread --></name>
+    <reasoning><!-- one or two sentences about why this mystery thread can be considered resolved for now. --></reasoning>
+  </mysteryThread>
+  ... repeat for each resolved mystery thread ...
+</resolvedMysteryThreads>
+
+Otherwise, respond with:
+
+<resolvedMysteryThreads>
+</resolvedMysteryThreads>

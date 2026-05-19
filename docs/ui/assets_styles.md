@@ -3,6 +3,7 @@
 ## SCSS/CSS layout
 - `public/css/_globals.scss`
   - Color palette, gradient, font family, and mixins.
+  - The default font stack starts with Roboto; `main.scss` imports the Google Fonts Roboto variable family and sets the default body width axis to `100` and font weight to `400`.
   - Primary UI palette is defined here (glass background, primary blue, etc).
   - Shared app-header theme tokens live here, including the header surface, border, hover/action/active/accent colors, focus ring, muted text, control height/radius, and compact spacing.
 - `public/css/main.scss`
@@ -11,7 +12,8 @@
   - The app header renders a dark glass band with a crossed-swords brand crest, primary nav labels `Play`, `New Game`, `Worlds`, `Lorebooks`, `System`, a native `Tools` disclosure, and chat-only `Save` / `Load` actions. Tablet-width viewports move nav to a horizontally scrollable second row; phone-width viewports switch nav to a wrapping flex layout and render the open Tools menu as an embedded two-column panel so it stays inside the viewport.
   - The chat tab bar uses icon-only `.tab-button` controls with shared `.tab-button__icon` sizing, transparent button chrome, and a flush `.tab-bar` layout with no gap or bottom margin plus a subtle inset shadow.
   - Live skill/attack check chat bubbles use `.check-results-*` and `.check-result-*` classes for grouped rows, collapsed `<details>` summaries, status/error/cache-hit borders, and expanded detail bodies that reuse the existing skill/attack breakdown markup.
-  - The play-page spinner/status feedback uses `.chat-spinner-status-bar` between the prompt-progress dock and chat input. It is hidden by default, switches to `.is-visible` for flex layout, uses a small `.chat-spinner-status-bar__spinner`, italic text, and `pointer-events: none` so it does not block chat or sidebar interaction.
+  - The play-page spinner/status feedback uses `.chat-spinner-status-bar` between the prompt-progress dock and chat input. It is hidden by default, switches to `.is-visible` for flex layout, uses a small `.chat-spinner-status-bar__spinner`, italic text, and `pointer-events: none` so it does not block chat or sidebar interaction. Request-scoped chat progress text is routed into this same strip instead of using temporary loading bubbles.
+  - The one-line prompt-progress tracker places tightly spaced eye/cancel/retry controls before the prompt name, keeps those white SVG icons fully bright with a slight white glow on hover/active, gives the prompt name a 60% desktop flex basis with medium-bold weight, appends `(and N more)` when multiple prompts are running, and relaxes the label width on mobile.
   - The Adventure-tab location panel keeps the shared glass `.container` styling but overrides the nested `.location-block .container` shape so only the bottom-right corner remains rounded.
   - The main Adventure layout uses a flush `.chat-wrapper` with no inter-column gap.
   - The Adventure-tab `.chat-sidebar` outer panel also keeps only the bottom-right corner rounded.
@@ -35,7 +37,7 @@
 - `public/generated-images/` is the image output directory for entity images; persisted image IDs are displayed through `/api/images/:imageId/file` so PNG/JPEG/WebP/GIF files do not require extension-specific client URLs.
 - `public/icons/` stores static UI icon assets (for example, `sword-shield.svg`).
 - `assets/material-icons/app-nav-icons/` stores mask-friendly app-header icons for New Game, System, Tools, Save, Load, Debug, and Player Stats. App-header masks also reuse existing game-tab icons for Play, Worlds, and Lorebooks.
-- `assets/material-icons/misc/compress.svg` and `assets/material-icons/misc/expand.svg` are used by the docked prompt-progress tracker mode buttons and rendered as white right-aligned controls in the one-line state.
+- `assets/material-icons/misc/compress.svg` and `assets/material-icons/misc/expand.svg` are used by the docked prompt-progress tracker mode buttons and rendered as white right-aligned controls in the one-line state. `assets/material-icons/misc/view_prompt.svg`, `restart.svg`, and `cancel.svg` are used by the prompt row action buttons, rendered as white icons on transparent borderless buttons.
 - `public/js/image-manager.js` coordinates image job requests and updates.
 - `public/js/lightbox.js` provides the full-screen lightbox viewer.
 

@@ -410,6 +410,19 @@ test('mystery_box_mention update prompt can use mystery box search tool', async 
                 choices: [
                     {
                         message: {
+                            content: `<resolvedMysteryThreads>
+</resolvedMysteryThreads>`,
+                            tool_calls: []
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            data: {
+                choices: [
+                    {
+                        message: {
                             content: '',
                             tool_calls: [
                                 {
@@ -500,9 +513,9 @@ test('mystery_box_mention update prompt can use mystery box search tool', async 
             sourceEntryId: 'entry_8'
         });
 
-        assert.ok(toolNamesByRound[0].includes('findMysteryBoxes'));
-        assert.ok(toolNamesByRound[0].includes('getMysteryBox'));
-        assert.ok(toolNamesByRound[0].includes('listMysteryBoxes'));
+        assert.ok(toolNamesByRound.some((names) => names.includes('findMysteryBoxes')));
+        assert.ok(toolNamesByRound.some((names) => names.includes('getMysteryBox')));
+        assert.ok(toolNamesByRound.some((names) => names.includes('listMysteryBoxes')));
         const box = MysteryBox.getByKey('Omega-7 captain');
         assert.ok(box);
         assert.equal(box.name, 'Captain Ellison');
@@ -546,10 +559,19 @@ test('mystery_box_mention skips unrelated mentions when active thread capacity i
     });
 
     try {
-        LLMClient.chatCompletion = async () => `<mysteryBoxUpdate>
+        const responses = [
+            `<resolvedMysteryThreads>
+</resolvedMysteryThreads>`,
+            `<mysteryBoxUpdate>
   <action>skip</action>
   <reason>Active mystery thread capacity is full and this unrelated mention does not belong to any active thread.</reason>
-</mysteryBoxUpdate>`;
+</mysteryBoxUpdate>`
+        ];
+        LLMClient.chatCompletion = async () => {
+            const response = responses.shift();
+            assert.ok(response, 'Expected a queued LLM response.');
+            return response;
+        };
         LLMClient.logPrompt = () => {};
         Events.initialize({
             promptEnv: {
@@ -590,8 +612,10 @@ test('mystery_box_mention skips unrelated mentions when active thread capacity i
 
         assert.equal(MysteryBox.getAll().length, 0);
         assert.equal(MysteryThread.getAll().length, 1);
-        assert.equal(renderedContexts[0].mysteryThreadCapacityFull, true);
-        assert.equal(renderedContexts[0].mysteryThreadMaxActive, 1);
+        const updateContext = renderedContexts.find((context) => context.promptType === 'mystery-box-update');
+        assert.ok(updateContext);
+        assert.equal(updateContext.mysteryThreadCapacityFull, true);
+        assert.equal(updateContext.mysteryThreadMaxActive, 1);
     } finally {
         Events._deps = previousDeps;
         Events._baseTimeout = previousTimeout;
@@ -600,6 +624,224 @@ test('mystery_box_mention skips unrelated mentions when active thread capacity i
         Events._handlers = previousHandlers;
         LLMClient.chatCompletion = previousChatCompletion;
         LLMClient.logPrompt = previousLogPrompt;
+        MysteryBox.clear();
+        MysteryThread.clear();
+    }
+});
+
+test('mystery_box_mention runs mystery thread check before update and frees resolved active capacity', async () => {
+    const previousChatCompletion = LLMClient.chatCompletion;
+    const previousLogPrompt = LLMClient.logPrompt;
+    const previousDeps = Events._deps;
+    const previousTimeout = Events._baseTimeout;
+    const previousParsers = Events._parsers;
+    const previousAggregators = Events._aggregators;
+    const previousHandlers = Events._handlers;
+    const renderedContexts = [];
+    const loggedPrefixes = [];
+
+    IdGenerator.reset();
+    MysteryBox.clear();
+    MysteryThread.clear();
+    const resolvedThread = new MysteryThread({
+        name: 'Existing Active Thread',
+        status: 'active',
+        summary: 'A mystery that has now been answered.',
+        constraints: ['The culprit has confessed.']
+    });
+
+    const responses = [
+        `<resolvedMysteryThreads>
+  <mysteryThread>
+    <name>Existing Active Thread</name>
+    <reasoning>The culprit confessed on screen, so this no longer needs active continuity.</reasoning>
+  </mysteryThread>
+</resolvedMysteryThreads>`,
+        `<mysteryBoxUpdate>
+  <action>create</action>
+  <thread>
+    <name>New Signal</name>
+    <status>active</status>
+    <summary>The new signal points to a separate unresolved actor.</summary>
+    <constraints>
+      <constraint>The signal is unrelated to the resolved confession.</constraint>
+    </constraints>
+  </thread>
+  <name>New Signal</name>
+  <keys>
+    <key>signal</key>
+  </keys>
+  <text>The signal is a separate unresolved clue created after the older thread resolved.</text>
+</mysteryBoxUpdate>`
+    ];
+
+    try {
+        LLMClient.chatCompletion = async () => {
+            const response = responses.shift();
+            assert.ok(response, 'Expected a queued LLM response.');
+            return response;
+        };
+        LLMClient.logPrompt = (entry) => {
+            loggedPrefixes.push(entry?.prefix || null);
+        };
+        Events.initialize({
+            promptEnv: {
+                render: (template, context) => {
+                    renderedContexts.push({ template, context });
+                    return JSON.stringify(context);
+                }
+            },
+            parseXMLTemplate: (rendered) => ({
+                systemPrompt: 'system',
+                generationPrompt: rendered
+            }),
+            prepareBasePromptContext: async () => ({
+                setting: { name: 'Test Setting' }
+            }),
+            getConfig: () => ({ ai: {}, mystery_threads: { max_active: 1 } }),
+            getCurrentPlayer: () => ({ name: 'Wanderer' }),
+            findActorByName: () => null,
+            ensureNpcByName: async () => null
+        });
+
+        await Events.applyEventOutcomes({
+            rawEntries: {
+                mystery_box_mention: 'New Signal → The confession ends one mystery, but a fresh signal appears.'
+            },
+            parsed: {
+                mystery_box_mention: [
+                    {
+                        name: 'New Signal',
+                        context: 'The confession ends one mystery, but a fresh signal appears.'
+                    }
+                ]
+            }
+        }, {
+            textToCheck: 'The culprit confessed, then a new signal blinked from the sealed console.',
+            sourceEntryId: 'entry_thread_check'
+        });
+
+        assert.equal(resolvedThread.status, 'inactive');
+        const newThread = MysteryThread.getByKey('New Signal');
+        assert.ok(newThread);
+        assert.equal(newThread.status, 'active');
+        assert.equal(MysteryThread.getActive({ max: Number.MAX_SAFE_INTEGER }).length, 1);
+        assert.equal(renderedContexts[0].context.promptType, 'mystery-thread-check');
+        assert.deepEqual(
+            renderedContexts[0].context.activeMysteryThreads.map(thread => thread.name),
+            ['Existing Active Thread']
+        );
+        assert.equal(renderedContexts[1].context.promptType, 'mystery-box-update');
+        assert.equal(renderedContexts[1].context.mysteryThreadActiveCount, 0);
+        assert.equal(renderedContexts[1].context.mysteryThreadCapacityFull, false);
+        assert.equal(loggedPrefixes.includes('mystery_thread_check'), true);
+        assert.equal(loggedPrefixes.includes('mystery_box_update'), true);
+    } finally {
+        Events._deps = previousDeps;
+        Events._baseTimeout = previousTimeout;
+        Events._parsers = previousParsers;
+        Events._aggregators = previousAggregators;
+        Events._handlers = previousHandlers;
+        LLMClient.chatCompletion = previousChatCompletion;
+        LLMClient.logPrompt = previousLogPrompt;
+        MysteryBox.clear();
+        MysteryThread.clear();
+    }
+});
+
+test('mystery thread check warns and continues when resolved name does not match an active thread', async () => {
+    const previousChatCompletion = LLMClient.chatCompletion;
+    const previousLogPrompt = LLMClient.logPrompt;
+    const previousWarn = console.warn;
+    const previousDeps = Events._deps;
+    const previousTimeout = Events._baseTimeout;
+    const previousParsers = Events._parsers;
+    const previousAggregators = Events._aggregators;
+    const previousHandlers = Events._handlers;
+    const warnings = [];
+
+    IdGenerator.reset();
+    MysteryBox.clear();
+    MysteryThread.clear();
+    const activeThread = new MysteryThread({
+        name: 'Existing Active Thread',
+        status: 'active',
+        summary: 'Still unresolved.',
+        constraints: ['Keep this thread active.']
+    });
+
+    const responses = [
+        `<resolvedMysteryThreads>
+  <mysteryThread>
+    <name>Imaginary Thread</name>
+    <reasoning>The model named a thread that is not active.</reasoning>
+  </mysteryThread>
+</resolvedMysteryThreads>`,
+        `<mysteryBoxUpdate>
+  <action>skip</action>
+  <reason>Active mystery thread capacity is full and this unrelated mention does not belong to any active thread.</reason>
+</mysteryBoxUpdate>`
+    ];
+
+    try {
+        LLMClient.chatCompletion = async () => {
+            const response = responses.shift();
+            assert.ok(response, 'Expected a queued LLM response.');
+            return response;
+        };
+        LLMClient.logPrompt = () => {};
+        console.warn = (...args) => {
+            warnings.push(args.join(' '));
+        };
+        Events.initialize({
+            promptEnv: {
+                render: (_template, context) => JSON.stringify(context)
+            },
+            parseXMLTemplate: (rendered) => ({
+                systemPrompt: 'system',
+                generationPrompt: rendered
+            }),
+            prepareBasePromptContext: async () => ({
+                setting: { name: 'Test Setting' }
+            }),
+            getConfig: () => ({ ai: {}, mystery_threads: { max_active: 1 } }),
+            getCurrentPlayer: () => ({ name: 'Wanderer' }),
+            findActorByName: () => null,
+            ensureNpcByName: async () => null
+        });
+
+        await Events.applyEventOutcomes({
+            rawEntries: {
+                mystery_box_mention: 'Unrelated Clue → A new unrelated mystery appears.'
+            },
+            parsed: {
+                mystery_box_mention: [
+                    {
+                        name: 'Unrelated Clue',
+                        context: 'A new unrelated mystery appears.'
+                    }
+                ]
+            }
+        }, {
+            textToCheck: 'A new unrelated clue appears.',
+            sourceEntryId: 'entry_unknown_thread'
+        });
+
+        assert.equal(activeThread.status, 'active');
+        assert.equal(MysteryBox.getAll().length, 0);
+        assert.ok(
+            warnings.some((message) => /mystery thread check.*Imaginary Thread.*active thread/i.test(message)),
+            `Expected warning for unknown resolved thread name. Warnings: ${warnings.join('\n')}`
+        );
+    } finally {
+        Events._deps = previousDeps;
+        Events._baseTimeout = previousTimeout;
+        Events._parsers = previousParsers;
+        Events._aggregators = previousAggregators;
+        Events._handlers = previousHandlers;
+        LLMClient.chatCompletion = previousChatCompletion;
+        LLMClient.logPrompt = previousLogPrompt;
+        console.warn = previousWarn;
         MysteryBox.clear();
         MysteryThread.clear();
     }

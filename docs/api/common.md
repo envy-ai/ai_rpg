@@ -229,7 +229,7 @@ Extends `LocationDetails` with:
   - `destinationIsStub`, `destinationIsRegionEntryStub`, `destinationVisited`
   - `destinationIsVehicle` (boolean; derived only from destination location/region/pending-stub vehicle state, never from `exit.isVehicle`/`exit.vehicleType`)
   - `destinationVehicleType` (string | null; destination vehicle type hint when known; never inferred solely from `exit.vehicleType`)
-  - `vehicleIcon` (string | null; populated when the destination location/region is a vehicle; falls back to `🚗` when metadata is missing)
+  - `vehicleIcon` (string | null; populated when the destination location/region is a vehicle; falls back to `🚗` when metadata is missing; ordinary exits between locations inside the current vehicle region suppress that containing-region vehicle icon)
   - `isVehicleOutbound` (boolean; true when the current location context is a vehicle and the exit leaves it)
   - `isVehicleInbound` (boolean; true when the exit enters a vehicle destination from a non-vehicle context)
   - `relativeLevel` (when known)
@@ -285,6 +285,7 @@ Fields:
 - `objectives` (array of `{ id, description, completed, optional }`)
 - `rewardItems`, `rewardCurrency`, `rewardXp`
 - `rewardFactionReputation` (object map of `factionId -> integerDelta`, may include negative values)
+- `rewardNpcDispositions` (array of `{ npcId, npcName, dispositions: [{ type, intensity, reason }] }`)
 - `secretNotes`, `rewardClaimed`, `paused`
 - `giverId`, `giverName`, `giver`
 - `completed`
@@ -305,7 +306,7 @@ Fields:
   - `destinationName`, `bidirectional`, `isVehicle`, `vehicleType`
   - `isVehicle`/`vehicleType` describe the travel edge only; they do not imply destination vehicle status
   - `isVehicleOutbound`, `isVehicleInbound` (booleans)
-  - `vehicleIcon` (string | null; populated from destination vehicle metadata, or `🚗` fallback when destination is a vehicle but icon metadata is missing)
+  - `vehicleIcon` (string | null; populated from destination vehicle metadata, or `🚗` fallback when destination is a vehicle but icon metadata is missing; ordinary exits between locations inside the current vehicle region suppress that containing-region vehicle icon)
   - `destinationIsStub`, `destinationIsRegionEntryStub`, `destinationVisited`
   - vehicle exits tied to vehicle transit are omitted: boarding exits into a destination vehicle that is in transit or still finalizing arrival after `ETA`, and the active outside/disembark exit from a source vehicle in the same state
 - `image` (optional): `{ id, url }`
