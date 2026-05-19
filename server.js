@@ -50,6 +50,9 @@ const {
     formatSceneStartWorldTimeLabel,
     getCurrentWorldTimeSnapshotForHistoryEntry
 } = require('./history_time_labels.js');
+const {
+    shouldIncludeEntryInBaseContextHistory
+} = require('./base_context_history.js');
 const { getCurrencyLabel } = require('./public/js/currency-utils.js');
 const SanitizedStringSet = require('./SanitizedStringSet.js');
 const StatusEffect = require('./StatusEffect.js');
@@ -2409,6 +2412,17 @@ async function validateConfiguration() {
     }
     if (config.show_hidden_notes !== undefined && typeof config.show_hidden_notes !== 'boolean') {
         validationErrors.push('show_hidden_notes must be a boolean when provided');
+    }
+    if (config.chat_tools !== undefined) {
+        const chatToolsConfig = config.chat_tools;
+        if (!chatToolsConfig || typeof chatToolsConfig !== 'object' || Array.isArray(chatToolsConfig)) {
+            validationErrors.push('chat_tools must be an object when provided');
+        } else if (
+            chatToolsConfig.request_user_input_enabled !== undefined
+            && typeof chatToolsConfig.request_user_input_enabled !== 'boolean'
+        ) {
+            validationErrors.push('chat_tools.request_user_input_enabled must be a boolean when provided');
+        }
     }
     if (config.event_checks?.use_xml !== undefined && typeof config.event_checks.use_xml !== 'boolean') {
         validationErrors.push('event_checks.use_xml must be a boolean when provided');
@@ -5243,7 +5257,8 @@ function buildBasePromptContext({
     omitInventoryItems = null,
     omitAbilities = null,
     omitCraftHistory = null,
-    omitEventSummaryHistory = null
+    omitEventSummaryHistory = null,
+    includeAllHistoryEntryTypes = null
 } = {}) {
     const baseContextConfig = config?.base_context ?? null;
     if (baseContextConfig !== null && baseContextConfig !== undefined && typeof baseContextConfig !== 'object') {
@@ -5284,6 +5299,11 @@ function buildBasePromptContext({
         omitEventSummaryHistory,
         null,
         'buildBasePromptContext.omitEventSummaryHistory'
+    );
+    const shouldIncludeAllHistoryEntryTypes = resolveBooleanOption(
+        includeAllHistoryEntryTypes,
+        null,
+        'buildBasePromptContext.includeAllHistoryEntryTypes'
     );
     const activeSetting = getActiveSettingSnapshot();
     const settingDescription = describeSettingForPrompt(activeSetting);
@@ -6478,21 +6498,8 @@ function buildBasePromptContext({
         return stripEventSummaryTokenLines(joined);
     };
 
-    const shouldIncludeEntryInHistory = (entry) => {
-        if (!entry || entry.type === 'status-summary') {
-            return false;
-        }
-        const entryType = typeof entry.type === 'string' ? entry.type.trim().toLowerCase() : '';
-        if (entryType === 'level-up') {
-            return false;
-        }
-        if (shouldOmitEventSummaryHistory && entryType === 'event-summary') {
-            return false;
-        }
-        const metadata = entry.metadata && typeof entry.metadata === 'object'
-            ? entry.metadata
-            : null;
-        if (metadata?.excludeFromBaseContextHistory === true) {
+    const entryHasRenderableHistoryContent = (entry) => {
+        if (!entry || typeof entry !== 'object') {
             return false;
         }
         if (entry.content) {
@@ -6506,6 +6513,12 @@ function buildBasePromptContext({
         }
         return Boolean(formatEventSummaryEntry(entry));
     };
+
+    const shouldIncludeEntryInHistory = (entry) => shouldIncludeEntryInBaseContextHistory(entry, {
+        includeAllEntryTypes: shouldIncludeAllHistoryEntryTypes,
+        omitEventSummaryHistory: shouldOmitEventSummaryHistory,
+        hasRenderableContent: entryHasRenderableHistoryContent(entry)
+    });
 
     const relevantHistory = effectiveHistoryEntries.filter(shouldIncludeEntryInHistory);
 
@@ -7094,6 +7107,16 @@ function populateNpcSelectedMemoriesSync(baseContext) {
     const actors = [];
     const registerActor = (actor, groupLabel) => {
         if (!actor || typeof actor !== 'object') {
+            return;
+        }
+        if (actor.isDead === true) {
+            const important = sanitizeImportantMemories(actor.importantMemories
+                || actor.memories
+                || []);
+            actor.importantMemories = important;
+            const selectedCount = Math.min(maxMemories, important.length);
+            const selectedIndices = Array.from({ length: selectedCount }, (_, index) => index);
+            actor.selectedImportantMemories = createSelectedEntries(selectedIndices, important);
             return;
         }
         const actorId = actor.id || `${groupLabel}:${actor.name || ''}`.trim();

@@ -974,10 +974,29 @@ class Globals {
     const resolvedWasVisited = wasVisited === undefined
       ? Boolean(locationOrId && typeof locationOrId === 'object' && locationOrId.visited)
       : Boolean(wasVisited);
+    const lastVisitedTimeSource = typeof locationOrId === 'object' && locationOrId !== null
+      ? locationOrId.lastVisitedTime
+      : undefined;
+    const rawLastVisitedTime = typeof lastVisitedTimeSource === 'number'
+      ? lastVisitedTimeSource
+      : (
+        typeof lastVisitedTimeSource === 'string' && lastVisitedTimeSource.trim()
+          ? Number(lastVisitedTimeSource)
+          : NaN
+      );
+    const lastVisitedTime = Number.isFinite(rawLastVisitedTime)
+      ? rawLastVisitedTime
+      : null;
     if (!Globals._playerArrivalVisitStates.has(locationId)) {
-      Globals._playerArrivalVisitStates.set(locationId, resolvedWasVisited);
+      Globals._playerArrivalVisitStates.set(locationId, {
+        wasVisited: resolvedWasVisited,
+        lastVisitedTime
+      });
     }
-    return Globals._playerArrivalVisitStates.get(locationId);
+    const recordedState = Globals._playerArrivalVisitStates.get(locationId);
+    return typeof recordedState === 'object' && recordedState !== null
+      ? recordedState.wasVisited
+      : recordedState;
   }
 
   static getPlayerArrivalWasVisitedBeforeMove(locationOrId) {
@@ -987,9 +1006,29 @@ class Globals {
     if (!locationId) {
       return undefined;
     }
-    return Globals._playerArrivalVisitStates.has(locationId)
-      ? Globals._playerArrivalVisitStates.get(locationId)
-      : undefined;
+    if (!Globals._playerArrivalVisitStates.has(locationId)) {
+      return undefined;
+    }
+    const recordedState = Globals._playerArrivalVisitStates.get(locationId);
+    return typeof recordedState === 'object' && recordedState !== null
+      ? recordedState.wasVisited
+      : recordedState;
+  }
+
+  static getPlayerArrivalLastVisitedTimeBeforeMove(locationOrId) {
+    const locationId = typeof locationOrId === 'string'
+      ? locationOrId.trim()
+      : (typeof locationOrId?.id === 'string' ? locationOrId.id.trim() : '');
+    if (!locationId || !Globals._playerArrivalVisitStates.has(locationId)) {
+      return undefined;
+    }
+    const recordedState = Globals._playerArrivalVisitStates.get(locationId);
+    if (typeof recordedState !== 'object' || recordedState === null) {
+      return undefined;
+    }
+    return Number.isFinite(recordedState.lastVisitedTime)
+      ? recordedState.lastVisitedTime
+      : null;
   }
 
   static setInCombat(value) {

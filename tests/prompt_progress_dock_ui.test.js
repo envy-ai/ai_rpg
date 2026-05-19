@@ -94,11 +94,17 @@ test('one-line prompt tracker puts prompt actions before the prompt label and sh
     );
 });
 
-test('one-line prompt label uses a 60 percent desktop width with medium-bold weight', () => {
-    assert.match(scssSource, /\.prompt-progress-dock__one-line-label\s*\{[\s\S]*flex:\s*0 1 60%/);
+test('one-line prompt label uses a fixed 60 percent desktop width with medium-bold weight', () => {
+    assert.match(scssSource, /\.prompt-progress-dock\s*\{[\s\S]*min-width:\s*0/);
+    assert.match(scssSource, /\.prompt-progress-dock\s*\{[\s\S]*max-width:\s*100%/);
+    assert.match(scssSource, /\.prompt-progress-dock__one-line-content\s*\{[\s\S]*max-width:\s*100%/);
+    assert.match(scssSource, /\.prompt-progress-dock__one-line-content\s*\{[\s\S]*overflow:\s*hidden/);
+    assert.match(scssSource, /\.prompt-progress-dock__one-line-label\s*\{[\s\S]*flex:\s*0 0 60%/);
+    assert.match(scssSource, /\.prompt-progress-dock__one-line-label\s*\{[\s\S]*width:\s*60%/);
     assert.match(scssSource, /\.prompt-progress-dock__one-line-label\s*\{[\s\S]*max-width:\s*60%/);
     assert.match(scssSource, /\.prompt-progress-dock__one-line-label\s*\{[\s\S]*font-weight:\s*600/);
     assert.match(scssSource, /@media \(max-width: 900px\)[\s\S]*\.prompt-progress-dock__one-line-label\s*\{[\s\S]*flex:\s*1 1 auto/);
+    assert.match(scssSource, /@media \(max-width: 900px\)[\s\S]*\.prompt-progress-dock__one-line-label\s*\{[\s\S]*width:\s*auto/);
 });
 
 test('main styles import Roboto and use it as the default font at normal width and weight', () => {

@@ -231,7 +231,7 @@ const CHAT_TOOL_DEFINITIONS = Object.freeze([
         type: 'function',
         function: {
             name: 'getHistory',
-            description: 'Return all prose chat entries whose content contains every provided case-insensitive query substring.',
+            description: 'Return chat history entries whose content contains every provided case-insensitive query substring. Regular prompts search assistant prose-like entries; @, @@, and @@@ generic prompts search every stored chat log entry type.',
             parameters: {
                 type: 'object',
                 properties: {
@@ -272,6 +272,24 @@ const CHAT_TOOL_DEFINITIONS = Object.freeze([
                     }
                 },
                 required: ['sceneNumber'],
+                additionalProperties: false
+            }
+        }
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'requestUserInput',
+            description: 'Ask the player one direct question when the prompt cannot continue safely without additional information from the user.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    question: {
+                        type: 'string',
+                        description: 'The exact question to show to the player.'
+                    }
+                },
+                required: ['question'],
                 additionalProperties: false
             }
         }
@@ -1388,7 +1406,8 @@ const createChatToolRuntime = ({
     getGameLocations,
     getFactions,
     getRegionsMap,
-    getPendingRegionStubs
+    getPendingRegionStubs,
+    requestUserInput = null
 } = {}) => {
     ensureFunction(getConfig, 'getConfig');
     ensureFunction(getChatHistory, 'getChatHistory');
@@ -3620,7 +3639,7 @@ const createChatToolRuntime = ({
 
         const targetRegion = findRegionByLocationId(targetLocation.id) || null;
         const generated = await generateItemsByNames({
-            itemNames: [],
+            itemNames: requestedName ? [requestedName] : [],
             location: targetLocation,
             owner: null,
             region: targetRegion,
@@ -5673,7 +5692,8 @@ const createChatToolRuntime = ({
         query,
         startIndex = null,
         count = null,
-        includeFullContent = true
+        includeFullContent = true,
+        includeAllEntryTypes = false
     } = {}) => {
         const queries = normalizeHistoryQueries(query);
         const normalizedStartIndex = normalizeOptionalPositiveInteger(startIndex, 'startIndex');
@@ -5691,7 +5711,7 @@ const createChatToolRuntime = ({
             if (!entry || typeof entry !== 'object') {
                 continue;
             }
-            if (!isAssistantProseLikeEntry(entry)) {
+            if (!includeAllEntryTypes && !isAssistantProseLikeEntry(entry)) {
                 continue;
             }
             const content = typeof entry.content === 'string' ? entry.content : '';
@@ -5733,6 +5753,7 @@ const createChatToolRuntime = ({
         return {
             query: queries.length === 1 ? queries[0] : null,
             queries,
+            includeAllEntryTypes: Boolean(includeAllEntryTypes),
             totalMatches: matches.length,
             startIndex: effectiveStartIndex,
             count: normalizedCount,
@@ -5741,12 +5762,16 @@ const createChatToolRuntime = ({
         };
     };
 
-    const executeGetHistoryTool = ({ query, startIndex = null, count = null }) => {
+    const executeGetHistoryTool = (
+        { query, startIndex = null, count = null },
+        { includeAllEntryTypes = false } = {}
+    ) => {
         const historyResult = collectHistoryMatches({
             query,
             startIndex,
             count,
-            includeFullContent: true
+            includeFullContent: true,
+            includeAllEntryTypes
         });
         const lines = [
             '<historyResults>',
@@ -5784,6 +5809,7 @@ const createChatToolRuntime = ({
             metadata: {
                 query: historyResult.query,
                 queries: historyResult.queries,
+                includeAllEntryTypes: historyResult.includeAllEntryTypes,
                 startIndex: historyResult.startIndex,
                 count: historyResult.count,
                 returnedCount: historyResult.returnedCount,
@@ -6011,6 +6037,57 @@ const createChatToolRuntime = ({
                 returnedCount: sceneResult.entries.length,
                 entryIndexes: sceneResult.entries.map(entry => entry.historyIndex),
                 sceneEntryIndexes: sceneResult.entries.map(entry => entry.sceneEntryIndex)
+            }
+        };
+    };
+
+    const executeRequestUserInputTool = async (args = {}, { requestUserInputHandler = null } = {}) => {
+        const question = normalizeRequiredString(args.question, {
+            functionName: 'requestUserInput',
+            fieldName: 'question'
+        });
+        const handler = typeof requestUserInputHandler === 'function'
+            ? requestUserInputHandler
+            : (typeof requestUserInput === 'function' ? requestUserInput : null);
+        if (!handler) {
+            throw new ToolVisibleError(
+                'requestUserInput is unavailable for this prompt.',
+                { code: 'user_input_unavailable' }
+            );
+        }
+
+        let response = null;
+        try {
+            response = await handler({ question });
+        } catch (error) {
+            throw new ToolVisibleError(
+                error?.message || 'The player did not provide an answer.',
+                { code: toTrimmedString(error?.code) || 'user_input_unavailable' }
+            );
+        }
+
+        const answer = typeof response === 'string'
+            ? response.trim()
+            : toTrimmedString(response?.answer);
+        if (!answer) {
+            throw new ToolVisibleError(
+                'The player did not provide an answer.',
+                { code: 'user_input_empty' }
+            );
+        }
+
+        return {
+            content: [
+                '<userInputResponse>',
+                `  <question>${xmlEscapeText(question)}</question>`,
+                `  <answer>${xmlEscapeText(answer)}</answer>`,
+                '</userInputResponse>'
+            ].join('\n'),
+            metadata: {
+                functionName: 'requestUserInput',
+                requestId: toTrimmedString(response?.requestId) || null,
+                question,
+                answerLength: answer.length
             }
         };
     };
@@ -6257,7 +6334,15 @@ const createChatToolRuntime = ({
         )
     );
 
-    const executeChatToolCall = async (toolCall, { resultCache = null, defaultActorName = null } = {}) => {
+    const executeChatToolCall = async (
+        toolCall,
+        {
+            resultCache = null,
+            defaultActorName = null,
+            includeAllHistoryEntryTypes = false,
+            requestUserInputHandler = null
+        } = {}
+    ) => {
         if (!toolCall || typeof toolCall !== 'object') {
             throw new Error('Tool execution requires a tool call object.');
         }
@@ -6283,9 +6368,15 @@ const createChatToolRuntime = ({
             if (toolCall.functionName === 'moreInfo') {
                 toolResult = executeMoreInfoTool(argumentsObject);
             } else if (toolCall.functionName === 'getHistory') {
-                toolResult = executeGetHistoryTool(argumentsObject);
+                toolResult = executeGetHistoryTool(argumentsObject, {
+                    includeAllEntryTypes: includeAllHistoryEntryTypes
+                });
             } else if (toolCall.functionName === 'getFullScene') {
                 toolResult = executeGetFullSceneTool(argumentsObject);
+            } else if (toolCall.functionName === 'requestUserInput') {
+                toolResult = executeRequestUserInputTool(argumentsObject, {
+                    requestUserInputHandler
+                });
             } else if (toolCall.functionName === 'listMysteryBoxes') {
                 toolResult = executeListMysteryBoxesTool(argumentsObject);
             } else if (toolCall.functionName === 'findMysteryBoxes') {
@@ -6365,7 +6456,9 @@ const createChatToolRuntime = ({
         toolResultCache = null,
         onToolCallDebug = null,
         onToolCallEvent = null,
-        defaultToolActor = null
+        defaultToolActor = null,
+        includeAllHistoryEntryTypes = false,
+        requestUserInput: requestUserInputHandler = null
     }) => {
         if (!requestOptions || typeof requestOptions !== 'object') {
             throw new Error('runChatCompletionWithToolLoop requires requestOptions.');
@@ -6570,7 +6663,12 @@ const createChatToolRuntime = ({
                 try {
                     toolResult = toolCallsExhausted
                         ? buildToolCallAttemptsExhaustedResult(toolCall.functionName, maxRounds)
-                        : await executeChatToolCall(toolCall, { resultCache, defaultActorName });
+                        : await executeChatToolCall(toolCall, {
+                            resultCache,
+                            defaultActorName,
+                            includeAllHistoryEntryTypes,
+                            requestUserInputHandler
+                        });
                     if (!toolResult || typeof toolResult.content !== 'string' || !toolResult.content.trim()) {
                         throw new Error(`Tool "${toolCall.functionName}" returned empty content.`);
                     }

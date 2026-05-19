@@ -59,3 +59,45 @@ test('async disposition summaries aggregate per memory batch', () => {
 
     assert.match(source, /label = safeActorName[\s\S]*'📋 Events – Disposition Check'/);
 });
+
+test('npc memory prompt scheduling skips dead actors', () => {
+    const source = fs.readFileSync(require.resolve('../api.js'), 'utf8');
+    const promptSource = getApiFunctionSource(
+        source,
+        'async function runNpcMemoriesPrompt',
+        '\n        async function generateNpcMemoriesForLocationChange'
+    );
+    const locationChangeSource = getApiFunctionSource(
+        source,
+        'async function generateNpcMemoriesForLocationChange',
+        '\n        async function processPartyMemoriesForCurrentTurn'
+    );
+    const currentTurnSource = getApiFunctionSource(
+        source,
+        'async function processPartyMemoriesForCurrentTurn',
+        '\n        function schedulePartyMemoriesForCurrentTurn'
+    );
+
+    assert.ok(
+        promptSource.indexOf('!isNpcMemoryPromptEligible(npc)')
+            > promptSource.indexOf('async function runNpcMemoriesPrompt'),
+        'Expected npc-memories prompt helper to reject dead NPCs before preparing prompt context'
+    );
+    assert.ok(
+        promptSource.indexOf('!isNpcMemoryPromptEligible(npc)')
+            < promptSource.indexOf('prepareBasePromptContext({ locationOverride })'),
+        'Expected dead-NPC guard before base-context prompt preparation'
+    );
+
+    assert.match(locationChangeSource, /!isNpcMemoryPromptEligible\(actor\)/);
+    assert.equal(
+        countMatches(locationChangeSource, /!isNpcMemoryPromptEligible\(member\)/g),
+        2,
+        'Expected current and departed party-member memory loops to skip dead actors on location changes'
+    );
+    assert.equal(
+        countMatches(currentTurnSource, /!isNpcMemoryPromptEligible\(member\)/g),
+        2,
+        'Expected current and departed party-member memory loops to skip dead actors during current-turn processing'
+    );
+});

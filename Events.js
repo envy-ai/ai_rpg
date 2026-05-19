@@ -2176,6 +2176,54 @@ class Events {
         return sceneItemNames;
     }
 
+    static _findSceneThingByExactName(location, name, eventLabel = "item_appear") {
+        const resolvedLocation = this.resolveLocationCandidate(location);
+        if (!resolvedLocation) {
+            throw new Error(
+                `[${eventLabel}] Cannot compare new items against scene contents without a valid location.`,
+            );
+        }
+        const sceneThings = resolvedLocation.things;
+        if (!Array.isArray(sceneThings)) {
+            throw new Error(
+                `[${eventLabel}] Location things are unavailable for duplicate checks.`,
+            );
+        }
+        const normalizedName = normalizeString(name).toLowerCase();
+        if (!normalizedName) {
+            return null;
+        }
+        return sceneThings.find((thing) => (
+            thing
+            && typeof thing.name === "string"
+            && thing.name.trim().toLowerCase() === normalizedName
+        )) || null;
+    }
+
+    static _addQuantityToSceneThingStack(thing, quantity) {
+        if (!thing) {
+            return false;
+        }
+        if (!Number.isInteger(quantity) || quantity <= 0) {
+            throw new Error(
+                `_addQuantityToSceneThingStack requires a positive integer quantity; got "${quantity}".`,
+            );
+        }
+
+        const updatedCount = this._getThingCount(thing) + quantity;
+        thing.count = updatedCount;
+
+        const metadata = thing.metadata && typeof thing.metadata === "object"
+            ? thing.metadata
+            : {};
+        thing.metadata = {
+            ...metadata,
+            count: updatedCount,
+        };
+
+        return true;
+    }
+
     static _enqueueFollowupEventCheck(text, followupQueue = null) {
         const startOftext = typeof text === "string" ? text.slice(0, 20) : "";
         console.log(`Enqueuing follow-up event check for: ${startOftext}...`);
@@ -8798,16 +8846,54 @@ class Events {
                     await Promise.all(tasks);
                 }
             },
-            transfer_item: function (entries = [], context = {}) {
+            transfer_item: async function (entries = [], context = {}) {
                 if (!Array.isArray(entries) || !entries.length) {
                     return;
                 }
-                const { findActorByName } = this._deps;
+                const { findActorByName, generateItemsByNames } = this._deps;
                 if (typeof findActorByName !== "function") {
                     throw new Error(
                         "transfer_item handler requires findActorByName dependency.",
                     );
                 }
+
+                const mergeCandidates = (...candidateGroups) => {
+                    const seen = new Set();
+                    const merged = [];
+                    candidateGroups.flat().forEach((thing) => {
+                        if (!thing) {
+                            return;
+                        }
+                        const key = thing.id || thing;
+                        if (seen.has(key)) {
+                            return;
+                        }
+                        seen.add(key);
+                        merged.push(thing);
+                    });
+                    return merged;
+                };
+                const getAvailableQuantity = (candidates = []) => candidates.reduce(
+                    (total, candidate) => total + this._getThingCount(candidate),
+                    0,
+                );
+                const markReceiverOwnership = (thing, receiverActor) => {
+                    const metadata = { ...(thing.metadata || {}) };
+                    if (receiverActor?.id) {
+                        metadata.ownerId = receiverActor.id;
+                    }
+                    delete metadata.ownerID;
+                    delete metadata.owner_id;
+                    delete metadata.inventoryOwnerId;
+                    delete metadata.barterOwnerId;
+                    delete metadata.containerId;
+                    delete metadata.containerID;
+                    delete metadata.container_id;
+                    delete metadata.locationId;
+                    delete metadata.locationID;
+                    delete metadata.location_id;
+                    thing.metadata = metadata;
+                };
 
                 for (const entry of entries) {
                     const giver = entry.giver ? findActorByName(entry.giver) : null;
@@ -8828,20 +8914,84 @@ class Events {
                         continue;
                     }
 
-                    const candidates = this._findThingsByExactName(entry.item, {
+                    const originalItemName = entry.item;
+                    let candidates = this._findThingsByExactName(originalItemName, {
                         owner: giver,
                     });
+                    let availableQuantity = getAvailableQuantity(candidates);
+                    if (availableQuantity < quantity && context.location) {
+                        const locationCandidates = this._findThingsByExactName(
+                            originalItemName,
+                            {
+                                location: context.location,
+                                unownedOnly: true,
+                            },
+                        );
+                        candidates = mergeCandidates(candidates, locationCandidates);
+                        availableQuantity = getAvailableQuantity(candidates);
+                    }
+
+                    if (availableQuantity < quantity) {
+                        if (typeof generateItemsByNames !== "function") {
+                            throw new Error(
+                                "transfer_item handler requires generateItemsByNames dependency to create missing transferred items.",
+                            );
+                        }
+                        const shortfall = quantity - availableQuantity;
+                        const generatedItems = await generateItemsByNames({
+                            itemNames: [originalItemName],
+                            owner: giver,
+                        });
+                        const generatedThing = Array.isArray(generatedItems)
+                            ? generatedItems.find((candidate) => candidate?.name === originalItemName) || generatedItems[0] || null
+                            : null;
+                        if (!generatedThing) {
+                            throw new Error(
+                                `Unable to generate item "${originalItemName}" for transfer_item.`,
+                            );
+                        }
+                        const finalItemName = this._getGeneratedThingFinalName(
+                            generatedThing,
+                            {
+                                requestedName: originalItemName,
+                                eventKey: "transfer_item",
+                            },
+                        );
+                        if (finalItemName !== originalItemName) {
+                            entry.originalItem = entry.item;
+                            entry.item = finalItemName;
+                        }
+                        generatedThing.count = shortfall;
+                        const generatedCandidates = this._findThingsByExactName(
+                            finalItemName,
+                            {
+                                owner: giver,
+                                preferredThing: generatedThing,
+                            },
+                        );
+                        candidates = mergeCandidates(
+                            candidates,
+                            generatedCandidates,
+                            [generatedThing],
+                        );
+                    }
+
                     const selectedThings = this._extractThingQuantityFromCandidates(
                         candidates,
                         quantity,
                         { itemName: entry.item, eventKey: "transfer_item" },
                     );
                     selectedThings.forEach((thing) => {
-                        receiver.addInventoryItem(thing);
-                        thing.metadata = {
-                            ...(thing.metadata || {}),
-                            ownerId: receiver.id,
-                        };
+                        giver.removeInventoryItem(thing, { suppressNpcEquip: true });
+                        const added = receiver.addInventoryItem(thing, {
+                            suppressNpcEquip: true,
+                        });
+                        if (added === false) {
+                            throw new Error(
+                                `transfer_item could not add "${thing?.name || entry.item}" to "${receiver.name || entry.receiver}".`,
+                            );
+                        }
+                        markReceiverOwnership(thing, receiver);
                     });
                     if (entry.item) {
                         this.obtainedItems.add(entry.item);
@@ -9135,11 +9285,26 @@ class Events {
                 );
                 const filteredItems = items.filter((entry) => {
                     const name = typeof entry?.name === "string" ? entry.name.trim() : "";
-                    return (
-                        !!name &&
-                        !this._isItemAlreadyTracked(name) &&
-                        !sceneItemNames.has(name)
-                    );
+                    if (!name || this._isItemAlreadyTracked(name)) {
+                        return false;
+                    }
+                    if (sceneItemNames.has(name)) {
+                        const quantity = parseRequiredEventQuantity(entry?.quantity, {
+                            eventKey: "item_appear",
+                            entryText: JSON.stringify(entry),
+                        });
+                        const existingThing = this._findSceneThingByExactName(
+                            context.location,
+                            name,
+                            "item_appear",
+                        );
+                        if (existingThing) {
+                            this._addQuantityToSceneThingStack(existingThing, quantity);
+                            this._trackGeneratedItemNames(name, name);
+                        }
+                        return false;
+                    }
+                    return true;
                 });
 
                 if (!filteredItems.length) {

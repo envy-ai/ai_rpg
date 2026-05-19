@@ -17,6 +17,10 @@ dispositions:
   # Multiplies the first disposition delta applied to an NPC with no existing nonzero disposition toward the current player.
   first_impression_multiplier: 3
 
+chat_tools:
+  # Allows LLM chat-tool prompts to ask the player one direct follow-up question through a non-modal client panel.
+  request_user_input_enabled: true
+
 # OpenAI-compatible API configuration
 ai:
   # Text generation backend:
@@ -512,8 +516,8 @@ plot_expander_prompt_frequency: 10
 mystery_threads:
   max_active: 3
 
-# Minimum in-game time separation, in minutes, before the blocking while-you-were-away
-# reunion prompt runs when the player arrives at an NPC's location.
+# Minimum in-game time since the destination was last visited, in minutes, before
+# the blocking while-you-were-away reunion prompt runs when the player returns.
 while_you_were_away_threshold_minutes: 30
 
 base_context:

@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { randomUUID } = require('crypto');
 const Player = require('./Player.js');
 const Thing = require('./Thing.js');
 const { getCurrencyLabel } = require('./public/js/currency-utils.js');
@@ -37,6 +38,7 @@ const INFORMATION_GATHERING_CHAT_TOOL_NAMES = new Set([
     'moreInfo',
     'getHistory',
     'getFullScene',
+    'requestUserInput',
     'listMysteryBoxes',
     'findMysteryBoxes',
     'getMysteryBox',
@@ -140,6 +142,28 @@ function isRegularProseChatToolAllowed(functionName) {
         return false;
     }
     return true;
+}
+
+function isRequestUserInputToolEnabled() {
+    return Globals.config?.chat_tools?.request_user_input_enabled !== false;
+}
+
+function filterEnabledChatTools({ allowWorldMutationTools = false } = {}) {
+    return CHAT_TOOL_DEFINITIONS.filter(toolDefinition => {
+        const functionName = typeof toolDefinition?.function?.name === 'string'
+            ? toolDefinition.function.name.trim()
+            : '';
+        if (!functionName) {
+            return false;
+        }
+        if (functionName === 'requestUserInput' && !isRequestUserInputToolEnabled()) {
+            return false;
+        }
+        if (allowWorldMutationTools) {
+            return true;
+        }
+        return isRegularProseChatToolAllowed(functionName);
+    });
 }
 
 function normalizeNewExitSummaryText(value) {
@@ -1134,6 +1158,162 @@ module.exports = function registerApiRoutes(scope) {
                     return emit('chat_error', payload);
                 }
             };
+        }
+
+        const pendingPlayerInputRequests = new Map();
+
+        function createPlayerInputError(message, code = 'user_input_error') {
+            const error = new Error(message);
+            error.code = code;
+            return error;
+        }
+
+        function resolvePlayerInputTimeoutMs() {
+            const configured = Number(baseTimeoutMilliseconds);
+            return Number.isFinite(configured) && configured > 0
+                ? configured
+                : 300000;
+        }
+
+        function finishPlayerInputRequest(inputRequestId, outcome = {}) {
+            const id = typeof inputRequestId === 'string' ? inputRequestId.trim() : '';
+            if (!id) {
+                return false;
+            }
+            const pending = pendingPlayerInputRequests.get(id);
+            if (!pending) {
+                return false;
+            }
+            pendingPlayerInputRequests.delete(id);
+            if (pending.timeoutId) {
+                clearTimeout(pending.timeoutId);
+            }
+            if (realtimeHub && typeof realtimeHub.emit === 'function') {
+                realtimeHub.emit(
+                    pending.clientId,
+                    'player_input_request_closed',
+                    {
+                        inputRequestId: id,
+                        requestId: pending.requestId || null,
+                        reason: outcome.reason || (outcome.error ? 'error' : 'answered')
+                    }
+                );
+            }
+            if (outcome.error) {
+                pending.reject(outcome.error);
+            } else {
+                pending.resolve({
+                    answer: outcome.answer,
+                    requestId: id
+                });
+            }
+            return true;
+        }
+
+        function cancelPendingPlayerInputRequests(predicate, message, code = 'user_input_cancelled') {
+            const matcher = typeof predicate === 'function' ? predicate : () => true;
+            let cancelled = 0;
+            for (const [inputRequestId, pending] of Array.from(pendingPlayerInputRequests.entries())) {
+                if (!matcher(pending)) {
+                    continue;
+                }
+                const error = createPlayerInputError(message, code);
+                if (finishPlayerInputRequest(inputRequestId, {
+                    error,
+                    reason: 'cancelled'
+                })) {
+                    cancelled += 1;
+                }
+            }
+            return cancelled;
+        }
+
+        function requestPlayerInputFromClient({ stream = null, promptLabel = 'chat', question = '' } = {}) {
+            if (!isRequestUserInputToolEnabled()) {
+                throw createPlayerInputError(
+                    'requestUserInput is disabled by configuration.',
+                    'user_input_disabled'
+                );
+            }
+            const targetClientId = typeof stream?.clientId === 'string' ? stream.clientId.trim() : '';
+            if (!targetClientId) {
+                throw createPlayerInputError(
+                    'requestUserInput requires an active client id.',
+                    'user_input_unavailable'
+                );
+            }
+            if (!realtimeHub || typeof realtimeHub.emit !== 'function') {
+                throw createPlayerInputError(
+                    'requestUserInput requires realtime client messaging.',
+                    'user_input_unavailable'
+                );
+            }
+            const questionText = typeof question === 'string' ? question.trim() : '';
+            if (!questionText) {
+                throw createPlayerInputError(
+                    'requestUserInput requires a non-empty question.',
+                    'invalid_arguments'
+                );
+            }
+
+            const inputRequestId = randomUUID();
+            const targetRequestId = typeof stream?.requestId === 'string' && stream.requestId.trim()
+                ? stream.requestId.trim()
+                : null;
+            const timeoutMs = resolvePlayerInputTimeoutMs();
+
+            return new Promise((resolve, reject) => {
+                const timeoutId = setTimeout(() => {
+                    finishPlayerInputRequest(inputRequestId, {
+                        error: createPlayerInputError(
+                            'Timed out waiting for player response.',
+                            'user_input_timeout'
+                        ),
+                        reason: 'timeout'
+                    });
+                }, timeoutMs);
+                pendingPlayerInputRequests.set(inputRequestId, {
+                    clientId: targetClientId,
+                    requestId: targetRequestId,
+                    promptLabel: typeof promptLabel === 'string' && promptLabel.trim()
+                        ? promptLabel.trim()
+                        : 'chat',
+                    question: questionText,
+                    resolve,
+                    reject,
+                    timeoutId
+                });
+
+                const didEmit = realtimeHub.emit(
+                    targetClientId,
+                    'player_input_request',
+                    {
+                        inputRequestId,
+                        requestId: targetRequestId,
+                        promptLabel: typeof promptLabel === 'string' && promptLabel.trim()
+                            ? promptLabel.trim()
+                            : 'chat',
+                        question: questionText,
+                        timeoutMs
+                    }
+                );
+                if (!didEmit) {
+                    pendingPlayerInputRequests.delete(inputRequestId);
+                    clearTimeout(timeoutId);
+                    reject(createPlayerInputError(
+                        'No active tab is connected for requestUserInput.',
+                        'user_input_unavailable'
+                    ));
+                }
+            });
+        }
+
+        function createRequestUserInputHandler({ stream = null, promptLabel = 'chat' } = {}) {
+            return ({ question }) => requestPlayerInputFromClient({
+                stream,
+                promptLabel,
+                question
+            });
         }
 
         async function resolvePendingPlayerAbilitySelection({ ensureOptionsForNext = false } = {}) {
@@ -5494,7 +5674,8 @@ module.exports = function registerApiRoutes(scope) {
             parentEntryId = null,
             returnEntries = false,
             stream = null,
-            locationWasVisitedBeforeArrival = undefined
+            locationWasVisitedBeforeArrival = undefined,
+            locationLastVisitedTimeBeforeArrival = undefined
         } = {}) {
             const resolvedLocation = locationOverride
                 || (typeof currentPlayer?.currentLocation === 'string' && currentPlayer.currentLocation.trim()
@@ -5537,18 +5718,51 @@ module.exports = function registerApiRoutes(scope) {
                     : null;
             }
 
-            const baseContext = await prepareBasePromptContext({ locationOverride: resolvedLocation });
-            const allCandidates = Array.isArray(baseContext?.whileYouWereAwayNpcs)
-                ? baseContext.whileYouWereAwayNpcs
-                : [];
+            let resolvedLocationLastVisitedTimeBeforeArrival = locationLastVisitedTimeBeforeArrival;
+            if (resolvedLocationLastVisitedTimeBeforeArrival === undefined
+                && resolvedLocationIdForVisitCheck
+                && typeof Globals?.getPlayerArrivalLastVisitedTimeBeforeMove === 'function') {
+                resolvedLocationLastVisitedTimeBeforeArrival = Globals.getPlayerArrivalLastVisitedTimeBeforeMove(resolvedLocationIdForVisitCheck);
+            }
             const rawThreshold = Number(config?.while_you_were_away_threshold_minutes);
             const whileYouWereAwayThresholdMinutes = Number.isInteger(rawThreshold) && rawThreshold >= 0
                 ? rawThreshold
                 : 30;
-            const candidates = allCandidates.filter(candidate => (
-                Number.isInteger(candidate?.lastSeenAgeMinutes)
-                && candidate.lastSeenAgeMinutes >= whileYouWereAwayThresholdMinutes
-            ));
+            const rawLastVisitedTime = typeof resolvedLocationLastVisitedTimeBeforeArrival === 'number'
+                ? resolvedLocationLastVisitedTimeBeforeArrival
+                : (
+                    typeof resolvedLocationLastVisitedTimeBeforeArrival === 'string'
+                        && resolvedLocationLastVisitedTimeBeforeArrival.trim()
+                        ? Number(resolvedLocationLastVisitedTimeBeforeArrival)
+                        : NaN
+                );
+            if (whileYouWereAwayThresholdMinutes > 0 && Number.isFinite(rawLastVisitedTime)) {
+                const rawCurrentTime = Number.isFinite(Number(Globals?.elapsedTime))
+                    ? Number(Globals.elapsedTime)
+                    : (
+                        Number.isFinite(Number(currentPlayer?.elapsedTime))
+                            ? Number(currentPlayer.elapsedTime)
+                            : (typeof Globals?.getTotalWorldMinutes === 'function' ? Number(Globals.getTotalWorldMinutes()) : NaN)
+                    );
+                if (Number.isFinite(rawCurrentTime)
+                    && rawCurrentTime - rawLastVisitedTime < whileYouWereAwayThresholdMinutes) {
+                    return returnEntries
+                        ? {
+                            hiddenEntry: null,
+                            visibleEntry: null,
+                            eventResult: null,
+                            skipped: true,
+                            skipReason: 'recent_location_visit'
+                        }
+                        : null;
+                }
+            }
+
+            const baseContext = await prepareBasePromptContext({ locationOverride: resolvedLocation });
+            const allCandidates = Array.isArray(baseContext?.whileYouWereAwayNpcs)
+                ? baseContext.whileYouWereAwayNpcs
+                : [];
+            const candidates = allCandidates;
             const promptBaseContext = {
                 ...baseContext,
                 whileYouWereAwayNpcs: candidates
@@ -16832,8 +17046,10 @@ module.exports = function registerApiRoutes(scope) {
             }
         };
 
+        const isNpcMemoryPromptEligible = actor => Boolean(actor && actor.isDead !== true);
+
         async function runNpcMemoriesPrompt({ npc, historyEntries = [], locationOverride = null, totalPrompts = 1 } = {}) {
-            if (!npc || !Array.isArray(historyEntries) || !historyEntries.length) {
+            if (!isNpcMemoryPromptEligible(npc) || !Array.isArray(historyEntries) || !historyEntries.length) {
                 return { raw: '', memory: null, goals: null, dispositions: [] };
             }
 
@@ -17178,7 +17394,7 @@ module.exports = function registerApiRoutes(scope) {
 
             for (const actorId of candidateIds) {
                 const actor = players.get(actorId);
-                if (!actor) {
+                if (!actor || !isNpcMemoryPromptEligible(actor)) {
                     continue;
                 }
 
@@ -17233,7 +17449,7 @@ module.exports = function registerApiRoutes(scope) {
             if (Array.isArray(partyMemberIds) && partyMemberIds.length && partyInterval) {
                 for (const memberId of partyMemberIds) {
                     const member = players.get(memberId);
-                    if (!member || typeof member.incrementTurnsSincePartyMemoryGeneration !== 'function') {
+                    if (!member || !isNpcMemoryPromptEligible(member) || typeof member.incrementTurnsSincePartyMemoryGeneration !== 'function') {
                         continue;
                     }
 
@@ -17325,7 +17541,7 @@ module.exports = function registerApiRoutes(scope) {
             if (isNonEventTravel && Array.isArray(removedPartyMemberIds) && removedPartyMemberIds.length && partyInterval) {
                 for (const memberId of removedPartyMemberIds) {
                     const member = players.get(memberId);
-                    if (!member || !member.partyMembershipChangedThisTurn) {
+                    if (!member || !isNpcMemoryPromptEligible(member) || !member.partyMembershipChangedThisTurn) {
                         continue;
                     }
 
@@ -17488,7 +17704,7 @@ module.exports = function registerApiRoutes(scope) {
             if (Array.isArray(partyMemberIds) && partyMemberIds.length) {
                 for (const memberId of partyMemberIds) {
                     const member = players.get ? players.get(memberId) : null;
-                    if (!member || typeof member.incrementTurnsSincePartyMemoryGeneration !== 'function') {
+                    if (!member || !isNpcMemoryPromptEligible(member) || typeof member.incrementTurnsSincePartyMemoryGeneration !== 'function') {
                         continue;
                     }
 
@@ -17582,7 +17798,7 @@ module.exports = function registerApiRoutes(scope) {
             if (partyInterval && Array.isArray(removedPartyMemberIds) && removedPartyMemberIds.length) {
                 for (const memberId of removedPartyMemberIds) {
                     const member = players.get ? players.get(memberId) : null;
-                    if (!member || typeof member.getPartyMemoryHistorySegments !== 'function') {
+                    if (!member || !isNpcMemoryPromptEligible(member) || typeof member.getPartyMemoryHistorySegments !== 'function') {
                         continue;
                     }
 
@@ -17922,12 +18138,7 @@ module.exports = function registerApiRoutes(scope) {
                 if (Number.isFinite(repetitionPenalty) && repetitionPenalty > 0) {
                     additionalPayload.repetition_penalty = repetitionPenalty;
                 }
-                const enabledChatTools = CHAT_TOOL_DEFINITIONS.filter(toolDefinition => {
-                    const functionName = typeof toolDefinition?.function?.name === 'string'
-                        ? toolDefinition.function.name.trim()
-                        : '';
-                    return isRegularProseChatToolAllowed(functionName);
-                });
+                const enabledChatTools = filterEnabledChatTools();
                 if (enabledChatTools.length > 0) {
                     additionalPayload.tools = enabledChatTools;
                     additionalPayload.tool_choice = 'auto';
@@ -17988,6 +18199,10 @@ module.exports = function registerApiRoutes(scope) {
                         metadataLabel: aiMetricsLabel,
                         toolResultCache,
                         defaultToolActor: actor.name || null,
+                        requestUserInput: createRequestUserInputHandler({
+                            stream,
+                            promptLabel: aiMetricsLabel
+                        }),
                         onToolCallEvent: event => checkResultsRecorder.record(event),
                         onToolCallDebug: toolCallDebugRecorder
                             ? event => toolCallDebugRecorder.record(event)
@@ -18753,6 +18968,85 @@ module.exports = function registerApiRoutes(scope) {
             }
         }
 
+        app.post('/api/chat/user-input-response', (req, res) => {
+            try {
+                const body = req.body && typeof req.body === 'object' ? req.body : {};
+                const inputRequestId = typeof body.inputRequestId === 'string'
+                    ? body.inputRequestId.trim()
+                    : '';
+                const clientId = typeof body.clientId === 'string'
+                    ? body.clientId.trim()
+                    : '';
+                if (!inputRequestId) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'inputRequestId is required.'
+                    });
+                }
+                if (!clientId) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'clientId is required.'
+                    });
+                }
+
+                const pending = pendingPlayerInputRequests.get(inputRequestId);
+                if (!pending) {
+                    return res.status(404).json({
+                        success: false,
+                        error: 'Player input request was not found.'
+                    });
+                }
+                if (clientId !== pending.clientId) {
+                    return res.status(403).json({
+                        success: false,
+                        error: 'Player input request does not belong to this client.'
+                    });
+                }
+
+                if (body.cancelled === true) {
+                    finishPlayerInputRequest(inputRequestId, {
+                        error: createPlayerInputError(
+                            'The player cancelled the request for more information.',
+                            'user_input_cancelled'
+                        ),
+                        reason: 'cancelled'
+                    });
+                    return res.json({
+                        success: true,
+                        cancelled: true
+                    });
+                }
+
+                if (typeof body.answer !== 'string') {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'answer must be a string.'
+                    });
+                }
+                const answer = body.answer.trim();
+                if (!answer) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'answer must be non-empty.'
+                    });
+                }
+
+                finishPlayerInputRequest(inputRequestId, {
+                    answer,
+                    reason: 'answered'
+                });
+                return res.json({
+                    success: true
+                });
+            } catch (error) {
+                return res.status(500).json({
+                    success: false,
+                    error: error?.message || 'Failed to submit player input response.'
+                });
+            }
+        });
+
         // Chat API endpoint
         app.post('/api/chat', async (req, res) => {
             const requestBody = req.body || {};
@@ -19192,6 +19486,9 @@ module.exports = function registerApiRoutes(scope) {
                 const locationWasVisitedBeforeArrival = typeof Globals.getPlayerArrivalWasVisitedBeforeMove === 'function'
                     ? Globals.getPlayerArrivalWasVisitedBeforeMove(arrivalLocation.id)
                     : undefined;
+                const locationLastVisitedTimeBeforeArrival = typeof Globals.getPlayerArrivalLastVisitedTimeBeforeMove === 'function'
+                    ? Globals.getPlayerArrivalLastVisitedTimeBeforeMove(arrivalLocation.id)
+                    : undefined;
                 return runWhileYouWereAwayPrompt({
                     locationOverride: arrivalLocation,
                     originLocationId: initialPlayerLocationId,
@@ -19199,7 +19496,8 @@ module.exports = function registerApiRoutes(scope) {
                     entryCollector: newChatEntries,
                     parentEntryId,
                     stream,
-                    locationWasVisitedBeforeArrival
+                    locationWasVisitedBeforeArrival,
+                    locationLastVisitedTimeBeforeArrival
                 });
             };
 
@@ -20091,7 +20389,10 @@ module.exports = function registerApiRoutes(scope) {
                         stream.status('player_action:prompt', 'Building prompt for AI response.');
                         const baseContext = isNoContextPromptAction
                             ? null
-                            : await prepareBasePromptContext({ locationOverride: location });
+                            : await prepareBasePromptContext({
+                                locationOverride: location,
+                                includeAllHistoryEntryTypes: isGenericPromptAction && !isNoContextPromptAction
+                            });
                         const templateName = isNoContextPromptAction
                             ? 'generic-prompt-nocontext.xml.njk'
                             : 'base-context.xml.njk';
@@ -20530,14 +20831,7 @@ module.exports = function registerApiRoutes(scope) {
                 const allowWorldMutationTools = Boolean(isGenericPromptAction && !isNoContextPromptAction);
                 const enabledChatTools = isNoContextPromptAction
                     ? []
-                    : (allowWorldMutationTools
-                        ? CHAT_TOOL_DEFINITIONS
-                        : CHAT_TOOL_DEFINITIONS.filter(toolDefinition => {
-                            const functionName = typeof toolDefinition?.function?.name === 'string'
-                                ? toolDefinition.function.name.trim()
-                                : '';
-                            return isRegularProseChatToolAllowed(functionName);
-                        }));
+                    : filterEnabledChatTools({ allowWorldMutationTools });
                 if (Array.isArray(enabledChatTools) && enabledChatTools.length > 0) {
                     additionalPayload.tools = enabledChatTools;
                     additionalPayload.tool_choice = 'auto';
@@ -20601,6 +20895,11 @@ module.exports = function registerApiRoutes(scope) {
                         streamEmitter: stream,
                         metadataLabel: promptMetadataLabel,
                         toolResultCache,
+                        includeAllHistoryEntryTypes: allowWorldMutationTools,
+                        requestUserInput: createRequestUserInputHandler({
+                            stream,
+                            promptLabel: promptMetadataLabel
+                        }),
                         onToolCallEvent: event => checkResultsRecorder.record(event),
                         onToolCallDebug: toolCallDebugRecorder
                             ? event => toolCallDebugRecorder.record(event)
@@ -20746,6 +21045,11 @@ module.exports = function registerApiRoutes(scope) {
                                         streamEmitter: stream,
                                         metadataLabel: `${promptMetadataLabel}_rerun`,
                                         toolResultCache,
+                                        includeAllHistoryEntryTypes: allowWorldMutationTools,
+                                        requestUserInput: createRequestUserInputHandler({
+                                            stream,
+                                            promptLabel: `${promptMetadataLabel}_rerun`
+                                        }),
                                         onToolCallEvent: event => checkResultsRecorder.record(event),
                                         onToolCallDebug: toolCallDebugRecorder
                                             ? event => toolCallDebugRecorder.record(event)
@@ -26411,6 +26715,9 @@ module.exports = function registerApiRoutes(scope) {
                         returnEntries: true,
                         locationWasVisitedBeforeArrival: typeof Globals.getPlayerArrivalWasVisitedBeforeMove === 'function'
                             ? Globals.getPlayerArrivalWasVisitedBeforeMove(destinationLocation.id)
+                            : undefined,
+                        locationLastVisitedTimeBeforeArrival: typeof Globals.getPlayerArrivalLastVisitedTimeBeforeMove === 'function'
+                            ? Globals.getPlayerArrivalLastVisitedTimeBeforeMove(destinationLocation.id)
                             : undefined
                     });
 
@@ -31765,6 +32072,9 @@ module.exports = function registerApiRoutes(scope) {
                     returnEntries: true,
                     locationWasVisitedBeforeArrival: typeof Globals.getPlayerArrivalWasVisitedBeforeMove === 'function'
                         ? Globals.getPlayerArrivalWasVisitedBeforeMove(destinationLocation.id)
+                        : undefined,
+                    locationLastVisitedTimeBeforeArrival: typeof Globals.getPlayerArrivalLastVisitedTimeBeforeMove === 'function'
+                        ? Globals.getPlayerArrivalLastVisitedTimeBeforeMove(destinationLocation.id)
                         : undefined
                 });
                 const travelSummaryParentEntry = whileYouWereAwayResult?.visibleEntry
@@ -32367,6 +32677,40 @@ module.exports = function registerApiRoutes(scope) {
                     ? (gameLocations.get(locationId) || (typeof Location.get === 'function' ? Location.get(locationId) : null))
                     : null;
                 const resolvedLocationId = requireLocationId(locationRecord?.id || locationId, 'crafting action');
+                const locationThingIds = new Set(Array.isArray(locationRecord?.thingIds) ? locationRecord.thingIds : []);
+                const isThingInCurrentPlayerInventory = (thing) => (
+                    Boolean(thing)
+                    && typeof currentPlayer.hasInventoryItem === 'function'
+                    && currentPlayer.hasInventoryItem(thing)
+                );
+                const isThingInCurrentLocation = (thing) => {
+                    if (!thing?.id) {
+                        return false;
+                    }
+                    if (locationThingIds.has(thing.id)) {
+                        return true;
+                    }
+                    const metadataLocationId = typeof thing.metadata?.locationId === 'string'
+                        ? thing.metadata.locationId.trim()
+                        : '';
+                    return Boolean(metadataLocationId && metadataLocationId === resolvedLocationId);
+                };
+                for (const { thing } of slotItems) {
+                    const inPlayerInventory = isThingInCurrentPlayerInventory(thing);
+                    const inCurrentLocation = isThingInCurrentLocation(thing);
+                    if (!inPlayerInventory && !inCurrentLocation) {
+                        return res.status(400).json({
+                            success: false,
+                            error: `${thing.name || thing.id} is not in the current player's inventory or current location.`
+                        });
+                    }
+                    if (inPlayerInventory && Boolean(thing?.isEquipped || thing?.equippedSlot)) {
+                        return res.status(400).json({
+                            success: false,
+                            error: `${thing.name || thing.id} must be unequipped before it can be used for crafting.`
+                        });
+                    }
+                }
                 const resolvedRegion = locationRecord?.regionId && regions instanceof Map
                     ? regions.get(locationRecord.regionId) || null
                     : (Globals.region || null);
@@ -41341,6 +41685,14 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 const cancellation = LLMClient.cancelAllPrompts('Prompt canceled by user (cancel-all).');
+                const clientId = typeof body.clientId === 'string' && body.clientId.trim()
+                    ? body.clientId.trim()
+                    : null;
+                const cancelledInputRequestCount = cancelPendingPlayerInputRequests(
+                    clientId ? pending => pending.clientId === clientId : null,
+                    'Prompt canceled by user.',
+                    'user_input_cancelled'
+                );
                 let drain = null;
                 if (waitForDrain) {
                     drain = await LLMClient.waitForPromptDrain({ timeoutMs });
@@ -41354,7 +41706,10 @@ module.exports = function registerApiRoutes(scope) {
                     waitForDrain,
                     timeoutMs,
                     cancellation,
-                    drain
+                    drain,
+                    playerInputRequests: {
+                        cancelledCount: cancelledInputRequestCount
+                    }
                 });
             } catch (error) {
                 const message = error?.message || 'Failed to cancel prompts.';
@@ -41377,11 +41732,25 @@ module.exports = function registerApiRoutes(scope) {
                     });
                 }
 
+                const body = req.body && typeof req.body === 'object' ? req.body : {};
+                const clientId = typeof body.clientId === 'string' && body.clientId.trim()
+                    ? body.clientId.trim()
+                    : null;
                 LLMClient.cancelPrompt(promptId);
+                const cancelledInputRequestCount = clientId
+                    ? cancelPendingPlayerInputRequests(
+                        pending => pending.clientId === clientId,
+                        'Prompt canceled by user.',
+                        'user_input_cancelled'
+                    )
+                    : 0;
 
                 return res.json({
                     success: true,
-                    message: 'Prompt cancelled.'
+                    message: 'Prompt cancelled.',
+                    playerInputRequests: {
+                        cancelledCount: cancelledInputRequestCount
+                    }
                 });
             } catch (error) {
                 const message = error?.message || 'Failed to cancel prompt.';

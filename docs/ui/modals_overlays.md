@@ -5,6 +5,7 @@ Most modals live in `views/index.njk` and are wired up by the inline script or `
 ## Global overlays and status
 
 - `#chatSpinnerStatusBar`: non-modal inline status strip rendered in the chat column between `#promptProgressDock` and `.input-area`. It is hidden when idle, shows the same text that the old play-page spinner overlay would have shown, and uses a small spinner to the left of italicized status text. `window.showLocationOverlay(message)` and `window.hideLocationOverlay()` now update this strip instead of showing a blocking backdrop, so normal interface interaction remains available. Request-scoped `chat_status` progress text also uses this strip, replacing the former temporary `AI Game Master` loading bubbles; prompt-excluded result/debug entries such as `check-results`, `tool-call-debug`, and pending `npc-action` still render as chat entries.
+- `#playerInputRequestPanel`: non-modal floating panel used by the `requestUserInput` chat tool. The server emits `player_input_request` to the prompt request's `clientId`, so every open tab with that client id shows the same question; posting an answer or cancellation to `/api/chat/user-input-response` closes it across those tabs. The panel has no backdrop, keeps `aria-modal="false"`, does not add `body.modal-open`, sits above the rest of the interface, and can be dragged by its header so the player can inspect other UI before answering.
 - Prompt-progress dock (`#promptProgressDock`, rendered in `views/index.njk` between `#chatLog` and `.input-area`, controlled by `public/js/chat.js`):
   - Auto-closes `#loadGameModal` before showing prompt activity.
   - Persists its state in `localStorage` under `airpg:promptProgressDockState`, defaulting to `one-line`.
@@ -41,7 +42,7 @@ Most modals live in `views/index.njk` and are wired up by the inline script or `
 ## Quest editing
 
 - `#questEditModal` + `#questEditBackdrop`
-- Edits quest name, description, rewards, objectives.
+- Edits quest name, description, rewards, objectives. Item, faction reputation, and NPC disposition rewards use repeatable row editors; faction rows use faction selectors, and NPC disposition rows use NPC selectors plus disposition-type dropdowns from configured disposition definitions, with existing values preserved when option loading fails or a custom saved type is not in the definitions. NPC disposition reward reasons occupy a full-width second row.
 - Save uses `/api/quest/edit`.
 
 ## Faction creation
@@ -104,7 +105,7 @@ Most modals live in `views/index.njk` and are wired up by the inline script or `
 
 ## Crafting / processing
 
-- `#craftingModal`: drag-and-drop crafting UI for craft/process and `Modify Location`; craft, process, and location modification submits may run with no selected slot items when the player is relying on the station, location, abilities, or notes.
+- `#craftingModal`: drag-and-drop crafting UI for craft/process and `Modify Location`; craft and process show an available-items picker that combines active player inventory with current-location items, while `Modify Location` still uses optional selected player-inventory materials/tools. Craft, process, and location modification submits may run with no selected slot items when the player is relying on the station, location, abilities, or notes.
 - `#salvageIntentModal`: optional prompt before salvage; salvage and harvest still require exactly one target item.
 
 ## Save/load

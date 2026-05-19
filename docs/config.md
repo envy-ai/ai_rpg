@@ -76,6 +76,17 @@ dispositions:
 
 Disposition types, ranges, icons, and threshold labels still live in `defs/dispositions.yaml` plus mod defs overlays. The multiplier is loaded from merged config instead, so `config.yaml`, `--config-override`, and per-game YAML overrides can tune it without editing defs. The value must be a finite number when provided.
 
+## Chat tools
+
+`chat_tools.request_user_input_enabled` controls whether LLM chat-tool prompts can ask the player one direct follow-up question through the realtime UI.
+
+```yaml
+chat_tools:
+  request_user_input_enabled: true
+```
+
+The value defaults to `true` and must be a boolean when provided. When disabled, `requestUserInput` is removed from regular and generic chat-tool payloads.
+
 ## Event Checks
 
 `event_checks.enabled` controls whether narrative event processing runs at all. When it is `false`, prose does not mutate world state through event checks and quest completion checks are skipped.
@@ -801,9 +812,9 @@ plot_expander_prompt_frequency: 10
 - Runs use the base-context `plot-expander` include and store hidden `plot-expander` entries.
 - The latest `plot-expander` output is injected into base-context as `<plotExpander>` immediately after `<plotSummary>`.
 
-## While-you-were-away NPC update threshold
+## While-you-were-away location revisit threshold
 
-`while_you_were_away_threshold_minutes` controls which current-location NPCs are listed for individual updates when the blocking `while-you-were-away` prompt runs after the player arrives at a previously visited destination. First-time/unvisited destination arrivals skip the prompt entirely. The prompt itself still runs for previously visited arrivals even when no NPCs meet the threshold, so it can produce location-return prose.
+`while_you_were_away_threshold_minutes` controls whether the blocking `while-you-were-away` prompt runs after the player arrives at a previously visited destination, using the time since that destination was last visited before the current move. First-time/unvisited destination arrivals skip the prompt entirely. Previously visited arrivals below the threshold also skip the prompt, so short back-and-forth moves do not produce reunion prose.
 
 ```yaml
 while_you_were_away_threshold_minutes: 30
@@ -812,7 +823,8 @@ while_you_were_away_threshold_minutes: 30
 Rules:
 - Must be an integer `>= 0` when present.
 - Default is `30`.
+- The prompt runs only when the destination's pre-arrival `lastVisitedTime` is known and at least this many in-game minutes old. `0` runs the prompt for any previously visited destination. If an older save or manual call has no pre-arrival timestamp, the prompt preserves legacy behavior and can still run for previously visited destinations.
 - The prompt input includes current-location NPCs that have persisted `last_seen_time` / `last_seen_location` and were not in the same location as the player on the previous round, so already-present reunion NPCs stay in the candidate list instead of being misclassified as arrivals.
 - The prompt input includes each need-bar definition's `while_you_were_away_prompt_notes` when provided, letting need-bar defs guide how offscreen NPCs tend to satisfy or lose that bar.
-- The threshold controls which NPCs are listed for required `<characterUpdate>` entries. NPCs below the threshold are omitted from that required list, but the prompt still runs for previously visited arrivals.
+- The threshold does not filter individual NPC candidates; once the destination qualifies, all current-location reunion candidates are listed for possible `<characterUpdate>` entries.
 - When it runs, it blocks the arrival flow long enough to apply returned need-bar percentage values, optional NPC travel destinations, optional `<itemSceneryMoves>` item/scenery relocation entries, store the hidden `while-you-were-away` internal history entry, and optionally append a visible `while-you-were-away-player` assistant chat entry when the prompt returns non-empty `<proseForPlayer>`. Need-bar values strip nonnumeric text before parsing, clamp parsed out-of-range percentages to `0..100`, and ignore blank/`N/A` values for that bar. Item/scenery relocation only moves existing things that are at the pre-arrival origin location and not in a character inventory; other listed names warn and are ignored. If `slop_buster` is enabled, that visible prose is run through the shared slop-removal pipeline before storage.

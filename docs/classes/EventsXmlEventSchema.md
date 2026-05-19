@@ -127,6 +127,8 @@ Use this when the player gains currency, pays currency, or otherwise has currenc
 
 Use this when new tangible, carryable items appear in the scene for the first time, either newly created or newly described as present. Do not use this for scenery, harvestable resources, items merely moved from inventory, or crafted output already represented as an obtained item.
 
+If an exact same-name carryable item stack is already present in the current scene, the handler increments that stack by `<quantity>` instead of creating a duplicate stack.
+
 ```xml
 <itemAppear>
   <fullItemName>Exact new carryable item name</fullItemName>
@@ -183,7 +185,7 @@ Use this when a character drops, places, or sets down inventory items into the c
 
 ### `transfer_item`
 
-Use this when an item is handed, traded, or given from one actor to another. Do not use this for the player picking up loose scene items, dropping items, or creating new items.
+Use this when an item is handed, traded, or given from one actor to another. The handler resolves the giver's inventory first, can use a matching unowned item in the current location when a loose scene object is being handed over, and creates any missing shortfall before giving it to the receiver. Do not use this for the player picking up loose scene items without a giver, dropping items, or items merely appearing in the scene.
 
 ```xml
 <transferItem>

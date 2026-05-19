@@ -10,11 +10,18 @@ function findToolDefinition(name) {
     return CHAT_TOOL_DEFINITIONS.find(entry => entry?.function?.name === name)?.function || null;
 }
 
-function createMinimalRuntime({ llmResponses, capturedMessagesByRound = [], debugEvents = [] } = {}) {
+function createMinimalRuntime({
+    llmResponses = [],
+    capturedMessagesByRound = [],
+    debugEvents = [],
+    chatHistory = [],
+    isAssistantProseLikeEntry = () => true,
+    requestUserInput = null
+} = {}) {
     return createChatToolRuntime({
         getConfig: () => ({ ai: { max_tool_rounds: 4 } }),
-        getChatHistory: () => [],
-        isAssistantProseLikeEntry: () => true,
+        getChatHistory: () => chatHistory,
+        isAssistantProseLikeEntry,
         serializeNpcForClient: () => ({}),
         buildLocationResponse: () => ({}),
         getCurrentPlayer: () => ({ currentLocation: 'loc-origin' }),
@@ -47,9 +54,216 @@ function createMinimalRuntime({ llmResponses, capturedMessagesByRound = [], debu
         getGameLocations: () => new Map(),
         getFactions: () => [],
         getRegionsMap: () => new Map(),
-        getPendingRegionStubs: () => new Map()
+        getPendingRegionStubs: () => new Map(),
+        requestUserInput
     });
 }
+
+test('requestUserInput tool definition asks a required question only', () => {
+    const definition = findToolDefinition('requestUserInput');
+
+    assert.ok(definition, 'Expected requestUserInput chat tool definition.');
+    assert.match(definition.description, /ask/i);
+    assert.deepEqual(definition.parameters.required, ['question']);
+    assert.deepEqual(Object.keys(definition.parameters.properties).sort(), ['question']);
+    assert.equal(definition.parameters.additionalProperties, false);
+});
+
+test('runChatCompletionWithToolLoop sends requestUserInput answers back as tool XML', async () => {
+    const capturedMessagesByRound = [];
+    const questions = [];
+    const runtime = createMinimalRuntime({
+        capturedMessagesByRound,
+        requestUserInput: async ({ question }) => {
+            questions.push(question);
+            return {
+                answer: 'Check the manifest tab for the crate serial.',
+                requestId: 'player-input-1'
+            };
+        },
+        llmResponses: [
+            {
+                data: {
+                    choices: [{
+                        message: {
+                            content: '',
+                            tool_calls: [{
+                                id: 'call-input',
+                                type: 'function',
+                                function: {
+                                    name: 'requestUserInput',
+                                    arguments: JSON.stringify({
+                                        question: 'Which crate serial should I inspect?'
+                                    })
+                                }
+                            }]
+                        }
+                    }]
+                }
+            },
+            {
+                data: {
+                    choices: [{
+                        message: {
+                            content: 'I can continue now.',
+                            tool_calls: []
+                        }
+                    }]
+                }
+            }
+        ]
+    });
+
+    const result = await runtime.runChatCompletionWithToolLoop({
+        requestOptions: {
+            messages: [{ role: 'user', content: 'Ask if needed.' }]
+        },
+        metadataLabel: 'player_action'
+    });
+
+    assert.equal(result.aiResponse, 'I can continue now.');
+    assert.deepEqual(questions, ['Which crate serial should I inspect?']);
+    assert.equal(result.toolInvocations[0].name, 'requestUserInput');
+    assert.equal(result.toolInvocations[0].metadata.answerLength, 'Check the manifest tab for the crate serial.'.length);
+    const toolMessage = capturedMessagesByRound[1].find(message => message.role === 'tool');
+    assert.ok(toolMessage, 'Expected a requestUserInput tool response message.');
+    assert.match(toolMessage.content, /<userInputResponse>/);
+    assert.match(toolMessage.content, /<question>Which crate serial should I inspect\?<\/question>/);
+    assert.match(toolMessage.content, /<answer>Check the manifest tab for the crate serial\.<\/answer>/);
+});
+
+test('requestUserInput returns a tool error when no request handler is configured', async () => {
+    const capturedMessagesByRound = [];
+    const runtime = createMinimalRuntime({
+        capturedMessagesByRound,
+        llmResponses: [
+            {
+                data: {
+                    choices: [{
+                        message: {
+                            content: '',
+                            tool_calls: [{
+                                id: 'call-input',
+                                type: 'function',
+                                function: {
+                                    name: 'requestUserInput',
+                                    arguments: JSON.stringify({
+                                        question: 'What should I ask?'
+                                    })
+                                }
+                            }]
+                        }
+                    }]
+                }
+            },
+            {
+                data: {
+                    choices: [{
+                        message: {
+                            content: 'Recovered from missing request handler.',
+                            tool_calls: []
+                        }
+                    }]
+                }
+            }
+        ]
+    });
+
+    const result = await runtime.runChatCompletionWithToolLoop({
+        requestOptions: {
+            messages: [{ role: 'user', content: 'Ask if needed.' }]
+        },
+        metadataLabel: 'player_action'
+    });
+
+    assert.equal(result.aiResponse, 'Recovered from missing request handler.');
+    assert.equal(result.toolInvocations[0].metadata.error, true);
+    assert.equal(result.toolInvocations[0].metadata.code, 'user_input_unavailable');
+    const toolMessage = capturedMessagesByRound[1].find(message => message.role === 'tool');
+    assert.match(toolMessage.content, /<toolError>/);
+    assert.match(toolMessage.content, /requestUserInput/);
+});
+
+test('getHistory can include all log entry types when the tool loop opts in', async () => {
+    const chatHistory = [
+        {
+            id: 'entry-user-generic',
+            role: 'user',
+            type: 'user-generic-prompt',
+            content: 'Audit the oxidized relay clue.',
+            locationId: 'loc-1'
+        },
+        {
+            id: 'entry-visible-prose',
+            role: 'assistant',
+            type: 'player-action',
+            content: 'You pocket the relay casing.',
+            locationId: 'loc-1'
+        },
+        {
+            id: 'entry-event-summary',
+            role: 'assistant',
+            type: 'event-summary',
+            content: 'Events: the oxidized relay clue was logged as a summary row.',
+            locationId: 'loc-1'
+        }
+    ];
+    const capturedMessagesByRound = [];
+    const runtime = createMinimalRuntime({
+        chatHistory,
+        capturedMessagesByRound,
+        isAssistantProseLikeEntry: (entry) => entry?.type === 'player-action',
+        llmResponses: [
+            {
+                data: {
+                    choices: [{
+                        message: {
+                            content: '',
+                            tool_calls: [{
+                                id: 'call-history',
+                                type: 'function',
+                                function: {
+                                    name: 'getHistory',
+                                    arguments: JSON.stringify({ query: 'oxidized relay' })
+                                }
+                            }]
+                        }
+                    }]
+                }
+            },
+            {
+                data: {
+                    choices: [{
+                        message: {
+                            content: 'History reviewed.',
+                            tool_calls: []
+                        }
+                    }]
+                }
+            }
+        ]
+    });
+
+    const filtered = runtime.collectHistoryMatches({ query: 'oxidized relay' });
+    assert.equal(filtered.returnedCount, 0);
+
+    const result = await runtime.runChatCompletionWithToolLoop({
+        requestOptions: {
+            messages: [{ role: 'user', content: 'Search every log entry.' }]
+        },
+        metadataLabel: 'generic_prompt',
+        includeAllHistoryEntryTypes: true
+    });
+
+    assert.equal(result.aiResponse, 'History reviewed.');
+    assert.equal(result.toolInvocations[0].metadata.returnedCount, 2);
+    const toolMessage = capturedMessagesByRound[1].find(message => message.role === 'tool');
+    assert.ok(toolMessage, 'Expected a getHistory tool response message.');
+    assert.match(toolMessage.content, /user-generic-prompt/);
+    assert.match(toolMessage.content, /Audit the oxidized relay clue/);
+    assert.match(toolMessage.content, /event-summary/);
+    assert.match(toolMessage.content, /oxidized relay clue was logged/);
+});
 
 test('runChatCompletionWithToolLoop converts async ToolVisibleError rejections into tool messages', async () => {
     const originLocation = {

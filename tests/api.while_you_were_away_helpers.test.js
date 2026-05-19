@@ -118,13 +118,27 @@ function normalizeNpcNameKey(value) {
     return value.trim().toLowerCase();
 }
 
-function createLocation({ id, name, regionId, npcIds = [], thingIds = [] }) {
+function createLocation({ id, name, regionId, npcIds = [], thingIds = [], visited = true, lastVisitedTime = null }) {
     return {
         id,
         name,
         regionId,
+        visited,
+        lastVisitedTime,
         npcIds: npcIds.slice(),
         thingIds: thingIds.slice(),
+        minutesSinceLastVisit(currentTime = null) {
+            if (this.lastVisitedTime === null || this.lastVisitedTime === undefined) {
+                return null;
+            }
+            const referenceTime = currentTime === null || currentTime === undefined
+                ? 0
+                : Number(currentTime);
+            if (!Number.isFinite(referenceTime)) {
+                throw new Error('Location minutesSinceLastVisit reference time must be finite.');
+            }
+            return referenceTime - this.lastVisitedTime;
+        },
         addNpcId(npcId) {
             if (!this.npcIds.includes(npcId)) {
                 this.npcIds.push(npcId);
@@ -285,6 +299,7 @@ function loadWhileYouWereAwayHelpers({
         config,
         Globals: {
             config,
+            elapsedTime: typeof currentPlayer?.elapsedTime === 'number' ? currentPlayer.elapsedTime : 0,
             scrubGeneratedBrackets: value => value
         },
         currentPlayer,
@@ -710,6 +725,47 @@ test('runWhileYouWereAwayPrompt skips unvisited arrival locations before renderi
     assert.equal(result.skipReason, 'unvisited_location');
 });
 
+test('runWhileYouWereAwayPrompt skips previously visited locations below the revisit threshold', async () => {
+    const square = createLocation({
+        id: 'square',
+        name: 'Town Square',
+        regionId: 'alpha',
+        visited: true,
+        lastVisitedTime: 100
+    });
+    const gameLocations = new Map([[square.id, square]]);
+
+    const { runWhileYouWereAwayPrompt, pushedEntries } = loadWhileYouWereAwayHelpers({
+        config: {
+            ai: {},
+            while_you_were_away_threshold_minutes: 30
+        },
+        currentPlayer: {
+            id: 'player',
+            name: 'Baato',
+            currentLocation: 'square',
+            elapsedTime: 110
+        },
+        gameLocations,
+        prepareBasePromptContext: async () => {
+            throw new Error('Prompt context should not be prepared for too-recent location revisits.');
+        },
+        llmResponse: '<response><characterUpdates></characterUpdates></response>'
+    });
+
+    const result = await runWhileYouWereAwayPrompt({
+        locationOverride: square,
+        locationId: square.id,
+        locationWasVisitedBeforeArrival: true,
+        locationLastVisitedTimeBeforeArrival: square.lastVisitedTime,
+        returnEntries: true
+    });
+
+    assert.equal(result.skipped, true);
+    assert.equal(result.skipReason, 'recent_location_visit');
+    assert.equal(pushedEntries.length, 0);
+});
+
 test('runWhileYouWereAwayPrompt runs scoped event checks while ignoring handled need bars and arrivals', async () => {
     const square = createLocation({ id: 'square', name: 'Town Square', regionId: 'alpha', npcIds: ['mira'] });
     const regions = new Map([
@@ -1112,8 +1168,15 @@ test('runWhileYouWereAwayPrompt warns and ignores nonexistent need bars returned
     }
 });
 
-test('runWhileYouWereAwayPrompt runs without NPC updates when everyone was seen too recently', async () => {
-    const square = createLocation({ id: 'square', name: 'Town Square', regionId: 'alpha', npcIds: ['mira'] });
+test('runWhileYouWereAwayPrompt includes NPC candidates regardless of individual last-seen age when location threshold passes', async () => {
+    const square = createLocation({
+        id: 'square',
+        name: 'Town Square',
+        regionId: 'alpha',
+        npcIds: ['mira'],
+        visited: true,
+        lastVisitedTime: 0
+    });
     const regions = new Map([
         ['alpha', { id: 'alpha', name: 'Alpha', locationIds: ['square'], entranceLocationId: 'square' }]
     ]);
@@ -1137,7 +1200,8 @@ test('runWhileYouWereAwayPrompt runs without NPC updates when everyone was seen 
         currentPlayer: {
             id: 'player',
             name: 'Baato',
-            currentLocation: 'square'
+            currentLocation: 'square',
+            elapsedTime: 240
         },
         players: new Map([[npc.id, npc]]),
         gameLocations,
@@ -1154,7 +1218,12 @@ test('runWhileYouWereAwayPrompt runs without NPC updates when everyone was seen 
         }),
         llmResponse: `
 <response>
-  <characterUpdates></characterUpdates>
+  <characterUpdates>
+    <characterUpdate>
+      <name>Mira</name>
+      <update>Mira only just ducked out of sight.</update>
+    </characterUpdate>
+  </characterUpdates>
   <proseForPlayer>The square has gone quiet since you last passed through.</proseForPlayer>
 </response>
 `
@@ -1163,11 +1232,14 @@ test('runWhileYouWereAwayPrompt runs without NPC updates when everyone was seen 
     const result = await runWhileYouWereAwayPrompt({
         locationOverride: square,
         locationId: square.id,
+        locationWasVisitedBeforeArrival: true,
+        locationLastVisitedTimeBeforeArrival: square.lastVisitedTime,
         returnEntries: true
     });
 
     assert.equal(result.hiddenEntry.type, 'while-you-were-away');
-    assert.equal(result.hiddenEntry.content, 'No while-you-were-away character updates were returned.');
+    assert.match(result.hiddenEntry.content, /Update on Mira since Baato last saw them 3 hours and 59 minutes ago:/);
+    assert.match(result.hiddenEntry.content, /Mira only just ducked out of sight\./);
     assert.equal(result.visibleEntry.type, 'while-you-were-away-player');
     assert.equal(result.visibleEntry.content, 'The square has gone quiet since you last passed through.');
 });

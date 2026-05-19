@@ -103,3 +103,93 @@ test('createThing tool forwards isContainer into the thing generation seed', asy
     assert.equal(capturedGenerateArgs.seeds[0].isContainer, true);
     assert.equal(capturedGenerateArgs.options.treatAsScenery, true);
 });
+
+test('createThing tool queues requested names for named thing seeds', async () => {
+    const location = { id: 'loc-1', name: 'Study' };
+    const region = { id: 'region-1', name: 'Manor' };
+    let capturedGenerateArgs = null;
+    let completionCalls = 0;
+
+    const LLMClient = {
+        async chatCompletion(options) {
+            completionCalls += 1;
+            if (completionCalls === 1) {
+                options.onResponse?.({
+                    data: {
+                        choices: [{
+                            message: {
+                                content: '',
+                                tool_calls: [{
+                                    id: 'call-create-named-thing',
+                                    type: 'function',
+                                    function: {
+                                        name: 'createThing',
+                                        arguments: JSON.stringify({
+                                            shortDescription: 'prototype signal board',
+                                            itemOrScenery: 'item',
+                                            name: 'Velkathra Signal Board',
+                                            description: 'A rescued prototype board.'
+                                        })
+                                    }
+                                }]
+                            }
+                        }]
+                    }
+                });
+                return '';
+            }
+
+            options.onResponse?.({
+                data: {
+                    choices: [{
+                        message: {
+                            content: 'Created the board.',
+                            tool_calls: []
+                        }
+                    }]
+                }
+            });
+            return 'Created the board.';
+        },
+        logPrompt() {},
+        formatMessagesForErrorLog(messages) {
+            return JSON.stringify(messages);
+        }
+    };
+
+    const runtime = createChatToolRuntime({
+        getConfig: () => ({ ai: { max_tool_rounds: 3 } }),
+        getChatHistory: () => [],
+        isAssistantProseLikeEntry: () => true,
+        serializeNpcForClient: value => value,
+        buildLocationResponse: value => value,
+        getCurrentPlayer: () => ({ id: 'player-1', name: 'Player', currentLocation: location.id }),
+        createLocationFromEvent: async () => location,
+        createRegionStubFromEvent: async () => region,
+        generateItemsByNames: async (args) => {
+            capturedGenerateArgs = args;
+            return [{ id: 'thing-1', name: 'Velkathra Signal Board', thingType: 'item' }];
+        },
+        ensureExitConnection: async () => ({}),
+        findRegionByLocationId: () => region,
+        LLMClient,
+        Player: { getAll: () => [] },
+        Thing: { getAll: () => [] },
+        Location: { get: id => (id === location.id ? location : null), getAll: () => [location] },
+        Region: { getAll: () => [region] },
+        getGameLocations: () => new Map([[location.id, location]]),
+        getFactions: () => new Map(),
+        getRegionsMap: () => new Map([[region.id, region]]),
+        getPendingRegionStubs: () => new Map()
+    });
+
+    await runtime.runChatCompletionWithToolLoop({
+        requestOptions: {
+            messages: [{ role: 'user', content: 'Create a named signal board.' }]
+        },
+        metadataLabel: 'test_create_thing_named_seed'
+    });
+
+    assert.deepEqual(capturedGenerateArgs.itemNames, ['Velkathra Signal Board']);
+    assert.equal(capturedGenerateArgs.seeds[0].name, 'Velkathra Signal Board');
+});

@@ -23,13 +23,34 @@ test('crafting UI greys out non-empty containers and blocks assignment', () => {
     assertIncludes(scssSource, '.crafting-inventory-card.is-non-empty-container');
 });
 
+test('crafting UI includes current-location items in the available picker', () => {
+    assertIncludes(viewSource, '<h3>Available Items</h3>');
+    assertIncludes(viewSource, 'function getCurrentLocationCraftingItems()');
+    assertIncludes(viewSource, 'function buildCraftingAvailableItems(playerInventoryItems = [])');
+    assertIncludes(viewSource, "appendItems(playerInventoryItems, 'player');");
+    assertIncludes(viewSource, "appendItems(getCurrentLocationCraftingItems(), 'location');");
+    assertIncludes(viewSource, 'const availableCraftingItems = buildCraftingAvailableItems(inventoryItems);');
+    assertIncludes(viewSource, 'renderCraftingInventory(availableCraftingItems);');
+    assertIncludes(viewSource, "craftingSourceType !== 'location'");
+});
+
 test('crafting API rejects non-empty containers submitted as inputs', () => {
     assertIncludes(apiSource, 'function isNonEmptyCraftingContainer(thing)');
     assertIncludes(apiSource, 'Selected container');
     assertIncludes(apiSource, 'must be emptied before it can be used for crafting.');
 });
 
+test('crafting API accepts only player-inventory or current-location inputs', () => {
+    assertIncludes(apiSource, 'const locationThingIds = new Set(Array.isArray(locationRecord?.thingIds) ? locationRecord.thingIds : []);');
+    assertIncludes(apiSource, 'const isThingInCurrentPlayerInventory = (thing) => (');
+    assertIncludes(apiSource, 'const isThingInCurrentLocation = (thing) => {');
+    assertIncludes(apiSource, "is not in the current player's inventory or current location.");
+    assertIncludes(apiSource, 'must be unequipped before it can be used for crafting.');
+});
+
 test('crafting docs describe non-empty container handling', () => {
     assertIncludes(craftingDocs, 'Non-empty containers cannot be selected as crafting inputs');
+    assertIncludes(craftingDocs, 'Selected inputs may come from the active player inventory or the current location');
+    assertIncludes(chatDocs, 'crafting picker lists active player inventory items plus current-location items');
     assertIncludes(chatDocs, 'non-empty containers are greyed out');
 });

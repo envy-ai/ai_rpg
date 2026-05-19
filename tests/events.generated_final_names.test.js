@@ -91,6 +91,43 @@ test('item_appear still generates items during NPC turns when player movement is
     }
 });
 
+test('item_appear increments an existing same-name scene item stack', async () => {
+    let generateCalled = false;
+    setupEvents({
+        generateItemsByNames: async () => {
+            generateCalled = true;
+            return [{ id: 'thing-generated', name: "Midnight Ramen's House Noodle Bowl" }];
+        }
+    });
+
+    const existingNoodles = {
+        id: 'thing-noodles',
+        name: "Midnight Ramen's House Noodle Bowl",
+        count: 1,
+        metadata: { locationId: 'test-location', count: 1 }
+    };
+    const location = createLocation();
+    location.things.push(existingNoodles);
+
+    const structured = {
+        parsed: {
+            item_appear: [{
+                name: "Midnight Ramen's House Noodle Bowl",
+                quantity: 4,
+                description: 'Hot takeout bowls from Midnight Ramen.'
+            }]
+        },
+        rawEntries: {}
+    };
+
+    await Events.applyEventOutcomes(structured, { location });
+
+    assert.equal(generateCalled, false);
+    assert.equal(existingNoodles.count, 5);
+    assert.equal(existingNoodles.metadata.count, 5);
+    assert.equal(Events.newItems.has("Midnight Ramen's House Noodle Bowl"), true);
+});
+
 test('scenery_appear and harvest_gather preserve final generated names for summaries', async () => {
     const actor = {
         id: 'actor-ada',

@@ -52,7 +52,7 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
 - Locations: `currentLocation`, `location`, `currentVehicle`, `previousLocationId`, `previousLocation`, `currentLocationObject`, `lastVisitedTime`, `last_seen_time`, `last_seen_location`, `was_in_player_location_previous_round` (plus camelCase aliases).
 - Social/party: `partyMembers`, `isInPlayerParty`, `wasEverInPlayerParty`, `partyMembershipChangedThisTurn`, `partyMembersAddedThisTurn`, `partyMembersRemovedThisTurn`.
 - Quests/goals: `goals`, `characterArc`, `currentQuests`, `completedQuests`.
-- Need bars/memory: `turnsSincePartyMemoryGeneration`, `importantMemories`.
+- Need bars/memory: `turnsSincePartyMemoryGeneration`, `importantMemories`. Dead NPC/corpse actors can retain persisted memory state, but NPC memory prompt scheduling skips them while `isDead` is true.
 
 ## Instance API (Highlights)
 - Quests/goals:

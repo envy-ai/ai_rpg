@@ -43,6 +43,8 @@ banned_npc_names:
   - Elowen
   - Jinx
   - Vane
+  - Tika
+  - Tikka
 banned_npc_name_regexes:
   - "/Kael/"
   - "/Fael/"

@@ -234,7 +234,8 @@ test('quest disposition rewards are exposed through editor and API source hooks'
     assert.match(promptSource, /<reason>/);
     assert.match(apiSource, /rewardNpcDispositions/);
     assert.match(apiSource, /parseQuestNpcDispositionRewardsInput/);
-    assert.match(viewSource, /questEditRewardNpcDispositions/);
+    assert.match(viewSource, /questEditRewardNpcDispositionRows/);
+    assert.match(viewSource, /questEditAddNpcDispositionReward/);
     assert.match(viewSource, /NPC Disposition Rewards/);
     assert.match(viewSource, /normalizeQuestNpcDispositionRewards/);
     assert.match(viewSource, /gatherQuestNpcDispositionRewards/);

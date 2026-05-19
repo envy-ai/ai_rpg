@@ -6913,6 +6913,8 @@ body.dark .thing-toggle-hint {
   --prompt-progress-table-row-height: 34px;
   --prompt-progress-table-header-height: 32px;
   flex: 0 0 auto;
+  min-width: 0;
+  max-width: 100%;
   min-height: 0;
   border-top: 1px solid rgba(234, 179, 8, 0.28);
   border-bottom: 1px solid rgba(15, 23, 42, 0.85);
@@ -7044,7 +7046,9 @@ body.dark .thing-toggle-hint {
   align-items: center;
   gap: 8px;
   width: 100%;
+  max-width: 100%;
   min-width: 0;
+  overflow: hidden;
 }
 
 .prompt-progress-dock__one-line-content > .prompt-progress-dock__mode-controls {
@@ -7052,7 +7056,8 @@ body.dark .thing-toggle-hint {
 }
 
 .prompt-progress-dock__one-line-label {
-  flex: 0 1 60%;
+  flex: 0 0 60%;
+  width: 60%;
   max-width: 60%;
   min-width: 0;
   overflow: hidden;
@@ -7083,6 +7088,7 @@ body.dark .thing-toggle-hint {
 @media (max-width: 900px) {
   .prompt-progress-dock__one-line-label {
     flex: 1 1 auto;
+    width: auto;
     max-width: none;
   }
 }
@@ -7488,6 +7494,152 @@ body.dark .thing-toggle-hint {
 
   .config-section {
     margin-bottom: 0;
+  }
+}
+
+.player-input-request-panel {
+  position: fixed;
+  top: 72px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(460px, calc(100vw - 24px));
+  max-height: calc(100vh - 24px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid rgba(226, 232, 240, 0.32);
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.92);
+  color: #f8fafc;
+  box-shadow:
+    0 18px 44px rgba(0, 0, 0, 0.45),
+    0 0 0 1px rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(10px);
+  z-index: 11120;
+  pointer-events: auto;
+}
+
+.player-input-request-panel[hidden] {
+  display: none;
+}
+
+.player-input-request-panel__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px 10px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.24);
+  background: rgba(30, 41, 59, 0.72);
+  cursor: grab;
+  user-select: none;
+}
+
+.player-input-request-panel.is-dragging .player-input-request-panel__header {
+  cursor: grabbing;
+}
+
+.player-input-request-panel__heading {
+  min-width: 0;
+}
+
+.player-input-request-panel__heading h2 {
+  margin: 0;
+  color: #ffffff;
+  font-size: 0.98rem;
+  font-weight: 700;
+}
+
+.player-input-request-panel__prompt-label {
+  display: block;
+  margin-top: 3px;
+  color: rgba(226, 232, 240, 0.68);
+  font-size: 0.75rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.player-input-request-panel__close {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.9);
+  cursor: pointer;
+}
+
+.player-input-request-panel__close:hover,
+.player-input-request-panel__close:focus-visible {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.12);
+  outline: none;
+}
+
+.player-input-request-panel__form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  min-height: 0;
+}
+
+.player-input-request-panel__question {
+  margin: 0;
+  color: #e2e8f0;
+  font-size: 0.95rem;
+  line-height: 1.45;
+}
+
+.player-input-request-panel__label {
+  color: rgba(226, 232, 240, 0.78);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.player-input-request-panel__answer {
+  width: 100%;
+  min-height: 110px;
+  resize: vertical;
+  border: 1px solid rgba(148, 163, 184, 0.38);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.78);
+  color: #ffffff;
+  padding: 9px 10px;
+  font: inherit;
+  line-height: 1.4;
+}
+
+.player-input-request-panel__answer:focus {
+  border-color: rgba(125, 211, 252, 0.74);
+  box-shadow: 0 0 0 2px rgba(125, 211, 252, 0.2);
+  outline: none;
+}
+
+.player-input-request-panel__status {
+  margin: 0;
+  min-height: 1.1em;
+  color: rgba(226, 232, 240, 0.78);
+  font-size: 0.78rem;
+}
+
+.player-input-request-panel__status[data-state="error"] {
+  color: #fca5a5;
+}
+
+.player-input-request-panel__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 2px;
+}
+
+@media (max-width: 640px) {
+  .player-input-request-panel {
+    top: 56px;
+    width: calc(100vw - 20px);
   }
 }
 
@@ -8486,6 +8638,7 @@ body.modal-open {
 
 .quest-edit-form input[type="text"],
 .quest-edit-form input[type="number"],
+.quest-edit-form select,
 .quest-edit-form textarea {
   width: 100%;
   border-radius: 10px;
@@ -8501,16 +8654,79 @@ body.modal-open {
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }
 
+.quest-edit-section-header,
 .quest-edit-objective-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 12px;
 }
 
 .quest-edit-objectives {
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+.quest-edit-reward-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.quest-edit-reward-row {
+  padding: 10px 12px;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.35);
+  display: grid;
+  gap: 10px;
+  align-items: center;
+}
+
+.quest-edit-reward-row--item {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.quest-edit-reward-row--faction {
+  grid-template-columns: minmax(0, 1.35fr) minmax(96px, 0.65fr) auto;
+}
+
+.quest-edit-reward-row--npc-disposition {
+  align-items: start;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr) minmax(
+      82px,
+      0.45fr
+    ) auto;
+  grid-template-areas:
+    "npc type intensity remove"
+    "reason reason reason reason";
+}
+
+.quest-edit-reward-row--npc-disposition .quest-edit-reward-npc-select {
+  grid-area: npc;
+}
+
+.quest-edit-reward-row--npc-disposition .quest-edit-reward-disposition-type {
+  grid-area: type;
+}
+
+.quest-edit-reward-row--npc-disposition
+  .quest-edit-reward-disposition-intensity {
+  grid-area: intensity;
+}
+
+.quest-edit-reward-row--npc-disposition .quest-edit-reward-disposition-reason {
+  grid-area: reason;
+}
+
+.quest-edit-reward-row--npc-disposition .quest-edit-reward-remove {
+  align-self: center;
+  grid-area: remove;
+}
+
+.quest-edit-reward-row .btn {
+  justify-self: flex-end;
 }
 
 .quest-edit-objective-row {
@@ -11881,8 +12097,24 @@ body.modal-open {
 
   .thing-edit-metadata-row,
   .thing-edit-bonus-row,
-  .thing-edit-status-row {
+  .thing-edit-status-row,
+  .quest-edit-reward-row,
+  .quest-edit-objective-row {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .quest-edit-reward-row--npc-disposition {
+    grid-template-areas:
+      "npc"
+      "type"
+      "intensity"
+      "reason"
+      "remove";
+  }
+
+  .quest-edit-reward-row .btn,
+  .quest-edit-objective-row .btn {
+    justify-self: flex-start;
   }
 
   .region-edit-secret-row {

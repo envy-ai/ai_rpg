@@ -318,6 +318,16 @@ class AIRPGChat {
         this.slashUploadStatus = document.getElementById('slashUploadStatus');
         this.slashUploadCancelButton = document.getElementById('slashUploadCancelBtn');
         this.slashUploadSubmitButton = document.getElementById('slashUploadSubmitBtn');
+        this.playerInputRequestPanel = document.getElementById('playerInputRequestPanel');
+        this.playerInputRequestHeader = document.getElementById('playerInputRequestHeader');
+        this.playerInputRequestPromptLabel = document.getElementById('playerInputRequestPromptLabel');
+        this.playerInputRequestQuestion = document.getElementById('playerInputRequestQuestion');
+        this.playerInputRequestForm = document.getElementById('playerInputRequestForm');
+        this.playerInputRequestAnswer = document.getElementById('playerInputRequestAnswer');
+        this.playerInputRequestStatus = document.getElementById('playerInputRequestStatus');
+        this.playerInputRequestCloseButton = document.getElementById('playerInputRequestCloseBtn');
+        this.playerInputRequestCancelButton = document.getElementById('playerInputRequestCancelBtn');
+        this.playerInputRequestSubmitButton = document.getElementById('playerInputRequestSubmitBtn');
         this.sendButtonDefaultHtml = this.sendButton ? this.sendButton.innerHTML : 'Send';
         this.skillPointsDisplay = document.getElementById('unspentSkillPointsDisplay');
         this.skillRankElements = this.collectSkillRankElements();
@@ -374,6 +384,16 @@ class AIRPGChat {
         this.shortDescriptionPrompted = false;
         this.pendingSlashUploadRequest = null;
         this.slashUploadSubmitting = false;
+        this.playerInputRequests = new Map();
+        this.playerInputRequestQueue = [];
+        this.activePlayerInputRequest = null;
+        this.playerInputRequestSubmitting = false;
+        this.playerInputRequestDragState = {
+            active: false,
+            pointerId: null,
+            offsetX: 0,
+            offsetY: 0
+        };
 
         this.ensureTemplateEnvironment();
         this.init();
@@ -390,6 +410,7 @@ class AIRPGChat {
         this.setupPrefixHelpModal();
         this.setupEmptyActionConfirmModal();
         this.setupSlashUploadModal();
+        this.setupPlayerInputRequestPanel();
         this.loadExistingHistory();
 
         window.AIRPG_CHAT = this;
@@ -600,6 +621,294 @@ class AIRPGChat {
                 this.cancelSlashUploadModal();
             }
         });
+    }
+
+    setupPlayerInputRequestPanel() {
+        if (!this.playerInputRequestPanel) {
+            return;
+        }
+        this.bindPlayerInputRequestDrag();
+        if (this.playerInputRequestForm) {
+            this.playerInputRequestForm.addEventListener('submit', (event) => {
+                event.preventDefault();
+                this.submitPlayerInputRequest();
+            });
+        }
+        if (this.playerInputRequestCloseButton) {
+            this.playerInputRequestCloseButton.addEventListener('click', () => this.cancelActivePlayerInputRequest());
+        }
+        if (this.playerInputRequestCancelButton) {
+            this.playerInputRequestCancelButton.addEventListener('click', () => this.cancelActivePlayerInputRequest());
+        }
+        if (this.playerInputRequestAnswer) {
+            this.playerInputRequestAnswer.addEventListener('input', () => {
+                if (this.playerInputRequestStatus) {
+                    this.playerInputRequestStatus.hidden = true;
+                    this.playerInputRequestStatus.textContent = '';
+                }
+            });
+        }
+    }
+
+    bindPlayerInputRequestDrag() {
+        const panel = this.playerInputRequestPanel;
+        const header = this.playerInputRequestHeader;
+        if (!panel || !header || panel.dataset.dragBound === 'true') {
+            return;
+        }
+
+        const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
+
+        const onPointerMove = (event) => {
+            if (!this.playerInputRequestDragState.active || event.pointerId !== this.playerInputRequestDragState.pointerId) {
+                return;
+            }
+            const rect = panel.getBoundingClientRect();
+            const maxLeft = Math.max(0, window.innerWidth - rect.width);
+            const maxTop = Math.max(0, window.innerHeight - rect.height);
+            const left = clamp(event.clientX - this.playerInputRequestDragState.offsetX, 0, maxLeft);
+            const top = clamp(event.clientY - this.playerInputRequestDragState.offsetY, 0, maxTop);
+            panel.style.left = `${left}px`;
+            panel.style.top = `${top}px`;
+            panel.style.right = 'auto';
+            panel.style.transform = 'none';
+            panel.classList.add('is-dragging');
+            panel.dataset.dragPositioned = 'true';
+        };
+
+        const stopDragging = (event) => {
+            if (!this.playerInputRequestDragState.active) {
+                return;
+            }
+            if (event && event.pointerId !== undefined && event.pointerId !== this.playerInputRequestDragState.pointerId) {
+                return;
+            }
+            this.playerInputRequestDragState.active = false;
+            this.playerInputRequestDragState.pointerId = null;
+            panel.classList.remove('is-dragging');
+            window.removeEventListener('pointermove', onPointerMove);
+            window.removeEventListener('pointerup', stopDragging);
+            window.removeEventListener('pointercancel', stopDragging);
+        };
+
+        header.addEventListener('pointerdown', (event) => {
+            if (event.button !== 0) {
+                return;
+            }
+            if (event.target && event.target.closest('button, input, textarea, select, a')) {
+                return;
+            }
+            const rect = panel.getBoundingClientRect();
+            this.playerInputRequestDragState.active = true;
+            this.playerInputRequestDragState.pointerId = event.pointerId;
+            this.playerInputRequestDragState.offsetX = event.clientX - rect.left;
+            this.playerInputRequestDragState.offsetY = event.clientY - rect.top;
+            window.addEventListener('pointermove', onPointerMove);
+            window.addEventListener('pointerup', stopDragging);
+            window.addEventListener('pointercancel', stopDragging);
+            event.preventDefault();
+        });
+
+        panel.dataset.dragBound = 'true';
+    }
+
+    normalizePlayerInputRequest(payload) {
+        if (!payload || typeof payload !== 'object') {
+            return null;
+        }
+        const inputRequestId = typeof payload.inputRequestId === 'string'
+            ? payload.inputRequestId.trim()
+            : '';
+        const question = typeof payload.question === 'string'
+            ? payload.question.trim()
+            : '';
+        if (!inputRequestId || !question) {
+            return null;
+        }
+        return {
+            inputRequestId,
+            question,
+            requestId: typeof payload.requestId === 'string' && payload.requestId.trim()
+                ? payload.requestId.trim()
+                : null,
+            promptLabel: typeof payload.promptLabel === 'string' && payload.promptLabel.trim()
+                ? payload.promptLabel.trim()
+                : 'chat'
+        };
+    }
+
+    handlePlayerInputRequest(payload) {
+        const request = this.normalizePlayerInputRequest(payload);
+        if (!request) {
+            console.warn('Received invalid player input request payload:', payload);
+            return;
+        }
+        this.playerInputRequests.set(request.inputRequestId, request);
+        if (this.activePlayerInputRequest?.inputRequestId === request.inputRequestId) {
+            this.showPlayerInputRequest(request);
+            return;
+        }
+        if (this.activePlayerInputRequest) {
+            this.playerInputRequestQueue = this.playerInputRequestQueue
+                .filter(entry => entry.inputRequestId !== request.inputRequestId);
+            this.playerInputRequestQueue.push(request);
+            return;
+        }
+        this.showPlayerInputRequest(request);
+    }
+
+    handlePlayerInputRequestClosed(payload) {
+        const inputRequestId = typeof payload?.inputRequestId === 'string'
+            ? payload.inputRequestId.trim()
+            : '';
+        if (!inputRequestId) {
+            return;
+        }
+        this.playerInputRequests.delete(inputRequestId);
+        this.playerInputRequestQueue = this.playerInputRequestQueue
+            .filter(entry => entry.inputRequestId !== inputRequestId);
+        if (this.activePlayerInputRequest?.inputRequestId === inputRequestId) {
+            this.hidePlayerInputRequestPanel();
+            this.showNextPlayerInputRequest();
+        }
+    }
+
+    showPlayerInputRequest(request) {
+        if (!this.playerInputRequestPanel) {
+            return;
+        }
+        this.activePlayerInputRequest = request;
+        this.playerInputRequestSubmitting = false;
+        if (this.playerInputRequestQuestion) {
+            this.playerInputRequestQuestion.textContent = request.question;
+        }
+        if (this.playerInputRequestPromptLabel) {
+            this.playerInputRequestPromptLabel.textContent = request.promptLabel || '';
+        }
+        if (this.playerInputRequestAnswer) {
+            this.playerInputRequestAnswer.value = '';
+            this.playerInputRequestAnswer.disabled = false;
+        }
+        if (this.playerInputRequestStatus) {
+            this.playerInputRequestStatus.textContent = '';
+            this.playerInputRequestStatus.hidden = true;
+            this.playerInputRequestStatus.dataset.state = '';
+        }
+        if (this.playerInputRequestSubmitButton) {
+            this.playerInputRequestSubmitButton.disabled = false;
+        }
+        if (this.playerInputRequestCancelButton) {
+            this.playerInputRequestCancelButton.disabled = false;
+        }
+        this.playerInputRequestPanel.removeAttribute('hidden');
+        this.playerInputRequestPanel.setAttribute('aria-hidden', 'false');
+        window.setTimeout(() => {
+            this.playerInputRequestAnswer?.focus({ preventScroll: true });
+        }, 0);
+    }
+
+    hidePlayerInputRequestPanel() {
+        if (!this.playerInputRequestPanel) {
+            return;
+        }
+        this.activePlayerInputRequest = null;
+        this.playerInputRequestSubmitting = false;
+        this.playerInputRequestPanel.setAttribute('hidden', '');
+        this.playerInputRequestPanel.setAttribute('aria-hidden', 'true');
+        if (this.playerInputRequestAnswer) {
+            this.playerInputRequestAnswer.value = '';
+            this.playerInputRequestAnswer.disabled = false;
+        }
+    }
+
+    showNextPlayerInputRequest() {
+        while (this.playerInputRequestQueue.length) {
+            const next = this.playerInputRequestQueue.shift();
+            if (next && this.playerInputRequests.has(next.inputRequestId)) {
+                this.showPlayerInputRequest(next);
+                return;
+            }
+        }
+    }
+
+    setPlayerInputRequestStatus(message, state = 'info') {
+        if (!this.playerInputRequestStatus) {
+            return;
+        }
+        this.playerInputRequestStatus.textContent = message || '';
+        this.playerInputRequestStatus.dataset.state = state || 'info';
+        this.playerInputRequestStatus.hidden = !message;
+    }
+
+    async submitPlayerInputRequest() {
+        const request = this.activePlayerInputRequest;
+        if (!request || this.playerInputRequestSubmitting) {
+            return;
+        }
+        const answer = this.playerInputRequestAnswer?.value?.trim() || '';
+        if (!answer) {
+            this.setPlayerInputRequestStatus('Enter an answer before submitting.', 'error');
+            this.playerInputRequestAnswer?.focus();
+            return;
+        }
+        await this.sendPlayerInputRequestResponse(request, { answer });
+    }
+
+    async cancelActivePlayerInputRequest() {
+        const request = this.activePlayerInputRequest;
+        if (!request || this.playerInputRequestSubmitting) {
+            return;
+        }
+        await this.sendPlayerInputRequestResponse(request, { cancelled: true });
+    }
+
+    async sendPlayerInputRequestResponse(request, { answer = '', cancelled = false } = {}) {
+        if (!request || !request.inputRequestId) {
+            return;
+        }
+        this.playerInputRequestSubmitting = true;
+        if (this.playerInputRequestSubmitButton) {
+            this.playerInputRequestSubmitButton.disabled = true;
+        }
+        if (this.playerInputRequestCancelButton) {
+            this.playerInputRequestCancelButton.disabled = true;
+        }
+        if (this.playerInputRequestAnswer) {
+            this.playerInputRequestAnswer.disabled = true;
+        }
+        this.setPlayerInputRequestStatus(cancelled ? 'Cancelling...' : 'Submitting...');
+        try {
+            const response = await fetch('/api/chat/user-input-response', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    inputRequestId: request.inputRequestId,
+                    requestId: request.requestId || null,
+                    clientId: this.clientId,
+                    answer,
+                    cancelled: Boolean(cancelled)
+                })
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok || !data?.success) {
+                throw new Error(data?.error || `HTTP ${response.status}`);
+            }
+            this.handlePlayerInputRequestClosed({
+                inputRequestId: request.inputRequestId
+            });
+        } catch (error) {
+            this.playerInputRequestSubmitting = false;
+            if (this.playerInputRequestSubmitButton) {
+                this.playerInputRequestSubmitButton.disabled = false;
+            }
+            if (this.playerInputRequestCancelButton) {
+                this.playerInputRequestCancelButton.disabled = false;
+            }
+            if (this.playerInputRequestAnswer) {
+                this.playerInputRequestAnswer.disabled = false;
+            }
+            this.setPlayerInputRequestStatus(`Failed: ${error.message || error}`, 'error');
+        }
     }
 
     isPrefixHelpModalOpen() {
@@ -3053,7 +3362,8 @@ class AIRPGChat {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 waitForDrain,
-                timeoutMs: Math.floor(normalizedTimeoutMs)
+                timeoutMs: Math.floor(normalizedTimeoutMs),
+                clientId: this.clientId
             })
         });
         const data = await response.json().catch(() => ({}));
@@ -3773,6 +4083,12 @@ class AIRPGChat {
                 break;
             case 'quest_confirmation_request':
                 this.handleQuestConfirmationRequest(payload);
+                break;
+            case 'player_input_request':
+                this.handlePlayerInputRequest(payload);
+                break;
+            case 'player_input_request_closed':
+                this.handlePlayerInputRequestClosed(payload);
                 break;
             default:
                 console.log('Realtime update:', payload);
@@ -4922,7 +5238,10 @@ class AIRPGChat {
         try {
             const response = await fetch(`/api/prompts/${encodeURIComponent(resolvedId)}/cancel`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' }
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    clientId: this.clientId
+                })
             });
             const data = await response.json().catch(() => ({}));
             if (!response.ok || !data?.success) {
