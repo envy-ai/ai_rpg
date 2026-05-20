@@ -1659,10 +1659,10 @@
                         <div class="crafting-modal__section-header thing-list-panel__header">
                             <div class="thing-list-panel__heading-group crafting-modal__heading-group">
                                 <div class="crafting-modal__heading-row">
-                                    <h3>Available Items</h3>
-                                    <span class="inventory-count" id="craftingInventoryCount">0 items</span>
+                                    <h3>Available Items &amp; Scenery</h3>
+                                    <span class="inventory-count" id="craftingInventoryCount">0 things</span>
                                 </div>
-                                <p class="crafting-modal__hint" id="craftingModalHint">Drag items into the slots to craft.</p>
+                                <p class="crafting-modal__hint" id="craftingModalHint">Drag items or scenery into the slots to craft.</p>
                             </div>
                             <div class="thing-list-panel__controls">
                                 {{ thingListViewToggle("craftingInventoryViewToggle", "craftingInventoryView", "Change crafting inventory view") }}
@@ -1676,12 +1676,12 @@
                         <div class="thing-list-filters-shell" id="craftingInventoryFilters">
                             <div class="thing-list-filters-row">
                                 <div class="npc-selection-filter npc-inventory-filter-input-wrapper crafting-inventory-filter">
-                                    <label class="sr-only" for="craftingInventoryFilterInput">Filter items</label>
-                                    <input type="search" id="craftingInventoryFilterInput" class="npc-selection-filter-input" placeholder="Filter items" aria-label="Filter items for crafting or processing">
+                                    <label class="sr-only" for="craftingInventoryFilterInput">Filter items and scenery</label>
+                                    <input type="search" id="craftingInventoryFilterInput" class="npc-selection-filter-input" placeholder="Filter items and scenery" aria-label="Filter items and scenery for crafting or processing">
                                 </div>
                                 <div class="npc-inventory-filter-slot-wrapper" id="craftingInventorySlotFilterWrapper">
-                                    <label class="sr-only" for="craftingInventorySlotFilter">Filter crafting items by slot</label>
-                                    <select id="craftingInventorySlotFilter" class="npc-inventory-slot-filter" aria-label="Filter crafting items by slot">
+                                    <label class="sr-only" for="craftingInventorySlotFilter">Filter crafting inputs by slot</label>
+                                    <select id="craftingInventorySlotFilter" class="npc-inventory-slot-filter" aria-label="Filter crafting inputs by slot">
                                         <option value="">All slots</option>
                                     </select>
                                 </div>
@@ -1706,7 +1706,7 @@
                             </div>
                         </div>
                         <div id="craftingInventoryGrid" class="crafting-modal__inventory-grid"></div>
-                        <div id="craftingInventoryEmpty" class="crafting-modal__empty">No items are available.</div>
+                        <div id="craftingInventoryEmpty" class="crafting-modal__empty">No items or scenery are available.</div>
                         </div>
                     </section>
                     <section class="crafting-modal__workspace">
@@ -10815,6 +10815,12 @@
             return null;
         }
 
+        const touchDragSlopDistance = 12;
+
+        function getTouchDragDistance(dx, dy) {
+            return Math.hypot(dx, dy);
+        }
+
         function isTouchDragInteractiveTarget(target) {
             return Boolean(target?.closest?.('.entity-context-menu-button, .thing-card-menu-button, button, a, input, select, textarea'));
         }
@@ -10875,9 +10881,6 @@
                 return;
             }
             modalInventoryTouchDragState = null;
-            if (state.longPressTimer) {
-                clearTimeout(state.longPressTimer);
-            }
             releaseModalInventoryTouchPointerCapture(state);
             state.card?.classList.remove('is-touch-dragging');
             if (suppressClick && state.card instanceof HTMLElement) {
@@ -10974,9 +10977,6 @@
             }
             card.dataset.modalTouchDragWired = 'true';
 
-            const longPressMs = 460;
-            const moveTolerance = 12;
-
             const createTouchDragState = ({
                 inputType,
                 identifier = null,
@@ -11003,14 +11003,11 @@
                     ghost: null,
                     onTouchDragStart,
                     onTouchDragMove,
-                    onTouchDrop,
-                    longPressTimer: window.setTimeout(() => {
-                        beginModalInventoryTouchDrag(modalInventoryTouchDragState);
-                    }, longPressMs)
+                    onTouchDrop
                 };
             };
 
-            const startPointerLongPress = (event) => {
+            const startPointerTouchDrag = (event) => {
                 if (!isTouchOrCoarsePointerContext()
                     || !isTouchLikePointerEvent(event)
                     || event.isPrimary === false
@@ -11037,20 +11034,18 @@
                 });
             };
 
-            const updatePointerLongPress = (event) => {
+            const updatePointerTouchDrag = (event) => {
                 const state = modalInventoryTouchDragState;
                 if (!state || state.card !== card || state.inputType !== 'pointer' || state.pointerId !== event.pointerId) {
                     return;
                 }
                 const dx = event.clientX - state.startX;
                 const dy = event.clientY - state.startY;
-                if (!state.dragStarted && Math.hypot(dx, dy) > moveTolerance) {
-                    cancelModalInventoryTouchDrag();
-                    return;
-                }
-
                 state.currentX = event.clientX;
                 state.currentY = event.clientY;
+                if (!state.dragStarted && getTouchDragDistance(dx, dy) > touchDragSlopDistance) {
+                    beginModalInventoryTouchDrag(state);
+                }
                 if (!state.dragStarted) {
                     return;
                 }
@@ -11062,7 +11057,7 @@
                 }
             };
 
-            const finishPointerLongPress = (event) => {
+            const finishPointerTouchDrag = (event) => {
                 const state = modalInventoryTouchDragState;
                 if (!state || state.card !== card || state.inputType !== 'pointer' || state.pointerId !== event.pointerId) {
                     return;
@@ -11085,18 +11080,18 @@
                 });
             };
 
-            const cancelPointerLongPress = (event) => {
+            const cancelPointerTouchDrag = (event) => {
                 const state = modalInventoryTouchDragState;
                 if (state?.card === card && state.inputType === 'pointer' && state.pointerId === event.pointerId) {
                     cancelModalInventoryTouchDrag({ suppressClick: state.dragStarted });
                 }
             };
 
-            card.addEventListener('pointerdown', startPointerLongPress);
-            card.addEventListener('pointermove', updatePointerLongPress);
-            card.addEventListener('pointerup', finishPointerLongPress);
-            card.addEventListener('pointercancel', cancelPointerLongPress);
-            card.addEventListener('lostpointercapture', cancelPointerLongPress);
+            card.addEventListener('pointerdown', startPointerTouchDrag);
+            card.addEventListener('pointermove', updatePointerTouchDrag);
+            card.addEventListener('pointerup', finishPointerTouchDrag);
+            card.addEventListener('pointercancel', cancelPointerTouchDrag);
+            card.addEventListener('lostpointercapture', cancelPointerTouchDrag);
 
             card.addEventListener('touchstart', (event) => {
                 if (!isTouchOrCoarsePointerContext() || event.touches.length !== 1 || modalInventoryTouchDragState) {
@@ -11126,13 +11121,11 @@
                 }
                 const dx = touch.clientX - state.startX;
                 const dy = touch.clientY - state.startY;
-                if (!state.dragStarted && Math.hypot(dx, dy) > moveTolerance) {
-                    cancelModalInventoryTouchDrag();
-                    return;
-                }
-
                 state.currentX = touch.clientX;
                 state.currentY = touch.clientY;
+                if (!state.dragStarted && getTouchDragDistance(dx, dy) > touchDragSlopDistance) {
+                    beginModalInventoryTouchDrag(state);
+                }
                 if (!state.dragStarted) {
                     return;
                 }
@@ -13397,12 +13390,17 @@
         }
 
         let draggedPartyNpc = null;
+        let partyNpcTouchDragState = null;
 
-        function resetPartyDragState() {
-            draggedPartyNpc = null;
+        function clearPartyDropHighlights() {
             document.querySelectorAll('.party-drop-target.is-drop-hover').forEach(el => {
                 el.classList.remove('is-drop-hover');
             });
+        }
+
+        function resetPartyDragState() {
+            draggedPartyNpc = null;
+            clearPartyDropHighlights();
         }
 
         function isNpcInParty(npcId) {
@@ -13433,6 +13431,322 @@
             return { record, npcId: stringId };
         }
 
+        function canDropDraggedNpcOnPartyTarget(mode, dragState = draggedPartyNpc) {
+            if (!dragState) {
+                return false;
+            }
+            if (mode === 'recruit') {
+                return dragState.source === 'location';
+            }
+            if (mode === 'dismiss') {
+                return dragState.source === 'party';
+            }
+            return false;
+        }
+
+        async function applyPartyDropTarget(mode, dragState = draggedPartyNpc) {
+            if (!canDropDraggedNpcOnPartyTarget(mode, dragState)) {
+                return;
+            }
+
+            const previousDraggedPartyNpc = draggedPartyNpc;
+            draggedPartyNpc = dragState;
+            try {
+                const { record, npcId } = resolveDraggedNpcRecord(draggedPartyNpc);
+                if (mode === 'recruit') {
+                    if (isNpcInParty(npcId)) {
+                        window.alert('That character is already in the party.');
+                        return;
+                    }
+                    await forceRecruitNpc(record, { card: draggedPartyNpc.element || null });
+                } else if (mode === 'dismiss') {
+                    if (!isNpcInParty(npcId)) {
+                        window.alert('That character is not in the party.');
+                        return;
+                    }
+                    await dismissNpcFromParty(record, { card: draggedPartyNpc.element || null });
+                }
+            } finally {
+                draggedPartyNpc = previousDraggedPartyNpc;
+            }
+        }
+
+        function resolveNpcPartyTouchDropTarget(state) {
+            if (!state) {
+                return { element: null, dropTarget: null, mode: '' };
+            }
+            const element = document.elementFromPoint(state.currentX, state.currentY);
+            const dropTarget = element?.closest?.('.party-drop-target') || null;
+            const rawMode = dropTarget?.dataset?.partyDropTarget || '';
+            const mode = rawMode === 'dismiss' ? 'dismiss' : (rawMode === 'recruit' ? 'recruit' : '');
+            return { element, dropTarget, mode };
+        }
+
+        function updateNpcPartyTouchDropHighlight(state) {
+            clearPartyDropHighlights();
+            const { dropTarget, mode } = resolveNpcPartyTouchDropTarget(state);
+            if (dropTarget && canDropDraggedNpcOnPartyTarget(mode, state?.draggedNpc || draggedPartyNpc)) {
+                dropTarget.classList.add('is-drop-hover');
+            }
+        }
+
+        function cancelNpcPartyTouchDrag({ suppressClick = false } = {}) {
+            const state = partyNpcTouchDragState;
+            if (!state) {
+                return;
+            }
+            partyNpcTouchDragState = null;
+            releaseModalInventoryTouchPointerCapture(state);
+            state.card?.classList.remove('is-dragging', 'is-touch-dragging');
+            if (suppressClick && state.card instanceof HTMLElement) {
+                state.card.dataset.touchDragSuppressClick = 'true';
+                window.setTimeout(() => {
+                    if (state.card?.dataset?.touchDragSuppressClick === 'true') {
+                        delete state.card.dataset.touchDragSuppressClick;
+                    }
+                }, 350);
+            }
+            state.ghost?.remove();
+            if (!modalInventoryTouchDragState) {
+                document.body.classList.remove('thing-touch-drag-active');
+            }
+            if (!state.draggedNpc || draggedPartyNpc === state.draggedNpc || draggedPartyNpc?.npcId === state.draggedNpc.npcId) {
+                draggedPartyNpc = null;
+            }
+            clearPartyDropHighlights();
+        }
+
+        function beginNpcPartyTouchDrag(state) {
+            if (!state || state.dragStarted || !state.npc?.id || !(state.card instanceof HTMLElement)) {
+                return;
+            }
+            state.dragStarted = true;
+            state.draggedNpc = {
+                npcId: state.npcId,
+                source: state.source || 'party',
+                npc: state.npc,
+                element: state.card
+            };
+            draggedPartyNpc = state.draggedNpc;
+            state.card.classList.add('is-dragging', 'is-touch-dragging');
+            state.ghost = createModalInventoryTouchDragGhost(state.card);
+            document.body.classList.add('thing-touch-drag-active');
+            suppressContextTooltipsForTouch(2400);
+            positionModalInventoryTouchDragGhost(state);
+            updateNpcPartyTouchDropHighlight(state);
+        }
+
+        async function finishNpcPartyTouchDrag(state) {
+            const { mode } = resolveNpcPartyTouchDropTarget(state);
+            if (!canDropDraggedNpcOnPartyTarget(mode, state?.draggedNpc)) {
+                return;
+            }
+            await applyPartyDropTarget(mode, state.draggedNpc);
+        }
+
+        function wireNpcPartyTouchDrag(card, npc, source) {
+            if (!(card instanceof HTMLElement) || !npc?.id || card.dataset.partyTouchDragAttached === 'true') {
+                return;
+            }
+            card.dataset.partyTouchDragAttached = 'true';
+
+            const npcId = String(npc.id);
+            const createTouchDragState = ({
+                inputType,
+                identifier = null,
+                pointerId = null,
+                startX,
+                startY,
+                pointerCaptureElement = null
+            }) => {
+                partyNpcTouchDragState = {
+                    card,
+                    npc,
+                    npcId,
+                    source: source || 'party',
+                    inputType,
+                    identifier,
+                    pointerId,
+                    pointerCaptureElement,
+                    startX,
+                    startY,
+                    currentX: startX,
+                    currentY: startY,
+                    dragStarted: false,
+                    draggedNpc: null,
+                    ghost: null
+                };
+            };
+
+            const startPointerTouchDrag = (event) => {
+                if (!isTouchOrCoarsePointerContext()
+                    || !isTouchLikePointerEvent(event)
+                    || event.isPrimary === false
+                    || event.button !== 0
+                    || partyNpcTouchDragState
+                    || modalInventoryTouchDragState) {
+                    return;
+                }
+                if (isTouchDragInteractiveTarget(event.target)) {
+                    return;
+                }
+                if (typeof card.setPointerCapture === 'function') {
+                    try {
+                        card.setPointerCapture(event.pointerId);
+                    } catch (_) {
+                        // Pointer capture can fail on detached nodes; movement still works through bubbling when possible.
+                    }
+                }
+                createTouchDragState({
+                    inputType: 'pointer',
+                    pointerId: event.pointerId,
+                    pointerCaptureElement: card,
+                    startX: event.clientX,
+                    startY: event.clientY
+                });
+            };
+
+            const updatePointerTouchDrag = (event) => {
+                const state = partyNpcTouchDragState;
+                if (!state || state.card !== card || state.inputType !== 'pointer' || state.pointerId !== event.pointerId) {
+                    return;
+                }
+                const dx = event.clientX - state.startX;
+                const dy = event.clientY - state.startY;
+                state.currentX = event.clientX;
+                state.currentY = event.clientY;
+                if (!state.dragStarted && getTouchDragDistance(dx, dy) > touchDragSlopDistance) {
+                    beginNpcPartyTouchDrag(state);
+                }
+                if (!state.dragStarted) {
+                    return;
+                }
+
+                event.preventDefault();
+                positionModalInventoryTouchDragGhost(state);
+                updateNpcPartyTouchDropHighlight(state);
+            };
+
+            const finishPointerTouchDrag = (event) => {
+                const state = partyNpcTouchDragState;
+                if (!state || state.card !== card || state.inputType !== 'pointer' || state.pointerId !== event.pointerId) {
+                    return;
+                }
+                state.currentX = event.clientX;
+                state.currentY = event.clientY;
+
+                if (!state.dragStarted) {
+                    cancelNpcPartyTouchDrag();
+                    return;
+                }
+
+                event.preventDefault();
+                event.stopPropagation();
+                const dropState = { ...state };
+                cancelNpcPartyTouchDrag({ suppressClick: true });
+                finishNpcPartyTouchDrag(dropState).catch(error => {
+                    console.warn('Failed to complete NPC touch drag:', error);
+                    alert(`Failed to update party membership: ${error?.message || error}`);
+                });
+            };
+
+            const cancelPointerTouchDrag = (event) => {
+                const state = partyNpcTouchDragState;
+                if (state?.card === card && state.inputType === 'pointer' && state.pointerId === event.pointerId) {
+                    cancelNpcPartyTouchDrag({ suppressClick: state.dragStarted });
+                }
+            };
+
+            card.addEventListener('pointerdown', startPointerTouchDrag);
+            card.addEventListener('pointermove', updatePointerTouchDrag);
+            card.addEventListener('pointerup', finishPointerTouchDrag);
+            card.addEventListener('pointercancel', cancelPointerTouchDrag);
+            card.addEventListener('lostpointercapture', cancelPointerTouchDrag);
+
+            card.addEventListener('touchstart', (event) => {
+                if (!isTouchOrCoarsePointerContext() || event.touches.length !== 1 || partyNpcTouchDragState || modalInventoryTouchDragState) {
+                    return;
+                }
+                if (isTouchDragInteractiveTarget(event.target)) {
+                    return;
+                }
+                const touch = event.changedTouches[0];
+                createTouchDragState({
+                    inputType: 'touch',
+                    identifier: touch.identifier,
+                    startX: touch.clientX,
+                    startY: touch.clientY
+                });
+            }, { passive: true });
+
+            card.addEventListener('touchmove', (event) => {
+                const state = partyNpcTouchDragState;
+                if (!state || state.card !== card || state.inputType !== 'touch') {
+                    return;
+                }
+                const touch = getTouchByIdentifier(event.changedTouches, state.identifier)
+                    || getTouchByIdentifier(event.touches, state.identifier);
+                if (!touch) {
+                    return;
+                }
+                const dx = touch.clientX - state.startX;
+                const dy = touch.clientY - state.startY;
+                state.currentX = touch.clientX;
+                state.currentY = touch.clientY;
+                if (!state.dragStarted && getTouchDragDistance(dx, dy) > touchDragSlopDistance) {
+                    beginNpcPartyTouchDrag(state);
+                }
+                if (!state.dragStarted) {
+                    return;
+                }
+
+                event.preventDefault();
+                positionModalInventoryTouchDragGhost(state);
+                updateNpcPartyTouchDropHighlight(state);
+            }, { passive: false });
+
+            card.addEventListener('touchend', (event) => {
+                const state = partyNpcTouchDragState;
+                if (!state || state.card !== card || state.inputType !== 'touch') {
+                    return;
+                }
+                const touch = getTouchByIdentifier(event.changedTouches, state.identifier);
+                if (touch) {
+                    state.currentX = touch.clientX;
+                    state.currentY = touch.clientY;
+                }
+
+                if (!state.dragStarted) {
+                    cancelNpcPartyTouchDrag();
+                    return;
+                }
+
+                event.preventDefault();
+                event.stopPropagation();
+                const dropState = { ...state };
+                cancelNpcPartyTouchDrag({ suppressClick: true });
+                finishNpcPartyTouchDrag(dropState).catch(error => {
+                    console.warn('Failed to complete NPC touch drag:', error);
+                    alert(`Failed to update party membership: ${error?.message || error}`);
+                });
+            }, { passive: false });
+
+            card.addEventListener('touchcancel', () => {
+                const state = partyNpcTouchDragState;
+                if (state?.card === card && state.inputType === 'touch') {
+                    cancelNpcPartyTouchDrag({ suppressClick: state.dragStarted });
+                }
+            }, { passive: true });
+
+            card.addEventListener('click', (event) => {
+                if (card.dataset.touchDragSuppressClick === 'true') {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    event.stopImmediatePropagation();
+                }
+            }, true);
+        }
+
         function registerNpcPartyDragSource(card, npc, source) {
             if (!card || !npc || !npc.id) {
                 return;
@@ -13452,6 +13766,7 @@
             card.dataset.partyDragNpcId = npcId;
             card.dataset.partyDragSource = source || 'party';
             card.draggable = true;
+            wireNpcPartyTouchDrag(card, npc, source);
 
             card.addEventListener('dragstart', (event) => {
                 draggedPartyNpc = {
@@ -13489,16 +13804,7 @@
             element.classList.add('party-drop-target');
 
             const shouldHandleDrag = () => {
-                if (!draggedPartyNpc) {
-                    return false;
-                }
-                if (normalizedMode === 'recruit') {
-                    return draggedPartyNpc.source === 'location';
-                }
-                if (normalizedMode === 'dismiss') {
-                    return draggedPartyNpc.source === 'party';
-                }
-                return false;
+                return canDropDraggedNpcOnPartyTarget(normalizedMode);
             };
 
             element.addEventListener('dragover', (event) => {
@@ -13534,20 +13840,7 @@
                 }
 
                 try {
-                    const { record, npcId } = resolveDraggedNpcRecord(draggedPartyNpc);
-                    if (normalizedMode === 'recruit') {
-                        if (isNpcInParty(npcId)) {
-                            window.alert('That character is already in the party.');
-                            return;
-                        }
-                        await forceRecruitNpc(record, { card: draggedPartyNpc.element || null });
-                    } else if (normalizedMode === 'dismiss') {
-                        if (!isNpcInParty(npcId)) {
-                            window.alert('That character is not in the party.');
-                            return;
-                        }
-                        await dismissNpcFromParty(record, { card: draggedPartyNpc.element || null });
-                    }
+                    await applyPartyDropTarget(normalizedMode, draggedPartyNpc);
                 } catch (error) {
                     console.warn('Party drag/drop failed:', error);
                     window.alert(error?.message || 'Unable to update party membership.');
@@ -21195,6 +21488,17 @@
                 : [];
         }
 
+        function getCurrentLocationCraftingScenery() {
+            const activeLocation = lastRenderedLocation || window.lastRenderedLocation || null;
+            const activeLocationId = activeLocation?.id || null;
+            if (!activeLocationId || currentLocationThingCollections?.locationId !== activeLocationId) {
+                return [];
+            }
+            return Array.isArray(currentLocationThingCollections.scenery)
+                ? currentLocationThingCollections.scenery
+                : [];
+        }
+
         function getCurrentLocationContainerCraftingItems() {
             const activeLocation = lastRenderedLocation || window.lastRenderedLocation || null;
             const activeLocationId = activeLocation?.id || null;
@@ -21206,7 +21510,7 @@
                 : [];
         }
 
-        function buildCraftingAvailableItems(playerInventoryItems = []) {
+        function buildCraftingAvailableItems(playerInventoryItems = [], { includeLocationSources = true } = {}) {
             const mergedItems = [];
             const seenIds = new Set();
 
@@ -21229,8 +21533,11 @@
             };
 
             appendItems(playerInventoryItems, 'player');
-            appendItems(getCurrentLocationCraftingItems(), 'location');
-            appendItems(getCurrentLocationContainerCraftingItems(), 'location');
+            if (includeLocationSources) {
+                appendItems(getCurrentLocationCraftingItems(), 'location');
+                appendItems(getCurrentLocationCraftingScenery(), 'location');
+                appendItems(getCurrentLocationContainerCraftingItems(), 'location');
+            }
             return mergedItems;
         }
 
@@ -21331,7 +21638,9 @@
                 ? getLatestPlayerData()
                 : (window.currentPlayerData || null);
             const inventoryItems = Array.isArray(playerData?.inventory) ? playerData.inventory : [];
-            const availableCraftingItems = buildCraftingAvailableItems(inventoryItems);
+            const availableCraftingItems = buildCraftingAvailableItems(inventoryItems, {
+                includeLocationSources: currentCraftingMode !== 'modify-location'
+            });
 
             if (craftingInventoryFilterInput) {
                 craftingInventoryFilterInput.value = '';
@@ -21359,19 +21668,19 @@
             }
             if (craftingModalHint) {
                 craftingModalHint.textContent = currentCraftingMode === 'process'
-                    ? 'Drag a single item into the slot to process it. Items remain where they are until you confirm.'
+                    ? 'Drag a single item or scenery object into the slot to process it. Inputs remain where they are until you confirm.'
                     : (currentCraftingMode === 'modify-location'
                         ? 'Drag up to four items or tools into the slots to modify this location. Items remain in your inventory until you confirm.'
-                        : `Drag up to four items into the slots to craft ${craftTargetLabel}. Items remain where they are until you confirm.`);
+                        : `Drag up to four items or scenery objects into the slots to craft ${craftTargetLabel}. Inputs remain where they are until you confirm.`);
             }
             if (craftingActionButton) {
                 craftingActionButton.textContent = currentCraftingMode === 'process'
-                    ? 'Process Item'
+                    ? 'Process Input'
                     : (currentCraftingMode === 'modify-location' ? 'Modify Location' : `Craft ${craftTargetLabelTitle}`);
             }
             if (craftingNoProseButton) {
                 craftingNoProseButton.textContent = currentCraftingMode === 'process'
-                    ? 'Process (no prose)'
+                    ? 'Process Input (no prose)'
                     : (currentCraftingMode === 'modify-location' ? 'Modify Location (no prose)' : `Craft ${craftTargetLabelTitle} (no prose)`);
             }
             if (craftingNotesInput) {
@@ -21466,10 +21775,10 @@
                 equippedOnlyRadio: craftingInventoryEquippedOnlyRadio,
                 equippableOnlyRadio: craftingInventoryEquippableOnlyRadio,
                 nonEquippableOnlyRadio: craftingInventoryNonEquippableOnlyRadio,
-                emptyMessage: 'No items are available.',
-                filteredEmptyMessage: 'No items match your filters.',
-                singularLabel: 'item',
-                pluralLabel: 'items',
+                emptyMessage: 'No items or scenery are available.',
+                filteredEmptyMessage: 'No items or scenery match your filters.',
+                singularLabel: 'thing',
+                pluralLabel: 'things',
                 enableEquipmentFilters: true,
                 tableConfig: {
                     showHeaders: true,

@@ -27,7 +27,7 @@ The player mentioned the following intent or approach before salvaging: "{{ salv
 {% else %}
 
 {% set hasInputItems = inputItems and inputItems.length > 0 %}
-{{ actorName }} attempted to craft "{{ intendedItemName }}" using the crafting/processing station "{{ stationName }}"{% if hasInputItems %} out of the following items:{% else %} with no selected inventory items.{% endif %}
+{{ actorName }} attempted to craft "{{ intendedItemName }}" using the crafting/processing station "{{ stationName }}"{% if hasInputItems %} out of the following selected inputs:{% else %} with no selected input things.{% endif %}
 {% if hasInputItems %}
 {% for item in inputItems %}- {{ item.name }}
 {% endfor %} 
@@ -41,7 +41,7 @@ The intended output is scenery (not a portable item).
 The intended output is a portable item.
 {% endif %}
 
-Regardless of their success or failure, they produced {% if producedItem %}the following {% if craftTargetType == 'scenery' %}scenery{% else %}item{% endif %}: "{{ producedItem.name }}"{% else %}no {% if craftTargetType == 'scenery' %}scenery{% else %}item{% endif %}{% endif %} and consumed {% if consumedItems.length > 0 %}the following items in the process:{% else %}no items in the process.{% endif %}
+Regardless of their success or failure, they produced {% if producedItem %}the following {% if craftTargetType == 'scenery' %}scenery{% else %}item{% endif %}: "{{ producedItem.name }}"{% else %}no {% if craftTargetType == 'scenery' %}scenery{% else %}item{% endif %}{% endif %} and consumed {% if consumedItems.length > 0 %}the following inputs in the process:{% else %}no inputs in the process.{% endif %}
 {% for item in consumedItems %}- {{ item.name }}
 {% endfor %}
 

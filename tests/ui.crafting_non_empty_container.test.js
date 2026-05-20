@@ -9,6 +9,7 @@ const apiSource = fs.readFileSync(path.join(rootDir, 'api.js'), 'utf8');
 const scssSource = fs.readFileSync(path.join(rootDir, 'public', 'css', 'main.scss'), 'utf8');
 const craftingDocs = fs.readFileSync(path.join(rootDir, 'docs', 'api', 'crafting.md'), 'utf8');
 const chatDocs = fs.readFileSync(path.join(rootDir, 'docs', 'ui', 'chat_interface.md'), 'utf8');
+const craftPrompt = fs.readFileSync(path.join(rootDir, 'prompts', '_includes', 'plausibility-check-craft.njk'), 'utf8');
 
 function assertIncludes(source, expected) {
     assert.ok(source.includes(expected), `Expected source to include: ${expected}`);
@@ -34,16 +35,18 @@ test('location container cards override item/scenery drag drops', () => {
     assertIncludes(chatDocs, 'Dropping an item card onto a container card');
 });
 
-test('crafting UI includes current-location items in the available picker', () => {
-    assertIncludes(viewSource, '<h3>Available Items</h3>');
+test('crafting UI includes current-location items and scenery in the available picker', () => {
+    assertIncludes(viewSource, '<h3>Available Items &amp; Scenery</h3>');
     assertIncludes(viewSource, 'function getCurrentLocationCraftingItems()');
+    assertIncludes(viewSource, 'function getCurrentLocationCraftingScenery()');
     assertIncludes(viewSource, 'function getCurrentLocationContainerCraftingItems()');
     assertIncludes(viewSource, 'async function fetchContainedThingDetailsForContainers(rootThings = [])');
-    assertIncludes(viewSource, 'function buildCraftingAvailableItems(playerInventoryItems = [])');
+    assertIncludes(viewSource, 'function buildCraftingAvailableItems(playerInventoryItems = [], { includeLocationSources = true } = {})');
     assertIncludes(viewSource, "appendItems(playerInventoryItems, 'player');");
     assertIncludes(viewSource, "appendItems(getCurrentLocationCraftingItems(), 'location');");
+    assertIncludes(viewSource, "appendItems(getCurrentLocationCraftingScenery(), 'location');");
     assertIncludes(viewSource, "appendItems(getCurrentLocationContainerCraftingItems(), 'location');");
-    assertIncludes(viewSource, 'const availableCraftingItems = buildCraftingAvailableItems(inventoryItems);');
+    assertIncludes(viewSource, 'includeLocationSources: currentCraftingMode !== \'modify-location\'');
     assertIncludes(viewSource, 'renderCraftingInventory(availableCraftingItems);');
     assertIncludes(viewSource, "craftingSourceType !== 'location'");
 });
@@ -65,7 +68,13 @@ test('crafting API accepts only player-inventory or current-location inputs', ()
 
 test('crafting docs describe non-empty container handling', () => {
     assertIncludes(craftingDocs, 'Non-empty containers cannot be selected as crafting inputs');
-    assertIncludes(craftingDocs, 'Selected inputs may come from the active player inventory, loose current-location items, or item contents inside containers in the current location');
-    assertIncludes(chatDocs, 'crafting picker lists active player inventory items, current-location items, and item contents inside current-location containers');
+    assertIncludes(craftingDocs, 'Selected inputs may come from the active player inventory, loose current-location items or scenery, or item contents inside containers in the current location');
+    assertIncludes(chatDocs, 'crafting picker lists active player inventory items, current-location items and scenery, and item contents inside current-location containers');
     assertIncludes(chatDocs, 'non-empty containers are greyed out');
+});
+
+test('crafting prompt describes selected scenery as input things', () => {
+    assertIncludes(craftPrompt, 'If no input things are selected');
+    assertIncludes(craftPrompt, 'out of the following selected inputs');
+    assertIncludes(craftPrompt, 'with no selected input things');
 });
