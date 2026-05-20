@@ -518,6 +518,38 @@ The below context is an account of the current game state, including the setting
   {% if plotExpander and plotExpander | trim %}
   <plotExpander>{{ plotExpander }}</plotExpander>
   {% endif %}
+  {% set plotAnalysisHasThreads = plotAnalysis and plotAnalysis.plotThreads and plotAnalysis.plotThreads.length %}
+  {% set plotAnalysisHasComplications = plotAnalysis and plotAnalysis.currentPlotComplications and plotAnalysis.currentPlotComplications.length %}
+  {% set plotAnalysisHasContent = plotAnalysisHasThreads or plotAnalysisHasComplications %}
+  {% if promptType != 'plot-analysis' and plotAnalysisHasContent %}
+  <plotAnalysis{% if plotAnalysis.updatedAt %} updatedAt="{{ plotAnalysis.updatedAt }}"{% endif %}>
+    {% if plotAnalysis.plotThreads and plotAnalysis.plotThreads.length %}
+    <plotThreads>
+      {% for thread in plotAnalysis.plotThreads %}
+      <plotThread>
+        <description>{{ thread.description }}</description>
+        <isCurrentFocus>{{ thread.isCurrentFocus }}</isCurrentFocus>
+      </plotThread>
+      {% endfor %}
+    </plotThreads>
+    {% endif %}
+    {% if plotAnalysis.currentPlotComplications and plotAnalysis.currentPlotComplications.length %}
+    <currentPlotComplications>
+      {% for complication in plotAnalysis.currentPlotComplications %}
+      <complication>
+        <description>{{ complication.description }}</description>
+      </complication>
+      {% endfor %}
+    </currentPlotComplications>
+    {% endif %}
+    {% if plotAnalysis.parseError %}
+    <parseError>{{ plotAnalysis.parseError }}</parseError>
+    {% endif %}
+    {% if plotAnalysis.raw %}
+    <rawOutput>{{ plotAnalysis.raw }}</rawOutput>
+    {% endif %}
+  </plotAnalysis>
+  {% endif %}
   {% if activeMysteryThreads and activeMysteryThreads.length %}
   <activeMysteryThreads max="{{ mysteryThreadMaxActive | default(activeMysteryThreads.length, true) }}">
     <instructions>GM-private continuity. Preserve these mystery facts and constraints when generating new material, but do not directly reveal hidden truth unless the player discovers it through play.</instructions>
@@ -553,6 +585,11 @@ The below context is an account of the current game state, including the setting
   {% endif %}
   <recentStoryHistory>{{ recentGameHistory }}</recentStoryHistory>
 </gameState>
+{% if promptType != 'plot-analysis' and plotAnalysisHasContent %}
+<plotAnalysis>
+  {% include "_includes/plot-analysis-blurb.njk" %}
+</plotAnalysis>
+{% endif %}
 <currentConditions>
   <worldTime>
     <dateLabel>{{ worldTime.dateLabel }}</dateLabel>

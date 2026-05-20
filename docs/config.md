@@ -87,6 +87,21 @@ chat_tools:
 
 The value defaults to `true` and must be a boolean when provided. When disabled, `requestUserInput` is removed from regular and generic chat-tool payloads.
 
+## Plot analysis
+
+`plot_analysis.enabled` controls whether normal player actions schedule the non-blocking background `plot-analysis` prompt.
+
+```yaml
+plot_analysis:
+  enabled: true
+  max_plot_threads: 3
+  max_plot_complications: 3
+```
+
+`enabled` defaults to `true` and must be a boolean when provided. When disabled, new player turns do not schedule background plot-analysis work; the latest saved `Globals.plotAnalysis` value still loads, persists, appears in base-context prompts, and remains visible through `/plot_analysis`.
+
+`max_plot_threads` and `max_plot_complications` default to the values shown in `config.default.yaml`. The current `prompts/_includes/plot-analysis-blurb.njk` warning text uses `max_plot_complications`; `max_plot_threads` remains available to prompt include customizations.
+
 ## Event Checks
 
 `event_checks.enabled` controls whether narrative event processing runs at all. When it is `false`, prose does not mutate world state through event checks and quest completion checks are skipped.

@@ -2424,6 +2424,17 @@ async function validateConfiguration() {
             validationErrors.push('chat_tools.request_user_input_enabled must be a boolean when provided');
         }
     }
+    if (config.plot_analysis !== undefined) {
+        const plotAnalysisConfig = config.plot_analysis;
+        if (!plotAnalysisConfig || typeof plotAnalysisConfig !== 'object' || Array.isArray(plotAnalysisConfig)) {
+            validationErrors.push('plot_analysis must be an object when provided');
+        } else if (
+            plotAnalysisConfig.enabled !== undefined
+            && typeof plotAnalysisConfig.enabled !== 'boolean'
+        ) {
+            validationErrors.push('plot_analysis.enabled must be a boolean when provided');
+        }
+    }
     if (config.event_checks?.use_xml !== undefined && typeof config.event_checks.use_xml !== 'boolean') {
         validationErrors.push('event_checks.use_xml must be a boolean when provided');
     }
@@ -7003,6 +7014,7 @@ function buildBasePromptContext({
         fullGameHistory,
         plotSummary: latestPlotSummary,
         plotExpander: latestPlotExpander,
+        plotAnalysis: typeof Globals.getPlotAnalysis === 'function' ? Globals.getPlotAnalysis() : null,
         mysteryThreadMaxActive: resolveMysteryThreadMaxActive(config),
         activeMysteryThreads: buildActiveMysteryThreadsForPrompt(config),
         currentRegion: currentRegionContext,

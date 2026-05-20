@@ -159,7 +159,7 @@ Request:
 
 Response:
 - 200: `{ success: true, type, saves, count, message }`
-  - `saves` entries include baseline metadata and fields from each save's `metadata.json`.
+  - `saves` entries include baseline metadata and fields from each save's `metadata.json`, including `plotAnalysis` when a background plot-analysis prompt has completed.
 - 400/500 with `{ success: false, error }`
 
 ## DELETE /api/save/:saveName

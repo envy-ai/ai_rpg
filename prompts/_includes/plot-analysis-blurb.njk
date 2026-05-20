@@ -1,0 +1,54 @@
+{% set analysis = plotAnalysis | default(null) -%}
+{% set rootConfig = config | default({}, true) -%}
+{% set plotAnalysisConfig = rootConfig.plot_analysis | default({}, true) -%}
+{% set maxPlotThreads = plotAnalysisConfig.max_plot_threads | default(4) -%}
+{% set maxPlotComplications = plotAnalysisConfig.max_plot_complications | default(4) -%}
+{% set plotThreads = [] -%}
+{% set currentPlotComplications = [] -%}
+{% if analysis -%}
+  {% set plotThreads = analysis.plotThreads | default([], true) -%}
+  {% set currentPlotComplications = analysis.currentPlotComplications | default([], true) -%}
+{% endif -%}
+{% set currentFocusDescription = '' -%}
+{% for thread in plotThreads -%}
+  {% if thread.isCurrentFocus and not currentFocusDescription -%}
+    {% set currentFocusDescription = thread.description -%}
+  {% endif -%}
+{% endfor -%}
+{% if not currentFocusDescription and plotThreads.length -%}
+  {% for thread in plotThreads -%}
+    {% if loop.first -%}
+      {% set currentFocusDescription = thread.description -%}
+    {% endif -%}
+  {% endfor -%}
+{% endif -%}
+Current major plot threads:
+
+{% if plotThreads.length -%}
+{% for thread in plotThreads -%}
+- {% if thread.isCurrentFocus %}[CURRENT] {% endif %}{{ thread.description }}
+{% endfor -%}
+
+Note that the "[CURRENT]" tag is intended to be informational and is not a constraint. Use your judgement to allow the story to flow naturally even if it's not following the item marked current, and don't restrict character actions based on this.
+{% else -%}
+- None currently identified.
+{% endif %}
+Current plot complications:
+
+{% if currentPlotComplications.length -%}
+{% for complication in currentPlotComplications -%}
+- {{ complication.description }}
+{% endfor -%}
+{% elif currentFocusDescription -%}
+- {{ currentFocusDescription }}
+{% else -%}
+- None currently identified.
+{% endif -%}
+{#% if plotThreads.length > maxPlotThreads %}
+
+There are currently too many major plot threads. Allow the characters to resolve current threads before introducing new ones.
+{% endif -%#}
+{% if currentPlotComplications.length > maxPlotComplications %}
+
+IMPORTANT: There are currently too many plot complications. Allow the characters to resolve the current complications before introducing additional things the characters have to do in order to accomplish their existing goals.
+{% endif -%}

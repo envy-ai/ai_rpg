@@ -965,6 +965,167 @@ const CHAT_TOOL_DEFINITIONS = Object.freeze([
     {
         type: 'function',
         function: {
+            name: 'resolveAreaAttack',
+            description: 'Resolve one shared area attack or effect against multiple defenders, apply per-target damage, and return grouped per-target outcomes.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    attacker: {
+                        type: 'string',
+                        description: 'Full exact name of the attacker as seen in location context, or "player".'
+                    },
+                    targets: {
+                        type: 'array',
+                        description: 'Each defender affected by this one area effect. Use exact names from location context.',
+                        items: {
+                            type: 'object',
+                            properties: {
+                                name: {
+                                    type: 'string',
+                                    description: 'Full exact defender name as seen in location context, or "player".'
+                                },
+                                position: {
+                                    type: 'string',
+                                    enum: ['center', 'near', 'edge', 'behind cover', 'uncertain'],
+                                    description: 'Symbolic location within the area effect.'
+                                },
+                                defenseInfo: {
+                                    type: 'object',
+                                    properties: {
+                                        evadeSkill: {
+                                            type: 'string',
+                                            description: 'N/A or exact skill name used to dodge or evade.'
+                                        },
+                                        deflectSkill: {
+                                            type: 'string',
+                                            description: 'N/A or exact skill name used to parry, deflect, or block.'
+                                        },
+                                        toughnessAttribute: {
+                                            type: 'string',
+                                            description: 'N/A or exact attribute name used to absorb damage.'
+                                        }
+                                    },
+                                    required: ['evadeSkill', 'deflectSkill', 'toughnessAttribute'],
+                                    additionalProperties: false
+                                },
+                                circumstanceModifiers: {
+                                    type: 'array',
+                                    description: 'Target-specific defense modifiers. Positive values make the target harder to affect; negative values make the target easier to affect. Use an empty array when none apply.',
+                                    items: {
+                                        type: 'object',
+                                        properties: {
+                                            amount: { type: 'integer' },
+                                            reason: { type: 'string' }
+                                        },
+                                        required: ['amount', 'reason'],
+                                        additionalProperties: false
+                                    }
+                                },
+                                damageEffectiveness: {
+                                    type: 'integer',
+                                    description: 'Integer from 1 to 5 for this target, where 3 is typical effectiveness.'
+                                }
+                            },
+                            required: [
+                                'name',
+                                'position',
+                                'defenseInfo',
+                                'circumstanceModifiers',
+                                'damageEffectiveness'
+                            ],
+                            additionalProperties: false
+                        }
+                    },
+                    attackerInfo: {
+                        type: 'object',
+                        properties: {
+                            attackSkill: {
+                                type: 'string',
+                                description: 'Exact skill name used for placement or accuracy.'
+                            },
+                            damageAttribute: {
+                                type: 'string',
+                                description: 'Exact attribute name used for damage.'
+                            }
+                        },
+                        required: ['attackSkill', 'damageAttribute'],
+                        additionalProperties: false
+                    },
+                    ability: {
+                        type: 'string',
+                        description: 'N/A or exact name of the ability used.'
+                    },
+                    weapon: {
+                        type: 'string',
+                        description: 'N/A, barehanded, or exact name of the weapon/item/effect source used.'
+                    },
+                    areaShape: {
+                        type: 'string',
+                        enum: ['blast', 'cone', 'line', 'cloud', 'burst', 'sweep', 'other'],
+                        description: 'General shape of the area effect.'
+                    },
+                    effectDescription: {
+                        type: 'string',
+                        description: 'Short description of the shared area effect.'
+                    },
+                    rollMode: {
+                        type: 'string',
+                        enum: ['sharedAttackRoll'],
+                        description: 'For v1 this must be sharedAttackRoll.'
+                    },
+                    circumstanceModifiers: {
+                        type: 'array',
+                        description: 'Attacker/effect-wide circumstance modifiers to the shared attack roll. Use an empty array when none apply.',
+                        items: {
+                            type: 'object',
+                            properties: {
+                                amount: { type: 'integer' },
+                                reason: { type: 'string' }
+                            },
+                            required: ['amount', 'reason'],
+                            additionalProperties: false
+                        }
+                    },
+                    secondaryEffect: {
+                        type: 'object',
+                        properties: {
+                            name: {
+                                type: 'string',
+                                description: 'N/A or status effect name suggested by this area effect.'
+                            },
+                            description: {
+                                type: 'string',
+                                description: 'Observed secondary effect if applicable, or N/A.'
+                            },
+                            appliesOn: {
+                                type: 'string',
+                                enum: ['hit', 'damage', 'anyEffect', 'never'],
+                                description: 'When the secondary effect should be narrated as applying.'
+                            }
+                        },
+                        required: ['name', 'description', 'appliesOn'],
+                        additionalProperties: false
+                    }
+                },
+                required: [
+                    'attacker',
+                    'targets',
+                    'attackerInfo',
+                    'ability',
+                    'weapon',
+                    'areaShape',
+                    'effectDescription',
+                    'rollMode',
+                    'circumstanceModifiers',
+                    'secondaryEffect'
+                ],
+                additionalProperties: false
+            }
+        }
+    },
+    {
+        type: 'function',
+        function: {
             name: 'resolveSkillCheck',
             description: 'Resolve an unopposed skill check for a meaningful uncertain non-attack action and return the resulting outcome label.',
             parameters: {
@@ -1396,6 +1557,7 @@ const createChatToolRuntime = ({
     alterNpcByEvent = null,
     alterLocationByEvent = null,
     resolveAttack = null,
+    resolveAreaAttack = null,
     resolvePlausibilityCheck = null,
     resolveOpposedPlausibilityCheck = null,
     LLMClient,
@@ -1974,6 +2136,27 @@ const createChatToolRuntime = ({
                 target: args.defender,
                 weapon: args.weapon,
                 ability: args.ability,
+                skill: args.attackerInfo?.attackSkill
+            });
+        }
+        if (functionName === 'resolveAreaAttack') {
+            const targetNames = Array.isArray(args.targets)
+                ? args.targets
+                    .map(entry => normalizeCacheKeyPart(entry?.name))
+                    .filter(Boolean)
+                    .sort()
+                    .join(',')
+                : null;
+            return stableCacheKey({
+                type: 'area_attack',
+                round: roundKey,
+                attacker: args.attacker,
+                targets: targetNames,
+                weapon: args.weapon,
+                ability: args.ability,
+                areaShape: args.areaShape,
+                effectDescription: args.effectDescription,
+                rollMode: args.rollMode,
                 skill: args.attackerInfo?.attackSkill
             });
         }
@@ -5250,6 +5433,301 @@ const createChatToolRuntime = ({
         };
     };
 
+    const AREA_ATTACK_POSITIONS = new Set(['center', 'near', 'edge', 'behind cover', 'uncertain']);
+    const AREA_ATTACK_SHAPES = new Set(['blast', 'cone', 'line', 'cloud', 'burst', 'sweep', 'other']);
+    const AREA_ATTACK_SECONDARY_APPLIES_ON = new Set(['hit', 'damage', 'anyeffect', 'never']);
+
+    const normalizeAreaAttackEnum = (value, allowedValues, { functionName, fieldName } = {}) => {
+        const normalized = normalizeRequiredString(value, { functionName, fieldName }).toLowerCase().replace(/\s+/g, ' ');
+        if (!allowedValues.has(normalized)) {
+            throw new ToolVisibleError(
+                `${functionName} "${fieldName}" must be one of: ${Array.from(allowedValues).join(', ')}.`,
+                { code: 'invalid_arguments' }
+            );
+        }
+        return normalized;
+    };
+
+    const formatAreaAttackPercent = (value) => {
+        const numeric = Number(value);
+        if (!Number.isFinite(numeric)) {
+            return null;
+        }
+        return Math.ceil(numeric - 1e-9);
+    };
+
+    const buildResolveAreaAttackContent = ({ resolved, summary }) => {
+        const results = Array.isArray(summary?.results)
+            ? summary.results
+            : (Array.isArray(resolved?.results) ? resolved.results : []);
+        if (!results.length) {
+            throw new ToolVisibleError(
+                'resolveAreaAttack completed without returning per-target results.',
+                { code: 'area_attack_resolution_failed' }
+            );
+        }
+
+        const lines = ['Area attack results:'];
+        for (const result of results) {
+            const target = normalizeOptionalString(result?.target || result?.targetName || result?.name) || 'Target';
+            const hit = typeof result?.hit === 'boolean' ? result.hit : false;
+            if (!hit) {
+                lines.push(`- ${target}: miss, no damage`);
+                continue;
+            }
+
+            const damagePercent = formatAreaAttackPercent(
+                result.healthLostPercent
+                ?? result.damagePercent
+                ?? result.damageApplied
+                ?? result.damage
+            );
+            if (damagePercent === null) {
+                throw new ToolVisibleError(
+                    `resolveAreaAttack hit ${target}, but no finite damage percentage could be calculated.`,
+                    { code: 'area_attack_resolution_failed' }
+                );
+            }
+
+            const remainingHealthPercent = formatAreaAttackPercent(
+                result.remainingHealthPercent
+                ?? result.remainingPercent
+            );
+            if (remainingHealthPercent === null) {
+                throw new ToolVisibleError(
+                    `resolveAreaAttack hit ${target}, but no finite remaining-health percentage could be calculated.`,
+                    { code: 'area_attack_resolution_failed' }
+                );
+            }
+
+            const defeatedText = remainingHealthPercent <= 0 ? ' (incapacitated or dead)' : '';
+            const effectName = normalizeOptionalString(result.secondaryEffect || result.effect);
+            const effectText = result.secondaryEffectApplied && effectName
+                ? `, effect: ${effectName}`
+                : '';
+            lines.push(`- ${target}: hit, Damage: ${damagePercent}%, Remaining health: ${remainingHealthPercent}%${defeatedText}${effectText}`);
+        }
+        return lines.join('\n');
+    };
+
+    const executeResolveAreaAttackTool = async ({
+        attacker,
+        targets,
+        attackerInfo,
+        ability,
+        weapon,
+        areaShape,
+        effectDescription,
+        rollMode,
+        circumstanceModifiers,
+        secondaryEffect
+    } = {}) => {
+        const functionName = 'resolveAreaAttack';
+        if (typeof resolveAreaAttack !== 'function') {
+            throw new ToolVisibleError(
+                'resolveAreaAttack is unavailable because the area attack resolver was not configured.',
+                { code: 'missing_dependency' }
+            );
+        }
+
+        const attackerName = normalizeRequiredString(attacker, { functionName, fieldName: 'attacker' });
+        if (!Array.isArray(targets) || !targets.length) {
+            throw new ToolVisibleError(
+                'resolveAreaAttack requires a non-empty "targets" array.',
+                { code: 'invalid_arguments' }
+            );
+        }
+
+        const attackerInfoObject = normalizeRequiredObject(attackerInfo, { functionName, fieldName: 'attackerInfo' });
+        const attackSkill = normalizeRequiredString(attackerInfoObject.attackSkill, {
+            functionName,
+            fieldName: 'attackerInfo.attackSkill'
+        });
+        const damageAttribute = normalizeRequiredString(attackerInfoObject.damageAttribute, {
+            functionName,
+            fieldName: 'attackerInfo.damageAttribute'
+        });
+        const abilityName = normalizeRequiredString(ability, { functionName, fieldName: 'ability' });
+        const weaponName = normalizeRequiredString(weapon, { functionName, fieldName: 'weapon' });
+        const shapeName = normalizeAreaAttackEnum(areaShape, AREA_ATTACK_SHAPES, {
+            functionName,
+            fieldName: 'areaShape'
+        });
+        const effectText = normalizeRequiredString(effectDescription, { functionName, fieldName: 'effectDescription' });
+        const rollModeName = normalizeRequiredString(rollMode, { functionName, fieldName: 'rollMode' });
+        if (rollModeName !== 'sharedAttackRoll') {
+            throw new ToolVisibleError(
+                'resolveAreaAttack "rollMode" must be "sharedAttackRoll".',
+                { code: 'invalid_arguments' }
+            );
+        }
+        const sharedModifiers = normalizeAttackModifierArray(circumstanceModifiers, {
+            functionName,
+            fieldName: 'circumstanceModifiers'
+        });
+
+        const secondaryEffectObject = normalizeRequiredObject(secondaryEffect, {
+            functionName,
+            fieldName: 'secondaryEffect'
+        });
+        const secondaryEffectName = normalizeRequiredString(secondaryEffectObject.name, {
+            functionName,
+            fieldName: 'secondaryEffect.name'
+        });
+        const secondaryEffectDescription = normalizeRequiredString(secondaryEffectObject.description, {
+            functionName,
+            fieldName: 'secondaryEffect.description'
+        });
+        const appliesOnNormalized = normalizeAreaAttackEnum(secondaryEffectObject.appliesOn, AREA_ATTACK_SECONDARY_APPLIES_ON, {
+            functionName,
+            fieldName: 'secondaryEffect.appliesOn'
+        });
+        const appliesOn = appliesOnNormalized === 'anyeffect' ? 'anyEffect' : appliesOnNormalized;
+
+        const seenTargets = new Set();
+        const normalizedTargets = targets.map((target, index) => {
+            if (!target || typeof target !== 'object' || Array.isArray(target)) {
+                throw new ToolVisibleError(
+                    `resolveAreaAttack "targets[${index}]" must be an object.`,
+                    { code: 'invalid_arguments' }
+                );
+            }
+            const targetName = normalizeRequiredString(target.name, {
+                functionName,
+                fieldName: `targets[${index}].name`
+            });
+            const targetKey = targetName.trim().toLowerCase();
+            if (seenTargets.has(targetKey)) {
+                throw new ToolVisibleError(
+                    `resolveAreaAttack duplicate target "${targetName}" is not allowed.`,
+                    { code: 'invalid_arguments' }
+                );
+            }
+            seenTargets.add(targetKey);
+
+            const targetPosition = normalizeAreaAttackEnum(target.position, AREA_ATTACK_POSITIONS, {
+                functionName,
+                fieldName: `targets[${index}].position`
+            });
+            const defenseInfo = normalizeRequiredObject(target.defenseInfo, {
+                functionName,
+                fieldName: `targets[${index}].defenseInfo`
+            });
+            const evadeSkill = normalizeRequiredString(defenseInfo.evadeSkill, {
+                functionName,
+                fieldName: `targets[${index}].defenseInfo.evadeSkill`
+            });
+            const deflectSkill = normalizeRequiredString(defenseInfo.deflectSkill, {
+                functionName,
+                fieldName: `targets[${index}].defenseInfo.deflectSkill`
+            });
+            const toughnessAttribute = normalizeRequiredString(defenseInfo.toughnessAttribute, {
+                functionName,
+                fieldName: `targets[${index}].defenseInfo.toughnessAttribute`
+            });
+            const targetModifiers = normalizeAttackModifierArray(target.circumstanceModifiers, {
+                functionName,
+                fieldName: `targets[${index}].circumstanceModifiers`,
+                invertAmount: true
+            });
+            const damageEffectivenessValue = normalizeOptionalInteger(target.damageEffectiveness, {
+                functionName,
+                fieldName: `targets[${index}].damageEffectiveness`
+            });
+            if (damageEffectivenessValue === null) {
+                throw new ToolVisibleError(
+                    `resolveAreaAttack "targets[${index}].damageEffectiveness" is required.`,
+                    { code: 'invalid_arguments' }
+                );
+            }
+            if (damageEffectivenessValue < 1 || damageEffectivenessValue > 5) {
+                throw new ToolVisibleError(
+                    `resolveAreaAttack "targets[${index}].damageEffectiveness" must be an integer from 1 to 5.`,
+                    { code: 'invalid_arguments' }
+                );
+            }
+
+            return {
+                name: targetName,
+                position: targetPosition,
+                defenseInfo: {
+                    evadeSkill,
+                    deflectSkill,
+                    toughnessAttribute
+                },
+                circumstanceModifiers: targetModifiers,
+                damageEffectiveness: damageEffectivenessValue
+            };
+        });
+
+        const areaAttackEntry = {
+            attacker: attackerName,
+            targets: normalizedTargets,
+            attackerInfo: {
+                attackSkill,
+                damageAttribute
+            },
+            ability: abilityName,
+            weapon: weaponName,
+            areaShape: shapeName,
+            effectDescription: effectText,
+            rollMode: rollModeName,
+            circumstanceModifiers: sharedModifiers,
+            secondaryEffect: {
+                name: secondaryEffectName,
+                description: secondaryEffectDescription,
+                appliesOn
+            }
+        };
+
+        const resolved = await resolveAreaAttack({ areaAttackEntry });
+        if (!resolved || typeof resolved !== 'object') {
+            throw new ToolVisibleError(
+                'resolveAreaAttack completed without returning an area attack result.',
+                { code: 'area_attack_resolution_failed' }
+            );
+        }
+
+        const summary = resolved.summary && typeof resolved.summary === 'object'
+            ? resolved.summary
+            : {
+                kind: 'area-attack',
+                attacker: attackerName,
+                weapon: weaponName,
+                ability: abilityName,
+                areaShape: shapeName,
+                rollMode: rollModeName,
+                results: Array.isArray(resolved.results) ? resolved.results : []
+            };
+        const results = Array.isArray(summary.results)
+            ? summary.results
+            : (Array.isArray(resolved.results) ? resolved.results : []);
+        const hitCount = Number.isFinite(Number(resolved.hitCount))
+            ? Number(resolved.hitCount)
+            : results.filter(entry => entry?.hit === true).length;
+        const targetCount = Number.isFinite(Number(resolved.targetCount))
+            ? Number(resolved.targetCount)
+            : results.length;
+
+        return {
+            content: buildResolveAreaAttackContent({ resolved, summary }),
+            metadata: {
+                kind: 'area-attack',
+                result: hitCount > 0 ? (hitCount === targetCount ? 'all-hit' : 'mixed') : 'miss',
+                hitCount,
+                targetCount,
+                locationRefreshRequested: Boolean(resolved.locationRefreshRequested),
+                summary,
+                results,
+                attacker: summary.attacker || attackerName,
+                weapon: summary.weapon || weaponName,
+                ability: summary.ability || abilityName,
+                areaShape: summary.areaShape || shapeName,
+                rollMode: summary.rollMode || rollModeName
+            }
+        };
+    };
+
     const buildPlausibilitySkillCheck = ({
         reason,
         skill,
@@ -6415,6 +6893,8 @@ const createChatToolRuntime = ({
                 toolResult = executeAlterLocationTool(argumentsObject);
             } else if (toolCall.functionName === 'resolveAttack') {
                 toolResult = executeResolveAttackTool(argumentsObject);
+            } else if (toolCall.functionName === 'resolveAreaAttack') {
+                toolResult = executeResolveAreaAttackTool(argumentsObject);
             } else if (toolCall.functionName === 'resolveSkillCheck' || toolCall.functionName === 'resolvePlausibilityCheck') {
                 toolResult = executeResolvePlausibilityCheckTool(argumentsObject, {
                     defaultActorName,

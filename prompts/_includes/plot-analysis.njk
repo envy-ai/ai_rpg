@@ -3,12 +3,12 @@ Let's talk about plot complications and plot threads.
 
 A plot in this situation is the character(s) having to do thing A. A plot complication is the character discovering that they have to do thing B in order to be able to do thing A. Two levels of plot complication would be them discovering that they have to do thing C in order to do thing B (in order to do thing A).
 
-If a plot complication is considered to be in series, plot threads run in parallel and may each have their own complications.
+A plot *thread* is a plot that is not a complication or subplot of another plot, although it may have complications of its own. If you can answer the question "why are they doing this?" with "because of plot X", the current plot is a complication of plot X (which may be a complication of plot Y, etc.). 
 
-Your task is to list all of the currently running plot threads and determine which one of those is being addressed currently (if more than one, choose the one that feels more complex). Then, for that plot thread, list the current plot complications in series, starting with the main plot and then each complication in order. If there are no complications, just list the main plot.
+Your task is to list all of the currently running root plot threads (that aren't complications or subplots of other plots) and determine which one of those is being addressed currently (if more than one, choose the one that feels more complex). Then, for that plot thread, list the current plot complications in series, starting with the main plot and then each complication in order. If there are no complications, just list the main plot.
 </task>
 
-First, list the active plot threads informally in bullet points, noting which one is the current focus. Then, for that active plot, list any currently running complications in series (if there are any) in a numbered list, starting with the main plot and then each complication in order. If there are no complications, just list the main plot.
+First, list the active plot threads informally in bullet points, noting underneath if it's a complication/subplot of another thread, and then under it list any complications or subplots it has. With that list made, pick out the current main plot thread and list its complications in order of precedence.
 
 Then, output the following XML structure:
 
@@ -24,6 +24,6 @@ Then, output the following XML structure:
     <complication>
       <description><!-- 1-2 sentence description of the complication, starting with the main plot and then each complication in order --></description>
     </complication>
-    ... repeat for each complication ...
+    ... repeat for each complication in order, starting with the highest-level complication ...
   </currentPlotComplications>
 </response>

@@ -46,6 +46,7 @@ const INFORMATION_GATHERING_CHAT_TOOL_NAMES = new Set([
     'getMysteryThread',
     'listLocationEntities',
     'resolveAttack',
+    'resolveAreaAttack',
     'resolveSkillCheck',
     'resolveOpposedSkillCheck',
     'resolvePlausibilityCheck',
@@ -56,6 +57,7 @@ const INFORMATION_GATHERING_CHAT_TOOL_NAMES = new Set([
 
 const LEGACY_PROMPT_CHECK_CHAT_TOOL_NAMES = new Set([
     'resolveAttack',
+    'resolveAreaAttack',
     'resolveSkillCheck',
     'resolveOpposedSkillCheck',
     'resolvePlausibilityCheck',
@@ -71,6 +73,7 @@ const SKILL_CHECK_CHAT_TOOL_NAMES = new Set([
 
 const CHECK_RESULT_CHAT_TOOL_NAMES = new Set([
     'resolveAttack',
+    'resolveAreaAttack',
     'resolveSkillCheck',
     'resolveOpposedSkillCheck',
     'resolvePlausibilityCheck',
@@ -146,6 +149,10 @@ function isRegularProseChatToolAllowed(functionName) {
 
 function isRequestUserInputToolEnabled() {
     return Globals.config?.chat_tools?.request_user_input_enabled !== false;
+}
+
+function isPlotAnalysisPromptEnabled() {
+    return Globals.config?.plot_analysis?.enabled !== false;
 }
 
 function filterEnabledChatTools({ allowWorldMutationTools = false } = {}) {
@@ -1827,6 +1834,7 @@ module.exports = function registerApiRoutes(scope) {
             alterNpcByEvent,
             alterLocationByEvent,
             resolveAttack: resolveAttackToolCall,
+            resolveAreaAttack: resolveAreaAttackToolCall,
             resolvePlausibilityCheck: resolvePlausibilityToolCall,
             resolveOpposedPlausibilityCheck: resolvePlausibilityToolCall,
             LLMClient,
@@ -1859,6 +1867,8 @@ module.exports = function registerApiRoutes(scope) {
         let plotSummaryRunOnNextEligibleTurn = false;
         let plotExpanderInProgress = false;
         let plotExpanderTurnCounter = 0;
+        let plotAnalysisPromptSequence = 0;
+        let plotAnalysisPromptToken = randomUUID();
         let offscreenNpcActivityInProgress = false;
         let offscreenNpcActivityState = {
             dailyMentionedNpcNamesByWeek: {},
@@ -4853,6 +4863,158 @@ module.exports = function registerApiRoutes(scope) {
             return plotExpanderTurnCounter % frequency === 0;
         }
 
+        function resetPlotAnalysisPromptRuntime() {
+            plotAnalysisPromptSequence = 0;
+            plotAnalysisPromptToken = randomUUID();
+        }
+
+        function getDirectChildElementsByTagName(parentNode, tagName) {
+            if (!parentNode || typeof tagName !== 'string' || !tagName.trim()) {
+                return [];
+            }
+
+            const targetTag = tagName.trim().toLowerCase();
+            return Array.from(parentNode.childNodes || []).filter(node => {
+                if (!node || node.nodeType !== 1) {
+                    return false;
+                }
+                const nodeName = typeof node.nodeName === 'string'
+                    ? node.nodeName.toLowerCase()
+                    : '';
+                return nodeName === targetTag;
+            });
+        }
+
+        function parsePlotAnalysisBoolean(value) {
+            if (typeof value !== 'string') {
+                return false;
+            }
+            const normalized = value.trim().toLowerCase();
+            return normalized === 'true' || normalized === 'yes' || normalized === '1';
+        }
+
+        function parsePlotAnalysisResponse(rawResponse) {
+            if (typeof rawResponse !== 'string') {
+                throw new TypeError('Plot analysis response must be a string.');
+            }
+            const xmlPayload = Utils.extractFinalXmlRootBlock(rawResponse, ['response']);
+            if (!xmlPayload) {
+                throw new Error('Plot analysis response missing <response> XML.');
+            }
+
+            const doc = Utils.parseXmlDocumentStrict(sanitizeForXml(xmlPayload), 'text/xml');
+            const responseNode = doc.getElementsByTagName('response')[0] || null;
+            if (!responseNode) {
+                throw new Error('Plot analysis response missing <response> root.');
+            }
+
+            const plotThreadsNode = getDirectChildElementByTagName(responseNode, 'plotThreads');
+            const plotThreads = plotThreadsNode
+                ? getDirectChildElementsByTagName(plotThreadsNode, 'plotThread')
+                    .map(node => {
+                        const description = getDirectChildTextByTagName(node, 'description').trim();
+                        if (!description) {
+                            return null;
+                        }
+                        return {
+                            description,
+                            isCurrentFocus: parsePlotAnalysisBoolean(
+                                getDirectChildTextByTagName(node, 'isCurrentFocus')
+                            )
+                        };
+                    })
+                    .filter(Boolean)
+                : [];
+
+            const complicationsNode = getDirectChildElementByTagName(responseNode, 'currentPlotComplications');
+            const currentPlotComplications = complicationsNode
+                ? getDirectChildElementsByTagName(complicationsNode, 'complication')
+                    .map(node => {
+                        const description = getDirectChildTextByTagName(node, 'description').trim();
+                        return description ? { description } : null;
+                    })
+                    .filter(Boolean)
+                : [];
+
+            return {
+                plotThreads,
+                currentPlotComplications
+            };
+        }
+
+        function buildPlotAnalysisStateFromResponse(rawResponse, {
+            startedAt = null,
+            completedAt = null,
+            sequence = null,
+            sourceRequestId = null,
+            locationId = null
+        } = {}) {
+            const raw = typeof rawResponse === 'string' ? rawResponse.trim() : '';
+            if (!raw) {
+                throw new Error('Plot analysis response was empty.');
+            }
+
+            const state = {
+                raw,
+                updatedAt: completedAt || new Date().toISOString(),
+                startedAt: startedAt || null,
+                completedAt: completedAt || null,
+                sourceRequestId: sourceRequestId || null,
+                locationId: locationId || null
+            };
+            if (Number.isInteger(sequence) && sequence >= 0) {
+                state.sequence = sequence;
+            }
+
+            try {
+                const parsed = parsePlotAnalysisResponse(raw);
+                state.plotThreads = parsed.plotThreads;
+                state.currentPlotComplications = parsed.currentPlotComplications;
+            } catch (error) {
+                state.parseError = error.message || String(error);
+                state.plotThreads = [];
+                state.currentPlotComplications = [];
+                console.warn('Plot analysis XML parse failed:', state.parseError);
+            }
+
+            return state;
+        }
+
+        function persistPlotAnalysisToCurrentSave(plotAnalysis) {
+            const currentMetadata = (typeof Globals.getSaveMetadata === 'function'
+                ? Globals.getSaveMetadata()
+                : Globals.saveMetadata) || {};
+            if (!currentMetadata || typeof currentMetadata !== 'object' || Array.isArray(currentMetadata)) {
+                throw new Error('Current save metadata must be an object before persisting plot analysis.');
+            }
+
+            const metadata = { ...currentMetadata };
+            if (plotAnalysis) {
+                metadata.plotAnalysis = plotAnalysis;
+            } else {
+                delete metadata.plotAnalysis;
+            }
+            Globals.setSaveMetadata(metadata);
+
+            const saveInfo = typeof Globals.getCurrentSaveInfo === 'function'
+                ? Globals.getCurrentSaveInfo()
+                : Globals.currentSaveInfo;
+            if (!saveInfo || typeof saveInfo !== 'object') {
+                return false;
+            }
+            const saveDir = typeof saveInfo.saveDir === 'string' ? saveInfo.saveDir.trim() : '';
+            if (!saveDir) {
+                return false;
+            }
+            if (!fs.existsSync(saveDir)) {
+                throw new Error(`Save directory does not exist: ${saveDir}`);
+            }
+
+            const metadataPath = path.join(saveDir, 'metadata.json');
+            fs.writeFileSync(metadataPath, JSON.stringify(metadata, null, 2));
+            return true;
+        }
+
         function resolveRegionNameForLocationId(locationId) {
             if (typeof locationId !== 'string' || !locationId.trim()) {
                 return null;
@@ -6669,6 +6831,133 @@ module.exports = function registerApiRoutes(scope) {
             } finally {
                 plotExpanderInProgress = false;
             }
+        }
+
+        async function runPlotAnalysisPrompt({
+            locationOverride = null,
+            locationId = null,
+            sourceRequestId = null,
+            sequence = null,
+            token = null
+        } = {}) {
+            const promptSequence = Number.isInteger(sequence) && sequence >= 0
+                ? sequence
+                : ++plotAnalysisPromptSequence;
+            const promptToken = token || plotAnalysisPromptToken;
+            const startedAt = new Date().toISOString();
+            try {
+                if (promptToken !== plotAnalysisPromptToken) {
+                    return null;
+                }
+                if (!config?.ai) {
+                    console.warn('AI configuration missing; unable to run plot analysis prompt.');
+                    return null;
+                }
+
+                const baseContext = await prepareBasePromptContext({ locationOverride });
+                if (promptToken !== plotAnalysisPromptToken || promptSequence !== plotAnalysisPromptSequence) {
+                    console.info('Plot analysis prompt became stale before LLM request; skipping.');
+                    return null;
+                }
+
+                const renderedTemplate = promptEnv.render('base-context.xml.njk', {
+                    ...baseContext,
+                    promptType: 'plot-analysis'
+                });
+                const parsedTemplate = parseXMLTemplate(renderedTemplate);
+                if (!parsedTemplate?.systemPrompt || !parsedTemplate?.generationPrompt) {
+                    console.warn('Plot analysis template missing prompts; skipping.');
+                    return null;
+                }
+
+                const requestOptions = {
+                    messages: [
+                        { role: 'system', content: parsedTemplate.systemPrompt },
+                        { role: 'user', content: parsedTemplate.generationPrompt }
+                    ],
+                    metadataLabel: 'plot_analysis',
+                    metadata: {
+                        sourceRequestId: sourceRequestId || null
+                    },
+                    validateXML: false,
+                    runInBackground: true
+                };
+
+                if (typeof parsedTemplate.temperature === 'number') {
+                    requestOptions.temperature = parsedTemplate.temperature;
+                }
+
+                const rawResponse = await LLMClient.chatCompletion(requestOptions);
+                LLMClient.logPrompt({
+                    prefix: 'plot_analysis',
+                    metadataLabel: 'plot_analysis',
+                    systemPrompt: parsedTemplate.systemPrompt || '',
+                    generationPrompt: parsedTemplate.generationPrompt || '',
+                    response: rawResponse || '',
+                    model: requestOptions.model,
+                    endpoint: requestOptions.endpoint
+                });
+
+                const plotAnalysisText = typeof rawResponse === 'string' ? rawResponse.trim() : '';
+                if (!plotAnalysisText) {
+                    console.warn('Plot analysis response was empty.');
+                    return null;
+                }
+                if (promptToken !== plotAnalysisPromptToken || promptSequence !== plotAnalysisPromptSequence) {
+                    console.info('Stale plot analysis response ignored.');
+                    return null;
+                }
+
+                const completedAt = new Date().toISOString();
+                const resolvedLocationId = typeof locationId === 'string' && locationId.trim()
+                    ? locationId.trim()
+                    : (typeof locationOverride?.id === 'string' && locationOverride.id.trim()
+                        ? locationOverride.id.trim()
+                        : (typeof currentPlayer?.currentLocation === 'string' && currentPlayer.currentLocation.trim()
+                            ? currentPlayer.currentLocation.trim()
+                            : null));
+                const plotAnalysis = buildPlotAnalysisStateFromResponse(plotAnalysisText, {
+                    startedAt,
+                    completedAt,
+                    sequence: promptSequence,
+                    sourceRequestId,
+                    locationId: resolvedLocationId
+                });
+                Globals.setPlotAnalysis(plotAnalysis);
+
+                try {
+                    persistPlotAnalysisToCurrentSave(Globals.getPlotAnalysis());
+                } catch (persistError) {
+                    console.warn('Failed to persist plot analysis metadata:', persistError.message);
+                }
+
+                return Globals.getPlotAnalysis();
+            } catch (error) {
+                console.warn('Failed to run plot analysis prompt:', error.message);
+                return null;
+            }
+        }
+
+        function schedulePlotAnalysisPrompt({
+            locationOverride = null,
+            locationId = null,
+            sourceRequestId = null
+        } = {}) {
+            if (!isPlotAnalysisPromptEnabled()) {
+                return false;
+            }
+            const sequence = ++plotAnalysisPromptSequence;
+            const token = plotAnalysisPromptToken;
+            setImmediate(() => {
+                void runPlotAnalysisPrompt({
+                    locationOverride,
+                    locationId,
+                    sourceRequestId,
+                    sequence,
+                    token
+                });
+            });
+            return true;
         }
 
         async function runSupplementalStoryInfo({
@@ -13626,6 +13915,9 @@ module.exports = function registerApiRoutes(scope) {
             };
 
             const resolveKind = (toolName, metadata = {}) => {
+                if (toolName === 'resolveAreaAttack') {
+                    return 'area-attack';
+                }
                 if (toolName === 'resolveAttack') {
                     return 'attack';
                 }
@@ -13646,6 +13938,14 @@ module.exports = function registerApiRoutes(scope) {
                     const attacker = cleanText(params.attacker) || 'Attacker';
                     const defender = cleanText(params.defender) || 'defender';
                     return `Resolving attack: ${attacker} -> ${defender}`;
+                }
+                if (record.kind === 'area-attack') {
+                    const attacker = cleanText(params.attacker) || 'Attacker';
+                    const targetCount = Array.isArray(params.targets) ? params.targets.length : 0;
+                    const targetText = targetCount > 0
+                        ? `${targetCount} target${targetCount === 1 ? '' : 's'}`
+                        : 'targets';
+                    return `Resolving area attack: ${attacker} -> ${targetText}`;
                 }
 
                 const actor = cleanText(params.actor) || 'Actor';
@@ -13738,7 +14038,46 @@ module.exports = function registerApiRoutes(scope) {
                 return prefixOutcomeIcon(summaryText, icon);
             };
 
+            const summarizeAreaAttackCheck = (record, metadata) => {
+                const summary = metadata?.summary && typeof metadata.summary === 'object'
+                    ? metadata.summary
+                    : null;
+                const params = record.parameters && typeof record.parameters === 'object'
+                    ? record.parameters
+                    : {};
+                const attacker = cleanText(summary?.attacker)
+                    || cleanText(metadata?.attacker)
+                    || cleanText(params.attacker)
+                    || 'Attacker';
+                const weapon = cleanText(summary?.weapon)
+                    || cleanText(metadata?.weapon)
+                    || cleanText(params.weapon)
+                    || cleanText(summary?.effectDescription)
+                    || 'area effect';
+                const results = Array.isArray(summary?.results)
+                    ? summary.results
+                    : (Array.isArray(metadata?.results) ? metadata.results : []);
+                const targetCount = Number.isFinite(Number(metadata?.targetCount))
+                    ? Number(metadata.targetCount)
+                    : results.length;
+                const hitCount = Number.isFinite(Number(metadata?.hitCount))
+                    ? Number(metadata.hitCount)
+                    : results.filter(entry => entry?.hit === true).length;
+
+                if (hitCount <= 0) {
+                    return `💨 ${attacker} caught no targets with ${weapon}`;
+                }
+                if (targetCount > 0 && hitCount < targetCount) {
+                    return `💥 ${attacker} hit ${hitCount}/${targetCount} targets with ${weapon}`;
+                }
+                const countText = targetCount > 0 ? targetCount : hitCount;
+                return `💥 ${attacker} hit ${countText} target${countText === 1 ? '' : 's'} with ${weapon}`;
+            };
+
             const summarizeCompletedCheck = (record, metadata) => {
+                if (record.kind === 'area-attack') {
+                    return summarizeAreaAttackCheck(record, metadata);
+                }
                 if (record.kind === 'attack') {
                     return summarizeAttackCheck(record, metadata);
                 }
@@ -13791,6 +14130,9 @@ module.exports = function registerApiRoutes(scope) {
                     }
                     if (record.attackSummary) {
                         publicRecord.attackSummary = record.attackSummary;
+                    }
+                    if (record.areaAttackSummary) {
+                        publicRecord.areaAttackSummary = record.areaAttackSummary;
                     }
                     if (record.error) {
                         publicRecord.error = record.error;
@@ -13899,14 +14241,24 @@ module.exports = function registerApiRoutes(scope) {
                         record.cacheHit = Boolean(event.cacheHit || metadata.cached);
                         record.cacheKey = cleanText(event.cacheKey) || cleanText(metadata.cacheKey) || null;
                         delete record.error;
-                        if (record.kind === 'attack') {
+                        if (record.kind === 'area-attack') {
+                            record.areaAttackSummary = metadata.summary && typeof metadata.summary === 'object'
+                                ? cloneCheckValue(metadata.summary)
+                                : null;
+                            delete record.attackSummary;
+                            delete record.skillCheck;
+                        } else if (record.kind === 'attack') {
                             record.attackSummary = metadata.summary && typeof metadata.summary === 'object'
                                 ? cloneCheckValue(metadata.summary)
                                 : null;
+                            delete record.areaAttackSummary;
+                            delete record.skillCheck;
                         } else {
                             record.skillCheck = metadata.actionResolution && typeof metadata.actionResolution === 'object'
                                 ? cloneCheckValue(metadata.actionResolution)
                                 : null;
+                            delete record.areaAttackSummary;
+                            delete record.attackSummary;
                         }
                     } else if (event.phase === 'error') {
                         record.status = 'error';
@@ -15933,6 +16285,331 @@ module.exports = function registerApiRoutes(scope) {
                     id: actingActor?.id || null,
                     name: actingActor?.name || actor || 'player'
                 }
+            };
+        }
+
+        function resolveAreaAttackToolCall({ areaAttackEntry } = {}) {
+            if (!areaAttackEntry || typeof areaAttackEntry !== 'object') {
+                throw new Error('resolveAreaAttack requires an areaAttackEntry object.');
+            }
+
+            if (areaAttackEntry.rollMode !== 'sharedAttackRoll') {
+                throw new Error('resolveAreaAttack only supports rollMode "sharedAttackRoll".');
+            }
+
+            if (!Array.isArray(areaAttackEntry.targets) || !areaAttackEntry.targets.length) {
+                throw new Error('resolveAreaAttack requires at least one target.');
+            }
+
+            const cleanText = (value) => (
+                typeof value === 'string' && value.trim() ? value.trim() : ''
+            );
+            const percent = (value, max) => {
+                if (!Number.isFinite(value) || !Number.isFinite(max) || max <= 0) {
+                    return null;
+                }
+                return Number(((value / max) * 100).toFixed(2));
+            };
+            const positionAdjustments = Object.freeze({
+                center: { defenseModifier: 0, damageMultiplier: 1 },
+                near: { defenseModifier: 2, damageMultiplier: 1 },
+                edge: { defenseModifier: 4, damageMultiplier: 0.5 },
+                'behind cover': { defenseModifier: 6, damageMultiplier: 0.5 },
+                uncertain: { defenseModifier: 2, damageMultiplier: 1 }
+            });
+            const normalizePosition = (value) => {
+                const normalized = cleanText(value).toLowerCase().replace(/\s+/g, ' ');
+                if (!normalized || !positionAdjustments[normalized]) {
+                    throw new Error(`resolveAreaAttack received invalid target position "${value || ''}".`);
+                }
+                return normalized;
+            };
+            const sanitizeEffectName = (effect) => {
+                const name = cleanText(effect?.name);
+                if (!name || name.toLowerCase() === 'n/a') {
+                    return null;
+                }
+                return name;
+            };
+            const shouldSuggestSecondaryEffect = (effect, { hit, damageApplied }) => {
+                const name = sanitizeEffectName(effect);
+                if (!name) {
+                    return false;
+                }
+                const appliesOn = cleanText(effect?.appliesOn).toLowerCase();
+                if (appliesOn === 'never') {
+                    return false;
+                }
+                if (appliesOn === 'hit') {
+                    return Boolean(hit);
+                }
+                if (appliesOn === 'damage') {
+                    return Boolean(hit && Number.isFinite(damageApplied) && damageApplied > 0);
+                }
+                if (appliesOn === 'anyeffect') {
+                    return Boolean(hit);
+                }
+                return false;
+            };
+
+            const attacker = resolveChatToolActor(areaAttackEntry.attacker, 'attacker');
+            const attackerLocationId = attacker.currentLocation || attacker.locationId || currentPlayer?.currentLocation || null;
+            const attackerLocation = attackerLocationId ? Location.get(attackerLocationId) : null;
+
+            const resolvedTargetEntries = areaAttackEntry.targets.map((target, index) => {
+                if (!target || typeof target !== 'object' || Array.isArray(target)) {
+                    throw new Error(`resolveAreaAttack target ${index + 1} must be an object.`);
+                }
+                const targetActor = resolveChatToolActor(target.name, `target ${index + 1}`);
+                const targetKey = targetActor?.id || cleanText(targetActor?.name).toLowerCase();
+                if (!targetKey) {
+                    throw new Error(`resolveAreaAttack could not resolve a stable identity for target "${target.name || ''}".`);
+                }
+                return {
+                    source: target,
+                    actor: targetActor,
+                    key: targetKey,
+                    position: normalizePosition(target.position)
+                };
+            });
+
+            const seenTargetKeys = new Set();
+            for (const target of resolvedTargetEntries) {
+                if (seenTargetKeys.has(target.key)) {
+                    throw new Error(`resolveAreaAttack duplicate target "${target.actor?.name || target.source?.name || target.key}" is not allowed.`);
+                }
+                seenTargetKeys.add(target.key);
+            }
+
+            const baseCircumstances = Array.isArray(areaAttackEntry.circumstanceModifiers)
+                ? areaAttackEntry.circumstanceModifiers.map(entry => ({
+                    amount: Number.isFinite(entry?.amount) ? entry.amount : 0,
+                    reason: cleanText(entry?.reason) || null
+                }))
+                : [];
+
+            let sharedDieRoll = null;
+            let sharedRoll = null;
+            const computedEntries = [];
+
+            for (const target of resolvedTargetEntries) {
+                const defenseInfo = target.source.defenseInfo || {};
+                const positionAdjustment = positionAdjustments[target.position];
+                const positionModifier = positionAdjustment.defenseModifier !== 0
+                    ? [{
+                        amount: -positionAdjustment.defenseModifier,
+                        reason: `Area position: ${target.position}`
+                    }]
+                    : [];
+                const targetCircumstances = Array.isArray(target.source.circumstanceModifiers)
+                    ? target.source.circumstanceModifiers.map(entry => ({
+                        amount: Number.isFinite(entry?.amount) ? entry.amount : 0,
+                        reason: cleanText(entry?.reason) || null
+                    }))
+                    : [];
+                const attackEntry = {
+                    attacker: cleanText(areaAttackEntry.attacker),
+                    defender: target.actor?.name || cleanText(target.source.name),
+                    targetActorId: target.actor?.id || null,
+                    attackerInfo: {
+                        attackSkill: cleanText(areaAttackEntry.attackerInfo?.attackSkill),
+                        damageAttribute: cleanText(areaAttackEntry.attackerInfo?.damageAttribute)
+                    },
+                    defenderInfo: {
+                        evadeSkill: cleanText(defenseInfo.evadeSkill),
+                        deflectSkill: cleanText(defenseInfo.deflectSkill),
+                        toughnessAttribute: cleanText(defenseInfo.toughnessAttribute)
+                    },
+                    ability: cleanText(areaAttackEntry.ability) || 'N/A',
+                    weapon: cleanText(areaAttackEntry.weapon) || 'N/A',
+                    damageEffectiveness: target.source.damageEffectiveness,
+                    circumstanceModifiers: baseCircumstances
+                        .concat(positionModifier)
+                        .concat(targetCircumstances),
+                    areaAttack: {
+                        position: target.position,
+                        areaShape: cleanText(areaAttackEntry.areaShape) || null,
+                        effectDescription: cleanText(areaAttackEntry.effectDescription) || null
+                    }
+                };
+
+                const attackCheckInfo = {
+                    structured: {
+                        attacks: [attackEntry]
+                    }
+                };
+                const attackContext = buildAttackContextForActor({
+                    attackCheckInfo,
+                    actor: attacker,
+                    location: attackerLocation || null,
+                    dieRollOverride: sharedDieRoll
+                });
+
+                if (!attackContext?.isAttack) {
+                    throw new Error(`resolveAreaAttack could not match attacker "${areaAttackEntry.attacker}" to the resolved actor.`);
+                }
+
+                const attackOutcome = attackContext.outcome || null;
+                if (!attackOutcome) {
+                    throw new Error(`resolveAreaAttack did not produce an attack outcome for "${target.actor?.name || target.source.name}".`);
+                }
+
+                if (sharedDieRoll === null) {
+                    const rolledDie = Number(attackOutcome.hitRoll?.die);
+                    if (!Number.isInteger(rolledDie)) {
+                        throw new Error('resolveAreaAttack did not produce a finite shared die roll.');
+                    }
+                    sharedDieRoll = rolledDie;
+                    const globalCircumstanceModifier = baseCircumstances.reduce((sum, entry) => (
+                        sum + (Number.isFinite(entry.amount) ? entry.amount : 0)
+                    ), 0);
+                    const attackSkillValue = Number.isFinite(attackOutcome.hitRoll?.attackSkill?.value)
+                        ? attackOutcome.hitRoll.attackSkill.value
+                        : 0;
+                    const attackAttributeModifier = Number.isFinite(attackOutcome.hitRoll?.attackAttribute?.modifier)
+                        ? attackOutcome.hitRoll.attackAttribute.modifier
+                        : 0;
+                    sharedRoll = {
+                        die: sharedDieRoll,
+                        total: sharedDieRoll + attackSkillValue + attackAttributeModifier + globalCircumstanceModifier,
+                        attackSkill: attackOutcome.hitRoll?.attackSkill?.name || cleanText(areaAttackEntry.attackerInfo?.attackSkill) || null,
+                        damageAttribute: cleanText(areaAttackEntry.attackerInfo?.damageAttribute) || null
+                    };
+                }
+
+                if (attackOutcome.hit) {
+                    const declaredDamage = Number(attackOutcome.damage?.total);
+                    if (!Number.isFinite(declaredDamage)) {
+                        throw new Error(`resolveAreaAttack hit "${target.actor?.name || target.source.name}" without a finite damage total.`);
+                    }
+                    const damageMultiplier = positionAdjustment.damageMultiplier;
+                    if (damageMultiplier !== 1 && attackOutcome.damage) {
+                        const scaledDamage = damageMultiplier === 0.5
+                            ? Math.ceil(declaredDamage * damageMultiplier)
+                            : declaredDamage * damageMultiplier;
+                        attackOutcome.damage.prePositionTotal = declaredDamage;
+                        attackOutcome.damage.positionMultiplier = damageMultiplier;
+                        attackOutcome.damage.total = scaledDamage;
+                        if (!attackOutcome.damage.calculation || typeof attackOutcome.damage.calculation !== 'object') {
+                            attackOutcome.damage.calculation = {};
+                        }
+                        attackOutcome.damage.calculation.prePositionDamage = declaredDamage;
+                        attackOutcome.damage.calculation.positionDamageMultiplier = damageMultiplier;
+                        attackOutcome.damage.calculation.finalDamage = scaledDamage;
+                    }
+
+                    const finalDamage = Number(attackOutcome.damage?.total);
+                    if (!Number.isFinite(finalDamage)) {
+                        throw new Error(`resolveAreaAttack hit "${target.actor?.name || target.source.name}" without a finite final damage total.`);
+                    }
+                    if (finalDamage > 0 && typeof target.actor?.modifyHealth !== 'function') {
+                        throw new Error(`resolveAreaAttack cannot apply damage to "${target.actor?.name || target.source.name}".`);
+                    }
+                }
+
+                computedEntries.push({
+                    target,
+                    attackContext,
+                    attackOutcome
+                });
+            }
+
+            const results = [];
+            const applications = [];
+            let locationRefreshRequested = false;
+
+            for (const computed of computedEntries) {
+                const { target, attackContext, attackOutcome } = computed;
+                let damageApplication = null;
+                let appliedStatusEffects = [];
+                const declaredDamage = attackOutcome.hit && Number.isFinite(attackOutcome.damage?.total)
+                    ? attackOutcome.damage.total
+                    : 0;
+
+                if (attackOutcome.hit && declaredDamage > 0) {
+                    const damageResult = applyAttackDamageToTarget({
+                        attackContext,
+                        attackOutcome,
+                        attacker
+                    });
+                    damageApplication = damageResult.application || null;
+                    appliedStatusEffects = Array.isArray(damageResult.appliedStatusEffects)
+                        ? damageResult.appliedStatusEffects
+                        : [];
+                    if (!damageApplication) {
+                        throw new Error(`resolveAreaAttack hit "${target.actor?.name || target.source.name}" but could not apply damage.`);
+                    }
+                    applications.push(damageApplication);
+                    locationRefreshRequested = true;
+                    if (appliedStatusEffects.length) {
+                        locationRefreshRequested = true;
+                    }
+                }
+
+                const attackSummary = buildAttackSummary({
+                    attackContext,
+                    attackOutcome,
+                    damageApplication
+                });
+
+                const currentHealth = Number.isFinite(target.actor?.health)
+                    ? target.actor.health
+                    : (Number.isFinite(attackOutcome.target?.remainingHealth) ? attackOutcome.target.remainingHealth : null);
+                const maxHealth = Number.isFinite(target.actor?.maxHealth)
+                    ? target.actor.maxHealth
+                    : (Number.isFinite(attackOutcome.target?.maxHealth) ? attackOutcome.target.maxHealth : null);
+                const damageApplied = Number.isFinite(damageApplication?.damageApplied)
+                    ? damageApplication.damageApplied
+                    : (attackOutcome.hit ? 0 : null);
+                const healthLostPercent = Number.isFinite(damageApplication?.healthLostPercent)
+                    ? damageApplication.healthLostPercent
+                    : percent(damageApplied, maxHealth);
+                const remainingHealthPercent = Number.isFinite(damageApplication?.remainingHealthPercent)
+                    ? damageApplication.remainingHealthPercent
+                    : percent(currentHealth, maxHealth);
+                const secondaryEffectName = sanitizeEffectName(areaAttackEntry.secondaryEffect);
+                const suggestedSecondaryEffect = shouldSuggestSecondaryEffect(areaAttackEntry.secondaryEffect, {
+                    hit: Boolean(attackOutcome.hit),
+                    damageApplied
+                });
+
+                results.push({
+                    target: target.actor?.name || cleanText(target.source.name),
+                    targetId: target.actor?.id || null,
+                    hit: Boolean(attackOutcome.hit),
+                    damageApplied: Number.isFinite(damageApplied) ? damageApplied : 0,
+                    damageDeclared: Number.isFinite(declaredDamage) ? declaredDamage : null,
+                    healthLostPercent: Number.isFinite(healthLostPercent) ? healthLostPercent : null,
+                    remainingHealthPercent: Number.isFinite(remainingHealthPercent) ? remainingHealthPercent : null,
+                    position: target.position,
+                    secondaryEffectApplied: false,
+                    secondaryEffect: suggestedSecondaryEffect ? secondaryEffectName : null,
+                    appliedStatusEffects,
+                    application: damageApplication,
+                    attackSummary
+                });
+            }
+
+            const hitCount = results.filter(result => result.hit === true).length;
+            const summary = {
+                kind: 'area-attack',
+                attacker: attacker?.name || cleanText(areaAttackEntry.attacker) || null,
+                weapon: cleanText(areaAttackEntry.weapon) || 'N/A',
+                ability: cleanText(areaAttackEntry.ability) || 'N/A',
+                areaShape: cleanText(areaAttackEntry.areaShape) || null,
+                effectDescription: cleanText(areaAttackEntry.effectDescription) || null,
+                rollMode: 'sharedAttackRoll',
+                sharedRoll,
+                results
+            };
+
+            return {
+                hitCount,
+                targetCount: results.length,
+                locationRefreshRequested,
+                summary,
+                results,
+                applications
             };
         }
 
@@ -20951,6 +21628,18 @@ module.exports = function registerApiRoutes(scope) {
 
                 if (templateTemperature !== null) {
                     requestOptions.temperature = templateTemperature;
+                }
+
+                if (promptMetadataLabel === 'player_action') {
+                    try {
+                        schedulePlotAnalysisPrompt({
+                            locationOverride: location || null,
+                            locationId: location?.id || currentPlayer?.currentLocation || null,
+                            sourceRequestId: stream.requestId || null
+                        });
+                    } catch (plotAnalysisScheduleError) {
+                        console.warn('Failed to schedule plot analysis prompt:', plotAnalysisScheduleError.message);
+                    }
                 }
 
                 stream.status('player_action:prompt', 'Awaiting response from AI...');
@@ -38874,6 +39563,8 @@ module.exports = function registerApiRoutes(scope) {
                 plotSummaryRunOnNextEligibleTurn = false;
                 plotExpanderInProgress = false;
                 plotExpanderTurnCounter = 0;
+                resetPlotAnalysisPromptRuntime();
+                Globals.setPlotAnalysis(null);
                 resetOffscreenNpcActivityState();
                 report('new_game:calendar', 'Generating world calendar...');
                 const calendarDefinition = await resolveCalendarDefinitionForSetting({
@@ -39890,6 +40581,7 @@ module.exports = function registerApiRoutes(scope) {
                 }
             }
             plotExpanderInProgress = false;
+            resetPlotAnalysisPromptRuntime();
             offscreenNpcActivityState = normalizeOffscreenNpcActivityState(metadata.offscreenNpcActivityState);
             Globals.setCurrentSaveInfo({
                 saveName: metadata.saveName || normalizedName,

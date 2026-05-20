@@ -1102,7 +1102,10 @@ class Utils {
       totalSkills: skills.size,
       currentSettingId: currentSetting?.id || null,
       currentSettingName: currentSetting?.name || null,
-      idCounters: IdGenerator.snapshotCounters()
+      idCounters: IdGenerator.snapshotCounters(),
+      plotAnalysis: typeof Globals.getPlotAnalysis === 'function'
+        ? Globals.getPlotAnalysis()
+        : null
     };
 
     serialized.setting = null;
@@ -1837,6 +1840,9 @@ class Utils {
 
     IdGenerator.reset();
     IdGenerator.seedCounters(serialized.metadata?.idCounters || {});
+    if (typeof Globals.setPlotAnalysis === 'function') {
+      Globals.setPlotAnalysis(serialized.metadata?.plotAnalysis || null);
+    }
 
     const {
       gameLocations,

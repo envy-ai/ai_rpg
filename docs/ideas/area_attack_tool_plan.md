@@ -2,6 +2,8 @@
 
 ## Summary
 
+Implementation status: v1 is implemented in the regular prose chat-tool path. Secondary effect fields are returned as suggested metadata only; the tool does not directly generate new status effects because the schema does not include duration/level data for a fully validated status application.
+
 Add a first-class `resolveAreaAttack` chat tool for attacks that affect multiple targets at once: grenades, blasts, cones, sweeping magic, automatic fire, shockwaves, traps, gas clouds, vehicle impacts, and similar effects.
 
 The existing `resolveAttack` tool should remain the single-target path. `resolveAreaAttack` should not be a loose batch wrapper around `resolveAttack`; it should model one area effect with a shared source, target list, and per-target outcomes. This keeps ordinary attacks simple while giving the LLM a clear tool for cases where one action can harm or impair several actors.

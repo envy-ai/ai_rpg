@@ -133,3 +133,17 @@ test('prompt progress dock styles include 4px collapsed bar and 3-row table cap'
     assert.match(scssSource, /--prompt-progress-table-body-rows:\s*3/);
     assert.match(scssSource, /position:\s*sticky/);
 });
+
+test('multi-row prompt progress table omits target and average-output columns', () => {
+    assert.doesNotMatch(chatSource, /<th>Target<\/th>/);
+    assert.doesNotMatch(chatSource, /<th>Avg Out<\/th>/);
+
+    const rowStart = chatSource.indexOf('createPromptProgressTableRow(entry');
+    const rowEnd = chatSource.indexOf('\n    createPromptProgressHeader', rowStart);
+    assert.notEqual(rowStart, -1, 'table row renderer should exist');
+    assert.notEqual(rowEnd, -1, 'table row renderer end should be locatable');
+    const rowSource = chatSource.slice(rowStart, rowEnd);
+
+    assert.doesNotMatch(rowSource, /formatPromptProgressTarget/);
+    assert.doesNotMatch(rowSource, /formatPromptProgressOutputAverage/);
+});

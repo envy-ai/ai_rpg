@@ -19,6 +19,7 @@ class Globals {
   static gameConfigOverrideYaml = '';
   static worldTime = null;
   static calendarDefinition = null;
+  static plotAnalysis = null;
 
   static #hashString(value) {
     const source = typeof value === 'string' ? value : String(value ?? '');
@@ -35,6 +36,112 @@ class Globals {
       return undefined;
     }
     return JSON.parse(JSON.stringify(value));
+  }
+
+  static #normalizePlotAnalysisText(value, label) {
+    if (value === null || value === undefined) {
+      return null;
+    }
+    if (typeof value !== 'string') {
+      throw new Error(`Plot analysis ${label} must be a string when provided.`);
+    }
+    return value;
+  }
+
+  static #normalizePlotAnalysisThreads(value) {
+    if (value === null || value === undefined) {
+      return undefined;
+    }
+    if (!Array.isArray(value)) {
+      throw new Error('Plot analysis plotThreads must be an array when provided.');
+    }
+    return value
+      .map((entry, index) => {
+        if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+          throw new Error(`Plot analysis plotThreads[${index}] must be an object.`);
+        }
+        const description = Globals.#normalizePlotAnalysisText(entry.description, `plotThreads[${index}].description`);
+        if (!description || !description.trim()) {
+          return null;
+        }
+        return {
+          description: description.trim(),
+          isCurrentFocus: entry.isCurrentFocus === true
+        };
+      })
+      .filter(Boolean);
+  }
+
+  static #normalizePlotAnalysisComplications(value) {
+    if (value === null || value === undefined) {
+      return undefined;
+    }
+    if (!Array.isArray(value)) {
+      throw new Error('Plot analysis currentPlotComplications must be an array when provided.');
+    }
+    return value
+      .map((entry, index) => {
+        if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+          throw new Error(`Plot analysis currentPlotComplications[${index}] must be an object.`);
+        }
+        const description = Globals.#normalizePlotAnalysisText(entry.description, `currentPlotComplications[${index}].description`);
+        if (!description || !description.trim()) {
+          return null;
+        }
+        return {
+          description: description.trim()
+        };
+      })
+      .filter(Boolean);
+  }
+
+  static #normalizePlotAnalysis(value) {
+    if (value === null || value === undefined) {
+      return null;
+    }
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      throw new Error('Plot analysis must be an object or null.');
+    }
+
+    const normalized = {};
+    const stringFields = [
+      'raw',
+      'updatedAt',
+      'startedAt',
+      'completedAt',
+      'sourceRequestId',
+      'locationId',
+      'parseError'
+    ];
+    for (const field of stringFields) {
+      if (!Object.prototype.hasOwnProperty.call(value, field)) {
+        continue;
+      }
+      const text = Globals.#normalizePlotAnalysisText(value[field], field);
+      if (text !== null) {
+        normalized[field] = text;
+      }
+    }
+
+    if (Object.prototype.hasOwnProperty.call(value, 'sequence')) {
+      const sequence = Number(value.sequence);
+      if (!Number.isFinite(sequence) || !Number.isInteger(sequence) || sequence < 0) {
+        throw new Error('Plot analysis sequence must be a non-negative integer when provided.');
+      }
+      normalized.sequence = sequence;
+    }
+
+    const plotThreads = Globals.#normalizePlotAnalysisThreads(value.plotThreads);
+    if (plotThreads !== undefined) {
+      normalized.plotThreads = plotThreads;
+    }
+
+    const complications = Globals.#normalizePlotAnalysisComplications(value.currentPlotComplications);
+    if (complications !== undefined) {
+      normalized.currentPlotComplications = complications;
+    }
+
+    return normalized;
   }
 
   static getTimeConfig() {
@@ -874,6 +981,14 @@ class Globals {
 
   static getSaveMetadata() {
     return Globals.saveMetadata;
+  }
+
+  static setPlotAnalysis(value) {
+    Globals.plotAnalysis = Globals.#normalizePlotAnalysis(value);
+  }
+
+  static getPlotAnalysis() {
+    return Globals.plotAnalysis ? Globals.#deepClone(Globals.plotAnalysis) : null;
   }
 
   static setCurrentSaveInfo(info) {

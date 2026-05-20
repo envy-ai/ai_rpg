@@ -2625,6 +2625,9 @@ class AIRPGChat {
         if (record?.kind === 'attack') {
             return 'Attack check';
         }
+        if (record?.kind === 'area-attack') {
+            return 'Area attack';
+        }
         if (record?.kind === 'opposed-skill') {
             return 'Opposed skill check';
         }
@@ -2644,6 +2647,10 @@ class AIRPGChat {
         }
         if (record.kind === 'attack' && record.attackSummary) {
             const details = this.generateAttackCheckInsight(record.attackSummary);
+            return details?.html || '';
+        }
+        if (record.kind === 'area-attack' && record.areaAttackSummary) {
+            const details = this.generateAreaAttackInsight(record.areaAttackSummary);
             return details?.html || '';
         }
         return '';
@@ -2850,6 +2857,98 @@ class AIRPGChat {
         }
         return {
             html: detailsElement.innerHTML
+        };
+    }
+
+    generateAreaAttackInsight(summary) {
+        if (!summary || typeof summary !== 'object') {
+            return null;
+        }
+
+        const formatSigned = (value) => {
+            if (typeof value !== 'number' || Number.isNaN(value)) {
+                return null;
+            }
+            return value >= 0 ? `+${value}` : `${value}`;
+        };
+
+        const lines = [];
+        const effectParts = [];
+        if (summary.areaShape) {
+            effectParts.push(this.escapeHtml(String(summary.areaShape)));
+        }
+        if (summary.weapon && summary.weapon !== 'N/A') {
+            effectParts.push(`Weapon: ${this.escapeHtml(String(summary.weapon))}`);
+        }
+        if (summary.ability && summary.ability !== 'N/A') {
+            effectParts.push(`Ability: ${this.escapeHtml(String(summary.ability))}`);
+        }
+        if (summary.effectDescription) {
+            effectParts.push(this.escapeHtml(String(summary.effectDescription)));
+        }
+        if (effectParts.length) {
+            lines.push(`<li><strong>Area Effect:</strong> ${effectParts.join(' • ')}</li>`);
+        }
+
+        const sharedRoll = summary.sharedRoll || {};
+        const rollParts = [];
+        if (typeof sharedRoll.die === 'number') {
+            rollParts.push(`d20 ${sharedRoll.die}`);
+        }
+        if (sharedRoll.attackSkill) {
+            rollParts.push(this.escapeHtml(String(sharedRoll.attackSkill)));
+        }
+        if (sharedRoll.damageAttribute) {
+            rollParts.push(`Damage: ${this.escapeHtml(String(sharedRoll.damageAttribute))}`);
+        }
+        if (typeof sharedRoll.total === 'number') {
+            rollParts.push(`Total ${sharedRoll.total}`);
+        }
+        if (rollParts.length) {
+            lines.push(`<li><strong>Shared Roll:</strong> ${rollParts.join(' → ')}</li>`);
+        }
+
+        const results = Array.isArray(summary.results) ? summary.results : [];
+        results.forEach((result) => {
+            if (!result || typeof result !== 'object') {
+                return;
+            }
+            const target = result.target || result.targetName || 'Target';
+            const resultParts = [];
+            resultParts.push(result.hit ? 'Hit' : 'Miss');
+            if (result.position) {
+                resultParts.push(this.escapeHtml(String(result.position)));
+            }
+            if (typeof result.damageApplied === 'number') {
+                const damageValue = this.formatHealthDisplayValue(result.damageApplied);
+                resultParts.push(`Damage ${damageValue}`);
+            }
+            if (typeof result.healthLostPercent === 'number') {
+                resultParts.push(`Lost ${result.healthLostPercent}%`);
+            }
+            if (typeof result.remainingHealthPercent === 'number') {
+                resultParts.push(`Remaining ${result.remainingHealthPercent}%`);
+            }
+            if (result.secondaryEffectApplied && result.secondaryEffect) {
+                resultParts.push(`Effect: ${this.escapeHtml(String(result.secondaryEffect))}`);
+            } else if (result.secondaryEffect) {
+                resultParts.push(`Possible effect: ${this.escapeHtml(String(result.secondaryEffect))}`);
+            }
+            if (result.attackSummary?.hitDegree !== undefined && result.attackSummary?.hitDegree !== null) {
+                const hitDegree = Number(result.attackSummary.hitDegree);
+                if (Number.isFinite(hitDegree)) {
+                    resultParts.push(`Degree ${formatSigned(hitDegree) ?? hitDegree}`);
+                }
+            }
+            lines.push(`<li><strong>${this.escapeHtml(String(target))}:</strong> ${resultParts.join(' • ')}</li>`);
+        });
+
+        if (!lines.length) {
+            return null;
+        }
+
+        return {
+            html: `<div class="area-attack-details"><ul>${lines.join('\n')}</ul></div>`
         };
     }
 
@@ -4702,28 +4801,12 @@ class AIRPGChat {
         return `~${Math.floor(progressFraction * 100)}%`;
     }
 
-    formatPromptProgressTarget(entry) {
-        const targetCharacters = Number(entry?.targetCharacters);
-        if (!Number.isFinite(targetCharacters)) {
-            return '-';
-        }
-        return targetCharacters.toLocaleString();
-    }
-
     formatPromptProgressRunCount(entry) {
         const runCount = Number(entry?.runCount);
         if (!Number.isFinite(runCount)) {
             return '0';
         }
         return Math.trunc(runCount).toLocaleString();
-    }
-
-    formatPromptProgressOutputAverage(entry) {
-        const averageOutputCharacters = Number(entry?.averageOutputCharacters);
-        if (!Number.isFinite(averageOutputCharacters)) {
-            return 'null';
-        }
-        return Math.round(averageOutputCharacters).toLocaleString();
     }
 
     clearPendingPromptProgressRender() {
@@ -4991,14 +5074,8 @@ class AIRPGChat {
         const receivedCell = document.createElement('td');
         receivedCell.textContent = this.formatPromptProgressReceived(entry);
 
-        const targetCell = document.createElement('td');
-        targetCell.textContent = this.formatPromptProgressTarget(entry);
-
         const runCountCell = document.createElement('td');
         runCountCell.textContent = this.formatPromptProgressRunCount(entry);
-
-        const averageOutputCell = document.createElement('td');
-        averageOutputCell.textContent = this.formatPromptProgressOutputAverage(entry);
 
         const secondsCell = document.createElement('td');
         secondsCell.textContent = Number.isFinite(entry.seconds) ? `${Math.round(entry.seconds)}s` : '-';
@@ -5020,9 +5097,7 @@ class AIRPGChat {
         row.appendChild(progressCell);
         row.appendChild(modelCell);
         row.appendChild(receivedCell);
-        row.appendChild(targetCell);
         row.appendChild(runCountCell);
-        row.appendChild(averageOutputCell);
         row.appendChild(secondsCell);
         row.appendChild(timeoutCell);
         row.appendChild(latencyCell);
@@ -5187,7 +5262,7 @@ class AIRPGChat {
         this.promptProgressEntries = entries.filter(entry => entry && typeof entry === 'object');
         const dock = this.ensurePromptProgressDock();
         this.promptProgressMessage = dock;
-        const tableHeaderHtml = '<tr><th class="prompt-progress-cancel-header">Actions</th><th>Prompt</th><th>Progress</th><th>Model</th><th>Received</th><th>Target</th><th>Runs</th><th>Avg Out</th><th>Seconds</th><th>Timeout In</th><th>Latency</th><th>Avg/s</th><th>Retries</th></tr>';
+        const tableHeaderHtml = '<tr><th class="prompt-progress-cancel-header">Actions</th><th>Prompt</th><th>Progress</th><th>Model</th><th>Received</th><th>Runs</th><th>Seconds</th><th>Timeout In</th><th>Latency</th><th>Avg/s</th><th>Retries</th></tr>';
         const renderTimestamp = () => new Date().toISOString().replace('T', ' ').replace('Z', '');
 
         if (this.promptProgressHideTimer) {

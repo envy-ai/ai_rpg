@@ -7,6 +7,7 @@ Centralized static state and helpers used across the server. Provides access to 
 - `config`, `baseDir`, `gameLoaded`, `inCombat`, `realtimeHub`.
 - `currentSaveVersion`, `saveFileSaveVersion` (`1.2` adds compact counter-ID migration for persisted domain objects).
 - `sceneSummaries`, `saveMetadata`, `currentSaveInfo`.
+- `plotAnalysis`: the most recent background `plot-analysis` prompt output, stored as a structured object and persisted through save metadata.
 - `travelHistory`, `slopWords`, `slopTrigrams`.
 - `_playerArrivalVisitStates` (transient per-request map of player movement destination ids to their pre-arrival `visited` state and `lastVisitedTime`).
 - `worldTime`, `calendarDefinition`.
@@ -14,6 +15,7 @@ Centralized static state and helpers used across the server. Provides access to 
 
 ## Static API
 - `setSaveMetadata(metadata)` / `getSaveMetadata()`.
+- `setPlotAnalysis(value)` / `getPlotAnalysis()`: validates and deep-clones the latest plot-analysis state. `null` clears the state.
 - `setCurrentSaveInfo(info)` / `getCurrentSaveInfo()`.
 - `getBasePromptContext`, `getPromptEnv`, `parseXMLTemplate`: placeholders that must be assigned.
 - `appendChatEntry(entry, { collector, locationId, clientId, emitClientRefresh, refreshPayload })`: server-assigned helper that routes through `pushChatEntry` and can optionally emit `chat_history_updated`.

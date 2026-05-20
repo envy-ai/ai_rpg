@@ -21,6 +21,12 @@ chat_tools:
   # Allows LLM chat-tool prompts to ask the player one direct follow-up question through a non-modal client panel.
   request_user_input_enabled: true
 
+plot_analysis:
+  # Schedules the non-blocking background plot-analysis prompt after player actions.
+  enabled: true
+  max_plot_threads: 3 # Currently does nothing
+  max_plot_complications: 3
+
 # OpenAI-compatible API configuration
 ai:
   # Text generation backend:
