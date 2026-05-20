@@ -1225,6 +1225,22 @@ function renderMap(region, options = {}) {
     return result;
   };
 
+  const expandStub = async (stubId) => {
+    if (!stubId) {
+      throw new Error('Stub id is required.');
+    }
+    const response = await fetch(`/api/stubs/${encodeURIComponent(stubId)}/expand`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ clientId: window.AIRPG_CLIENT_ID || null })
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || !result?.success) {
+      throw new Error(result?.error || `Failed to unstub '${stubId}'`);
+    }
+    return result;
+  };
+
   const deleteEdgeAndExit = async (edge) => {
     if (!edge || !cyInstance) {
       return;
@@ -1342,6 +1358,40 @@ function renderMap(region, options = {}) {
     menu.style.zIndex = '2100';
     menu.style.minWidth = '180px';
 
+    const isRegionStub = Boolean(node?.hasClass?.('region-exit') || node?.data?.('regionName') || node?.data?.('targetRegionId'));
+
+    const unstubBtn = document.createElement('button');
+    unstubBtn.type = 'button';
+    unstubBtn.textContent = isRegionStub ? 'Unstub region' : 'Unstub location';
+    unstubBtn.style.width = '100%';
+    unstubBtn.style.padding = '8px 10px';
+    unstubBtn.style.border = 'none';
+    unstubBtn.style.background = 'transparent';
+    unstubBtn.style.color = '#a7f3d0';
+    unstubBtn.style.textAlign = 'left';
+    unstubBtn.style.cursor = 'pointer';
+    unstubBtn.addEventListener('mouseover', () => {
+      unstubBtn.style.background = 'rgba(16,185,129,0.12)';
+    });
+    unstubBtn.addEventListener('mouseout', () => {
+      unstubBtn.style.background = 'transparent';
+    });
+    unstubBtn.addEventListener('click', async () => {
+      try {
+        const confirmed = window.confirm(`Unstub this ${isRegionStub ? 'region' : 'location'} now?`);
+        if (!confirmed) {
+          return;
+        }
+        const result = await expandStub(stubId);
+        const regionId = activeRegionId || result?.expandedRegion?.id || result?.location?.regionId || null;
+        await window.loadRegionMap?.(regionId);
+      } catch (error) {
+        window.alert(error?.message || 'Failed to unstub');
+      } finally {
+        closeEdgeMenu();
+      }
+    });
+
     const editBtn = document.createElement('button');
     editBtn.type = 'button';
     editBtn.textContent = 'Edit stub';
@@ -1419,6 +1469,7 @@ function renderMap(region, options = {}) {
       }
     });
 
+    menu.appendChild(unstubBtn);
     menu.appendChild(editBtn);
     menu.appendChild(deleteBtn);
     document.body.appendChild(menu);

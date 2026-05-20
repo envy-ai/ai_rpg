@@ -90,7 +90,7 @@ Most modals live in `views/index.njk` and are wired up by the inline script or `
 
 ## Location and region editing
 
-- `#locationEditModal`: edit location name/description/level/status effects, controlling faction, and vehicle fields.
+- `#locationEditModal`: edit location name/description/level/status effects, controlling faction, vehicle fields, and the containing region. Changing the Region selector saves normal location edits first, then calls `POST /api/locations/:id/relocate` to move the location server-side so `location.regionId` and old/new `Region.locationIds` stay in sync. Pending regions are shown as disabled `unstub first` options. When the selected region differs from the current one, the modal shows a relocation-cleanup section with inbound/outbound direct exits from `GET /api/locations/:id/relocation-options`; selected exits are removed during relocation and a checkbox can make the moved location the target region entrance.
 - `#regionEditModal`: edit region name/description/parent/level, controlling faction, and vehicle fields.
   - Both include a short description field directly under the main description.
   - Status-effect duration fields accept shared minute-canonical duration input such as `4 hours, 15 minutes`, `1d11h30m`, or bare minute counts.

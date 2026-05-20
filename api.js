@@ -29670,6 +29670,338 @@ module.exports = function registerApiRoutes(scope) {
             }
         });
 
+        app.get('/api/locations/:id/relocation-options', (req, res) => {
+            try {
+                const locationIdRaw = req.params.id;
+                const locationId = typeof locationIdRaw === 'string' ? locationIdRaw.trim() : '';
+                if (!locationId) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Location ID is required'
+                    });
+                }
+
+                const targetLocation = gameLocations.get(locationId) || Location.get(locationId);
+                if (!targetLocation) {
+                    return res.status(404).json({
+                        success: false,
+                        error: `Location with ID '${locationId}' not found`
+                    });
+                }
+
+                const describeRegion = (regionId) => {
+                    if (!regionId) {
+                        return { id: null, name: null, isStub: false };
+                    }
+                    const liveRegion = regions.get(regionId) || null;
+                    if (liveRegion) {
+                        return {
+                            id: liveRegion.id,
+                            name: liveRegion.name || liveRegion.id,
+                            isStub: false
+                        };
+                    }
+                    const pendingRegion = pendingRegionStubs.get(regionId) || null;
+                    if (pendingRegion) {
+                        return {
+                            id: regionId,
+                            name: pendingRegion.name || pendingRegion.originalName || regionId,
+                            isStub: true
+                        };
+                    }
+                    return { id: regionId, name: regionId, isStub: false };
+                };
+
+                const describeLocation = (location) => ({
+                    id: location?.id || null,
+                    name: location?.name
+                        || location?.stubMetadata?.targetRegionName
+                        || location?.stubMetadata?.shortDescription
+                        || location?.id
+                        || null,
+                    regionId: location?.regionId || location?.stubMetadata?.regionId || location?.stubMetadata?.targetRegionId || null
+                });
+
+                const currentRegionId = targetLocation.regionId
+                    || targetLocation.stubMetadata?.regionId
+                    || targetLocation.stubMetadata?.targetRegionId
+                    || null;
+                const exitOptions = [];
+                const seenExitIds = new Set();
+
+                const pushExitOption = ({ relation, originLocation, direction, exit }) => {
+                    if (!originLocation || !exit) {
+                        return;
+                    }
+                    const exitId = typeof exit.id === 'string' && exit.id.trim()
+                        ? exit.id.trim()
+                        : `${originLocation.id || 'unknown'}:${direction || 'unknown'}`;
+                    if (seenExitIds.has(exitId)) {
+                        return;
+                    }
+                    seenExitIds.add(exitId);
+
+                    const destinationLocation = exit.destination
+                        ? (gameLocations.get(exit.destination) || Location.get(exit.destination) || null)
+                        : null;
+                    const originSummary = describeLocation(originLocation);
+                    const destinationSummary = describeLocation(destinationLocation);
+                    const originRegion = describeRegion(originSummary.regionId);
+                    const destinationRegion = describeRegion(
+                        exit.destinationRegion
+                        || destinationSummary.regionId
+                        || null
+                    );
+                    const connectedRegionId = relation === 'inbound'
+                        ? originSummary.regionId
+                        : (exit.destinationRegion || destinationSummary.regionId || null);
+
+                    exitOptions.push({
+                        exitId,
+                        relation,
+                        direction: direction || null,
+                        originLocation: originSummary,
+                        originRegion,
+                        destinationLocation: destinationSummary,
+                        destinationRegion,
+                        connectedRegionId,
+                        description: exit.description || null
+                    });
+                };
+
+                if (typeof targetLocation.getAvailableDirections === 'function') {
+                    for (const direction of targetLocation.getAvailableDirections()) {
+                        pushExitOption({
+                            relation: 'outbound',
+                            originLocation: targetLocation,
+                            direction,
+                            exit: targetLocation.getExit(direction)
+                        });
+                    }
+                }
+
+                for (const candidateLocation of gameLocations.values()) {
+                    if (!candidateLocation
+                        || candidateLocation.id === targetLocation.id
+                        || typeof candidateLocation.getAvailableDirections !== 'function') {
+                        continue;
+                    }
+                    for (const direction of candidateLocation.getAvailableDirections()) {
+                        const exit = candidateLocation.getExit(direction);
+                        if (!exit || exit.destination !== targetLocation.id) {
+                            continue;
+                        }
+                        pushExitOption({
+                            relation: 'inbound',
+                            originLocation: candidateLocation,
+                            direction,
+                            exit
+                        });
+                    }
+                }
+
+                exitOptions.sort((a, b) => {
+                    const relationOrder = a.relation.localeCompare(b.relation);
+                    if (relationOrder !== 0) {
+                        return relationOrder;
+                    }
+                    const originA = a.originLocation?.name || '';
+                    const originB = b.originLocation?.name || '';
+                    return originA.localeCompare(originB, undefined, { sensitivity: 'base' });
+                });
+
+                return res.json({
+                    success: true,
+                    locationId: targetLocation.id,
+                    currentRegionId,
+                    exitOptions
+                });
+            } catch (error) {
+                console.error('Failed to load location relocation options:', error);
+                return res.status(500).json({
+                    success: false,
+                    error: error?.message || 'Failed to load location relocation options'
+                });
+            }
+        });
+
+        app.post('/api/locations/:id/relocate', (req, res) => {
+            try {
+                const locationIdRaw = req.params.id;
+                const locationId = typeof locationIdRaw === 'string' ? locationIdRaw.trim() : '';
+                if (!locationId) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Location ID is required'
+                    });
+                }
+
+                const location = gameLocations.get(locationId) || Location.get(locationId);
+                if (!location) {
+                    return res.status(404).json({
+                        success: false,
+                        error: `Location with ID '${locationId}' not found`
+                    });
+                }
+                if (location.isStub) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Stub locations must be unstubbed before they can be relocated.'
+                    });
+                }
+
+                const body = req.body || {};
+                const targetRegionId = typeof body.targetRegionId === 'string' && body.targetRegionId.trim()
+                    ? body.targetRegionId.trim()
+                    : '';
+                if (!targetRegionId) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Target region ID is required'
+                    });
+                }
+                if (pendingRegionStubs.has(targetRegionId)) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Target region is still a stub. Unstub the region before relocating a location into it.'
+                    });
+                }
+                const targetRegion = regions.get(targetRegionId) || null;
+                if (!targetRegion) {
+                    return res.status(404).json({
+                        success: false,
+                        error: `Target region '${targetRegionId}' not found`
+                    });
+                }
+
+                const previousRegionId = location.regionId
+                    || findRegionByLocationId(location.id)?.id
+                    || null;
+                const rawRemoveExitIds = Array.isArray(body.removeExitIds)
+                    ? body.removeExitIds
+                    : [];
+                const removeExitIds = Array.from(new Set(rawRemoveExitIds
+                    .filter(value => typeof value === 'string' && value.trim())
+                    .map(value => value.trim())));
+                const makeRegionEntrance = body.makeRegionEntrance === true
+                    || body.makeRegionEntrance === 'true'
+                    || body.makeRegionEntrance === 1
+                    || body.makeRegionEntrance === '1';
+
+                const removedExitIds = new Set();
+                const removedExits = [];
+                for (const exitId of removeExitIds) {
+                    if (removedExitIds.has(exitId)) {
+                        continue;
+                    }
+                    let locatedExit = null;
+                    let candidateLocation = null;
+                    for (const possibleLocation of gameLocations.values()) {
+                        candidateLocation = possibleLocation;
+                        const match = findExitById(candidateLocation, exitId);
+                        if (match) {
+                            locatedExit = match;
+                            break;
+                        }
+                        candidateLocation = null;
+                    }
+                    if (!locatedExit || !candidateLocation) {
+                        throw new Error(`Exit '${exitId}' was not found for relocation cleanup.`);
+                    }
+
+                    removeExitStrict(candidateLocation, locatedExit.direction, locatedExit.exit.id || null);
+                    if (locatedExit.exit.id) {
+                        removedExitIds.add(locatedExit.exit.id);
+                    }
+
+                    let reverseRemoval = null;
+                    const destinationLocation = locatedExit.exit.destination
+                        ? (gameLocations.get(locatedExit.exit.destination) || Location.get(locatedExit.exit.destination))
+                        : null;
+                    if (destinationLocation) {
+                        const reverseExit = findExitOnLocation(
+                            destinationLocation,
+                            candidate => candidate.destination === candidateLocation.id
+                        );
+                        if (reverseExit && !removedExitIds.has(reverseExit.exit.id || '')) {
+                            removeExitStrict(destinationLocation, reverseExit.direction, reverseExit.exit.id || null);
+                            if (reverseExit.exit.id) {
+                                removedExitIds.add(reverseExit.exit.id);
+                            }
+                            reverseRemoval = {
+                                locationId: destinationLocation.id || null,
+                                exitId: reverseExit.exit.id || null,
+                                direction: reverseExit.direction
+                            };
+                        }
+                    }
+
+                    removedExits.push({
+                        locationId: candidateLocation.id || null,
+                        exitId: locatedExit.exit.id || null,
+                        direction: locatedExit.direction,
+                        destinationId: locatedExit.exit.destination || null,
+                        reverseRemoved: reverseRemoval
+                    });
+                }
+
+                location.regionId = targetRegionId;
+                for (const region of regions.values()) {
+                    if (!region || region.id === targetRegionId || !Array.isArray(region.locationIds)) {
+                        continue;
+                    }
+                    if (region.locationIds.includes(location.id)) {
+                        region.removeLocationId(location.id);
+                    }
+                }
+
+                if (makeRegionEntrance) {
+                    targetRegion.entranceLocationId = location.id;
+                }
+
+                const locationPayload = buildLocationResponse(location);
+                if (!locationPayload) {
+                    return res.status(500).json({
+                        success: false,
+                        error: 'Failed to serialize relocated location.'
+                    });
+                }
+
+                if (realtimeHub && typeof realtimeHub.emit === 'function') {
+                    try {
+                        realtimeHub.emit(null, 'location_relocated', {
+                            locationId: location.id,
+                            locationName: location.name || null,
+                            previousRegionId,
+                            targetRegionId,
+                            removedExits,
+                            makeRegionEntrance,
+                            location: locationPayload,
+                            timestamp: new Date().toISOString()
+                        });
+                    } catch (broadcastError) {
+                        console.warn('Failed to broadcast location relocation:', broadcastError.message);
+                    }
+                }
+
+                return res.json({
+                    success: true,
+                    message: 'Location relocated successfully.',
+                    location: locationPayload,
+                    previousRegionId,
+                    targetRegionId,
+                    removedExits,
+                    makeRegionEntrance
+                });
+            } catch (error) {
+                console.error('Failed to relocate location:', error);
+                return res.status(500).json({
+                    success: false,
+                    error: error?.message || 'Failed to relocate location'
+                });
+            }
+        });
+
         app.delete('/api/locations/:id', (req, res) => {
             try {
                 const locationIdRaw = req.params.id;
@@ -31431,6 +31763,92 @@ module.exports = function registerApiRoutes(scope) {
                 return res.status(500).json({
                     success: false,
                     error: error?.message || 'Failed to update stub'
+                });
+            }
+        });
+
+        app.post('/api/stubs/:id/expand', async (req, res) => {
+            try {
+                const stubIdRaw = req.params.id;
+                const stubId = typeof stubIdRaw === 'string' ? stubIdRaw.trim() : '';
+                if (!stubId) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Stub ID is required'
+                    });
+                }
+
+                const stubLocation = getStubLocationById(stubId);
+                if (!stubLocation) {
+                    return res.status(404).json({
+                        success: false,
+                        error: `Stub '${stubId}' not found`
+                    });
+                }
+
+                let expandedLocation = null;
+                let expandedRegion = null;
+                const wasRegionEntryStub = Boolean(stubLocation.stubMetadata?.isRegionEntryStub);
+                if (wasRegionEntryStub) {
+                    expandedLocation = await expandRegionEntryStub(stubLocation);
+                    if (!expandedLocation) {
+                        throw new Error('Region expansion did not return an entrance location.');
+                    }
+                    const expandedRegionId = expandedLocation.regionId
+                        || stubLocation.stubMetadata?.targetRegionId
+                        || stubLocation.stubMetadata?.regionId
+                        || null;
+                    expandedRegion = expandedRegionId && regions.has(expandedRegionId)
+                        ? regions.get(expandedRegionId)
+                        : null;
+                } else {
+                    await scheduleStubExpansion(stubLocation);
+                    expandedLocation = gameLocations.get(stubLocation.id) || Location.get(stubLocation.id) || null;
+                    if (!expandedLocation) {
+                        throw new Error('Location expansion did not return a location.');
+                    }
+                    if (expandedLocation.isStub) {
+                        throw new Error(`Location stub '${stubId}' is still stubbed after expansion.`);
+                    }
+                    expandedRegion = expandedLocation.regionId && regions.has(expandedLocation.regionId)
+                        ? regions.get(expandedLocation.regionId)
+                        : null;
+                }
+
+                const locationPayload = buildLocationResponse(expandedLocation);
+                if (!locationPayload) {
+                    throw new Error('Failed to serialize expanded location.');
+                }
+                const expandedRegionPayload = expandedRegion
+                    ? buildRegionApiPayload(expandedRegion)
+                    : null;
+
+                if (realtimeHub && typeof realtimeHub.emit === 'function') {
+                    try {
+                        realtimeHub.emit(null, 'location_stub_expanded', {
+                            stubId,
+                            type: wasRegionEntryStub ? 'region' : 'location',
+                            location: locationPayload,
+                            expandedRegion: expandedRegionPayload,
+                            timestamp: new Date().toISOString()
+                        });
+                    } catch (broadcastError) {
+                        console.warn('Failed to broadcast stub expansion:', broadcastError.message);
+                    }
+                }
+
+                return res.json({
+                    success: true,
+                    type: wasRegionEntryStub ? 'region' : 'location',
+                    stubId,
+                    location: locationPayload,
+                    expandedRegion: expandedRegionPayload
+                });
+            } catch (error) {
+                console.error('Failed to expand stub:', error);
+                return res.status(500).json({
+                    success: false,
+                    error: error?.message || 'Failed to expand stub'
                 });
             }
         });

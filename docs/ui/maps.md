@@ -27,6 +27,7 @@ Rendered inside `#mapContainer` in the Map tab.
 - Tapping a location node immediately returns the UI to the Adventure tab, then fast-travels the player there through the existing player-teleport flow. Fast travel also advances world time by the shortest directed route cost computed from stored exit `travelTimeMinutes`; when minutes advance, the chat history gets travel and elapsed-time event-summary rows, parent-linked to visible arrival prose when one is generated. When no route exists, the map fast travel still completes with `0` minutes elapsed.
 - After a successful direct move or map fast-travel arrival, the client also refreshes chat history and Story Tools so any visible `while-you-were-away-player` reunion prose generated during arrival is shown immediately.
 - Stub node `Edit stub` opens the shared location-stub editor, including vehicle metadata controls (`isVehicle` + `vehicleInfo`) for both location stubs and region-entry stubs; the vehicle-exit field is a select labeled `inside -> outside`.
+- Stub node context menus also show `Unstub Location` or `Unstub Region`. This calls `POST /api/stubs/:id/expand`, refreshes the active map/world-map, and does not require the player to travel to the stub first.
 - Hydrated location node context menu includes `Set Last Seen`, which opens the shared chat-page modal and submits the same `H AM/PM`, `H:MM AM/PM`, or `duration ago` formats accepted by `/set_last_seen` for that location's NPCs.
 - Hydrated location node context menu also includes `Delete Location`, which confirms a destructive warning and then calls location cascade deletion (items/NPCs, exits to/from, then location).
 - Link mode for creating new exits (ghost node + edge).
@@ -34,7 +35,7 @@ Rendered inside `#mapContainer` in the Map tab.
   - region/location target, including existing pending-region entrance targets, optional relative level, optional image data.
   - Shift-drag map creation for new location stubs requests `bidirectional: true` so the created connection is two-way.
 - Exit deletions call `DELETE /api/locations/:id/exits/:exitId`.
-- Stub expansion hits `/api/stubs/:stubId` (GET/POST) to fill in stub regions/locations.
+- Stub expansion hits `POST /api/stubs/:id/expand` to fill in stub regions/locations.
 - New-exit summary pills in the chat drawer call the focused region-map loader with the exit's origin region, then center the newly discovered location or region-exit bubble.
 
 ### Cross-component hooks

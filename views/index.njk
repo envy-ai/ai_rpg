@@ -388,6 +388,7 @@
                     </div>
                 </section>
                 <div class="map-location-context-menu entity-context-menu location-image-menu" id="mapLocationContextMenu" hidden>
+                    <button type="button" class="entity-context-menu-item location-image-menu-item" id="mapLocationMenuUnstubButton" hidden>Unstub Location</button>
                     <button type="button" class="entity-context-menu-item location-image-menu-item" id="mapLocationMenuEditButton">Edit Location</button>
                     <button type="button" class="entity-context-menu-item location-image-menu-item" id="mapLocationMenuRegionButton">Edit Region</button>
                     <button type="button" class="entity-context-menu-item location-image-menu-item" id="mapLocationMenuWeatherButton">Edit Weather</button>
@@ -2350,6 +2351,10 @@
                     <label for="locationEditLevel">Level</label>
                     <input type="number" id="locationEditLevel" name="level" min="1" max="99" step="1" required>
                 </div>
+                <div class="location-edit-field" id="locationEditRegionGroup">
+                    <label for="locationEditRegion">Region</label>
+                    <select id="locationEditRegion" name="regionId"></select>
+                </div>
                 <div class="location-edit-field" id="locationEditHasWeatherGroup">
                     <label for="locationEditHasWeather">Local Weather</label>
                     <select id="locationEditHasWeather" name="hasWeather">
@@ -2369,6 +2374,17 @@
                 <div class="location-edit-field location-edit-field--static">
                     <span class="location-edit-label">Absolute Level</span>
                     <span id="locationEditAbsoluteLevel" class="location-edit-value">—</span>
+                </div>
+                <div class="location-edit-section location-edit-relocation-section" id="locationEditRelocationSection" hidden>
+                    <div class="npc-edit-section-header">
+                        <h3>Relocation Cleanup</h3>
+                    </div>
+                    <p class="modal-checkbox-hint">Selected exits are removed when the location moves to the chosen region.</p>
+                    <div id="locationEditRelocationExitList" class="location-edit-relocation-exit-list"></div>
+                    <label class="modal-checkbox location-edit-region-entrance-option" for="locationEditMakeRegionEntrance">
+                        <input type="checkbox" id="locationEditMakeRegionEntrance" name="makeRegionEntrance">
+                        <span>Make this the region entrance</span>
+                    </label>
                 </div>
                 <div class="location-edit-section">
                     <div class="npc-edit-section-header">
@@ -8680,6 +8696,8 @@
         let locationEditMode = 'location';
         let stubEditContext = null;
         let locationEditVehicleInfoSnapshot = null;
+        let locationEditRelocationOptions = [];
+        let locationEditRelocationLocationId = null;
         let regionEditVehicleInfoSnapshot = null;
         let factionOptionsCache = { list: [], map: new Map(), loadedAt: 0 };
         let factionOptionsPromise = null;
@@ -8927,6 +8945,7 @@
         const locationImageRegenerateButton = document.getElementById('locationImageRegenerateButton');
         const mapLocationContextMenu = document.getElementById('mapLocationContextMenu');
         const worldMapReloadButton = document.getElementById('worldMapReloadButton');
+        const mapLocationMenuUnstubButton = document.getElementById('mapLocationMenuUnstubButton');
         const mapLocationMenuEditButton = document.getElementById('mapLocationMenuEditButton');
         const mapLocationMenuRegionButton = document.getElementById('mapLocationMenuRegionButton');
         const mapLocationMenuWeatherButton = document.getElementById('mapLocationMenuWeatherButton');
@@ -8960,6 +8979,8 @@
         const locationEditRelativeLevelGroup = document.getElementById('locationEditRelativeLevelGroup');
         const locationEditRelativeLevelInput = document.getElementById('locationEditRelativeLevel');
         const locationEditLevelInput = document.getElementById('locationEditLevel');
+        const locationEditRegionGroup = document.getElementById('locationEditRegionGroup');
+        const locationEditRegionSelect = document.getElementById('locationEditRegion');
         const locationEditHasWeatherGroup = document.getElementById('locationEditHasWeatherGroup');
         const locationEditHasWeatherSelect = document.getElementById('locationEditHasWeather');
         const locationEditFactionSelect = document.getElementById('locationEditFaction');
@@ -8980,6 +9001,9 @@
         const locationEditVehicleEtaInput = document.getElementById('locationEditVehicleETA');
         const locationEditVehicleExitIdInput = document.getElementById('locationEditVehicleExitId');
         const locationEditAbsoluteLevel = document.getElementById('locationEditAbsoluteLevel');
+        const locationEditRelocationSection = document.getElementById('locationEditRelocationSection');
+        const locationEditRelocationExitList = document.getElementById('locationEditRelocationExitList');
+        const locationEditMakeRegionEntranceInput = document.getElementById('locationEditMakeRegionEntrance');
         const locationEditStatus = document.getElementById('locationEditStatus');
         const locationEditCancelBtn = document.getElementById('locationEditCancelBtn');
         const locationEditCloseBtn = document.getElementById('locationEditCloseBtn');
@@ -9682,6 +9706,33 @@
             suppressContextTooltipsForTouch();
         }
 
+        function syncMapLocationContextMenuActions() {
+            if (!mapLocationContextMenu) {
+                return;
+            }
+            const targetLocation = getLocationMenuContext();
+            const isStub = Boolean(targetLocation && targetLocation.isStub);
+            const isRegionStub = Boolean(targetLocation && targetLocation.stubMetadata?.isRegionEntryStub);
+
+            if (mapLocationMenuUnstubButton) {
+                mapLocationMenuUnstubButton.hidden = !isStub;
+                mapLocationMenuUnstubButton.textContent = isRegionStub ? 'Unstub Region' : 'Unstub Location';
+            }
+            [mapLocationMenuRegionButton, mapLocationMenuWeatherButton, mapLocationMenuCalendarButton].forEach(button => {
+                if (!button) {
+                    return;
+                }
+                button.hidden = isStub;
+            });
+            if (mapLocationMenuRegenerateImageButton) {
+                mapLocationMenuRegenerateImageButton.hidden = isStub;
+            }
+            if (mapLocationMenuDeleteButton) {
+                mapLocationMenuDeleteButton.hidden = isStub;
+                mapLocationMenuDeleteButton.textContent = 'Delete Location';
+            }
+        }
+
         document.addEventListener('pointerdown', markThingIconTouchContextSuppression, { capture: true, passive: true });
         document.addEventListener('touchstart', markThingIconTouchContextSuppression, { capture: true, passive: true });
         document.addEventListener('contextmenu', suppressThingIconNativeTouchContextMenu, { capture: true });
@@ -9766,6 +9817,7 @@
                 clearLocationMenuContext();
                 return;
             }
+            syncMapLocationContextMenuActions();
 
             const point = anchorPoint || { x: window.innerWidth / 2, y: window.innerHeight / 2 };
             mapLocationContextMenu.style.left = '0px';
@@ -25857,6 +25909,186 @@
             return null;
         }
 
+        function resetLocationRelocationControls() {
+            locationEditRelocationOptions = [];
+            locationEditRelocationLocationId = null;
+            if (locationEditRegionSelect) {
+                locationEditRegionSelect.innerHTML = '';
+                locationEditRegionSelect.disabled = true;
+            }
+            if (locationEditRelocationExitList) {
+                locationEditRelocationExitList.innerHTML = '';
+            }
+            if (locationEditMakeRegionEntranceInput) {
+                locationEditMakeRegionEntranceInput.checked = false;
+            }
+            toggleLocationEditSection(locationEditRelocationSection, false);
+        }
+
+        function resolveLocationEditSelectedRegionId() {
+            const selected = typeof locationEditRegionSelect?.value === 'string'
+                ? locationEditRegionSelect.value.trim()
+                : '';
+            return selected || null;
+        }
+
+        function formatLocationRelocationExitLabel(option) {
+            const originName = option?.originLocation?.name || option?.originLocation?.id || 'Unknown origin';
+            const destinationName = option?.destinationLocation?.name || option?.destinationLocation?.id || 'Unknown destination';
+            const direction = option?.direction ? ` ${option.direction}` : '';
+            const relation = option?.relation === 'inbound' ? 'incoming' : 'outgoing';
+            return `${originName}${direction} -> ${destinationName} (${relation})`;
+        }
+
+        function renderLocationRelocationExitOptions(targetLocation = getLocationMenuContext()) {
+            if (!locationEditRelocationSection || !locationEditRelocationExitList || !targetLocation) {
+                return;
+            }
+
+            const originalRegionId = resolveRegionIdFromLocationRecord(targetLocation);
+            const selectedRegionId = resolveLocationEditSelectedRegionId();
+            const isRelocating = Boolean(
+                selectedRegionId
+                && originalRegionId
+                && selectedRegionId !== originalRegionId
+            );
+
+            if (!isRelocating) {
+                toggleLocationEditSection(locationEditRelocationSection, false);
+                locationEditRelocationExitList.innerHTML = '';
+                if (locationEditMakeRegionEntranceInput) {
+                    locationEditMakeRegionEntranceInput.checked = false;
+                }
+                return;
+            }
+
+            toggleLocationEditSection(locationEditRelocationSection, true);
+            locationEditRelocationExitList.innerHTML = '';
+            const options = Array.isArray(locationEditRelocationOptions)
+                ? locationEditRelocationOptions
+                : [];
+            const relevantOptions = options.filter(option => option && option.exitId);
+
+            if (!relevantOptions.length) {
+                const empty = document.createElement('p');
+                empty.className = 'location-edit-relocation-empty';
+                empty.textContent = 'No direct exits are available for cleanup.';
+                locationEditRelocationExitList.appendChild(empty);
+                return;
+            }
+
+            relevantOptions.forEach(option => {
+                const label = document.createElement('label');
+                label.className = 'location-edit-relocation-exit-option';
+
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.value = option.exitId;
+                checkbox.checked = option.connectedRegionId === originalRegionId;
+
+                const text = document.createElement('span');
+                text.textContent = formatLocationRelocationExitLabel(option);
+
+                label.appendChild(checkbox);
+                label.appendChild(text);
+                locationEditRelocationExitList.appendChild(label);
+            });
+        }
+
+        function collectSelectedLocationRelocationExitIds() {
+            if (!locationEditRelocationExitList || locationEditRelocationSection?.hasAttribute('hidden')) {
+                return [];
+            }
+            return Array.from(locationEditRelocationExitList.querySelectorAll('input[type="checkbox"]:checked'))
+                .map(input => typeof input.value === 'string' ? input.value.trim() : '')
+                .filter(Boolean);
+        }
+
+        async function populateLocationEditRegionSelect(targetLocation) {
+            if (!locationEditRegionSelect || !targetLocation) {
+                return;
+            }
+            const originalRegionId = resolveRegionIdFromLocationRecord(targetLocation);
+            locationEditRegionSelect.disabled = true;
+            locationEditRegionSelect.innerHTML = '';
+            const loadingOption = document.createElement('option');
+            loadingOption.value = '';
+            loadingOption.textContent = 'Loading regions...';
+            locationEditRegionSelect.appendChild(loadingOption);
+
+            const options = await ensureNewExitOptionsLoaded(false);
+            locationEditRegionSelect.innerHTML = '';
+
+            const liveGroup = document.createElement('optgroup');
+            liveGroup.label = 'Regions';
+            const pendingGroup = document.createElement('optgroup');
+            pendingGroup.label = 'Pending regions';
+
+            const regionsList = Array.isArray(options?.regions) ? options.regions : [];
+            regionsList.forEach(region => {
+                if (!region?.id) {
+                    return;
+                }
+                const option = document.createElement('option');
+                option.value = region.id;
+                option.textContent = region.isStub
+                    ? `${region.name || region.id} (unstub first)`
+                    : (region.name || region.id);
+                option.disabled = Boolean(region.isStub);
+                option.dataset.isStub = region.isStub ? 'true' : 'false';
+                if (region.isStub) {
+                    pendingGroup.appendChild(option);
+                } else {
+                    liveGroup.appendChild(option);
+                }
+            });
+
+            if (liveGroup.children.length) {
+                locationEditRegionSelect.appendChild(liveGroup);
+            }
+            if (pendingGroup.children.length) {
+                locationEditRegionSelect.appendChild(pendingGroup);
+            }
+
+            if (originalRegionId && !Array.from(locationEditRegionSelect.options).some(opt => opt.value === originalRegionId)) {
+                const missingOption = document.createElement('option');
+                missingOption.value = originalRegionId;
+                missingOption.textContent = targetLocation.regionName || originalRegionId;
+                locationEditRegionSelect.appendChild(missingOption);
+            }
+
+            if (originalRegionId && Array.from(locationEditRegionSelect.options).some(opt => opt.value === originalRegionId)) {
+                locationEditRegionSelect.value = originalRegionId;
+            }
+            locationEditRegionSelect.disabled = false;
+            renderLocationRelocationExitOptions(targetLocation);
+        }
+
+        async function loadLocationRelocationOptions(targetLocation) {
+            if (!targetLocation?.id || !locationEditRelocationExitList) {
+                return;
+            }
+            locationEditRelocationLocationId = targetLocation.id;
+            locationEditRelocationExitList.innerHTML = '';
+            const loading = document.createElement('p');
+            loading.className = 'location-edit-relocation-empty';
+            loading.textContent = 'Loading exit cleanup options...';
+            locationEditRelocationExitList.appendChild(loading);
+
+            const response = await fetch(`/api/locations/${encodeURIComponent(targetLocation.id)}/relocation-options?_=${Date.now()}`, {
+                cache: 'no-store'
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok || !data?.success) {
+                throw new Error(data?.error || `HTTP ${response.status}`);
+            }
+            if (locationEditRelocationLocationId !== targetLocation.id) {
+                return;
+            }
+            locationEditRelocationOptions = Array.isArray(data.exitOptions) ? data.exitOptions : [];
+            renderLocationRelocationExitOptions(targetLocation);
+        }
+
         function resolveStubDescription(location) {
             if (!location) {
                 return '';
@@ -25934,6 +26166,7 @@
             toggleLocationEditSection(locationEditStatusSection, !isStubMode);
             toggleLocationEditSection(locationEditShortDescriptionGroup, !isStubMode);
             toggleLocationEditSection(locationEditRelativeLevelGroup, isStubMode);
+            toggleLocationEditSection(locationEditRegionGroup, !isStubMode);
             toggleLocationEditSection(locationEditHasWeatherGroup, !isStubMode);
             toggleLocationEditSection(locationVehicleEditor.section, true);
 
@@ -25954,6 +26187,12 @@
                 locationEditShortDescriptionInput.disabled = isStubMode;
                 if (isStubMode) {
                     locationEditShortDescriptionInput.value = '';
+                }
+            }
+            if (locationEditRegionSelect) {
+                locationEditRegionSelect.disabled = isStubMode;
+                if (isStubMode) {
+                    locationEditRegionSelect.innerHTML = '';
                 }
             }
             if (locationEditHasWeatherSelect) {
@@ -25977,6 +26216,7 @@
 
             const stubContext = getStubEditContext(targetLocation);
             setLocationEditMode(stubContext ? 'stub' : 'location', stubContext);
+            resetLocationRelocationControls();
 
             const name = targetLocation.name || '';
             const description = stubContext ? resolveStubDescription(targetLocation) : (targetLocation.description || '');
@@ -26020,6 +26260,14 @@
             }
             if (!stubContext) {
                 setLocationHasWeatherField(targetLocation);
+                populateLocationEditRegionSelect(targetLocation).catch(error => {
+                    console.warn('Failed to populate location region selector:', error);
+                    setLocationEditStatus(`Failed to load regions: ${error?.message || 'Unknown error'}`, 'error');
+                });
+                loadLocationRelocationOptions(targetLocation).catch(error => {
+                    console.warn('Failed to load relocation options:', error);
+                    setLocationEditStatus(`Failed to load relocation options: ${error?.message || 'Unknown error'}`, 'error');
+                });
             }
             if (locationEditFactionSelect) {
                 populateFactionSelect(locationEditFactionSelect, {
@@ -26098,6 +26346,7 @@
             updateLocationAbsoluteLevelDisplay(null);
             setLocationEditMode('location', null);
             locationEditVehicleInfoSnapshot = null;
+            resetLocationRelocationControls();
             resetVehicleEditor(locationVehicleEditor);
             clearLocationMenuContext();
         }
@@ -26280,6 +26529,23 @@
                 payload.controllingFactionId = controllingFactionId;
             }
 
+            const originalRegionId = resolveRegionIdFromLocationRecord(targetLocation);
+            let targetRegionId = originalRegionId || null;
+            if (locationEditRegionSelect && !locationEditRegionGroup?.hasAttribute('hidden')) {
+                if (locationEditRegionSelect.disabled) {
+                    setLocationEditStatus('Region options are still loading.', 'error');
+                    locationEditRegionSelect.focus();
+                    return;
+                }
+                targetRegionId = resolveLocationEditSelectedRegionId();
+                if (!targetRegionId) {
+                    setLocationEditStatus('Region is required.', 'error');
+                    locationEditRegionSelect.focus();
+                    return;
+                }
+            }
+            const shouldRelocateLocation = Boolean(targetRegionId && targetRegionId !== originalRegionId);
+
             setLocationEditStatus('Saving changes...', null);
             if (locationEditSaveBtn) {
                 locationEditSaveBtn.disabled = true;
@@ -26297,10 +26563,32 @@
                     throw new Error(data?.error || `HTTP ${response.status}`);
                 }
 
-                setLocationEditStatus('Location updated.', 'success');
+                let updatedLocation = data.location;
+                let relocationData = null;
+                if (shouldRelocateLocation) {
+                    setLocationEditStatus('Relocating location...', null);
+                    const relocationPayload = {
+                        targetRegionId,
+                        removeExitIds: collectSelectedLocationRelocationExitIds(),
+                        makeRegionEntrance: Boolean(locationEditMakeRegionEntranceInput?.checked)
+                    };
+                    const relocationResponse = await fetch(`/api/locations/${encodeURIComponent(targetLocation.id)}/relocate`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(relocationPayload)
+                    });
+                    relocationData = await relocationResponse.json().catch(() => ({}));
+                    if (!relocationResponse.ok || !relocationData?.success) {
+                        throw new Error(relocationData?.error || `HTTP ${relocationResponse.status}`);
+                    }
+                    updatedLocation = relocationData.location || updatedLocation;
+                    newExitOptionsCache = null;
+                    newExitRegionsById = new Map();
+                }
+
+                setLocationEditStatus(shouldRelocateLocation ? 'Location relocated.' : 'Location updated.', 'success');
                 closeLocationEditModal();
 
-                const updatedLocation = data.location;
                 if (data.worldTime && typeof window.AIRPG_CHAT?.updateWorldTimeIndicator === 'function') {
                     window.AIRPG_CHAT.updateWorldTimeIndicator(data.worldTime, { emitTransitions: false });
                 }
@@ -26315,12 +26603,22 @@
                     if (mapTab?.classList.contains('active')) {
                         const mapContainer = document.getElementById('mapContainer');
                         const activeRegionId = mapContainer?.dataset?.regionId || null;
-                        if (!activeRegionId || (updatedLocation.regionId && updatedLocation.regionId === activeRegionId)) {
+                        if (!activeRegionId
+                            || shouldRelocateLocation
+                            || (updatedLocation.regionId && updatedLocation.regionId === activeRegionId)) {
                             try {
                                 await window.loadRegionMap?.(activeRegionId || updatedLocation.regionId || null);
                             } catch (mapError) {
                                 console.warn('Failed to refresh map after location edit:', mapError);
                             }
+                        }
+                    }
+                    const worldMapTab = document.querySelector('[data-tab="world-map"]');
+                    if (shouldRelocateLocation && worldMapTab?.classList.contains('active')) {
+                        try {
+                            await window.loadWorldMap?.({ silent: true });
+                        } catch (worldMapError) {
+                            console.warn('Failed to refresh world map after location relocation:', worldMapError);
                         }
                     }
                 } else if (typeof window.loadCurrentLocation === 'function') {
@@ -28463,6 +28761,93 @@
             }
         }
 
+        async function expandSelectedMapStub() {
+            const targetLocation = getLocationMenuContext();
+            if (!targetLocation || !targetLocation.id) {
+                alert('No stub is currently selected.');
+                clearLocationMenuContext();
+                return;
+            }
+            if (!targetLocation.isStub) {
+                alert('Selected location is not a stub.');
+                clearLocationMenuContext();
+                return;
+            }
+
+            const isRegionStub = Boolean(targetLocation.stubMetadata?.isRegionEntryStub);
+            const targetName = targetLocation.name
+                || targetLocation.stubMetadata?.targetRegionName
+                || targetLocation.stubMetadata?.shortDescription
+                || targetLocation.id;
+            const confirmed = window.confirm(
+                `Unstub ${isRegionStub ? 'region' : 'location'} "${targetName}" now?`
+            );
+            if (!confirmed) {
+                clearLocationMenuContext();
+                return;
+            }
+
+            let overlayVisible = false;
+            try {
+                showLocationOverlay(isRegionStub ? `Unstubbing region ${targetName}...` : `Unstubbing location ${targetName}...`);
+                overlayVisible = true;
+            } catch (_) {
+                // Ignore overlay failures.
+            }
+
+            try {
+                const response = await fetch(`/api/stubs/${encodeURIComponent(targetLocation.id)}/expand`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ clientId: window.AIRPG_CLIENT_ID || null })
+                });
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok || !data?.success) {
+                    throw new Error(data?.error || `HTTP ${response.status}`);
+                }
+
+                if (data.location?.id) {
+                    locationCache[data.location.id] = data.location.name || data.location.id;
+                }
+                newExitOptionsCache = null;
+                newExitRegionsById = new Map();
+
+                const mapTab = document.querySelector('[data-tab="map"]');
+                if (mapTab?.classList.contains('active')) {
+                    const mapContainer = document.getElementById('mapContainer');
+                    const activeRegionId = mapContainer?.dataset?.regionId || null;
+                    const expandedRegionId = data.expandedRegion?.id || data.location?.regionId || activeRegionId || null;
+                    try {
+                        await window.loadRegionMap?.(activeRegionId || expandedRegionId || null);
+                    } catch (mapError) {
+                        console.warn('Failed to refresh map after stub expansion:', mapError);
+                    }
+                }
+
+                const worldMapTab = document.querySelector('[data-tab="world-map"]');
+                if (worldMapTab?.classList.contains('active')) {
+                    try {
+                        await window.loadWorldMap?.({ silent: true });
+                    } catch (worldMapError) {
+                        console.warn('Failed to refresh world map after stub expansion:', worldMapError);
+                    }
+                }
+
+                if (lastRenderedLocation?.id === data.location?.id && typeof window.updateLocationDisplay === 'function') {
+                    lastRenderedLocation = JSON.parse(JSON.stringify(data.location));
+                    await window.updateLocationDisplay(data.location);
+                }
+            } catch (error) {
+                console.warn('Failed to expand stub:', error);
+                alert(`Failed to unstub ${isRegionStub ? 'region' : 'location'}: ${error?.message || 'Unknown error'}`);
+            } finally {
+                if (overlayVisible) {
+                    hideLocationOverlay();
+                }
+                clearLocationMenuContext();
+            }
+        }
+
         if (locationImageMenuButton) {
             wireContextMenuButtonTooltipSuppression(locationImageMenuButton);
             locationImageMenuButton.addEventListener('click', (event) => {
@@ -28537,11 +28922,25 @@
             });
         }
 
+        if (mapLocationMenuUnstubButton) {
+            mapLocationMenuUnstubButton.addEventListener('click', async (event) => {
+                event.stopPropagation();
+                closeMapLocationContextMenu({ preserveContext: true });
+                await expandSelectedMapStub();
+            });
+        }
+
         if (mapLocationMenuEditButton) {
             mapLocationMenuEditButton.addEventListener('click', (event) => {
                 event.stopPropagation();
                 closeMapLocationContextMenu({ preserveContext: true });
                 openLocationEditModal();
+            });
+        }
+
+        if (locationEditRegionSelect) {
+            locationEditRegionSelect.addEventListener('change', () => {
+                renderLocationRelocationExitOptions(getLocationMenuContext());
             });
         }
 

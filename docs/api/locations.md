@@ -75,6 +75,39 @@ Notes:
   - `isVehicle=false` clears vehicle info.
   - `isVehicle=true` requires valid vehicle data (`vehicleInfo` object or existing values when omitted, including optional `icon`).
 
+## GET /api/locations/:id/relocation-options
+
+Returns direct exit cleanup candidates for the location editor's region-relocation UI.
+
+Request:
+- Path: `id`
+
+Responses:
+- 200: `{ success: true, locationId, currentRegionId, exitOptions }`
+  - `exitOptions`: `Array<{ exitId, relation, direction, originLocation, originRegion, destinationLocation, destinationRegion, connectedRegionId, description }>`
+  - `relation` is `inbound` for exits from another location to the edited location and `outbound` for exits from the edited location to another destination.
+- 400/404/500: `{ success: false, error }`
+
+## POST /api/locations/:id/relocate
+
+Moves a hydrated location to a different live region and optionally removes selected exits in the same transaction.
+
+Request:
+- Path: `id`
+- Body:
+  - `targetRegionId` (required live region id)
+  - `removeExitIds` (optional array of exit ids to remove; reverse exits are removed with the selected exit when present)
+  - `makeRegionEntrance` (optional boolean/string/number truthy flag)
+
+Responses:
+- 200: `{ success: true, message, location: LocationResponse, previousRegionId, targetRegionId, removedExits, makeRegionEntrance }`
+- 400/404/500: `{ success: false, error }`
+  - Stub locations must be unstubbed first.
+  - Pending-region stubs must be expanded before they can be used as relocation targets.
+
+Notes:
+- The route updates `location.regionId`, repairs old/new `Region.locationIds` membership, removes stale duplicate membership from any non-target region, and optionally sets the target region's `entranceLocationId`.
+
 ## POST /api/locations/:id/modify
 
 Runs the current-location `Modify Location` crafting flow. The endpoint uses optional selected player-inventory materials/tools plus freeform notes to run dedicated plausibility and success-degree prompts, then applies any accepted physical/environmental change through the existing `alter_location` event path with location level preservation enabled. Outcomes may also grant newly uncovered portable items to the player when those items are byproducts of the alteration, such as a coin found under repaired flooring.
@@ -226,6 +259,14 @@ Notes:
 - `controllingFactionId` must reference an existing faction id or be `null` to clear.
 - Vehicle edits follow the same `isVehicle` + `vehicleInfo` validation semantics as location/region updates.
 - For region-entry stubs, successful vehicle edits are mirrored into pending-region stub records so expansion uses the updated vehicle metadata.
+
+## POST /api/stubs/:id/expand
+
+Explicitly expands a stub without relying on `GET /api/locations/:id` side effects. Region-entry stubs expand their pending target region and return its entrance location; ordinary location stubs expand in place.
+
+Responses:
+- 200: `{ success: true, type, stubId, location: LocationResponse, expandedRegion? }`
+- 400/404/500: `{ success: false, error }`
 
 ## DELETE /api/stubs/:id
 

@@ -10829,6 +10829,45 @@ body.modal-open {
   gap: 12px;
 }
 
+.location-edit-relocation-section {
+  border: 1px solid rgba(96, 165, 250, 0.28);
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.42);
+  padding: 12px;
+}
+
+.location-edit-relocation-exit-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.location-edit-relocation-exit-option {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.55);
+  color: #e2e8f0;
+  font-size: 0.88rem;
+  line-height: 1.35;
+  padding: 8px 10px;
+}
+
+.location-edit-relocation-exit-option input {
+  margin-top: 2px;
+}
+
+.location-edit-relocation-empty {
+  color: rgba(203, 213, 225, 0.82);
+  font-size: 0.85rem;
+  font-style: italic;
+  margin: 0;
+}
+
 .npc-edit-footer,
 .location-edit-footer,
 .region-edit-footer,
