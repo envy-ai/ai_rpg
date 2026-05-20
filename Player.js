@@ -3592,7 +3592,7 @@ class Player {
     }
 
     get isDisabled() {
-        return this.#isDead || (this.#health <= 0);
+        return this.#isDead || (this.#health <= 0) || this.#hasStatusEffect('Incapacitated');
     }
 
     get inCombat() {
@@ -5022,6 +5022,18 @@ class Player {
      */
     getIntrinsicStatusEffects() {
         return this.#getIntrinsicStatusEffects();
+    }
+
+    #hasStatusEffect(nameOrDescription) {
+        if (typeof nameOrDescription !== 'string' || !nameOrDescription.trim()) {
+            return false;
+        }
+        const target = nameOrDescription.trim().toLowerCase();
+        return this.getStatusEffects().some(effect => {
+            const name = typeof effect?.name === 'string' ? effect.name.trim().toLowerCase() : '';
+            const description = typeof effect?.description === 'string' ? effect.description.trim().toLowerCase() : '';
+            return name === target || description === target;
+        });
     }
 
     /**

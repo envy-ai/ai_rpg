@@ -60,3 +60,53 @@ test('death_incapacitation dead outcome marks actor dead with a finite health de
         Events._handlers = previousHandlers;
     }
 });
+
+test('death_incapacitation incapacitated outcome preserves health and applies status', async () => {
+    const previousDeps = Events._deps;
+    const previousParsers = Events._parsers;
+    const previousAggregators = Events._aggregators;
+    const previousHandlers = Events._handlers;
+
+    const appliedEffects = [];
+    const actor = {
+        name: 'Gallery Sentinel',
+        isNPC: true,
+        isDead: false,
+        health: 12,
+        modifyHealth() {
+            throw new Error('Incapacitation should not modify health.');
+        },
+        addStatusEffect(effect) {
+            appliedEffects.push(effect);
+            return effect;
+        }
+    };
+
+    Events.initialize({
+        config: { omit_npc_generation: true },
+        findActorByName: (name) => (name === 'Gallery Sentinel' ? actor : null),
+    });
+
+    try {
+        await Events.applyEventOutcomes({
+            parsed: {
+                death_incapacitation: [
+                    { name: 'Gallery Sentinel', status: 'incapacitated' },
+                ],
+            },
+            rawEntries: {
+                death_incapacitation: 'Gallery Sentinel -> incapacitated',
+            },
+        }, {});
+
+        assert.equal(actor.health, 12);
+        assert.equal(actor.isDead, false);
+        assert.equal(appliedEffects.length, 1);
+        assert.equal(appliedEffects[0].description, 'Incapacitated');
+    } finally {
+        Events._deps = previousDeps;
+        Events._parsers = previousParsers;
+        Events._aggregators = previousAggregators;
+        Events._handlers = previousHandlers;
+    }
+});

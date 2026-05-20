@@ -343,7 +343,7 @@ Use this for significant lasting changes to an animate entity, especially physic
 
 ### `status_effect_change`
 
-Use this when an animate entity gains or loses a temporary status effect that is not already represented as a permanent NPC alteration. Use `gained` for new effects and `lost` only when an existing listed status effect goes away. If the effect came from an item use or ingestion, prefer `itemInflict` or `itemIngest` instead of duplicating the same change here. Healing or damage recovery usually cause status effects that drain health to end.
+Use this when an animate entity gains or loses a temporary status effect that is not already represented as a permanent NPC alteration. Use `gained` for new effects and `lost` only when an existing listed status effect goes away. If the effect came from an item use or ingestion, prefer `itemInflict` or `itemIngest` instead of duplicating the same change here. Important: If first aid is applied to a wound that has a status effect associated with it, that status effect should be lost.
 
 ```xml
 <statusEffectChange>

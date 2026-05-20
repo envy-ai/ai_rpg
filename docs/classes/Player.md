@@ -48,7 +48,7 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
 ## Accessors (Grouped)
 - Identity and descriptors: `id`, `name`, `aliases`, `description`, `shortDescription`, `imageId`, `class`, `race`, `gender`, `personalityType`, `personalityTraits`, `personalityNotes`, `aiNotes`, `resistances`, `vulnerabilities`.
 - Factions: `factionId`.
-- State: `level`, `experience`, `health`, `maxHealth`, `healthAttribute`, `isDead`, `persistWhenDead`, `isDisabled`, `inCombat`, `isHostile`, `corpseCountdown`, `elapsedTime`, `createdAt`, `lastUpdated`.
+- State: `level`, `experience`, `health`, `maxHealth`, `healthAttribute`, `isDead`, `persistWhenDead`, `isDisabled` (dead, zero-health, or carrying an exact `Incapacitated` status effect), `inCombat`, `isHostile`, `corpseCountdown`, `elapsedTime`, `createdAt`, `lastUpdated`.
 - Locations: `currentLocation`, `location`, `currentVehicle`, `previousLocationId`, `previousLocation`, `currentLocationObject`, `lastVisitedTime`, `last_seen_time`, `last_seen_location`, `was_in_player_location_previous_round` (plus camelCase aliases).
 - Social/party: `partyMembers`, `isInPlayerParty`, `wasEverInPlayerParty`, `partyMembershipChangedThisTurn`, `partyMembersAddedThisTurn`, `partyMembersRemovedThisTurn`.
 - Quests/goals: `goals`, `characterArc`, `currentQuests`, `completedQuests`.
@@ -161,6 +161,7 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
 - `setNeedBarApplicability(...)` preserves stored values for bars that stay enabled, drops bars explicitly disabled for that actor, and restores newly re-enabled bars at `100`.
 - Status-effect-driven max-health increases now raise current health by the same max-health delta. Status-effect-driven decreases do not subtract health back out; they only clamp current health if it now exceeds the reduced max.
 - `removeStatusEffect(...)` removes intrinsic effects by exact case-insensitive `name` or exact case-insensitive `description`, preserving legacy description removal while allowing XML event checks to clear effects by listed status-effect name.
+- `isDisabled` now treats the explicit `Incapacitated` status effect as disabling even when the actor still has positive health.
 - `persistWhenDead` is persisted per actor. When true, dead actors never receive a corpse countdown and are skipped by corpse cleanup; missing save data defaults it to `false`.
 - `wasEverInPlayerParty` is also persisted per actor. It flips to `true` when the actor joins the player party, and load reconciliation also marks currently in-party actors as historical party members so older saves do not lose that history. Missing save data defaults it to `false`.
 - Joining the player party, leaving the player party, or dying while currently in the player party permanently flips `persistWhenDead` to `true` for that actor.

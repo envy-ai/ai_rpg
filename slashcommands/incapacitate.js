@@ -1,5 +1,6 @@
 const Globals = require('../Globals.js');
 const SlashCommandBase = require('../SlashCommandBase.js');
+const StatusEffect = require('../StatusEffect.js');
 const {
   formatAmbiguousCharacterMatches,
   getInteractionCurrentLocationId,
@@ -53,8 +54,17 @@ class IncapacitateCommand extends SlashCommandBase {
       throw new Error(`Unable to incapacitate NPC "${characterName}".`);
     }
 
+    const priorHealth = Number(npc.health);
     npc.isDead = false;
-    npc.setHealth(0);
+    if (Number.isFinite(priorHealth) && npc.health !== priorHealth) {
+      npc.setHealth(priorHealth);
+    }
+    if (typeof npc.addStatusEffect === 'function') {
+      npc.addStatusEffect(new StatusEffect({
+        description: 'Incapacitated',
+        duration: null
+      }));
+    }
 
     return interaction.reply({ content: `${npc.name} is incapacitated.`, ephemeral: false });
   }

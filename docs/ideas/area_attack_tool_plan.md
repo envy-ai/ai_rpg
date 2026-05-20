@@ -105,13 +105,12 @@ This should be all-or-nothing at validation time, but not all-or-nothing mechani
 
 V1 can use a simple symbolic position model:
 
-| Position | Suggested Meaning |
-| --- | --- |
-| `center` | Target is at or near the main impact point. |
-| `near` | Target is in the main affected group. |
-| `edge` | Target is barely caught by the effect. |
-| `behind cover` | Target is in the area but shielded. |
-| `uncertain` | LLM cannot determine exact exposure. |
+| Position       | Suggested Meaning                           |
+| -------------- | ------------------------------------------- |
+| `center`       | Target is at or near the main impact point. |
+| `near`         | Target is in the main affected group.       |
+| `edge`         | Target is barely caught by the effect.      |
+| `behind cover` | Target is in the area but shielded.         |
 
 The server can translate this into per-target modifiers and/or damage scaling. The exact numbers should be conservative and configurable later if needed. Initial behavior could be:
 
@@ -119,7 +118,6 @@ The server can translate this into per-target modifiers and/or damage scaling. T
 - `near`: small defensive bonus, full damage.
 - `edge`: defensive bonus, reduced damage.
 - `behind cover`: stronger defensive bonus, reduced damage.
-- `uncertain`: no scaling, rely on explicit modifiers.
 
 Avoid adding hard-coded numeric tuning until implementation, but the tool shape should preserve enough information for it.
 

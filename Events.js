@@ -11474,7 +11474,6 @@ class Events {
                             actor.addStatusEffect(makeStatusEffect("Deceased", null));
                         }
                     } else {
-                        actor.modifyHealth(-Math.abs(actor.health || 0), "Incapacitated");
                         if (typeof actor.addStatusEffect === "function") {
                             actor.addStatusEffect(makeStatusEffect("Incapacitated", null));
                         }
