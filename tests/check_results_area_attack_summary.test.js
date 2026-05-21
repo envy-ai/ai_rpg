@@ -18,6 +18,13 @@ test('area attacks are grouped check-results records', () => {
     assert.match(chatSource, /record\.kind === 'area-attack' && record\.areaAttackSummary/);
 });
 
+test('area attack expanded details reuse regular attack breakdowns per target', () => {
+    assert.match(chatSource, /const targetAttackInsight = this\.generateAttackCheckInsight\(result\.attackSummary\);/);
+    assert.match(chatSource, /area-attack-target-breakdown/);
+    assert.match(commonDocs, /expanded details reuse the regular attack breakdown for each target/);
+    assert.match(chatDocs, /expanded details reuse the regular attack breakdown for each target/);
+});
+
 test('area attack docs describe grouped tool and check-results output', () => {
     assert.match(apiChatDocs, /`resolveAreaAttack/);
     assert.match(commonDocs, /`kind` \(`skill`, `opposed-skill`, `attack`, or `area-attack`\)/);

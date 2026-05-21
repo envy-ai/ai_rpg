@@ -26160,6 +26160,9 @@
                     ? 'Region Description'
                     : locationEditDefaultDescriptionLabel;
             }
+            if (locationEditDescriptionInput) {
+                locationEditDescriptionInput.required = !isStubMode;
+            }
 
             toggleLocationEditSection(locationEditLevelField, !isStubMode);
             toggleLocationEditSection(locationEditAbsoluteLevelField, !isStubMode);
@@ -26373,11 +26376,6 @@
                 }
 
                 const descriptionValue = locationEditDescriptionInput?.value ?? '';
-                if (!descriptionValue.trim()) {
-                    setLocationEditStatus('Stub description cannot be empty.', 'error');
-                    locationEditDescriptionInput?.focus();
-                    return;
-                }
 
                 let relativeLevelValue = null;
                 if (locationEditRelativeLevelInput) {

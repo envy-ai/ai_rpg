@@ -2940,7 +2940,16 @@ class AIRPGChat {
                     resultParts.push(`Degree ${formatSigned(hitDegree) ?? hitDegree}`);
                 }
             }
-            lines.push(`<li><strong>${this.escapeHtml(String(target))}:</strong> ${resultParts.join(' • ')}</li>`);
+
+            let targetDetailHtml = '';
+            if (result.attackSummary && typeof result.attackSummary === 'object') {
+                const targetAttackInsight = this.generateAttackCheckInsight(result.attackSummary);
+                if (targetAttackInsight?.html) {
+                    targetDetailHtml = `<div class="area-attack-target-breakdown">${targetAttackInsight.html}</div>`;
+                }
+            }
+
+            lines.push(`<li><strong>${this.escapeHtml(String(target))}:</strong> ${resultParts.join(' • ')}${targetDetailHtml}</li>`);
         });
 
         if (!lines.length) {
@@ -4776,15 +4785,6 @@ class AIRPGChat {
         return count.toLocaleString();
     }
 
-    formatPromptProgressAverage(entry) {
-        const rawAverage = entry?.avgReceivedPerSecond ?? entry?.avgBps;
-        const average = Number(rawAverage);
-        if (!Number.isFinite(average)) {
-            return '-';
-        }
-        return average.toLocaleString();
-    }
-
     formatPromptProgressPercent(entry) {
         const progressFraction = Number(entry?.progressFraction);
         if (!Number.isFinite(progressFraction)) {
@@ -4799,14 +4799,6 @@ class AIRPGChat {
             return '~0%';
         }
         return `~${Math.floor(progressFraction * 100)}%`;
-    }
-
-    formatPromptProgressRunCount(entry) {
-        const runCount = Number(entry?.runCount);
-        if (!Number.isFinite(runCount)) {
-            return '0';
-        }
-        return Math.trunc(runCount).toLocaleString();
     }
 
     clearPendingPromptProgressRender() {
@@ -5074,9 +5066,6 @@ class AIRPGChat {
         const receivedCell = document.createElement('td');
         receivedCell.textContent = this.formatPromptProgressReceived(entry);
 
-        const runCountCell = document.createElement('td');
-        runCountCell.textContent = this.formatPromptProgressRunCount(entry);
-
         const secondsCell = document.createElement('td');
         secondsCell.textContent = Number.isFinite(entry.seconds) ? `${Math.round(entry.seconds)}s` : '-';
 
@@ -5086,9 +5075,6 @@ class AIRPGChat {
         const latencyCell = document.createElement('td');
         latencyCell.textContent = Number.isFinite(entry.latencyMs) ? `${(entry.latencyMs / 1000).toFixed(1)}s` : '-';
 
-        const avgCell = document.createElement('td');
-        avgCell.textContent = this.formatPromptProgressAverage(entry);
-
         const retryCell = document.createElement('td');
         retryCell.textContent = Number.isFinite(entry.retries) ? `${entry.retries}` : '0';
 
@@ -5097,11 +5083,9 @@ class AIRPGChat {
         row.appendChild(progressCell);
         row.appendChild(modelCell);
         row.appendChild(receivedCell);
-        row.appendChild(runCountCell);
         row.appendChild(secondsCell);
         row.appendChild(timeoutCell);
         row.appendChild(latencyCell);
-        row.appendChild(avgCell);
         row.appendChild(retryCell);
         return row;
     }
@@ -5262,7 +5246,7 @@ class AIRPGChat {
         this.promptProgressEntries = entries.filter(entry => entry && typeof entry === 'object');
         const dock = this.ensurePromptProgressDock();
         this.promptProgressMessage = dock;
-        const tableHeaderHtml = '<tr><th class="prompt-progress-cancel-header">Actions</th><th>Prompt</th><th>Progress</th><th>Model</th><th>Received</th><th>Runs</th><th>Seconds</th><th>Timeout In</th><th>Latency</th><th>Avg/s</th><th>Retries</th></tr>';
+        const tableHeaderHtml = '<tr><th class="prompt-progress-cancel-header">Actions</th><th>Prompt</th><th>Progress</th><th>Model</th><th>Received</th><th>Seconds</th><th>Timeout In</th><th>Latency</th><th>Retries</th></tr>';
         const renderTimestamp = () => new Date().toISOString().replace('T', ' ').replace('Z', '');
 
         if (this.promptProgressHideTimer) {

@@ -681,7 +681,7 @@ random_event_frequency:
   locationSpecific: 0.06
 ```
 
-- `enabled: false` disables random event rolls.
+- `enabled: false` disables random event rolls and seed-pool generation. Missing location and region seed pools are generated again on the next eligible turn after random events are re-enabled.
 - `locationSpecific` and `regionSpecific` continue to use location/region seed pools (not text files).
 - Any other key under `random_event_frequency` is treated as a file-based random event type (excluding control/seed keys: `enabled`, `location`, `region`, `locationSpecific`, `regionSpecific`).
 - File-based random event types load from `random_events/<type>.txt` (for example `party` -> `random_events/party.txt`).

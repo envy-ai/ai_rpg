@@ -8871,6 +8871,12 @@ module.exports = function registerApiRoutes(scope) {
                 return;
             }
 
+            const frequencyConfig = Globals.config?.random_event_frequency || {};
+            if (frequencyConfig.enabled === false) {
+                console.info('Random event seed generation skipped: random_event_frequency.enabled is false.');
+                return;
+            }
+
             const region = location.region
                 || (location.regionId && typeof Region?.get === 'function' ? Region.get(location.regionId) : null)
                 || (typeof findRegionByLocationId === 'function' ? findRegionByLocationId(location.id) : null)
@@ -31170,9 +31176,8 @@ module.exports = function registerApiRoutes(scope) {
             }
 
             const normalizedName = typeof rawName === 'string' && rawName.trim() ? rawName.trim() : null;
-            const normalizedDescription = typeof rawDescription === 'string' && rawDescription.trim()
-                ? rawDescription.trim()
-                : null;
+            const hasDescriptionUpdate = typeof rawDescription === 'string';
+            const normalizedDescription = hasDescriptionUpdate ? rawDescription.trim() : null;
             const normalizedRelativeLevel = Number.isFinite(relativeLevel)
                 ? Math.max(-10, Math.min(10, Math.round(relativeLevel)))
                 : null;
@@ -31188,17 +31193,31 @@ module.exports = function registerApiRoutes(scope) {
             const metadata = stubLocation.stubMetadata || {};
             let metadataChanged = false;
 
-            if (normalizedDescription && metadata.shortDescription !== normalizedDescription) {
+            if (hasDescriptionUpdate && metadata.shortDescription !== normalizedDescription) {
                 metadata.shortDescription = normalizedDescription;
                 metadataChanged = true;
             }
 
-            if (normalizedDescription && metadata.blueprintDescription !== normalizedDescription) {
+            if (hasDescriptionUpdate && metadata.blueprintDescription !== normalizedDescription) {
                 metadata.blueprintDescription = normalizedDescription;
                 metadataChanged = true;
             }
 
-            if (normalizedDescription && stubLocation.shortDescription !== normalizedDescription) {
+            if (hasDescriptionUpdate && metadata.stubDescription !== normalizedDescription) {
+                metadata.stubDescription = normalizedDescription;
+                metadataChanged = true;
+            }
+
+            if (hasDescriptionUpdate && metadata.stubShortDescription !== normalizedDescription) {
+                metadata.stubShortDescription = normalizedDescription;
+                metadataChanged = true;
+            }
+
+            if (hasDescriptionUpdate && stubLocation.description !== normalizedDescription) {
+                stubLocation.description = normalizedDescription;
+            }
+
+            if (hasDescriptionUpdate && (stubLocation.shortDescription || '') !== normalizedDescription) {
                 stubLocation.shortDescription = normalizedDescription;
             }
 
@@ -31207,7 +31226,7 @@ module.exports = function registerApiRoutes(scope) {
                     metadata.targetRegionName = normalizedName;
                     metadataChanged = true;
                 }
-                if (normalizedDescription && metadata.targetRegionDescription !== normalizedDescription) {
+                if (hasDescriptionUpdate && metadata.targetRegionDescription !== normalizedDescription) {
                     metadata.targetRegionDescription = normalizedDescription;
                     metadataChanged = true;
                 }
@@ -31230,7 +31249,7 @@ module.exports = function registerApiRoutes(scope) {
                         updated.name = normalizedName;
                         pendingChanged = true;
                     }
-                    if (normalizedDescription && updated.description !== normalizedDescription) {
+                    if (hasDescriptionUpdate && updated.description !== normalizedDescription) {
                         updated.description = normalizedDescription;
                         pendingChanged = true;
                     }
@@ -32327,6 +32346,12 @@ module.exports = function registerApiRoutes(scope) {
                         error: 'Stub description is required'
                     });
                 }
+                if (typeof body.description !== 'string') {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Stub description must be a string'
+                    });
+                }
 
                 const nameValue = typeof body.name === 'string' ? body.name.trim() : '';
                 if (!nameValue) {
@@ -32337,12 +32362,6 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 const descriptionValue = typeof body.description === 'string' ? body.description.trim() : '';
-                if (!descriptionValue) {
-                    return res.status(400).json({
-                        success: false,
-                        error: 'Stub description cannot be empty'
-                    });
-                }
 
                 let relativeLevel = null;
                 if (hasOwn.call(body, 'relativeLevel')) {

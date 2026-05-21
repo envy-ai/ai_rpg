@@ -245,7 +245,7 @@ Responses:
 Request:
 - Body:
   - `name` (required)
-  - `description` (required)
+  - `description` (required string; may be empty)
   - `relativeLevel?` (number)
   - `controllingFactionId?` (string or null)
   - `isVehicle?` (boolean)
@@ -257,6 +257,7 @@ Responses:
 
 Notes:
 - `controllingFactionId` must reference an existing faction id or be `null` to clear.
+- Empty `description` values are accepted for stub edits and clear the stub's existing presentation description fields.
 - Vehicle edits follow the same `isVehicle` + `vehicleInfo` validation semantics as location/region updates.
 - For region-entry stubs, successful vehicle edits are mirrored into pending-region stub records so expansion uses the updated vehicle metadata.
 
