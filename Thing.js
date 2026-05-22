@@ -34,6 +34,7 @@ class Thing {
   #previouslyHarvestedItems;
   #lastHarvested;
   #containedThingIds;
+  #containerContents;
   #flags = new SanitizedStringSet();
   #isEnrichingStatusEffects = false;
   #shortDescription;
@@ -574,6 +575,7 @@ class Thing {
     isHarvestable = null,
     isSalvageable = null,
     isContainer = null,
+    containerContents = [],
     containedThingIds = [],
     flags = new SanitizedStringSet(),
     enrichStatusEffects = true
@@ -630,6 +632,7 @@ class Thing {
     this.#previouslyHarvestedItems = [];
     this.#lastHarvested = null;
     this.#containedThingIds = new Set();
+    this.#containerContents = [];
     this.#flags = flags instanceof SanitizedStringSet ? flags : new SanitizedStringSet(flags);
     this.isVehicle = isVehicle;
     this.isCraftingStation = isCraftingStation;
@@ -637,6 +640,7 @@ class Thing {
     this.isHarvestable = isHarvestable;
     this.isSalvageable = isSalvageable;
     this.isContainer = isContainer;
+    this.containerContents = containerContents;
     this.#containedThingIds = new Set(this.#normalizeContainedThingIds(containedThingIds));
 
     this.#applyMetadataFieldsFromMetadata();
@@ -789,6 +793,23 @@ class Thing {
 
   get containedThingIds() {
     return Array.from(this.#containedThingIds);
+  }
+
+  get containerContents() {
+    return this.#containerContents.map(entry => ({ ...entry }));
+  }
+
+  set containerContents(entries) {
+    const normalized = Thing.#normalizeContainerContents(entries);
+    this.#containerContents = normalized;
+    if (normalized.length && !this.isContainer) {
+      console.warn(
+        `Thing "${this.#name}" has container contents but is not marked as a container. Marking it as a container.`
+      );
+      this.isContainer = true;
+    }
+    this.#syncFieldsToMetadata();
+    this.#lastUpdated = new Date().toISOString();
   }
 
   get rarity() {
@@ -1526,6 +1547,57 @@ class Thing {
     return numericValue;
   }
 
+  static #normalizeContainerContentCount(value, fieldName = 'containerContents count') {
+    if (value === null || value === undefined || value === '') {
+      return 1;
+    }
+    if (typeof value === 'number') {
+      return Thing.#normalizeCount(value, fieldName);
+    }
+    const text = String(value).trim();
+    if (!text) {
+      return 1;
+    }
+    const match = text.match(/-?\d+/);
+    if (!match) {
+      return 1;
+    }
+    return Thing.#normalizeCount(Number(match[0]), fieldName);
+  }
+
+  static #normalizeContainerContents(entries = []) {
+    if (entries === null || entries === undefined || entries === '') {
+      return [];
+    }
+    if (!Array.isArray(entries)) {
+      throw new Error('containerContents must be an array of contained item seeds.');
+    }
+
+    const normalized = [];
+    for (const entry of entries) {
+      if (entry === null || entry === undefined || entry === '') {
+        continue;
+      }
+
+      let name = '';
+      let count = 1;
+      if (typeof entry === 'string') {
+        name = entry.trim();
+      } else if (entry && typeof entry === 'object' && !Array.isArray(entry)) {
+        name = typeof entry.name === 'string' ? entry.name.trim() : '';
+        count = Thing.#normalizeContainerContentCount(entry.count, `containerContents count for "${name || 'contained item'}"`);
+      } else {
+        throw new Error('containerContents entries must be objects with name/count fields.');
+      }
+
+      if (!name) {
+        continue;
+      }
+      normalized.push({ name, count });
+    }
+    return normalized;
+  }
+
   #normalizeContainedThingIds(ids = []) {
     if (ids === null || ids === undefined) {
       return [];
@@ -1595,6 +1667,7 @@ class Thing {
       isHarvestable: normalizeBoolean(this.isHarvestable),
       isSalvageable: normalizeBoolean(this.isSalvageable),
       isContainer: normalizeBoolean(this.isContainer),
+      containerContents: this.containerContents,
       containedThingIds: Array.from(this.#containedThingIds),
       flags: this.#flags && this.#flags.size ? Array.from(this.#flags) : undefined,
       metadata: this.#metadata && Object.keys(this.#metadata).length ? { ...this.#metadata } : undefined,
@@ -1651,6 +1724,7 @@ class Thing {
       relativeLevel: data.relativeLevel ?? data.metadata?.relativeLevel ?? null,
       previouslyHarvestedItems: data.previouslyHarvestedItems ?? data.metadata?.previouslyHarvestedItems ?? [],
       lastHarvested: data.lastHarvested ?? data.metadata?.lastHarvested ?? null,
+      containerContents: data.containerContents ?? data.metadata?.containerContents ?? [],
       containedThingIds: data.containedThingIds ?? data.metadata?.containedThingIds ?? [],
       flags: Array.isArray(data.flags) ? data.flags : (Array.isArray(data.metadata?.flags) ? data.metadata.flags : []),
       ...booleanFlagOptions,
@@ -1695,6 +1769,9 @@ class Thing {
     const overridePayload = clonePlain(overrides) || {};
     if (!Object.prototype.hasOwnProperty.call(overridePayload, 'containedThingIds')) {
       serialized.containedThingIds = [];
+    }
+    if (!Object.prototype.hasOwnProperty.call(overridePayload, 'containerContents')) {
+      serialized.containerContents = [];
     }
     const baseMetadata = serialized.metadata && typeof serialized.metadata === 'object'
       ? serialized.metadata
@@ -1962,6 +2039,9 @@ class Thing {
     if (Array.isArray(meta.containedThingIds)) {
       this.#containedThingIds = new Set(this.#normalizeContainedThingIds(meta.containedThingIds));
     }
+    if (Array.isArray(meta.containerContents)) {
+      this.#containerContents = Thing.#normalizeContainerContents(meta.containerContents);
+    }
 
     if (meta.isVehicle !== undefined) {
       this.isVehicle = Thing.#normalizeBooleanFlag(meta.isVehicle);
@@ -1980,6 +2060,12 @@ class Thing {
     }
     if (meta.isContainer !== undefined) {
       this.isContainer = Thing.#normalizeBooleanFlag(meta.isContainer);
+    }
+    if (this.#containerContents.length && !this.isContainer) {
+      console.warn(
+        `Thing "${this.#name}" has container contents but is not marked as a container. Marking it as a container.`
+      );
+      this.isContainer = true;
     }
 
     this.#syncFieldsToMetadata();
@@ -2042,6 +2128,11 @@ class Thing {
       this.#metadata.lastHarvested = this.#lastHarvested;
     } else {
       delete this.#metadata.lastHarvested;
+    }
+    if (this.#containerContents.length) {
+      this.#metadata.containerContents = this.containerContents;
+    } else {
+      delete this.#metadata.containerContents;
     }
     delete this.#metadata.containedThingIds;
 
@@ -2293,6 +2384,12 @@ class Thing {
     if (this.#containedThingIds.size > 0) {
       this.#containedThingIds.clear();
     }
+    this.#lastUpdated = new Date().toISOString();
+  }
+
+  clearContainerContents() {
+    this.#containerContents = [];
+    this.#syncFieldsToMetadata();
     this.#lastUpdated = new Date().toISOString();
   }
 

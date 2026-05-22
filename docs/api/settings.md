@@ -17,6 +17,7 @@ Request:
   - Includes `defaultFactionCount` (non-negative integer or empty) and `defaultFactions` (array of faction drafts) for settings-scoped faction defaults.
   - Includes optional `calendarDefinition`, the same calendar object shape used by `/api/calendar`. `null` or omitted means the profile has no pre-generated calendar.
   - Includes `unifiedTonalScale`, an object keyed by tonal-axis id, where each selected axis is `{ level, comment? }`. Levels may be defined scale values or generated half-step values such as `3.5`.
+  - Includes `hidingAttribute`, `hidingSkill`, `perceptionAttribute`, and `perceptionSkill`. The two attribute fields are required by the Worlds UI and must use defined attribute keys; skill fields are optional and come from `defaultExistingSkills`.
 
 Response:
 - 201: `{ success: true, setting: SettingInfo, message }`
@@ -35,6 +36,7 @@ Notes:
 - When autofilling `defaultStartingLocation`, the AI is guided to use the multiline template shown on the form (region name, summary, rooms/locations, region exits with blank lines).
 - When autofilling `baseContextPreamble`, the AI is guided to use a single-line bracketed format (e.g., `[Title: ...; Tags: ...; Genre: ...]`).
 - When autofilling `defaultExistingSkills` (and the list is empty or baseline-only), the AI is asked to add up to ~10 setting-specific skills to complement the baseline list.
+- When autofilling hide/perception mechanics, the AI is given defined attribute options and the current `defaultExistingSkills`; it must use exact attribute keys, choose exact skill names, or leave optional skill tags empty.
 - `customSlopWords` is accepted as a list (or newline-delimited string) and round-trips through autofill as `<customSlopWords><word>...</word></customSlopWords>`.
 - `defaultFactionCount` and `defaultFactions` are accepted in the payload and preserved through merge behavior; setting autofill does not currently synthesize faction drafts directly.
 - `unifiedTonalScale` is accepted and preserved through merge behavior; setting autofill does not currently synthesize tonal-scale selections.
@@ -66,6 +68,7 @@ Request:
   - Supports `defaultFactionCount` and `defaultFactions` updates.
   - Supports `calendarDefinition`; invalid calendar JSON/shape is rejected with `400`.
   - Supports `unifiedTonalScale` updates with numeric levels, generated half-step values, and optional comments.
+  - Supports the hide/perception mechanic selectors: required `hidingAttribute` / `perceptionAttribute` and optional `hidingSkill` / `perceptionSkill`.
 
 Response:
 - 200: `{ success: true, setting: SettingInfo, message }`

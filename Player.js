@@ -82,6 +82,7 @@ class Player {
     #lastSeenTime = null;
     #lastSeenLocation = null;
     #wasInPlayerLocationPreviousRound = false;
+    #hiddenFromPlayer = false;
     #lastActionWasTravel = false;
     #consecutiveTravelActions = 0;
     #turnsSincePartyMemoryGeneration = 0;
@@ -2039,6 +2040,7 @@ class Player {
         // Player image ID for generated portrait
         this.#imageId = options.imageId ?? null;
         this.#isNPC = Boolean(options.isNPC);
+        this.#hiddenFromPlayer = this.#isNPC && !this.#isDead && Boolean(options.hiddenFromPlayer);
         this.#isHostile = this.#isNPC && Boolean(options.isHostile);
         this.#barterInventory = new Set();
         this.#willingToTrade = this.#isNPC ? options.willingToTrade !== false : true;
@@ -3373,6 +3375,23 @@ class Player {
         this.was_in_player_location_previous_round = value;
     }
 
+    get hiddenFromPlayer() {
+        return Boolean(this.#hiddenFromPlayer);
+    }
+
+    set hiddenFromPlayer(value) {
+        const next = Boolean(value) && this.#isNPC && !this.#isDead;
+        if (this.#hiddenFromPlayer === next) {
+            return;
+        }
+        this.#hiddenFromPlayer = next;
+        this.#lastUpdated = new Date().toISOString();
+    }
+
+    get isHiddenFromPlayer() {
+        return this.hiddenFromPlayer;
+    }
+
     recordLastSeenByPlayer({ time, locationId, wasInPlayerLocationPreviousRound = true } = {}) {
         const normalizedTime = Player.#normalizeLastSeenTime(time);
         if (normalizedTime === null) {
@@ -3543,6 +3562,9 @@ class Player {
             if (!sharesPlayerLocation) {
                 continue;
             }
+            if (npc.hiddenFromPlayer && !npc.isDead) {
+                continue;
+            }
 
             npc.recordLastSeenByPlayer({
                 time: timestamp,
@@ -3612,6 +3634,7 @@ class Player {
         }
         this.#isDead = next;
         if (next) {
+            this.#hiddenFromPlayer = false;
             if (this.#isInPlayerParty) {
                 this.#persistWhenDead = true;
             }
@@ -6095,6 +6118,7 @@ class Player {
             was_in_player_location_previous_round: this.#wasInPlayerLocationPreviousRound,
             imageId: this.#imageId,
             isNPC: this.#isNPC,
+            hiddenFromPlayer: this.#hiddenFromPlayer,
             isHostile: this.#isHostile,
             personalityType: this.#personalityType,
             personalityTraits: this.#personalityTraits,
@@ -6178,6 +6202,7 @@ class Player {
             imageId: this.#imageId,
             attributes: this.#attributes,
             isNPC: this.#isNPC,
+            hiddenFromPlayer: this.#hiddenFromPlayer,
             isHostile: this.#isHostile,
             isDead: this.#isDead,
             persistWhenDead: this.#persistWhenDead,
@@ -6267,6 +6292,7 @@ class Player {
             was_in_player_location_previous_round: data.was_in_player_location_previous_round
                 ?? data.wasInPlayerLocationPreviousRound,
             isNPC: data.isNPC,
+            hiddenFromPlayer: data.hiddenFromPlayer,
             isHostile: data.isHostile,
             shortDescription: data.shortDescription,
             class: data.class,

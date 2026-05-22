@@ -17,6 +17,7 @@ Stores and manages scene summaries extracted from chat history. Tracks scene ran
 - `deleteSummariesOverlappingRange(startIndex, endIndex)`: removes overlapping scenes and returns the gap range needing resummarization.
 - `getScenes()`: returns cloned scenes (safe copies).
 - `getScenesInOrder()`: returns scenes sorted by start index.
+- `updateSceneAtDisplayIndex(displayIndex, updates)`: edits a scene by its 1-based display number while preserving its entry range and entry ids. `summary`, `details`, and `quotes` are validated through the same strict scene normalization used for generated summaries.
 - `ingestNpcNamesFromEntries(entries)`: stores NPC name lists per entry id when available.
 - `getAbsentCharactersByScene(characterNames)`: returns a Map of scene start index to names missing from that scene.
 - `serialize()`: returns a stable JSON-friendly payload including entry index map and NPC names.
@@ -24,6 +25,7 @@ Stores and manages scene summaries extracted from chat history. Tracks scene ran
 
 ## Diagnostics
 - `/scene_summaries` lists stored scene summaries by display number and covered 1-based entry range, and reports coverage gaps against the current scene-summary-eligible chat history.
+- Story Tools includes a `Scene Summaries` tab backed by `GET /api/scene-summaries` and `PUT /api/scene-summaries/:index`. Manual edits update the runtime store and immediately rewrite `sceneSummaries.json` for the active save when one is loaded.
 - Scene-summary entry counts come from `scene_summary_index.js`, shared by `/summarize`, `/summarize check`, `/scene_summaries`, automatic threshold summarization, and the actual server-side scene summarizer. The shared index excludes event/status summary entries and plot-summary/plot-expander entries while preserving hidden supplemental/offscreen story entries.
 - Chat prompts can call `getFullScene({ sceneNumber })` for a stored `Scene N` listed inside `<olderStoryHistory>`; this uses the same display number as `/scene_summaries`. The tool resolves the stored scene range through the shared scene-summary index and returns delineated entries for user actions, NPC action plans, storyteller prose, and eligible hidden scene notes.
 

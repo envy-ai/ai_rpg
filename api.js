@@ -30,6 +30,7 @@ const {
     countSceneSummaryIndexEntries
 } = require('./scene_summary_index.js');
 const { normalizeUnifiedTonalScaleSelections } = require('./UnifiedTonalScale.js');
+const { loadMergedDefinitionFile } = require('./DefinitionLoader.js');
 const e = require('express');
 const { getLorebookManager } = require('./lorebook.js');
 const console = require('console');
@@ -45,6 +46,8 @@ const INFORMATION_GATHERING_CHAT_TOOL_NAMES = new Set([
     'listMysteryThreads',
     'getMysteryThread',
     'listLocationEntities',
+    'revealEntity',
+    'hideEntity',
     'resolveAttack',
     'resolveAreaAttack',
     'resolveSkillCheck',
@@ -10739,6 +10742,8 @@ module.exports = function registerApiRoutes(scope) {
             'item_appear',
             'drop_item',
             'pick_up_item',
+            'put_item_in_container',
+            'remove_item_from_container',
             'transfer_item',
             'consume_item',
             'move_new_location',
@@ -11445,6 +11450,52 @@ module.exports = function registerApiRoutes(scope) {
                                     entityRefs: [
                                         ...summaryEntityRef('npc', { name: actor }),
                                         ...summaryEntityRef('thing', { name: itemName })
+                                    ]
+                                });
+                            });
+                            break;
+                        case 'put_item_in_container':
+                            entries.forEach(entry => {
+                                const actor = entry?.character ? safeSummaryName(entry.character) : null;
+                                const itemName = formatSummaryItemWithQuantity(
+                                    entry?.item,
+                                    entry?.quantity,
+                                );
+                                const containerName = safeSummaryItem(entry?.containerName || entry?.container, 'a container');
+                                add({
+                                    icon: '📥',
+                                    text: actor
+                                        ? `${actor} put ${itemName} into ${containerName}.`
+                                        : `${itemName} was placed into ${containerName}.`,
+                                    category: 'inventory',
+                                    sourceType: 'put_item_in_container',
+                                    entityRefs: [
+                                        ...(actor ? summaryEntityRef('npc', { name: actor }) : []),
+                                        ...summaryEntityRef('thing', { name: itemName }),
+                                        ...summaryEntityRef('thing', { name: containerName })
+                                    ]
+                                });
+                            });
+                            break;
+                        case 'remove_item_from_container':
+                            entries.forEach(entry => {
+                                const actor = entry?.character ? safeSummaryName(entry.character) : null;
+                                const itemName = formatSummaryItemWithQuantity(
+                                    entry?.item,
+                                    entry?.quantity,
+                                );
+                                const containerName = safeSummaryItem(entry?.containerName || entry?.container, 'a container');
+                                add({
+                                    icon: '📤',
+                                    text: actor
+                                        ? `${actor} removed ${itemName} from ${containerName}.`
+                                        : `${itemName} was removed from ${containerName}.`,
+                                    category: 'inventory',
+                                    sourceType: 'remove_item_from_container',
+                                    entityRefs: [
+                                        ...(actor ? summaryEntityRef('npc', { name: actor }) : []),
+                                        ...summaryEntityRef('thing', { name: itemName }),
+                                        ...summaryEntityRef('thing', { name: containerName })
                                     ]
                                 });
                             });
@@ -14296,7 +14347,9 @@ module.exports = function registerApiRoutes(scope) {
             promptLabel = 'action',
             parentId = null,
             locationId = null,
-            requestId = null
+            requestId = null,
+            hiddenFromClient = false,
+            metadata = null
         } = {}, collector = null) {
             if (!Array.isArray(chatHistory)) {
                 return null;
@@ -14346,7 +14399,191 @@ module.exports = function registerApiRoutes(scope) {
                 }
             });
 
-            return recorder.getEntry();
+            const entry = recorder.getEntry();
+            if (entry) {
+                entry.metadata = {
+                    ...(entry.metadata && typeof entry.metadata === 'object' ? entry.metadata : {}),
+                    ...(metadata && typeof metadata === 'object' ? metadata : {}),
+                    ...(hiddenFromClient ? { hiddenFromClient: true } : {})
+                };
+            }
+            return entry;
+        }
+
+        function normalizeHiddenNpcCheckSkill(value) {
+            const text = typeof value === 'string' ? value.trim() : '';
+            if (!text || /^n\/?a$/i.test(text) || /^none$/i.test(text)) {
+                return null;
+            }
+            return text;
+        }
+
+        function getHidePerceptionCheckSettings() {
+            const settingSnapshot = typeof getActiveSettingSnapshot === 'function'
+                ? getActiveSettingSnapshot()
+                : (typeof currentSetting?.toJSON === 'function' ? currentSetting.toJSON() : currentSetting);
+            const hidingAttribute = typeof settingSnapshot?.hidingAttribute === 'string'
+                ? settingSnapshot.hidingAttribute.trim()
+                : '';
+            const perceptionAttribute = typeof settingSnapshot?.perceptionAttribute === 'string'
+                ? settingSnapshot.perceptionAttribute.trim()
+                : '';
+            if (!hidingAttribute || !perceptionAttribute) {
+                throw new Error('Automatic hidden NPC checks require hidingAttribute and perceptionAttribute settings.');
+            }
+            return {
+                hidingAttribute,
+                hidingSkill: normalizeHiddenNpcCheckSkill(settingSnapshot?.hidingSkill),
+                perceptionAttribute,
+                perceptionSkill: normalizeHiddenNpcCheckSkill(settingSnapshot?.perceptionSkill)
+            };
+        }
+
+        function buildHiddenNpcOpposedPlausibility({
+            actor,
+            opponent,
+            actorAttribute,
+            actorSkill,
+            opponentAttribute,
+            opponentSkill,
+            reason
+        }) {
+            const actorName = typeof actor?.name === 'string' && actor.name.trim() ? actor.name.trim() : 'Actor';
+            const opponentName = typeof opponent?.name === 'string' && opponent.name.trim() ? opponent.name.trim() : 'opponent';
+            const resolvedReason = typeof reason === 'string' && reason.trim()
+                ? reason.trim()
+                : `${actorName} makes an opposed check against ${opponentName}.`;
+            return {
+                type: 'Plausible',
+                reason: resolvedReason,
+                skillCheck: {
+                    reason: resolvedReason,
+                    skill: actorSkill || null,
+                    attribute: actorAttribute,
+                    difficulty: 'Opposed',
+                    checkType: 'opposed',
+                    circumstanceModifiers: [],
+                    opposedCheck: {
+                        opponent: opponentName,
+                        opponentSkill: opponentSkill || null,
+                        opponentAttribute
+                    }
+                }
+            };
+        }
+
+        function recordHiddenNpcCheckResults(hiddenNpcChecks, {
+            parentId = null,
+            locationId = null,
+            collector = null,
+            requestId = null
+        } = {}) {
+            if (!Array.isArray(hiddenNpcChecks) || !hiddenNpcChecks.length) {
+                return [];
+            }
+            return hiddenNpcChecks
+                .map(check => {
+                    if (!check?.resolution) {
+                        return null;
+                    }
+                    const hiddenFromClient = config?.hide_hide_checks === true && check.success === false;
+                    return recordActionOutcomeCheckResultsEntry({
+                        resolution: check.resolution,
+                        actorName: check.actorName || null,
+                        skillLabel: check.resolution.skill || 'Perception',
+                        reason: check.resolution.reason || null,
+                        promptLabel: check.automatic ? 'Automatic hide/perception check' : 'Hide/perception event',
+                        parentId,
+                        locationId,
+                        requestId,
+                        hiddenFromClient,
+                        metadata: {
+                            hiddenNpcCheck: true,
+                            automatic: Boolean(check.automatic),
+                            action: check.action || null,
+                            npcId: check.npcId || null,
+                            npcName: check.npcName || null
+                        }
+                    }, collector);
+                })
+                .filter(Boolean);
+        }
+
+        async function runAutomaticHiddenNpcChecksForCurrentPlayer({
+            player = currentPlayer,
+            locationId = null,
+            previouslySharedNpcIds = null,
+            parentId = null,
+            collector = null,
+            requestId = null
+        } = {}) {
+            if (!(player instanceof Player)) {
+                return [];
+            }
+            const targetLocationId = typeof locationId === 'string' && locationId.trim()
+                ? locationId.trim()
+                : (typeof player.currentLocation === 'string' ? player.currentLocation.trim() : '');
+            if (!targetLocationId) {
+                return [];
+            }
+
+            const previousShared = new Set(
+                (previouslySharedNpcIds == null
+                    ? []
+                    : (Array.isArray(previouslySharedNpcIds) ? previouslySharedNpcIds : Array.from(previouslySharedNpcIds)))
+                    .map(id => (typeof id === 'string' ? id.trim() : ''))
+                    .filter(Boolean)
+            );
+            const currentSharedNpcIds = Player.getNpcIdsSharingPlayerLocation({ player, locationId: targetLocationId });
+            const hiddenNpcIdsToCheck = currentSharedNpcIds.filter(npcId => {
+                if (previousShared.has(npcId)) {
+                    return false;
+                }
+                const npc = players.get(npcId);
+                return npc instanceof Player && npc.isNPC && npc.hiddenFromPlayer === true && npc.isDead !== true;
+            });
+            if (!hiddenNpcIdsToCheck.length) {
+                return [];
+            }
+            const settings = getHidePerceptionCheckSettings();
+            const checks = [];
+            for (const npcId of hiddenNpcIdsToCheck) {
+                const npc = players.get(npcId);
+                const plausibility = buildHiddenNpcOpposedPlausibility({
+                    actor: player,
+                    opponent: npc,
+                    actorAttribute: settings.perceptionAttribute,
+                    actorSkill: settings.perceptionSkill,
+                    opponentAttribute: settings.hidingAttribute,
+                    opponentSkill: settings.hidingSkill,
+                    reason: `${player.name || 'The player'} attempts to notice ${npc.name || 'a hidden NPC'}.`
+                });
+                const resolution = resolveActionOutcome({ plausibility, player });
+                if (!resolution || typeof resolution !== 'object') {
+                    throw new Error(`Automatic hidden NPC check for "${npc.name || npcId}" did not return an action resolution.`);
+                }
+                if (resolution.success === true) {
+                    npc.hiddenFromPlayer = false;
+                }
+                checks.push({
+                    action: 'automatic_reveal_hidden_npc',
+                    automatic: true,
+                    actorId: player.id || null,
+                    actorName: player.name || null,
+                    npcId: npc.id || null,
+                    npcName: npc.name || null,
+                    success: resolution.success === true,
+                    resolution
+                });
+            }
+
+            recordHiddenNpcCheckResults(checks, {
+                parentId,
+                locationId: targetLocationId,
+                collector,
+                requestId
+            });
+            return checks;
         }
 
         function loadRandomEventLines(type) {
@@ -16361,6 +16598,13 @@ module.exports = function registerApiRoutes(scope) {
             const attacker = resolveChatToolActor(areaAttackEntry.attacker, 'attacker');
             const attackerLocationId = attacker.currentLocation || attacker.locationId || currentPlayer?.currentLocation || null;
             const attackerLocation = attackerLocationId ? Location.get(attackerLocationId) : null;
+            const revealAttackerIfHidden = () => {
+                if (!attacker || attacker.hiddenFromPlayer !== true || attacker.isDead === true) {
+                    return false;
+                }
+                attacker.hiddenFromPlayer = false;
+                return true;
+            };
 
             const resolvedTargetEntries = areaAttackEntry.targets.map((target, index) => {
                 if (!target || typeof target !== 'object' || Array.isArray(target)) {
@@ -16608,11 +16852,12 @@ module.exports = function registerApiRoutes(scope) {
                 sharedRoll,
                 results
             };
+            const attackerRevealedFromHidden = revealAttackerIfHidden();
 
             return {
                 hitCount,
                 targetCount: results.length,
-                locationRefreshRequested,
+                locationRefreshRequested: Boolean(locationRefreshRequested || attackerRevealedFromHidden),
                 summary,
                 results,
                 applications
@@ -16672,6 +16917,13 @@ module.exports = function registerApiRoutes(scope) {
             if (defender?.id) {
                 attackEntry.targetActorId = defender.id;
             }
+            const revealAttackerIfHidden = () => {
+                if (!attacker || attacker.hiddenFromPlayer !== true || attacker.isDead === true) {
+                    return false;
+                }
+                attacker.hiddenFromPlayer = false;
+                return true;
+            };
 
             const attackerLocationId = attacker.currentLocation || attacker.locationId || currentPlayer?.currentLocation || null;
             const attackerLocation = attackerLocationId ? Location.get(attackerLocationId) : null;
@@ -16732,6 +16984,7 @@ module.exports = function registerApiRoutes(scope) {
                 attackContext.summary = attackSummary;
                 attackCheckInfo.summary = attackSummary;
             }
+            const attackerRevealedFromHidden = revealAttackerIfHidden();
 
             return {
                 hit,
@@ -16739,7 +16992,7 @@ module.exports = function registerApiRoutes(scope) {
                 declaredDamage,
                 application: attackDamageApplication,
                 appliedStatusEffects,
-                locationRefreshRequested: Boolean(attackDamageApplication || appliedStatusEffects.length),
+                locationRefreshRequested: Boolean(attackDamageApplication || appliedStatusEffects.length || attackerRevealedFromHidden),
                 summary: attackSummary,
                 attackContext,
                 attackOutcome
@@ -22771,6 +23024,13 @@ module.exports = function registerApiRoutes(scope) {
                         }, newChatEntries);
                     });
 
+                    recordHiddenNpcCheckResults(eventResult?.hiddenNpcChecks, {
+                        parentId: aiResponseEntry?.id || null,
+                        locationId: aiResponseLocationId,
+                        collector: newChatEntries,
+                        requestId: stream?.requestId || null
+                    });
+
                     if (Array.isArray(responseData.plausibilities) && responseData.plausibilities.length > 1) {
                         responseData.plausibilities.slice(1).forEach(plausibilityPayload => {
                             if (!plausibilityPayload || typeof plausibilityPayload !== 'object') {
@@ -23046,6 +23306,17 @@ module.exports = function registerApiRoutes(scope) {
                     });
 
                     console.log(`Finalizing turns for all players (count: ${Globals.playersById.size})`);
+                    const automaticHiddenNpcChecks = await runAutomaticHiddenNpcChecksForCurrentPlayer({
+                        player: currentPlayer,
+                        locationId: currentPlayer?.currentLocation || location?.id || null,
+                        previouslySharedNpcIds: npcIdsSharingPlayerLocationAtTurnStart,
+                        parentId: aiResponseEntry?.id || null,
+                        collector: newChatEntries,
+                        requestId: stream?.requestId || null
+                    });
+                    if (automaticHiddenNpcChecks.length) {
+                        responseData.locationRefreshRequested = true;
+                    }
                     Player.recordNpcSightingsForCurrentPlayer({
                         player: currentPlayer,
                         previouslySharedNpcIds: npcIdsSharingPlayerLocationAtTurnStart
@@ -23398,6 +23669,88 @@ module.exports = function registerApiRoutes(scope) {
             return normalizeMysteryTextListForApi(value, 'Mystery box key');
         };
 
+        const getSceneSummariesForApi = () => {
+            const sceneSummaries = Globals.getSceneSummaries();
+            if (!sceneSummaries || typeof sceneSummaries.getScenesInOrder !== 'function') {
+                throw new Error('Scene summaries are unavailable.');
+            }
+            return sceneSummaries;
+        };
+
+        const serializeSceneSummaryForClient = (scene, index) => {
+            if (!scene || typeof scene !== 'object') {
+                return null;
+            }
+            const sceneNumber = Number.isInteger(index) ? index + 1 : null;
+            return {
+                sceneNumber,
+                startIndex: scene.startIndex,
+                endIndex: scene.endIndex,
+                startEntryId: scene.startEntryId,
+                endEntryId: scene.endEntryId,
+                summary: typeof scene.summary === 'string' ? scene.summary : '',
+                details: Array.isArray(scene.details) ? scene.details.filter(entry => typeof entry === 'string') : [],
+                quotes: Array.isArray(scene.quotes)
+                    ? scene.quotes
+                        .filter(quote => quote && typeof quote === 'object')
+                        .map(quote => ({
+                            character: typeof quote.character === 'string' ? quote.character : '',
+                            text: typeof quote.text === 'string' ? quote.text : ''
+                        }))
+                    : []
+            };
+        };
+
+        const normalizeSceneSummaryQuotesForApi = (value) => {
+            if (value === undefined || value === null) {
+                return [];
+            }
+            if (!Array.isArray(value)) {
+                throw new Error('Scene summary quotes must be an array.');
+            }
+            return value.map((quote, index) => {
+                if (!quote || typeof quote !== 'object' || Array.isArray(quote)) {
+                    throw new Error(`Scene summary quote at index ${index} must be an object.`);
+                }
+                const character = typeof quote.character === 'string' ? quote.character.trim() : '';
+                const text = typeof quote.text === 'string' ? quote.text.trim() : '';
+                if (!character || !text) {
+                    throw new Error(`Scene summary quote at index ${index} is missing character or text.`);
+                }
+                return { character, text };
+            });
+        };
+
+        const persistSceneSummariesToCurrentSave = () => {
+            const saveInfo = typeof Globals.getCurrentSaveInfo === 'function'
+                ? Globals.getCurrentSaveInfo()
+                : Globals.currentSaveInfo;
+            if (!saveInfo || typeof saveInfo !== 'object') {
+                return false;
+            }
+            const saveDir = typeof saveInfo.saveDir === 'string' ? saveInfo.saveDir.trim() : '';
+            if (!saveDir) {
+                return false;
+            }
+            if (!fs.existsSync(saveDir)) {
+                throw new Error(`Save directory does not exist: ${saveDir}`);
+            }
+
+            const sceneSummaries = getSceneSummariesForApi();
+            fs.writeFileSync(
+                path.join(saveDir, 'sceneSummaries.json'),
+                JSON.stringify(sceneSummaries.serialize(), null, 2)
+            );
+
+            const metadata = {
+                ...((typeof Globals.getSaveMetadata === 'function' ? Globals.getSaveMetadata() : Globals.saveMetadata) || {})
+            };
+            metadata.totalSceneSummaries = sceneSummaries.getScenesInOrder().length;
+            Globals.setSaveMetadata(metadata);
+            fs.writeFileSync(path.join(saveDir, 'metadata.json'), JSON.stringify(metadata, null, 2));
+            return true;
+        };
+
         const persistMysteryBoxesToCurrentSave = () => {
             const saveInfo = typeof Globals.getCurrentSaveInfo === 'function'
                 ? Globals.getCurrentSaveInfo()
@@ -23450,6 +23803,73 @@ module.exports = function registerApiRoutes(scope) {
                 throw new Error(`Cannot activate mystery thread "${thread.name}"; mystery_threads.max_active is ${maxActive}. Deactivate or conclude another active thread first.`);
             }
         };
+
+        app.get('/api/scene-summaries', (req, res) => {
+            try {
+                const sceneSummaries = getSceneSummariesForApi();
+                const scenes = sceneSummaries.getScenesInOrder()
+                    .map(serializeSceneSummaryForClient)
+                    .filter(Boolean);
+                return res.json({
+                    success: true,
+                    sceneSummaries: scenes,
+                    count: scenes.length
+                });
+            } catch (error) {
+                console.error('Failed to list scene summaries:', error);
+                return res.status(500).json({
+                    success: false,
+                    error: error?.message || 'Failed to list scene summaries.'
+                });
+            }
+        });
+
+        app.put('/api/scene-summaries/:index', (req, res) => {
+            try {
+                const rawIndex = typeof req.params.index === 'string' ? req.params.index.trim() : '';
+                const sceneNumber = Number(rawIndex);
+                if (!Number.isInteger(sceneNumber) || sceneNumber <= 0) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Scene summary number must be a positive integer.'
+                    });
+                }
+
+                const body = req.body || {};
+                const summary = typeof body.summary === 'string' ? body.summary.trim() : '';
+                if (!summary) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Scene summary text is required.'
+                    });
+                }
+
+                const sceneSummaries = getSceneSummariesForApi();
+                if (typeof sceneSummaries.updateSceneAtDisplayIndex !== 'function') {
+                    throw new Error('Scene summaries cannot be edited in this runtime.');
+                }
+
+                const updated = sceneSummaries.updateSceneAtDisplayIndex(sceneNumber, {
+                    summary,
+                    details: normalizeMysteryTextListForApi(body.details, 'Scene summary detail'),
+                    quotes: normalizeSceneSummaryQuotesForApi(body.quotes)
+                });
+                const persisted = persistSceneSummariesToCurrentSave();
+
+                return res.json({
+                    success: true,
+                    sceneSummary: serializeSceneSummaryForClient(updated, sceneNumber - 1),
+                    persisted
+                });
+            } catch (error) {
+                const message = error?.message || 'Failed to update scene summary.';
+                console.error('Failed to update scene summary:', error);
+                return res.status(400).json({
+                    success: false,
+                    error: message
+                });
+            }
+        });
 
         app.get('/api/mystery-threads', (req, res) => {
             try {
@@ -23902,7 +24322,7 @@ module.exports = function registerApiRoutes(scope) {
         });
 
         // Get current player status
-        app.get('/api/player', (req, res) => {
+        app.get('/api/player', async (req, res) => {
             if (!currentPlayer) {
                 return res.status(404).json({
                     success: false,
@@ -23910,10 +24330,18 @@ module.exports = function registerApiRoutes(scope) {
                 });
             }
 
-            res.json({
-                success: true,
-                player: serializeNpcForClient(currentPlayer)
-            });
+            try {
+                await ensurePendingContainerContentsForThings(currentPlayer.getInventoryItems());
+                res.json({
+                    success: true,
+                    player: serializeNpcForClient(currentPlayer)
+                });
+            } catch (error) {
+                res.status(error.status || 500).json({
+                    success: false,
+                    error: error.message || 'Failed to load current player'
+                });
+            }
         });
 
         app.put('/api/player/thing-list-view-preferences', (req, res) => {
@@ -27482,6 +27910,13 @@ module.exports = function registerApiRoutes(scope) {
                             : undefined
                     });
 
+                    await runAutomaticHiddenNpcChecksForCurrentPlayer({
+                        player: npc,
+                        locationId: destinationLocation.id,
+                        previouslySharedNpcIds: npcIdsSharingPlayerLocationAtTurnStart,
+                        parentId: whileYouWereAwayResult?.visibleEntry?.id || null,
+                        requestId: null
+                    });
                     Player.recordNpcSightingsForCurrentPlayer({
                         player: npc,
                         locationId: destinationLocation.id,
@@ -33307,6 +33742,14 @@ module.exports = function registerApiRoutes(scope) {
                     console.log('🧠 Skipping NPC memory generation: consecutive travel actions detected during move request.');
                 }
 
+                await runAutomaticHiddenNpcChecksForCurrentPlayer({
+                    player: currentPlayer,
+                    locationId: destinationLocation.id,
+                    previouslySharedNpcIds: npcIdsSharingPlayerLocationAtTurnStart,
+                    parentId: travelSummaryParentId,
+                    requestId: null
+                });
+
                 const locationData = buildLocationResponse(destinationLocation);
                 if (!locationData) {
                     return res.status(500).json({
@@ -34283,6 +34726,7 @@ module.exports = function registerApiRoutes(scope) {
                         count: itemBlueprint.count ?? 1,
                         level: Number.isFinite(itemBlueprint.level) ? itemBlueprint.level : null,
                         relativeLevel: Number.isFinite(itemBlueprint.relativeLevel) ? itemBlueprint.relativeLevel : null,
+                        containerContents: itemBlueprint.containerContents,
                         metadata,
                         isVehicle: itemBlueprint.isVehicle,
                         isCraftingStation: itemBlueprint.isCraftingStation,
@@ -34993,6 +35437,13 @@ module.exports = function registerApiRoutes(scope) {
                 }
                 await processDueVehicleArrivals();
 
+                const automaticHiddenNpcChecks = await runAutomaticHiddenNpcChecksForCurrentPlayer({
+                    player: currentPlayer,
+                    locationId: resolvedLocationId,
+                    previouslySharedNpcIds: npcIdsSharingPlayerLocationAtTurnStart,
+                    parentId: chatEntry?.id || null,
+                    requestId: null
+                });
                 Player.recordNpcSightingsForCurrentPlayer({
                     player: currentPlayer,
                     locationId: resolvedLocationId,
@@ -35024,6 +35475,7 @@ module.exports = function registerApiRoutes(scope) {
                     unmatchedConsumedNames,
                     timeTakenMinutes: appliedTimeTakenMinutes,
                     timeProgress: craftingTimeProgress,
+                    locationRefreshRequested: automaticHiddenNpcChecks.length > 0,
                     worldTime: buildWorldTimePayload({
                         transitions: Array.isArray(craftingTimeProgress?.transitions)
                             ? craftingTimeProgress.transitions
@@ -35724,6 +36176,13 @@ module.exports = function registerApiRoutes(scope) {
                 }
                 await processDueVehicleArrivals();
 
+                const automaticHiddenNpcChecks = await runAutomaticHiddenNpcChecksForCurrentPlayer({
+                    player: currentPlayer,
+                    locationId: resolvedLocationId,
+                    previouslySharedNpcIds: npcIdsSharingPlayerLocationAtTurnStart,
+                    parentId: chatEntry?.id || null,
+                    requestId: null
+                });
                 Player.recordNpcSightingsForCurrentPlayer({
                     player: currentPlayer,
                     locationId: resolvedLocationId,
@@ -35762,6 +36221,7 @@ module.exports = function registerApiRoutes(scope) {
                     unmatchedConsumedNames,
                     timeTakenMinutes: appliedTimeTakenMinutes,
                     timeProgress: modificationTimeProgress,
+                    locationRefreshRequested: automaticHiddenNpcChecks.length > 0,
                     worldTime: buildWorldTimePayload({
                         transitions: Array.isArray(modificationTimeProgress?.transitions)
                             ? modificationTimeProgress.transitions
@@ -36072,6 +36532,7 @@ module.exports = function registerApiRoutes(scope) {
                     count,
                     level,
                     relativeLevel,
+                    containerContents,
                     statusEffects
                 } = req.body || {};
                 const normalizedShortDescription = shortDescription ?? null;
@@ -36104,6 +36565,7 @@ module.exports = function registerApiRoutes(scope) {
                     count,
                     level,
                     relativeLevel,
+                    containerContents,
                     statusEffects,
                     ...booleanFlags
                 });
@@ -36273,6 +36735,7 @@ module.exports = function registerApiRoutes(scope) {
                     count,
                     level,
                     relativeLevel,
+                    containerContents,
                     statusEffects
                 } = req.body || {};
                 const booleanFlags = extractThingBooleanFlagsFromPayload(req.body || {});
@@ -36379,6 +36842,12 @@ module.exports = function registerApiRoutes(scope) {
                     thing.relativeLevel = relativeLevel;
                 }
 
+                applyThingBooleanFlagsToInstance(thing, booleanFlags);
+
+                if (containerContents !== undefined) {
+                    thing.containerContents = containerContents;
+                }
+
                 if (statusEffects !== undefined) {
                     if (Array.isArray(statusEffects)) {
                         thing.setStatusEffects(statusEffects);
@@ -36391,8 +36860,6 @@ module.exports = function registerApiRoutes(scope) {
                         });
                     }
                 }
-
-                applyThingBooleanFlagsToInstance(thing, booleanFlags);
 
                 // Trigger image regeneration if visual properties changed (only when relevant)
                 let imageNeedsUpdate = false;
@@ -36690,6 +37157,7 @@ module.exports = function registerApiRoutes(scope) {
                             level: computedLevel,
                             relativeLevel,
                             statusEffects: effectiveStatusEffects,
+                            containerContents: itemData.containerContents,
                             metadata,
                             ...booleanFlags,
                             enrichStatusEffects: true
@@ -37178,12 +37646,52 @@ module.exports = function registerApiRoutes(scope) {
             }
         }
 
-        function buildContainerInventoryPayload(container, { location = null } = {}) {
+        async function ensureContainerContentsGenerated(container, { location = null } = {}) {
+            const pendingContents = Array.isArray(container?.containerContents)
+                ? container.containerContents
+                : [];
+            if (!pendingContents.length) {
+                return [];
+            }
+            if (typeof generateContainerContentsForThing !== 'function') {
+                throw createContainerMoveError('Container contents generation helper is unavailable.', 500);
+            }
+            const generated = await generateContainerContentsForThing({ container, location });
+            if (things instanceof Map) {
+                things.set(container.id, container);
+                for (const item of Array.isArray(generated) ? generated : []) {
+                    if (item?.id) {
+                        things.set(item.id, item);
+                    }
+                }
+            }
+            return Array.isArray(generated) ? generated : [];
+        }
+
+        async function ensurePendingContainerContentsForThings(items = []) {
+            const list = Array.isArray(items) ? items : [];
+            const seen = new Set();
+            for (const item of list) {
+                if (!item || !item.isContainer || !Array.isArray(item.containerContents) || item.containerContents.length === 0) {
+                    continue;
+                }
+                if (item.id && seen.has(item.id)) {
+                    continue;
+                }
+                if (item.id) {
+                    seen.add(item.id);
+                }
+                await ensureContainerContentsGenerated(item);
+            }
+        }
+
+        async function buildContainerInventoryPayload(container, { location = null } = {}) {
             if (!currentPlayer) {
                 const error = new Error('No current player found');
                 error.status = 404;
                 throw error;
             }
+            await ensureContainerContentsGenerated(container, { location });
             const playerPayload = serializeNpcForClient(currentPlayer);
             const contents = typeof container.getInventoryItems === 'function'
                 ? container.getInventoryItems().map(item => (item && typeof item.toJSON === 'function' ? item.toJSON() : item))
@@ -37198,10 +37706,10 @@ module.exports = function registerApiRoutes(scope) {
             };
         }
 
-        app.get('/api/things/:id/container', (req, res) => {
+        app.get('/api/things/:id/container', async (req, res) => {
             try {
                 const container = resolveRequestContainer(req.params.id);
-                return res.json(buildContainerInventoryPayload(container));
+                return res.json(await buildContainerInventoryPayload(container));
             } catch (error) {
                 return res.status(error.status || 500).json({
                     success: false,
@@ -37210,7 +37718,7 @@ module.exports = function registerApiRoutes(scope) {
             }
         });
 
-        app.post('/api/things/:id/container/move-in', (req, res) => {
+        app.post('/api/things/:id/container/move-in', async (req, res) => {
             try {
                 if (!currentPlayer) {
                     return res.status(404).json({
@@ -37249,7 +37757,7 @@ module.exports = function registerApiRoutes(scope) {
                     }
                     things.set(container.id, container);
                 }
-                return res.json(buildContainerInventoryPayload(container, { location: sourceLocation }));
+                return res.json(await buildContainerInventoryPayload(container, { location: sourceLocation }));
             } catch (error) {
                 return res.status(error.status || 500).json({
                     success: false,
@@ -37258,7 +37766,7 @@ module.exports = function registerApiRoutes(scope) {
             }
         });
 
-        app.post('/api/things/:id/container/move-out', (req, res) => {
+        app.post('/api/things/:id/container/move-out', async (req, res) => {
             try {
                 if (!currentPlayer) {
                     return res.status(404).json({
@@ -37284,7 +37792,7 @@ module.exports = function registerApiRoutes(scope) {
                     }
                     things.set(container.id, container);
                 }
-                return res.json(buildContainerInventoryPayload(container));
+                return res.json(await buildContainerInventoryPayload(container));
             } catch (error) {
                 return res.status(error.status || 500).json({
                     success: false,
@@ -37991,6 +38499,232 @@ module.exports = function registerApiRoutes(scope) {
             }
         });
 
+        function buildSettingMechanicAttributeOptions() {
+            let definitions = {};
+            try {
+                const { value } = loadMergedDefinitionFile({
+                    baseDir: Globals.baseDir || __dirname,
+                    filename: 'attributes.yaml'
+                });
+                definitions = value?.attributes || {};
+            } catch (error) {
+                throw new Error(`Unable to load attribute definitions for setting mechanics: ${error.message}`);
+            }
+
+            return Object.entries(definitions)
+                .map(([name, definition]) => {
+                    const normalizedName = typeof name === 'string' ? name.trim() : '';
+                    if (!normalizedName) {
+                        return null;
+                    }
+                    const label = typeof definition?.label === 'string' && definition.label.trim()
+                        ? definition.label.trim()
+                        : normalizedName
+                            .split(/[_\s-]+/)
+                            .filter(Boolean)
+                            .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+                            .join(' ');
+                    return {
+                        name: normalizedName,
+                        label,
+                        abbreviation: typeof definition?.abbreviation === 'string' ? definition.abbreviation.trim() : '',
+                        description: typeof definition?.description === 'string' ? definition.description.trim() : ''
+                    };
+                })
+                .filter(Boolean);
+        }
+
+        function normalizeSettingMechanicText(value) {
+            return typeof value === 'string' ? value.trim() : '';
+        }
+
+        function normalizeSettingSkillOptions(value) {
+            if (Array.isArray(value)) {
+                return value
+                    .map(normalizeSettingMechanicText)
+                    .filter(Boolean);
+            }
+            if (typeof value === 'string') {
+                return value
+                    .split(/\r?\n/)
+                    .map(normalizeSettingMechanicText)
+                    .filter(Boolean);
+            }
+            return [];
+        }
+
+        function resolveAllowedSettingMechanicValue(value, allowedValues, fieldName, { allowBlank = false } = {}) {
+            const normalizedValue = normalizeSettingMechanicText(value);
+            if (!normalizedValue) {
+                if (allowBlank) {
+                    return '';
+                }
+                throw new Error(`${fieldName} is required.`);
+            }
+            if (allowBlank && /^(none|no skill|n\/a|not applicable)$/i.test(normalizedValue)) {
+                return '';
+            }
+
+            const exactMatch = allowedValues.find(allowed => allowed === normalizedValue);
+            if (exactMatch) {
+                return exactMatch;
+            }
+            const lowerValue = normalizedValue.toLowerCase();
+            const caseInsensitiveMatch = allowedValues.find(allowed => allowed.toLowerCase() === lowerValue);
+            if (caseInsensitiveMatch) {
+                return caseInsensitiveMatch;
+            }
+
+            throw new Error(`${fieldName} "${normalizedValue}" is not defined. Allowed values: ${allowedValues.join(', ')}`);
+        }
+
+        function parseSettingHidePerceptionResponse(xmlContent) {
+            if (!xmlContent || typeof xmlContent !== 'string') {
+                throw new Error('AI response was empty while choosing setting hide/perception mechanics.');
+            }
+
+            const trimmed = xmlContent.trim();
+            if (!trimmed) {
+                throw new Error('AI response was empty while choosing setting hide/perception mechanics.');
+            }
+
+            const doc = Utils.parseXmlDocument(sanitizeForXml(trimmed), 'text/xml');
+            const parserError = doc.getElementsByTagName('parsererror')[0];
+            if (parserError) {
+                throw new Error(`AI response XML parsing error while choosing setting hide/perception mechanics: ${parserError.textContent}`);
+            }
+
+            const mechanicsNode = doc.getElementsByTagName('settingMechanics')[0];
+            if (!mechanicsNode) {
+                throw new Error('AI response missing <settingMechanics> element.');
+            }
+
+            const getText = (tagName) => {
+                const node = mechanicsNode.getElementsByTagName(tagName)[0];
+                if (!node || typeof node.textContent !== 'string') {
+                    return '';
+                }
+                return node.textContent.trim();
+            };
+
+            return {
+                hidingAttribute: getText('hidingAttribute'),
+                hidingSkill: getText('hidingSkill'),
+                perceptionAttribute: getText('perceptionAttribute'),
+                perceptionSkill: getText('perceptionSkill')
+            };
+        }
+
+        function normalizeSettingHidePerceptionSelection(selection, { attributeOptions, skills }) {
+            const attributeNames = attributeOptions.map(attribute => attribute.name).filter(Boolean);
+            if (attributeNames.length === 0) {
+                throw new Error('Cannot choose setting hide/perception mechanics because no attributes are defined.');
+            }
+            const skillOptions = normalizeSettingSkillOptions(skills);
+
+            return {
+                hidingAttribute: resolveAllowedSettingMechanicValue(selection?.hidingAttribute, attributeNames, 'hidingAttribute'),
+                hidingSkill: resolveAllowedSettingMechanicValue(selection?.hidingSkill, skillOptions, 'hidingSkill', { allowBlank: true }),
+                perceptionAttribute: resolveAllowedSettingMechanicValue(selection?.perceptionAttribute, attributeNames, 'perceptionAttribute'),
+                perceptionSkill: resolveAllowedSettingMechanicValue(selection?.perceptionSkill, skillOptions, 'perceptionSkill', { allowBlank: true })
+            };
+        }
+
+        function settingNeedsHidePerceptionSelections(settingSnapshot) {
+            if (!settingSnapshot || typeof settingSnapshot !== 'object') {
+                return false;
+            }
+            return !normalizeSettingMechanicText(settingSnapshot.hidingAttribute)
+                || !normalizeSettingMechanicText(settingSnapshot.perceptionAttribute);
+        }
+
+        async function generateSettingHidePerceptionSelections(settingSnapshot) {
+            const attributeOptions = buildSettingMechanicAttributeOptions();
+            const skills = normalizeSettingSkillOptions(settingSnapshot?.defaultExistingSkills);
+            const renderedTemplate = promptEnv.render('setting-hide-perception.xml.njk', {
+                setting: settingSnapshot || {},
+                attributeOptions,
+                skills
+            });
+            const promptData = parseXMLTemplate(renderedTemplate);
+            const systemPrompt = promptData.systemPrompt ? promptData.systemPrompt.trim() : '';
+            const generationPrompt = promptData.generationPrompt ? promptData.generationPrompt.trim() : '';
+            if (!generationPrompt) {
+                throw new Error('Failed to build setting hide/perception generation prompt.');
+            }
+
+            const messages = [];
+            if (systemPrompt) {
+                messages.push({ role: 'system', content: systemPrompt });
+            }
+            messages.push({ role: 'user', content: generationPrompt });
+
+            const requestOptions = {
+                messages,
+                metadataLabel: 'setting_hide_perception'
+            };
+            if (typeof promptData.temperature === 'number') {
+                requestOptions.temperature = promptData.temperature;
+            } else {
+                const configTemperature = Number(config?.ai?.temperature);
+                if (Number.isInteger(configTemperature)) {
+                    requestOptions.temperature = configTemperature;
+                }
+            }
+
+            const aiMessage = await LLMClient.chatCompletion(requestOptions);
+            if (!aiMessage || typeof aiMessage !== 'string') {
+                throw new Error('AI did not return setting hide/perception mechanics.');
+            }
+
+            LLMClient.logPrompt({
+                prefix: 'setting_hide_perception',
+                metadataLabel: requestOptions.metadataLabel,
+                systemPrompt: systemPrompt || '',
+                generationPrompt: generationPrompt || '',
+                response: aiMessage || ''
+            });
+
+            const parsedSelection = parseSettingHidePerceptionResponse(aiMessage);
+            return normalizeSettingHidePerceptionSelection({
+                hidingAttribute: parsedSelection.hidingAttribute || settingSnapshot?.hidingAttribute || '',
+                hidingSkill: parsedSelection.hidingSkill || settingSnapshot?.hidingSkill || '',
+                perceptionAttribute: parsedSelection.perceptionAttribute || settingSnapshot?.perceptionAttribute || '',
+                perceptionSkill: parsedSelection.perceptionSkill || settingSnapshot?.perceptionSkill || ''
+            }, {
+                attributeOptions,
+                skills
+            });
+        }
+
+        async function ensureCurrentSettingHidePerceptionSelections() {
+            if (!currentSetting) {
+                return { updated: false, selections: null };
+            }
+            const settingSnapshot = currentSetting && typeof currentSetting.toJSON === 'function'
+                ? currentSetting.toJSON()
+                : currentSetting;
+            if (!settingNeedsHidePerceptionSelections(settingSnapshot)) {
+                return { updated: false, selections: null };
+            }
+
+            const selections = await generateSettingHidePerceptionSelections(settingSnapshot);
+            if (currentSetting && typeof currentSetting.update === 'function') {
+                currentSetting.update(selections);
+            } else if (currentSetting && typeof currentSetting === 'object') {
+                Object.assign(currentSetting, selections);
+            } else {
+                throw new Error('Loaded setting cannot store hide/perception mechanic selections.');
+            }
+            console.log(
+                `Filled setting hide/perception mechanics: hiding=${selections.hidingAttribute}`
+                + (selections.hidingSkill ? `/${selections.hidingSkill}` : '')
+                + `, perception=${selections.perceptionAttribute}`
+                + (selections.perceptionSkill ? `/${selections.perceptionSkill}` : '')
+            );
+            return { updated: true, selections };
+        }
+
         function normalizeSettingPayload(raw = {}) {
             const toStringValue = (value) => {
                 if (value === null || value === undefined) {
@@ -38094,6 +38828,10 @@ module.exports = function registerApiRoutes(scope) {
                 defaultStartingLocation: toStringValue(raw.defaultStartingLocation),
                 defaultStartingCurrency: toNumberString(raw.defaultStartingCurrency),
                 defaultExistingSkills: toStringArray(raw.defaultExistingSkills),
+                hidingAttribute: toStringValue(raw.hidingAttribute),
+                hidingSkill: toStringValue(raw.hidingSkill),
+                perceptionAttribute: toStringValue(raw.perceptionAttribute),
+                perceptionSkill: toStringValue(raw.perceptionSkill),
                 defaultFactionCount: toNumberString(raw.defaultFactionCount),
                 defaultFactions: toFactionArray(raw.defaultFactions),
                 calendarDefinition: toNullableCalendarDefinition(raw.calendarDefinition),
@@ -38299,6 +39037,10 @@ module.exports = function registerApiRoutes(scope) {
                 defaultStartingLocation: getText('defaultStartingLocation'),
                 defaultStartingCurrency: toNumber(getText('defaultStartingCurrency')),
                 defaultExistingSkills: getList('defaultExistingSkills', 'skill'),
+                hidingAttribute: getText('hidingAttribute'),
+                hidingSkill: getText('hidingSkill'),
+                perceptionAttribute: getText('perceptionAttribute'),
+                perceptionSkill: getText('perceptionSkill'),
                 defaultFactionCount: toNumber(getText('defaultFactionCount')),
                 defaultFactions: getFactionList(),
                 availableClasses: getList('availableClasses', 'class'),
@@ -38457,6 +39199,7 @@ module.exports = function registerApiRoutes(scope) {
                         availableRaces: normalizedSetting.availableRaces,
                         customSlopWords: normalizedSetting.customSlopWords
                     },
+                    attributeOptions: buildSettingMechanicAttributeOptions(),
                     additionalInstructions,
                     hasImage: Boolean(imageDataUrl)
                 });
@@ -40509,6 +41252,36 @@ module.exports = function registerApiRoutes(scope) {
             return stats;
         }
 
+        function persistLoadedGameStateAfterSettingBackfill(saveDir, metadata = {}) {
+            if (!currentPlayer) {
+                throw new Error('Cannot persist loaded setting backfill before current player is resolved.');
+            }
+            const serializedBackfill = Utils.serializeGameState({
+                currentPlayer,
+                gameLocations,
+                gameLocationExits,
+                regions,
+                chatHistory,
+                generatedImages,
+                things,
+                players,
+                skills,
+                factions,
+                currentSetting,
+                pendingRegionStubs,
+                gameConfigOverrideYaml: typeof Globals.getGameConfigOverrideYaml === 'function'
+                    ? Globals.getGameConfigOverrideYaml()
+                    : ''
+            });
+            serializedBackfill.metadata = {
+                ...(serializedBackfill.metadata || {}),
+                ...(metadata && typeof metadata === 'object' ? metadata : {}),
+                currentSettingId: currentSetting?.id || metadata?.currentSettingId || null,
+                currentSettingName: currentSetting?.name || metadata?.currentSettingName || null
+            };
+            Utils.writeSerializedGameState(saveDir, serializedBackfill);
+        }
+
         async function performGameLoad(requestedSaveName, { skipSummary = false, saveRoot = null, clientId = null } = {}) {
             const normalizedName = typeof requestedSaveName === 'string' ? requestedSaveName.trim() : '';
             if (!normalizedName) {
@@ -40629,6 +41402,8 @@ module.exports = function registerApiRoutes(scope) {
             } else {
                 currentSetting = null;
             }
+
+            const hidePerceptionBackfillResult = await ensureCurrentSettingHidePerceptionSelections();
 
             const saveMissingCalendarDefinition = serialized.calendarDefinition === null
                 || serialized.calendarDefinition === undefined;
@@ -40810,6 +41585,10 @@ module.exports = function registerApiRoutes(scope) {
                 : (metadata.chatHistoryLength || 0);
             metadata.totalGeneratedImages = generatedImages.size;
             metadata.totalSkills = skills.size;
+
+            if (hidePerceptionBackfillResult.updated) {
+                persistLoadedGameStateAfterSettingBackfill(saveDir, metadata);
+            }
 
             if (!skipSummary) {
                 const summaryConfig = getSummaryConfig();

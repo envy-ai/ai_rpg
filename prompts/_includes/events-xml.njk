@@ -132,15 +132,16 @@ Normal event elements are direct children of `<events>`.
 
 ### `new_exit_discovered`
 
-Use this when the text reveals, unlocks, unblocks, creates, clears, finds out about, or otherwise discovers a route or vehicle connection to another location or region. Unlike movement tags, this does not mean the player traveled there. `newExitDiscovered` is not a travel context boundary. You may chain these together to represent multiple discoveries in a single text block, or paths or areas consisting of multiple locations so long as every origin location already exists (either in the world or previously in the chain). Do not use this for exits that were already known or for travel that occurred without a new exit being discovered. If the text implies multiple exits in a chain but doesn't specify the intermediate locations, you may come up with them yourself.
+Use this when the text reveals, finds out about, or otherwise identifies the existence of a route or vehicle connection to another location or region, regardless of whether that route is currently safe, passable, or practical to use. Unlike movement tags, this does not mean the player traveled there. `newExitDiscovered` is not a travel context boundary. Do not use this for exits that are already specified in the location XML or for travel that occurred without a new exit being discovered. DO use it for exits that are known to exist in the scene prose but were not previously known to the system, such as exits mentioned in the text that were not in the location XML, or exits that are revealed by a perception check or similar. 
 
 ```xml
 <newExitDiscovered>
+  <destinationType>"location" or "region"</destinationType>
   <destination>
-    <regionName>Exact region name of the exit's destination</regionName>
-    <locationName>Exact location name of the exit's destination (make something up if need be; should not be the same as the region name).</locationName>
+    <regionName>Exact region name of the exit's destination (make something up if new)</regionName>
+    <locationName>Exact location name of the exit's destination (make something up if new; should not be the same as the region name).</locationName>
   </destination>
-  <destinationKind>location|region</destinationKind>
+  <destinationHasNewExits>true or false, depending on whether the destination is likely to have exits to additional unexplored locations or regions based on the text{# developer note: this will override the destinationType to "region" if true; this is on purpose. #}</destinationHasNewExits>
   <vehicleType>none OR vehicle type, if this exit is a vehicle connection (like a ferry or train)</vehicleType>
   <description>1-2 sentence destination or exit description</description>
   <origin>
@@ -154,7 +155,7 @@ Use this when the text reveals, unlocks, unblocks, creates, clears, finds out ab
 
 ### `alter_location`
 
-Use this when the current location's environmental description changes in a meaningful lasting way (changes to lighting or other ephemeral changes are not considered meaningful). This is not for travel from one location to another. If the location name still fits after the alteration, repeat the same name as `newLocationName`.
+Use this when the current location's environmental description changes in a meaningful lasting way (changes to lighting or other ephemeral changes are not considered meaningful). This is not for travel from one location to another. Do not use this to indicate movement of items or scenery (use `thingMoveWithCharacter`, `thingArrival`, or `thingDeparture` instead). If the location name still fits after the alteration, repeat the same name as `newLocationName`.
 
 ```xml
 <alterLocation>
@@ -218,6 +219,53 @@ Use this when a character obtains one or more tangible carryable items by a meth
   <fullItemName>Exact item name</fullItemName>
   <quantity>Positive integer</quantity>
 </pickUpItem>
+```
+
+### `put_item_in_container`
+Use this when a character puts one or more items into a container, such as a bag, chest, box, crate, locker, or similar container. Use `player` for the current player when appropriate. Do not use this for consuming items, transferring items to another character, dropping items, or altering items.
+
+```xml
+<putItemInContainer>
+  <character>Exact character, or player (omit if none)</character>
+  <fullItemName>Exact item name</fullItemName>
+  <quantity>Positive integer</quantity>
+  <containerName>Exact container name</containerName>
+</putItemInContainer>
+```
+
+### `remove_item_from_container`
+Use this when a character takes one or more items out of a container, such as a bag, chest, box, crate, locker, or similar container. Use `player` for the current player when appropriate. Do not use this for consuming items, transferring items from another character, dropping items, or altering items. If the item is not listed in the current context but the text says it came out of the container, still emit this tag; the handler will ensure the removed item exists.
+
+```xml
+<removeItemFromContainer>
+  <character>Exact character, or player (omit if none; item(s) will be removed from container and placed in current location)</character>
+  <fullItemName>Exact item name</fullItemName>
+  <quantity>Positive integer</quantity>
+  <containerName>Exact container name</containerName>
+</removeItemFromContainer>
+```
+
+### `reveal_hidden_npc`
+
+Use this when a previously hidden NPC or entity is revealed or becomes visible to the player. This is not for NPCs that were already present and visible in the scene, or for NPCs that are newly arrived but immediately visible (use `npcArrival` for that). 
+
+```xml
+<revealHiddenNpc>
+  <npcName>Exact NPC or entity name</npcName>
+  <description>Brief description of how the NPC or entity was revealed</description>
+  <useOpposedCheck>False if the NPC willingly revealed itself, true otherwise</useOpposedCheck>
+</revealHiddenNpc>
+```
+
+### `hide_visible_npc`
+
+Use this when a previously visible NPC or entity becomes hidden or invisible to the player. This is not for NPCs that were already hidden, or for NPCs that are newly arrived but immediately hidden (use `npcArrival` for that). 
+
+```xml
+<hideVisibleNpc>
+  <npcName>Exact NPC or entity name</npcName>
+  <description>Brief description of how the NPC or entity was hidden</description>
+</hideVisibleNpc>
 ```
 
 ### `drop_item`
@@ -361,6 +409,7 @@ Use this when an animate entity arrives at the current location from elsewhere, 
 ```xml
 <npcArrival>
   <npcName>Exact NPC or entity name</npcName>
+  <hideFromPlayer>true if the NPC/entity is attempting to arrive without being seen, false otherwise</hideFromPlayer>
 </npcArrival>
 ```
 
@@ -373,6 +422,7 @@ Use this when an animate entity leaves the scene for another destination. Includ
   <npcName>Exact NPC or entity name</npcName>
   <destinationRegion>Destination region</destinationRegion>
   <destinationLocation>Destination location</destinationLocation>
+  <hideFromPlayer>true if the NPC/entity is attempting to arrive at the destination without being seen, false otherwise</hideFromPlayer>
 </npcDeparture>
 ```
 

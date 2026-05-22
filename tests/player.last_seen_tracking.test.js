@@ -206,3 +206,104 @@ test('NPC last-seen fields persist through Player JSON', () => {
         assert.equal(legacyLoaded.was_in_player_location_previous_round, false);
     });
 });
+
+test('hidden NPC state persists and hidden NPCs are not recorded as seen', () => {
+    withTempPlayerEnvironment(() => {
+        const player = new Player({
+            id: 'hidden-state-player',
+            name: 'Baato',
+            location: 'atrium'
+        });
+        const hiddenNpc = new Player({
+            id: 'hidden-state-npc',
+            name: 'Mira',
+            isNPC: true,
+            location: 'atrium',
+            hiddenFromPlayer: true
+        });
+
+        assert.equal(hiddenNpc.hiddenFromPlayer, true);
+
+        const updated = Player.recordNpcSightingsForCurrentPlayer({
+            player,
+            worldTimeMinutes: 300,
+            locationId: 'atrium'
+        });
+
+        assert.deepEqual(updated, []);
+        assert.equal(hiddenNpc.last_seen_time, null);
+        assert.equal(hiddenNpc.last_seen_location, null);
+
+        hiddenNpc.hiddenFromPlayer = false;
+        assert.equal(hiddenNpc.hiddenFromPlayer, false);
+
+        const visibleUpdated = Player.recordNpcSightingsForCurrentPlayer({
+            player,
+            worldTimeMinutes: 305,
+            locationId: 'atrium'
+        });
+
+        assert.deepEqual(visibleUpdated.map(actor => actor.id), ['hidden-state-npc']);
+        assert.equal(hiddenNpc.last_seen_time, 305);
+        assert.equal(hiddenNpc.last_seen_location, 'atrium');
+
+        hiddenNpc.hiddenFromPlayer = true;
+        const saved = hiddenNpc.toJSON();
+        assert.equal(saved.hiddenFromPlayer, true);
+
+        Player.clearRuntimeRegistries();
+        Player.reloadDefinitionCaches({ refreshInstances: false });
+
+        const loaded = Player.fromJSON(saved);
+        assert.equal(loaded.hiddenFromPlayer, true);
+    });
+});
+
+test('hidden corpses are treated as visible for NPC sighting records', () => {
+    withTempPlayerEnvironment(() => {
+        const player = new Player({
+            id: 'hidden-corpse-player',
+            name: 'Baato',
+            location: 'crypt'
+        });
+        const hiddenCorpse = new Player({
+            id: 'hidden-corpse-npc',
+            name: 'Fallen Scout',
+            isNPC: true,
+            location: 'crypt',
+            hiddenFromPlayer: true,
+            isDead: true
+        });
+
+        assert.equal(hiddenCorpse.hiddenFromPlayer, false);
+
+        const updated = Player.recordNpcSightingsForCurrentPlayer({
+            player,
+            worldTimeMinutes: 410,
+            locationId: 'crypt'
+        });
+
+        assert.deepEqual(updated.map(actor => actor.id), ['hidden-corpse-npc']);
+        assert.equal(hiddenCorpse.last_seen_time, 410);
+        assert.equal(hiddenCorpse.last_seen_location, 'crypt');
+
+        hiddenCorpse.hiddenFromPlayer = true;
+        assert.equal(hiddenCorpse.hiddenFromPlayer, false);
+    });
+});
+
+test('dying clears hidden NPC state', () => {
+    withTempPlayerEnvironment(() => {
+        const hiddenNpc = new Player({
+            id: 'hidden-dies-npc',
+            name: 'Mira',
+            isNPC: true,
+            location: 'atrium',
+            hiddenFromPlayer: true
+        });
+
+        assert.equal(hiddenNpc.hiddenFromPlayer, true);
+        hiddenNpc.isDead = true;
+        assert.equal(hiddenNpc.hiddenFromPlayer, false);
+    });
+});

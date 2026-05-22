@@ -50,6 +50,7 @@ Respond in the below format, making sure that <npcInfo> is the root tag and encl
         {% for attrName, attrDef in attributeDefinitions %}      <attribute name="{{ attrName }}"><!--Rating using: poor, below average, average, above average, excellent, or legendary.--></attribute>
         {% endfor %}
             </attributes>
+            <hiddenFromPlayer>{% if npc.hiddenFromPlayer is defined -%}{% if npc.hiddenFromPlayer in [true, 'true', 'True', 1, '1', 'yes', 'Yes', 'hidden', 'Hidden'] %}true{% else %}false{% endif %}{%- else -%}<!--true for an entity that's not immediately obvious to the player; false otherwise-->{%- endif %}</hiddenFromPlayer>
             <startingHealthPercentage>{% if npc.startingHealthPercentage is defined %}{{ npc.startingHealthPercentage }}{% else %}<!--Integer from 0 to 100 representing the NPC's starting health as a percentage of their maximum health. Usually 100, but may be lower if the NPC is injured or otherwise not at full health. 0 if for some reason the NPC is incapacitated. 'deceased' if the NPC is dead.-->{% endif %}</startingHealthPercentage>
             <startingNeeds>
                 {% for need in needBarDefinitions -%}

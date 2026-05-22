@@ -38,6 +38,10 @@ class SettingInfo {
   #defaultPlayerDescription;
   #defaultStartingLocation;
   #defaultExistingSkills;
+  #hidingAttribute;
+  #hidingSkill;
+  #perceptionAttribute;
+  #perceptionSkill;
   #defaultFactionCount;
   #defaultFactions;
   #calendarDefinition;
@@ -55,6 +59,10 @@ class SettingInfo {
 
   static #normalizeExistingSkills(value) {
     return SettingInfo.#normalizeStringList(value);
+  }
+
+  static #normalizeSelectorValue(value) {
+    return typeof value === 'string' ? value.trim() : '';
   }
 
   static #normalizeStringList(value) {
@@ -369,6 +377,10 @@ class SettingInfo {
     this.#defaultPlayerDescription = typeof options.defaultPlayerDescription === 'string' ? options.defaultPlayerDescription : '';
     this.#defaultStartingLocation = typeof options.defaultStartingLocation === 'string' ? options.defaultStartingLocation : '';
     this.#defaultExistingSkills = SettingInfo.#normalizeExistingSkills(options.defaultExistingSkills);
+    this.#hidingAttribute = SettingInfo.#normalizeSelectorValue(options.hidingAttribute);
+    this.#hidingSkill = SettingInfo.#normalizeSelectorValue(options.hidingSkill);
+    this.#perceptionAttribute = SettingInfo.#normalizeSelectorValue(options.perceptionAttribute);
+    this.#perceptionSkill = SettingInfo.#normalizeSelectorValue(options.perceptionSkill);
     this.#defaultFactionCount = SettingInfo.#normalizeFactionCount(options.defaultFactionCount);
     this.#defaultFactions = SettingInfo.#normalizeFactions(options.defaultFactions);
     this.#calendarDefinition = SettingInfo.#normalizeCalendarDefinition(options.calendarDefinition);
@@ -418,6 +430,10 @@ class SettingInfo {
   get defaultPlayerDescription() { return this.#defaultPlayerDescription; }
   get defaultStartingLocation() { return this.#defaultStartingLocation; }
   get defaultExistingSkills() { return [...this.#defaultExistingSkills]; }
+  get hidingAttribute() { return this.#hidingAttribute; }
+  get hidingSkill() { return this.#hidingSkill; }
+  get perceptionAttribute() { return this.#perceptionAttribute; }
+  get perceptionSkill() { return this.#perceptionSkill; }
   get defaultFactionCount() { return this.#defaultFactionCount; }
   get defaultFactions() { return this.#defaultFactions.map(faction => JSON.parse(JSON.stringify(faction))); }
   get calendarDefinition() {
@@ -587,6 +603,26 @@ class SettingInfo {
     this.#updateTimestamp();
   }
 
+  set hidingAttribute(value) {
+    this.#hidingAttribute = SettingInfo.#normalizeSelectorValue(value);
+    this.#updateTimestamp();
+  }
+
+  set hidingSkill(value) {
+    this.#hidingSkill = SettingInfo.#normalizeSelectorValue(value);
+    this.#updateTimestamp();
+  }
+
+  set perceptionAttribute(value) {
+    this.#perceptionAttribute = SettingInfo.#normalizeSelectorValue(value);
+    this.#updateTimestamp();
+  }
+
+  set perceptionSkill(value) {
+    this.#perceptionSkill = SettingInfo.#normalizeSelectorValue(value);
+    this.#updateTimestamp();
+  }
+
   set defaultFactionCount(value) {
     this.#defaultFactionCount = SettingInfo.#normalizeFactionCount(value);
     this.#updateTimestamp();
@@ -720,6 +756,10 @@ class SettingInfo {
       defaultPlayerDescription: this.#defaultPlayerDescription,
       defaultStartingLocation: this.#defaultStartingLocation,
       defaultExistingSkills: [...this.#defaultExistingSkills],
+      hidingAttribute: this.#hidingAttribute,
+      hidingSkill: this.#hidingSkill,
+      perceptionAttribute: this.#perceptionAttribute,
+      perceptionSkill: this.#perceptionSkill,
       defaultFactionCount: this.#defaultFactionCount,
       defaultFactions: this.#defaultFactions.map(faction => JSON.parse(JSON.stringify(faction))),
       calendarDefinition: this.#calendarDefinition
@@ -782,6 +822,10 @@ class SettingInfo {
       imagePromptPrefixScenery: this.#imagePromptPrefixScenery,
       playerStartingLevel: this.#playerStartingLevel,
       defaultStartingCurrency: this.#defaultStartingCurrency,
+      hidingAttribute: this.#hidingAttribute,
+      hidingSkill: this.#hidingSkill,
+      perceptionAttribute: this.#perceptionAttribute,
+      perceptionSkill: this.#perceptionSkill,
       calendarDefinition: this.#calendarDefinition
         ? JSON.parse(JSON.stringify(this.#calendarDefinition))
         : null,

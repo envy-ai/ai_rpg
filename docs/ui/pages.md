@@ -74,7 +74,7 @@ This page maps routes to templates and the client scripts/styles they load.
 - Styles: `public/css/main.css`, `public/css/settings.css`.
 - Script: inline (settings CRUD is embedded in the template).
 - Data injected by `server.js`:
-  - `currentPage`, `defaultExistingSkills`, `defaultExistingSkillsError`, `defaultFactionCountFallback`, `unifiedTonalScaleDefinition`, and `unifiedTonalScaleError`. Profile data is loaded via `/api/settings` calls.
+  - `currentPage`, `defaultExistingSkills`, `defaultExistingSkillsError`, `defaultFactionCountFallback`, `unifiedTonalScaleDefinition`, `unifiedTonalScaleError`, and `attributeOptions`. Profile data is loaded via `/api/settings` calls.
 - Notes: the global nav labels this route as `Worlds`, while the page title is `World Profiles`. The underlying API and internal ids still use `settings`.
 - Notes: uses a master-detail layout with a left world-profile library and a right editor panel.
 - Notes: the left panel includes search (`name/theme/genre/tone/difficulty`), sort controls, and selection-scoped actions (`Edit`, `Apply`, `Clone`, `Delete`), instead of per-row action buttons.
@@ -89,6 +89,7 @@ This page maps routes to templates and the client scripts/styles they load.
 - Notes: library/editor scrolling is container-scoped within the settings workspace (instead of raw viewport-height caps) so bottom actions stay reachable.
 - Notes: the default Starting Location Generation Instructions field mirrors the multiline placeholder used on the New Game form.
 - Notes: the Default Existing Skills field is prefilled from `defs/default_skills.yaml` when creating a new (blank) setting.
+- Notes: the `Character Options` tab includes required Hiding Attribute and Perception Attribute selects populated from defined attributes, plus optional Hiding Skill and Perception Skill selects populated live from the `Default Existing Skills` textarea.
 - Notes: the `Calendar` tab is second from the right and stores optional `setting.calendarDefinition` data with the world profile through a structured editor, not a raw JSON textarea. It includes year-name, Months, Weekdays, Seasons, and Holidays sections with add/remove/reorder controls, dynamic month selectors for season starts and holidays, day selectors that follow the selected month length, stale-reference validation, `/api/settings/calendar/generate` pre-generation, `/api/settings/calendar/default` Gregorian defaults, and blank-state behavior that lets new-game setup generate the calendar later.
 - Notes: the auto-fill button can append up to ~10 setting-specific skills when the skills list is empty or baseline-only.
 - Notes: Prompt Guidance includes `Custom Slop Words` (one per line); single-word entries feed slop-word checks and multi-word entries feed configured ngram checks.

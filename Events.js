@@ -124,6 +124,14 @@ const EVENT_PROMPT_ORDER = [
             prompt: `Did any new inanimate items appear in the scene for the first time, either as newly created items or items that were mentioned as already existing but had not been previously described in the scene context? If so, list them in the format "[exact item name] → [quantity as a positive integer] → [description]" with multiple items separated by vertical bars. Otherwise, answer N/A. Note that even if an item was crafted with multiple ingredients, it should only be listed once here as a new item, with the correct quantity.`,
         },
         {
+            key: "put_item_in_container",
+            prompt: `Did anyone put one or more items into a container? If so, list "[exact character name, or player, or omit if no character] → [exact item name] → [quantity as a positive integer] → [exact container name]". If there are multiple entries, separate them with vertical bars. Otherwise, answer N/A.`,
+        },
+        {
+            key: "remove_item_from_container",
+            prompt: `Did anyone remove one or more items from a container? If so, list "[exact character name, or player, or omit if no character] → [exact item name] → [quantity as a positive integer] → [exact container name]". If no character is named, the item is removed into the current location. If there are multiple entries, separate them with vertical bars. Otherwise, answer N/A.`,
+        },
+        {
             key: "drop_item",
             prompt: `Of any items not listed above, were any items dropped, placed, or set down from an entity's inventory onto the scene? If so, list the full name of the person who dropped the item as seen in the location context ("player" if it was the player), the exact item name, and the quantity dropped as a positive integer. Items are not considered dropped/placed/set down if they're being used to assemble something in the scene (furniture, a pile of items, or other scenery) and should not be listed here. Use the format: "[exact character name] → [exact item name] → [quantity] | [exact character name] → [exact item name] → [quantity]". Otherwise, answer N/A.`,
         },
@@ -164,13 +172,21 @@ const EVENT_PROMPT_ORDER = [
             prompt: `Did any animate entities (NPCs, animals, monsters, robots, or anything else capable of moving on its own) gain or lose any temporary status effects that you didn't list above as permanent changes? If so, list them in this format: "[exact entity name] → [Exact name of status effect] → [gained/lost] [→ integer status effect level, if gained]". If there are multiple entries, separate them with vertical bars. Otherwise answer N/A.  Don't use redundant wording in the status effect description. We already know if the status is gained or lost, so just say 'Bob → drunk → gained → 5' or 'Bob → drunk → lost'. When losing a status effect, use the exact name listed with the character XML. The status effect level should generally be the level of the cause of the status effect, be it an item or character. If the effect isn't from an item or a result of something a character did, just use the location level. If the status effect doesn't already have a name, make one up. Note that 'lost' means that an existing status effect goes away, so it doesn't make sense to say a status effect is 'lost' if it's not already a listed status effect for the character.`,
         },
         {
+            key: "reveal_hidden_npc",
+            prompt: `Did a previously hidden NPC or animate entity become visible to the player? If so, list it as "[exact name] → [one sentence description] → [true|false for whether to use an opposed check]". If no hidden NPC became visible, answer N/A.`,
+        },
+        {
+            key: "hide_visible_npc",
+            prompt: `Did a previously visible NPC or animate entity hide from the player? If so, list it as "[exact name] → [one sentence description]". If no visible NPC hid, answer N/A.`,
+        },
+        {
             key: "npc_arrival_departure",
-            prompt: `Did any animate entities (NPCs, animals, monsters, robots, or anything else capable of moving on its own) leave the scene? If so, list the full names of those entities as seen in the location context (capitalized as Proper Nouns) separated by vertical bars. Decide what concrete location and region they went to. The destination must not be unknown and must not be the current location. If a party member stops accompanying the player and goes to a destination, list them here so they can leave the party before moving there. Use the format: "[name] → left → [destination region] → [destination location]". If you don't know exactly where they went, use what makes the most sense. Otherwise, answer N/A.`,
+            prompt: `Did any animate entities (NPCs, animals, monsters, robots, or anything else capable of moving on its own) leave the scene? If so, list the full names of those entities as seen in the location context (capitalized as Proper Nouns) separated by vertical bars. Decide what concrete location and region they went to. The destination must not be unknown and must not be the current location. If a party member stops accompanying the player and goes to a destination, list them here so they can leave the party before moving there. Use the format: "[name] → left → [destination region] → [destination location] → [true|false if attempting to hide at destination]". If you don't know exactly where they went, use what makes the most sense. Otherwise, answer N/A.`,
             postProcess: (entry) => ({ ...entry, action: entry?.action || "left" }),
         },
         {
             key: "npc_arrival_departure",
-            prompt: `Did any animate entities (NPCs, animals, monsters, robots, or anything else capable of moving on its own) arrive at this location from elsewhere or otherwise newly appear on the scene (summoned, etc)? If so, list the full names of those entities as seen in the location context (capitalized as Proper Nouns) separated by vertical bars. Use the format: "[name] → arrived". Otherwise, answer N/A.`,
+            prompt: `Did any animate entities (NPCs, animals, monsters, robots, or anything else capable of moving on its own) arrive at this location from elsewhere or otherwise newly appear on the scene (summoned, etc)? If so, list the full names of those entities as seen in the location context (capitalized as Proper Nouns) separated by vertical bars. Use the format: "[name] → arrived → [true|false if attempting to hide from the player]". Otherwise, answer N/A.`,
             postProcess: (entry) => ({
                 ...entry,
                 action: entry?.action || "arrived",
@@ -432,6 +448,24 @@ function parseRequiredEventQuantity(rawQuantity, { eventKey, entryText }) {
     return parsedQuantity;
 }
 
+function normalizeOptionalEventActorName(value) {
+    const trimmed = normalizeString(value);
+    if (!trimmed) {
+        return null;
+    }
+    const normalized = trimmed.toLowerCase();
+    if (
+        NO_EVENT_TOKENS.has(normalized) ||
+        normalized === "null" ||
+        normalized === "unknown" ||
+        normalized === "omitted" ||
+        normalized === "omit"
+    ) {
+        return null;
+    }
+    return trimmed;
+}
+
 function parseRequiredEventQuantityOrAll(rawQuantity, { eventKey, entryText }) {
     const normalizedQuantity = typeof rawQuantity === "string"
         ? rawQuantity.trim()
@@ -440,6 +474,43 @@ function parseRequiredEventQuantityOrAll(rawQuantity, { eventKey, entryText }) {
         return "all";
     }
     return parseRequiredEventQuantity(normalizedQuantity, { eventKey, entryText });
+}
+
+function parseContainerItemMovementEvent(raw, { eventKey }) {
+    return splitPipeList(raw)
+        .map((entry) => {
+            if (typeof entry !== "string") {
+                return null;
+            }
+            const parts = splitArrowParts(entry, 4);
+            let character = null;
+            let item = "";
+            let rawQuantity = "";
+            let containerName = "";
+
+            if (parts.length === 4) {
+                [character, item, rawQuantity, containerName] = parts;
+            } else if (parts.length === 3) {
+                [item, rawQuantity, containerName] = parts;
+            } else {
+                return null;
+            }
+
+            if (!item || !containerName) {
+                return null;
+            }
+
+            return {
+                character: normalizeOptionalEventActorName(character),
+                item: item.trim(),
+                quantity: parseRequiredEventQuantity(rawQuantity, {
+                    eventKey,
+                    entryText: entry,
+                }),
+                containerName: containerName.trim(),
+            };
+        })
+        .filter(Boolean);
 }
 
 function locationHasExitToDestination(location, destinationId) {
@@ -2668,6 +2739,8 @@ class Events {
         filterByItem("transfer_item");
         filterByItem("harvest_gather");
         filterByItem("pick_up_item");
+        filterByItem("put_item_in_container");
+        filterByItem("remove_item_from_container");
         filterByItem("drop_item");
         filterByItem("consume_item");
 
@@ -2846,6 +2919,8 @@ class Events {
             questRewards: [],
             questObjectivesCompleted: [],
             itemTriggeredStatusChanges: [],
+            hiddenNpcChecks: [],
+            locationRefreshRequested: false,
             timeProgress: null,
         };
     }
@@ -2871,12 +2946,16 @@ class Events {
         mergeArray("questCompletionRewards", "questRewards");
         mergeArray("completedQuestObjectives", "questObjectivesCompleted");
         mergeArray("itemTriggeredStatusChanges");
+        mergeArray("hiddenNpcChecks");
 
         if (
             outcomeContext.timeProgress &&
             typeof outcomeContext.timeProgress === "object"
         ) {
             accumulator.timeProgress = outcomeContext.timeProgress;
+        }
+        if (outcomeContext.locationRefreshRequested) {
+            accumulator.locationRefreshRequested = true;
         }
     }
 
@@ -3174,7 +3253,15 @@ class Events {
                 accumulator,
             );
 
-            if (
+            const travelBoundaryDestinationLocation =
+                suppressActiveVehicleDestinationTravelMove
+                    ? null
+                    : this._resolveStructuredTravelMoveDestinationLocation(
+                        xmlEvents.travelMove.structured,
+                    );
+            if (travelBoundaryDestinationLocation) {
+                destinationLocation = travelBoundaryDestinationLocation;
+            } else if (
                 currentPlayer?.currentLocation &&
                 Location &&
                 typeof Location.get === "function"
@@ -3197,17 +3284,33 @@ class Events {
                 }
             }
 
-            await this._applyStructuredEventsForRun(
-                xmlEvents.afterTravel.structured,
-                {
-                    ...commonContext,
-                    location: destinationLocation,
-                    region: destinationRegion,
-                    suppressMoveEvents: true,
-                    allowMoveTurnAppearances: true,
-                },
-                accumulator,
+            const applyAfterTravelEvents = () =>
+                this._applyStructuredEventsForRun(
+                    xmlEvents.afterTravel.structured,
+                    {
+                        ...commonContext,
+                        location: destinationLocation,
+                        region: destinationRegion,
+                        suppressMoveEvents: true,
+                        allowMoveTurnAppearances: true,
+                    },
+                    accumulator,
+                );
+            const needsTemporaryArrivalPlayerLocation = Boolean(
+                suppressMoveEvents &&
+                destinationLocation?.id &&
+                currentPlayer &&
+                currentPlayer.currentLocation !== destinationLocation.id,
             );
+            if (needsTemporaryArrivalPlayerLocation) {
+                await this._withTemporaryPlayerLocation(
+                    currentPlayer,
+                    destinationLocation,
+                    applyAfterTravelEvents,
+                );
+            } else {
+                await applyAfterTravelEvents();
+            }
         }
 
         this._mergeItemTriggeredStatusChangesIntoStructured(
@@ -3320,11 +3423,12 @@ class Events {
                 departed: npcState.departedCharacters,
                 movedLocations: npcState.movedLocationNames,
             },
-            locationRefreshRequested: npcState.locationRefreshRequested,
+            locationRefreshRequested: Boolean(npcState.locationRefreshRequested || accumulator.locationRefreshRequested),
             questObjectivesCompleted: accumulator.questObjectivesCompleted,
             questRewards: accumulator.questRewards,
             questsAwarded: accumulator.questsAwarded,
             followupResults,
+            hiddenNpcChecks: accumulator.hiddenNpcChecks,
             timeProgress: accumulator.timeProgress,
         };
     }
@@ -3632,6 +3736,8 @@ class Events {
         let questRewards = [];
         let questObjectivesCompleted = [];
         let itemTriggeredStatusChanges = [];
+        let hiddenNpcChecks = [];
+        let outcomeLocationRefreshRequested = false;
         let timeProgress = null;
 
         try {
@@ -3712,6 +3818,15 @@ class Events {
                 itemTriggeredStatusChanges = outcomeContext.itemTriggeredStatusChanges;
             }
             if (
+                Array.isArray(outcomeContext?.hiddenNpcChecks) &&
+                outcomeContext.hiddenNpcChecks.length
+            ) {
+                hiddenNpcChecks = outcomeContext.hiddenNpcChecks;
+            }
+            if (outcomeContext?.locationRefreshRequested) {
+                outcomeLocationRefreshRequested = true;
+            }
+            if (
                 Array.isArray(outcomeContext?.completedQuestObjectives) &&
                 outcomeContext.completedQuestObjectives.length
             ) {
@@ -3779,7 +3894,8 @@ class Events {
         let locationRefreshRequested = Boolean(
             (addedCharacters && addedCharacters.length) ||
             (departedCharacters && departedCharacters.length) ||
-            (movedLocationNames && movedLocationNames.length),
+            (movedLocationNames && movedLocationNames.length) ||
+            outcomeLocationRefreshRequested,
         );
 
         const followupResults = [];
@@ -3948,6 +4064,7 @@ class Events {
             questRewards,
             questsAwarded,
             followupResults,
+            hiddenNpcChecks,
             timeProgress,
         };
     }
@@ -4725,17 +4842,30 @@ class Events {
             case "newExitDiscovered": {
                 const destinationNode = this._getXmlDirectChildNode(node, "destination");
                 const originNode = this._getXmlDirectChildNode(node, "origin");
-                const destinationKind = this._getXmlDirectChildText(node, "destinationKind");
-                const normalizedKind = destinationKind.trim().toLowerCase();
+                const destinationType = this._getXmlDirectChildText(node, "destinationType");
+                const normalizedType = destinationType.trim().toLowerCase();
+                const destinationHasNewExits = this._getXmlDirectChildText(node, "destinationHasNewExits");
+                const normalizedHasNewExits = destinationHasNewExits.trim().toLowerCase();
+                const effectiveDestinationType =
+                    normalizedType === "region" || normalizedHasNewExits === "true"
+                        ? "region"
+                        : destinationType;
+                const effectiveNormalizedType = effectiveDestinationType.trim().toLowerCase();
                 const legacyDestinationName =
                     this._getXmlDirectChildText(node, "destinationName");
-                const destinationLocationName =
+                let destinationLocationName =
                     this._getXmlDirectChildText(destinationNode, "locationName")
                     || this._getXmlDirectChildText(node, "destinationLocationName");
-                const destinationRegionName =
+                let destinationRegionName =
                     this._getXmlDirectChildText(destinationNode, "regionName")
                     || this._getXmlDirectChildText(node, "destinationRegionName");
-                const destinationName = normalizedKind === "region"
+                if (normalizedType === "location" && normalizedHasNewExits === "true") {
+                    const promotedRegionName =
+                        destinationLocationName || legacyDestinationName || destinationRegionName;
+                    destinationRegionName = promotedRegionName;
+                    destinationLocationName = "";
+                }
+                const destinationName = effectiveNormalizedType === "region"
                     ? destinationRegionName || legacyDestinationName || destinationLocationName
                     : destinationLocationName || legacyDestinationName || destinationRegionName;
                 const exitLocationName =
@@ -4748,7 +4878,7 @@ class Events {
                     key: "new_exit_discovered",
                     raw: [
                         destinationName || "none",
-                        destinationKind || "none",
+                        effectiveDestinationType || "none",
                         this._getXmlDirectChildText(node, "vehicleType") || "none",
                         this._getXmlDirectChildText(node, "description") || "none",
                         this._getXmlDirectChildText(node, "travelTime") || "none",
@@ -4821,6 +4951,26 @@ class Events {
                         "actorName",
                         "fullItemName",
                         "quantity",
+                    ]),
+                };
+            case "putItemInContainer":
+                return {
+                    key: "put_item_in_container",
+                    raw: this._formatXmlLegacyRawEntry(node, [
+                        "character",
+                        "fullItemName",
+                        "quantity",
+                        "containerName",
+                    ]),
+                };
+            case "removeItemFromContainer":
+                return {
+                    key: "remove_item_from_container",
+                    raw: this._formatXmlLegacyRawEntry(node, [
+                        "character",
+                        "fullItemName",
+                        "quantity",
+                        "containerName",
                     ]),
                 };
             case "dropItem":
@@ -4926,6 +5076,27 @@ class Events {
                 }
                 return { key: "status_effect_change", raw: parts.join(" → ") };
             }
+            case "revealHiddenNpc":
+            case "revealHiddenNPC": {
+                const parts = [
+                    this._getXmlDirectChildText(node, "npcName"),
+                    this._getXmlDirectChildText(node, "description"),
+                ];
+                const useOpposedCheck = this._getXmlDirectChildText(node, "useOpposedCheck");
+                if (useOpposedCheck) {
+                    parts.push(useOpposedCheck);
+                }
+                return { key: "reveal_hidden_npc", raw: parts.join(" → ") };
+            }
+            case "hideVisibleNpc":
+            case "hideVisibleNPC":
+                return {
+                    key: "hide_visible_npc",
+                    raw: this._formatXmlLegacyRawEntry(node, [
+                        "npcName",
+                        "description",
+                    ]),
+                };
             case "npcArrivalDeparture": {
                 const parts = [
                     this._getXmlDirectChildText(node, "npcName"),
@@ -4942,13 +5113,18 @@ class Events {
                 if (destinationRegion || destinationLocation) {
                     parts.push(destinationRegion, destinationLocation);
                 }
+                const hideFromPlayer = this._getXmlDirectChildText(node, "hideFromPlayer");
+                if (hideFromPlayer) {
+                    parts.push(hideFromPlayer);
+                }
                 return { key: "npc_arrival_departure", raw: parts.join(" → ") };
             }
             case "npcArrival": {
                 const npcName = this._getXmlDirectChildText(node, "npcName");
+                const hideFromPlayer = this._getXmlDirectChildText(node, "hideFromPlayer");
                 return {
                     key: "npc_arrival_departure",
-                    raw: `${npcName} → arrived`,
+                    raw: hideFromPlayer ? `${npcName} → arrived → ${hideFromPlayer}` : `${npcName} → arrived`,
                 };
             }
             case "npcDeparture": {
@@ -4958,6 +5134,10 @@ class Events {
                     this._getXmlDirectChildText(node, "destinationRegion"),
                     this._getXmlDirectChildText(node, "destinationLocation"),
                 ];
+                const hideFromPlayer = this._getXmlDirectChildText(node, "hideFromPlayer");
+                if (hideFromPlayer) {
+                    parts.push(hideFromPlayer);
+                }
                 return { key: "npc_arrival_departure", raw: parts.join(" → ") };
             }
             case "thingArrival": {
@@ -5289,6 +5469,106 @@ class Events {
         });
     }
 
+    static _resolveStructuredTravelMoveDestinationLocation(structuredEvents) {
+        const parsed = structuredEvents?.parsed;
+        if (!parsed || typeof parsed !== "object") {
+            return null;
+        }
+
+        let destinationName = "";
+        if (Array.isArray(parsed.move_location) && parsed.move_location.length) {
+            const lastMove = parsed.move_location[parsed.move_location.length - 1];
+            destinationName = typeof lastMove === "string" ? lastMove.trim() : "";
+        }
+        if (
+            !destinationName &&
+            Array.isArray(parsed.move_new_location) &&
+            parsed.move_new_location.length
+        ) {
+            const lastMove =
+                parsed.move_new_location[parsed.move_new_location.length - 1];
+            destinationName =
+                typeof lastMove?.name === "string" ? lastMove.name.trim() : "";
+        }
+        if (!destinationName) {
+            return null;
+        }
+
+        return resolveEventLocationByName({
+            Location: this._deps.Location,
+            gameLocations: this._deps.gameLocations,
+            findLocationByNameLoose: this._deps.findLocationByNameLoose,
+        }, destinationName);
+    }
+
+    static async _withTemporaryPlayerLocation(player, location, callback) {
+        if (!player || typeof callback !== "function") {
+            throw new Error(
+                "Temporary player-location scope requires a player and callback.",
+            );
+        }
+        if (!location || typeof location.id !== "string" || !location.id.trim()) {
+            throw new Error(
+                "Temporary player-location scope requires a destination location.",
+            );
+        }
+        if (typeof player.setLocation !== "function") {
+            throw new Error(
+                "Temporary player-location scope requires player.setLocation.",
+            );
+        }
+
+        const destinationId = location.id.trim();
+        const originalLocationId =
+            typeof player.currentLocation === "string" &&
+                player.currentLocation.trim()
+                ? player.currentLocation.trim()
+                : null;
+
+        if (originalLocationId === destinationId) {
+            return callback();
+        }
+
+        player.setLocation(location);
+        if (player.currentLocation !== destinationId) {
+            throw new Error(
+                `Unable to set player location to travel arrival destination "${destinationId}".`,
+            );
+        }
+
+        let callbackResult;
+        let callbackError = null;
+        try {
+            callbackResult = await callback();
+        } catch (error) {
+            callbackError = error;
+        }
+
+        if (originalLocationId) {
+            player.setLocation(originalLocationId);
+            if (player.currentLocation !== originalLocationId) {
+                throw new Error(
+                    `Unable to restore player location to "${originalLocationId}" after travel arrival events.`,
+                );
+            }
+        } else {
+            player.setLocation(null);
+            if (
+                player.currentLocation !== null &&
+                player.currentLocation !== undefined
+            ) {
+                throw new Error(
+                    "Unable to restore player location to empty state after travel arrival events.",
+                );
+            }
+        }
+
+        if (callbackError) {
+            throw callbackError;
+        }
+        return callbackResult;
+    }
+
     static _parseXmlEventCheckResponse(responseText, options = {}) {
         const ignoredEventKeys = this._normalizeIgnoredEventKeys(
             options?.ignoredEventKeys || [],
@@ -5372,6 +5652,17 @@ class Events {
             } else {
                 this._appendXmlRawEvent(afterRawLists, key, raw);
             }
+        }
+
+        if (hasTravelBoundary && Array.isArray(beforeRawLists.thing_move_with_character)) {
+            const moveWithCharacterRaw = beforeRawLists.thing_move_with_character;
+            delete beforeRawLists.thing_move_with_character;
+            afterRawLists.thing_move_with_character = [
+                ...moveWithCharacterRaw,
+                ...(Array.isArray(afterRawLists.thing_move_with_character)
+                    ? afterRawLists.thing_move_with_character
+                    : []),
+            ];
         }
 
         if (hasTravelBoundary && !hasArrived) {
@@ -5584,7 +5875,7 @@ class Events {
                     this,
                     entries,
                     context,
-                    parsedEvents.rawEntries[key],
+                    parsedEvents.rawEntries?.[key],
                 );
             } catch (error) {
                 console.warn(`Failed to apply ${key} events:`, error.message);
@@ -5705,6 +5996,8 @@ class Events {
         registerFromArray(parsed.item_ingest, (entry) => entry?.target);
         registerFromArray(parsed.harvest_gather, (entry) => entry?.harvester);
         registerFromArray(parsed.pick_up_item, (entry) => entry?.name);
+        registerFromArray(parsed.put_item_in_container, (entry) => entry?.character);
+        registerFromArray(parsed.remove_item_from_container, (entry) => entry?.character);
         registerFromArray(parsed.drop_item, (entry) => entry?.name);
         registerFromArray(parsed.received_quest, (entry) => entry?.giver);
 
@@ -5849,12 +6142,150 @@ class Events {
         updateArrayEntries(parsed.pick_up_item, (entry) => {
             entry.name = resolveName(entry.name);
         });
+        updateArrayEntries(parsed.put_item_in_container, (entry) => {
+            if (entry.character) {
+                entry.character = resolveName(entry.character);
+            }
+        });
+        updateArrayEntries(parsed.remove_item_from_container, (entry) => {
+            if (entry.character) {
+                entry.character = resolveName(entry.character);
+            }
+        });
         updateArrayEntries(parsed.drop_item, (entry) => {
             entry.name = resolveName(entry.name);
         });
         updateArrayEntries(parsed.received_quest, (entry) => {
             entry.giver = resolveName(entry.giver);
         });
+    }
+
+    static _parseBooleanish(value, { defaultValue = null } = {}) {
+        if (value === null || value === undefined) {
+            return defaultValue;
+        }
+        if (typeof value === "boolean") {
+            return value;
+        }
+        const normalized = String(value).trim().toLowerCase();
+        if (!normalized) {
+            return defaultValue;
+        }
+        if (["true", "yes", "y", "1", "on", "hidden"].includes(normalized)) {
+            return true;
+        }
+        if (["false", "no", "n", "0", "off", "visible"].includes(normalized)) {
+            return false;
+        }
+        return defaultValue;
+    }
+
+    static _normalizeHiddenNpcSkill(value) {
+        const text = normalizeString(value);
+        if (!text || text.toLowerCase() === "n/a" || text.toLowerCase() === "none") {
+            return null;
+        }
+        return text;
+    }
+
+    static _getHidePerceptionSettings() {
+        const setting = typeof this._deps.getActiveSettingSnapshot === "function"
+            ? this._deps.getActiveSettingSnapshot()
+            : null;
+        const hidingAttribute = normalizeString(setting?.hidingAttribute);
+        const perceptionAttribute = normalizeString(setting?.perceptionAttribute);
+        if (!hidingAttribute || !perceptionAttribute) {
+            throw new Error("Hidden NPC opposed checks require hidingAttribute and perceptionAttribute settings.");
+        }
+        return {
+            hidingAttribute,
+            hidingSkill: this._normalizeHiddenNpcSkill(setting?.hidingSkill),
+            perceptionAttribute,
+            perceptionSkill: this._normalizeHiddenNpcSkill(setting?.perceptionSkill),
+        };
+    }
+
+    static _buildHiddenNpcOpposedPlausibility({
+        actor,
+        opponent,
+        actorAttribute,
+        actorSkill,
+        opponentAttribute,
+        opponentSkill,
+        reason
+    } = {}) {
+        const actorName = normalizeString(actor?.name) || "Actor";
+        const opponentName = normalizeString(opponent?.name) || "opponent";
+        return {
+            type: "Plausible",
+            reason: normalizeString(reason) || `${actorName} makes an opposed check against ${opponentName}.`,
+            skillCheck: {
+                reason: normalizeString(reason) || `${actorName} makes an opposed check against ${opponentName}.`,
+                skill: actorSkill || null,
+                attribute: actorAttribute,
+                difficulty: "Opposed",
+                checkType: "opposed",
+                circumstanceModifiers: [],
+                opposedCheck: {
+                    opponent: opponentName,
+                    opponentSkill: opponentSkill || null,
+                    opponentAttribute,
+                },
+            },
+        };
+    }
+
+    static _runHiddenNpcOpposedCheck({
+        actor,
+        opponent,
+        reason,
+        actorAttribute,
+        actorSkill,
+        opponentAttribute,
+        opponentSkill,
+        context = {},
+        action = "hidden_npc_check",
+        automatic = false
+    } = {}) {
+        const resolveActionOutcome = this._deps.resolveActionOutcome;
+        if (typeof resolveActionOutcome !== "function") {
+            throw new Error("Hidden NPC opposed checks require resolveActionOutcome dependency.");
+        }
+        const plausibility = this._buildHiddenNpcOpposedPlausibility({
+            actor,
+            opponent,
+            actorAttribute,
+            actorSkill,
+            opponentAttribute,
+            opponentSkill,
+            reason,
+        });
+        const resolution = resolveActionOutcome({ plausibility, player: actor });
+        if (!resolution || typeof resolution !== "object") {
+            throw new Error("Hidden NPC opposed check did not return an action resolution.");
+        }
+        if (!Array.isArray(context.hiddenNpcChecks)) {
+            context.hiddenNpcChecks = [];
+        }
+        context.hiddenNpcChecks.push({
+            action,
+            automatic: Boolean(automatic),
+            actorId: actor?.id || null,
+            actorName: actor?.name || null,
+            npcId: opponent?.isNPC ? opponent.id || null : actor?.id || null,
+            npcName: opponent?.isNPC ? opponent.name || null : actor?.name || null,
+            success: resolution.success === true,
+            resolution,
+        });
+        return resolution;
+    }
+
+    static _resolveHiddenNpcTarget(name) {
+        const trimmed = normalizeString(name);
+        if (!trimmed || typeof this._deps.findActorByName !== "function") {
+            return null;
+        }
+        return this._deps.findActorByName(trimmed) || null;
     }
 
     static _buildParsers() {
@@ -6240,6 +6671,14 @@ class Events {
                         };
                     })
                     .filter(Boolean),
+            put_item_in_container: (raw) =>
+                parseContainerItemMovementEvent(raw, {
+                    eventKey: "put_item_in_container",
+                }),
+            remove_item_from_container: (raw) =>
+                parseContainerItemMovementEvent(raw, {
+                    eventKey: "remove_item_from_container",
+                }),
             drop_item: (raw) =>
                 splitPipeList(raw)
                     .map((entry) => {
@@ -6362,6 +6801,46 @@ class Events {
                         };
                     })
                     .filter(Boolean),
+            reveal_hidden_npc: (raw) =>
+                splitPipeList(raw)
+                    .map((entry) => {
+                        const parts = splitArrowParts(entry);
+                        if (!parts.length) {
+                            return null;
+                        }
+                        const name = parts[0]?.trim();
+                        if (!name) {
+                            return null;
+                        }
+                        let useOpposedCheck = true;
+                        let descriptionParts = parts.slice(1);
+                        if (descriptionParts.length > 0) {
+                            const parsedBoolean = this._parseBooleanish(descriptionParts[descriptionParts.length - 1], { defaultValue: null });
+                            if (parsedBoolean !== null) {
+                                useOpposedCheck = parsedBoolean;
+                                descriptionParts = descriptionParts.slice(0, -1);
+                            }
+                        }
+                        return {
+                            name,
+                            description: descriptionParts.join(" → ").trim(),
+                            useOpposedCheck,
+                        };
+                    })
+                    .filter(Boolean),
+            hide_visible_npc: (raw) =>
+                splitPipeList(raw)
+                    .map((entry) => {
+                        const [name, description] = splitArrowParts(entry, 2);
+                        if (!name) {
+                            return null;
+                        }
+                        return {
+                            name: name.trim(),
+                            description: description ? description.trim() : "",
+                        };
+                    })
+                    .filter(Boolean),
             npc_arrival_departure: (raw) =>
                 splitPipeList(raw)
                     .map((entry) => {
@@ -6373,10 +6852,19 @@ class Events {
 
                         const name = parts[0];
                         const action = parts[1]?.toLowerCase();
-                        const remaining = parts.slice(2);
+                        let remaining = parts.slice(2);
 
                         if (!name || !action) {
                             return null;
+                        }
+
+                        let hideFromPlayer = false;
+                        if (remaining.length > 0) {
+                            const parsedHide = this._parseBooleanish(remaining[remaining.length - 1], { defaultValue: null });
+                            if (parsedHide !== null) {
+                                hideFromPlayer = parsedHide;
+                                remaining = remaining.slice(0, -1);
+                            }
                         }
 
                         let destinationRegion = null;
@@ -6392,13 +6880,17 @@ class Events {
                         const destination =
                             destinationLocation || destinationRegion || null;
 
-                        return {
+                        const result = {
                             name,
                             action,
                             destination,
                             destinationRegion,
                             destinationLocation,
                         };
+                        if (hideFromPlayer === true) {
+                            result.hideFromPlayer = true;
+                        }
+                        return result;
                     })
                     .filter(Boolean),
             thing_arrival_departure: (raw) =>
@@ -6819,6 +7311,8 @@ class Events {
         const keys = [
             "harvest_gather",
             "pick_up_item",
+            "put_item_in_container",
+            "remove_item_from_container",
             "drop_item",
             "item_appear",
             "scenery_appear",
@@ -6875,10 +7369,13 @@ class Events {
             switch (key) {
                 case "harvest_gather":
                 case "pick_up_item":
+                case "put_item_in_container":
+                case "remove_item_from_container":
                 case "drop_item":
                     parsedEntries.forEach((entry) => {
                         if (entry && typeof entry === "object") {
                             addName(entry.item);
+                            addName(entry.containerName);
                         }
                     });
                     break;
@@ -9234,6 +9731,207 @@ class Events {
                     await Promise.all(tasks);
                 }
             },
+            put_item_in_container: function (entries = [], context = {}) {
+                if (!Array.isArray(entries) || !entries.length) {
+                    return;
+                }
+
+                const { findActorByName } = this._deps;
+
+                const resolveActor = (name) => {
+                    const actorName = normalizeOptionalEventActorName(name);
+                    if (!actorName) {
+                        return null;
+                    }
+                    if (typeof findActorByName !== "function") {
+                        throw new Error(
+                            "put_item_in_container handler requires findActorByName dependency when character is specified.",
+                        );
+                    }
+                    const actor = findActorByName(actorName);
+                    if (!actor || typeof actor.addInventoryItem !== "function") {
+                        throw new Error(
+                            `put_item_in_container could not find actor "${actorName}".`,
+                        );
+                    }
+                    return actor;
+                };
+
+                for (const entry of entries) {
+                    if (!entry) {
+                        continue;
+                    }
+                    const itemName = normalizeString(entry.item);
+                    const containerName = normalizeString(entry.containerName || entry.container);
+                    if (!itemName || !containerName) {
+                        continue;
+                    }
+                    const quantity = parseRequiredEventQuantity(entry?.quantity, {
+                        eventKey: "put_item_in_container",
+                        entryText: JSON.stringify(entry),
+                    });
+                    const actor = resolveActor(entry.character);
+                    const container = this._resolveContainerByExactName(containerName, {
+                        actor,
+                        location: context.location || null,
+                        eventKey: "put_item_in_container",
+                    });
+                    if (typeof container.addInventoryItem !== "function") {
+                        throw new Error(
+                            `put_item_in_container resolved "${containerName}" but it cannot hold inventory.`,
+                        );
+                    }
+
+                    let candidates;
+                    if (actor) {
+                        candidates = this._findThingsByExactName(itemName, { owner: actor });
+                    } else {
+                        if (!context.location) {
+                            throw new Error(
+                                `put_item_in_container requires a location when no actor is specified for "${itemName}".`,
+                            );
+                        }
+                        candidates = this._findThingsByExactName(itemName, {
+                            location: context.location,
+                            unownedOnly: true,
+                        });
+                    }
+
+                    const selectedThings = this._extractThingQuantityFromCandidates(
+                        candidates,
+                        quantity,
+                        { itemName, eventKey: "put_item_in_container" },
+                    );
+                    selectedThings.forEach((thing) => {
+                        container.addInventoryItem(thing);
+                    });
+
+                    entry.character = actor?.name || null;
+                    entry.containerName = container.name || containerName;
+                }
+            },
+            remove_item_from_container: async function (entries = [], context = {}) {
+                if (!Array.isArray(entries) || !entries.length) {
+                    return;
+                }
+
+                const { findActorByName } = this._deps;
+
+                const resolveActor = (name) => {
+                    const actorName = normalizeOptionalEventActorName(name);
+                    if (!actorName) {
+                        return null;
+                    }
+                    if (typeof findActorByName !== "function") {
+                        throw new Error(
+                            "remove_item_from_container handler requires findActorByName dependency when character is specified.",
+                        );
+                    }
+                    const actor = findActorByName(actorName);
+                    if (!actor || typeof actor.addInventoryItem !== "function") {
+                        throw new Error(
+                            `remove_item_from_container could not find actor "${actorName}".`,
+                        );
+                    }
+                    return actor;
+                };
+
+                for (const entry of entries) {
+                    if (!entry) {
+                        continue;
+                    }
+                    let itemName = normalizeString(entry.item);
+                    const containerName = normalizeString(entry.containerName || entry.container);
+                    if (!itemName || !containerName) {
+                        continue;
+                    }
+                    const quantity = parseRequiredEventQuantity(entry?.quantity, {
+                        eventKey: "remove_item_from_container",
+                        entryText: JSON.stringify(entry),
+                    });
+                    const actor = resolveActor(entry.character);
+                    const container = this._resolveContainerByExactName(containerName, {
+                        actor,
+                        location: context.location || null,
+                        eventKey: "remove_item_from_container",
+                    });
+                    if (typeof container.getInventoryItems !== "function") {
+                        throw new Error(
+                            `remove_item_from_container resolved "${containerName}" but it cannot list inventory.`,
+                        );
+                    }
+                    let candidates = typeof container.getInventoryItems === "function"
+                        ? container.getInventoryItems().filter((thing) => (
+                            thing?.name &&
+                            thing.name.trim().toLowerCase() === itemName.toLowerCase()
+                        ))
+                        : [];
+                    const availableQuantity = candidates.reduce(
+                        (total, thing) => total + this._getThingCount(thing),
+                        0,
+                    );
+                    if (availableQuantity < quantity) {
+                        const shortfall = quantity - availableQuantity;
+                        const generatedItems = await this._generateItemsIntoWorld(
+                            [itemName],
+                            context.location || null,
+                        );
+                        const generatedThing = Array.isArray(generatedItems)
+                            ? generatedItems.find((candidate) => candidate?.name === itemName) || generatedItems[0] || null
+                            : null;
+                        if (!generatedThing) {
+                            throw new Error(
+                                `Unable to generate item "${itemName}" for remove_item_from_container.`,
+                            );
+                        }
+                        const finalItemName = this._getGeneratedThingFinalName(
+                            generatedThing,
+                            {
+                                requestedName: itemName,
+                                eventKey: "remove_item_from_container",
+                            },
+                        );
+                        if (finalItemName !== itemName) {
+                            entry.originalItem = entry.item;
+                            entry.item = finalItemName;
+                            itemName = finalItemName;
+                        }
+                        generatedThing.count = shortfall;
+                        container.addInventoryItem(generatedThing);
+                        candidates = [...candidates, generatedThing].filter((thing, index, list) => (
+                            thing && list.findIndex((candidate) => candidate?.id === thing.id) === index
+                        ));
+                    }
+                    const selectedThings = this._extractThingQuantityFromCandidates(
+                        candidates,
+                        quantity,
+                        { itemName, eventKey: "remove_item_from_container" },
+                    );
+
+                    selectedThings.forEach((thing) => {
+                        if (actor) {
+                            const added = actor.addInventoryItem(thing, {
+                                suppressNpcEquip: true,
+                            });
+                            if (added === false) {
+                                throw new Error(
+                                    `remove_item_from_container could not add "${thing?.name || itemName}" to "${actor.name || entry.character}".`,
+                                );
+                            }
+                        } else {
+                            if (!context.location || typeof context.location.addThingId !== "function") {
+                                throw new Error(
+                                    `remove_item_from_container requires a valid location when no actor is specified for "${itemName}".`,
+                                );
+                            }
+                            context.location.addThingId(thing.id);
+                        }
+                    });
+
+                    entry.character = actor?.name || null;
+                    entry.containerName = container.name || containerName;
+                }
+            },
             drop_item: function (entries = [], context = {}) {
                 const location = context.location;
                 if (!entries.length) {
@@ -9784,6 +10482,94 @@ class Events {
                             error.message,
                         );
                     }
+                }
+            },
+            reveal_hidden_npc: async function (entries = [], context = {}) {
+                if (!Array.isArray(entries) || !entries.length) {
+                    return;
+                }
+                const player = context.player || this.currentPlayer || this._deps.getCurrentPlayer?.() || Globals.currentPlayer || null;
+                const settings = this._getHidePerceptionSettings();
+                const appliedEntries = [];
+
+                for (const entry of entries) {
+                    const npc = this._resolveHiddenNpcTarget(entry?.name);
+                    if (!npc || npc.isDead === true || npc.hiddenFromPlayer !== true) {
+                        continue;
+                    }
+
+                    if (entry?.useOpposedCheck !== false) {
+                        if (!player) {
+                            throw new Error("reveal_hidden_npc requires a current player for opposed checks.");
+                        }
+                        const resolution = this._runHiddenNpcOpposedCheck({
+                            actor: player,
+                            opponent: npc,
+                            actorAttribute: settings.perceptionAttribute,
+                            actorSkill: settings.perceptionSkill,
+                            opponentAttribute: settings.hidingAttribute,
+                            opponentSkill: settings.hidingSkill,
+                            reason: entry?.description || `The player attempts to notice ${npc.name || entry.name}.`,
+                            context,
+                            action: "reveal_hidden_npc"
+                        });
+                        if (resolution.success !== true) {
+                            appliedEntries.push({ ...entry, npcName: npc.name || entry.name, success: false });
+                            continue;
+                        }
+                    }
+
+                    npc.hiddenFromPlayer = false;
+                    context.locationRefreshRequested = true;
+                    appliedEntries.push({ ...entry, npcName: npc.name || entry.name, success: true });
+                }
+
+                entries.length = 0;
+                if (appliedEntries.length) {
+                    entries.push(...appliedEntries);
+                }
+            },
+            hide_visible_npc: async function (entries = [], context = {}) {
+                if (!Array.isArray(entries) || !entries.length) {
+                    return;
+                }
+                const player = context.player || this.currentPlayer || this._deps.getCurrentPlayer?.() || Globals.currentPlayer || null;
+                if (!player) {
+                    throw new Error("hide_visible_npc requires a current player for opposed checks.");
+                }
+                const settings = this._getHidePerceptionSettings();
+                const appliedEntries = [];
+
+                for (const entry of entries) {
+                    const npc = this._resolveHiddenNpcTarget(entry?.name);
+                    if (!npc || npc.isDead === true) {
+                        continue;
+                    }
+                    const resolution = this._runHiddenNpcOpposedCheck({
+                        actor: npc,
+                        opponent: player,
+                        actorAttribute: settings.hidingAttribute,
+                        actorSkill: settings.hidingSkill,
+                        opponentAttribute: settings.perceptionAttribute,
+                        opponentSkill: settings.perceptionSkill,
+                        reason: entry?.description || `${npc.name || entry.name} attempts to hide from the player.`,
+                        context,
+                        action: "hide_visible_npc"
+                    });
+                    if (resolution.success === true) {
+                        npc.hiddenFromPlayer = true;
+                        context.locationRefreshRequested = true;
+                    }
+                    appliedEntries.push({
+                        ...entry,
+                        npcName: npc.name || entry.name,
+                        success: resolution.success === true,
+                    });
+                }
+
+                entries.length = 0;
+                if (appliedEntries.length) {
+                    entries.push(...appliedEntries);
                 }
             },
             npc_arrival_departure: async function (entries = [], context = {}) {
@@ -10387,6 +11173,11 @@ class Events {
                                 if (gameLocations instanceof Map && targetLocation?.id) {
                                     gameLocations.set(targetLocation.id, targetLocation);
                                 }
+
+                                if (entry.hideFromPlayer === true) {
+                                    npc.hiddenFromPlayer = true;
+                                    context.locationRefreshRequested = true;
+                                }
                             } catch (error) {
                                 console.warn(
                                     `Failed to place arriving NPC "${finalizedName}" in current location:`,
@@ -10514,6 +11305,9 @@ class Events {
                                 typeof targetLocation.addNpcId === "function"
                             ) {
                                 targetLocation.addNpcId(npc.id);
+                            }
+                            if (entry.hideFromPlayer === true) {
+                                npc.hiddenFromPlayer = true;
                             }
                             this.departedCharacters.add(finalizedName);
                         } catch (error) {
@@ -11442,17 +12236,19 @@ class Events {
                     });
                 }
             },
-            attack_damage: function (entries = []) {
-                /*
-                        const { findActorByName } = this._deps;
-                        for (const entry of entries) {
-                            const victim = findActorByName?.(entry.target);
-                            if (!victim || typeof victim.modifyHealth !== 'function') {
-                                continue;
-                            }
-                            victim.modifyHealth(-5, entry.attacker ? `Attacked by ${entry.attacker}` : 'Attacked');
-                        }
-                        */
+            attack_damage: function (entries = [], context = {}) {
+                const { findActorByName } = this._deps;
+                if (!Array.isArray(entries) || !entries.length || typeof findActorByName !== "function") {
+                    return;
+                }
+                for (const entry of entries) {
+                    const attacker = findActorByName(entry?.attacker);
+                    if (!attacker || attacker.hiddenFromPlayer !== true || attacker.isDead === true) {
+                        continue;
+                    }
+                    attacker.hiddenFromPlayer = false;
+                    context.locationRefreshRequested = true;
+                }
             },
             death_incapacitation: function (entries = []) {
                 const { findActorByName } = this._deps;
@@ -13471,6 +14267,58 @@ class Events {
 
                 return this._getThingCount(right) - this._getThingCount(left);
             });
+    }
+
+    static _findContainersByExactName(containerName, { actor = null, location = null } = {}) {
+        const normalizedName =
+            typeof containerName === "string" ? containerName.trim().toLowerCase() : "";
+        if (!normalizedName) {
+            return [];
+        }
+
+        const sourceThings = this.things instanceof Map
+            ? Array.from(this.things.values())
+            : Thing.getAll();
+        const locationId = typeof location?.id === "string" ? location.id.trim() : null;
+        const actorId = typeof actor?.id === "string" ? actor.id.trim() : null;
+
+        const scoreContainer = (thing) => {
+            let score = 0;
+            if (locationId && this._thingLocationId(thing) === locationId) {
+                score += 8;
+            }
+            if (actorId && this._thingOwnedByActor(thing, actor)) {
+                score += 4;
+            }
+            const containingThing = this._resolveContainingThing(thing);
+            if (locationId && containingThing && this._thingLocationId(containingThing) === locationId) {
+                score += 2;
+            }
+            if (actorId && containingThing && this._thingOwnedByActor(containingThing, actor)) {
+                score += 2;
+            }
+            return score;
+        };
+        const hasContext = Boolean(locationId || actorId);
+
+        return sourceThings
+            .filter((thing) => (
+                thing?.isContainer === true &&
+                typeof thing.name === "string" &&
+                thing.name.trim().toLowerCase() === normalizedName
+            ))
+            .filter((thing) => !hasContext || scoreContainer(thing) > 0)
+            .sort((left, right) => scoreContainer(right) - scoreContainer(left));
+    }
+
+    static _resolveContainerByExactName(containerName, { actor = null, location = null, eventKey = "container_event" } = {}) {
+        const candidates = this._findContainersByExactName(containerName, { actor, location });
+        if (!candidates.length) {
+            throw new Error(
+                `${eventKey} could not find container "${containerName}".`,
+            );
+        }
+        return candidates[0];
     }
 
     static _cloneThingWithQuantity(sourceThing, quantity, { metadataOverrides = {} } = {}) {

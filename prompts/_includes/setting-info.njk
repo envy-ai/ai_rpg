@@ -13,6 +13,10 @@ Information about the setting of the game:
   <currencyNamePlural>{{ setting.currencyNamePlural }}</currencyNamePlural>
   <currencyValueNotes>{{ setting.currencyValueNotes }}</currencyValueNotes>
   <writingStyleNotes>{{ setting.writingStyleNotes }}</writingStyleNotes>
+  <hidingAttribute>{{ setting.hidingAttribute | default('', true) }}</hidingAttribute>
+  <hidingSkill>{{ setting.hidingSkill | default('', true) }}</hidingSkill>
+  <perceptionAttribute>{{ setting.perceptionAttribute | default('', true) }}</perceptionAttribute>
+  <perceptionSkill>{{ setting.perceptionSkill | default('', true) }}</perceptionSkill>
   <races>{{ (setting.races or []) | join(', ') }}</races>
   <attributes>{{ setting.attributes | join(', ') }}</attributes>
   <skills>{{ setting.skills | join(', ') }}</skills>

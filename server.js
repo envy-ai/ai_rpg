@@ -498,6 +498,9 @@ function isHiddenChatEntry(entry) {
     if (!entry || typeof entry !== 'object') {
         return false;
     }
+    if (entry.metadata && typeof entry.metadata === 'object' && entry.metadata.hiddenFromClient === true) {
+        return true;
+    }
     const entryType = typeof entry.type === 'string' ? entry.type.trim() : '';
     return HIDDEN_CHAT_ENTRY_TYPES.has(entryType);
 }
@@ -2413,6 +2416,9 @@ async function validateConfiguration() {
     if (config.show_hidden_notes !== undefined && typeof config.show_hidden_notes !== 'boolean') {
         validationErrors.push('show_hidden_notes must be a boolean when provided');
     }
+    if (config.hide_hide_checks !== undefined && typeof config.hide_hide_checks !== 'boolean') {
+        validationErrors.push('hide_hide_checks must be a boolean when provided');
+    }
     if (config.chat_tools !== undefined) {
         const chatToolsConfig = config.chat_tools;
         if (!chatToolsConfig || typeof chatToolsConfig !== 'object' || Array.isArray(chatToolsConfig)) {
@@ -4107,6 +4113,7 @@ function serializeNpcForClient(npc, options = {}) {
         imageId: npc.imageId,
         isNPC: Boolean(npc.isNPC),
         isPlayer: !Boolean(npc.isNPC),
+        hiddenFromPlayer: Boolean(npc.hiddenFromPlayer && !npc.isDead),
         isHostile: Boolean(npc.isHostile),
         isDead: Boolean(npc.isDead),
         isInPlayerParty: (() => {
@@ -4212,6 +4219,7 @@ function buildNpcProfiles(location) {
     }
     return location.npcIds
         .map(id => players.get(id))
+        .filter(Boolean)
         .map(serializeNpcForClient)
         .filter(Boolean);
 }
@@ -6096,6 +6104,7 @@ function buildBasePromptContext({
                 id: npc.id,
                 name: npcStatus?.name || npc.name || 'Unknown NPC',
                 description: npcStatus?.description || npc.description || '',
+                hiddenFromPlayer: Boolean(npc.hiddenFromPlayer && !npc.isDead),
                 class: npcStatus?.class || npc.class || null,
                 race: npcStatus?.race || npc.race || null,
                 level: npcStatus?.level || npc.level || null,
@@ -6149,6 +6158,7 @@ function buildBasePromptContext({
                 id: member.id,
                 name: memberStatus?.name || member.name || 'Unknown Ally',
                 description: memberStatus?.description || member.description || '',
+                hiddenFromPlayer: Boolean(member.hiddenFromPlayer && !member.isDead),
                 class: memberStatus?.class || member.class || null,
                 race: memberStatus?.race || member.race || null,
                 level: memberStatus?.level || member.level || null,
@@ -12511,6 +12521,7 @@ async function generateInventoryForCharacter({
                     count: item.count,
                     level: computedLevel,
                     relativeLevel,
+                    containerContents: item.containerContents,
                     metadata,
                     ...booleanFlags
                 });
@@ -13027,6 +13038,7 @@ async function generateItemsByNames({
                     count: itemData?.count,
                     level: computedLevel,
                     relativeLevel,
+                    containerContents: itemData?.containerContents,
                     metadata,
                     ...booleanFlags
                 });
@@ -13114,6 +13126,204 @@ async function generateItemsByNames({
         const fallbacks = [];
         return fallbacks;
     }
+}
+
+async function generateContainerContentsForThing({
+    container = null,
+    location = null,
+    region = null
+} = {}) {
+    if (!container || typeof container !== 'object') {
+        throw new Error('generateContainerContentsForThing requires a container Thing.');
+    }
+    if (!container.isContainer) {
+        throw new Error(`Thing "${container.name || container.id || 'unknown'}" is not a container.`);
+    }
+
+    const pendingContents = Array.isArray(container.containerContents)
+        ? container.containerContents
+        : [];
+    if (!pendingContents.length) {
+        return [];
+    }
+    if (!hasConfiguredAiBackend()) {
+        throw new Error('AI configuration missing; cannot generate container contents.');
+    }
+
+    const resolvedLocation = location || Globals.location || null;
+    const resolvedRegion = region || (resolvedLocation ? findRegionByLocationId(resolvedLocation.id) : null) || Globals.region || null;
+    const baseContext = await prepareBasePromptContext({ locationOverride: resolvedLocation });
+    const attributeList = (baseContext.attributes && baseContext.attributes.length)
+        ? baseContext.attributes
+        : Object.keys(attributeDefinitionsForPrompt || {})
+            .filter(name => typeof name === 'string' && name.trim())
+            .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+    const equipmentSlotTypes = (baseContext.equipmentSlots && baseContext.equipmentSlots.length)
+        ? baseContext.equipmentSlots
+        : getGearSlotTypes();
+    const gearSlotNames = (baseContext.gearSlots && baseContext.gearSlots.length)
+        ? baseContext.gearSlots
+        : getGearSlotNames();
+
+    const renderedTemplate = promptEnv.render('base-context.xml.njk', {
+        ...baseContext,
+        promptType: 'thing-generator-contents',
+        equipmentSlots: equipmentSlotTypes,
+        gearSlots: gearSlotNames,
+        attributes: attributeList,
+        attributeDefinitions: baseContext.attributeDefinitions || attributeDefinitionsForPrompt,
+        container: {
+            id: container.id || null,
+            name: container.name || 'Container',
+            description: container.description || '',
+            shortDescription: container.shortDescription || '',
+            containerContents: pendingContents
+        }
+    });
+    const parsedTemplate = parseXMLTemplate(renderedTemplate);
+    if (!parsedTemplate?.systemPrompt || !parsedTemplate?.generationPrompt) {
+        throw new Error('Container contents generation template missing prompts.');
+    }
+
+    const messages = [
+        { role: 'system', content: parsedTemplate.systemPrompt },
+        { role: 'user', content: parsedTemplate.generationPrompt }
+    ];
+
+    const requestStart = Date.now();
+    let requestPayloadForLog = null;
+    const responseText = await LLMClient.chatCompletion({
+        messages,
+        metadataLabel: `thing_generator_contents_${String(container.name || container.id || 'container').replace(/[^a-z0-9]+/gi, '_').replace(/^_+|_+$/g, '').toLowerCase() || 'container'}`,
+        captureRequestPayload: (payload) => { requestPayloadForLog = payload; }
+    });
+
+    if (!responseText || !responseText.trim()) {
+        throw new Error('Empty container contents generation response from AI.');
+    }
+
+    const parsedItems = await parseThingsXml(responseText, {
+        isInventory: true,
+        promptEnv,
+        parseXMLTemplate,
+        prepareBasePromptContext
+    });
+    if (!Array.isArray(parsedItems) || !parsedItems.length) {
+        throw new Error(`Container contents generation for "${container.name || container.id}" returned no items.`);
+    }
+
+    const baseReference = Number.isFinite(resolvedLocation?.baseLevel)
+        ? resolvedLocation.baseLevel
+        : (Number.isFinite(resolvedRegion?.averageLevel)
+            ? resolvedRegion.averageLevel
+            : (Number.isFinite(currentPlayer?.level) ? currentPlayer.level : 1));
+    const createdThings = [];
+
+    for (const itemData of parsedItems) {
+        if (!itemData?.name) {
+            continue;
+        }
+        const relativeLevel = Number.isFinite(itemData.relativeLevel) ? Math.round(itemData.relativeLevel) : 0;
+        const computedLevel = clampLevel(baseReference + relativeLevel, baseReference);
+        const rawAttributeBonuses = normalizeAttributeBonusesForItem(
+            Array.isArray(itemData.attributeBonuses) ? itemData.attributeBonuses : []
+        );
+        const scaledAttributeBonuses = scaleAttributeBonusesForItem(
+            rawAttributeBonuses,
+            { level: computedLevel, rarity: itemData.rarity }
+        );
+        const booleanFlags = extractThingBooleanFlags(itemData);
+        const metadata = sanitizeMetadataObject({
+            rarity: itemData.rarity || null,
+            itemType: itemData.type || null,
+            itemTypeDetail: itemData.type || null,
+            value: itemData.value || null,
+            weight: itemData.weight || null,
+            properties: itemData.properties || null,
+            slot: itemData.slot || null,
+            attributeBonuses: scaledAttributeBonuses.length ? scaledAttributeBonuses : null,
+            unscaledAttributeBonuses: rawAttributeBonuses.length ? rawAttributeBonuses : null,
+            causeStatusEffectOnTarget: itemData.causeStatusEffectOnTarget || null,
+            causeStatusEffectOnEquipper: itemData.causeStatusEffectOnEquipper || null,
+            relativeLevel,
+            level: computedLevel,
+            ...booleanFlags
+        });
+
+        const thing = new Thing({
+            name: itemData.name,
+            description: itemData.description || `An item found inside ${container.name || 'a container'}.`,
+            shortDescription: itemData.shortDescription ?? null,
+            thingType: 'item',
+            rarity: itemData.rarity || null,
+            itemTypeDetail: itemData.type || null,
+            slot: itemData.slot || null,
+            attributeBonuses: scaledAttributeBonuses,
+            unscaledAttributeBonuses: rawAttributeBonuses,
+            causeStatusEffect: (function buildCauseEffects() {
+                const entries = [];
+                if (itemData.causeStatusEffectOnTarget) {
+                    entries.push({ ...itemData.causeStatusEffectOnTarget, applyToTarget: true });
+                }
+                if (itemData.causeStatusEffectOnEquipper) {
+                    entries.push({ ...itemData.causeStatusEffectOnEquipper, applyToEquipper: true });
+                }
+                if (!entries.length && itemData.causeStatusEffect) {
+                    entries.push(itemData.causeStatusEffect);
+                }
+                return entries.length ? entries : null;
+            }()),
+            count: itemData.count,
+            level: computedLevel,
+            relativeLevel,
+            containerContents: itemData.containerContents,
+            metadata,
+            ...booleanFlags
+        });
+        things.set(thing.id, thing);
+        container.addInventoryItem(thing);
+        createdThings.push(thing);
+    }
+
+    if (!createdThings.length) {
+        throw new Error(`Container contents generation for "${container.name || container.id}" created no valid items.`);
+    }
+
+    if (createdThings.length) {
+        await ensureThingNamesAllowed({ things: createdThings, location: resolvedLocation, region: resolvedRegion });
+        await ensureUniqueThingNames({ things: createdThings, location: resolvedLocation, region: resolvedRegion });
+    }
+
+    container.clearContainerContents();
+    if (things instanceof Map && container.id) {
+        things.set(container.id, container);
+    }
+
+    const apiDurationSeconds = (Date.now() - requestStart) / 1000;
+    LLMClient.logPrompt({
+        prefix: 'thing_generator_contents',
+        metadataLabel: 'thing_generator_contents',
+        systemPrompt: parsedTemplate.systemPrompt || '',
+        generationPrompt: parsedTemplate.generationPrompt || '',
+        response: responseText || '',
+        requestPayload: requestPayloadForLog,
+        sections: [
+            {
+                title: 'Duration',
+                content: formatDurationLine(apiDurationSeconds)
+            },
+            {
+                title: 'Container',
+                content: JSON.stringify(container.toJSON ? container.toJSON() : { id: container.id, name: container.name }, null, 2)
+            },
+            {
+                title: 'Generated Contents',
+                content: JSON.stringify(createdThings.map(thing => (thing.toJSON ? thing.toJSON() : thing)), null, 2)
+            }
+        ]
+    });
+
+    return createdThings;
 }
 
 function buildThingPromptItem(thing) {
@@ -13208,6 +13418,7 @@ function buildThingPromptItem(thing) {
         isHarvestable: resolveBooleanFlag('isHarvestable'),
         isSalvageable: resolveBooleanFlag('isSalvageable'),
         isContainer: resolveBooleanFlag('isContainer'),
+        containerContents: Array.isArray(thing.containerContents) ? thing.containerContents : [],
         attributeBonuses: attributeBonuses,
         causeStatusEffectOnTarget,
         causeStatusEffectOnEquipper,
@@ -14865,6 +15076,13 @@ function normalizeNpcPromptSeed(seed = {}) {
     if (Object.prototype.hasOwnProperty.call(seed, 'isHostile')) {
         normalized.isHostile = Boolean(seed.isHostile);
     }
+    if (Object.prototype.hasOwnProperty.call(seed, 'hiddenFromPlayer')
+        || Object.prototype.hasOwnProperty.call(seed, 'hideFromPlayer')) {
+        const rawHidden = Object.prototype.hasOwnProperty.call(seed, 'hiddenFromPlayer')
+            ? seed.hiddenFromPlayer
+            : seed.hideFromPlayer;
+        normalized.hiddenFromPlayer = parseGeneratedNpcBoolean(rawHidden);
+    }
 
     if (Object.prototype.hasOwnProperty.call(seed, 'relativeLevel')) {
         const relative = Number(seed.relativeLevel);
@@ -15306,6 +15524,7 @@ async function generateNpcFromEvent({
             attributes,
             factionId: factionResolution.id,
             isNPC: true,
+            hiddenFromPlayer: Boolean(npcData?.hiddenFromPlayer),
             isHostile: Boolean(npcData?.isHostile),
             healthAttribute: npcData?.healthAttribute,
             personalityType: npcData?.personalityType || null,
@@ -15447,7 +15666,8 @@ async function generateNpcFromEvent({
                 description: `${name} arrives on the scene.`,
                 level: 1,
                 location: location?.id || null,
-                isNPC: true
+                isNPC: true,
+                hiddenFromPlayer: Boolean(seedSource?.hiddenFromPlayer || seedSource?.hideFromPlayer)
             });
             players.set(fallbackNpc.id, fallbackNpc);
             if (location && typeof location.addNpcId === 'function') {
@@ -16553,6 +16773,26 @@ function finalizeGeneratedNpcStartingDeathState(npc, startingHealth) {
     return resolved;
 }
 
+function parseGeneratedNpcBoolean(value, { defaultValue = false } = {}) {
+    if (value === null || value === undefined) {
+        return defaultValue;
+    }
+    if (typeof value === 'boolean') {
+        return value;
+    }
+    const normalized = String(value).trim().toLowerCase();
+    if (!normalized) {
+        return defaultValue;
+    }
+    if (['true', '1', 'yes', 'y', 'on', 'hidden'].includes(normalized)) {
+        return true;
+    }
+    if (['false', '0', 'no', 'n', 'off', 'visible'].includes(normalized)) {
+        return false;
+    }
+    return defaultValue;
+}
+
 function parseLocationNpcs(xmlContent) {
     const result = { npcs: [], memories: new Map() };
     if (!xmlContent || typeof xmlContent !== 'string') {
@@ -16610,8 +16850,12 @@ function parseLocationNpcs(xmlContent) {
             const personalityNode = node.getElementsByTagName('personality')[0];
             const currencyNode = node.getElementsByTagName('currency')[0];
             const isHostileNode = node.getElementsByTagName('isHostile')[0];
+            const hiddenFromPlayerNode = node.getElementsByTagName('hiddenFromPlayer')[0];
             const isHostile = isHostileNode
                 ? /^\s*(true|1|yes|hostile)\s*$/i.test(isHostileNode.textContent)
+                : false;
+            const hiddenFromPlayer = hiddenFromPlayerNode
+                ? parseGeneratedNpcBoolean(hiddenFromPlayerNode.textContent)
                 : false;
 
             const className = classNode ? classNode.textContent.trim() : null;
@@ -16715,6 +16959,7 @@ function parseLocationNpcs(xmlContent) {
                     needBars: startingNeeds.needBars,
                     needBarApplicability: startingNeeds.needBarApplicability,
                     startingHealth,
+                    hiddenFromPlayer,
                     isHostile
                 });
             }
@@ -16781,8 +17026,12 @@ function parseRegionNpcs(xmlContent) {
             const personalityNode = node.getElementsByTagName('personality')[0];
             const currencyNode = node.getElementsByTagName('currency')[0];
             const isHostileNode = node.getElementsByTagName('isHostile')[0];
+            const hiddenFromPlayerNode = node.getElementsByTagName('hiddenFromPlayer')[0];
             const isHostile = isHostileNode
                 ? /^\s*(true|1|yes|hostile)\s*$/i.test(isHostileNode.textContent)
+                : false;
+            const hiddenFromPlayer = hiddenFromPlayerNode
+                ? parseGeneratedNpcBoolean(hiddenFromPlayerNode.textContent)
                 : false;
 
             const name = nameNode ? nameNode.textContent.trim() : null;
@@ -16893,6 +17142,7 @@ function parseRegionNpcs(xmlContent) {
                 needBars: startingNeeds.needBars,
                 needBarApplicability: startingNeeds.needBarApplicability,
                 startingHealth,
+                hiddenFromPlayer,
                 isHostile
             });
         }
@@ -20526,21 +20776,85 @@ async function parseThingsXml(xmlContent, { isInventory = false, promptEnv = nul
             return items;
         }
 
+        const getDirectChildElement = (parentNode, tagName) => {
+            if (!parentNode || !parentNode.childNodes) {
+                return null;
+            }
+            return Array.from(parentNode.childNodes).find(child => {
+                if (!child || child.nodeType !== 1) {
+                    return false;
+                }
+                const childName = child.tagName || child.nodeName || child.localName || '';
+                return childName === tagName;
+            }) || null;
+        };
+
+        const getDirectChildText = (parentNode, tagName) => (
+            getDirectChildElement(parentNode, tagName)?.textContent?.trim() || ''
+        );
+
+        const parseContainedItemCount = (value, itemName = 'contained item') => {
+            if (value === null || value === undefined) {
+                return 1;
+            }
+            const raw = String(value).trim();
+            if (!raw) {
+                return 1;
+            }
+            const match = raw.match(/-?\d+/);
+            if (!match) {
+                return 1;
+            }
+            const parsed = Number(match[0]);
+            if (!Number.isInteger(parsed) || parsed < 0) {
+                throw new Error(`Contained item "${itemName}" has invalid <count> value "${raw}".`);
+            }
+            return parsed;
+        };
+
+        const parseContainerContents = (parentNode, parentName) => {
+            const containerContentsNode = getDirectChildElement(parentNode, 'containerContents');
+            if (!containerContentsNode) {
+                return [];
+            }
+            return Array.from(containerContentsNode.childNodes || [])
+                .filter(child => {
+                    if (!child || child.nodeType !== 1) {
+                        return false;
+                    }
+                    const childName = child.tagName || child.nodeName || child.localName || '';
+                    return childName === 'containedItem';
+                })
+                .map(containedNode => {
+                    const name = getDirectChildText(containedNode, 'name');
+                    if (!name) {
+                        return null;
+                    }
+                    const countNode = getDirectChildElement(containedNode, 'count');
+                    return {
+                        name,
+                        count: parseContainedItemCount(countNode?.textContent, name)
+                    };
+                })
+                .filter(Boolean);
+        };
+
         for (const node of itemNodes) {
             //console.log('Processing node:');
-            const nameNode = node.getElementsByTagName('name')[0];
+            const nameNode = getDirectChildElement(node, 'name');
             if (!nameNode) {
                 console.warn('Skipping item node with no <name> child node.');
                 console.trace();
                 continue;
             }
 
-            const attributeBonusesNode = node.getElementsByTagName('attributeBonuses')[0];
+            const entryName = nameNode.textContent.trim();
+            const attributeBonusesNode = getDirectChildElement(node, 'attributeBonuses');
             const attributeBonuses = attributeBonusesNode
                 ? Array.from(attributeBonusesNode.getElementsByTagName('attributeBonus'))
                     .map(bonusNode => {
-                        const attr = bonusNode.getElementsByTagName('attribute')[0]?.textContent?.trim();
-                        const bonusRaw = bonusNode.getElementsByTagName('bonus')[0]?.textContent?.trim();
+                        const attr = getDirectChildText(bonusNode, 'attribute');
+                        const bonusRaw = getDirectChildText(bonusNode, 'bonus');
                         if (!attr) {
                             console.warn('Skipping attributeBonus node with no <attribute> child node.');
                             console.trace();
@@ -20555,28 +20869,15 @@ async function parseThingsXml(xmlContent, { isInventory = false, promptEnv = nul
                     .filter(Boolean)
                 : [];
 
-            const getDirectChildElement = (parentNode, tagName) => {
-                if (!parentNode || !parentNode.childNodes) {
-                    return null;
-                }
-                return Array.from(parentNode.childNodes).find(child => {
-                    if (!child || child.nodeType !== 1) {
-                        return false;
-                    }
-                    const childName = child.tagName || child.nodeName || child.localName || '';
-                    return childName === tagName;
-                }) || null;
-            };
-
             const parseStatusEffectTag = (tagName) => {
                 const nodeRef = getDirectChildElement(node, tagName);
                 if (!nodeRef) {
                     // Empty nodes are fine.
                     return null;
                 }
-                const effectName = nodeRef.getElementsByTagName('name')[0]?.textContent?.trim();
-                const effectDescription = nodeRef.getElementsByTagName('description')[0]?.textContent?.trim();
-                const effectDuration = nodeRef.getElementsByTagName('duration')[0]?.textContent?.trim();
+                const effectName = getDirectChildText(nodeRef, 'name');
+                const effectDescription = getDirectChildText(nodeRef, 'description');
+                const effectDuration = getDirectChildText(nodeRef, 'duration');
                 const effectPayload = {};
                 if (effectName) effectPayload.name = effectName;
                 if (effectDescription) effectPayload.description = effectDescription;
@@ -20585,8 +20886,8 @@ async function parseThingsXml(xmlContent, { isInventory = false, promptEnv = nul
                 }
 
                 const attributes = Array.from(nodeRef.getElementsByTagName('attribute')).map(attrNode => {
-                    const attrName = attrNode.getElementsByTagName('name')[0]?.textContent?.trim();
-                    const modRaw = attrNode.getElementsByTagName('modifier')[0]?.textContent?.trim();
+                    const attrName = getDirectChildText(attrNode, 'name');
+                    const modRaw = getDirectChildText(attrNode, 'modifier');
                     const modifier = Number(modRaw);
                     if (!attrName || !Number.isFinite(modifier)) {
                         return null;
@@ -20595,8 +20896,8 @@ async function parseThingsXml(xmlContent, { isInventory = false, promptEnv = nul
                 }).filter(Boolean);
 
                 const skills = Array.from(nodeRef.getElementsByTagName('skill')).map(skillNode => {
-                    const skillName = skillNode.getElementsByTagName('name')[0]?.textContent?.trim();
-                    const modRaw = skillNode.getElementsByTagName('modifier')[0]?.textContent?.trim();
+                    const skillName = getDirectChildText(skillNode, 'name');
+                    const modRaw = getDirectChildText(skillNode, 'modifier');
                     const modifier = Number(modRaw);
                     if (!skillName || !Number.isFinite(modifier)) {
                         return null;
@@ -20605,8 +20906,8 @@ async function parseThingsXml(xmlContent, { isInventory = false, promptEnv = nul
                 }).filter(Boolean);
 
                 const needBars = Array.from(nodeRef.getElementsByTagName('needBar')).map(needNode => {
-                    const barName = needNode.getElementsByTagName('name')[0]?.textContent?.trim();
-                    const deltaRaw = needNode.getElementsByTagName('delta')[0]?.textContent?.trim();
+                    const barName = getDirectChildText(needNode, 'name');
+                    const deltaRaw = getDirectChildText(needNode, 'delta');
                     const delta = Number(deltaRaw);
                     if (!barName || !Number.isFinite(delta)) {
                         return null;
@@ -20659,10 +20960,10 @@ async function parseThingsXml(xmlContent, { isInventory = false, promptEnv = nul
             
             console.log('Parsed status effects for item:', nameNode.textContent.trim(), causeStatusEffect);
             */
-            const relativeLevelNode = node.getElementsByTagName('relativeLevel')[0];
+            const relativeLevelNode = getDirectChildElement(node, 'relativeLevel');
             const relativeLevel = relativeLevelNode ? Number(relativeLevelNode.textContent.trim()) : null;
 
-            const rawItemOrScenery = node.getElementsByTagName('itemOrScenery')[0]?.textContent?.trim();
+            const rawItemOrScenery = getDirectChildText(node, 'itemOrScenery');
             const fallbackKind = (() => {
                 const tagName = typeof node.tagName === 'string' ? node.tagName.trim().toLowerCase() : '';
                 if (tagName === 'scenery') return 'scenery';
@@ -20674,7 +20975,7 @@ async function parseThingsXml(xmlContent, { isInventory = false, promptEnv = nul
                 ? 'item'
                 : (rawItemOrScenery || fallbackKind || 'item');
 
-            const countNode = node.getElementsByTagName('count')[0];
+            const countNode = getDirectChildElement(node, 'count');
             let parsedCount = 1;
             if (countNode) {
                 const rawCount = countNode.textContent?.trim() || '';
@@ -20689,32 +20990,37 @@ async function parseThingsXml(xmlContent, { isInventory = false, promptEnv = nul
             }
 
             const parseBooleanTag = tag => {
-                const text = node.getElementsByTagName(tag)[0]?.textContent?.trim().toLowerCase();
+                const text = getDirectChildText(node, tag).toLowerCase();
                 return text === 'true';
             };
             //console.log('Creating entry for item:', nameNode.textContent.trim());
-            const shortDescription = node.getElementsByTagName('shortDescription')[0]?.textContent?.trim() || '';
+            const shortDescription = getDirectChildText(node, 'shortDescription');
             if (!shortDescription) {
-                const entryName = nameNode.textContent.trim();
                 if (entryName) {
                     missingShortDescriptions.push(entryName);
                 }
             }
+            const containerContents = parseContainerContents(node, entryName);
+            const parsedIsContainer = parseBooleanTag('isContainer');
+            const isContainer = parsedIsContainer || containerContents.length > 0;
+            if (!parsedIsContainer && containerContents.length > 0) {
+                console.warn(`Thing "${entryName}" has container contents but is not marked as a container. Marking it as a container.`);
+            }
 
             const entry = {
-                name: nameNode.textContent.trim(),
-                description: node.getElementsByTagName('description')[0]?.textContent?.trim() || '',
+                name: entryName,
+                description: getDirectChildText(node, 'description'),
                 shortDescription,
                 itemOrScenery: resolvedKind,
                 thingType: resolvedKind,
-                type: node.getElementsByTagName('type')[0]?.textContent?.trim()
+                type: getDirectChildText(node, 'type')
                     || (resolvedKind === 'scenery' ? 'scenery' : 'item'),
-                slot: node.getElementsByTagName('slot')[0]?.textContent?.trim() || '',
-                rarity: node.getElementsByTagName('rarity')[0]?.textContent?.trim()
+                slot: getDirectChildText(node, 'slot'),
+                rarity: getDirectChildText(node, 'rarity')
                     || (isInventory ? getDefaultRarityLabel() : ''),
-                value: node.getElementsByTagName('value')[0]?.textContent?.trim() || '',
-                weight: node.getElementsByTagName('weight')[0]?.textContent?.trim() || '',
-                properties: node.getElementsByTagName('properties')[0]?.textContent?.trim() || '',
+                value: getDirectChildText(node, 'value'),
+                weight: getDirectChildText(node, 'weight'),
+                properties: getDirectChildText(node, 'properties'),
                 relativeLevel,
                 count: parsedCount,
                 attributeBonuses,
@@ -20726,7 +21032,8 @@ async function parseThingsXml(xmlContent, { isInventory = false, promptEnv = nul
                 isProcessingStation: parseBooleanTag('isProcessingStation'),
                 isHarvestable: parseBooleanTag('isHarvestable'),
                 isSalvageable: parseBooleanTag('isSalvageable'),
-                isContainer: parseBooleanTag('isContainer')
+                isContainer,
+                containerContents
             };
 
             //console.log('Parsed item entry:', entry);
@@ -21067,6 +21374,7 @@ async function generateLocationThingsForLocation({ location } = {}) {
             count: itemData.count,
             level: computedLevel,
             relativeLevel,
+            containerContents: itemData.containerContents,
             metadata: cleanedMetadata,
             ...booleanFlags
         });
@@ -23260,6 +23568,7 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
                 resistances: typeof npcData.resistances === 'string' ? npcData.resistances : '',
                 vulnerabilities: typeof npcData.vulnerabilities === 'string' ? npcData.vulnerabilities : '',
                 isNPC: true,
+                hiddenFromPlayer: Boolean(npcData.hiddenFromPlayer),
                 isHostile: Boolean(npcData.isHostile),
                 healthAttribute: npcData.healthAttribute,
                 personalityType: npcData.personalityType || null,
@@ -23706,6 +24015,7 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
                 attributes,
                 factionId: factionResolution.id,
                 isNPC: true,
+                hiddenFromPlayer: Boolean(npcData.hiddenFromPlayer),
                 isHostile: Boolean(npcData.isHostile),
                 healthAttribute: npcData.healthAttribute,
                 personalityType: npcData.personalityType || null,
@@ -29301,6 +29611,38 @@ app.get('/settings', (req, res) => {
     const defaultFactionCountFallback = Number.isFinite(parsedFactionCount) && parsedFactionCount >= 0
         ? parsedFactionCount
         : 5;
+    let attributeDefinitionsForSettings = {};
+    try {
+        const { value } = loadMergedDefinitionFile({
+            baseDir: Globals.baseDir || __dirname,
+            filename: 'attributes.yaml'
+        });
+        attributeDefinitionsForSettings = value?.attributes || {};
+    } catch (error) {
+        console.warn('Failed to load attribute definitions for settings page:', error.message);
+        attributeDefinitionsForSettings = attributeDefinitionsForPrompt || {};
+    }
+    const attributeOptions = Object.entries(attributeDefinitionsForSettings || {})
+        .map(([name, definition]) => {
+            const normalizedName = typeof name === 'string' ? name.trim() : '';
+            if (!normalizedName) {
+                return null;
+            }
+            const label = typeof definition?.label === 'string' && definition.label.trim()
+                ? definition.label.trim()
+                : normalizedName
+                    .split(/[_\s-]+/)
+                    .filter(Boolean)
+                    .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+                    .join(' ');
+            return {
+                name: normalizedName,
+                label,
+                abbreviation: typeof definition?.abbreviation === 'string' ? definition.abbreviation.trim() : '',
+                description: typeof definition?.description === 'string' ? definition.description : ''
+            };
+        })
+        .filter(Boolean);
     res.render('settings.njk', {
         title: 'Game Settings Manager',
         currentPage: 'settings',
@@ -29308,7 +29650,8 @@ app.get('/settings', (req, res) => {
         defaultExistingSkillsError,
         defaultFactionCountFallback,
         unifiedTonalScaleDefinition,
-        unifiedTonalScaleError
+        unifiedTonalScaleError,
+        attributeOptions
     });
 });
 
@@ -29327,6 +29670,8 @@ Events.initialize({
     Location,
     getConfig: () => config,
     getCurrentPlayer: () => currentPlayer,
+    getActiveSettingSnapshot,
+    resolveActionOutcome,
     players,
     things,
     regions,
@@ -29421,6 +29766,7 @@ const apiScope = {
     generateFactionsList,
     generateThingImage,
     generateItemsByNames,
+    generateContainerContentsForThing,
     expandRegionEntryStub,
     queueLocationThingImages,
     requestNpcAbilityAssignments,

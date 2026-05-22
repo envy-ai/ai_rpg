@@ -16,7 +16,9 @@ function createMinimalRuntime({
     debugEvents = [],
     chatHistory = [],
     isAssistantProseLikeEntry = () => true,
-    requestUserInput = null
+    requestUserInput = null,
+    characters = [],
+    currentPlayer = { currentLocation: 'loc-origin' }
 } = {}) {
     return createChatToolRuntime({
         getConfig: () => ({ ai: { max_tool_rounds: 4 } }),
@@ -24,7 +26,7 @@ function createMinimalRuntime({
         isAssistantProseLikeEntry,
         serializeNpcForClient: () => ({}),
         buildLocationResponse: () => ({}),
-        getCurrentPlayer: () => ({ currentLocation: 'loc-origin' }),
+        getCurrentPlayer: () => currentPlayer,
         createLocationFromEvent: async () => {
             throw new Error('createLocationFromEvent should not be reached for this test.');
         },
@@ -47,7 +49,7 @@ function createMinimalRuntime({
             logPrompt: () => {},
             formatMessagesForErrorLog: (messages) => JSON.stringify(messages)
         },
-        Player: { getAll: () => [] },
+        Player: { getAll: () => characters },
         Thing: { getAll: () => [] },
         Location: { getAll: () => [], get: () => null },
         Region: { getAll: () => [] },
@@ -67,6 +69,165 @@ test('requestUserInput tool definition asks a required question only', () => {
     assert.deepEqual(definition.parameters.required, ['question']);
     assert.deepEqual(Object.keys(definition.parameters.properties).sort(), ['question']);
     assert.equal(definition.parameters.additionalProperties, false);
+});
+
+test('revealEntity and hideEntity tool definitions require only an entity name', () => {
+    const revealDefinition = findToolDefinition('revealEntity');
+    const hideDefinition = findToolDefinition('hideEntity');
+
+    assert.ok(revealDefinition, 'Expected revealEntity chat tool definition.');
+    assert.ok(hideDefinition, 'Expected hideEntity chat tool definition.');
+    assert.deepEqual(revealDefinition.parameters.required, ['name']);
+    assert.deepEqual(hideDefinition.parameters.required, ['name']);
+    assert.deepEqual(Object.keys(revealDefinition.parameters.properties).sort(), ['description', 'name']);
+    assert.deepEqual(Object.keys(hideDefinition.parameters.properties).sort(), ['description', 'name']);
+    assert.equal(revealDefinition.parameters.additionalProperties, false);
+    assert.equal(hideDefinition.parameters.additionalProperties, false);
+});
+
+test('revealEntity and hideEntity tool calls toggle hiddenFromPlayer without resolving checks', async () => {
+    const capturedMessagesByRound = [];
+    const shade = {
+        id: 'npc-shade',
+        name: 'Shade',
+        isNPC: true,
+        currentLocation: 'loc-origin',
+        hiddenFromPlayer: true
+    };
+    const runtime = createMinimalRuntime({
+        capturedMessagesByRound,
+        characters: [shade],
+        llmResponses: [
+            {
+                data: {
+                    choices: [{
+                        message: {
+                            content: '',
+                            tool_calls: [{
+                                id: 'call-reveal',
+                                type: 'function',
+                                function: {
+                                    name: 'revealEntity',
+                                    arguments: JSON.stringify({
+                                        name: 'Shade',
+                                        description: 'The light catches Shade.'
+                                    })
+                                }
+                            }]
+                        }
+                    }]
+                }
+            },
+            {
+                data: {
+                    choices: [{
+                        message: {
+                            content: '',
+                            tool_calls: [{
+                                id: 'call-hide',
+                                type: 'function',
+                                function: {
+                                    name: 'hideEntity',
+                                    arguments: JSON.stringify({
+                                        name: 'Shade',
+                                        description: 'Shade slips behind the curtain.'
+                                    })
+                                }
+                            }]
+                        }
+                    }]
+                }
+            },
+            {
+                data: {
+                    choices: [{
+                        message: {
+                            content: 'Visibility updated.',
+                            tool_calls: []
+                        }
+                    }]
+                }
+            }
+        ]
+    });
+
+    const result = await runtime.runChatCompletionWithToolLoop({
+        requestOptions: {
+            messages: [{ role: 'user', content: 'Reveal and hide Shade.' }]
+        },
+        metadataLabel: 'player_action'
+    });
+
+    assert.equal(result.aiResponse, 'Visibility updated.');
+    assert.equal(shade.hiddenFromPlayer, true);
+    assert.deepEqual(result.toolInvocations.map(call => call.name), ['revealEntity', 'hideEntity']);
+    assert.equal(result.toolInvocations[0].metadata.hiddenFromPlayer, false);
+    assert.equal(result.toolInvocations[1].metadata.hiddenFromPlayer, true);
+    const revealToolMessage = capturedMessagesByRound[1].find(message => message.role === 'tool' && message.tool_call_id === 'call-reveal');
+    const hideToolMessage = capturedMessagesByRound[2].find(message => message.role === 'tool' && message.tool_call_id === 'call-hide');
+    assert.match(revealToolMessage.content, /<field name="hidden">false<\/field>/);
+    assert.match(hideToolMessage.content, /<field name="hidden">true<\/field>/);
+});
+
+test('hideEntity does not make dead NPCs hidden', async () => {
+    const capturedMessagesByRound = [];
+    const corpse = {
+        id: 'npc-corpse',
+        name: 'Fallen Scout',
+        isNPC: true,
+        isDead: true,
+        currentLocation: 'loc-origin',
+        hiddenFromPlayer: false
+    };
+    const runtime = createMinimalRuntime({
+        capturedMessagesByRound,
+        characters: [corpse],
+        llmResponses: [
+            {
+                data: {
+                    choices: [{
+                        message: {
+                            content: '',
+                            tool_calls: [{
+                                id: 'call-hide-corpse',
+                                type: 'function',
+                                function: {
+                                    name: 'hideEntity',
+                                    arguments: JSON.stringify({
+                                        name: 'Fallen Scout',
+                                        description: 'The body is dragged behind debris.'
+                                    })
+                                }
+                            }]
+                        }
+                    }]
+                }
+            },
+            {
+                data: {
+                    choices: [{
+                        message: {
+                            content: 'Corpse visibility unchanged.',
+                            tool_calls: []
+                        }
+                    }]
+                }
+            }
+        ]
+    });
+
+    const result = await runtime.runChatCompletionWithToolLoop({
+        requestOptions: {
+            messages: [{ role: 'user', content: 'Try to hide the corpse.' }]
+        },
+        metadataLabel: 'player_action'
+    });
+
+    assert.equal(result.aiResponse, 'Corpse visibility unchanged.');
+    assert.equal(corpse.hiddenFromPlayer, false);
+    assert.equal(result.toolInvocations[0].metadata.hiddenFromPlayer, false);
+    const hideToolMessage = capturedMessagesByRound[1].find(message => message.role === 'tool' && message.tool_call_id === 'call-hide-corpse');
+    assert.match(hideToolMessage.content, /<field name="hidden">false<\/field>/);
 });
 
 test('runChatCompletionWithToolLoop sends requestUserInput answers back as tool XML', async () => {

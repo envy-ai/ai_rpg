@@ -276,6 +276,59 @@ test('base-context current location NPC list omits party members', () => {
     assert.match(currentLocationNpcBlock, /<name>Tessa<\/name>/);
 });
 
+test('base-context includes character hidden field only when true', () => {
+    const promptEnv = createPromptEnv();
+    const context = buildRenderContext();
+    context.npcs = [
+        {
+            id: 'npc-hidden',
+            name: 'Shade',
+            description: 'A hidden observer.',
+            class: 'Scout',
+            race: 'Human',
+            resistances: '',
+            vulnerabilities: '',
+            hiddenFromPlayer: true,
+            personality: { type: '', traits: '', goals: [], notes: '', aiNotes: '' },
+            aiNotes: '',
+            dispositionsTowardsPlayer: [],
+            selectedImportantMemories: [],
+            inventory: [],
+            skills: [],
+            abilities: []
+        },
+        {
+            id: 'npc-visible',
+            name: 'Ada',
+            description: 'A visible ally.',
+            class: 'Guide',
+            race: 'Human',
+            resistances: '',
+            vulnerabilities: '',
+            hiddenFromPlayer: false,
+            personality: { type: '', traits: '', goals: [], notes: '', aiNotes: '' },
+            aiNotes: '',
+            dispositionsTowardsPlayer: [],
+            selectedImportantMemories: [],
+            inventory: [],
+            skills: [],
+            abilities: []
+        }
+    ];
+    context.currentLocation.npcs = context.npcs;
+
+    const rendered = promptEnv.render('base-context.xml.njk', context);
+
+    assert.match(
+        rendered,
+        /<npc>\s*<id>npc-hidden<\/id>\s*<name>Shade<\/name>\s*<hidden>true<\/hidden>/
+    );
+    assert.doesNotMatch(
+        rendered,
+        /<npc>\s*<id>npc-visible<\/id>\s*<name>Ada<\/name>\s*<hidden>false<\/hidden>/
+    );
+});
+
 test('base-context includes active mystery threads and contained boxes only', () => {
     const promptEnv = createPromptEnv();
     const context = buildRenderContext();

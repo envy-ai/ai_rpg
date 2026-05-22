@@ -205,6 +205,7 @@ prompt_progress:
     question*: 5000
     random_event*: 5000
     run_prompts: 5000
+    scene_illustration_prompt: 5000
     scene_summarize: 5000
     separate_thing: 5000
     setting_*: 5000
@@ -511,6 +512,9 @@ debug_tool_calls: false
 
 # When true, player-action <hidden> notes are included in the client-visible chat log.
 show_hidden_notes: false
+
+# When true, failed automatic hide/perception checks are stored but omitted from client chat payloads.
+hide_hide_checks: false
 
 # Number of eligible player-action turns between automatic plot-expander prompt runs.
 # Set to 0 to disable automatic plot-expander runs.

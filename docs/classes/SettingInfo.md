@@ -6,7 +6,7 @@ Represents a game setting/world configuration, including theme, genre, prompts, 
 ## Key State
 - Core fields: `#id`, `#name`, `#description`, `#theme`, `#genre`, `#tone`, `#difficulty`, `#startingLocationType`.
 - Prompt and style fields: `#currencyName`, `#currencyNamePlural`, `#currencyValueNotes`, `#writingStyleNotes`, `#baseContextPreamble`, `#characterGenInstructions`, `#imagePromptPrefix*`, `#customSlopWords`, `#unifiedTonalScale`.
-- Defaults: `#playerStartingLevel`, `#defaultStartingCurrency`, `#defaultPlayerName`, `#defaultPlayerDescription`, `#defaultStartingLocation` (generation instructions), `#defaultExistingSkills`, `#defaultFactionCount`, `#defaultFactions`, `#calendarDefinition`.
+- Defaults: `#playerStartingLevel`, `#defaultStartingCurrency`, `#defaultPlayerName`, `#defaultPlayerDescription`, `#defaultStartingLocation` (generation instructions), `#defaultExistingSkills`, `#hidingAttribute`, `#hidingSkill`, `#perceptionAttribute`, `#perceptionSkill`, `#defaultFactionCount`, `#defaultFactions`, `#calendarDefinition`.
 - Lists: `#availableClasses`, `#availableRaces`, `#customSlopWords`.
 - Metadata: `#createdAt`, `#lastUpdated`.
 - Static indexes: `#indexByID`, `#indexByName`.
@@ -23,6 +23,7 @@ Represents a game setting/world configuration, including theme, genre, prompts, 
 - `toJSON()`: alias of `getStatus()`.
 - `clone(newName)`: deep-ish copy with a new id and timestamps; optionally renames.
 - `getPromptVariables()`: returns a reduced object for prompt templates, including `calendarDefinition` and `unifiedTonalScale`.
+- Hiding/perception mechanic selectors are persisted and exposed to prompt variables/base context. `hidingAttribute` and `perceptionAttribute` are required by the Worlds UI, while `hidingSkill` and `perceptionSkill` may be blank.
 - `toString()`: returns `"name (theme/genre)"`.
 - `save(saveDir)`: writes to `saves/settings` (or provided dir) as JSON.
 - `deleteSavedFile(saveDir)`: deletes persisted files for this setting by id suffix match.
@@ -48,3 +49,4 @@ Represents a game setting/world configuration, including theme, genre, prompts, 
 - Faction draft normalization validates ids/names, relation targets/statuses/notes, assets, and reputation tiers; invalid payloads throw explicit errors.
 - `calendarDefinition` stores an optional world-profile calendar draft using the same shape as the active-game calendar (`yearName`, `months`, `weekdays`, `seasons`, `holidays`). It is normalized through `Globals.normalizeCalendarDefinition`, saved with the setting JSON, and returned as a deep clone. `null` means new-game creation should generate a calendar normally.
 - `baseContextPreamble` is prepended to image-generation prompts at execution time for the OpenAI and NanoGPT backends; ComfyUI skips it.
+- Legacy saved games whose current setting lacks hiding/perception attributes are backfilled on `/api/load` through the `setting_hide_perception` prompt, then written back to the loaded save.

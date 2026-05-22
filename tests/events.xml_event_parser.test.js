@@ -61,7 +61,7 @@ test('XML event parser converts core camelCase tags to existing event keys', () 
     try {
         const parsed = Events._parseXmlEventCheckResponse(`
 <events>
-  <newExitDiscovered><destination><locationName>Hidden Garden</locationName><regionName>Hedge Maze</regionName></destination><destinationKind>location</destinationKind><vehicleType>none</vehicleType><description>A concealed garden path.</description><origin><locationName>Old Gatehouse</locationName><regionName>Castle Grounds</regionName></origin><travelTime>5 minutes</travelTime></newExitDiscovered>
+  <newExitDiscovered><destination><locationName>Hidden Garden</locationName><regionName>Hedge Maze</regionName></destination><destinationType>location</destinationType><vehicleType>none</vehicleType><description>A concealed garden path.</description><origin><locationName>Old Gatehouse</locationName><regionName>Castle Grounds</regionName></origin><travelTime>5 minutes</travelTime></newExitDiscovered>
   <alterLocation><currentLocationName>Hall</currentLocationName><newLocationName>Burned Hall</newLocationName><changeDescription>Smoke blackens the walls.</changeDescription></alterLocation>
   <itemInflict><fullItemName>Healing Salve</fullItemName><targetName>Wanderer</targetName><statusEffect>Soothed</statusEffect></itemInflict>
   <itemIngest><fullItemName>Bitter Tea</fullItemName><consumerName>Wanderer</consumerName></itemIngest>
@@ -77,8 +77,10 @@ test('XML event parser converts core camelCase tags to existing event keys', () 
   <attackDamage><attackerName>Goblin</attackerName><targetName>Wanderer</targetName></attackDamage>
   <alterNpc><npcName>Goblin</npcName><alterationCategory>physical transformation</alterationCategory><changeDescription>The goblin turns to stone.</changeDescription></alterNpc>
   <statusEffectChange><entityName>Wanderer</entityName><statusEffectName>Poisoned</statusEffectName><action>gained</action><level>2</level></statusEffectChange>
-  <npcArrival><npcName>Ada</npcName></npcArrival>
-  <npcDeparture><npcName>Bram</npcName><destinationRegion>Town</destinationRegion><destinationLocation>Market</destinationLocation></npcDeparture>
+  <revealHiddenNpc><npcName>Shade</npcName><description>The lantern catches his sleeve.</description><useOpposedCheck>true</useOpposedCheck></revealHiddenNpc>
+  <hideVisibleNpc><npcName>Ada</npcName><description>Ada melts into the crowd.</description></hideVisibleNpc>
+  <npcArrival><npcName>Ada</npcName><hideFromPlayer>true</hideFromPlayer></npcArrival>
+  <npcDeparture><npcName>Bram</npcName><destinationRegion>Town</destinationRegion><destinationLocation>Market</destinationLocation><hideFromPlayer>true</hideFromPlayer></npcDeparture>
   <thingArrival><thingName>Supply Wagon</thingName></thingArrival>
   <thingDeparture><thingName>Signal Beacon</thingName><destinationRegion>Town</destinationRegion><destinationLocation>Watchtower</destinationLocation></thingDeparture>
   <thingMoveWithCharacter><thingName>Handcart</thingName><characterName>Wanderer</characterName></thingMoveWithCharacter>
@@ -125,8 +127,21 @@ test('XML event parser converts core camelCase tags to existing event keys', () 
         assert.equal(events.alter_npc[0].name, 'Goblin');
         assert.equal(events.status_effect_change[0].level, 2);
         assert.deepEqual(events.npc_arrival_departure, [
-            { name: 'Ada', action: 'arrived', destination: null, destinationRegion: null, destinationLocation: null },
-            { name: 'Bram', action: 'left', destination: 'Market', destinationRegion: 'Town', destinationLocation: 'Market' }
+            { name: 'Ada', action: 'arrived', destination: null, destinationRegion: null, destinationLocation: null, hideFromPlayer: true },
+            { name: 'Bram', action: 'left', destination: 'Market', destinationRegion: 'Town', destinationLocation: 'Market', hideFromPlayer: true }
+        ]);
+        assert.deepEqual(events.reveal_hidden_npc, [
+            {
+                name: 'Shade',
+                description: 'The lantern catches his sleeve.',
+                useOpposedCheck: true
+            }
+        ]);
+        assert.deepEqual(events.hide_visible_npc, [
+            {
+                name: 'Ada',
+                description: 'Ada melts into the crowd.'
+            }
         ]);
         assert.deepEqual(events.thing_arrival_departure, [
             { name: 'Supply Wagon', action: 'arrived', destination: null, destinationRegion: null, destinationLocation: null },
@@ -177,7 +192,7 @@ test('XML newExitDiscovered preserves destination location when destination kind
       <locationName>Gorge Trailhead</locationName>
       <regionName>Copperwheel Gorge</regionName>
     </destination>
-    <destinationKind>region</destinationKind>
+    <destinationType>region</destinationType>
     <vehicleType>none</vehicleType>
     <description>A switchback trail leads down into the copper gorge.</description>
     <origin>
@@ -197,6 +212,37 @@ test('XML newExitDiscovered preserves destination location when destination kind
     assert.equal(entry.exitLocationName, 'Old Gatehouse');
     assert.equal(entry.exitRegionName, 'Castle Grounds');
     assert.equal(entry.travelTimeMinutes, 12);
+});
+
+test('XML newExitDiscovered promoted from location uses location name as region target', () => {
+    const parsed = Events._parseXmlEventCheckResponse(`
+<events>
+  <newExitDiscovered>
+    <destination>
+      <regionName>Pre-Construction Extended Network</regionName>
+      <locationName>Residential Grid Alpha Access</locationName>
+    </destination>
+    <destinationType>location</destinationType>
+    <destinationHasNewExits>true</destinationHasNewExits>
+    <vehicleType>none</vehicleType>
+    <description>Northbound transit corridor leading to Residential Grid Alpha.</description>
+    <origin>
+      <regionName>Pre-Construction Extended Network</regionName>
+      <locationName>Transit Gallery</locationName>
+    </origin>
+    <travelTime>30 minutes</travelTime>
+  </newExitDiscovered>
+</events>
+`);
+
+    const entry = parsed.structured.parsed.new_exit_discovered[0];
+    assert.equal(entry.name, 'Residential Grid Alpha Access');
+    assert.equal(entry.kind, 'region');
+    assert.equal(entry.destinationLocationName, undefined);
+    assert.equal(entry.destinationRegionName, 'Residential Grid Alpha Access');
+    assert.equal(entry.exitLocationName, 'Transit Gallery');
+    assert.equal(entry.exitRegionName, 'Pre-Construction Extended Network');
+    assert.equal(entry.travelTimeMinutes, 30);
 });
 
 test('XML event parser splits travel phases and ignores during-travel events', () => {
@@ -251,6 +297,100 @@ test('XML event parser rejects invalid travel boundaries', () => {
         () => Events._parseXmlEventCheckResponse('<events><moveLocation><destinationName>A</destinationName></moveLocation><arriveAtLocation/><moveLocation><destinationName>B</destinationName></moveLocation></events>'),
         /multiple travel boundaries/i
     );
+});
+
+test('hidden NPC reveal and hide events use configured opposed checks before toggling visibility', async () => {
+    const previousDeps = Events._deps;
+    const previousHandlers = Events._handlers;
+    const previousParsers = Events._parsers;
+    const previousCurrentPlayer = Globals.currentPlayer;
+
+    const player = { id: 'player-1', name: 'Baato' };
+    const shade = {
+        id: 'npc-shade',
+        name: 'Shade',
+        isNPC: true,
+        hiddenFromPlayer: true
+    };
+    const checks = [];
+
+    try {
+        Globals.currentPlayer = player;
+        Events.initialize({
+            getCurrentPlayer: () => player,
+            findActorByName: (name) => String(name || '').toLowerCase() === 'shade' ? shade : null,
+            ensureNpcByName: async () => null,
+            getActiveSettingSnapshot: () => ({
+                hidingAttribute: 'Agility',
+                hidingSkill: 'Stealth',
+                perceptionAttribute: 'Awareness',
+                perceptionSkill: 'Notice'
+            }),
+            resolveActionOutcome: ({ plausibility, player: actingActor }) => {
+                checks.push({ plausibility, actingActor });
+                return {
+                    label: checks.length === 1 ? 'failure' : 'success',
+                    degree: checks.length === 1 ? 'failure' : 'success',
+                    success: checks.length !== 1,
+                    skill: plausibility.skillCheck.skill,
+                    attribute: plausibility.skillCheck.attribute,
+                    opponent: {
+                        name: plausibility.skillCheck.opposedCheck.opponent
+                    }
+                };
+            }
+        });
+
+        await Events.applyEventOutcomes({
+            parsed: {
+                reveal_hidden_npc: [{
+                    name: 'Shade',
+                    description: 'The lantern catches Shade.',
+                    useOpposedCheck: true
+                }]
+            }
+        }, {});
+
+        assert.equal(shade.hiddenFromPlayer, true);
+        assert.equal(checks[0].actingActor, player);
+        assert.equal(checks[0].plausibility.skillCheck.attribute, 'Awareness');
+        assert.equal(checks[0].plausibility.skillCheck.skill, 'Notice');
+        assert.equal(checks[0].plausibility.skillCheck.opposedCheck.opponent, 'Shade');
+        assert.equal(checks[0].plausibility.skillCheck.opposedCheck.opponentAttribute, 'Agility');
+
+        await Events.applyEventOutcomes({
+            parsed: {
+                reveal_hidden_npc: [{
+                    name: 'Shade',
+                    description: 'The lantern catches Shade.',
+                    useOpposedCheck: true
+                }]
+            }
+        }, {});
+
+        assert.equal(shade.hiddenFromPlayer, false);
+
+        await Events.applyEventOutcomes({
+            parsed: {
+                hide_visible_npc: [{
+                    name: 'Shade',
+                    description: 'Shade slips away.'
+                }]
+            }
+        }, {});
+
+        assert.equal(shade.hiddenFromPlayer, true);
+        assert.equal(checks[2].actingActor, shade);
+        assert.equal(checks[2].plausibility.skillCheck.attribute, 'Agility');
+        assert.equal(checks[2].plausibility.skillCheck.skill, 'Stealth');
+        assert.equal(checks[2].plausibility.skillCheck.opposedCheck.opponent, 'Baato');
+        assert.equal(checks[2].plausibility.skillCheck.opposedCheck.opponentAttribute, 'Awareness');
+    } finally {
+        Events._deps = previousDeps;
+        Events._handlers = previousHandlers;
+        Events._parsers = previousParsers;
+        Globals.currentPlayer = previousCurrentPlayer;
+    }
 });
 
 test('mystery_box_mention event runs update prompt and creates a mystery box', async () => {
@@ -1292,6 +1432,210 @@ test('XML runEventChecks applies origin, movement, and destination phases while 
         LLMClient.chatCompletion = previousChatCompletion;
         LLMClient.logPrompt = previousLogPrompt;
         Globals.advanceTime = previousAdvanceTime;
+        Globals.config = previousConfig;
+        Globals.currentPlayer = previousCurrentPlayer;
+        Globals.processedMove = previousProcessedMove;
+    }
+});
+
+test('XML runEventChecks can apply suppressed travel arrival phase at explicit destination', async () => {
+    const previousConfig = Globals.config;
+    const previousCurrentPlayer = Globals.currentPlayer;
+    const previousProcessedMove = Globals.processedMove;
+    const previousChatCompletion = LLMClient.chatCompletion;
+    const previousLogPrompt = LLMClient.logPrompt;
+    const previousDeps = Events._deps;
+    const previousTimeout = Events._baseTimeout;
+    const previousParsers = Events._parsers;
+    const previousAggregators = Events._aggregators;
+    const previousHandlers = Events._handlers;
+
+    const things = new Map();
+    const locations = new Map();
+    const destinationRegion = {
+        id: 'region_dest',
+        name: 'Lancaster Maintenance Substation',
+        locationIds: ['dest']
+    };
+    const createLocation = (id, name, regionId = null) => {
+        const thingIds = new Set();
+        const location = {
+            id,
+            name,
+            regionId,
+            addThingId(thingId) {
+                for (const candidate of new Set(locations.values())) {
+                    candidate._thingIds.delete(thingId);
+                }
+                thingIds.add(thingId);
+                const thing = things.get(thingId);
+                if (thing) {
+                    thing.metadata = { ...(thing.metadata || {}), locationId: id };
+                }
+            },
+            removeThingId(thingId) {
+                const removed = thingIds.delete(thingId);
+                const thing = things.get(thingId);
+                if (removed && thing?.metadata?.locationId === id) {
+                    const metadata = { ...thing.metadata };
+                    delete metadata.locationId;
+                    thing.metadata = metadata;
+                }
+                return removed;
+            },
+            hasThing(thingId) {
+                return thingIds.has(thingId);
+            },
+            get _thingIds() {
+                return thingIds;
+            }
+        };
+        locations.set(id, location);
+        locations.set(name, location);
+        return location;
+    };
+
+    const origin = createLocation('origin', 'Living Area', 'region_origin');
+    const destination = createLocation('dest', 'Main Junction Hub', destinationRegion.id);
+    const display = {
+        id: 'thing_display',
+        name: 'Wall-Mounted Display Screen',
+        metadata: {},
+        removeFromWorld() {
+            for (const location of new Set(locations.values())) {
+                location.removeThingId(this.id);
+            }
+        },
+        putInLocation(locationId) {
+            const location = locations.get(locationId);
+            if (!location) {
+                throw new Error(`Location ${locationId} missing`);
+            }
+            location.addThingId(this.id);
+        }
+    };
+    const fern = {
+        id: 'thing_fern',
+        name: 'Planted Fern in Cracked Hydroplanter',
+        metadata: {},
+        removeFromWorld() {
+            for (const location of new Set(locations.values())) {
+                location.removeThingId(this.id);
+            }
+        },
+        putInLocation(locationId) {
+            const location = locations.get(locationId);
+            if (!location) {
+                throw new Error(`Location ${locationId} missing`);
+            }
+            location.addThingId(this.id);
+        }
+    };
+    things.set(display.id, display);
+    things.set(fern.id, fern);
+    origin.addThingId(display.id);
+    origin.addThingId(fern.id);
+
+    const player = {
+        isNPC: false,
+        name: 'Baato',
+        currentLocation: origin.id,
+        setLocation(locationOrId) {
+            this.currentLocation = typeof locationOrId === 'string'
+                ? locationOrId
+                : locationOrId?.id || null;
+        }
+    };
+    const arrivalPlayerLocations = [];
+    const arrivalContextLocations = [];
+
+    try {
+        Globals.config = {
+            ai: {},
+            event_checks: { enabled: true },
+            quests: { enabled: false },
+            omit_npc_generation: true
+        };
+        Globals.currentPlayer = player;
+        Globals.processedMove = false;
+        LLMClient.chatCompletion = async () => `<events>
+  <thingMoveWithCharacter>
+    <thingName>Planted Fern in Cracked Hydroplanter</thingName>
+    <characterName>Baato</characterName>
+  </thingMoveWithCharacter>
+  <thingDeparture>
+    <thingName>Wall-Mounted Display Screen</thingName>
+    <destinationRegion>Lancaster Maintenance Substation</destinationRegion>
+    <destinationLocation>Main Junction Hub</destinationLocation>
+  </thingDeparture>
+  <moveLocation><destinationName>Main Junction Hub</destinationName></moveLocation>
+  <arriveAtLocation/>
+  <thingArrival><thingName>Wall-Mounted Display Screen</thingName></thingArrival>
+  <sceneryAppear><sceneryName>Arrival Marker</sceneryName><description>Records arrival context.</description></sceneryAppear>
+</events>`;
+        LLMClient.logPrompt = () => {};
+        Events.initialize({
+            promptEnv: {
+                render: (_template, context) => JSON.stringify({ promptType: context.promptType })
+            },
+            parseXMLTemplate: (rendered) => ({
+                systemPrompt: 'system',
+                generationPrompt: rendered
+            }),
+            prepareBasePromptContext: async () => ({
+                needBarDefinitions: [],
+                npcs: [],
+                party: []
+            }),
+            Location: {
+                get: (reference) => locations.get(reference) || null,
+                findByName: (name) => locations.get(name) || null,
+                findShortestTravelTimeMinutes: () => 7
+            },
+            findLocationByNameLoose: (name) => locations.get(name) || null,
+            findRegionByNameLoose: () => destinationRegion,
+            findRegionByLocationId: (locationId) => ({ id: `region-${locationId}`, name: `Region ${locationId}` }),
+            findThingByName: (name) => {
+                const normalized = String(name || '').trim().toLowerCase();
+                return Array.from(things.values()).find(thing => thing.name.toLowerCase() === normalized) || null;
+            },
+            getCurrentPlayer: () => player,
+            getConfig: () => Globals.config,
+            things,
+            gameLocations: locations,
+            regions: new Map([[destinationRegion.id, destinationRegion]])
+        });
+        Events._handlers = {
+            ...Events._handlers,
+            scenery_appear: async function (_entries, context = {}) {
+                arrivalPlayerLocations.push(context.player?.currentLocation || null);
+                arrivalContextLocations.push(context.location?.id || null);
+            }
+        };
+
+        await Events.runEventChecks({
+            textToCheck: 'Baato carries the display screen to the main junction hub.',
+            suppressMoveEvents: true,
+            suppressTimeAdvance: true
+        });
+
+        assert.equal(destination.hasThing(display.id), true);
+        assert.equal(origin.hasThing(display.id), false);
+        assert.equal(display.metadata.locationId, destination.id);
+        assert.equal(destination.hasThing(fern.id), true);
+        assert.equal(origin.hasThing(fern.id), false);
+        assert.equal(fern.metadata.locationId, destination.id);
+        assert.deepEqual(arrivalContextLocations, [destination.id]);
+        assert.deepEqual(arrivalPlayerLocations, [destination.id]);
+        assert.equal(player.currentLocation, origin.id);
+    } finally {
+        Events._deps = previousDeps;
+        Events._baseTimeout = previousTimeout;
+        Events._parsers = previousParsers;
+        Events._aggregators = previousAggregators;
+        Events._handlers = previousHandlers;
+        LLMClient.chatCompletion = previousChatCompletion;
+        LLMClient.logPrompt = previousLogPrompt;
         Globals.config = previousConfig;
         Globals.currentPlayer = previousCurrentPlayer;
         Globals.processedMove = previousProcessedMove;

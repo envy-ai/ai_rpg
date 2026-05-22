@@ -69,7 +69,7 @@ Normal event elements are direct children of `<events>`.
 
 ### `new_exit_discovered`
 
-Use this when the text reveals, unlocks, unblocks, creates, clears, finds out about, or otherwise discovers a route or vehicle connection to another location or region. Unlike movement tags, this does not mean the player traveled there. `newExitDiscovered` is not a travel context boundary. Omit `origin` when the route is discovered at the current location; include it when the discovered exit starts somewhere else. If the destination is a region, still include a concrete destination location name when the text provides or implies one; the handler uses the region as the wiring target while summaries can display the specific destination location.
+Use this when the text reveals, unlocks, unblocks, creates, clears, finds out about, or otherwise discovers a route or vehicle connection to another location or region. Unlike movement tags, this does not mean the player traveled there. `newExitDiscovered` is not a travel context boundary. Omit `origin` when the route is discovered at the current location; include it when the discovered exit starts somewhere else. If `destinationType` is `region`, still include a concrete destination location name when the text provides or implies one; the handler uses the region as the wiring target while summaries can display the specific destination location. If `destinationType` is `location` and `destinationHasNewExits` is `true`, the parser promotes `locationName` into the region target/name and clears the destination location field before handling.
 
 ```xml
 <newExitDiscovered>
@@ -77,7 +77,8 @@ Use this when the text reveals, unlocks, unblocks, creates, clears, finds out ab
     <regionName>Exact region name of the exit's destination</regionName>
     <locationName>Exact location name of the exit's destination, including for region exits when known or implied</locationName>
   </destination>
-  <destinationKind>location|region</destinationKind>
+  <destinationType>location|region</destinationType>
+  <destinationHasNewExits>true|false</destinationHasNewExits>
   <vehicleType>none OR vehicle type, if this exit is a vehicle connection</vehicleType>
   <description>1-2 sentence destination or exit description</description>
   <origin>
@@ -169,6 +170,32 @@ Use this when a character obtains one or more tangible carryable items by a meth
   <fullItemName>Exact item name</fullItemName>
   <quantity>Positive integer</quantity>
 </pickUpItem>
+```
+
+### `put_item_in_container`
+
+Use this when a character puts one or more item stacks into an existing container, such as a bag, chest, box, crate, locker, or similar container. Use `player` for the current player when appropriate. If no character is named, the handler takes matching loose items from the current location. The container must already exist and be marked as a container; this event does not generate missing items or containers.
+
+```xml
+<putItemInContainer>
+  <character>Exact character, or player; omit when moving a loose current-location item</character>
+  <fullItemName>Exact item name</fullItemName>
+  <quantity>Positive integer</quantity>
+  <containerName>Exact container name</containerName>
+</putItemInContainer>
+```
+
+### `remove_item_from_container`
+
+Use this when a character takes one or more item stacks out of an existing container. Use `player` for the current player when appropriate. If no character is named, the handler moves the item into the current location. If the container does not already list enough direct matching contents, the handler generates the missing shortfall into the container before removing it. Nested containers are not searched.
+
+```xml
+<removeItemFromContainer>
+  <character>Exact character, or player; omit to place the item in the current location</character>
+  <fullItemName>Exact item name</fullItemName>
+  <quantity>Positive integer</quantity>
+  <containerName>Exact container name</containerName>
+</removeItemFromContainer>
 ```
 
 ### `drop_item`
@@ -307,24 +334,48 @@ Use this when an animate entity gains or loses a temporary status effect that is
 
 ### `npc_arrival`
 
-Use this when an animate entity arrives at the current location from elsewhere, or newly appears in the scene.
+Use this when an animate entity arrives at the current location from elsewhere, or newly appears in the scene. Set `hideFromPlayer` only when a living NPC is actively trying to arrive unnoticed; this marks them hidden until the player detects them through the normal opposed check. Dead NPCs/corpses are always visible.
 
 ```xml
 <npcArrival>
   <npcName>Exact NPC or entity name</npcName>
+  <hideFromPlayer>true|false</hideFromPlayer>
 </npcArrival>
 ```
 
 ### `npc_departure`
 
-Use this when an animate entity leaves the scene for another destination. Include a concrete best-known destination region and destination location. The destination must not be `unknown`, blank, or the current location; if the exact destination is not established, choose the most plausible concrete region and location so the character can be tracked offscreen. If a party member stops accompanying the player and goes to a destination, use this event so they can leave the party before moving there. Do not use this for party members simply remaining with the player.
+Use this when an animate entity leaves the scene for another destination. Include a concrete best-known destination region and destination location. The destination must not be `unknown`, blank, or the current location; if the exact destination is not established, choose the most plausible concrete region and location so the character can be tracked offscreen. If a party member stops accompanying the player and goes to a destination, use this event so they can leave the party before moving there. Do not use this for party members simply remaining with the player. Set `hideFromPlayer` only when a living NPC is trying to remain hidden after moving. Dead NPCs/corpses are always visible.
 
 ```xml
 <npcDeparture>
   <npcName>Exact NPC or entity name</npcName>
   <destinationRegion>Destination region</destinationRegion>
   <destinationLocation>Destination location</destinationLocation>
+  <hideFromPlayer>true|false</hideFromPlayer>
 </npcDeparture>
+```
+
+### `reveal_hidden_npc`
+
+Use this when narration says the player could notice, expose, discover, or otherwise reveal a currently hidden living NPC. The handler ignores the event if that NPC is not hidden or is dead. A failed opposed check leaves the NPC hidden.
+
+```xml
+<revealHiddenNpc>
+  <npcName>Exact hidden NPC or entity name</npcName>
+  <description>One sentence reason the NPC might be revealed</description>
+</revealHiddenNpc>
+```
+
+### `hide_visible_npc`
+
+Use this when a visible living NPC actively tries to hide, slip away into cover, blend into a crowd, or otherwise become hidden from the player. This always uses an opposed hide/perception check. Dead NPCs/corpses are ignored because they are always visible.
+
+```xml
+<hideVisibleNpc>
+  <npcName>Exact visible NPC or entity name</npcName>
+  <description>One sentence reason the NPC might become hidden</description>
+</hideVisibleNpc>
 ```
 
 ### `thing_arrival`

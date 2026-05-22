@@ -15,6 +15,12 @@
   <isHarvestable>{{ item.isHarvestable }}</isHarvestable>
   <isSalvageable>{{ item.isSalvageable }}</isSalvageable>
   <isContainer>{{ item.isContainer }}</isContainer>
+  {% if item.isContainer %}<containerContents>
+    {% for content in item.containerContents %}<containedItem>
+      <name>{{ content.name }}</name>
+      <count>{{ content.count }}</count>
+    </containedItem>{% endfor %}
+  </containerContents>{% endif %}
   <attributeBonuses>
     {% if item.attributeBonuses %}{% for bonus in item.attributeBonuses %}<attributeBonus>
       <attribute>{{ bonus.attribute }}</attribute>

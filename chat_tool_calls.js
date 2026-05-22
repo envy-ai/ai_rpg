@@ -620,6 +620,50 @@ const CHAT_TOOL_DEFINITIONS = Object.freeze([
     {
         type: 'function',
         function: {
+            name: 'revealEntity',
+            description: 'Mark a hidden character or NPC as visible to the player after you have already resolved any needed opposed check yourself.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    name: {
+                        type: 'string',
+                        description: 'Character ID or name to reveal.'
+                    },
+                    description: {
+                        type: 'string',
+                        description: 'Optional short description of how the character becomes visible.'
+                    }
+                },
+                required: ['name'],
+                additionalProperties: false
+            }
+        }
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'hideEntity',
+            description: 'Mark a visible character or NPC as hidden from the player after you have already resolved any needed opposed check yourself.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    name: {
+                        type: 'string',
+                        description: 'Character ID or name to hide.'
+                    },
+                    description: {
+                        type: 'string',
+                        description: 'Optional short description of how the character hides.'
+                    }
+                },
+                required: ['name'],
+                additionalProperties: false
+            }
+        }
+    },
+    {
+        type: 'function',
+        function: {
             name: 'createThing',
             description: 'Create a thing at a location using thing-generator-single. Returns the final created name (which may differ from requested name after name validation).',
             parameters: {
@@ -3654,6 +3698,52 @@ const createChatToolRuntime = ({
         };
     };
 
+    const executeSetEntityHiddenFromPlayerTool = ({
+        name,
+        description = '',
+        hiddenFromPlayer,
+        functionName
+    } = {}) => {
+        const entityName = normalizeRequiredString(name, { functionName, fieldName: 'name' });
+        const targetCharacter = resolveCharacterReference(entityName, { fieldName: 'name' });
+        const effectiveHiddenFromPlayer = Boolean(hiddenFromPlayer) && !Boolean(targetCharacter.isDead);
+        targetCharacter.hiddenFromPlayer = effectiveHiddenFromPlayer;
+
+        const lines = [
+            `<${functionName}Result>`,
+            ...renderXmlNode('entity', {
+                id: targetCharacter.id || null,
+                name: targetCharacter.name || null,
+                isNPC: Boolean(targetCharacter.isNPC),
+                hidden: Boolean(effectiveHiddenFromPlayer),
+                description: normalizeOptionalString(description)
+            }, 1),
+            `</${functionName}Result>`
+        ];
+
+        return {
+            content: lines.join('\n'),
+            metadata: {
+                entityId: targetCharacter.id || null,
+                entityName: targetCharacter.name || null,
+                hiddenFromPlayer: Boolean(effectiveHiddenFromPlayer),
+                locationRefreshRequested: true
+            }
+        };
+    };
+
+    const executeRevealEntityTool = (args = {}) => executeSetEntityHiddenFromPlayerTool({
+        ...args,
+        hiddenFromPlayer: false,
+        functionName: 'revealEntity'
+    });
+
+    const executeHideEntityTool = (args = {}) => executeSetEntityHiddenFromPlayerTool({
+        ...args,
+        hiddenFromPlayer: true,
+        functionName: 'hideEntity'
+    });
+
     const executeCreateThingTool = async ({
         shortDescription,
         itemOrScenery,
@@ -5206,6 +5296,47 @@ const createChatToolRuntime = ({
         return null;
     };
 
+    const resolveAttackToolAttackerForVisibility = (rawName) => {
+        const name = toTrimmedString(rawName);
+        if (!name) {
+            return null;
+        }
+
+        const current = getCurrentPlayer();
+        const normalized = name.toLowerCase();
+        if (current) {
+            const currentNames = [
+                'player',
+                'the player',
+                'you',
+                toTrimmedString(current.id),
+                toTrimmedString(current.name)
+            ].filter(Boolean).map(value => value.toLowerCase());
+            if (currentNames.includes(normalized)) {
+                return current;
+            }
+        }
+
+        const allCharacters = getAllCharacters();
+        const idMatch = allCharacters.find(character => toTrimmedString(character?.id) === name) || null;
+        if (idMatch) {
+            return idMatch;
+        }
+
+        return allCharacters.find(character => (
+            toTrimmedString(character?.name).toLowerCase() === normalized
+        )) || null;
+    };
+
+    const revealAttackToolAttackerIfHidden = (rawName) => {
+        const attacker = resolveAttackToolAttackerForVisibility(rawName);
+        if (!attacker || attacker.hiddenFromPlayer !== true || attacker.isDead === true) {
+            return false;
+        }
+        attacker.hiddenFromPlayer = false;
+        return true;
+    };
+
     const buildResolveAttackHitContent = ({ resolved, damage }) => {
         const application = resolved?.application && typeof resolved.application === 'object'
             ? resolved.application
@@ -5383,6 +5514,7 @@ const createChatToolRuntime = ({
                 { code: 'attack_resolution_failed' }
             );
         }
+        const attackerRevealedFromHidden = revealAttackToolAttackerIfHidden(attackerName);
 
         if (!resolved.hit) {
             return {
@@ -5392,7 +5524,8 @@ const createChatToolRuntime = ({
                     hit: false,
                     summary: resolved.summary || null,
                     attacker: attackerName,
-                    defender: defenderName
+                    defender: defenderName,
+                    locationRefreshRequested: Boolean(resolved.locationRefreshRequested || attackerRevealedFromHidden)
                 }
             };
         }
@@ -5425,7 +5558,7 @@ const createChatToolRuntime = ({
                 appliedStatusEffects: Array.isArray(resolved.appliedStatusEffects)
                     ? resolved.appliedStatusEffects
                     : [],
-                locationRefreshRequested: Boolean(resolved.locationRefreshRequested || resolved.application),
+                locationRefreshRequested: Boolean(resolved.locationRefreshRequested || resolved.application || attackerRevealedFromHidden),
                 summary: resolved.summary || null,
                 attacker: attackerName,
                 defender: defenderName
@@ -5708,6 +5841,7 @@ const createChatToolRuntime = ({
         const targetCount = Number.isFinite(Number(resolved.targetCount))
             ? Number(resolved.targetCount)
             : results.length;
+        const attackerRevealedFromHidden = revealAttackToolAttackerIfHidden(attackerName);
 
         return {
             content: buildResolveAreaAttackContent({ resolved, summary }),
@@ -5716,7 +5850,7 @@ const createChatToolRuntime = ({
                 result: hitCount > 0 ? (hitCount === targetCount ? 'all-hit' : 'mixed') : 'miss',
                 hitCount,
                 targetCount,
-                locationRefreshRequested: Boolean(resolved.locationRefreshRequested),
+                locationRefreshRequested: Boolean(resolved.locationRefreshRequested || attackerRevealedFromHidden),
                 summary,
                 results,
                 attacker: summary.attacker || attackerName,
@@ -6879,6 +7013,10 @@ const createChatToolRuntime = ({
                 toolResult = executeCreateExitTool(argumentsObject);
             } else if (toolCall.functionName === 'listLocationEntities') {
                 toolResult = executeListLocationEntitiesTool(argumentsObject);
+            } else if (toolCall.functionName === 'revealEntity') {
+                toolResult = executeRevealEntityTool(argumentsObject);
+            } else if (toolCall.functionName === 'hideEntity') {
+                toolResult = executeHideEntityTool(argumentsObject);
             } else if (toolCall.functionName === 'createThing') {
                 toolResult = executeCreateThingTool(argumentsObject);
             } else if (toolCall.functionName === 'alterThing') {

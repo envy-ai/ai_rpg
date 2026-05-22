@@ -9,14 +9,14 @@ function findToolDefinition(name) {
     return CHAT_TOOL_DEFINITIONS.find(entry => entry?.function?.name === name)?.function || null;
 }
 
-function makeRuntime({ firstResponse, resolveAreaAttack, capturedMessagesByRound }) {
+function makeRuntime({ firstResponse, resolveAreaAttack, capturedMessagesByRound, characters = [], currentPlayer = null }) {
     return createChatToolRuntime({
         getConfig: () => ({ ai: { max_tool_rounds: 3 } }),
         getChatHistory: () => [],
         isAssistantProseLikeEntry: () => true,
         serializeNpcForClient: () => ({}),
         buildLocationResponse: () => ({}),
-        getCurrentPlayer: () => ({ id: 'player-1', name: 'Exis', currentLocation: 'loc-1' }),
+        getCurrentPlayer: () => currentPlayer || { id: 'player-1', name: 'Exis', currentLocation: 'loc-1' },
         createLocationFromEvent: async () => {
             throw new Error('createLocationFromEvent should not be reached.');
         },
@@ -52,7 +52,7 @@ function makeRuntime({ firstResponse, resolveAreaAttack, capturedMessagesByRound
             logPrompt: () => {},
             formatMessagesForErrorLog: messages => JSON.stringify(messages)
         },
-        Player: { getAll: () => [] },
+        Player: { getAll: () => characters },
         Thing: { getAll: () => [] },
         Location: { getAll: () => [], get: () => null },
         Region: { getAll: () => [] },
@@ -291,6 +291,52 @@ test('resolveAreaAttack returns grouped per-target content and metadata', async 
         'Goblin Sapper',
         'Shield Adept'
     ]);
+});
+
+test('resolveAreaAttack reveals a hidden attacker immediately', async () => {
+    const capturedMessagesByRound = [];
+    const hiddenAttacker = {
+        id: 'npc-shade',
+        name: 'Shade',
+        isNPC: true,
+        hiddenFromPlayer: true,
+        currentLocation: 'loc-1'
+    };
+    const args = {
+        ...areaAttackArgs,
+        attacker: 'Shade'
+    };
+    const runtime = makeRuntime({
+        firstResponse: resolveAreaAttackToolResponse(args),
+        capturedMessagesByRound,
+        characters: [hiddenAttacker],
+        resolveAreaAttack: async () => ({
+            hitCount: 0,
+            targetCount: 3,
+            locationRefreshRequested: false,
+            summary: {
+                kind: 'area-attack',
+                attacker: 'Shade',
+                weapon: 'Concussion Grenade',
+                ability: 'N/A',
+                areaShape: 'blast',
+                rollMode: 'sharedAttackRoll',
+                results: [
+                    { target: 'Commander Razorclaw', hit: false, damageApplied: 0, remainingHealthPercent: 100, position: 'center' },
+                    { target: 'Goblin Sapper', hit: false, damageApplied: 0, remainingHealthPercent: 100, position: 'edge' },
+                    { target: 'Shield Adept', hit: false, damageApplied: 0, remainingHealthPercent: 100, position: 'behind cover' }
+                ]
+            }
+        })
+    });
+
+    const result = await runtime.runChatCompletionWithToolLoop({
+        requestOptions: { messages: [{ role: 'user', content: 'Shade attacks the group.' }] },
+        metadataLabel: 'test_resolve_area_attack_hidden_attacker'
+    });
+
+    assert.equal(hiddenAttacker.hiddenFromPlayer, false);
+    assert.equal(result.toolInvocations[0].metadata.locationRefreshRequested, true);
 });
 
 test('resolveAreaAttack marks all-hit area results distinctly', async () => {

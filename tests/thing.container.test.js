@@ -83,6 +83,85 @@ test('container flag and inventory ids persist through JSON and saves', () => {
   }
 });
 
+test('pending container contents normalize and persist through JSON and saves', () => {
+  const warnings = [];
+  const originalWarn = console.warn;
+  console.warn = (...args) => warnings.push(args.join(' '));
+
+  let crate;
+  try {
+    crate = new Thing({
+      id: 'thing-pending-crate',
+      name: 'Sealed Supply Crate',
+      description: 'A sealed crate with a manifest tag.',
+      thingType: 'scenery',
+      isContainer: false,
+      containerContents: [
+        { name: 'Signal Flares', count: '3 flares' },
+        { name: 'Folded Map' }
+      ]
+    });
+  } finally {
+    console.warn = originalWarn;
+  }
+
+  assert.equal(crate.isContainer, true);
+  assert.match(warnings.join('\n'), /container contents/i);
+  assert.deepEqual(crate.containerContents, [
+    { name: 'Signal Flares', count: 3 },
+    { name: 'Folded Map', count: 1 }
+  ]);
+
+  const restored = Thing.fromJSON(crate.toJSON());
+  assert.equal(restored.isContainer, true);
+  assert.deepEqual(restored.containerContents, [
+    { name: 'Signal Flares', count: 3 },
+    { name: 'Folded Map', count: 1 }
+  ]);
+
+  const empty = new Thing({
+    id: 'thing-empty-container',
+    name: 'Empty Box',
+    description: 'An empty box.',
+    thingType: 'item',
+    isContainer: true,
+    containerContents: []
+  });
+  assert.deepEqual(empty.containerContents, []);
+
+  const saveDir = makeTempSaveDir();
+  try {
+    Utils.writeSerializedGameState(saveDir, {
+      gameWorld: {},
+      chatHistory: [],
+      generatedImages: {},
+      things: {
+        [crate.id]: crate.toJSON(),
+        [empty.id]: empty.toJSON()
+      },
+      players: {},
+      factions: {},
+      skills: [],
+      metadata: {},
+      pendingRegionStubs: {},
+      worldTime: null,
+      calendarDefinition: null,
+      gameConfigOverrideYaml: '',
+      chatSummaries: {},
+      sceneSummaries: {}
+    });
+
+    const reloaded = Utils.loadSerializedGameState(saveDir);
+    assert.deepEqual(reloaded.things[crate.id].containerContents, [
+      { name: 'Signal Flares', count: 3 },
+      { name: 'Folded Map', count: 1 }
+    ]);
+    assert.deepEqual(reloaded.things[empty.id].containerContents, []);
+  } finally {
+    fs.rmSync(saveDir, { recursive: true, force: true });
+  }
+});
+
 test('adding and removing contained items updates placement metadata loudly', () => {
   Globals.config = {
     ...(originalConfig && typeof originalConfig === 'object' ? originalConfig : {}),

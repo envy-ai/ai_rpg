@@ -25,6 +25,7 @@ This is the high-level index for every Express route registered in `api.js`. The
 - `docs/api/players.md` - player CRUD, party, gear
 - `docs/api/quests.md` - quest edits/confirmations
 - `docs/api/regions.md` - region CRUD and generation
+- `docs/api/scene-summaries.md` - Story Tools scene-summary editor routes
 - `docs/api/settings.md` - setting CRUD, AI fill-missing, faction defaults, and world-profile calendar drafts
 - `docs/api/things.md` - items/scenery CRUD and inventory transfers
 - `docs/api/misc.md` - feature flags, health check, slash commands, prompt cancel, config test

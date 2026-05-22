@@ -19,6 +19,9 @@ Response:
 - 200: `{ success: true, player: NpcProfile }`
 - 404: `{ success: false, error: 'No current player found' }`
 
+Notes:
+- Before serializing the player payload, containers in the current player's inventory with pending `Thing.containerContents` seeds generate those contents through `thing-generator-contents` and clear the pending seed list.
+
 ## PUT /api/player/thing-list-view-preferences
 Persist the current player's shared thing-list panel view mode for one panel.
 

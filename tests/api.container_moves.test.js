@@ -6,7 +6,7 @@ const vm = require('vm');
 function loadContainerMoveHelpers() {
     const source = fs.readFileSync(require.resolve('../api.js'), 'utf8');
     const start = source.indexOf('        function createContainerMoveError(message, status = 400) {');
-    const end = source.indexOf('\n        function buildContainerInventoryPayload', start);
+    const end = source.indexOf('\n        async function buildContainerInventoryPayload', start);
     if (start < 0 || end < 0) {
         throw new Error('Unable to locate container move helpers in api.js');
     }

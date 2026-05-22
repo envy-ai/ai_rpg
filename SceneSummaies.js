@@ -195,6 +195,42 @@ class SceneSummaries {
         return this.getScenes().sort((a, b) => a.startIndex - b.startIndex);
     }
 
+    updateSceneAtDisplayIndex(displayIndex, updates = {}) {
+        const index = Number(displayIndex);
+        if (!Number.isInteger(index) || index <= 0) {
+            throw new Error('Scene summary display number must be a positive integer.');
+        }
+        if (!updates || typeof updates !== 'object' || Array.isArray(updates)) {
+            throw new Error('Scene summary updates must be an object.');
+        }
+
+        const ordered = this._scenes
+            .map((scene, originalIndex) => ({ scene, originalIndex }))
+            .sort((a, b) => a.scene.startIndex - b.scene.startIndex);
+        const target = ordered[index - 1];
+        if (!target) {
+            throw new Error(`Scene summary ${index} not found.`);
+        }
+
+        const nextScene = {
+            ...target.scene,
+            summary: Object.prototype.hasOwnProperty.call(updates, 'summary')
+                ? updates.summary
+                : target.scene.summary,
+            details: Object.prototype.hasOwnProperty.call(updates, 'details')
+                ? updates.details
+                : target.scene.details,
+            quotes: Object.prototype.hasOwnProperty.call(updates, 'quotes')
+                ? updates.quotes
+                : target.scene.quotes
+        };
+
+        const normalized = this.#normalizeScene(nextScene);
+        this._scenes[target.originalIndex] = normalized;
+        this._metadata.updatedAt = new Date().toISOString();
+        return this.#cloneScene(normalized);
+    }
+
     ingestNpcNamesFromEntries(entries = []) {
         if (!Array.isArray(entries)) {
             throw new Error('Entries list must be an array.');

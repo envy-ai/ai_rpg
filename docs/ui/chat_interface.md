@@ -49,6 +49,7 @@ The main UI is rendered by `views/index.njk` and powered by `public/js/chat.js` 
   - When move plausibility is configured for `unexplored_locations`, exit-button travel uses the chat/event-move path for unresolved region-entry exits and for expanded destination locations whose exit payload reports `destinationVisited === false`; merely being expanded no longer makes a location count as explored.
   - `exit.isVehicle`/`exit.vehicleType` are treated as edge metadata only and must not be used to infer that the destination location/region is itself a vehicle.
   - NPC list + "Add NPC" button.
+  - Living NPCs with `hiddenFromPlayer === true` are sent in the location payload but hidden by the client by default. The NPC section has a top-right eye toggle with the tooltip `show hidden`; when enabled, hidden living NPC cards render with a translucent `is-hidden-from-player` treatment distinct from dead/corpse opacity. Corpses are always visible even if their persisted NPC record is hidden.
   - NPC and party-member card health bars sit just below the portrait image so they do not overlap the in-portrait need bars.
   - Character-card and player-card health bars now show a centered outlined `current/max` readout directly above the bar itself; readout values are rounded upward for display while bar fill still uses raw health, and the player sidebar no longer repeats a separate `HP:` text row below the portrait metadata.
   - Player, location-NPC, sidebar-party, and Party-tab portraits now show a top-left bare `L.<level>` text badge on the image itself instead of repeating the level in separate text rows.
@@ -256,7 +257,8 @@ Inline script functions in `views/index.njk` render these tabs:
 
 ## Story Tools tab
 
-- `initStoryToolsPanel()` renders a tabbed editor-friendly Story Tools area. The first inner tab is the existing full-history entry view; the second inner tab is `Mystery Boxes`.
+- `initStoryToolsPanel()` renders a tabbed editor-friendly Story Tools area. The first inner tab is the existing full-history entry view; the second inner tab is `Scene Summaries`; the third inner tab is `Mystery Boxes`.
+- The `Scene Summaries` inner tab uses `GET /api/scene-summaries` for the left-side scene list and `PUT /api/scene-summaries/:index` to edit the selected summary. It shows the scene display number plus entry range, and edits the summary text, newline-delimited detail lines, and quote lines formatted as `Character: quote`. Saves refresh the scene list and report whether the active save was rewritten immediately or only runtime state was updated.
 - The `Mystery Boxes` inner tab is now thread-scoped. It uses `GET /api/mystery-threads` for the left-side thread list, `GET /api/mystery-threads/:id` to load the selected thread plus contained boxes, `PUT /api/mystery-threads/:id` to edit thread name/status/summary/constraints, and `PUT /api/mystery-boxes/:id` to edit the selected contained box. Box API responses include computed `threadId` / `threadName`, and mention history remains read-only in a right-hand column beside the editable box fields.
 - Uses `GET /api/chat/history?includeAllEntries=true` to include hidden entries and entries that are normally omitted from client chat history; player-action `<hidden>` note blocks appear there only when `show_hidden_notes` is true.
 - Paging:

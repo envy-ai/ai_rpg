@@ -92,7 +92,15 @@
                                         </div>
                                     </details>
                                     <details class="location-section location-npcs" open>
-                                        <summary>NPCs</summary>
+                                        <summary>
+                                            <span>NPCs</span>
+                                            <button type="button" class="location-hidden-npcs-toggle" id="toggleHiddenNpcsButton" aria-label="show hidden" aria-pressed="false" title="show hidden">
+                                                <svg class="location-hidden-npcs-toggle__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                                                    <path d="M2.06 12.35a1 1 0 0 1 0-.7C3.74 7.51 7.68 4.75 12 4.75s8.26 2.76 9.94 6.9a1 1 0 0 1 0 .7c-1.68 4.14-5.62 6.9-9.94 6.9s-8.26-2.76-9.94-6.9Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
+                                                    <circle cx="12" cy="12" r="3.1" fill="none" stroke="currentColor" stroke-width="1.8"></circle>
+                                                </svg>
+                                            </button>
+                                        </summary>
                                         <div class="location-npc-content">
                                             <div class="location-entity-grid" id="locationNPCs">
                                                 <div class="location-npc-empty">No notable NPCs present.</div>
@@ -773,6 +781,7 @@
                         </header>
                         <div class="story-tools-tab-list" role="tablist" aria-label="Story Tools sections">
                             <button type="button" class="story-tools-tab-button active" id="storyToolsHistoryTab" role="tab" aria-selected="true" aria-controls="storyToolsHistoryPanel">Story Entries</button>
+                            <button type="button" class="story-tools-tab-button" id="storyToolsSceneSummariesTab" role="tab" aria-selected="false" aria-controls="storyToolsSceneSummariesPanel">Scene Summaries</button>
                             <button type="button" class="story-tools-tab-button" id="storyToolsMysteryBoxesTab" role="tab" aria-selected="false" aria-controls="storyToolsMysteryBoxesPanel">Mystery Boxes</button>
                         </div>
                         <div class="story-tools-subpanel active" id="storyToolsHistoryPanel" role="tabpanel" aria-labelledby="storyToolsHistoryTab">
@@ -808,6 +817,40 @@
                                     <div class="story-tools-empty" id="storyToolsEmpty" hidden>No story entries found.</div>
                                     <div class="story-tools-entries" id="storyToolsEntries"></div>
                                 </div>
+                            </div>
+                        </div>
+                        <div class="story-tools-subpanel" id="storyToolsSceneSummariesPanel" role="tabpanel" aria-labelledby="storyToolsSceneSummariesTab" hidden>
+                            <div class="scene-summaries-layout">
+                                <aside class="scene-summaries-list-pane" aria-label="Scene summaries">
+                                    <div class="mystery-boxes-list-header">
+                                        <h3>Scenes</h3>
+                                        <span class="mystery-boxes-count" id="sceneSummariesCount">0 scenes</span>
+                                    </div>
+                                    <div class="mystery-boxes-empty" id="sceneSummariesEmpty" hidden>No scene summaries found.</div>
+                                    <div class="scene-summaries-list" id="sceneSummariesList"></div>
+                                </aside>
+                                <section class="scene-summary-detail-pane" aria-label="Scene summary detail">
+                                    <div class="mystery-box-detail-empty" id="sceneSummaryDetailEmpty">No scene summary selected.</div>
+                                    <form class="scene-summary-form" id="sceneSummaryForm" hidden>
+                                        <div class="scene-summary-meta" id="sceneSummaryMeta"></div>
+                                        <div class="scene-summary-form-row">
+                                            <label for="sceneSummaryTextInput">Summary</label>
+                                            <textarea id="sceneSummaryTextInput" rows="6"></textarea>
+                                        </div>
+                                        <div class="scene-summary-form-row">
+                                            <label for="sceneSummaryDetailsInput">Details</label>
+                                            <textarea id="sceneSummaryDetailsInput" rows="10" spellcheck="false"></textarea>
+                                        </div>
+                                        <div class="scene-summary-form-row">
+                                            <label for="sceneSummaryQuotesInput">Quotes</label>
+                                            <textarea id="sceneSummaryQuotesInput" rows="8" spellcheck="false"></textarea>
+                                        </div>
+                                        <div class="mystery-box-form-actions">
+                                            <span class="scene-summary-status" id="sceneSummaryStatus" aria-live="polite"></span>
+                                            <button type="submit" class="story-tools-entry-edit" id="sceneSummarySaveButton">Save</button>
+                                        </div>
+                                    </form>
+                                </section>
                             </div>
                         </div>
                         <div class="story-tools-subpanel" id="storyToolsMysteryBoxesPanel" role="tabpanel" aria-labelledby="storyToolsMysteryBoxesTab" hidden>
@@ -3904,6 +3947,18 @@
             if (indicator) {
                 appendCharacterConditionIndicator(portrait, indicator);
             }
+        }
+
+        function isNpcHiddenFromLocationDisplay(npc) {
+            return Boolean(npc?.hiddenFromPlayer) && !Boolean(npc?.isDead);
+        }
+
+        function shouldRenderLocationNpc(npc, showHidden = false) {
+            return !isNpcHiddenFromLocationDisplay(npc) || Boolean(showHidden);
+        }
+
+        function shouldStyleLocationNpcAsHidden(npc, showHidden = false) {
+            return Boolean(showHidden) && isNpcHiddenFromLocationDisplay(npc);
         }
 
         function applyNpcDeathStyling(card, portrait, npc) {
@@ -11306,6 +11361,7 @@
         let draggedNpcGoalRow = null;
         let locationImageGenerationEnabled = true;
         let lastRenderedLocation = null;
+        let locationNpcsShowHidden = false;
         let currentLocationThingCollections = {
             locationId: null,
             items: [],
@@ -23639,6 +23695,7 @@
             const chatSpinnerStatusBar = document.getElementById('chatSpinnerStatusBar');
             const chatSpinnerStatusText = document.getElementById('chatSpinnerStatusText');
             const locationNPCs = document.getElementById('locationNPCs');
+            const toggleHiddenNpcsButton = document.getElementById('toggleHiddenNpcsButton');
             const locationSceneryPanel = document.getElementById('locationSceneryPanel');
             const locationScenery = document.getElementById('locationScenery');
             const locationSceneryEmpty = document.getElementById('locationSceneryEmpty');
@@ -23667,8 +23724,30 @@
             window.currentNpcData = npcDataCache;
             const npcMenuState = { openMenu: null, trigger: null, card: null };
 
+            function updateHiddenNpcsToggleButton() {
+                if (!toggleHiddenNpcsButton) {
+                    return;
+                }
+                toggleHiddenNpcsButton.classList.toggle('is-active', locationNpcsShowHidden);
+                toggleHiddenNpcsButton.setAttribute('aria-pressed', locationNpcsShowHidden ? 'true' : 'false');
+            }
+
             if (locationNPCs) {
                 registerPartyDropTarget(locationNPCs, 'dismiss');
+            }
+            if (toggleHiddenNpcsButton) {
+                updateHiddenNpcsToggleButton();
+                toggleHiddenNpcsButton.addEventListener('click', async (event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    locationNpcsShowHidden = !locationNpcsShowHidden;
+                    updateHiddenNpcsToggleButton();
+
+                    const locationToRender = lastRenderedLocation || window.lastRenderedLocation || null;
+                    if (locationToRender && typeof window.updateLocationDisplay === 'function') {
+                        await window.updateLocationDisplay(locationToRender);
+                    }
+                });
             }
             if (locationScenery) {
                 registerThingTypeDropTarget(locationScenery, { targetType: 'scenery' });
@@ -30507,15 +30586,18 @@
 
                     if (locationNPCs) {
                         const npcs = Array.isArray(location.npcs) ? location.npcs : [];
-                        if (npcs.length === 0) {
+                        const visibleNpcs = npcs.filter(npc => shouldRenderLocationNpc(npc, locationNpcsShowHidden));
+                        updateHiddenNpcsToggleButton();
+                        if (visibleNpcs.length === 0) {
                             locationNPCs.innerHTML = '<div class="location-npc-empty">No notable NPCs present.</div>';
                         } else {
                             locationNPCs.innerHTML = '';
-                            npcs.forEach(npc => {
+                            visibleNpcs.forEach(npc => {
                                 const previous = npc?.id ? npcDataCache.get(npc.id) : null;
 
                                 const card = document.createElement('div');
                                 card.className = 'entity-card entity-card--npc location-entity-card is-npc';
+                                card.classList.toggle('is-hidden-from-player', shouldStyleLocationNpcAsHidden(npc, locationNpcsShowHidden));
 
                                 const portrait = document.createElement('div');
                                 portrait.className = 'entity-icon location-entity-icon';
@@ -33540,9 +33622,22 @@
             const entriesContainer = document.getElementById('storyToolsEntries');
             const emptyState = document.getElementById('storyToolsEmpty');
             const historyTab = document.getElementById('storyToolsHistoryTab');
+            const sceneSummariesTab = document.getElementById('storyToolsSceneSummariesTab');
             const mysteryBoxesTab = document.getElementById('storyToolsMysteryBoxesTab');
             const historyPanel = document.getElementById('storyToolsHistoryPanel');
+            const sceneSummariesPanel = document.getElementById('storyToolsSceneSummariesPanel');
             const mysteryBoxesPanel = document.getElementById('storyToolsMysteryBoxesPanel');
+            const sceneSummariesCount = document.getElementById('sceneSummariesCount');
+            const sceneSummariesList = document.getElementById('sceneSummariesList');
+            const sceneSummariesEmpty = document.getElementById('sceneSummariesEmpty');
+            const sceneSummaryDetailEmpty = document.getElementById('sceneSummaryDetailEmpty');
+            const sceneSummaryForm = document.getElementById('sceneSummaryForm');
+            const sceneSummaryMeta = document.getElementById('sceneSummaryMeta');
+            const sceneSummaryTextInput = document.getElementById('sceneSummaryTextInput');
+            const sceneSummaryDetailsInput = document.getElementById('sceneSummaryDetailsInput');
+            const sceneSummaryQuotesInput = document.getElementById('sceneSummaryQuotesInput');
+            const sceneSummaryStatus = document.getElementById('sceneSummaryStatus');
+            const sceneSummarySaveButton = document.getElementById('sceneSummarySaveButton');
             const mysteryBoxesCount = document.getElementById('mysteryBoxesCount');
             const mysteryBoxesList = document.getElementById('mysteryBoxesList');
             const mysteryBoxesEmpty = document.getElementById('mysteryBoxesEmpty');
@@ -33570,7 +33665,10 @@
             if (
                 !countLabel || !searchInput || !searchClearButton || !searchModeSelect || !typeFilterSelect
                 || !searchCaseSensitiveInput || !searchStatus || !pageList || !entriesContainer || !emptyState
-                || !historyTab || !mysteryBoxesTab || !historyPanel || !mysteryBoxesPanel
+                || !historyTab || !sceneSummariesTab || !mysteryBoxesTab || !historyPanel || !sceneSummariesPanel
+                || !mysteryBoxesPanel || !sceneSummariesCount || !sceneSummariesList || !sceneSummariesEmpty
+                || !sceneSummaryDetailEmpty || !sceneSummaryForm || !sceneSummaryMeta || !sceneSummaryTextInput
+                || !sceneSummaryDetailsInput || !sceneSummaryQuotesInput || !sceneSummaryStatus || !sceneSummarySaveButton
                 || !mysteryBoxesCount || !mysteryBoxesList || !mysteryBoxesEmpty || !mysteryThreadsList
                 || !mysteryThreadDetailEmpty || !mysteryThreadForm || !mysteryThreadNameInput || !mysteryThreadStatusSelect
                 || !mysteryThreadSummaryInput || !mysteryThreadConstraintsInput || !mysteryThreadBoxesCount
@@ -33607,6 +33705,13 @@
                 searchRegex: null,
                 searchError: null
             };
+            const sceneSummaryState = {
+                scenes: [],
+                selectedSceneNumber: null,
+                selectedScene: null,
+                loaded: false,
+                isSaving: false
+            };
             const mysteryState = {
                 threads: [],
                 boxes: [],
@@ -33630,16 +33735,25 @@
             };
 
             const setStoryToolsSection = (sectionName) => {
+                const isSceneSummaries = sectionName === 'sceneSummaries';
                 const isMysteryBoxes = sectionName === 'mysteryBoxes';
-                historyTab.classList.toggle('active', !isMysteryBoxes);
+                const isHistory = !isSceneSummaries && !isMysteryBoxes;
+                historyTab.classList.toggle('active', isHistory);
+                sceneSummariesTab.classList.toggle('active', isSceneSummaries);
                 mysteryBoxesTab.classList.toggle('active', isMysteryBoxes);
-                historyTab.setAttribute('aria-selected', isMysteryBoxes ? 'false' : 'true');
+                historyTab.setAttribute('aria-selected', isHistory ? 'true' : 'false');
+                sceneSummariesTab.setAttribute('aria-selected', isSceneSummaries ? 'true' : 'false');
                 mysteryBoxesTab.setAttribute('aria-selected', isMysteryBoxes ? 'true' : 'false');
-                historyPanel.hidden = isMysteryBoxes;
+                historyPanel.hidden = !isHistory;
+                sceneSummariesPanel.hidden = !isSceneSummaries;
                 mysteryBoxesPanel.hidden = !isMysteryBoxes;
-                historyPanel.classList.toggle('active', !isMysteryBoxes);
+                historyPanel.classList.toggle('active', isHistory);
+                sceneSummariesPanel.classList.toggle('active', isSceneSummaries);
                 mysteryBoxesPanel.classList.toggle('active', isMysteryBoxes);
-                countLabel.hidden = isMysteryBoxes;
+                countLabel.hidden = !isHistory;
+                if (isSceneSummaries && !sceneSummaryState.loaded) {
+                    window.refreshSceneSummaries?.({ preserveSelection: true });
+                }
                 if (isMysteryBoxes && !mysteryState.loaded) {
                     window.refreshMysteryThreads?.({ preserveSelection: true });
                 }
@@ -34183,6 +34297,179 @@
                 mysteryThreadStatus.classList.toggle('is-success', tone === 'success');
             };
 
+            const setSceneSummaryStatus = (message = '', tone = '') => {
+                sceneSummaryStatus.textContent = message;
+                sceneSummaryStatus.classList.toggle('is-error', tone === 'error');
+                sceneSummaryStatus.classList.toggle('is-success', tone === 'success');
+            };
+
+            const getSceneSummaryRangeLabel = (scene) => {
+                const start = Number(scene?.startIndex);
+                const end = Number(scene?.endIndex);
+                if (!Number.isInteger(start) || !Number.isInteger(end)) {
+                    return 'Unknown entries';
+                }
+                return start === end ? `Entry ${start}` : `Entries ${start}-${end}`;
+            };
+
+            const getSceneSummaryTitle = (scene) => {
+                const sceneNumber = Number(scene?.sceneNumber);
+                if (Number.isInteger(sceneNumber) && sceneNumber > 0) {
+                    return `Scene ${sceneNumber}`;
+                }
+                return 'Scene';
+            };
+
+            const setSceneSummaryCount = () => {
+                const count = sceneSummaryState.scenes.length;
+                sceneSummariesCount.textContent = `${count} ${count === 1 ? 'scene' : 'scenes'}`;
+            };
+
+            const formatSceneSummaryQuotes = (quotes) => {
+                return Array.isArray(quotes)
+                    ? quotes
+                        .filter(quote => quote && typeof quote === 'object')
+                        .map(quote => {
+                            const character = typeof quote.character === 'string' ? quote.character.trim() : '';
+                            const text = typeof quote.text === 'string' ? quote.text.trim() : '';
+                            return character && text ? `${character}: ${text}` : '';
+                        })
+                        .filter(Boolean)
+                        .join('\n')
+                    : '';
+            };
+
+            const parseSceneSummaryQuoteLines = (value) => {
+                const lines = String(value || '')
+                    .split(/\r?\n/)
+                    .map(line => line.trim())
+                    .filter(Boolean);
+                return lines.map((line, index) => {
+                    const separatorIndex = line.indexOf(':');
+                    if (separatorIndex <= 0 || separatorIndex === line.length - 1) {
+                        throw new Error(`Quote line ${index + 1} must use "Character: quote".`);
+                    }
+                    const character = line.slice(0, separatorIndex).trim();
+                    const text = line.slice(separatorIndex + 1).trim();
+                    if (!character || !text) {
+                        throw new Error(`Quote line ${index + 1} must include both character and quote text.`);
+                    }
+                    return { character, text };
+                });
+            };
+
+            const renderSceneSummariesList = () => {
+                sceneSummariesList.replaceChildren();
+                setSceneSummaryCount();
+
+                if (!sceneSummaryState.scenes.length) {
+                    sceneSummariesEmpty.hidden = false;
+                    return;
+                }
+
+                sceneSummariesEmpty.hidden = true;
+                sceneSummaryState.scenes.forEach((scene) => {
+                    if (!scene || typeof scene !== 'object') {
+                        return;
+                    }
+                    const sceneNumber = Number(scene.sceneNumber);
+                    if (!Number.isInteger(sceneNumber) || sceneNumber <= 0) {
+                        return;
+                    }
+
+                    const button = document.createElement('button');
+                    button.type = 'button';
+                    button.className = 'scene-summary-list-button';
+                    if (sceneNumber === sceneSummaryState.selectedSceneNumber) {
+                        button.classList.add('active');
+                    }
+                    button.dataset.sceneNumber = String(sceneNumber);
+
+                    const name = document.createElement('span');
+                    name.className = 'mystery-thread-list-name';
+                    name.textContent = getSceneSummaryTitle(scene);
+                    button.appendChild(name);
+
+                    const meta = document.createElement('span');
+                    meta.className = 'mystery-thread-list-meta';
+                    meta.textContent = getSceneSummaryRangeLabel(scene);
+                    button.appendChild(meta);
+
+                    const preview = document.createElement('span');
+                    preview.className = 'scene-summary-list-preview';
+                    preview.textContent = typeof scene.summary === 'string' ? scene.summary : '';
+                    button.appendChild(preview);
+
+                    button.addEventListener('click', () => {
+                        selectSceneSummary(sceneNumber);
+                    });
+                    sceneSummariesList.appendChild(button);
+                });
+            };
+
+            const renderSceneSummaryDetail = (scene) => {
+                sceneSummaryState.selectedScene = scene || null;
+                setSceneSummaryStatus('');
+                if (!scene) {
+                    sceneSummaryForm.hidden = true;
+                    sceneSummaryDetailEmpty.hidden = false;
+                    sceneSummaryDetailEmpty.textContent = 'No scene summary selected.';
+                    return;
+                }
+
+                sceneSummaryDetailEmpty.hidden = true;
+                sceneSummaryForm.hidden = false;
+                sceneSummaryMeta.textContent = `${getSceneSummaryTitle(scene)} · ${getSceneSummaryRangeLabel(scene)}`;
+                sceneSummaryTextInput.value = typeof scene.summary === 'string' ? scene.summary : '';
+                sceneSummaryDetailsInput.value = Array.isArray(scene.details) ? scene.details.join('\n') : '';
+                sceneSummaryQuotesInput.value = formatSceneSummaryQuotes(scene.quotes);
+            };
+
+            const selectSceneSummary = (sceneNumber) => {
+                const normalizedNumber = Number(sceneNumber);
+                if (!Number.isInteger(normalizedNumber) || normalizedNumber <= 0) {
+                    sceneSummaryState.selectedSceneNumber = null;
+                    renderSceneSummariesList();
+                    renderSceneSummaryDetail(null);
+                    return;
+                }
+                sceneSummaryState.selectedSceneNumber = normalizedNumber;
+                const scene = sceneSummaryState.scenes.find(entry => Number(entry?.sceneNumber) === normalizedNumber) || null;
+                renderSceneSummariesList();
+                renderSceneSummaryDetail(scene);
+            };
+
+            const refreshSceneSummaries = async ({ preserveSelection = false } = {}) => {
+                const previousSelectedNumber = sceneSummaryState.selectedSceneNumber;
+                try {
+                    const response = await fetch('/api/scene-summaries', { cache: 'no-store' });
+                    const data = await response.json().catch(() => ({}));
+                    if (!response.ok || !data.success) {
+                        throw new Error(data?.error || `HTTP ${response.status}`);
+                    }
+
+                    sceneSummaryState.scenes = Array.isArray(data.sceneSummaries) ? data.sceneSummaries : [];
+                    sceneSummaryState.loaded = true;
+                    const stillSelected = preserveSelection
+                        && Number.isInteger(previousSelectedNumber)
+                        && sceneSummaryState.scenes.some(scene => Number(scene?.sceneNumber) === previousSelectedNumber);
+                    sceneSummaryState.selectedSceneNumber = stillSelected
+                        ? previousSelectedNumber
+                        : (Number(sceneSummaryState.scenes[0]?.sceneNumber) || null);
+                    renderSceneSummariesList();
+                    selectSceneSummary(sceneSummaryState.selectedSceneNumber);
+                } catch (error) {
+                    console.warn('Failed to refresh scene summaries:', error);
+                    sceneSummaryState.scenes = [];
+                    sceneSummaryState.loaded = false;
+                    sceneSummaryState.selectedSceneNumber = null;
+                    renderSceneSummariesList();
+                    sceneSummaryForm.hidden = true;
+                    sceneSummaryDetailEmpty.hidden = false;
+                    sceneSummaryDetailEmpty.textContent = `Failed to load scene summaries: ${error?.message || error}`;
+                }
+            };
+
             const setMysteryBoxCount = () => {
                 const threadCount = mysteryState.threads.length;
                 const boxCount = mysteryState.threads.reduce((sum, thread) => sum + (Number.isInteger(thread?.boxCount) ? thread.boxCount : 0), 0);
@@ -34542,8 +34829,71 @@
                 setStoryToolsSection('history');
             });
 
+            sceneSummariesTab.addEventListener('click', () => {
+                setStoryToolsSection('sceneSummaries');
+            });
+
             mysteryBoxesTab.addEventListener('click', () => {
                 setStoryToolsSection('mysteryBoxes');
+            });
+
+            sceneSummaryForm.addEventListener('submit', async (event) => {
+                event.preventDefault();
+                const selectedSceneNumber = sceneSummaryState.selectedSceneNumber;
+                if (!selectedSceneNumber || sceneSummaryState.isSaving) {
+                    return;
+                }
+
+                const summary = sceneSummaryTextInput.value.trim();
+                if (!summary) {
+                    setSceneSummaryStatus('Summary is required.', 'error');
+                    sceneSummaryTextInput.focus();
+                    return;
+                }
+
+                let quotes = [];
+                try {
+                    quotes = parseSceneSummaryQuoteLines(sceneSummaryQuotesInput.value);
+                } catch (error) {
+                    setSceneSummaryStatus(error?.message || 'Quote format is invalid.', 'error');
+                    sceneSummaryQuotesInput.focus();
+                    return;
+                }
+
+                sceneSummaryState.isSaving = true;
+                sceneSummarySaveButton.disabled = true;
+                setSceneSummaryStatus('Saving...');
+                try {
+                    const response = await fetch(`/api/scene-summaries/${encodeURIComponent(selectedSceneNumber)}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            summary,
+                            details: sceneSummaryDetailsInput.value
+                                .split(/\r?\n/)
+                                .map(entry => entry.trim())
+                                .filter(Boolean),
+                            quotes
+                        })
+                    });
+                    const data = await response.json().catch(() => ({}));
+                    if (!response.ok || !data.success) {
+                        throw new Error(data?.error || `HTTP ${response.status}`);
+                    }
+
+                    const updatedScene = data.sceneSummary || null;
+                    if (updatedScene) {
+                        sceneSummaryState.selectedSceneNumber = Number(updatedScene.sceneNumber) || selectedSceneNumber;
+                        renderSceneSummaryDetail(updatedScene);
+                    }
+                    await refreshSceneSummaries({ preserveSelection: true });
+                    setSceneSummaryStatus(data.persisted ? 'Saved.' : 'Saved in memory.', 'success');
+                } catch (error) {
+                    setSceneSummaryStatus(`Save failed: ${error?.message || error}`, 'error');
+                } finally {
+                    sceneSummaryState.isSaving = false;
+                    sceneSummarySaveButton.disabled = false;
+                }
             });
 
             mysteryThreadForm.addEventListener('submit', async (event) => {
@@ -34677,6 +35027,9 @@
                         && (scrollToLatest || (!preserveSelection && pageCount > 0))
                     );
                     renderEntryPage({ scrollToBottom: shouldScrollToBottom });
+                    if (!sceneSummariesPanel.hidden) {
+                        await refreshSceneSummaries({ preserveSelection: true });
+                    }
                     if (!mysteryBoxesPanel.hidden) {
                         await refreshMysteryThreads({ preserveSelection: true });
                     }
@@ -34696,6 +35049,7 @@
             };
 
             window.refreshStoryTools = refreshStoryTools;
+            window.refreshSceneSummaries = refreshSceneSummaries;
             window.refreshMysteryThreads = refreshMysteryThreads;
             window.refreshMysteryBoxes = refreshMysteryBoxes;
             refreshStoryTools({ preserveSelection: false, scrollToLatest: true });

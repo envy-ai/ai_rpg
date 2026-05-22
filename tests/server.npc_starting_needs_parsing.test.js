@@ -94,6 +94,7 @@ test('parseLocationNpcs captures starting need levels and applicability', () => 
       <name>Dockhand Pell</name>
       <description>A tired dockhand.</description>
       <aiNotes>Pell warns dockworkers before a storm hits.</aiNotes>
+      <hiddenFromPlayer>true</hiddenFromPlayer>
       <startingNeeds>
         <needBar>
           <id>food</id>
@@ -131,6 +132,7 @@ test('parseLocationNpcs captures starting need levels and applicability', () => 
             deceased: false
         });
         assert.equal(npc.aiNotes, 'Pell warns dockworkers before a storm hits.');
+        assert.equal(npc.hiddenFromPlayer, true);
     } finally {
         Globals.config = previousConfig;
     }
@@ -148,6 +150,7 @@ test('parseRegionNpcs captures starting need levels and applicability', () => {
       <name>Archivist Nera</name>
       <location>Archive Hall</location>
       <aiNotes>Nera seals the stacks if fire is mentioned.</aiNotes>
+      <hiddenFromPlayer>false</hiddenFromPlayer>
       <startingNeeds>
         <needBar>
           <id>focus</id>
@@ -174,6 +177,7 @@ test('parseRegionNpcs captures starting need levels and applicability', () => {
             { id: 'focus', percentage: 72 }
         ]);
         assert.equal(npc.aiNotes, 'Nera seals the stacks if fire is mentioned.');
+        assert.equal(npc.hiddenFromPlayer, false);
     } finally {
         Globals.config = previousConfig;
     }

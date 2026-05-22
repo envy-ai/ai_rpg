@@ -353,6 +353,44 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                                 <textarea id="availableRaces" name="availableRaces" rows="7" placeholder="Human\nElf\nClockwork Automaton"></textarea>
                                 <div class="help-text">Races or species available for new characters.</div>
                             </div>
+
+                            <div class="form-group">
+                                <label for="hidingAttribute">Hiding Attribute *</label>
+                                <select id="hidingAttribute" name="hidingAttribute" required>
+                                    <option value="">Select attribute</option>
+                                    {% for attribute in attributeOptions or [] %}
+                                    <option value="{{ attribute.name }}">{{ attribute.label or attribute.name }}</option>
+                                    {% endfor %}
+                                </select>
+                                <div class="help-text">Required attribute for hidden entities, stealth, and concealment checks.</div>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="hidingSkill">Hiding Skill</label>
+                                <select id="hidingSkill" name="hidingSkill" data-hide-perception-skill-select="hidingSkill">
+                                    <option value="">No skill</option>
+                                </select>
+                                <div class="help-text">Optional skill paired with the hiding attribute.</div>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="perceptionAttribute">Perception Attribute *</label>
+                                <select id="perceptionAttribute" name="perceptionAttribute" required>
+                                    <option value="">Select attribute</option>
+                                    {% for attribute in attributeOptions or [] %}
+                                    <option value="{{ attribute.name }}">{{ attribute.label or attribute.name }}</option>
+                                    {% endfor %}
+                                </select>
+                                <div class="help-text">Required attribute for spotting hidden entities and noticing concealed details.</div>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="perceptionSkill">Perception Skill</label>
+                                <select id="perceptionSkill" name="perceptionSkill" data-hide-perception-skill-select="perceptionSkill">
+                                    <option value="">No skill</option>
+                                </select>
+                                <div class="help-text">Optional skill paired with the perception attribute.</div>
+                            </div>
                         </div>
                     </section>
 
@@ -544,6 +582,7 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
         let settingsFactionEditor = null;
         const defaultExistingSkillsList = {{ (defaultExistingSkills or []) | dump | safe }};
         const defaultExistingSkillsLoadError = {{ (defaultExistingSkillsError or '') | dump | safe }};
+        const attributeOptions = {{ (attributeOptions or []) | dump | safe }};
         const defaultFactionCountFallback = {{ (defaultFactionCountFallback or 5) | dump | safe }};
         const unifiedTonalScaleDefinition = {{ (unifiedTonalScaleDefinition or {}) | dump | safe }};
         const unifiedTonalScaleLoadError = {{ (unifiedTonalScaleError or '') | dump | safe }};
@@ -713,6 +752,7 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
             if (defaultText) {
                 defaultExistingSkillsField.value = defaultText;
             }
+            refreshHidePerceptionSkillOptions();
         }
 
         function openAutofillInstructionsModal(triggerButton) {
@@ -778,6 +818,7 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                 showMessage(`Warning: unified tonal scale could not be loaded. ${unifiedTonalScaleLoadError}`, 'error');
             }
             applyDefaultExistingSkillsIfBlank();
+            refreshHidePerceptionSkillOptions();
         });
 
         document.addEventListener('keydown', (event) => {
@@ -1111,6 +1152,12 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
             };
 
             assignValue('defaultExistingSkills', joinLines(setting.defaultExistingSkills));
+            assignValue('hidingAttribute', setting.hidingAttribute || '');
+            assignValue('perceptionAttribute', setting.perceptionAttribute || '');
+            refreshHidePerceptionSkillOptions({
+                hidingSkill: setting.hidingSkill || '',
+                perceptionSkill: setting.perceptionSkill || ''
+            });
             assignValue('availableClasses', joinLines(setting.availableClasses));
             assignValue('availableRaces', joinLines(setting.availableRaces));
             assignValue('currencyValueNotes', setting.currencyValueNotes || '');
@@ -1295,6 +1342,18 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
             if (defaultExistingSkillsField) {
                 defaultExistingSkillsField.value = getDefaultExistingSkillsText();
             }
+            const hidingAttributeField = document.getElementById('hidingAttribute');
+            if (hidingAttributeField) {
+                hidingAttributeField.value = '';
+            }
+            const perceptionAttributeField = document.getElementById('perceptionAttribute');
+            if (perceptionAttributeField) {
+                perceptionAttributeField.value = '';
+            }
+            refreshHidePerceptionSkillOptions({
+                hidingSkill: '',
+                perceptionSkill: ''
+            });
             const availableClassesField = document.getElementById('availableClasses');
             if (availableClassesField) {
                 availableClassesField.value = '';
@@ -1396,6 +1455,99 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                 .split(/\r?\n/)
                 .map(line => line.trim())
                 .filter(line => line.length > 0);
+        }
+
+        function getCurrentDefaultExistingSkills() {
+            const defaultExistingSkillsField = document.getElementById('defaultExistingSkills');
+            return splitLines(defaultExistingSkillsField?.value || '');
+        }
+
+        function normalizeSettingsOptionKey(value) {
+            return typeof value === 'string' ? value.trim().toLowerCase() : '';
+        }
+
+        function populateHidePerceptionSkillSelect(selectId, selectedValue = '') {
+            const select = document.getElementById(selectId);
+            if (!select) {
+                throw new Error(`Form field "${selectId}" is missing`);
+            }
+
+            const normalizedSelectedValue = typeof selectedValue === 'string' ? selectedValue.trim() : '';
+            const skills = getCurrentDefaultExistingSkills();
+            select.innerHTML = '';
+
+            const blankOption = document.createElement('option');
+            blankOption.value = '';
+            blankOption.textContent = 'No skill';
+            select.appendChild(blankOption);
+
+            const seen = new Set();
+            for (const skill of skills) {
+                const key = normalizeSettingsOptionKey(skill);
+                if (!key || seen.has(key)) {
+                    continue;
+                }
+                seen.add(key);
+                const option = document.createElement('option');
+                option.value = skill;
+                option.textContent = skill;
+                select.appendChild(option);
+            }
+
+            if (normalizedSelectedValue && !seen.has(normalizeSettingsOptionKey(normalizedSelectedValue))) {
+                const staleOption = document.createElement('option');
+                staleOption.value = normalizedSelectedValue;
+                staleOption.textContent = `${normalizedSelectedValue} (not in default skills)`;
+                select.appendChild(staleOption);
+            }
+
+            select.value = normalizedSelectedValue;
+        }
+
+        function refreshHidePerceptionSkillOptions(selectedValues = {}) {
+            const hidingSelect = document.getElementById('hidingSkill');
+            const perceptionSelect = document.getElementById('perceptionSkill');
+            const hidingValue = Object.prototype.hasOwnProperty.call(selectedValues, 'hidingSkill')
+                ? selectedValues.hidingSkill
+                : hidingSelect?.value || '';
+            const perceptionValue = Object.prototype.hasOwnProperty.call(selectedValues, 'perceptionSkill')
+                ? selectedValues.perceptionSkill
+                : perceptionSelect?.value || '';
+
+            populateHidePerceptionSkillSelect('hidingSkill', hidingValue);
+            populateHidePerceptionSkillSelect('perceptionSkill', perceptionValue);
+        }
+
+        function validateHidePerceptionSelections(settingData) {
+            const attributeNames = new Set(
+                (Array.isArray(attributeOptions) ? attributeOptions : [])
+                    .map(attribute => (typeof attribute?.name === 'string' ? attribute.name.trim() : ''))
+                    .filter(Boolean)
+            );
+            if (!settingData.hidingAttribute) {
+                throw new Error('Hiding attribute is required.');
+            }
+            if (!settingData.perceptionAttribute) {
+                throw new Error('Perception attribute is required.');
+            }
+            if (attributeNames.size > 0 && !attributeNames.has(settingData.hidingAttribute)) {
+                throw new Error(`Hiding attribute "${settingData.hidingAttribute}" is not defined.`);
+            }
+            if (attributeNames.size > 0 && !attributeNames.has(settingData.perceptionAttribute)) {
+                throw new Error(`Perception attribute "${settingData.perceptionAttribute}" is not defined.`);
+            }
+
+            const skillNames = new Set(
+                (Array.isArray(settingData.defaultExistingSkills) ? settingData.defaultExistingSkills : [])
+                    .map(normalizeSettingsOptionKey)
+                    .filter(Boolean)
+            );
+            if (settingData.hidingSkill && !skillNames.has(normalizeSettingsOptionKey(settingData.hidingSkill))) {
+                throw new Error(`Hiding skill "${settingData.hidingSkill}" is not listed in default existing skills.`);
+            }
+            if (settingData.perceptionSkill && !skillNames.has(normalizeSettingsOptionKey(settingData.perceptionSkill))) {
+                throw new Error(`Perception skill "${settingData.perceptionSkill}" is not listed in default existing skills.`);
+            }
         }
 
         function setSettingsCalendarStatus(message = '', type = null) {
@@ -2847,6 +2999,7 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
             const settingsCalendarAddWeekdayBtn = document.getElementById('settingsCalendarAddWeekdayBtn');
             const settingsCalendarAddSeasonBtn = document.getElementById('settingsCalendarAddSeasonBtn');
             const settingsCalendarAddHolidayBtn = document.getElementById('settingsCalendarAddHolidayBtn');
+            const defaultExistingSkillsField = document.getElementById('defaultExistingSkills');
 
             if (!settingsListEl || !settingsSearchEl || !settingsSortEl || !newSettingBtn) {
                 throw new Error('Library controls are missing from the settings page.');
@@ -2881,9 +3034,20 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                 settingData.defaultStartingCurrency = Number.isFinite(parsedDefaultCurrency) ? Math.max(0, parsedDefaultCurrency) : 0;
                 const defaultExistingSkillsText = settingData.defaultExistingSkills || '';
                 settingData.defaultExistingSkills = splitLines(defaultExistingSkillsText);
+                settingData.hidingAttribute = (settingData.hidingAttribute || '').trim();
+                settingData.hidingSkill = (settingData.hidingSkill || '').trim();
+                settingData.perceptionAttribute = (settingData.perceptionAttribute || '').trim();
+                settingData.perceptionSkill = (settingData.perceptionSkill || '').trim();
                 settingData.availableClasses = splitLines(settingData.availableClasses);
                 settingData.availableRaces = splitLines(settingData.availableRaces);
                 settingData.customSlopWords = splitLines(settingData.customSlopWords);
+                try {
+                    validateHidePerceptionSelections(settingData);
+                } catch (error) {
+                    showMessage(error?.message || 'Hide/perception check selections are invalid.', 'error');
+                    setActiveEditorTab('characters');
+                    return;
+                }
                 const parsedDefaultFactionCount = parseInt(settingData.defaultFactionCount, 10);
                 if ((settingData.defaultFactionCount || '').trim() === '') {
                     settingData.defaultFactionCount = '';
@@ -3109,6 +3273,11 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
 
             settingForm.addEventListener('input', updatePreview);
             settingForm.addEventListener('change', updatePreview);
+            if (defaultExistingSkillsField) {
+                defaultExistingSkillsField.addEventListener('input', () => {
+                    refreshHidePerceptionSkillOptions();
+                });
+            }
 
             const generateBtn = document.getElementById('generateBtn');
             if (generateBtn) {
@@ -3313,6 +3482,8 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                     defaultStartingLocation: filled.defaultStartingLocation,
                     defaultStartingCurrency: filled.defaultStartingCurrency,
                     defaultExistingSkills: filled.defaultExistingSkills,
+                    hidingAttribute: filled.hidingAttribute,
+                    perceptionAttribute: filled.perceptionAttribute,
                     defaultFactionCount: filled.defaultFactionCount,
                     availableClasses: filled.availableClasses,
                     availableRaces: filled.availableRaces,
@@ -3329,6 +3500,10 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                 if (settingsFactionEditor && Array.isArray(filled.defaultFactions)) {
                     settingsFactionEditor.load(filled.defaultFactions);
                 }
+                refreshHidePerceptionSkillOptions({
+                    hidingSkill: filled.hidingSkill ?? document.getElementById('hidingSkill')?.value ?? '',
+                    perceptionSkill: filled.perceptionSkill ?? document.getElementById('perceptionSkill')?.value ?? ''
+                });
                 if (Object.prototype.hasOwnProperty.call(filled, 'calendarDefinition')) {
                     applyCalendarDefinitionToForm(filled.calendarDefinition || null);
                 }

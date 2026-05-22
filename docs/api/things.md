@@ -6,7 +6,7 @@ Common payloads: see `docs/api/common.md`.
 Create a new thing.
 
 Request:
-- Body supports: `name`, `description`, `shortDescription`, `thingType`, `imageId`, `rarity`, `itemTypeDetail`, `metadata`, `slot`, `attributeBonuses`, `causeStatusEffect`, `causeStatusEffectOnTarget`, `causeStatusEffectOnEquipper`, `count`, `level`, `relativeLevel`, `statusEffects`, plus boolean flags (`isVehicle`, `isCraftingStation`, `isProcessingStation`, `isHarvestable`, `isSalvageable`, `isContainer`).
+- Body supports: `name`, `description`, `shortDescription`, `thingType`, `imageId`, `rarity`, `itemTypeDetail`, `metadata`, `slot`, `attributeBonuses`, `causeStatusEffect`, `causeStatusEffectOnTarget`, `causeStatusEffectOnEquipper`, `count`, `level`, `relativeLevel`, `containerContents`, `statusEffects`, plus boolean flags (`isVehicle`, `isCraftingStation`, `isProcessingStation`, `isHarvestable`, `isSalvageable`, `isContainer`).
 
 Response:
 - 200: `{ success: true, thing: Thing, message, imageNeedsGeneration }`
@@ -36,7 +36,7 @@ Response:
 Update a thing.
 
 Request:
-- Body supports: `name`, `description`, `shortDescription`, `thingType`, `imageId`, `rarity`, `itemTypeDetail`, `metadata`, `slot`, `attributeBonuses`, `causeStatusEffect`, `causeStatusEffectOnTarget`, `causeStatusEffectOnEquipper`, `count`, `level`, `relativeLevel`, `statusEffects`, plus boolean flags (`isVehicle`, `isCraftingStation`, `isProcessingStation`, `isHarvestable`, `isSalvageable`, `isContainer`).
+- Body supports: `name`, `description`, `shortDescription`, `thingType`, `imageId`, `rarity`, `itemTypeDetail`, `metadata`, `slot`, `attributeBonuses`, `causeStatusEffect`, `causeStatusEffectOnTarget`, `causeStatusEffectOnEquipper`, `count`, `level`, `relativeLevel`, `containerContents`, `statusEffects`, plus boolean flags (`isVehicle`, `isCraftingStation`, `isProcessingStation`, `isHarvestable`, `isSalvageable`, `isContainer`).
 
 Response:
 - 200: `{ success: true, thing: Thing, message, imageNeedsUpdate }`
@@ -111,6 +111,7 @@ Response:
 Notes:
 - Only things with `isContainer: true` can be opened.
 - `contents` contains item-type things held by the container; scenery containers can hold items, but scenery itself cannot be contained.
+- If the container has pending `containerContents` seeds, this route runs the dedicated `thing-generator-contents` prompt once, creates all listed contents as real item Things inside the container, clears the pending seeds, then returns the refreshed contents.
 
 ## POST /api/things/:containerId/container/move-in
 Move a whole item stack from the current player's unequipped inventory or a loose current-location item into a container.

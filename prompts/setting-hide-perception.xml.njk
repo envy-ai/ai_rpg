@@ -1,0 +1,53 @@
+<template>
+<role>Chooses the world-profile attributes and optional skills used for hiding and perception checks.</role>
+
+<systemPrompt>
+You configure RPG world-profile mechanics. Choose concise, setting-appropriate check components from the provided lists. Return only the requested XML.
+</systemPrompt>
+
+<generationPrompt>
+The loaded game setting is missing required hiding/perception check selections. Fill them in without changing unrelated setting details.
+
+<setting>
+  <name>{{ setting.name }}</name>
+  <description>{{ setting.description }}</description>
+  <theme>{{ setting.theme }}</theme>
+  <genre>{{ setting.genre }}</genre>
+  <tone>{{ setting.tone }}</tone>
+  <magicLevel>{{ setting.magicLevel }}</magicLevel>
+  <techLevel>{{ setting.techLevel }}</techLevel>
+  <hidingAttribute>{{ setting.hidingAttribute }}</hidingAttribute>
+  <hidingSkill>{{ setting.hidingSkill }}</hidingSkill>
+  <perceptionAttribute>{{ setting.perceptionAttribute }}</perceptionAttribute>
+  <perceptionSkill>{{ setting.perceptionSkill }}</perceptionSkill>
+</setting>
+
+Use exact <name> values from this list for hidingAttribute and perceptionAttribute:
+<attributes>
+{% for attribute in attributeOptions %}
+  <attribute>
+    <name>{{ attribute.name }}</name>
+    <label>{{ attribute.label }}</label>
+    <description>{{ attribute.description }}</description>
+  </attribute>
+{% endfor %}
+</attributes>
+
+Choose hidingSkill and perceptionSkill from this skill list, or leave the tag empty when no skill should apply:
+<skills>
+{% for skill in skills %}
+  <skill>{{ skill }}</skill>
+{% endfor %}
+</skills>
+
+If a field in <setting> is already filled in, preserve it unless it conflicts with the available attributes or skills. Attributes are required. Skills are optional.
+
+Return exactly this XML structure:
+<settingMechanics>
+  <hidingAttribute>exact attribute name</hidingAttribute>
+  <hidingSkill>exact skill name or empty</hidingSkill>
+  <perceptionAttribute>exact attribute name</perceptionAttribute>
+  <perceptionSkill>exact skill name or empty</perceptionSkill>
+</settingMechanics>
+</generationPrompt>
+</template>

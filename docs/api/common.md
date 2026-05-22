@@ -123,6 +123,7 @@ Fields:
 - `health`, `maxHealth`, `healthAttribute` (`health` may be fractional; clients display health readouts rounded upward)
 - `imageId`
 - `isNPC`, `isPlayer`, `isHostile`, `isDead`
+- `hiddenFromPlayer` (boolean, effective only for living NPCs; hidden corpses serialize as visible)
 - `persistWhenDead`
 - `isInPlayerParty`, `wasEverInPlayerParty`, `isHostileToPlayer`
 - `locationId`
@@ -185,11 +186,13 @@ Fields:
 - `causeStatusEffect` (legacy field)
 - `level`, `relativeLevel`
 - Boolean flags: `isVehicle`, `isCraftingStation`, `isProcessingStation`, `isHarvestable`, `isSalvageable`, `isContainer`
+- `containerContents` (array of pending `{ name, count }` seeds for not-yet-instantiated container contents)
 - `containedThingIds` (array of item ids held by this thing when `isContainer` is true)
 - `flags` (string array) and `metadata` (object)
 - `statusEffects` (array of StatusEffect)
 
 Optional fields may be omitted when empty/undefined.
+Pending `containerContents` is separate from real `containedThingIds`; opening a container or viewing a player inventory route can generate those pending seeds into actual contained item Things and then clear `containerContents`.
 
 ## ThingProfile (buildThingProfiles)
 Included in `LocationResponse.things`.

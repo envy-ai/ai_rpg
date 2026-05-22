@@ -9,14 +9,14 @@ function findToolDefinition(name) {
     return CHAT_TOOL_DEFINITIONS.find(entry => entry?.function?.name === name)?.function || null;
 }
 
-function makeRuntime({ firstResponse, resolveAttack, capturedMessagesByRound }) {
+function makeRuntime({ firstResponse, resolveAttack, capturedMessagesByRound, characters = [], currentPlayer = null }) {
     return createChatToolRuntime({
         getConfig: () => ({ ai: { max_tool_rounds: 3 } }),
         getChatHistory: () => [],
         isAssistantProseLikeEntry: () => true,
         serializeNpcForClient: () => ({}),
         buildLocationResponse: () => ({}),
-        getCurrentPlayer: () => ({ id: 'player-1', name: 'Player', currentLocation: 'loc-1' }),
+        getCurrentPlayer: () => currentPlayer || { id: 'player-1', name: 'Player', currentLocation: 'loc-1' },
         createLocationFromEvent: async () => {
             throw new Error('createLocationFromEvent should not be reached.');
         },
@@ -52,7 +52,7 @@ function makeRuntime({ firstResponse, resolveAttack, capturedMessagesByRound }) 
             logPrompt: () => {},
             formatMessagesForErrorLog: messages => JSON.stringify(messages)
         },
-        Player: { getAll: () => [] },
+        Player: { getAll: () => characters },
         Thing: { getAll: () => [] },
         Location: { getAll: () => [], get: () => null },
         Region: { getAll: () => [] },
@@ -208,6 +208,43 @@ test('resolveAttack returns applied damage health percentages and preserves atta
 
     const toolMessage = capturedMessagesByRound[1].find(message => message.role === 'tool');
     assert.equal(toolMessage.content, 'Damage: 14%\nRemaining health: 86%');
+});
+
+test('resolveAttack reveals a hidden attacker immediately', async () => {
+    const capturedMessagesByRound = [];
+    const hiddenAttacker = {
+        id: 'npc-shade',
+        name: 'Shade',
+        isNPC: true,
+        hiddenFromPlayer: true,
+        currentLocation: 'loc-1'
+    };
+    const args = {
+        ...attackArgs,
+        attacker: 'Shade'
+    };
+    const runtime = makeRuntime({
+        firstResponse: resolveAttackToolResponse(args),
+        capturedMessagesByRound,
+        characters: [hiddenAttacker],
+        resolveAttack: async () => ({
+            hit: false,
+            locationRefreshRequested: false,
+            summary: {
+                hit: false,
+                attacker: { name: 'Shade' },
+                defender: { name: 'Hollow Sentinel Valdrus' }
+            }
+        })
+    });
+
+    const result = await runtime.runChatCompletionWithToolLoop({
+        requestOptions: { messages: [{ role: 'user', content: 'Shade attacks.' }] },
+        metadataLabel: 'test_resolve_attack_hidden_attacker'
+    });
+
+    assert.equal(hiddenAttacker.hiddenFromPlayer, false);
+    assert.equal(result.toolInvocations[0].metadata.locationRefreshRequested, true);
 });
 
 test('resolveAttack marks zero remaining health as incapacitated or dead', async () => {
