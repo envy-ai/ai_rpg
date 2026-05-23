@@ -38,7 +38,7 @@ Centralized client for LLM chat completions with concurrency limits, streaming p
 - `resolveChatEndpoint(endpoint)` / `resolveTemperature(explicit, fallback)` / `resolveOutput(output, fallback)`.
 - `chatCompletion({ messages, metadataLabel, timeoutMs, temperature, stream, ... })`:
   - Handles retries, streaming, logging, and optional image preprocessing.
-  - Optional `validateXMLStrict: true` upgrades XML validation from the normal lenient parser to `Utils.parseXmlDocumentStrict(...)`, causing malformed XML to fail with parser diagnostics instead of being normalized first.
+  - Optional `validateXMLStrict: true` upgrades XML validation from the normal lenient parser to `Utils.parseXmlDocumentStrict(...)`, causing malformed XML to fail with parser diagnostics instead of being normalized first. Before XML validation, response text is reduced to the final complete XML block inferred from the last closing tag, so analysis before or after the final block does not make an otherwise valid XML answer fail validation.
   - Optional `logStreamChunksToConsole: true` dumps raw streamed `data:` payload chunks to the server console with separator lines; it is a no-op for non-streamed calls.
   - Supports deterministic `forceOutput` mode for tests: skips AI network calls but still runs response post-processing/validation and emits normalized `onResponse` data.
   - Supports fixture-driven deterministic outputs via `LLM_FORCE_OUTPUTS_FILE` env or `ai.force_outputs_file` config:

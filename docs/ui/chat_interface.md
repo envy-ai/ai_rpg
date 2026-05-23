@@ -254,6 +254,7 @@ Inline script functions in `views/index.njk` render these tabs:
 - `initPartyDisplay()` renders party cards and ties into the chat sidebar.
 - Party-member context menus now include both `Dismiss` and `Dismiss everyone else`; the latter keeps the selected member and removes every other current party member using the same party-removal path.
 - Non-party NPC context menus now also include `Recruit all party members`; it recruits every current-location NPC with `wasEverInPlayerParty === true` that is not already in the party.
+- NPC context menus include `Toggle Hidden`, which flips the living NPC's persisted `hiddenFromPlayer` state through `PUT /api/npcs/:id` and refreshes the current location/party display. Dead NPCs keep the action disabled because corpses are always visible.
 
 ## Story Tools tab
 

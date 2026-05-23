@@ -100,7 +100,8 @@ Quick refresher on where these systems live and how they're wired.
   - `slopWords`
   - `slopRegexes` (triggered regex names)
   - `slopNgrams`
-- Output must be XML containing `<editedText>...</editedText>`. The `LLMClient` request now has strict XML validation enabled for this prompt, and the server also parses the response with `Utils.parseXmlDocumentStrict(...)`, treating malformed XML or missing/empty `<editedText>` as parse failures. It retries up to `config.slop_remover_base_attempts` (default `2`) with extension up to 5 attempts on parse failures.
+  - `forbiddenTropes` from `defs/slopwords.yaml` `forbidden_tropes`, rendered only as additional slop-remover prompt context
+- Output must be XML containing `<editedText>...</editedText>`. Before validation/parsing, the server extracts the final complete XML block inferred from the response's last closing tag, so earlier analysis, earlier XML drafts, or trailing commentary are ignored when a final XML block is present. The `LLMClient` request has strict XML validation enabled for this prompt, and the server also parses the extracted response with `Utils.parseXmlDocumentStrict(...)`, treating malformed XML or missing/empty `<editedText>` as parse failures. It retries up to `config.slop_remover_base_attempts` (default `2`) with extension up to 5 attempts on parse failures.
 - After each attempt, the server re-checks for remaining slop words, regex names, and n-grams; if it hits max attempts, it logs and allows remaining slop.
 - Diagnostics (`slopWords` + `slopRegexes` + `slopNgrams`) are attached to the response and recorded in chat history.
 
@@ -133,6 +134,7 @@ Quick refresher on where these systems live and how they're wired.
   - `ngram_default` for configured ngrams.
   - `slopwords` and `ngrams` maps support per-entry numeric ppm or `default`.
   - `regexes` array entries support per-entry numeric `ppm` or `default`, and are listed in slop-remover prompts by `name`.
+  - `forbidden_tropes` is an optional array of strings exposed to the slop-remover prompt as context only; it is not part of slop detection, retry logic, or diagnostics.
 
 ## Primary code map
 - Detection utilities: `Utils.js`

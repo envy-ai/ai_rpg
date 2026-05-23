@@ -514,7 +514,7 @@ debug_tool_calls: false
 show_hidden_notes: false
 
 # When true, failed automatic hide/perception checks are stored but omitted from client chat payloads.
-hide_hide_checks: false
+hide_hide_checks: true
 
 # Number of eligible player-action turns between automatic plot-expander prompt runs.
 # Set to 0 to disable automatic plot-expander runs.

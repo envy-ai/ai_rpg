@@ -23772,6 +23772,46 @@
                 closeThingContextMenu();
             }
 
+            async function toggleNpcHiddenFromPlayer(npc, { card = null } = {}) {
+                if (!npc || !npc.id) {
+                    throw new Error('NPC identifier is required.');
+                }
+
+                const latestNpc = npcDataCache.get(npc.id) || npc;
+                if (latestNpc?.isDead) {
+                    throw new Error('Dead NPCs are always visible.');
+                }
+
+                const nextHidden = !Boolean(latestNpc.hiddenFromPlayer);
+                showLocationOverlay(nextHidden ? 'Hiding character...' : 'Revealing character...');
+                try {
+                    const response = await fetch(`/api/npcs/${encodeURIComponent(npc.id)}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ hiddenFromPlayer: nextHidden })
+                    });
+                    const result = await response.json().catch(() => ({}));
+                    if (!response.ok || !result?.success) {
+                        throw new Error(result?.error || `HTTP ${response.status}`);
+                    }
+
+                    const updatedNpc = result?.npc || { ...latestNpc, hiddenFromPlayer: nextHidden };
+                    npcDataCache.set(npc.id, cloneActorRecord(updatedNpc) || { ...updatedNpc });
+                    if (card) {
+                        card.classList.toggle('is-hidden-from-player', shouldStyleLocationNpcAsHidden(updatedNpc, locationNpcsShowHidden));
+                    }
+
+                    window.refreshParty?.();
+                    if (typeof window.loadCurrentLocation === 'function') {
+                        await window.loadCurrentLocation();
+                    }
+
+                    return updatedNpc;
+                } finally {
+                    hideLocationOverlay();
+                }
+            }
+
             function registerNpcContextMenu(card, npc) {
                 if (!card || !npc || !npc.id) {
                     return;
@@ -23843,6 +23883,7 @@
                 let teleportButton = null;
                 let memoriesButton = null;
                 let goalsButton = null;
+                let toggleHiddenButton = null;
                 let recruitButton = null;
                 let recruitAllPreviousPartyMembersButton = null;
                 let dismissButton = null;
@@ -23874,6 +23915,16 @@
                     goalsButton.className = 'entity-context-menu-item npc-card-menu-item';
                     goalsButton.textContent = 'Goals';
                     menu.appendChild(goalsButton);
+
+                    toggleHiddenButton = document.createElement('button');
+                    toggleHiddenButton.type = 'button';
+                    toggleHiddenButton.className = 'entity-context-menu-item npc-card-menu-item';
+                    toggleHiddenButton.textContent = 'Toggle Hidden';
+                    toggleHiddenButton.disabled = Boolean(npc.isDead);
+                    if (toggleHiddenButton.disabled) {
+                        toggleHiddenButton.title = 'Dead NPCs are always visible.';
+                    }
+                    menu.appendChild(toggleHiddenButton);
 
                     const isInParty = Boolean(npc.isInPlayerParty);
                     if (isInParty) {
@@ -24100,6 +24151,20 @@
                         closeNpcContextMenu();
                         const latestNpc = npcDataCache.get(npc.id) || npc;
                         showNpcGoalsModal(latestNpc);
+                    });
+                }
+
+                if (toggleHiddenButton) {
+                    toggleHiddenButton.addEventListener('click', async (event) => {
+                        event.stopPropagation();
+                        closeNpcContextMenu();
+                        try {
+                            const latestNpc = npcDataCache.get(npc.id) || npc;
+                            await toggleNpcHiddenFromPlayer(latestNpc, { card });
+                        } catch (error) {
+                            console.warn('Failed to toggle NPC hidden state:', error);
+                            alert(`Failed to toggle hidden state: ${error?.message || 'Unknown error'}`);
+                        }
                     });
                 }
 

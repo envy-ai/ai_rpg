@@ -29,7 +29,7 @@ Update an NPC's core data.
 
 Request:
 - Path: `id`
-- Body supports: `name`, `description`, `shortDescription`, `race`, `class`, `factionId`, `level`, `health`, `healthAttribute`, `attributes`, `skills`, `abilities`, `currency`, `experience`, `isDead`, `personalityType`, `personalityTraits`, `personalityNotes`, `aiNotes`, `statusEffects`, `aliases`, `resistances`, `vulnerabilities`, `needBarApplicability` (also accepts singular aliases `resistance` and `vulnerability`)
+- Body supports: `name`, `description`, `shortDescription`, `race`, `class`, `factionId`, `level`, `health`, `healthAttribute`, `attributes`, `skills`, `abilities`, `currency`, `experience`, `isDead`, `hiddenFromPlayer`, `personalityType`, `personalityTraits`, `personalityNotes`, `aiNotes`, `statusEffects`, `aliases`, `resistances`, `vulnerabilities`, `needBarApplicability` (also accepts singular aliases `resistance` and `vulnerability`)
 - Rejects `unspentSkillPoints` (400) because pools are formula-derived at read time.
 
 Response:
@@ -42,6 +42,7 @@ Notes:
 - If provided, `aliases` must be an array of strings.
 - If provided, `needBarApplicability` must be an object and is only accepted for NPCs; unchecked bars are removed from that actor and re-enabled bars come back at `100`.
 - If provided, `willingToTrade` must be a boolean and sets whether the NPC can open barter sessions. Setting it to `false` stamps a temporary refusal expiry using `barter.refusal_duration_minutes`; setting it to `true` clears the refusal expiry.
+- If provided, `hiddenFromPlayer` must be a boolean. Dead NPCs/corpses remain visible because the `Player` model normalizes hidden state to `false` while dead.
 
 ## POST /api/npcs/:id/trade/session
 Start or refresh a barter session with a non-hostile NPC at the current location or in the player party.

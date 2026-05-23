@@ -70,3 +70,33 @@ test('extractFinalXmlRootBlock supports root attributes', () => {
         '<finalProse mode="final">Final text.</finalProse>'
     );
 });
+
+test('extractFinalXmlBlockFromResponse returns the final complete XML block using its closing tag', () => {
+    const response = [
+        'blah blah',
+        '<response>hello</response>',
+        '',
+        'blah blah',
+        '<response>world</response>',
+        'blah blah'
+    ].join('\n');
+
+    assert.equal(
+        Utils.extractFinalXmlBlockFromResponse(response),
+        '<response>world</response>'
+    );
+});
+
+test('extractFinalXmlBlockFromResponse supports attributes on the final root opening tag', () => {
+    const response = [
+        'analysis',
+        '<editedText>draft</editedText>',
+        '<editedText mode="final">final</editedText>',
+        'trailing commentary'
+    ].join('\n');
+
+    assert.equal(
+        Utils.extractFinalXmlBlockFromResponse(response),
+        '<editedText mode="final">final</editedText>'
+    );
+});

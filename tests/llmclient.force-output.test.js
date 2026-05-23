@@ -102,6 +102,71 @@ test('LLMClient.chatCompletion uses forceOutput string without network call', as
     }
 });
 
+test('LLMClient.chatCompletion validates the final XML block when strict XML output has surrounding text', async () => {
+    const originalAxiosPost = axios.post;
+    const originalConfig = Globals.config;
+    const response = [
+        'analysis before',
+        '<response>hello</response>',
+        '',
+        'more analysis',
+        '<response>world</response>',
+        'analysis after'
+    ].join('\n');
+
+    axios.post = async () => {
+        throw new Error('axios.post should not be called when forceOutput is provided.');
+    };
+    Globals.config = null;
+
+    try {
+        const result = await LLMClient.chatCompletion({
+            messages: [{ role: 'user', content: 'Run deterministic XML validation test.' }],
+            forceOutput: response,
+            validateXML: true,
+            validateXMLStrict: true,
+            output: 'silent',
+            retryAttempts: 0
+        });
+
+        assert.equal(result, response);
+    } finally {
+        axios.post = originalAxiosPost;
+        Globals.config = originalConfig;
+    }
+});
+
+test('LLMClient.chatCompletion checks required tags against the final XML block', async () => {
+    const originalAxiosPost = axios.post;
+    const originalConfig = Globals.config;
+    const response = [
+        '<response><editedText>draft</editedText></response>',
+        '<response><other>final</other></response>'
+    ].join('\n');
+
+    axios.post = async () => {
+        throw new Error('axios.post should not be called when forceOutput is provided.');
+    };
+    Globals.config = null;
+
+    try {
+        const result = await LLMClient.chatCompletion({
+            messages: [{ role: 'user', content: 'Run deterministic required-tag test.' }],
+            forceOutput: response,
+            validateXML: true,
+            validateXMLStrict: true,
+            requiredTags: ['editedText'],
+            output: 'silent',
+            retryAttempts: 0
+        });
+
+        assert.equal(result, '');
+    } finally {
+        axios.post = originalAxiosPost;
+        Globals.config = originalConfig;
+    }
+});
+
 test('LLMClient.chatCompletion logs AI override profile summary without dumping override details', { concurrency: false }, async () => {
     const originalAxiosPost = axios.post;
     const originalConfig = Globals.config;

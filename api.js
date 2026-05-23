@@ -3111,6 +3111,30 @@ module.exports = function registerApiRoutes(scope) {
             'while-you-were-away-player'
         ]);
 
+        const loadForbiddenTropesForSlopPrompt = () => {
+            const { value } = loadMergedDefinitionFile({
+                baseDir: Globals.baseDir || __dirname,
+                filename: 'slopwords.yaml'
+            });
+            const rawForbiddenTropes = value?.forbidden_tropes;
+            if (rawForbiddenTropes === undefined || rawForbiddenTropes === null) {
+                return [];
+            }
+            if (!Array.isArray(rawForbiddenTropes)) {
+                throw new Error('slopwords.yaml forbidden_tropes must be an array when provided.');
+            }
+            return rawForbiddenTropes.map((entry, index) => {
+                if (typeof entry !== 'string') {
+                    throw new Error(`slopwords.yaml forbidden_tropes entry at index ${index} must be a string.`);
+                }
+                const trimmed = entry.trim();
+                if (!trimmed) {
+                    throw new Error(`slopwords.yaml forbidden_tropes entry at index ${index} must not be empty.`);
+                }
+                return trimmed;
+            });
+        };
+
         const getSlopHistorySegments = () => {
             if (!Array.isArray(chatHistory)) {
                 throw new Error('Chat history is unavailable for slopword analysis.');
@@ -3469,7 +3493,8 @@ module.exports = function registerApiRoutes(scope) {
                 textToEdit,
                 slopWords = [],
                 slopRegexes = [],
-                slopNgrams = []
+                slopNgrams = [],
+                forbiddenTropes = []
             }) => {
                 if (config?.prompt_uses_caching === true) {
                     const baseContext = await prepareBasePromptContext();
@@ -3481,7 +3506,8 @@ module.exports = function registerApiRoutes(scope) {
                         textToEdit,
                         slopWords,
                         slopRegexes,
-                        slopNgrams
+                        slopNgrams,
+                        forbiddenTropes
                     });
                 }
 
@@ -3493,7 +3519,8 @@ module.exports = function registerApiRoutes(scope) {
                     textToEdit,
                     slopWords,
                     slopRegexes,
-                    slopNgrams
+                    slopNgrams,
+                    forbiddenTropes
                 });
             };
             const parseSlopRemoverEditedTextResponse = (responseText) => {
@@ -3506,7 +3533,8 @@ module.exports = function registerApiRoutes(scope) {
                     throw new Error('empty response');
                 }
 
-                const parsedDocument = Utils.parseXmlDocumentStrict(trimmedResponse, 'text/xml');
+                const xmlPayload = Utils.extractFinalXmlBlockFromResponse(trimmedResponse) || trimmedResponse;
+                const parsedDocument = Utils.parseXmlDocumentStrict(xmlPayload, 'text/xml');
 
                 const editedTextNode = parsedDocument.getElementsByTagName('editedText')[0];
                 if (!editedTextNode) {
@@ -3522,6 +3550,7 @@ module.exports = function registerApiRoutes(scope) {
             };
 
             const originalProse = currentProse;
+            const forbiddenTropes = loadForbiddenTropesForSlopPrompt();
             let maxAttempts = resolveSlopRemoverBaseAttempts();
             for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
                 const slopWords = Array.from(slopWordSet).sort((a, b) => a.localeCompare(b));
@@ -3563,7 +3592,8 @@ module.exports = function registerApiRoutes(scope) {
                         textToEdit: currentProse,
                         slopWords,
                         slopRegexes,
-                        slopNgrams
+                        slopNgrams,
+                        forbiddenTropes
                     });
                     promptData = parseXMLTemplate(rendered);
                     if (!promptData?.systemPrompt || !promptData?.generationPrompt) {
@@ -26570,6 +26600,7 @@ module.exports = function registerApiRoutes(scope) {
 
                 const body = req.body || {};
                 const hasNeedBarApplicability = Object.prototype.hasOwnProperty.call(body, 'needBarApplicability');
+                const hasHiddenFromPlayer = Object.prototype.hasOwnProperty.call(body, 'hiddenFromPlayer');
                 const {
                     name,
                     description,
@@ -26586,6 +26617,7 @@ module.exports = function registerApiRoutes(scope) {
                     experience,
                     willingToTrade,
                     isDead,
+                    hiddenFromPlayer,
                     personalityType,
                     personalityTraits,
                     personalityNotes,
@@ -26640,6 +26672,13 @@ module.exports = function registerApiRoutes(scope) {
                     return res.status(400).json({
                         success: false,
                         error: 'unspentSkillPoints is formula-derived and cannot be set directly.'
+                    });
+                }
+
+                if (hasHiddenFromPlayer && typeof hiddenFromPlayer !== 'boolean') {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'hiddenFromPlayer must be a boolean.'
                     });
                 }
 
@@ -26698,6 +26737,10 @@ module.exports = function registerApiRoutes(scope) {
                     } catch (deadError) {
                         console.warn(`Failed to set isDead for NPC ${npcId}:`, deadError.message);
                     }
+                }
+
+                if (hasHiddenFromPlayer) {
+                    npc.hiddenFromPlayer = hiddenFromPlayer;
                 }
 
                 if (typeof healthAttribute === 'string' && healthAttribute.trim()) {

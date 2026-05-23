@@ -23,6 +23,7 @@ Collection of static utility helpers used across the server: set math, text simi
 - `innerXML(node)`.
 - `extractXmlNodeContent(node)`: returns trimmed text for prompt nodes containing CDATA children, while preserving serialized inner XML for ordinary prompt nodes.
 - `extractFinalXmlRootBlock(input, rootTags)`: finds the last complete XML block whose root tag is one of the requested names and returns only that block. This is used by player-action XML parsing so draft/thinking text that contains earlier `<finalProse>`, `<travelProse>`, or `<rejected>` tags does not confuse final prose selection.
+- `extractFinalXmlBlockFromResponse(input)`: infers the final XML root from the last closing tag in an LLM response, strips trailing text after that closing tag, then returns the final complete block for that root. This supports prompts that accidentally include analysis before or after the final XML answer.
 - Game-state serialization writes `Globals.getPlotAnalysis()` into `metadata.plotAnalysis`, and hydration restores that value through `Globals.setPlotAnalysis(...)`.
 - `parseXmlDocument(xmlContent, mimeType)` with cheerio-based normalization for malformed XML.
 - `parseXmlDocumentStrict(xmlContent, mimeType)` for strict XML parsing with collected syntax diagnostics; malformed XML throws with parser-reported line/column details instead of being normalized.

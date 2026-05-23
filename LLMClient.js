@@ -4290,11 +4290,12 @@ class LLMClient {
                     }
 
                     if (validateXML && !hasToolCalls) {
+                        const responseXmlContent = Utils.extractFinalXmlBlockFromResponse(responseContent) || responseContent;
                         try {
                             if (validateXMLStrict) {
-                                Utils.parseXmlDocumentStrict(responseContent);
+                                Utils.parseXmlDocumentStrict(responseXmlContent);
                             } else {
-                                Utils.parseXmlDocument(responseContent);
+                                Utils.parseXmlDocument(responseXmlContent);
                             }
                         } catch (xmlError) {
                             errorLog(`XML validation failed (attempt ${attempt + 1}):`, xmlError);
@@ -4314,7 +4315,7 @@ class LLMClient {
                         // use regex to check for required tags
                         for (const tag of requiredTags) {
                             const tagPattern = new RegExp(`<${tag}[\s\S]*?>[\s\S]*?<\/${tag}>`, 'i');
-                            if (!tagPattern.test(responseContent)) {
+                            if (!tagPattern.test(responseXmlContent)) {
                                 const errorMsg = `Required XML tag <${tag}> is missing in the response (attempt ${attempt + 1}).`;
                                 const filePath = LLMClient.writeLogFile({
                                     prefix: 'missingTag',

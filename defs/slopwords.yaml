@@ -2,6 +2,15 @@
 default: 200
 ngram_default: 5
 
+# A list of forbidden tropes
+forbidden_tropes:
+  - "you’re either x or y. i can’t decide which yet."
+  - "REALLY looked."
+  - "mouth opens. closes. opens again."
+  - "a beat."
+  - "most people do this… but YOU. you do THAT.."
+  - "you did x. in y. in my z."
+
 # A list of slop words (ngrams are listed below as well) and their allowable parts per million before being flagged as repetitive
 regexes:
   - pattern: "/gossip/i"
@@ -9,6 +18,9 @@ regexes:
     ppm: default
   - pattern: "/(logging|logbook|document|data point|record|journal|ledger)/i"
     name: "Stop having characters log and document everything. It's an overused trope. Omit."
+    ppm: 0
+  - pattern: '/[Aa] beat\./'
+    name: "Avoid repetitive use of 'a beat' in prose, because if you use it in prose, every character must immediately shit themselves in horrifying, graphic detail. Best just to change/remove it, because no one wants that."
     ppm: 0
 slopwords:
   # Custom ones first:

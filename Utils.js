@@ -125,6 +125,30 @@ class Utils {
       : '';
   }
 
+  static extractFinalXmlBlockFromResponse(input) {
+    if (input === null || input === undefined) {
+      throw new TypeError('Utils.extractFinalXmlBlockFromResponse requires a string input.');
+    }
+
+    const text = typeof input === 'string' ? input : String(input);
+    const closingPattern = /<\/\s*([A-Za-z_][A-Za-z0-9_.:-]*)\s*>/g;
+    let finalClosingMatch = null;
+    let match = null;
+    while ((match = closingPattern.exec(text)) !== null) {
+      finalClosingMatch = {
+        tag: match[1],
+        end: match.index + match[0].length,
+      };
+    }
+
+    if (!finalClosingMatch) {
+      return '';
+    }
+
+    const contentThroughFinalClosingTag = text.slice(0, finalClosingMatch.end);
+    return this.extractFinalXmlRootBlock(contentThroughFinalClosingTag, finalClosingMatch.tag);
+  }
+
   static roundAwayFromZero(value) {
     if (!Number.isFinite(value) || value === 0) {
       return 0;
