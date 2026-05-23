@@ -6,7 +6,7 @@ Common payloads: see `docs/api/common.md`.
 Create a new thing.
 
 Request:
-- Body supports: `name`, `description`, `shortDescription`, `thingType`, `imageId`, `rarity`, `itemTypeDetail`, `metadata`, `slot`, `attributeBonuses`, `causeStatusEffect`, `causeStatusEffectOnTarget`, `causeStatusEffectOnEquipper`, `count`, `level`, `relativeLevel`, `containerContents`, `statusEffects`, plus boolean flags (`isVehicle`, `isCraftingStation`, `isProcessingStation`, `isHarvestable`, `isSalvageable`, `isContainer`).
+- Body supports: `name`, `description`, `shortDescription`, `thingType`, `imageId`, `rarity`, `itemTypeDetail`, `metadata`, `slot`, `attributeBonuses`, `causeStatusEffect`, `causeStatusEffectOnTarget`, `causeStatusEffectOnEquipper`, `count`, `level`, `relativeLevel`, `containerContents`, `statusEffects`, plus boolean flags (`isVehicle`, `isCraftingStation`, `isProcessingStation`, `isHarvestable`, `isSalvageable`, `isContainer`) and registered Thing fields exposed to create/edit flows.
 
 Response:
 - 200: `{ success: true, thing: Thing, message, imageNeedsGeneration }`
@@ -14,6 +14,7 @@ Response:
 
 Notes:
 - When `causeStatusEffectOnTarget`/`causeStatusEffectOnEquipper` are supplied, `causeStatusEffect` is treated as legacy input.
+- Registered Thing fields with `clearThingSlotWhenPresent` clear `slot` when they are provided with a meaningful value.
 
 ## GET /api/things
 List all things (optionally by type).
@@ -32,11 +33,26 @@ Response:
 - 200: `{ success: true, thing: Thing }`
 - 404: `{ success: false, error }`
 
+## POST /api/mod-thing-context-actions/:actionId
+Execute a registered mod-owned Thing context-menu action.
+
+Request:
+- Path `actionId` is the registry full id, such as `implants:install-implant`.
+- Body: `{ thingId, context?, ownerId?, ownerType?, npcId?, locationId? }`.
+
+Response:
+- 200: `{ success: true, actionId, result, thing, actor? }`
+- 400/404 with `{ success: false, error }`
+
+Notes:
+- The route looks up the action live from `ModExtensionRegistry` and calls its handler with the Thing, owner actor when resolvable, current player, runtime maps, and request context.
+- Mod handlers are authoritative and should throw explicit errors for invalid owners, incompatible items, duplicate state, or unsupported contexts.
+
 ## PUT /api/things/:id
 Update a thing.
 
 Request:
-- Body supports: `name`, `description`, `shortDescription`, `thingType`, `imageId`, `rarity`, `itemTypeDetail`, `metadata`, `slot`, `attributeBonuses`, `causeStatusEffect`, `causeStatusEffectOnTarget`, `causeStatusEffectOnEquipper`, `count`, `level`, `relativeLevel`, `containerContents`, `statusEffects`, plus boolean flags (`isVehicle`, `isCraftingStation`, `isProcessingStation`, `isHarvestable`, `isSalvageable`, `isContainer`).
+- Body supports: `name`, `description`, `shortDescription`, `thingType`, `imageId`, `rarity`, `itemTypeDetail`, `metadata`, `slot`, `attributeBonuses`, `causeStatusEffect`, `causeStatusEffectOnTarget`, `causeStatusEffectOnEquipper`, `count`, `level`, `relativeLevel`, `containerContents`, `statusEffects`, plus boolean flags (`isVehicle`, `isCraftingStation`, `isProcessingStation`, `isHarvestable`, `isSalvageable`, `isContainer`) and registered Thing fields exposed to the edit modal.
 
 Response:
 - 200: `{ success: true, thing: Thing, message, imageNeedsUpdate }`
@@ -44,6 +60,8 @@ Response:
 
 Notes:
 - `causeStatusEffect` is treated as a legacy payload and mapped internally when provided.
+- Registered Thing fields are written through `thing.setExtensionField(...)` when available.
+- Registered Thing fields with `clearThingSlotWhenPresent` clear `slot` when they are provided with a meaningful value.
 
 ## POST /api/things/:id/separate
 Run the `thing-separate` prompt against an item or scenery thing and replace it with the parsed output things.
@@ -111,7 +129,7 @@ Response:
 Notes:
 - Only things with `isContainer: true` can be opened.
 - `contents` contains item-type things held by the container; scenery containers can hold items, but scenery itself cannot be contained.
-- If the container has pending `containerContents` seeds, this route runs the dedicated `thing-generator-contents` prompt once, creates all listed contents as real item Things inside the container, clears the pending seeds, then returns the refreshed contents.
+- If the container has pending `containerContents` seeds, this route runs the dedicated `thing-generator-contents` prompt once, creates all listed contents as real item Things inside the container, clears the pending seeds, then returns the refreshed contents. Empty sentinels such as `empty`, `none`, or `n/a` and zero-count seeds are discarded during parsing/loading, so loaded empty containers return normally without firing that prompt.
 
 ## POST /api/things/:containerId/container/move-in
 Move a whole item stack from the current player's unequipped inventory or a loose current-location item into a container.

@@ -33,6 +33,41 @@ test('settings editor renders registered mod setting tabs with their fields', ()
             label: 'Display Label',
             type: 'string',
             defaultValue: 'implants'
+          },
+          {
+            namespace: 'implants',
+            key: 'applyPreset',
+            label: 'Apply Preset',
+            type: 'select',
+            defaultValue: '',
+            persist: false,
+            action: 'applyPreset',
+            options: [
+              {
+                value: 'implants',
+                label: 'Implants',
+                settings: {
+                  implants: {
+                    displayLabel: 'implants',
+                    itemLabel: 'Implant',
+                    badgeImagePath: 'microchip.svg'
+                  }
+                },
+                confirmMessage: 'Apply the Implants preset?'
+              },
+              {
+                value: 'tattoo',
+                label: 'Tattoo',
+                settings: {
+                  implants: {
+                    displayLabel: 'tattoos',
+                    itemLabel: 'Tattoo Design',
+                    badgeImagePath: 'image.svg'
+                  }
+                },
+                confirmMessage: 'Apply the Tattoo preset?'
+              }
+            ]
           }
         ]
       },
@@ -68,6 +103,11 @@ test('settings editor renders registered mod setting tabs with their fields', ()
   assert.match(rendered, /data-editor-panel="mod-spells"/);
   assert.match(rendered, /data-mod-setting-namespace="implants"/);
   assert.match(rendered, /data-mod-setting-key="displayLabel"/);
+  assert.match(rendered, /data-mod-setting-action="applyPreset"/);
+  assert.match(rendered, /data-mod-setting-persist="false"/);
+  assert.match(rendered, /data-mod-setting-preset-values=/);
+  assert.match(rendered, /Tattoo Design/);
+  assert.match(rendered, /image\.svg/);
   assert.match(rendered, /data-mod-setting-namespace="spells"/);
   assert.match(rendered, /data-mod-setting-key="manaUsageBaseCosts"/);
 });
@@ -101,4 +141,15 @@ test('settings editor resets mod fields to defaults and opens the owning tab for
   assert.match(source, /field\.dataset\.modSettingDefault/);
   assert.match(source, /field\.closest\('\.editor-tab-panel'\)\?\.dataset\?\.editorPanel/);
   assert.match(source, /setActiveEditorTab\(error\.editorTab \|\| 'prompts'\)/);
+});
+
+test('settings editor applies mod presets with confirmation without persisting the action select', () => {
+  const source = fs.readFileSync(path.join(baseDir, 'views', 'settings.njk'), 'utf8');
+
+  assert.match(source, /function applyModSettingPreset/);
+  assert.match(source, /window\.confirm\(confirmMessage\)/);
+  assert.match(source, /findModSettingField\(namespace,\s*key\)/);
+  assert.match(source, /selector\.value = ''/);
+  assert.ok(source.includes('querySelectorAll(\'[data-mod-setting-action="applyPreset"]\')'));
+  assert.match(source, /if \(field\.dataset\.modSettingPersist === 'false'\)/);
 });

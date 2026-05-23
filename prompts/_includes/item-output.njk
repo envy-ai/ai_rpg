@@ -5,6 +5,8 @@
   <itemOrScenery>{{ item.itemOrScenery }}</itemOrScenery>
   <type>{{ item.type }}</type>
   <slot>{% if item.slot %}{{ item.slot | join(", ") }}{% else %}N/A{% endif %}</slot>
+  {% if item.extensionXmlFields %}{% for field in item.extensionXmlFields %}<{{ field.tagName }}>{{ field.value }}</{{ field.tagName }}>
+  {% endfor %}{% endif %}
   <rarity>{{ item.rarity }}</rarity>
   <value>{{ item.value }}</value>
   <weight>{{ item.weight }}</weight>

@@ -17,12 +17,21 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
     {% macro renderModSettingField(field) %}
     {% set fieldId = "modSetting_" + field.namespace + "_" + field.key %}
     {% set fieldDefaultJson = field.defaultValue | default(null) | dump %}
+    {% set shouldPersist = field.persist != false %}
     <div class="form-group full-width">
         <label for="{{ fieldId }}">{{ field.label or field.key }}</label>
         {% if field.type == 'object' %}
-        <textarea id="{{ fieldId }}" rows="4" data-mod-setting-field="true" data-mod-setting-namespace="{{ field.namespace }}" data-mod-setting-key="{{ field.key }}" data-mod-setting-type="{{ field.type }}" data-mod-setting-default="{{ fieldDefaultJson | escape }}">{{ field.defaultValue | default({}) | dump(2) }}</textarea>
+        <textarea id="{{ fieldId }}" rows="4" data-mod-setting-field="{{ 'true' if shouldPersist else 'false' }}" data-mod-setting-persist="{{ 'true' if shouldPersist else 'false' }}" data-mod-setting-namespace="{{ field.namespace }}" data-mod-setting-key="{{ field.key }}" data-mod-setting-type="{{ field.type }}" data-mod-setting-default="{{ fieldDefaultJson | escape }}" data-mod-setting-action="{{ field.action | default('', true) }}">{{ field.defaultValue | default({}) | dump(2) }}</textarea>
+        {% elif field.type == 'select' %}
+        <select id="{{ fieldId }}" data-mod-setting-field="{{ 'true' if shouldPersist else 'false' }}" data-mod-setting-persist="{{ 'true' if shouldPersist else 'false' }}" data-mod-setting-namespace="{{ field.namespace }}" data-mod-setting-key="{{ field.key }}" data-mod-setting-type="{{ field.type }}" data-mod-setting-default="{{ fieldDefaultJson | escape }}" data-mod-setting-action="{{ field.action | default('', true) }}">
+            <option value="">{{ field.placeholder or 'Select...' }}</option>
+            {% for option in field.options or [] %}
+            {% set optionSettingsJson = option.settings | default(null) | dump %}
+            <option value="{{ option.value }}" {% if option.value == field.defaultValue %}selected{% endif %} data-mod-setting-preset-values="{{ optionSettingsJson | escape }}" data-mod-setting-confirm-message="{{ option.confirmMessage | default('', true) | escape }}">{{ option.label or option.value }}{% if option.description %} - {{ option.description }}{% endif %}</option>
+            {% endfor %}
+        </select>
         {% else %}
-        <input type="text" id="{{ fieldId }}" value="{{ field.defaultValue | default('') }}" data-mod-setting-field="true" data-mod-setting-namespace="{{ field.namespace }}" data-mod-setting-key="{{ field.key }}" data-mod-setting-type="{{ field.type }}" data-mod-setting-default="{{ fieldDefaultJson | escape }}">
+        <input type="text" id="{{ fieldId }}" value="{{ field.defaultValue | default('') }}" data-mod-setting-field="{{ 'true' if shouldPersist else 'false' }}" data-mod-setting-persist="{{ 'true' if shouldPersist else 'false' }}" data-mod-setting-namespace="{{ field.namespace }}" data-mod-setting-key="{{ field.key }}" data-mod-setting-type="{{ field.type }}" data-mod-setting-default="{{ fieldDefaultJson | escape }}" data-mod-setting-action="{{ field.action | default('', true) }}">
         {% endif %}
         {% if field.description %}
         <div class="help-text">{{ field.description }}</div>
@@ -1505,9 +1514,84 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                 .filter(line => line.length > 0);
         }
 
+        function findModSettingField(namespace, key) {
+            const normalizedNamespace = typeof namespace === 'string' ? namespace.trim() : '';
+            const normalizedKey = typeof key === 'string' ? key.trim() : '';
+            if (!normalizedNamespace || !normalizedKey) {
+                return null;
+            }
+            return Array.from(document.querySelectorAll('[data-mod-setting-field="true"]'))
+                .find(field =>
+                    (field.dataset.modSettingNamespace || '').trim() === normalizedNamespace
+                    && (field.dataset.modSettingKey || '').trim() === normalizedKey
+                ) || null;
+        }
+
+        function setModSettingFieldValue(field, value) {
+            if (!field) {
+                return;
+            }
+            const type = (field.dataset.modSettingType || 'string').trim();
+            field.value = type === 'object'
+                ? JSON.stringify(value && typeof value === 'object' && !Array.isArray(value) ? value : {}, null, 2)
+                : String(value ?? '');
+            field.dispatchEvent(new Event('input', { bubbles: true }));
+            field.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+
+        function applyModSettingPreset(selector) {
+            if (!selector) {
+                return;
+            }
+            const option = selector.selectedOptions?.[0] || null;
+            const selectedValue = selector.value || '';
+            if (!selectedValue || !option) {
+                selector.value = '';
+                return;
+            }
+
+            const rawPresetValues = option.dataset.modSettingPresetValues || 'null';
+            let presetValues = null;
+            try {
+                presetValues = JSON.parse(rawPresetValues);
+            } catch (error) {
+                selector.value = '';
+                throw new Error(`Preset "${selectedValue}" has invalid setting data: ${error.message}`);
+            }
+            if (!presetValues || typeof presetValues !== 'object' || Array.isArray(presetValues)) {
+                selector.value = '';
+                throw new Error(`Preset "${selectedValue}" does not define setting values.`);
+            }
+
+            const confirmMessage = option.dataset.modSettingConfirmMessage
+                || `Apply the ${option.textContent.trim() || selectedValue} preset? This will replace the fields in this mod tab.`;
+            if (!window.confirm(confirmMessage)) {
+                selector.value = '';
+                return;
+            }
+
+            Object.entries(presetValues).forEach(([namespace, values]) => {
+                if (!values || typeof values !== 'object' || Array.isArray(values)) {
+                    throw new Error(`Preset "${selectedValue}" namespace "${namespace}" must be an object.`);
+                }
+                Object.entries(values).forEach(([key, value]) => {
+                    const field = findModSettingField(namespace, key);
+                    if (!field) {
+                        throw new Error(`Preset "${selectedValue}" references missing mod setting "${namespace}.${key}".`);
+                    }
+                    setModSettingFieldValue(field, value);
+                });
+            });
+            selector.value = '';
+            updatePreview();
+        }
+
         function collectModSettingsFromForm() {
             const modSettings = {};
             document.querySelectorAll('[data-mod-setting-field="true"]').forEach(field => {
+                if (field.dataset.modSettingPersist === 'false') {
+                    return;
+                }
                 const namespace = (field.dataset.modSettingNamespace || '').trim();
                 const key = (field.dataset.modSettingKey || '').trim();
                 const type = (field.dataset.modSettingType || 'string').trim();
@@ -1558,6 +1642,10 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                 ? setting.modSettings
                 : {};
             document.querySelectorAll('[data-mod-setting-field="true"]').forEach(field => {
+                if (field.dataset.modSettingPersist === 'false') {
+                    field.value = '';
+                    return;
+                }
                 const namespace = (field.dataset.modSettingNamespace || '').trim();
                 const key = (field.dataset.modSettingKey || '').trim();
                 const type = (field.dataset.modSettingType || 'string').trim();
@@ -3393,6 +3481,16 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                         throw new Error('Editor tab button is missing data-editor-tab.');
                     }
                     setActiveEditorTab(tabId);
+                });
+            });
+            document.querySelectorAll('[data-mod-setting-action="applyPreset"]').forEach((selector) => {
+                selector.addEventListener('change', () => {
+                    try {
+                        applyModSettingPreset(selector);
+                    } catch (error) {
+                        selector.value = '';
+                        showMessage(error?.message || 'Failed to apply mod preset.', 'error');
+                    }
                 });
             });
 

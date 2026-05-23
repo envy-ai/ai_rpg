@@ -162,6 +162,32 @@ test('pending container contents normalize and persist through JSON and saves', 
   }
 });
 
+test('pending container contents ignore empty sentinels and zero-count seeds', () => {
+  const pouch = new Thing({
+    id: 'thing-mostly-empty-pouch',
+    name: 'Mostly Empty Pouch',
+    description: 'A pouch with a misleading manifest.',
+    thingType: 'item',
+    isContainer: true,
+    containerContents: [
+      { name: 'empty' },
+      { name: 'None' },
+      { name: 'N/A' },
+      { name: 'Signal Flares', count: 0 },
+      { name: 'Empty Vial', count: 1 }
+    ]
+  });
+
+  assert.deepEqual(pouch.containerContents, [
+    { name: 'Empty Vial', count: 1 }
+  ]);
+
+  const restored = Thing.fromJSON(pouch.toJSON());
+  assert.deepEqual(restored.containerContents, [
+    { name: 'Empty Vial', count: 1 }
+  ]);
+});
+
 test('adding and removing contained items updates placement metadata loudly', () => {
   Globals.config = {
     ...(originalConfig && typeof originalConfig === 'object' ? originalConfig : {}),

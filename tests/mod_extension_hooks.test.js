@@ -183,6 +183,61 @@ test('ModExtensionRegistry registers world setting tabs and groups fields by tab
     );
 });
 
+test('ModExtensionRegistry preserves select/action mod setting field metadata', () => {
+    const registry = new ModExtensionRegistry();
+
+    registry.registerSettingTab({
+        modName: 'implants',
+        id: 'implants',
+        label: 'Implants'
+    });
+    registry.registerSettingField({
+        modName: 'implants',
+        namespace: 'implants',
+        key: 'applyPreset',
+        label: 'Apply Preset',
+        type: 'select',
+        defaultValue: '',
+        tabId: 'implants',
+        persist: false,
+        action: 'applyPreset',
+        options: [
+            {
+                value: 'implants',
+                label: 'Implants',
+                description: 'Use implant terminology.',
+                settings: {
+                    implants: {
+                        displayLabel: 'implants',
+                        itemLabel: 'Implant',
+                        badgeImagePath: 'microchip.svg'
+                    }
+                },
+                confirmMessage: 'Apply the Implants preset?'
+            }
+        ]
+    });
+
+    const field = registry.getSettingField('implants', 'applyPreset');
+    assert.equal(field.persist, false);
+    assert.equal(field.action, 'applyPreset');
+    assert.deepEqual(field.options, [
+        {
+            value: 'implants',
+            label: 'Implants',
+            description: 'Use implant terminology.',
+            settings: {
+                implants: {
+                    displayLabel: 'implants',
+                    itemLabel: 'Implant',
+                    badgeImagePath: 'microchip.svg'
+                }
+            },
+            confirmMessage: 'Apply the Implants preset?'
+        }
+    ]);
+});
+
 test('ModExtensionRegistry registers first-class entity fields for live tool schemas', () => {
     const registry = new ModExtensionRegistry();
 
@@ -194,17 +249,46 @@ test('ModExtensionRegistry registers first-class entity fields for live tool sch
         description: 'Implant grouping slot.',
         exposeToCreateTool: true,
         exposeToUpdateTool: true,
-        exposeToGeneratorPrompt: true
+        exposeToGeneratorPrompt: true,
+        exposeToXmlParser: true,
+        exposeToEditModal: true,
+        clearThingSlotWhenPresent: true,
+        edit: {
+            label: 'Implant slot',
+            placeholder: 'neural',
+            description: 'Required grouping slot for implant-compatible items.',
+            order: 20
+        },
+        xmlPrompt: {
+            placeholder: 'N/A unless this item can be installed as an implant.'
+        }
     });
 
     assert.equal(registry.getEntityField('thing', 'implantSlot').modName, 'implants');
     assert.equal(registry.getEntityField('thing', 'implantSlot').type, 'string');
+    assert.deepEqual(registry.getEntityField('thing', 'implantSlot').xmlPrompt, {
+        tagName: 'implantSlot',
+        placeholder: 'N/A unless this item can be installed as an implant.'
+    });
+    assert.equal(registry.getEntityField('thing', 'implantSlot').exposeToEditModal, true);
+    assert.equal(registry.getEntityField('thing', 'implantSlot').clearThingSlotWhenPresent, true);
+    assert.deepEqual(registry.getEntityField('thing', 'implantSlot').edit, {
+        label: 'Implant slot',
+        placeholder: 'neural',
+        description: 'Required grouping slot for implant-compatible items.',
+        inputType: 'text',
+        order: 20
+    });
     assert.deepEqual(
         registry.getEntityFields('thing', { exposeToCreateTool: true }).map(field => field.fieldName),
         ['implantSlot']
     );
     assert.deepEqual(
         registry.getEntityFields('thing', { exposeToUpdateTool: true }).map(field => field.fieldName),
+        ['implantSlot']
+    );
+    assert.deepEqual(
+        registry.getEntityFields('thing', { exposeToEditModal: true }).map(field => field.fieldName),
         ['implantSlot']
     );
 
@@ -215,6 +299,190 @@ test('ModExtensionRegistry registers first-class entity fields for live tool sch
             fieldName: 'implantSlot'
         }),
         /Entity field "thing\.implantSlot" is already registered/
+    );
+});
+
+test('ModExtensionRegistry registers Thing context actions with client metadata and server handlers', () => {
+    const registry = new ModExtensionRegistry();
+    const handler = () => ({ ok: true });
+
+    registry.registerThingContextAction({
+        modName: 'implants',
+        id: 'install-implant',
+        label: 'Install implant',
+        fieldName: 'implantSlot',
+        contexts: ['player-inventory', 'npc-inventory'],
+        order: 30,
+        handler
+    });
+
+    assert.deepEqual(registry.getThingContextActions(), [{
+        modName: 'implants',
+        id: 'install-implant',
+        fullId: 'implants:install-implant',
+        label: 'Install implant',
+        fieldName: 'implantSlot',
+        fieldValue: undefined,
+        contexts: ['player-inventory', 'npc-inventory'],
+        order: 30
+    }]);
+    assert.equal(registry.getThingContextActionRecord('implants:install-implant').handler, handler);
+
+    assert.throws(
+        () => registry.registerThingContextAction({
+            modName: 'implants',
+            id: 'install-implant',
+            label: 'Duplicate',
+            fieldName: 'implantSlot',
+            handler
+        }),
+        /Thing context action "implants:install-implant" is already registered/
+    );
+    assert.throws(
+        () => registry.registerThingContextAction({
+            modName: 'implants',
+            id: 'bad-action',
+            label: 'Bad',
+            fieldName: 'implantSlot'
+        }),
+        /requires a handler function/
+    );
+});
+
+test('ModExtensionRegistry registers Thing image badges for mod-owned asset overlays', () => {
+    const registry = new ModExtensionRegistry();
+
+    registry.registerThingImageBadge({
+        modName: 'implants',
+        id: 'implant-chip',
+        fieldName: 'implantSlot',
+        label: 'Implant-compatible',
+        iconUrl: '/mods/implants/assets/microchip.svg',
+        renderMode: 'mask',
+        position: 'top-left',
+        order: 20
+    });
+    registry.registerThingImageBadge({
+        modName: 'portrait-overlays',
+        id: 'painted-badge',
+        fieldName: 'portraitBadge',
+        label: 'Painted Badge',
+        imageUrl: '/mods/portrait-overlays/assets/badge.webp',
+        renderMode: 'image',
+        position: 'top-right'
+    });
+
+    assert.deepEqual(registry.getThingImageBadges().map(badge => ({
+        fullId: badge.fullId,
+        fieldName: badge.fieldName,
+        label: badge.label,
+        iconUrl: badge.iconUrl,
+        imageUrl: badge.imageUrl,
+        renderMode: badge.renderMode,
+        position: badge.position,
+        order: badge.order
+    })), [
+        {
+            fullId: 'implants:implant-chip',
+            fieldName: 'implantSlot',
+            label: 'Implant-compatible',
+            iconUrl: '/mods/implants/assets/microchip.svg',
+            imageUrl: '',
+            renderMode: 'mask',
+            position: 'top-left',
+            order: 20
+        },
+        {
+            fullId: 'portrait-overlays:painted-badge',
+            fieldName: 'portraitBadge',
+            label: 'Painted Badge',
+            iconUrl: '',
+            imageUrl: '/mods/portrait-overlays/assets/badge.webp',
+            renderMode: 'image',
+            position: 'top-right',
+            order: 1000
+        }
+    ]);
+
+    assert.throws(
+        () => registry.registerThingImageBadge({
+            modName: 'implants',
+            id: 'implant-chip',
+            fieldName: 'otherField',
+            iconUrl: '/mods/implants/assets/other.svg'
+        }),
+        /Thing image badge "implants:implant-chip" is already registered/
+    );
+    assert.throws(
+        () => registry.registerThingImageBadge({
+            modName: 'implants',
+            id: 'bad-url',
+            fieldName: 'implantSlot',
+            iconUrl: '/assets/microchip.svg'
+        }),
+        /must use a mod asset URL/
+    );
+    assert.throws(
+        () => registry.registerThingImageBadge({
+            modName: 'implants',
+            id: 'two-icons',
+            fieldName: 'implantSlot',
+            iconUrl: '/mods/implants/assets/microchip.svg',
+            imageUrl: '/mods/implants/assets/microchip.png'
+        }),
+        /requires exactly one of iconUrl or imageUrl/
+    );
+});
+
+test('ModExtensionRegistry keeps setting-driven Thing image badge asset metadata', () => {
+    const registry = new ModExtensionRegistry();
+
+    registry.registerThingImageBadge({
+        modName: 'implants',
+        id: 'implant-chip',
+        fieldName: 'implantSlot',
+        label: 'Implant-compatible',
+        iconUrl: '/mods/implants/assets/microchip.svg',
+        renderMode: 'mask',
+        position: 'top-left',
+        assetPathSetting: {
+            namespace: 'implants',
+            key: 'badgeImagePath',
+            defaultValue: 'microchip.svg'
+        },
+        labelSetting: {
+            namespace: 'implants',
+            key: 'itemLabel',
+            defaultValue: 'Implant'
+        }
+    });
+
+    const [badge] = registry.getThingImageBadges();
+    assert.deepEqual(badge.assetPathSetting, {
+        namespace: 'implants',
+        key: 'badgeImagePath',
+        defaultValue: 'microchip.svg'
+    });
+    assert.deepEqual(badge.labelSetting, {
+        namespace: 'implants',
+        key: 'itemLabel',
+        defaultValue: 'Implant'
+    });
+});
+
+test('ModExtensionRegistry requires prompt placeholders for generated Thing XML fields', () => {
+    const registry = new ModExtensionRegistry();
+
+    assert.throws(
+        () => registry.registerEntityField({
+            modName: 'implants',
+            entityType: 'thing',
+            fieldName: 'implantSlot',
+            type: 'string',
+            exposeToGeneratorPrompt: true,
+            exposeToXmlParser: true
+        }),
+        /xmlPrompt\.placeholder/
     );
 });
 
@@ -359,7 +627,10 @@ test('bundled implant and spell mods register independent hook surfaces', () => 
         registerAttributeModifierContributor: contributor => registry.registerAttributeModifierContributor({ modName: 'test', contributor }),
         registerStatusEffectContributor: contributor => registry.registerStatusEffectContributor({ modName: 'test', contributor }),
         registerActorStatusContributor: contributor => registry.registerActorStatusContributor({ modName: 'test', contributor }),
-        registerBaseContextContributor: contributor => registry.registerBaseContextContributor({ modName: 'test', contributor })
+        registerBaseContextContributor: contributor => registry.registerBaseContextContributor({ modName: 'test', contributor }),
+        registerThingImageBadge: options => registry.registerThingImageBadge({ ...options, modName: options.modName || 'test' }),
+        registerThingContextAction: options => registry.registerThingContextAction({ ...options, modName: options.modName || 'test' }),
+        getModAssetUrl: assetPath => `/mods/test/assets/${String(assetPath || '').replace(/^\/+/, '')}`
     };
 
     require('../mods/implants/mod.js').register(scope);
@@ -377,10 +648,51 @@ test('bundled implant and spell mods register independent hook surfaces', () => 
     );
     assert.ok(registry.getXmlEventPromptSchemas().every(schema => schema.description && schema.xml));
     assert.ok(registry.getSettingField('implants', 'displayLabel'));
+    assert.ok(registry.getSettingField('implants', 'itemLabel'));
+    assert.ok(registry.getSettingField('implants', 'badgeImagePath'));
+    assert.equal(registry.getSettingField('implants', 'applyPreset').action, 'applyPreset');
+    assert.equal(registry.getSettingField('implants', 'applyPreset').persist, false);
+    assert.deepEqual(
+        registry.getSettingField('implants', 'applyPreset').options.map(option => option.value),
+        ['implants', 'tattoo']
+    );
     assert.equal(registry.getEntityField('thing', 'implantSlot').fieldName, 'implantSlot');
+    assert.equal(registry.getEntityField('thing', 'implantSlot').exposeToEditModal, true);
+    assert.equal(registry.getEntityField('thing', 'implantSlot').clearThingSlotWhenPresent, true);
+    assert.deepEqual(
+        registry.getThingContextActions().map(action => ({
+            fullId: action.fullId,
+            label: action.label,
+            fieldName: action.fieldName,
+            contexts: action.contexts
+        })),
+        [
+            {
+                fullId: 'test:install-implant',
+                label: 'Install implant',
+                fieldName: 'implantSlot',
+                contexts: ['player-inventory', 'npc-inventory']
+            },
+            {
+                fullId: 'test:uninstall-implant',
+                label: 'Uninstall implant',
+                fieldName: 'implantSlot',
+                contexts: ['player-inventory', 'npc-inventory', 'npc-equipment']
+            }
+        ]
+    );
     assert.ok(registry.getSettingField('spells', 'manaCostFormula'));
     assert.ok(registry.getSettingTabs().some(tab => tab.id === 'implants'));
     assert.ok(registry.getSettingTabs().some(tab => tab.id === 'spells'));
+    assert.deepEqual(
+        registry.getThingImageBadges().map(badge => badge.fullId),
+        ['test:implant-chip']
+    );
+    assert.deepEqual(registry.getThingImageBadges()[0].assetPathSetting, {
+        namespace: 'implants',
+        key: 'badgeImagePath',
+        defaultValue: 'microchip.svg'
+    });
 });
 
 test('ModLoader provides config defaults during mod registration', () => {
@@ -410,6 +722,36 @@ module.exports = {
         });
         assert.deepEqual(result.failed, []);
         assert.deepEqual(result.loaded, ['config-reader']);
+    } finally {
+        fs.rmSync(tempBaseDir, { recursive: true, force: true });
+    }
+});
+
+test('ModLoader mod scope exposes mod asset URLs and Thing image badge registration', () => {
+    const registry = new ModExtensionRegistry();
+    const tempBaseDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-rpg-mod-scope-'));
+    const modDir = path.join(tempBaseDir, 'mods', 'implants');
+    fs.mkdirSync(modDir, { recursive: true });
+
+    try {
+        const loader = new ModLoader(tempBaseDir, { config: {} });
+        const scope = loader.createModScope('implants', modDir, {
+            modExtensionRegistry: registry
+        });
+
+        assert.equal(scope.getModAssetUrl('microchip.svg'), '/mods/implants/assets/microchip.svg');
+        scope.registerThingImageBadge({
+            id: 'implant-chip',
+            fieldName: 'implantSlot',
+            iconUrl: scope.getModAssetUrl('microchip.svg'),
+            label: 'Implant-compatible',
+            position: 'top-left'
+        });
+
+        assert.deepEqual(
+            registry.getThingImageBadges().map(badge => badge.fullId),
+            ['implants:implant-chip']
+        );
     } finally {
         fs.rmSync(tempBaseDir, { recursive: true, force: true });
     }

@@ -27,6 +27,7 @@ Mods can now provide `defs/*.yaml` overlays that merge into the root `defs/*.yam
   - `mod.js` is not loaded
   - `defs/*.yaml` overlays are ignored
   - `public/` assets are not served
+  - `assets/` image/icon assets are not served
 - The active mod set is frozen at process startup.
 - Changing `enabled` on disk requires a server restart to take effect.
 - The `/mods` page provides a top-level checkbox manager for discovered mods. Saving that page writes explicit `mods.<name>.enabled` flags to `config.yaml`, reloads merged config for validation, and reports whether the running process still differs from the configured mod set.
@@ -65,13 +66,15 @@ Mods with `mod.js` can register runtime hooks through their scoped helper method
 - `registerSettingTab(...)`
 - `registerSettingField(...)`
 - `registerEntityField(...)`
+- `registerThingImageBadge(...)`
+- `registerThingContextAction(...)`
 - `registerStartupValidator(...)`
 
-See [`modding_hooks.md`](modding_hooks.md) and [`classes/ModExtensionRegistry.md`](classes/ModExtensionRegistry.md) for the hook contract. Chat tools are combined with built-ins at request time, XML event tags are looked up live while parsing the event-check response, world-profile setting fields can be grouped into mod-owned tabs, and registered Thing fields can be exposed to live `createThing` / `updateObjectFields` schemas.
+See [`modding_hooks.md`](modding_hooks.md) and [`classes/ModExtensionRegistry.md`](classes/ModExtensionRegistry.md) for the hook contract. Chat tools are combined with built-ins at request time, XML event tags are looked up live while parsing the event-check response, world-profile setting fields can be grouped into mod-owned tabs, select fields can apply confirmed preset values without persisting the action control, registered Thing fields can be exposed to live `createThing` / `updateObjectFields` schemas plus generated item XML scaffolds and the item edit modal, registered Thing fields can clear normal equipment slots when special-system fields are present, registered Thing image badges can overlay mod-owned SVG or raster assets on item cards with optional world-profile setting overrides for asset path and label, and registered Thing context actions can add server-backed item menu entries.
 
 The repository includes two hook-based mods:
 
-- `mods/implants`: inventory-backed actor attachments using a first-class `Thing.implantSlot` field, with prose-only install/remove tools, matching XML events, and an `Implants` World Profiles tab.
+- `mods/implants`: inventory-backed actor attachments using a first-class `Thing.implantSlot` field exposed as `<implantSlot>` in item generation prompts and the item editor, with normal `Thing.slot` clearing for implant-compatible items, context-menu install/uninstall actions, prose install/remove tools, matching XML events, an `Implants` World Profiles tab, and a configurable overlay badge for implant-compatible item images. `mods/implants/presets.yaml` defines the default `implants` preset (`Implant`, `microchip.svg`) and a `tattoo` preset (`Tattoo Design`, `image.svg`); applying a preset copies values into editable per-world settings.
 - `mods/spells`: actor-owned spells with mana spending, spell generation, and a `Spells` World Profiles tab for per-world cost settings.
 
 ## Example

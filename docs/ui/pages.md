@@ -91,7 +91,7 @@ This page maps routes to templates and the client scripts/styles they load.
 - Notes: uses a master-detail layout with a left world-profile library and a right editor panel.
 - Notes: the left panel includes search (`name/theme/genre/tone/difficulty`), sort controls, and selection-scoped actions (`Edit`, `Apply`, `Clone`, `Delete`), instead of per-row action buttons.
 - Notes: editor fields are grouped into tabbed sections (`Basics`, `New Game Defaults`, `Tone Scale`, `Factions`, `Character Options`, `Prompt Guidance`, optional mod-owned tabs, `Calendar`, `Image Prefixes`) and a sticky action bar keeps `Clear`, `Create/Update`, and `Auto-Fill Blank Fields` visible while scrolling.
-- Notes: mod setting fields with a registered tab render in their own World Profiles tab; legacy ungrouped mod fields still render in the Prompt Guidance `Mod Settings` block.
+- Notes: mod setting fields with a registered tab render in their own World Profiles tab; legacy ungrouped mod fields still render in the Prompt Guidance `Mod Settings` block. Registered select fields render as dropdowns, and non-persisted `applyPreset` action fields ask for confirmation before copying preset values into editable persisted mod settings.
 - Notes: the `Tone Scale` tab renders axes from `defs/unified_tonal_scale.yaml`; dropdowns include defined levels plus generated half-step midpoint choices such as `3.5 - Hopeful/Mixed`. If any tonal axis is selected, every axis must have a numeric level, and optional comments are saved in `setting.unifiedTonalScale`.
 - Notes: the `Factions` tab includes:
   - `Number of Factions` input (`defaultFactionCount`) for new-game faction target count.

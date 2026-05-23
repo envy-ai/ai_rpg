@@ -669,7 +669,8 @@ test('runWhileYouWereAwayPrompt applies absolute need values, moves NPCs, and re
         locationOverride: square,
         locationId: square.id,
         entryCollector: collector,
-        parentEntryId: 'parent-1'
+        parentEntryId: 'parent-1',
+        locationWasVisitedBeforeArrival: true
     });
 
     assert.equal(npc._bars[0].value, 750);
@@ -713,6 +714,44 @@ test('runWhileYouWereAwayPrompt skips unvisited arrival locations before renderi
         locationOverride: newRoom,
         locationId: newRoom.id,
         locationWasVisitedBeforeArrival: false,
+        returnEntries: true
+    });
+
+    assert.equal(prepared, false);
+    assert.equal(pushedEntries.length, 0);
+    assert.equal(result.hiddenEntry, null);
+    assert.equal(result.visibleEntry, null);
+    assert.equal(result.eventResult, null);
+    assert.equal(result.skipped, true);
+    assert.equal(result.skipReason, 'unvisited_location');
+});
+
+test('runWhileYouWereAwayPrompt skips when pre-arrival visit snapshot is missing', async () => {
+    const newRoom = createLocation({
+        id: 'new-room',
+        name: 'New Room',
+        regionId: 'alpha',
+        visited: true,
+        lastVisitedTime: 120
+    });
+    const gameLocations = new Map([[newRoom.id, newRoom]]);
+    let prepared = false;
+    const { runWhileYouWereAwayPrompt, pushedEntries } = loadWhileYouWereAwayHelpers({
+        currentPlayer: {
+            id: 'player',
+            name: 'Baato',
+            currentLocation: 'new-room'
+        },
+        gameLocations,
+        prepareBasePromptContext: async () => {
+            prepared = true;
+            throw new Error('Prompt context should not be prepared without a pre-arrival visit snapshot.');
+        }
+    });
+
+    const result = await runWhileYouWereAwayPrompt({
+        locationOverride: newRoom,
+        locationId: newRoom.id,
         returnEntries: true
     });
 
@@ -859,7 +898,8 @@ test('runWhileYouWereAwayPrompt runs scoped event checks while ignoring handled 
         locationOverride: square,
         locationId: square.id,
         entryCollector: collector,
-        returnEntries: true
+        returnEntries: true,
+        locationWasVisitedBeforeArrival: true
     });
 
     assert.equal(eventCheckCalls.length, 1);
@@ -925,7 +965,8 @@ test('runWhileYouWereAwayPrompt can return both hidden and visible entries for p
     const result = await runWhileYouWereAwayPrompt({
         locationOverride: square,
         locationId: square.id,
-        returnEntries: true
+        returnEntries: true,
+        locationWasVisitedBeforeArrival: true
     });
 
     assert.equal(result.hiddenEntry.type, 'while-you-were-away');
@@ -991,7 +1032,8 @@ test('runWhileYouWereAwayPrompt runs slop removal on visible prose and records a
         locationOverride: square,
         locationId: square.id,
         entryCollector: collector,
-        returnEntries: true
+        returnEntries: true,
+        locationWasVisitedBeforeArrival: true
     });
 
     assert.equal(slopCalls.length, 1);
@@ -1076,7 +1118,8 @@ test('runWhileYouWereAwayPrompt silently ignores inactive need bars returned by 
     try {
         const storedEntry = await runWhileYouWereAwayPrompt({
             locationOverride: square,
-            locationId: square.id
+            locationId: square.id,
+            locationWasVisitedBeforeArrival: true
         });
 
         assert.equal(npc._setCalls.length, 0);
@@ -1156,7 +1199,8 @@ test('runWhileYouWereAwayPrompt warns and ignores nonexistent need bars returned
     try {
         const storedEntry = await runWhileYouWereAwayPrompt({
             locationOverride: square,
-            locationId: square.id
+            locationId: square.id,
+            locationWasVisitedBeforeArrival: true
         });
 
         assert.equal(npc._setCalls.length, 0);
@@ -1302,7 +1346,8 @@ test('runWhileYouWereAwayPrompt moves listed origin things to the arrival locati
             locationOverride: destination,
             locationId: destination.id,
             originLocationOverride: origin,
-            returnEntries: true
+            returnEntries: true,
+            locationWasVisitedBeforeArrival: true
         });
 
         assert.equal(destination.thingIds.includes(cart.id), true);
@@ -1396,7 +1441,8 @@ test('runWhileYouWereAwayPrompt allows arrival updates for current-location NPCs
 
     const storedEntry = await runWhileYouWereAwayPrompt({
         locationOverride: square,
-        locationId: square.id
+        locationId: square.id,
+        locationWasVisitedBeforeArrival: true
     });
 
     assert.equal(storedEntry.type, 'while-you-were-away');
@@ -1509,7 +1555,8 @@ test('runWhileYouWereAwayPrompt moves HERE arrival updates matched by existing N
 
     const storedEntry = await runWhileYouWereAwayPrompt({
         locationOverride: mainRoom,
-        locationId: mainRoom.id
+        locationId: mainRoom.id,
+        locationWasVisitedBeforeArrival: true
     });
 
     assert.equal(storedEntry.type, 'while-you-were-away');
@@ -1572,7 +1619,8 @@ test('runWhileYouWereAwayPrompt matches HERE arrivals by alias', async () => {
 
     const storedEntry = await runWhileYouWereAwayPrompt({
         locationOverride: mainRoom,
-        locationId: mainRoom.id
+        locationId: mainRoom.id,
+        locationWasVisitedBeforeArrival: true
     });
 
     assert.match(storedEntry.content, /Update on Suzu Mizuhan since Baato last saw them some time ago:/);
@@ -1633,7 +1681,8 @@ test('runWhileYouWereAwayPrompt keeps current party HERE arrivals in the party o
 
     const storedEntry = await runWhileYouWereAwayPrompt({
         locationOverride: mainRoom,
-        locationId: mainRoom.id
+        locationId: mainRoom.id,
+        locationWasVisitedBeforeArrival: true
     });
 
     assert.match(storedEntry.content, /Update on Suzu Mizuhan since Baato last saw them some time ago:/);
@@ -1709,7 +1758,8 @@ test('runWhileYouWereAwayPrompt prefers a single former party member among dupli
 
     await runWhileYouWereAwayPrompt({
         locationOverride: mainRoom,
-        locationId: mainRoom.id
+        locationId: mainRoom.id,
+        locationWasVisitedBeforeArrival: true
     });
 
     assert.equal(firstFarmhand.currentLocation, 'barn');
@@ -1757,7 +1807,8 @@ test('runWhileYouWereAwayPrompt warns and skips unmatched HERE arrivals without 
         const result = await runWhileYouWereAwayPrompt({
             locationOverride: mainRoom,
             locationId: mainRoom.id,
-            returnEntries: true
+            returnEntries: true,
+            locationWasVisitedBeforeArrival: true
         });
 
         assert.equal(players.size, 0);

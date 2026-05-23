@@ -2315,6 +2315,11 @@
                     </div>
                 </div>
 
+                <div class="npc-edit-section" id="thingEditModFieldsSection" hidden>
+                    <h3>Mod Fields</h3>
+                    <div id="thingEditModFieldsList" class="npc-edit-grid"></div>
+                </div>
+
                 <div class="npc-edit-section">
                     <div class="npc-edit-section-header">
                         <h3>Metadata</h3>
@@ -2673,6 +2678,9 @@
         window.AIRPG_CONFIG.baseWeaponDamage = {{ (baseWeaponDamage if baseWeaponDamage is defined else null) | dump | safe }};
         window.AIRPG_CONFIG.clientMessageHistory = {{ clientMessageHistory | dump | safe }};
         window.AIRPG_CONFIG.debugVehicles = {{ (vehicleDebugEnabled if vehicleDebugEnabled is defined else false) | dump | safe }};
+        window.AIRPG_CONFIG.thingImageBadges = {{ (thingImageBadges or []) | dump | safe }};
+        window.AIRPG_CONFIG.thingContextActions = {{ (thingContextActions or []) | dump | safe }};
+        window.AIRPG_CONFIG.thingEditFields = {{ (thingEditFields or []) | dump | safe }};
         const __knownSkillNameSet = new Set(
             (Array.isArray(window.availableSkillsList) ? window.availableSkillsList : [])
                 .map(skill => {
@@ -2936,143 +2944,225 @@
             element.appendChild(badge);
         }
 
+        const IMAGE_BADGE_POSITION_CLASSES = {
+            'top-left': 'entity-image-badges--top-left',
+            'top-right': 'entity-image-badges--top-right',
+            'bottom-left': 'entity-image-badges--bottom-left',
+            'bottom-right': 'entity-image-badges--bottom-right'
+        };
+        const IMAGE_BADGE_RENDER_MODES = new Set(['auto', 'mask', 'image']);
+
+        function normalizeImageBadgePosition(position) {
+            const normalized = typeof position === 'string' && position.trim()
+                ? position.trim().toLowerCase()
+                : 'bottom-left';
+            if (!IMAGE_BADGE_POSITION_CLASSES[normalized]) {
+                throw new Error(`Unsupported image badge position "${normalized}".`);
+            }
+            return normalized;
+        }
+
+        function normalizeImageBadgeRenderMode(renderMode) {
+            const normalized = typeof renderMode === 'string' && renderMode.trim()
+                ? renderMode.trim().toLowerCase()
+                : 'auto';
+            if (!IMAGE_BADGE_RENDER_MODES.has(normalized)) {
+                throw new Error(`Unsupported image badge renderMode "${normalized}".`);
+            }
+            return normalized;
+        }
+
+        function normalizeImageBadgeEntry(badge) {
+            if (typeof badge === 'string') {
+                const icon = badge.trim();
+                return icon ? { icon, label: '', position: 'bottom-left', renderMode: 'auto' } : null;
+            }
+            if (!badge || typeof badge !== 'object') {
+                return null;
+            }
+
+            const icon = typeof badge.icon === 'string' ? badge.icon.trim() : '';
+            const iconUrl = typeof badge.iconUrl === 'string' ? badge.iconUrl.trim() : '';
+            const imageUrl = typeof badge.imageUrl === 'string' ? badge.imageUrl.trim() : '';
+            if (!icon && !iconUrl && !imageUrl) {
+                return null;
+            }
+            if (icon && (iconUrl || imageUrl)) {
+                throw new Error('Image badges cannot combine text icons with asset URLs.');
+            }
+            if (iconUrl && imageUrl) {
+                throw new Error('Image badges require exactly one asset URL.');
+            }
+
+            const order = Number(badge.order);
+            return {
+                icon,
+                iconUrl,
+                imageUrl,
+                label: typeof badge.label === 'string' ? badge.label : '',
+                key: typeof badge.key === 'string' ? badge.key : null,
+                position: normalizeImageBadgePosition(badge.position),
+                renderMode: normalizeImageBadgeRenderMode(badge.renderMode),
+                order: Number.isFinite(order) ? order : 1000
+            };
+        }
+
+        function normalizeImageBadges(badges) {
+            if (!Array.isArray(badges) || !badges.length) {
+                return [];
+            }
+            return badges
+                .map(normalizeImageBadgeEntry)
+                .filter(Boolean);
+        }
+
+        function getStoredImageBadges(element) {
+            if (!element?.dataset?.imageBadges) {
+                return [];
+            }
+            try {
+                const stored = JSON.parse(element.dataset.imageBadges);
+                return normalizeImageBadges(stored);
+            } catch (error) {
+                throw new Error(`Stored image badge data is invalid: ${error?.message || error}`);
+            }
+        }
+
+        function buildCssUrl(value) {
+            return `url("${String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}")`;
+        }
+
+        function renderImageBadgeVisual(span, badge) {
+            span.replaceChildren();
+            if (badge.iconUrl || badge.imageUrl) {
+                span.classList.add('entity-image-badge--asset');
+                const resolvedRenderMode = badge.renderMode === 'auto'
+                    ? (badge.imageUrl ? 'image' : 'mask')
+                    : badge.renderMode;
+                const assetUrl = badge.iconUrl || badge.imageUrl;
+                if (resolvedRenderMode === 'mask') {
+                    const mask = document.createElement('span');
+                    mask.className = 'entity-image-badge__mask';
+                    const cssUrl = buildCssUrl(assetUrl);
+                    mask.style.webkitMaskImage = cssUrl;
+                    mask.style.maskImage = cssUrl;
+                    span.appendChild(mask);
+                    return;
+                }
+                const image = document.createElement('img');
+                image.className = 'entity-image-badge__image';
+                image.src = assetUrl;
+                image.alt = '';
+                image.draggable = false;
+                image.setAttribute('draggable', 'false');
+                span.appendChild(image);
+                return;
+            }
+
+            span.textContent = badge.icon || '';
+        }
+
         function renderImageBadgesOverlay(element, badges = null) {
             if (!element) {
                 return;
             }
-            const existing = element.querySelector('.entity-image-badges');
-            if (existing) {
-                existing.remove();
-            }
+            element.querySelectorAll('.entity-image-badges').forEach(existing => existing.remove());
 
-            let normalized = [];
-            if (Array.isArray(badges) && badges.length) {
-                normalized = badges
-                    .map(badge => {
-                        if (typeof badge === 'string') {
-                            const icon = badge.trim();
-                            return icon ? { icon, label: '' } : null;
-                        }
-                        if (badge && typeof badge === 'object' && typeof badge.icon === 'string') {
-                            const icon = badge.icon.trim();
-                            if (!icon) {
-                                return null;
-                            }
-                            return {
-                                icon,
-                                label: typeof badge.label === 'string' ? badge.label : '',
-                                key: typeof badge.key === 'string' ? badge.key : null
-                            };
-                        }
-                        return null;
-                    })
-                    .filter(Boolean);
-            } else if (element?.dataset?.imageBadges) {
-                try {
-                    const stored = JSON.parse(element.dataset.imageBadges);
-                    if (Array.isArray(stored)) {
-                        normalized = stored
-                            .map(entry => {
-                            if (entry && typeof entry.icon === 'string') {
-                                const icon = entry.icon.trim();
-                                if (!icon) {
-                                    return null;
-                                }
-                                return {
-                                    icon,
-                                    label: typeof entry.label === 'string' ? entry.label : '',
-                                    key: typeof entry.key === 'string' ? entry.key : null
-                                };
-                            }
-                            return null;
-                        })
-                        .filter(Boolean);
-                    }
-                } catch (_) {
-                    normalized = [];
-                }
-            }
+            const normalized = Array.isArray(badges) && badges.length
+                ? normalizeImageBadges(badges)
+                : getStoredImageBadges(element);
 
             if (!normalized.length) {
                 return;
             }
 
-            const overlay = document.createElement('div');
-            overlay.className = 'entity-image-badges';
-            const hasInteractiveBadges = normalized.some(entry =>
-                entry.key === 'isCraftingStation'
-                || entry.key === 'isProcessingStation'
-                || entry.key === 'isSalvageable'
-                || entry.key === 'isHarvestable'
-                || entry.key === 'isContainer'
-            );
-            if (hasInteractiveBadges) {
-                overlay.classList.add('entity-image-badges--interactive');
-            }
+            const groupedBadges = new Map();
             normalized.forEach(badge => {
-                const span = document.createElement('span');
-                span.className = 'entity-image-badge';
-                span.textContent = badge.icon;
-                if (badge.label) {
-                    span.title = badge.label;
+                if (!groupedBadges.has(badge.position)) {
+                    groupedBadges.set(badge.position, []);
                 }
-                if (badge.key) {
-                    span.dataset.badgeKey = badge.key;
-                }
-                const isCraftingAction = badge.key === 'isCraftingStation';
-                const isProcessingAction = badge.key === 'isProcessingStation';
-                const isSalvageAction = badge.key === 'isSalvageable';
-                const isHarvestAction = badge.key === 'isHarvestable';
-                const isContainerAction = badge.key === 'isContainer';
-                if (isCraftingAction || isProcessingAction || isSalvageAction || isHarvestAction || isContainerAction) {
-                    span.classList.add('entity-image-badge--action');
-                    span.setAttribute('role', 'button');
-                    span.setAttribute('tabindex', '0');
-                    if (isContainerAction) {
-                        const activateBadge = (event) => {
-                            event.preventDefault();
-                            event.stopPropagation();
-                            openThingContainerModalFromElement(element);
-                        };
-                        span.addEventListener('click', activateBadge);
-                        span.addEventListener('keydown', (event) => {
-                            if (event.key === 'Enter' || event.key === ' ') {
-                                activateBadge(event);
-                            }
-                        });
-                    } else if (isSalvageAction || isHarvestAction) {
-                        const activateBadge = (event) => {
-                            event.preventDefault();
-                            event.stopPropagation();
-                            if (isHarvestAction) {
-                                attemptHarvestFromBadge(element);
-                            } else {
-                                attemptSalvageFromBadge(element);
-                            }
-                        };
-                        span.addEventListener('click', activateBadge);
-                        span.addEventListener('keydown', (event) => {
-                            if (event.key === 'Enter' || event.key === ' ') {
-                                activateBadge(event);
-                            }
-                        });
-                    } else {
-                        const activateBadge = (event) => {
-                            event.preventDefault();
-                            event.stopPropagation();
-                            openCraftingModalFromBadge(isProcessingAction ? 'isProcessingStation' : 'isCraftingStation', element);
-                        };
-                        span.addEventListener('click', activateBadge);
-                        span.addEventListener('keydown', (event) => {
-                            if (event.key === 'Enter' || event.key === ' ') {
-                                activateBadge(event);
-                            }
-                        });
-                    }
-                }
-                overlay.appendChild(span);
+                groupedBadges.get(badge.position).push(badge);
             });
-            element.appendChild(overlay);
+
+            for (const [position, entries] of groupedBadges.entries()) {
+                entries.sort((a, b) => a.order - b.order);
+                const overlay = document.createElement('div');
+                overlay.className = `entity-image-badges ${IMAGE_BADGE_POSITION_CLASSES[position]}`;
+                const hasInteractiveBadges = entries.some(entry =>
+                    entry.key === 'isCraftingStation'
+                    || entry.key === 'isProcessingStation'
+                    || entry.key === 'isSalvageable'
+                    || entry.key === 'isHarvestable'
+                    || entry.key === 'isContainer'
+                );
+                if (hasInteractiveBadges) {
+                    overlay.classList.add('entity-image-badges--interactive');
+                }
+                entries.forEach(badge => {
+                    const span = document.createElement('span');
+                    span.className = 'entity-image-badge';
+                    renderImageBadgeVisual(span, badge);
+                    if (badge.label) {
+                        span.title = badge.label;
+                    }
+                    if (badge.key) {
+                        span.dataset.badgeKey = badge.key;
+                    }
+                    const isCraftingAction = badge.key === 'isCraftingStation';
+                    const isProcessingAction = badge.key === 'isProcessingStation';
+                    const isSalvageAction = badge.key === 'isSalvageable';
+                    const isHarvestAction = badge.key === 'isHarvestable';
+                    const isContainerAction = badge.key === 'isContainer';
+                    if (isCraftingAction || isProcessingAction || isSalvageAction || isHarvestAction || isContainerAction) {
+                        span.classList.add('entity-image-badge--action');
+                        span.setAttribute('role', 'button');
+                        span.setAttribute('tabindex', '0');
+                        if (isContainerAction) {
+                            const activateBadge = (event) => {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                openThingContainerModalFromElement(element);
+                            };
+                            span.addEventListener('click', activateBadge);
+                            span.addEventListener('keydown', (event) => {
+                                if (event.key === 'Enter' || event.key === ' ') {
+                                    activateBadge(event);
+                                }
+                            });
+                        } else if (isSalvageAction || isHarvestAction) {
+                            const activateBadge = (event) => {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                if (isHarvestAction) {
+                                    attemptHarvestFromBadge(element);
+                                } else {
+                                    attemptSalvageFromBadge(element);
+                                }
+                            };
+                            span.addEventListener('click', activateBadge);
+                            span.addEventListener('keydown', (event) => {
+                                if (event.key === 'Enter' || event.key === ' ') {
+                                    activateBadge(event);
+                                }
+                            });
+                        } else {
+                            const activateBadge = (event) => {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                openCraftingModalFromBadge(isProcessingAction ? 'isProcessingStation' : 'isCraftingStation', element);
+                            };
+                            span.addEventListener('click', activateBadge);
+                            span.addEventListener('keydown', (event) => {
+                                if (event.key === 'Enter' || event.key === ' ') {
+                                    activateBadge(event);
+                                }
+                            });
+                        }
+                    }
+                    overlay.appendChild(span);
+                });
+                element.appendChild(overlay);
+            }
         }
 
         function renderBarterValueBadgeOverlay(element) {
@@ -3162,26 +3252,7 @@
             const normalizedDisplayImageUrl = typeof displayImageUrl === 'string' ? displayImageUrl.trim() : '';
 
             const normalizedBadges = Array.isArray(badges)
-                ? badges
-                    .map(badge => {
-                        if (typeof badge === 'string') {
-                            const icon = badge.trim();
-                            return icon ? { icon, label: '' } : null;
-                        }
-                        if (badge && typeof badge === 'object' && typeof badge.icon === 'string') {
-                            const icon = badge.icon.trim();
-                            if (!icon) {
-                                return null;
-                            }
-                            return {
-                                icon,
-                                label: typeof badge.label === 'string' ? badge.label : '',
-                                key: typeof badge.key === 'string' ? badge.key : null
-                            };
-                        }
-                        return null;
-                    })
-                    .filter(Boolean)
+                ? normalizeImageBadges(badges)
                 : [];
 
             const normalizedCountBadgeText = typeof countBadgeText === 'string'
@@ -4514,6 +4585,16 @@
             return baseData;
         }
 
+        async function fetchLatestPlayerDataForModal() {
+            const response = await fetch('/api/player', { cache: 'no-store' });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok || !data?.success || !data.player) {
+                throw new Error(data?.error || `Failed to refresh player data: HTTP ${response.status}`);
+            }
+            updateChatPlayerPanel(data.player);
+            return getLatestPlayerData() || data.player;
+        }
+
         function normalizeAbilityNameKey(value) {
             if (typeof value !== 'string') {
                 return '';
@@ -5125,29 +5206,37 @@
         };
 
         if (chatSidebarElements.viewButton) {
-            chatSidebarElements.viewButton.addEventListener('click', () => {
-                const playerData = getLatestPlayerData();
-                if (!playerData || typeof showNpcViewModal !== 'function') {
-                    return;
-                }
+            chatSidebarElements.viewButton.addEventListener('click', async () => {
                 try {
+                    chatSidebarElements.viewButton.disabled = true;
+                    const playerData = await fetchLatestPlayerDataForModal();
+                    if (!playerData || typeof showNpcViewModal !== 'function') {
+                        throw new Error('Player view modal is not available.');
+                    }
                     showNpcViewModal(playerData);
                 } catch (error) {
                     console.warn('Failed to open player view modal:', error);
+                    alert(`Failed to open player view: ${error?.message || error}`);
+                } finally {
+                    chatSidebarElements.viewButton.disabled = false;
                 }
             });
         }
 
         if (chatSidebarElements.inventoryButton) {
-            chatSidebarElements.inventoryButton.addEventListener('click', () => {
-                const playerData = getLatestPlayerData();
-                if (!playerData || typeof showNpcInventoryModal !== 'function') {
-                    return;
-                }
+            chatSidebarElements.inventoryButton.addEventListener('click', async () => {
                 try {
+                    chatSidebarElements.inventoryButton.disabled = true;
+                    const playerData = await fetchLatestPlayerDataForModal();
+                    if (!playerData || typeof showNpcInventoryModal !== 'function') {
+                        throw new Error('Player inventory modal is not available.');
+                    }
                     showNpcInventoryModal(playerData);
                 } catch (error) {
                     console.warn('Failed to open player inventory modal:', error);
+                    alert(`Failed to open player inventory: ${error?.message || error}`);
+                } finally {
+                    chatSidebarElements.inventoryButton.disabled = false;
                 }
             });
         }
@@ -7514,6 +7603,16 @@
                 menu.appendChild(mergeStacksButton);
             }
 
+            const modThingContextActions = getModThingContextActions(thing, options);
+            const modThingContextActionButtons = modThingContextActions.map(action => {
+                const actionButton = document.createElement('button');
+                actionButton.type = 'button';
+                actionButton.className = 'entity-context-menu-item thing-card-menu-item thing-card-menu-item--mod-action';
+                actionButton.textContent = action.label || action.id || 'Mod Action';
+                menu.appendChild(actionButton);
+                return { action, button: actionButton };
+            });
+
             let regenerateImageButton = null;
             const imageGenerationEnabled = runtimeConfig?.imagegen?.enabled !== false;
             if (imageGenerationEnabled) {
@@ -7691,6 +7790,22 @@
                     }
                 });
             }
+
+            modThingContextActionButtons.forEach(({ action, button: actionButton }) => {
+                actionButton.addEventListener('click', async (event) => {
+                    event.stopPropagation();
+                    closeThingContextMenu();
+                    actionButton.disabled = true;
+                    try {
+                        await executeModThingContextAction(action, thingDataCache.get(thing.id) || thing, options);
+                    } catch (error) {
+                        console.warn(`Failed to run mod Thing action ${action.fullId || action.id || 'unknown'}:`, error);
+                        alert(`Failed to ${action.label || 'run action'}: ${error?.message || error}`);
+                    } finally {
+                        actionButton.disabled = false;
+                    }
+                });
+            });
 
             if (regenerateImageButton) {
                 regenerateImageButton.addEventListener('click', async (event) => {
@@ -8564,14 +8679,18 @@
             };
 
             const statusSections = [];
-            const canEquip = normalizedType !== 'scenery' && isEquippableThing(thing);
-            statusSections.push(renderEffectSection(thing.causeStatusEffectOnTarget, 'INFLICT STATUS EFFECT', { includeDuration: true }));
-            if (canEquip) {
-                statusSections.push(renderEffectSection(thing.causeStatusEffectOnEquipper, 'EQUIP STATUS EFFECT'));
+            const isItem = normalizedType !== 'scenery';
+            const targetStatusEffect = thing.causeStatusEffectOnTarget || thing.metadata?.causeStatusEffectOnTarget || null;
+            const equipperStatusEffect = thing.causeStatusEffectOnEquipper || thing.metadata?.causeStatusEffectOnEquipper || null;
+            const hasEquipperStatusEffect = Boolean(equipperStatusEffect && (equipperStatusEffect.description || equipperStatusEffect.name));
+            statusSections.push(renderEffectSection(targetStatusEffect, 'INFLICT STATUS EFFECT', { includeDuration: true }));
+            if (isItem && hasEquipperStatusEffect) {
+                statusSections.push(renderEffectSection(equipperStatusEffect, 'EQUIP STATUS EFFECT'));
             }
             const statusEffectsHtml = statusSections.filter(Boolean).join('');
             const attributeBonuses = getAttributeBonuses(thing).filter(Boolean);
-            const bonusesHtml = canEquip && attributeBonuses.length
+            const hasAttributeBonuses = attributeBonuses.length > 0;
+            const bonusesHtml = isItem && hasAttributeBonuses
                 ? `<div class="tooltip-thing-bonuses">
                         <div class="tooltip-thing-bonuses-title">Attribute Bonuses</div>
                         <ul class="tooltip-thing-bonuses-list">
@@ -9269,6 +9388,8 @@
         const thingEditIsHarvestableInput = document.getElementById('thingEditIsHarvestable');
         const thingEditIsSalvageableInput = document.getElementById('thingEditIsSalvageable');
         const thingEditIsContainerInput = document.getElementById('thingEditIsContainer');
+        const thingEditModFieldsSection = document.getElementById('thingEditModFieldsSection');
+        const thingEditModFieldsList = document.getElementById('thingEditModFieldsList');
         const thingMetadataList = document.getElementById('thingEditMetadataList');
         const thingMetadataAddBtn = document.getElementById('thingMetadataAddBtn');
         const thingAttributeBonusesList = document.getElementById('thingEditAttributeBonusesList');
@@ -10325,17 +10446,433 @@
             return false;
         }
 
+        function getThingModFieldValue(thing, fieldName) {
+            if (!thing || typeof thing !== 'object' || typeof fieldName !== 'string' || !fieldName.trim()) {
+                return undefined;
+            }
+            if (Object.prototype.hasOwnProperty.call(thing, fieldName)) {
+                return thing[fieldName];
+            }
+            return thing.metadata?.[fieldName];
+        }
+
+        function getThingModBadgeFieldValue(thing, fieldName) {
+            return getThingModFieldValue(thing, fieldName);
+        }
+
+        function hasMeaningfulThingModBadgeValue(value) {
+            if (value === undefined || value === null) {
+                return false;
+            }
+            if (typeof value === 'string') {
+                const normalized = value.trim().toLowerCase();
+                return Boolean(normalized && normalized !== 'n/a' && normalized !== 'none');
+            }
+            if (Array.isArray(value)) {
+                return value.length > 0;
+            }
+            return true;
+        }
+
+        function hasMeaningfulThingModFieldValue(value) {
+            return hasMeaningfulThingModBadgeValue(value);
+        }
+
+        function getRegisteredThingEditFields() {
+            const fields = Array.isArray(window.AIRPG_CONFIG?.thingEditFields)
+                ? window.AIRPG_CONFIG.thingEditFields
+                : [];
+            return fields
+                .filter(field => field && typeof field.fieldName === 'string' && field.fieldName.trim())
+                .map(field => ({
+                    ...field,
+                    edit: field.edit && typeof field.edit === 'object' ? field.edit : {}
+                }))
+                .sort((a, b) => {
+                    const orderA = Number.isFinite(Number(a.edit?.order)) ? Number(a.edit.order) : 1000;
+                    const orderB = Number.isFinite(Number(b.edit?.order)) ? Number(b.edit.order) : 1000;
+                    if (orderA !== orderB) {
+                        return orderA - orderB;
+                    }
+                    return a.fieldName.localeCompare(b.fieldName);
+                });
+        }
+
+        function formatThingEditModFieldValue(value) {
+            if (value === undefined || value === null) {
+                return '';
+            }
+            if (typeof value === 'object') {
+                return safeJsonStringify(value, '');
+            }
+            return String(value);
+        }
+
+        function renderThingEditModFields(thing = {}) {
+            if (!thingEditModFieldsSection || !thingEditModFieldsList) {
+                return;
+            }
+            const fields = getRegisteredThingEditFields();
+            thingEditModFieldsList.innerHTML = '';
+            if (!fields.length) {
+                thingEditModFieldsSection.setAttribute('hidden', '');
+                return;
+            }
+            thingEditModFieldsSection.removeAttribute('hidden');
+
+            fields.forEach(field => {
+                const fieldName = field.fieldName.trim();
+                const edit = field.edit || {};
+                const inputType = typeof edit.inputType === 'string' && edit.inputType.trim()
+                    ? edit.inputType.trim().toLowerCase()
+                    : (field.type === 'boolean' ? 'checkbox' : 'text');
+                const fieldId = `thingEditModField_${fieldName}`;
+                const wrapper = document.createElement('div');
+                wrapper.className = inputType === 'textarea' ? 'npc-edit-field npc-edit-field--wide' : 'npc-edit-field';
+
+                const label = document.createElement('label');
+                label.setAttribute('for', fieldId);
+                label.textContent = edit.label || fieldName;
+                wrapper.appendChild(label);
+
+                const rawValue = getThingModFieldValue(thing, fieldName);
+                const value = rawValue === undefined ? field.defaultValue : rawValue;
+                let input;
+                if (inputType === 'textarea') {
+                    input = document.createElement('textarea');
+                    input.rows = 2;
+                    input.value = formatThingEditModFieldValue(value);
+                } else {
+                    input = document.createElement('input');
+                    input.type = inputType === 'checkbox' ? 'checkbox' : (inputType === 'number' ? 'number' : 'text');
+                    if (input.type === 'checkbox') {
+                        input.checked = Boolean(value);
+                    } else {
+                        input.value = formatThingEditModFieldValue(value);
+                    }
+                }
+                input.id = fieldId;
+                input.dataset.fieldName = fieldName;
+                input.dataset.fieldType = field.type || 'string';
+                input.className = 'thing-edit-mod-field-input';
+                if (edit.placeholder && input.type !== 'checkbox') {
+                    input.placeholder = edit.placeholder;
+                }
+                wrapper.appendChild(input);
+
+                if (edit.description) {
+                    const hint = document.createElement('p');
+                    hint.className = 'npc-edit-hint';
+                    hint.textContent = edit.description;
+                    wrapper.appendChild(hint);
+                }
+
+                thingEditModFieldsList.appendChild(wrapper);
+            });
+        }
+
+        function parseThingEditModFieldValue(input, field) {
+            const fieldName = field.fieldName;
+            const type = typeof field.type === 'string' ? field.type.trim().toLowerCase() : 'string';
+            if (type === 'boolean') {
+                return Boolean(input?.checked);
+            }
+            const rawValue = input?.value ?? '';
+            const trimmed = typeof rawValue === 'string' ? rawValue.trim() : String(rawValue).trim();
+            if (!trimmed) {
+                return null;
+            }
+            if (type === 'number') {
+                const numeric = Number(trimmed);
+                if (!Number.isFinite(numeric)) {
+                    throw new Error(`${field.edit?.label || fieldName} must be a finite number.`);
+                }
+                return numeric;
+            }
+            if (type === 'integer') {
+                const numeric = Number(trimmed);
+                if (!Number.isInteger(numeric)) {
+                    throw new Error(`${field.edit?.label || fieldName} must be an integer.`);
+                }
+                return numeric;
+            }
+            if (type === 'array') {
+                const parsed = JSON.parse(trimmed);
+                if (!Array.isArray(parsed)) {
+                    throw new Error(`${field.edit?.label || fieldName} must be a JSON array.`);
+                }
+                return parsed;
+            }
+            if (type === 'object') {
+                const parsed = JSON.parse(trimmed);
+                if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+                    throw new Error(`${field.edit?.label || fieldName} must be a JSON object.`);
+                }
+                return parsed;
+            }
+            return trimmed;
+        }
+
+        function collectThingEditModFieldValues() {
+            const fields = getRegisteredThingEditFields();
+            const values = {};
+            const escapeSelectorValue = (value) => {
+                if (window.CSS && typeof window.CSS.escape === 'function') {
+                    return window.CSS.escape(value);
+                }
+                return String(value).replace(/["\\]/g, '\\$&');
+            };
+            for (const field of fields) {
+                const fieldName = typeof field.fieldName === 'string' ? field.fieldName.trim() : '';
+                if (!fieldName) {
+                    continue;
+                }
+                const input = thingEditModFieldsList?.querySelector(`[data-field-name="${escapeSelectorValue(fieldName)}"]`);
+                if (!input) {
+                    continue;
+                }
+                values[fieldName] = parseThingEditModFieldValue(input, field);
+            }
+            return values;
+        }
+
+        function thingEditModFieldsRequireSlotClear(values = {}) {
+            return getRegisteredThingEditFields().some(field => (
+                field.clearThingSlotWhenPresent === true
+                && hasMeaningfulThingModFieldValue(values[field.fieldName])
+            ));
+        }
+
+        function getActiveModSettingValue(reference) {
+            if (!reference || typeof reference !== 'object') {
+                return undefined;
+            }
+            const namespace = typeof reference.namespace === 'string' ? reference.namespace.trim() : '';
+            const key = typeof reference.key === 'string' ? reference.key.trim() : '';
+            if (!namespace || !key) {
+                return undefined;
+            }
+            const configured = window.currentSetting?.modSettings?.[namespace]?.[key];
+            if (configured !== undefined && configured !== null && String(configured).trim()) {
+                return configured;
+            }
+            return reference.defaultValue;
+        }
+
+        function normalizeModBadgeAssetPath(value, badge) {
+            const normalizedAssetPath = typeof value === 'string' ? value.trim().replace(/^\/+/, '') : '';
+            if (!normalizedAssetPath) {
+                return '';
+            }
+            if (normalizedAssetPath.split('/').includes('..')) {
+                throw new Error(`Mod Thing image badge "${badge.fullId || badge.id || 'unknown'}" has invalid asset path "${normalizedAssetPath}".`);
+            }
+            return normalizedAssetPath;
+        }
+
+        function resolveModThingBadgeAssetUrl(badge) {
+            if (!badge || typeof badge !== 'object') {
+                return '';
+            }
+            const configuredAssetPath = getActiveModSettingValue(badge.assetPathSetting);
+            const normalizedAssetPath = normalizeModBadgeAssetPath(configuredAssetPath, badge);
+            if (normalizedAssetPath) {
+                if (typeof badge.modName !== 'string' || !badge.modName.trim()) {
+                    throw new Error(`Mod Thing image badge "${badge.fullId || badge.id || 'unknown'}" cannot resolve a setting-driven asset without modName.`);
+                }
+                return `/mods/${badge.modName}/assets/${normalizedAssetPath}`;
+            }
+            return badge.iconUrl || badge.imageUrl || '';
+        }
+
+        function resolveModThingBadgeLabel(badge) {
+            const configuredLabel = getActiveModSettingValue(badge && badge.labelSetting);
+            if (typeof configuredLabel === 'string' && configuredLabel.trim()) {
+                return `${configuredLabel.trim()}-compatible`;
+            }
+            return typeof badge?.label === 'string' ? badge.label : '';
+        }
+
+        function getModThingImageBadges(thing) {
+            if (!thing || typeof thing !== 'object') {
+                return [];
+            }
+            const registeredBadges = Array.isArray(window.AIRPG_CONFIG?.thingImageBadges)
+                ? window.AIRPG_CONFIG.thingImageBadges
+                : [];
+            return registeredBadges
+                .filter(badge => {
+                    const fieldName = typeof badge?.fieldName === 'string' ? badge.fieldName.trim() : '';
+                    if (!fieldName) {
+                        return false;
+                    }
+                    const value = getThingModBadgeFieldValue(thing, fieldName);
+                    if (!hasMeaningfulThingModBadgeValue(value)) {
+                        return false;
+                    }
+                    if (badge.fieldValue !== undefined && badge.fieldValue !== null) {
+                        return String(value).trim().toLowerCase() === String(badge.fieldValue).trim().toLowerCase();
+                    }
+                    return true;
+                })
+                .map(badge => {
+                    const resolvedAssetUrl = resolveModThingBadgeAssetUrl(badge);
+                    const useImageUrl = Boolean(badge.imageUrl) && !badge.iconUrl;
+                    return {
+                        key: `mod:${badge.fullId || badge.id || badge.fieldName}`,
+                        label: resolveModThingBadgeLabel(badge),
+                        iconUrl: useImageUrl ? '' : resolvedAssetUrl,
+                        imageUrl: useImageUrl ? resolvedAssetUrl : '',
+                        renderMode: typeof badge.renderMode === 'string' ? badge.renderMode : 'auto',
+                        position: typeof badge.position === 'string' ? badge.position : 'bottom-left',
+                        order: Number.isFinite(Number(badge.order)) ? Number(badge.order) : 1000
+                    };
+                });
+        }
+
         function getThingPropertyBadges(thing) {
             if (!thing) {
                 return [];
             }
-            return THING_BADGE_DEFINITIONS
+            const builtInBadges = THING_BADGE_DEFINITIONS
                 .filter(definition => resolveThingBooleanFlag(thing, definition.key))
                 .map(definition => ({
                     key: definition.key,
                     icon: definition.icon,
                     label: definition.label
                 }));
+            return builtInBadges.concat(getModThingImageBadges(thing));
+        }
+
+        function getModThingContextActions(thing, options = {}) {
+            if (!thing || typeof thing !== 'object') {
+                return [];
+            }
+            const registeredActions = Array.isArray(window.AIRPG_CONFIG?.thingContextActions)
+                ? window.AIRPG_CONFIG.thingContextActions
+                : [];
+            const context = typeof options.context === 'string' ? options.context.trim() : '';
+            return registeredActions
+                .filter(action => {
+                    if (!action || typeof action.fullId !== 'string' || !action.fullId.trim()) {
+                        return false;
+                    }
+                    const contexts = Array.isArray(action.contexts)
+                        ? action.contexts.map(entry => (typeof entry === 'string' ? entry.trim() : '')).filter(Boolean)
+                        : [];
+                    if (contexts.length && (!context || !contexts.includes(context))) {
+                        return false;
+                    }
+                    const fieldName = typeof action.fieldName === 'string' ? action.fieldName.trim() : '';
+                    if (!fieldName) {
+                        return true;
+                    }
+                    const value = getThingModFieldValue(thing, fieldName);
+                    if (!hasMeaningfulThingModFieldValue(value)) {
+                        return false;
+                    }
+                    if (action.fieldValue !== undefined && action.fieldValue !== null) {
+                        return String(value).trim().toLowerCase() === String(action.fieldValue).trim().toLowerCase();
+                    }
+                    return true;
+                })
+                .sort((a, b) => {
+                    const orderA = Number.isFinite(Number(a.order)) ? Number(a.order) : 1000;
+                    const orderB = Number.isFinite(Number(b.order)) ? Number(b.order) : 1000;
+                    if (orderA !== orderB) {
+                        return orderA - orderB;
+                    }
+                    return String(a.fullId).localeCompare(String(b.fullId));
+                });
+        }
+
+        function resolveModThingContextActionOwner(options = {}) {
+            const context = typeof options.context === 'string' ? options.context.trim() : '';
+            if (context === 'npc-inventory' || context === 'npc-equipment') {
+                const ownerId = options.npcId || currentNpcInventoryNpcId || currentNpcViewId || '';
+                return ownerId ? { ownerId, ownerType: 'npc' } : {};
+            }
+            if (context === 'player-inventory' || context === 'container-player-inventory') {
+                const ownerId = window.currentPlayerData?.id || '';
+                return ownerId ? { ownerId, ownerType: 'player' } : {};
+            }
+            return {};
+        }
+
+        async function refreshAfterModThingContextAction(result, options = {}, thing = {}) {
+            const updatedThing = result?.thing || null;
+            if (updatedThing?.id) {
+                cacheThingData(updatedThing);
+                if (thing && thing.id === updatedThing.id) {
+                    Object.assign(thing, updatedThing);
+                }
+            }
+
+            const actor = result?.actor || null;
+            if (actor?.id) {
+                if (actor.isNPC) {
+                    if (window.currentNpcData instanceof Map) {
+                        window.currentNpcData.set(actor.id, cloneActorRecord(actor) || { ...actor });
+                    }
+                    if (currentNpcInventoryNpcId === actor.id && Array.isArray(actor.inventory)) {
+                        currentNpcInventory = actor.inventory;
+                        renderNpcInventory(actor.inventory);
+                    }
+                    if (currentNpcViewId === actor.id) {
+                        showNpcViewModal(actor);
+                    }
+                } else {
+                    window.currentPlayerData = cloneActorRecord(actor) || { ...actor };
+                    updateChatPlayerPanel?.(actor);
+                    if (options.context === 'player-inventory' || options.context === 'container-player-inventory') {
+                        await window.refreshInventory?.();
+                    }
+                    if (currentNpcViewId === actor.id) {
+                        showNpcViewModal(actor);
+                    }
+                }
+            } else if (options.context === 'player-inventory') {
+                await window.refreshInventory?.();
+            }
+
+            if (options.context === 'container-player-inventory' && currentThingContainerId) {
+                try {
+                    const payload = await fetchThingContainerPayload(currentThingContainerId);
+                    applyThingContainerPayload(payload);
+                } catch (error) {
+                    console.warn('Failed to refresh container after mod action:', error);
+                }
+            }
+
+            await window.refreshParty?.();
+        }
+
+        async function executeModThingContextAction(action, thing, options = {}) {
+            const fullId = typeof action?.fullId === 'string' ? action.fullId.trim() : '';
+            if (!fullId) {
+                throw new Error('Mod Thing context action is missing an id.');
+            }
+            if (!thing?.id) {
+                throw new Error('Mod Thing context action requires a Thing id.');
+            }
+            const owner = resolveModThingContextActionOwner(options);
+            const response = await fetch(`/api/mod-thing-context-actions/${encodeURIComponent(fullId)}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    thingId: thing.id,
+                    context: options.context || 'general',
+                    locationId: options.locationId || null,
+                    npcId: options.npcId || null,
+                    ...owner
+                })
+            });
+            const result = await response.json().catch(() => ({}));
+            if (!response.ok || !result?.success) {
+                throw new Error(result?.error || `HTTP ${response.status}`);
+            }
+            await refreshAfterModThingContextAction(result, options, thing);
+            return result;
         }
 
         function populateAttributeSelect(selectElement, selectedAttribute = '') {
@@ -10740,6 +11277,7 @@
             if (thingEditIsContainerInput) {
                 thingEditIsContainerInput.checked = resolveThingBooleanFlag(thing, 'isContainer');
             }
+            renderThingEditModFields(mode === 'edit' ? (thing || {}) : {});
 
             currentThingLockedMetadata = {};
             if (thing && typeof thing.metadata === 'object' && thing.metadata) {
@@ -10900,6 +11438,8 @@
         let currentThingContainerPlayerInventory = [];
         let currentThingContainerVisibleContents = [];
         let currentThingContainerVisiblePlayerInventory = [];
+        let thingContainerContentsLoading = false;
+        let thingContainerContentsGenerating = false;
         let thingContainerHistory = [];
         const thingContainerMoveInFlightIds = new Set();
         let thingContainerBulkMoveInFlight = false;
@@ -15952,6 +16492,12 @@
             if (thingAttributeBonusesList) {
                 thingAttributeBonusesList.innerHTML = '';
             }
+            if (thingEditModFieldsList) {
+                thingEditModFieldsList.innerHTML = '';
+            }
+            if (thingEditModFieldsSection) {
+                thingEditModFieldsSection.setAttribute('hidden', '');
+            }
             populateThingCauseStatusEffect(null, null);
             if (thingEditRarityInput) {
                 thingEditRarityInput.innerHTML = '';
@@ -17596,6 +18142,21 @@
                     if (thingEditIsContainerInput) {
                         seed.isContainer = Boolean(thingEditIsContainerInput.checked);
                     }
+                    let modFieldValues = {};
+                    try {
+                        modFieldValues = collectThingEditModFieldValues();
+                    } catch (error) {
+                        updateThingEditStatus(error?.message || 'Invalid mod field value.', 'error');
+                        return;
+                    }
+                    Object.entries(modFieldValues).forEach(([fieldName, value]) => {
+                        if (value !== null && value !== undefined && value !== '') {
+                            seed[fieldName] = value;
+                        }
+                    });
+                    if (thingEditModFieldsRequireSlotClear(modFieldValues)) {
+                        seed.slot = null;
+                    }
 
                     const payload = { seed };
 
@@ -17689,6 +18250,20 @@
                 if (thingEditLevelInput) {
                     const parsedLevel = Number.parseInt(thingEditLevelInput.value ?? '', 10);
                     payload.level = Number.isFinite(parsedLevel) ? parsedLevel : null;
+                }
+
+                let modFieldValues = {};
+                try {
+                    modFieldValues = collectThingEditModFieldValues();
+                } catch (error) {
+                    updateThingEditStatus(error?.message || 'Invalid mod field value.', 'error');
+                    return;
+                }
+                Object.entries(modFieldValues).forEach(([fieldName, value]) => {
+                    payload[fieldName] = value;
+                });
+                if (thingEditModFieldsRequireSlotClear(modFieldValues)) {
+                    payload.slot = null;
                 }
 
                 if (thingEditImageIdInput) {
@@ -20712,6 +21287,39 @@
             }
         }
 
+        function thingHasPendingGeneratedContainerContents(thing) {
+            return Array.isArray(thing?.containerContents) && thing.containerContents.length > 0;
+        }
+
+        function renderThingContainerContentsLoading() {
+            currentThingContainerVisibleContents = [];
+            if (containerContentsGrid) {
+                containerContentsGrid.hidden = false;
+                containerContentsGrid.style.display = '';
+                containerContentsGrid.innerHTML = '';
+                const loading = document.createElement('div');
+                loading.className = 'barter-modal__loading thing-container-modal__loading';
+                const spinner = document.createElement('span');
+                spinner.className = 'spinner barter-modal__spinner thing-container-modal__spinner';
+                spinner.setAttribute('role', 'status');
+                spinner.setAttribute('aria-hidden', 'true');
+                const text = document.createElement('span');
+                text.textContent = thingContainerContentsGenerating
+                    ? 'Container contents are being generated...'
+                    : 'Loading container contents...';
+                loading.appendChild(spinner);
+                loading.appendChild(text);
+                containerContentsGrid.appendChild(loading);
+            }
+            if (containerContentsEmpty) {
+                containerContentsEmpty.hidden = true;
+                containerContentsEmpty.style.display = 'none';
+            }
+            if (containerContentsCount) {
+                containerContentsCount.textContent = 'Loading...';
+            }
+        }
+
         function renderThingContainerModal() {
             if (!thingContainerModal) {
                 return;
@@ -20861,41 +21469,49 @@
                 })
             });
 
-            currentThingContainerVisibleContents = renderThingCollectionPanel({
-                items: currentThingContainerContents,
-                panelKey: 'containerContents',
-                grid: containerContentsGrid,
-                empty: containerContentsEmpty,
-                countEl: containerContentsCount,
-                searchInput: containerContentsFilterInput,
-                viewShell: containerContentsView,
-                sortShell: containerContentsSort,
-                slotFilter: containerContentsSlotFilter,
-                slotFilterWrapper: containerContentsSlotFilterWrapper,
-                showAllRadio: containerContentsShowAllRadio,
-                equippableOnlyRadio: containerContentsEquippableOnlyRadio,
-                nonEquippableOnlyRadio: containerContentsNonEquippableOnlyRadio,
-                emptyMessage: 'Container is empty.',
-                filteredEmptyMessage: 'No container items match your filters.',
-                singularLabel: 'item',
-                pluralLabel: 'items',
-                enableEquipmentFilters: true,
-                keepGridVisibleWhenEmpty: true,
-                tableConfig: {
-                    showHeaders: true,
-                    showLevel: true,
-                    showValue: true,
-                    showEquipment: false
-                },
-                buildCard: (item, { viewMode, tableConfig } = {}) => buildThingCollectionEntry(item, {
-                    viewMode,
-                    tableConfig,
-                    contextMenuOptions: { context: 'container-contents' },
-                    decorateCard: makeDecorator('container')
-                })
-            });
+            if (thingContainerContentsLoading) {
+                renderThingContainerContentsLoading();
+            } else {
+                currentThingContainerVisibleContents = renderThingCollectionPanel({
+                    items: currentThingContainerContents,
+                    panelKey: 'containerContents',
+                    grid: containerContentsGrid,
+                    empty: containerContentsEmpty,
+                    countEl: containerContentsCount,
+                    searchInput: containerContentsFilterInput,
+                    viewShell: containerContentsView,
+                    sortShell: containerContentsSort,
+                    slotFilter: containerContentsSlotFilter,
+                    slotFilterWrapper: containerContentsSlotFilterWrapper,
+                    showAllRadio: containerContentsShowAllRadio,
+                    equippableOnlyRadio: containerContentsEquippableOnlyRadio,
+                    nonEquippableOnlyRadio: containerContentsNonEquippableOnlyRadio,
+                    emptyMessage: 'Container is empty.',
+                    filteredEmptyMessage: 'No container items match your filters.',
+                    singularLabel: 'item',
+                    pluralLabel: 'items',
+                    enableEquipmentFilters: true,
+                    keepGridVisibleWhenEmpty: true,
+                    tableConfig: {
+                        showHeaders: true,
+                        showLevel: true,
+                        showValue: true,
+                        showEquipment: false
+                    },
+                    buildCard: (item, { viewMode, tableConfig } = {}) => buildThingCollectionEntry(item, {
+                        viewMode,
+                        tableConfig,
+                        contextMenuOptions: { context: 'container-contents' },
+                        decorateCard: makeDecorator('container')
+                    })
+                });
+            }
 
-            thingContainerModal.removeAttribute('aria-busy');
+            if (thingContainerContentsLoading) {
+                thingContainerModal.setAttribute('aria-busy', 'true');
+            } else {
+                thingContainerModal.removeAttribute('aria-busy');
+            }
             updateThingContainerBulkButtons();
         }
 
@@ -20904,6 +21520,8 @@
                 throw new Error(payload?.error || 'Container response did not include a container.');
             }
             cacheThingContainerPayload(payload);
+            thingContainerContentsLoading = false;
+            thingContainerContentsGenerating = false;
             currentThingContainerData = payload.container;
             currentThingContainerId = payload.container.id || null;
             currentThingContainerContents = Array.isArray(payload.contents)
@@ -20961,7 +21579,24 @@
                 thingContainerHistory = [];
             }
 
+            currentThingContainerId = containerId;
+            currentThingContainerData = {
+                ...(thing && typeof thing === 'object' ? thing : {}),
+                id: containerId,
+                name: thing?.name || 'Container',
+                isContainer: true
+            };
+            currentThingContainerContents = [];
+            currentThingContainerVisibleContents = [];
+            currentThingContainerPlayerInventory = Array.isArray(window.currentPlayerData?.inventory)
+                ? window.currentPlayerData.inventory
+                : [];
+            currentThingContainerVisiblePlayerInventory = [];
+            thingContainerContentsLoading = true;
+            thingContainerContentsGenerating = thingHasPendingGeneratedContainerContents(thing);
+
             showThingContainerShell(thing?.name || 'Container');
+            renderThingContainerModal();
             const sessionToken = thingContainerSessionToken;
             const applyVersion = reserveThingContainerPayloadApplyVersion();
             const payload = await fetchThingContainerPayload(containerId);
@@ -21187,6 +21822,8 @@
             thingContainerModal.setAttribute('aria-hidden', 'true');
             thingContainerModal.setAttribute('hidden', '');
             thingContainerModal.removeAttribute('aria-busy');
+            thingContainerContentsLoading = false;
+            thingContainerContentsGenerating = false;
             closeThingContextMenu();
             closeThingListFilterPopoverForPanel(containerPlayerInventoryPanel);
             closeThingListSortPopoverForPanel(containerPlayerInventoryPanel);
@@ -23139,10 +23776,19 @@
             let latestNpc = npc && npc.id ? (npcDataCache.get(npc.id) || npc) : npc;
             if ((!latestNpc?.attributeInfo || typeof latestNpc.attributeInfo !== 'object') && latestNpc?.id) {
                 try {
+                    const incomingModStatusSections = Array.isArray(latestNpc?.modStatusSections)
+                        ? latestNpc.modStatusSections
+                        : null;
                     const response = await fetch(`/api/npcs/${encodeURIComponent(latestNpc.id)}`, { cache: 'no-store' });
                     const result = await response.json();
                     if (result?.success && result.npc) {
-                        latestNpc = result.npc;
+                        if (Array.isArray(result.npc?.modStatusSections)) {
+                            latestNpc = result.npc;
+                        } else if (incomingModStatusSections) {
+                            latestNpc = { ...latestNpc, ...result.npc, modStatusSections: incomingModStatusSections };
+                        } else {
+                            latestNpc = result.npc;
+                        }
                         if (npcDataCache && latestNpc.id) {
                             npcDataCache.set(latestNpc.id, cloneActorRecord(latestNpc) || { ...latestNpc });
                         }

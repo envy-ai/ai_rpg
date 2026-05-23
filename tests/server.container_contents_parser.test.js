@@ -112,3 +112,46 @@ test('thing XML parser treats omitted and empty containerContents as empty', asy
         Globals.config = previousConfig;
     }
 });
+
+test('thing XML parser ignores empty container content sentinels and zero-count seeds', async () => {
+    const parseThingsXml = loadParseThingsXml();
+    const previousConfig = Globals.config;
+
+    Globals.config = { ...(previousConfig || {}), strictXMLParsing: false };
+    try {
+        const parsed = await parseThingsXml(`
+<items>
+  <item>
+    <name>Mostly Empty Pouch</name>
+    <description>A pouch with a misleading manifest.</description>
+    <shortDescription>Mostly empty pouch</shortDescription>
+    <itemOrScenery>item</itemOrScenery>
+    <type>pouch</type>
+    <isContainer>true</isContainer>
+    <containerContents>
+      <containedItem>
+        <name>empty</name>
+      </containedItem>
+      <containedItem>
+        <name>N/A</name>
+      </containedItem>
+      <containedItem>
+        <name>Signal Flares</name>
+        <count>0</count>
+      </containedItem>
+      <containedItem>
+        <name>Empty Vial</name>
+        <count>1</count>
+      </containedItem>
+    </containerContents>
+  </item>
+</items>`);
+
+        assert.equal(parsed.length, 1);
+        assert.deepEqual(JSON.parse(JSON.stringify(parsed[0].containerContents)), [
+            { name: 'Empty Vial', count: 1 }
+        ]);
+    } finally {
+        Globals.config = previousConfig;
+    }
+});

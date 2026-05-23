@@ -11,6 +11,8 @@ class ModExtensionRegistry {
     #settingFields = new Map();
     #settingTabs = new Map();
     #entityFieldsByType = new Map();
+    #thingImageBadges = new Map();
+    #thingContextActions = new Map();
     #startupValidators = [];
 
     static #thingReservedFieldNames = new Set([
@@ -46,6 +48,36 @@ class ModExtensionRegistry {
         'containerContents',
         'containedThingIds',
         'flags'
+    ]);
+
+    static #thingReservedXmlPromptTags = new Set([
+        'name',
+        'count',
+        'description',
+        'shortDescription',
+        'itemOrScenery',
+        'type',
+        'slot',
+        'rarity',
+        'value',
+        'weight',
+        'relativeLevel',
+        'isVehicle',
+        'isCraftingStation',
+        'isProcessingStation',
+        'isHarvestable',
+        'isSalvageable',
+        'isContainer',
+        'containerContents',
+        'containedItem',
+        'attributeBonuses',
+        'attributeBonus',
+        'attribute',
+        'bonus',
+        'causeStatusEffectOnTarget',
+        'causeStatusEffectOnEquipper',
+        'statusEffect',
+        'properties'
     ]);
 
     constructor({ reservedChatToolNames = [] } = {}) {
@@ -103,6 +135,258 @@ class ModExtensionRegistry {
         return normalized;
     }
 
+    static #normalizeXmlPromptTagName(value, fieldName) {
+        const normalized = ModExtensionRegistry.#normalizeString(value, fieldName);
+        if (!/^[A-Za-z_][A-Za-z0-9_.-]*$/.test(normalized)) {
+            throw new Error(`${fieldName} must start with a letter or underscore and contain only letters, numbers, underscores, hyphens, or periods.`);
+        }
+        return normalized;
+    }
+
+    static #normalizeEntityFieldXmlPrompt({
+        entityType,
+        fieldName,
+        exposeToGeneratorPrompt,
+        exposeToXmlParser,
+        xmlPrompt
+    }) {
+        if (!exposeToGeneratorPrompt && !exposeToXmlParser) {
+            if (xmlPrompt !== undefined && xmlPrompt !== null && xmlPrompt !== '') {
+                throw new Error(`Entity field "${entityType}.${fieldName}" xmlPrompt requires exposeToGeneratorPrompt or exposeToXmlParser.`);
+            }
+            return null;
+        }
+
+        const rawPrompt = xmlPrompt === undefined ? null : xmlPrompt;
+        let rawTagName = fieldName;
+        let rawPlaceholder = '';
+
+        if (typeof rawPrompt === 'string') {
+            rawPlaceholder = rawPrompt.trim();
+        } else if (rawPrompt && typeof rawPrompt === 'object' && !Array.isArray(rawPrompt)) {
+            if (typeof rawPrompt.tagName === 'string' && rawPrompt.tagName.trim()) {
+                rawTagName = rawPrompt.tagName.trim();
+            }
+            if (typeof rawPrompt.placeholder === 'string') {
+                rawPlaceholder = rawPrompt.placeholder.trim();
+            }
+        } else if (rawPrompt !== null && rawPrompt !== undefined && rawPrompt !== '') {
+            throw new Error(`Entity field "${entityType}.${fieldName}" xmlPrompt must be a string or object.`);
+        }
+
+        if (exposeToGeneratorPrompt && !rawPlaceholder) {
+            throw new Error(`Entity field "${entityType}.${fieldName}" exposeToGeneratorPrompt requires xmlPrompt.placeholder.`);
+        }
+
+        const tagName = ModExtensionRegistry.#normalizeXmlPromptTagName(
+            rawTagName,
+            `entity field "${entityType}.${fieldName}" xmlPrompt.tagName`
+        );
+        if (
+            entityType === 'thing'
+            && ModExtensionRegistry.#thingReservedXmlPromptTags.has(tagName)
+        ) {
+            throw new Error(`Entity field "thing.${fieldName}" xmlPrompt tag "${tagName}" conflicts with a built-in item XML tag.`);
+        }
+
+        return {
+            tagName,
+            placeholder: rawPlaceholder
+        };
+    }
+
+    static #normalizeEntityFieldEdit({
+        entityType,
+        fieldName,
+        fieldType,
+        exposeToEditModal,
+        edit
+    }) {
+        if (!exposeToEditModal) {
+            if (edit !== undefined && edit !== null && edit !== '') {
+                throw new Error(`Entity field "${entityType}.${fieldName}" edit metadata requires exposeToEditModal.`);
+            }
+            return null;
+        }
+        if (edit !== undefined && edit !== null && (typeof edit !== 'object' || Array.isArray(edit))) {
+            throw new Error(`Entity field "${entityType}.${fieldName}" edit metadata must be an object.`);
+        }
+        const raw = edit && typeof edit === 'object' ? edit : {};
+        const defaultInputType = (() => {
+            if (fieldType === 'boolean') return 'checkbox';
+            if (fieldType === 'number' || fieldType === 'integer') return 'number';
+            if (fieldType === 'array' || fieldType === 'object') return 'textarea';
+            return 'text';
+        })();
+        const inputType = typeof raw.inputType === 'string' && raw.inputType.trim()
+            ? raw.inputType.trim().toLowerCase()
+            : defaultInputType;
+        const allowedInputTypes = new Set(['text', 'textarea', 'number', 'checkbox']);
+        if (!allowedInputTypes.has(inputType)) {
+            throw new Error(`Entity field "${entityType}.${fieldName}" edit.inputType "${inputType}" is not supported.`);
+        }
+        const numericOrder = raw.order === undefined || raw.order === null || raw.order === ''
+            ? 1000
+            : Number(raw.order);
+        if (!Number.isFinite(numericOrder)) {
+            throw new Error(`Entity field "${entityType}.${fieldName}" edit.order must be a finite number.`);
+        }
+        return {
+            label: typeof raw.label === 'string' && raw.label.trim() ? raw.label.trim() : fieldName,
+            placeholder: typeof raw.placeholder === 'string' ? raw.placeholder.trim() : '',
+            description: typeof raw.description === 'string' ? raw.description.trim() : '',
+            inputType,
+            order: numericOrder
+        };
+    }
+
+    static #cloneEntityField(field) {
+        return field
+            ? {
+                ...field,
+                edit: field.edit ? { ...field.edit } : null,
+                xmlPrompt: field.xmlPrompt ? { ...field.xmlPrompt } : null
+            }
+            : null;
+    }
+
+    static #normalizeAssetUrlForMod(value, modName, fieldName) {
+        const normalized = ModExtensionRegistry.#normalizeString(value, fieldName);
+        const requiredPrefix = `/mods/${modName}/assets/`;
+        if (!normalized.startsWith(requiredPrefix)) {
+            throw new Error(`${fieldName} for mod "${modName}" must use a mod asset URL starting with "${requiredPrefix}".`);
+        }
+        if (normalized.includes('..')) {
+            throw new Error(`${fieldName} for mod "${modName}" cannot contain "..".`);
+        }
+        return normalized;
+    }
+
+    static #normalizeThingImageBadgePosition(value) {
+        const normalized = typeof value === 'string' && value.trim()
+            ? value.trim().toLowerCase()
+            : 'bottom-left';
+        const allowed = new Set(['top-left', 'top-right', 'bottom-left', 'bottom-right']);
+        if (!allowed.has(normalized)) {
+            throw new Error(`Thing image badge position "${normalized}" is not supported.`);
+        }
+        return normalized;
+    }
+
+    static #normalizeThingImageBadgeRenderMode(value) {
+        const normalized = typeof value === 'string' && value.trim()
+            ? value.trim().toLowerCase()
+            : 'auto';
+        const allowed = new Set(['auto', 'mask', 'image']);
+        if (!allowed.has(normalized)) {
+            throw new Error(`Thing image badge renderMode "${normalized}" is not supported.`);
+        }
+        return normalized;
+    }
+
+    static #cloneThingImageBadge(badge) {
+        return badge
+            ? {
+                ...badge,
+                assetPathSetting: badge.assetPathSetting ? { ...badge.assetPathSetting } : null,
+                labelSetting: badge.labelSetting ? { ...badge.labelSetting } : null
+            }
+            : null;
+    }
+
+    static #normalizeThingContextActionContexts(contexts, fullId) {
+        if (contexts === undefined || contexts === null || contexts === '') {
+            return [];
+        }
+        const rawEntries = Array.isArray(contexts) ? contexts : [contexts];
+        const normalized = [];
+        const seen = new Set();
+        for (const entry of rawEntries) {
+            const context = typeof entry === 'string' ? entry.trim() : '';
+            if (!context) {
+                throw new Error(`Thing context action "${fullId}" contexts must contain non-empty strings.`);
+            }
+            if (!seen.has(context)) {
+                seen.add(context);
+                normalized.push(context);
+            }
+        }
+        return normalized;
+    }
+
+    static #cloneThingContextAction(action, { includeHandler = false } = {}) {
+        if (!action) {
+            return null;
+        }
+        const cloned = {
+            modName: action.modName,
+            id: action.id,
+            fullId: action.fullId,
+            label: action.label,
+            fieldName: action.fieldName,
+            fieldValue: action.fieldValue,
+            contexts: [...action.contexts],
+            order: action.order
+        };
+        if (includeHandler) {
+            cloned.handler = action.handler;
+        }
+        return cloned;
+    }
+
+    static #cloneJsonish(value) {
+        if (value === undefined || value === null) {
+            return value;
+        }
+        return JSON.parse(JSON.stringify(value));
+    }
+
+    static #normalizeSettingFieldOptions(options, fieldId) {
+        if (options === undefined || options === null) {
+            return [];
+        }
+        if (!Array.isArray(options)) {
+            throw new Error(`Setting field "${fieldId}" options must be an array.`);
+        }
+        return options.map((option, index) => {
+            if (!option || typeof option !== 'object' || Array.isArray(option)) {
+                throw new Error(`Setting field "${fieldId}" option ${index + 1} must be an object.`);
+            }
+            const value = ModExtensionRegistry.#normalizeString(option.value, `Setting field "${fieldId}" option ${index + 1} value`);
+            const normalized = {
+                value,
+                label: typeof option.label === 'string' && option.label.trim() ? option.label.trim() : value
+            };
+            if (typeof option.description === 'string' && option.description.trim()) {
+                normalized.description = option.description.trim();
+            }
+            if (option.settings !== undefined) {
+                if (!option.settings || typeof option.settings !== 'object' || Array.isArray(option.settings)) {
+                    throw new Error(`Setting field "${fieldId}" option "${value}" settings must be an object.`);
+                }
+                normalized.settings = ModExtensionRegistry.#cloneJsonish(option.settings);
+            }
+            if (typeof option.confirmMessage === 'string' && option.confirmMessage.trim()) {
+                normalized.confirmMessage = option.confirmMessage.trim();
+            }
+            return normalized;
+        });
+    }
+
+    static #normalizeSettingReference(reference, fieldName) {
+        if (reference === undefined || reference === null || reference === '') {
+            return null;
+        }
+        if (!reference || typeof reference !== 'object' || Array.isArray(reference)) {
+            throw new Error(`${fieldName} must be an object.`);
+        }
+        return {
+            namespace: ModExtensionRegistry.#normalizeString(reference.namespace, `${fieldName}.namespace`),
+            key: ModExtensionRegistry.#normalizeString(reference.key, `${fieldName}.key`),
+            defaultValue: typeof reference.defaultValue === 'string' ? reference.defaultValue.trim() : ''
+        };
+    }
+
     static #normalizeXmlEventPromptSchema(promptSchema, { tagName, eventKey }) {
         if (promptSchema === null || promptSchema === undefined || promptSchema === '') {
             return null;
@@ -145,6 +429,8 @@ class ModExtensionRegistry {
         this.#settingFields.clear();
         this.#settingTabs.clear();
         this.#entityFieldsByType.clear();
+        this.#thingImageBadges.clear();
+        this.#thingContextActions.clear();
         this.#startupValidators = [];
     }
 
@@ -402,6 +688,9 @@ class ModExtensionRegistry {
         defaultValue,
         description = '',
         tabId = '',
+        options = [],
+        persist = true,
+        action = '',
         normalize
     } = {}) {
         const normalizedModName = ModExtensionRegistry.#normalizeModName(modName);
@@ -429,6 +718,9 @@ class ModExtensionRegistry {
             defaultValue,
             description: typeof description === 'string' ? description.trim() : '',
             tabId: normalizedTabId,
+            options: ModExtensionRegistry.#normalizeSettingFieldOptions(options, id),
+            persist: persist !== false,
+            action: typeof action === 'string' ? action.trim() : '',
             normalize: normalize || null
         });
     }
@@ -446,7 +738,10 @@ class ModExtensionRegistry {
                 }
                 return true;
             })
-            .map(field => ({ ...field }));
+            .map(field => ({
+                ...field,
+                options: ModExtensionRegistry.#cloneJsonish(field.options || [])
+            }));
     }
 
     getSettingField(namespace, key) {
@@ -456,7 +751,10 @@ class ModExtensionRegistry {
             return null;
         }
         const field = this.#settingFields.get(`${normalizedNamespace}.${normalizedKey}`);
-        return field ? { ...field } : null;
+        return field ? {
+            ...field,
+            options: ModExtensionRegistry.#cloneJsonish(field.options || [])
+        } : null;
     }
 
     getSettingTabs() {
@@ -483,7 +781,11 @@ class ModExtensionRegistry {
         exposeToCreateTool = false,
         exposeToUpdateTool = false,
         exposeToGeneratorPrompt = false,
-        exposeToXmlParser = false
+        exposeToXmlParser = false,
+        exposeToEditModal = false,
+        clearThingSlotWhenPresent = false,
+        edit = undefined,
+        xmlPrompt = undefined
     } = {}) {
         const normalizedModName = ModExtensionRegistry.#normalizeModName(modName);
         const normalizedEntityType = ModExtensionRegistry.#normalizeEntityType(entityType);
@@ -500,17 +802,42 @@ class ModExtensionRegistry {
             throw new Error(`Entity field "${normalizedEntityType}.${normalizedFieldName}" is already registered.`);
         }
 
+        const normalizedExposeToGeneratorPrompt = ModExtensionRegistry.#normalizeBoolean(exposeToGeneratorPrompt);
+        const normalizedExposeToXmlParser = ModExtensionRegistry.#normalizeBoolean(exposeToXmlParser);
+        const normalizedExposeToEditModal = ModExtensionRegistry.#normalizeBoolean(exposeToEditModal);
+        const normalizedClearThingSlotWhenPresent = ModExtensionRegistry.#normalizeBoolean(clearThingSlotWhenPresent);
+        if (normalizedClearThingSlotWhenPresent && normalizedEntityType !== 'thing') {
+            throw new Error(`Entity field "${normalizedEntityType}.${normalizedFieldName}" clearThingSlotWhenPresent is only valid for Thing fields.`);
+        }
+        const normalizedType = ModExtensionRegistry.#normalizeEntityFieldType(type);
+
         const record = {
             modName: normalizedModName,
             entityType: normalizedEntityType,
             fieldName: normalizedFieldName,
-            type: ModExtensionRegistry.#normalizeEntityFieldType(type),
+            type: normalizedType,
             defaultValue,
             description: typeof description === 'string' ? description.trim() : '',
             exposeToCreateTool: ModExtensionRegistry.#normalizeBoolean(exposeToCreateTool),
             exposeToUpdateTool: ModExtensionRegistry.#normalizeBoolean(exposeToUpdateTool),
-            exposeToGeneratorPrompt: ModExtensionRegistry.#normalizeBoolean(exposeToGeneratorPrompt),
-            exposeToXmlParser: ModExtensionRegistry.#normalizeBoolean(exposeToXmlParser)
+            exposeToGeneratorPrompt: normalizedExposeToGeneratorPrompt,
+            exposeToXmlParser: normalizedExposeToXmlParser,
+            exposeToEditModal: normalizedExposeToEditModal,
+            clearThingSlotWhenPresent: normalizedClearThingSlotWhenPresent,
+            edit: ModExtensionRegistry.#normalizeEntityFieldEdit({
+                entityType: normalizedEntityType,
+                fieldName: normalizedFieldName,
+                fieldType: normalizedType,
+                exposeToEditModal: normalizedExposeToEditModal,
+                edit
+            }),
+            xmlPrompt: ModExtensionRegistry.#normalizeEntityFieldXmlPrompt({
+                entityType: normalizedEntityType,
+                fieldName: normalizedFieldName,
+                exposeToGeneratorPrompt: normalizedExposeToGeneratorPrompt,
+                exposeToXmlParser: normalizedExposeToXmlParser,
+                xmlPrompt
+            })
         };
         fields.set(normalizedFieldName, record);
     }
@@ -524,14 +851,15 @@ class ModExtensionRegistry {
             return null;
         }
         const field = this.#entityFieldsByType.get(normalizedEntityType)?.get(normalizedFieldName) || null;
-        return field ? { ...field } : null;
+        return ModExtensionRegistry.#cloneEntityField(field);
     }
 
     getEntityFields(entityType, {
         exposeToCreateTool = undefined,
         exposeToUpdateTool = undefined,
         exposeToGeneratorPrompt = undefined,
-        exposeToXmlParser = undefined
+        exposeToXmlParser = undefined,
+        exposeToEditModal = undefined
     } = {}) {
         const normalizedEntityType = typeof entityType === 'string' && entityType.trim()
             ? entityType.trim().toLowerCase()
@@ -553,9 +881,143 @@ class ModExtensionRegistry {
                 if (exposeToXmlParser !== undefined && field.exposeToXmlParser !== Boolean(exposeToXmlParser)) {
                     return false;
                 }
+                if (exposeToEditModal !== undefined && field.exposeToEditModal !== Boolean(exposeToEditModal)) {
+                    return false;
+                }
                 return true;
             })
-            .map(field => ({ ...field }));
+            .map(field => ModExtensionRegistry.#cloneEntityField(field));
+    }
+
+    registerThingImageBadge({
+        modName,
+        id,
+        fieldName,
+        fieldValue = undefined,
+        label = '',
+        iconUrl = '',
+        imageUrl = '',
+        renderMode = 'auto',
+        position = 'bottom-left',
+        order = 1000,
+        assetPathSetting = null,
+        labelSetting = null
+    } = {}) {
+        const normalizedModName = ModExtensionRegistry.#normalizeModName(modName);
+        const normalizedId = ModExtensionRegistry.#normalizeIdentifier(id, 'Thing image badge id');
+        const fullId = `${normalizedModName}:${normalizedId}`;
+        if (this.#thingImageBadges.has(fullId)) {
+            throw new Error(`Thing image badge "${fullId}" is already registered.`);
+        }
+        const normalizedFieldName = ModExtensionRegistry.#normalizeFieldName(fieldName, `Thing image badge "${fullId}" fieldName`);
+        const rawIconUrl = typeof iconUrl === 'string' ? iconUrl.trim() : '';
+        const rawImageUrl = typeof imageUrl === 'string' ? imageUrl.trim() : '';
+        if (Boolean(rawIconUrl) === Boolean(rawImageUrl)) {
+            throw new Error(`Thing image badge "${fullId}" requires exactly one of iconUrl or imageUrl.`);
+        }
+        const numericOrder = Number(order);
+        if (!Number.isFinite(numericOrder)) {
+            throw new Error(`Thing image badge "${fullId}" order must be a finite number.`);
+        }
+
+        const record = {
+            modName: normalizedModName,
+            id: normalizedId,
+            fullId,
+            fieldName: normalizedFieldName,
+            fieldValue,
+            label: typeof label === 'string' && label.trim() ? label.trim() : normalizedId,
+            iconUrl: rawIconUrl
+                ? ModExtensionRegistry.#normalizeAssetUrlForMod(rawIconUrl, normalizedModName, `Thing image badge "${fullId}" iconUrl`)
+                : '',
+            imageUrl: rawImageUrl
+                ? ModExtensionRegistry.#normalizeAssetUrlForMod(rawImageUrl, normalizedModName, `Thing image badge "${fullId}" imageUrl`)
+                : '',
+            renderMode: ModExtensionRegistry.#normalizeThingImageBadgeRenderMode(renderMode),
+            position: ModExtensionRegistry.#normalizeThingImageBadgePosition(position),
+            order: numericOrder,
+            assetPathSetting: ModExtensionRegistry.#normalizeSettingReference(
+                assetPathSetting,
+                `Thing image badge "${fullId}" assetPathSetting`
+            ),
+            labelSetting: ModExtensionRegistry.#normalizeSettingReference(
+                labelSetting,
+                `Thing image badge "${fullId}" labelSetting`
+            )
+        };
+        this.#thingImageBadges.set(fullId, record);
+    }
+
+    getThingImageBadges() {
+        return Array.from(this.#thingImageBadges.values())
+            .map(badge => ModExtensionRegistry.#cloneThingImageBadge(badge))
+            .sort((a, b) => {
+                if (a.order !== b.order) {
+                    return a.order - b.order;
+                }
+                return a.fullId.localeCompare(b.fullId);
+            });
+    }
+
+    registerThingContextAction({
+        modName,
+        id,
+        label = '',
+        fieldName = '',
+        fieldValue = undefined,
+        contexts = [],
+        order = 1000,
+        handler
+    } = {}) {
+        const normalizedModName = ModExtensionRegistry.#normalizeModName(modName);
+        const normalizedId = ModExtensionRegistry.#normalizeIdentifier(id, 'Thing context action id');
+        const fullId = `${normalizedModName}:${normalizedId}`;
+        if (this.#thingContextActions.has(fullId)) {
+            throw new Error(`Thing context action "${fullId}" is already registered.`);
+        }
+        if (typeof handler !== 'function') {
+            throw new Error(`Thing context action "${fullId}" requires a handler function.`);
+        }
+        const normalizedFieldName = typeof fieldName === 'string' && fieldName.trim()
+            ? ModExtensionRegistry.#normalizeFieldName(fieldName, `Thing context action "${fullId}" fieldName`)
+            : '';
+        const numericOrder = Number(order);
+        if (!Number.isFinite(numericOrder)) {
+            throw new Error(`Thing context action "${fullId}" order must be a finite number.`);
+        }
+        this.#thingContextActions.set(fullId, {
+            modName: normalizedModName,
+            id: normalizedId,
+            fullId,
+            label: typeof label === 'string' && label.trim() ? label.trim() : normalizedId,
+            fieldName: normalizedFieldName,
+            fieldValue,
+            contexts: ModExtensionRegistry.#normalizeThingContextActionContexts(contexts, fullId),
+            order: numericOrder,
+            handler
+        });
+    }
+
+    getThingContextActions() {
+        return Array.from(this.#thingContextActions.values())
+            .map(action => ModExtensionRegistry.#cloneThingContextAction(action))
+            .sort((a, b) => {
+                if (a.order !== b.order) {
+                    return a.order - b.order;
+                }
+                return a.fullId.localeCompare(b.fullId);
+            });
+    }
+
+    getThingContextActionRecord(actionId) {
+        const normalized = typeof actionId === 'string' ? actionId.trim() : '';
+        if (!normalized) {
+            return null;
+        }
+        return ModExtensionRegistry.#cloneThingContextAction(
+            this.#thingContextActions.get(normalized) || null,
+            { includeHandler: true }
+        );
     }
 
     registerStartupValidator({ modName, validator } = {}) {

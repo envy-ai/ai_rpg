@@ -1604,6 +1604,25 @@ class Thing {
     return Thing.#normalizeCount(Number(match[0]), fieldName);
   }
 
+  static #isEmptyContainerContentName(value) {
+    if (typeof value !== 'string') {
+      return false;
+    }
+    const normalized = value.trim().toLowerCase().replace(/[.!?]+$/g, '');
+    return new Set([
+      'empty',
+      'none',
+      'n/a',
+      'na',
+      'null',
+      'nothing',
+      'no item',
+      'no items',
+      'no contents',
+      'not applicable'
+    ]).has(normalized);
+  }
+
   static #normalizeContainerContents(entries = []) {
     if (entries === null || entries === undefined || entries === '') {
       return [];
@@ -1629,7 +1648,7 @@ class Thing {
         throw new Error('containerContents entries must be objects with name/count fields.');
       }
 
-      if (!name) {
+      if (!name || Thing.#isEmptyContainerContentName(name) || count === 0) {
         continue;
       }
       normalized.push({ name, count });

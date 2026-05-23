@@ -22,7 +22,8 @@ test('createThing tool schema exposes registered Thing fields at request time', 
         fieldName: 'implantSlot',
         type: 'string',
         description: 'Implant grouping slot.',
-        exposeToCreateTool: true
+        exposeToCreateTool: true,
+        clearThingSlotWhenPresent: true
     });
 
     const createThing = getChatToolDefinitions({ modExtensionRegistry: registry })
@@ -132,7 +133,8 @@ test('createThing tool forwards and preserves registered Thing fields', async ()
         fieldName: 'implantSlot',
         type: 'string',
         description: 'Implant grouping slot.',
-        exposeToCreateTool: true
+        exposeToCreateTool: true,
+        clearThingSlotWhenPresent: true
     });
     const location = { id: 'loc-1', name: 'Study' };
     const region = { id: 'region-1', name: 'Manor' };
@@ -140,6 +142,7 @@ test('createThing tool forwards and preserves registered Thing fields', async ()
         id: 'thing-implant-1',
         name: 'Mnemonic Lattice',
         thingType: 'item',
+        slot: 'head',
         extensionFields: {},
         setExtensionField(fieldName, value) {
             this.extensionFields[fieldName] = value;
@@ -166,6 +169,7 @@ test('createThing tool forwards and preserves registered Thing fields', async ()
                                             shortDescription: 'a memory lattice implant',
                                             itemOrScenery: 'item',
                                             name: 'Mnemonic Lattice',
+                                            slot: 'head',
                                             implantSlot: 'neural'
                                         })
                                     }
@@ -231,7 +235,9 @@ test('createThing tool forwards and preserves registered Thing fields', async ()
 
     assert.equal(result.rounds, 2);
     assert.equal(capturedGenerateArgs.seeds[0].implantSlot, 'neural');
+    assert.equal(capturedGenerateArgs.seeds[0].slot, null);
     assert.deepEqual(createdThing.extensionFields, { implantSlot: 'neural' });
+    assert.equal(createdThing.slot, null);
 });
 
 test('createThing tool queues requested names for named thing seeds', async () => {

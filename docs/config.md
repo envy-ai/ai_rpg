@@ -883,7 +883,7 @@ while_you_were_away_threshold_minutes: 30
 Rules:
 - Must be an integer `>= 0` when present.
 - Default is `30`.
-- The prompt runs only when the destination's pre-arrival `lastVisitedTime` is known and at least this many in-game minutes old. `0` runs the prompt for any previously visited destination. If an older save or manual call has no pre-arrival timestamp, the prompt preserves legacy behavior and can still run for previously visited destinations.
+- The prompt runs only when the movement path captured an affirmative pre-arrival visit snapshot. If the destination's pre-arrival `lastVisitedTime` is known, it must be at least this many in-game minutes old. `0` runs the prompt for any destination that was explicitly known to be previously visited before the move. Missing pre-arrival snapshots skip the prompt instead of trusting the destination's current `visited` flag after movement.
 - The prompt input includes current-location NPCs that have persisted `last_seen_time` / `last_seen_location` and were not in the same location as the player on the previous round, so already-present reunion NPCs stay in the candidate list instead of being misclassified as arrivals.
 - The prompt input includes each need-bar definition's `while_you_were_away_prompt_notes` when provided, letting need-bar defs guide how offscreen NPCs tend to satisfy or lose that bar.
 - The threshold does not filter individual NPC candidates; once the destination qualifies, all current-location reunion candidates are listed for possible `<characterUpdate>` entries.

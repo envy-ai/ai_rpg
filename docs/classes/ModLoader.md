@@ -17,15 +17,16 @@ Loads and initializes enabled mods from the `mods/` directory. Provides per-mod 
 - `loadMod(modName, scope)`: loads a single enabled mod, validates `register` when `mod.js` is present, stores metadata, and accepts defs-only mods.
 - `createModScope(modName, modDir, scope)`: builds a per-mod scope with helpers:
   - `getModPublicUrl(filePath)`
+  - `getModAssetUrl(filePath)` for files under `mods/<mod>/assets`
   - `renderModPrompt(templateName, context)`
   - `registerModRoute(method, path, handler)`
   - `modConfig` (resolved config)
   - `modExtensionRegistry`
-  - hook helpers: `registerChatTool`, `registerXmlEvent`, `registerBaseContextContributor`, `registerActorStatusContributor`, `registerAttributeModifierContributor`, `registerStatusEffectContributor`, `registerInventorySyncContributor`, `registerSettingTab`, `registerSettingField`, `registerEntityField`, and `registerStartupValidator`
+  - hook helpers: `registerChatTool`, `registerXmlEvent`, `registerBaseContextContributor`, `registerActorStatusContributor`, `registerAttributeModifierContributor`, `registerStatusEffectContributor`, `registerInventorySyncContributor`, `registerSettingTab`, `registerSettingField`, `registerEntityField`, `registerThingImageBadge`, `registerThingContextAction`, and `registerStartupValidator`
 - `getModConfig(modName)`: loads `config.json` and applies `configSchema` defaults.
 - `getModConfigs()`: returns list of `{ name, displayName, schema, config }`.
 - `saveModConfig(modName, newConfig)`: persists config to `config.json`.
-- `setupStaticServing(app, express)`: serves `/mods/<name>` public assets.
+- `setupStaticServing(app, express)`: serves `/mods/<name>` public assets and `/mods/<name>/assets` mod-owned image/icon assets.
 - `getModClientScripts()`: returns mod public JS file paths.
 - `getModClientStyles()`: returns mod public CSS file paths.
 
@@ -38,3 +39,5 @@ Loads and initializes enabled mods from the `mods/` directory. Provides per-mod 
 - `registerModRoute` namespaces routes under `/api/mods/<modName>/...`.
 - Mod prompt environments receive the shared `eval` Nunjucks filter when the server provides it in scope.
 - `modConfig` is resolved before `register(scope)` runs, so mods can read schema defaults during registration.
+- `getModAssetUrl(...)` rejects empty paths and `..` segments. `registerThingImageBadge(...)` expects URLs produced by this helper so client badges can render SVG masks or raster images without exposing arbitrary filesystem paths.
+- `registerThingContextAction(...)` lets mods add server-backed actions to shared item/scenery context menus without registering ad hoc browser routes.

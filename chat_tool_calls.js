@@ -2303,6 +2303,23 @@ const createChatToolRuntime = ({
         }
     };
 
+    const hasMeaningfulRegisteredEntityFieldValue = (value) => {
+        if (value === undefined || value === null) {
+            return false;
+        }
+        if (typeof value === 'string') {
+            const normalized = value.trim().toLowerCase();
+            return Boolean(normalized && normalized !== 'n/a' && normalized !== 'none');
+        }
+        if (Array.isArray(value)) {
+            return value.length > 0;
+        }
+        if (typeof value === 'object') {
+            return Object.keys(value).length > 0;
+        }
+        return true;
+    };
+
     const cloneToolResult = (value) => {
         if (!value || typeof value !== 'object') {
             return value;
@@ -4079,6 +4096,12 @@ const createChatToolRuntime = ({
         if (typeValue) seed.type = typeValue;
         const slotValue = normalizeOptionalString(slot);
         if (slotValue) seed.slot = slotValue;
+        if (registeredCreateFields.some(field => (
+            field.clearThingSlotWhenPresent === true
+            && hasMeaningfulRegisteredEntityFieldValue(extensionFieldValues[field.fieldName])
+        ))) {
+            seed.slot = null;
+        }
         const rarityValue = normalizeOptionalString(rarity);
         if (rarityValue) seed.rarity = rarityValue;
 
@@ -4166,12 +4189,23 @@ const createChatToolRuntime = ({
                 { code: 'thing_generation_failed' }
             );
         }
+        let shouldClearCreatedThingSlot = false;
         for (const [fieldName, value] of Object.entries(extensionFieldValues)) {
             if (typeof createdThing.setExtensionField === 'function') {
                 createdThing.setExtensionField(fieldName, value);
             } else if (createdThing && typeof createdThing === 'object') {
                 createdThing[fieldName] = value;
             }
+            const field = registeredCreateFieldMap.get(fieldName) || null;
+            if (
+                field?.clearThingSlotWhenPresent === true
+                && hasMeaningfulRegisteredEntityFieldValue(value)
+            ) {
+                shouldClearCreatedThingSlot = true;
+            }
+        }
+        if (shouldClearCreatedThingSlot && createdThing && typeof createdThing === 'object') {
+            createdThing.slot = null;
         }
 
         const lines = [
@@ -5173,6 +5207,12 @@ const createChatToolRuntime = ({
                         target.record[fieldName] = value;
                     } else {
                         throw new Error(`Target does not support registered field "${fieldName}".`);
+                    }
+                    if (
+                        registeredField.clearThingSlotWhenPresent === true
+                        && hasMeaningfulRegisteredEntityFieldValue(value)
+                    ) {
+                        target.record.slot = null;
                     }
                 } else if (objectType === 'thing' && fieldName === 'value') {
                     const metadata = isPlainObject(target.record.metadata) ? { ...target.record.metadata } : {};

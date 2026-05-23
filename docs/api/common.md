@@ -146,6 +146,7 @@ Fields:
 - `needBars` (array of NeedBar)
 - `needBarApplicability` (object map of `needBarId -> boolean`)
 - `thingListViewPreferences` (object map of shared thing-list panel key -> view mode)
+- `modStatusSections` (array of mod-contributed actor profile/status sections)
 - `factionId` (string | null)
 - `factionStandings` (object map of `factionId -> number`)
 - `personality` (object | null, including `aiNotes` when available)
@@ -169,6 +170,7 @@ Highlights beyond `Player.toJSON()`:
 - `dispositions`, `dispositionDefinitions`
 - `skills`, `abilities`, `unspentSkillPoints`, `unspentAttributePoints`
 - `statusEffects` (active effects), `intrinsicStatusEffects` may be added by the route
+- `modStatusSections` is added by the route from registered mod actor-status contributors so detailed character refreshes preserve mod-owned systems.
 - `gear`, `gearSlotsByType`, `gearSlotDefinitions`
 - `needBars`, `needBarApplicability`, `corpseCountdown`, `persistWhenDead`, `wasEverInPlayerParty`, `last_seen_time`, `last_seen_location`, `was_in_player_location_previous_round`, `importantMemories`
 - `resistances`, `vulnerabilities`

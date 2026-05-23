@@ -14,6 +14,7 @@
   - Live skill/attack check chat bubbles use `.check-results-*` and `.check-result-*` classes for grouped rows, collapsed `<details>` summaries, status/error/cache-hit borders, and expanded detail bodies that reuse the existing skill/attack breakdown markup.
   - The play-page spinner/status feedback uses `.chat-spinner-status-bar` between the prompt-progress dock and chat input. It is hidden by default, switches to `.is-visible` for flex layout, uses a small `.chat-spinner-status-bar__spinner`, italic text, and `pointer-events: none` so it does not block chat or sidebar interaction. Request-scoped chat progress text is routed into this same strip instead of using temporary loading bubbles.
   - The one-line prompt-progress tracker places tightly spaced eye/cancel/retry controls before the prompt name, keeps those white SVG icons fully bright with a slight white glow on hover/active, gives the prompt name a fixed 60% desktop allocation with medium-bold weight and ellipsis overflow, appends `(and N more)` when multiple prompts are running, and relaxes the label width on mobile.
+  - Prompt-progress viewer windows are modeless `.prompt-progress-viewer` floating dialogs with `pointer-events: auto`, no backdrop, draggable headers, native resize, and stacked auto-anchored offsets so opening multiple prompt snapshots does not force the rest of the interface inert.
   - The Adventure-tab location panel keeps the shared glass `.container` styling but overrides the nested `.location-block .container` shape so only the bottom-right corner remains rounded.
   - The main Adventure layout uses a flush `.chat-wrapper` with no inter-column gap.
   - The Adventure-tab `.chat-sidebar` outer panel also keeps only the bottom-right corner rounded.
@@ -22,7 +23,7 @@
   - Compact thing-list popovers now promote their owning `.thing-list-panel` with a temporary `.thing-list-panel--popover-open` stacking class so location item/scenery text cannot paint above an open filter or sort popup.
   - Open item context menus use the `.entity-context-menu--floating` body-level positioning class while open, so Scenery menus can paint above the Things section and modal inventory/crafting menus are not clipped by scroll containers; the floating menu width shrinks to the widest visible option instead of keeping the legacy minimum width.
   - Thing-list icon surfaces opt out of native mobile long-press image/callout behavior (`-webkit-touch-callout`, image drag, and selection); modal drag-wired icons also use `touch-action: none` so custom pointer/touch movement-threshold dragging is not canceled by native gestures.
-  - The thing-container inventory modal uses `.thing-container-modal__*` classes for a wide two-column layout, compact visible-item bulk buttons, dashed drag/drop zones, breadcrumb buttons, touch-drag ghost styling, and a mobile vertical half-and-half split instead of a free-height one-column stack.
+  - The thing-container inventory modal uses `.thing-container-modal__*` classes for a wide two-column layout, compact visible-item bulk buttons, dashed drag/drop zones, breadcrumb buttons, touch-drag ghost styling, generated-content loading spinner sizing that reuses the barter modal loading pattern, and a mobile vertical half-and-half split instead of a free-height one-column stack.
   - Character view ability cards use `.npc-view-ability-*` classes and visually mirror the player level-up ability selector cards without inheriting the selector's clickable/selected behavior. Shared `.ability-type-*` classes color-code active/passive/triggered ability names, uppercase type labels, and NPC editor ability type controls.
   - Compiled output: `public/css/main.css`.
 - `public/css/settings.scss`
@@ -35,6 +36,7 @@
 
 ## Images
 - `public/generated-images/` is the image output directory for entity images; persisted image IDs are displayed through `/api/images/:imageId/file` so PNG/JPEG/WebP/GIF files do not require extension-specific client URLs.
+- `mods/<mod>/assets/` stores mod-owned image/icon assets served at `/mods/<mod>/assets/...`. Runtime hooks such as Thing image badges use `scope.getModAssetUrl(...)` to reference these files.
 - `public/icons/` stores static UI icon assets (for example, `sword-shield.svg`).
 - `assets/material-icons/app-nav-icons/` stores mask-friendly app-header icons for New Game, System, Tools, Save, Load, Debug, and Player Stats. App-header masks also reuse existing game-tab icons for Play, Worlds, and Lorebooks, and `assets/material-icons/misc/puzzle.svg` for Mods.
 - `assets/material-icons/misc/compress.svg` and `assets/material-icons/misc/expand.svg` are used by the docked prompt-progress tracker mode buttons and rendered as white right-aligned controls in the one-line state. `assets/material-icons/misc/view_prompt.svg`, `restart.svg`, and `cancel.svg` are used by the prompt row action buttons, rendered as white icons on transparent borderless buttons.
@@ -102,6 +104,13 @@ Loaded on the chat page:
 - Thing thumbnails on item/scenery cards also use a shared `.thing-count-badge` overlay in the
   lower-right corner of the image area. Items always show their persisted `count`; scenery
   hides the badge when `count === 1`.
+- Thing thumbnails can also render mod-registered image badges through `registerThingImageBadge`.
+  The shared renderer groups badges by image corner, keeps built-in action badges in the
+  bottom-left badge bar, renders `mask` badges as white CSS masks with a subtle glow, and
+  renders `image` badges directly for raster or full-color assets. The bundled implants mod
+  uses this path to place a configurable badge in the upper-left corner of implant-compatible
+  item images. Its default preset uses `mods/implants/assets/microchip.svg`; the tattoo preset
+  uses `mods/implants/assets/image.svg`.
 - Inventory, location item/scenery sections, and the crafting inventory now share the same
   inventory-style thing-card DOM builder in `views/index.njk`, with shared control/popup
   classes in `public/css/main.scss` such as `.thing-list-panel`, `.thing-list-panel__header`,

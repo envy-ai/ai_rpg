@@ -3102,14 +3102,51 @@ p:not(:last-child) {
 
 .thing-collection-view--small-grid .entity-image-badges {
   left: 4.2px;
+  right: auto;
+  top: auto;
   bottom: 4.2px;
   padding: 1.4px 4.2px;
   box-shadow: 0 2.8px 8.4px rgba(15, 23, 42, 0.35);
 }
 
+.thing-collection-view--small-grid .entity-image-badges--top-left {
+  left: 4.2px;
+  top: 4.2px;
+  right: auto;
+  bottom: auto;
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.thing-collection-view--small-grid .entity-image-badges--top-right {
+  left: auto;
+  top: 4.2px;
+  right: 4.2px;
+  bottom: auto;
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.thing-collection-view--small-grid .entity-image-badges--bottom-right {
+  left: auto;
+  top: auto;
+  right: 4.2px;
+  bottom: 4.2px;
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
 .thing-collection-view--small-grid .entity-image-badge {
   font-size: 0.665rem;
   padding: 0.7px;
+}
+
+.thing-collection-view--small-grid .entity-image-badge--asset {
+  width: 15.4px;
+  height: 15.4px;
 }
 
 .thing-table {
@@ -3519,6 +3556,8 @@ button.thing-action-icon:hover, button.thing-action-icon:focus-visible {
 .entity-image-badges {
   position: absolute;
   left: 6px;
+  right: auto;
+  top: auto;
   bottom: 6px;
   display: flex;
   gap: 0;
@@ -3527,6 +3566,42 @@ button.thing-action-icon:hover, button.thing-action-icon:focus-visible {
   background: rgba(15, 23, 42, 0.75);
   pointer-events: none;
   box-shadow: 0 4px 12px rgba(15, 23, 42, 0.35);
+}
+
+.entity-image-badges--bottom-left {
+  left: 6px;
+  right: auto;
+  top: auto;
+  bottom: 6px;
+}
+
+.entity-image-badges--top-left,
+.entity-image-badges--top-right,
+.entity-image-badges--bottom-right {
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.entity-image-badges--top-left {
+  left: 6px;
+  right: auto;
+  top: 6px;
+  bottom: auto;
+}
+
+.entity-image-badges--top-right {
+  left: auto;
+  right: 6px;
+  top: 6px;
+  bottom: auto;
+}
+
+.entity-image-badges--bottom-right {
+  left: auto;
+  right: 6px;
+  top: auto;
+  bottom: 6px;
 }
 
 .entity-image-badges--interactive {
@@ -3541,6 +3616,34 @@ button.thing-action-icon:hover, button.thing-action-icon:focus-visible {
   font-size: 0.95rem;
   line-height: 1;
   padding: 1px;
+}
+
+.entity-image-badge--asset {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  filter: drop-shadow(0 0 3px rgba(255, 255, 255, 0.85)) drop-shadow(0 1px 2px rgba(0, 0, 0, 0.85));
+}
+
+.entity-image-badge__mask,
+.entity-image-badge__image {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.entity-image-badge__mask {
+  background: #ffffff;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+}
+
+.entity-image-badge__image {
+  object-fit: contain;
 }
 
 .entity-image-badge--action {
@@ -7524,6 +7627,7 @@ body.dark .thing-toggle-hint {
   flex-direction: column;
   overflow: hidden;
   resize: both;
+  pointer-events: auto;
 }
 
 .prompt-progress-viewer__header {
@@ -9336,6 +9440,15 @@ body.modal-open {
 .thing-container-modal__dropzone.is-drag-over {
   border-color: rgba(125, 211, 252, 0.8);
   background: rgba(14, 116, 144, 0.2);
+}
+
+.thing-container-modal__loading {
+  flex: 1 1 100%;
+  width: 100%;
+}
+
+.thing-container-modal__spinner {
+  flex: 0 0 auto;
 }
 
 .thing-container-modal__draggable-item {

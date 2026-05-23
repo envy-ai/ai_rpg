@@ -12438,6 +12438,11 @@ function normalizeInventoryGenerationContext(inventoryGeneration = {}) {
                 if (!entry || typeof entry !== 'object') {
                     throw new Error(`inventoryGeneration.requestedItems[${index}] must be an object.`);
                 }
+                const generatorFieldInputs = getThingExtensionFieldInputsFromSource(
+                    entry,
+                    getThingGeneratorPromptFields(),
+                    `inventoryGeneration.requestedItems[${index}]`
+                );
                 const name = typeof entry.name === 'string' ? entry.name.trim() : '';
                 if (mode === 'barterStock' && !name) {
                     throw new Error(`inventoryGeneration.requestedItems[${index}] is missing a name.`);
@@ -12455,6 +12460,7 @@ function normalizeInventoryGenerationContext(inventoryGeneration = {}) {
                         : (typeof entry.notes === 'string' ? entry.notes.trim() : ''),
                     reason: typeof entry.reason === 'string' ? entry.reason.trim() : ''
                 };
+                Object.assign(normalized, generatorFieldInputs);
                 if (entry.relativeLevel !== undefined) {
                     normalized.relativeLevel = entry.relativeLevel;
                 }
@@ -12589,35 +12595,12 @@ async function generateInventoryForCharacter({
         const createdThings = [];
         for (const item of items) {
             if (!item.name) continue;
-            const detailParts = [];
-            if (item.type) detailParts.push(`Type: ${item.type}`);
-            if (item.slot && item.slot.toLowerCase() !== 'n/a') detailParts.push(`Slot: ${item.slot}`);
-            if (item.rarity) detailParts.push(`Rarity: ${item.rarity}`);
-            if (item.value) detailParts.push(`Value: ${item.value}`);
-            if (item.weight) detailParts.push(`Weight: ${item.weight}`);
-            const effectSummaries = [];
-            if (item.causeStatusEffectOnTarget) {
-                const effectName = item.causeStatusEffectOnTarget.name || 'Status Effect';
-                const effectDetail = item.causeStatusEffectOnTarget.description || '';
-                const combined = [effectName, effectDetail].filter(Boolean).join(' - ');
-                effectSummaries.push(`Target: ${combined}`);
-            }
-            if (item.causeStatusEffectOnEquipper) {
-                const effectName = item.causeStatusEffectOnEquipper.name || 'Status Effect';
-                const effectDetail = item.causeStatusEffectOnEquipper.description || '';
-                const combined = [effectName, effectDetail].filter(Boolean).join(' - ');
-                effectSummaries.push(`Equipper: ${combined}`);
-            }
-            if (effectSummaries.length) {
-                detailParts.push(`Status Effect: ${effectSummaries.join(' | ')}`);
-            }
             const relativeLevel = Number.isFinite(item.relativeLevel)
                 ? Math.max(-10, Math.min(10, Math.round(item.relativeLevel)))
                 : 0;
             const ownerLevel = Number.isFinite(character?.level) ? character.level : startingPlayerLevel;
             const computedLevel = clampLevel(ownerLevel + relativeLevel, ownerLevel);
             item.level = computedLevel;
-            if (item.properties) detailParts.push(`Properties: ${item.properties}`);
 
             const rawAttributeBonuses = normalizeAttributeBonusesForItem(
                 Array.isArray(item.attributeBonuses) ? item.attributeBonuses : []
@@ -12637,15 +12620,14 @@ async function generateInventoryForCharacter({
                     })
                     .join(', ')
                 : '';
-            if (bonusSummary) {
-                detailParts.push(`Bonuses: ${bonusSummary}`);
-            }
 
             console.log(
                 `[ItemGeneration] Calculated stats for "${item.name}": ownerLevel=${ownerLevel}, relativeLevel=${relativeLevel}, computedLevel=${computedLevel}, rarity=${item.rarity || 'unknown'}, slot=${item.slot || 'none'}, bonuses=${bonusSummary || 'none'}`
             );
 
-            const extendedDescription = [item.description, detailParts.join(' | ')].filter(Boolean).join(' ');
+            const itemDescription = typeof item.description === 'string' && item.description.trim()
+                ? item.description.trim()
+                : 'Inventory item';
 
             try {
                 const metadata = sanitizeMetadataObject({
@@ -12663,6 +12645,11 @@ async function generateInventoryForCharacter({
                     level: computedLevel
                 });
                 const booleanFlags = extractThingBooleanFlags(item);
+                const extensionFieldInputs = getThingExtensionFieldInputsFromSource(
+                    item,
+                    getThingXmlParserFields(),
+                    `generated inventory item "${item.name || 'unknown'}"`
+                );
                 Object.assign(metadata, booleanFlags);
                 if (
                     normalizedInventoryGeneration.mode === 'barterStock'
@@ -12677,7 +12664,7 @@ async function generateInventoryForCharacter({
 
                 const thing = new Thing({
                     name: item.name,
-                    description: extendedDescription || item.description || 'Inventory item',
+                    description: itemDescription,
                     shortDescription: item.shortDescription ?? null,
                     thingType: 'item',
                     rarity: item.rarity || null,
@@ -12691,6 +12678,7 @@ async function generateInventoryForCharacter({
                     relativeLevel,
                     containerContents: item.containerContents,
                     metadata,
+                    ...extensionFieldInputs,
                     ...booleanFlags
                 });
                 things.set(thing.id, thing);
@@ -12899,6 +12887,13 @@ async function generateItemsByNames({
             Object.assign(normalizedSeed, seedBooleanFlags);
         }
 
+        const generatorFieldInputs = getThingExtensionFieldInputsFromSource(
+            seed,
+            getThingGeneratorPromptFields(),
+            'thing generation seed'
+        );
+        Object.assign(normalizedSeed, generatorFieldInputs);
+
         return normalizedSeed;
     };
 
@@ -12991,6 +12986,7 @@ async function generateItemsByNames({
             gearSlots: gearSlotNames,
             attributes: attributeList,
             attributeDefinitions: baseContext.attributeDefinitions || attributeDefinitionsForPrompt,
+            thingGeneratorPromptFields: getThingGeneratorPromptFields(),
             additionalLore: formattedLorebook
         };
 
@@ -13089,33 +13085,6 @@ async function generateItemsByNames({
                     return generatedName;
                 })();
 
-                const descriptionParts = [];
-                if (itemData?.description) {
-                    descriptionParts.push(itemData.description.trim());
-                }
-                const detailParts = [];
-                if (itemData?.type) detailParts.push(`Type: ${itemData.type}`);
-                if (itemData?.rarity) detailParts.push(`Rarity: ${itemData.rarity}`);
-                if (itemData?.value) detailParts.push(`Value: ${itemData.value}`);
-                if (itemData?.weight) detailParts.push(`Weight: ${itemData.weight}`);
-                if (itemData?.slot && itemData.slot.toLowerCase() !== 'n/a') detailParts.push(`Slot: ${itemData.slot}`);
-                if (itemData?.properties) detailParts.push(`Properties: ${itemData.properties}`);
-                const effectSummaries = [];
-                if (itemData?.causeStatusEffectOnTarget) {
-                    const effectName = itemData.causeStatusEffectOnTarget.name || 'Status Effect';
-                    const effectDescription = itemData.causeStatusEffectOnTarget.description || '';
-                    const effectCombined = [effectName, effectDescription].filter(Boolean).join(' - ');
-                    effectSummaries.push(`Target: ${effectCombined}`);
-                }
-                if (itemData?.causeStatusEffectOnEquipper) {
-                    const effectName = itemData.causeStatusEffectOnEquipper.name || 'Status Effect';
-                    const effectDescription = itemData.causeStatusEffectOnEquipper.description || '';
-                    const effectCombined = [effectName, effectDescription].filter(Boolean).join(' - ');
-                    effectSummaries.push(`Equipper: ${effectCombined}`);
-                }
-                if (effectSummaries.length) {
-                    detailParts.push(`Status Effect: ${effectSummaries.join(' | ')}`);
-                }
                 let relativeLevel = null;
                 if (Number.isFinite(itemData?.relativeLevel)) {
                     relativeLevel = Math.max(-10, Math.min(10, Math.round(itemData.relativeLevel)));
@@ -13150,17 +13119,11 @@ async function generateItemsByNames({
                             const value = Number.isFinite(bonus.bonus) ? bonus.bonus : 0;
                             const sign = value >= 0 ? `+${value}` : `${value}`;
                             return `${attr} ${sign}`;
-                        })
+                    })
                         .join(', ')
                     : '';
-                if (bonusSummary) {
-                    detailParts.push(`Bonuses: ${bonusSummary}`);
-                }
 
-                if (detailParts.length) {
-                    descriptionParts.push(detailParts.join(' | '));
-                }
-                const composedDescription = descriptionParts.join(' ') || `A thing named ${finalName}.`;
+                const composedDescription = itemData?.description?.trim() || `A thing named ${finalName}.`;
 
                 const metadata = sanitizeMetadataObject({
                     rarity: itemData?.rarity || null,
@@ -13177,6 +13140,11 @@ async function generateItemsByNames({
                     level: computedLevel
                 });
                 const booleanFlags = extractThingBooleanFlags(itemData);
+                const extensionFieldInputs = getThingExtensionFieldInputsFromSource(
+                    itemData,
+                    getThingXmlParserFields(),
+                    `generated thing "${finalName || 'unknown'}"`
+                );
                 Object.assign(metadata, booleanFlags);
 
                 const thing = new Thing({
@@ -13208,6 +13176,7 @@ async function generateItemsByNames({
                     relativeLevel,
                     containerContents: itemData?.containerContents,
                     metadata,
+                    ...extensionFieldInputs,
                     ...booleanFlags
                 });
 
@@ -13340,6 +13309,7 @@ async function generateContainerContentsForThing({
         gearSlots: gearSlotNames,
         attributes: attributeList,
         attributeDefinitions: baseContext.attributeDefinitions || attributeDefinitionsForPrompt,
+        thingGeneratorPromptFields: getThingGeneratorPromptFields(),
         container: {
             id: container.id || null,
             name: container.name || 'Container',
@@ -13401,6 +13371,11 @@ async function generateContainerContentsForThing({
             { level: computedLevel, rarity: itemData.rarity }
         );
         const booleanFlags = extractThingBooleanFlags(itemData);
+        const extensionFieldInputs = getThingExtensionFieldInputsFromSource(
+            itemData,
+            getThingXmlParserFields(),
+            `generated container item "${itemData.name || 'unknown'}"`
+        );
         const metadata = sanitizeMetadataObject({
             rarity: itemData.rarity || null,
             itemType: itemData.type || null,
@@ -13446,6 +13421,7 @@ async function generateContainerContentsForThing({
             relativeLevel,
             containerContents: itemData.containerContents,
             metadata,
+            ...extensionFieldInputs,
             ...booleanFlags
         });
         things.set(thing.id, thing);
@@ -13565,6 +13541,10 @@ function buildThingPromptItem(thing) {
 
     const causeStatusEffectOnTarget = thing.causeStatusEffectOnTarget || metadata.causeStatusEffectOnTarget || null;
     const causeStatusEffectOnEquipper = thing.causeStatusEffectOnEquipper || metadata.causeStatusEffectOnEquipper || null;
+    const extensionXmlFields = getThingExtensionXmlFieldsForPrompt(thing);
+    const extensionFieldValues = Object.fromEntries(
+        extensionXmlFields.map(field => [field.fieldName, field.value])
+    );
 
     return {
         name: thing.name,
@@ -13590,7 +13570,9 @@ function buildThingPromptItem(thing) {
         attributeBonuses: attributeBonuses,
         causeStatusEffectOnTarget,
         causeStatusEffectOnEquipper,
-        properties: metadata.properties || ''
+        properties: metadata.properties || '',
+        extensionXmlFields,
+        ...extensionFieldValues
     };
 }
 
@@ -13629,7 +13611,8 @@ async function separateThingByPrompt({
         renderedTemplate = promptEnv.render('base-context.xml.njk', {
             ...baseContext,
             promptType: 'thing-separate',
-            item: itemForPrompt
+            item: itemForPrompt,
+            thingGeneratorPromptFields: getThingGeneratorPromptFields()
         });
     } catch (renderError) {
         try {
@@ -13643,7 +13626,8 @@ async function separateThingByPrompt({
                 stack: renderError.stack,
                 thingId: thing.id,
                 promptType: 'thing-separate',
-                item: itemForPrompt
+                item: itemForPrompt,
+                thingGeneratorPromptFields: getThingGeneratorPromptFields()
             };
             fs.writeFileSync(debugPath, JSON.stringify(debugPayload, null, 2), 'utf8');
         } catch (logError) {
@@ -13846,6 +13830,11 @@ async function alterThingByPrompt({
         attributeBonuses: itemForPrompt.attributeBonuses,
         causeStatusEffect: itemForPrompt.causeStatusEffect
     };
+    for (const field of getThingGeneratorPromptFields()) {
+        if (Object.prototype.hasOwnProperty.call(itemForPrompt, field.fieldName)) {
+            thingSeed[field.fieldName] = itemForPrompt[field.fieldName];
+        }
+    }
 
     const rarityDefinitionForSeed = Thing.getRarityDefinition(thingSeed.rarity, { fallbackToDefault: true });
     thingSeed.rarityDescription = rarityDefinitionForSeed
@@ -13857,7 +13846,8 @@ async function alterThingByPrompt({
         promptType: 'thing-alter',
         changeDescription: changeDescription || 'Describe how this item has been altered.',
         thingSeed,
-        item: itemForPrompt
+        item: itemForPrompt,
+        thingGeneratorPromptFields: getThingGeneratorPromptFields()
     };
 
     if (!hasConfiguredAiBackend()) {
@@ -14144,6 +14134,18 @@ async function alterThingByPrompt({
     });
     if (resolvedShortDescription) {
         thing.shortDescription = resolvedShortDescription;
+    }
+
+    const updatedExtensionFieldInputs = getThingExtensionFieldInputsFromSource(
+        updatedItem,
+        getThingXmlParserFields(),
+        `altered thing "${updatedName || originalName || 'unknown'}"`
+    );
+    for (const [fieldName, value] of Object.entries(updatedExtensionFieldInputs)) {
+        if (typeof thing.setExtensionField !== 'function') {
+            throw new Error(`Thing alteration cannot set registered field "${fieldName}" because Thing.setExtensionField is unavailable.`);
+        }
+        thing.setExtensionField(fieldName, value);
     }
 
     if (normalizedType === 'scenery') {
@@ -15940,6 +15942,7 @@ async function renderInventoryPrompt(context = {}) {
             inventoryGeneration: context.inventoryGeneration && typeof context.inventoryGeneration === 'object'
                 ? context.inventoryGeneration
                 : {},
+            thingGeneratorPromptFields: getThingGeneratorPromptFields(),
             thingSeed: {}
         });
     } catch (error) {
@@ -16025,7 +16028,8 @@ function renderEquipBestPrompt(context = {}) {
                 gearSlots: Array.isArray(context.character?.gearSlots)
                     ? context.character.gearSlots
                     : []
-            }
+            },
+            thingGeneratorPromptFields: getThingGeneratorPromptFields()
         });
     } catch (error) {
         console.error('Error rendering equip-best template:', error);
@@ -19815,6 +19819,142 @@ function sanitizeMetadataObject(meta) {
     return cleaned;
 }
 
+function getRegisteredThingEntityFields(filter = {}) {
+    const registry = Globals.modExtensionRegistry || modExtensionRegistry || null;
+    if (!registry || typeof registry.getEntityFields !== 'function') {
+        return [];
+    }
+    return registry.getEntityFields('thing', filter)
+        .filter(field => field && field.xmlPrompt && typeof field.xmlPrompt.tagName === 'string');
+}
+
+function getThingGeneratorPromptFields() {
+    return getRegisteredThingEntityFields({ exposeToGeneratorPrompt: true });
+}
+
+function getThingXmlParserFields() {
+    return getRegisteredThingEntityFields({ exposeToXmlParser: true });
+}
+
+function normalizeRegisteredThingFieldValue(value, field, sourceLabel = 'registered Thing field') {
+    if (value === undefined || value === null) {
+        return undefined;
+    }
+    if (typeof value === 'string') {
+        const trimmed = value.trim();
+        if (!trimmed || trimmed.toLowerCase() === 'n/a') {
+            return undefined;
+        }
+        value = trimmed;
+    }
+
+    switch (field.type) {
+        case 'string':
+            return String(value).trim();
+        case 'number': {
+            const numeric = Number(value);
+            if (!Number.isFinite(numeric)) {
+                throw new Error(`${sourceLabel} "${field.fieldName}" must be a finite number.`);
+            }
+            return numeric;
+        }
+        case 'integer': {
+            const numeric = Number(value);
+            if (!Number.isInteger(numeric)) {
+                throw new Error(`${sourceLabel} "${field.fieldName}" must be an integer.`);
+            }
+            return numeric;
+        }
+        case 'boolean': {
+            if (typeof value === 'boolean') {
+                return value;
+            }
+            if (typeof value === 'number') {
+                if (value === 1) return true;
+                if (value === 0) return false;
+            }
+            if (typeof value === 'string') {
+                const normalized = value.trim().toLowerCase();
+                if (['true', '1', 'yes', 'y', 'on'].includes(normalized)) return true;
+                if (['false', '0', 'no', 'n', 'off'].includes(normalized)) return false;
+            }
+            throw new Error(`${sourceLabel} "${field.fieldName}" must be true or false.`);
+        }
+        case 'array': {
+            const parsed = Array.isArray(value)
+                ? value
+                : (typeof value === 'string' ? JSON.parse(value) : value);
+            if (!Array.isArray(parsed)) {
+                throw new Error(`${sourceLabel} "${field.fieldName}" must be a JSON array.`);
+            }
+            return parsed;
+        }
+        case 'object': {
+            const parsed = value && typeof value === 'object' && !Array.isArray(value)
+                ? value
+                : (typeof value === 'string' ? JSON.parse(value) : value);
+            if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+                throw new Error(`${sourceLabel} "${field.fieldName}" must be a JSON object.`);
+            }
+            return parsed;
+        }
+        default:
+            throw new Error(`Unsupported registered Thing field type "${field.type}" for "${field.fieldName}".`);
+    }
+}
+
+function getThingExtensionFieldInputsFromSource(source = {}, fields = getThingXmlParserFields(), sourceLabel = 'registered Thing field') {
+    if (!source || typeof source !== 'object') {
+        return {};
+    }
+    const inputs = {};
+    for (const field of fields) {
+        if (!field || typeof field.fieldName !== 'string') {
+            continue;
+        }
+        if (!Object.prototype.hasOwnProperty.call(source, field.fieldName)) {
+            continue;
+        }
+        const value = normalizeRegisteredThingFieldValue(
+            source[field.fieldName],
+            field,
+            sourceLabel
+        );
+        if (value !== undefined) {
+            inputs[field.fieldName] = value;
+        }
+    }
+    return inputs;
+}
+
+function getThingExtensionXmlFieldsForPrompt(thing) {
+    if (!thing || typeof thing !== 'object') {
+        return [];
+    }
+    return getThingGeneratorPromptFields()
+        .map(field => {
+            const value = typeof thing.getExtensionField === 'function'
+                ? thing.getExtensionField(field.fieldName)
+                : thing[field.fieldName];
+            const normalizedValue = normalizeRegisteredThingFieldValue(
+                value,
+                field,
+                `Thing "${thing.name || thing.id || 'unknown'}" prompt field`
+            );
+            if (normalizedValue === undefined) {
+                return null;
+            }
+            return {
+                fieldName: field.fieldName,
+                tagName: field.xmlPrompt.tagName,
+                value: typeof normalizedValue === 'string'
+                    ? normalizedValue
+                    : JSON.stringify(normalizedValue)
+            };
+        })
+        .filter(Boolean);
+}
+
 const THING_BOOLEAN_FLAG_MAP = Thing.booleanFlagMap;
 const THING_BOOLEAN_FLAG_KEYS = Thing.booleanFlagKeys;
 
@@ -20907,6 +21047,7 @@ function renderLocationThingsPrompt(context = {}) {
             attributes: attributeNames,
             rarityDefinitions: Thing.getAllRarityDefinitions(),
             generatedThingRarity,
+            thingGeneratorPromptFields: getThingGeneratorPromptFields(),
             rarityList: providedRarityList,
             itemCount,
             sceneryCount,
@@ -20961,6 +21102,92 @@ async function parseThingsXml(xmlContent, { isInventory = false, promptEnv = nul
             getDirectChildElement(parentNode, tagName)?.textContent?.trim() || ''
         );
 
+        const getRegisteredThingXmlParserFields = () => {
+            const registry = (typeof Globals !== 'undefined' && Globals?.modExtensionRegistry)
+                ? Globals.modExtensionRegistry
+                : (typeof modExtensionRegistry !== 'undefined' ? modExtensionRegistry : null);
+            if (!registry || typeof registry.getEntityFields !== 'function') {
+                return [];
+            }
+            return registry.getEntityFields('thing', { exposeToXmlParser: true })
+                .filter(field => field && field.xmlPrompt && typeof field.xmlPrompt.tagName === 'string');
+        };
+
+        const parseRegisteredThingXmlFieldValue = (rawValue, field, itemName) => {
+            if (rawValue === undefined || rawValue === null) {
+                return undefined;
+            }
+            const trimmed = String(rawValue).trim();
+            if (!trimmed || trimmed.toLowerCase() === 'n/a') {
+                return undefined;
+            }
+
+            switch (field.type) {
+                case 'string':
+                    return trimmed;
+                case 'number': {
+                    const numeric = Number(trimmed);
+                    if (!Number.isFinite(numeric)) {
+                        throw new Error(`Thing "${itemName}" registered XML field <${field.xmlPrompt.tagName}> must be a finite number.`);
+                    }
+                    return numeric;
+                }
+                case 'integer': {
+                    const numeric = Number(trimmed);
+                    if (!Number.isInteger(numeric)) {
+                        throw new Error(`Thing "${itemName}" registered XML field <${field.xmlPrompt.tagName}> must be an integer.`);
+                    }
+                    return numeric;
+                }
+                case 'boolean': {
+                    const normalized = trimmed.toLowerCase();
+                    if (['true', '1', 'yes', 'y', 'on'].includes(normalized)) return true;
+                    if (['false', '0', 'no', 'n', 'off'].includes(normalized)) return false;
+                    throw new Error(`Thing "${itemName}" registered XML field <${field.xmlPrompt.tagName}> must be true or false.`);
+                }
+                case 'array': {
+                    const parsed = JSON.parse(trimmed);
+                    if (!Array.isArray(parsed)) {
+                        throw new Error(`Thing "${itemName}" registered XML field <${field.xmlPrompt.tagName}> must be a JSON array.`);
+                    }
+                    return parsed;
+                }
+                case 'object': {
+                    const parsed = JSON.parse(trimmed);
+                    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+                        throw new Error(`Thing "${itemName}" registered XML field <${field.xmlPrompt.tagName}> must be a JSON object.`);
+                    }
+                    return parsed;
+                }
+                default:
+                    throw new Error(`Thing "${itemName}" registered XML field <${field.xmlPrompt.tagName}> has unsupported type "${field.type}".`);
+            }
+        };
+
+        const registeredThingXmlParserFields = getRegisteredThingXmlParserFields();
+        const hasMeaningfulRegisteredThingFieldValue = (value) => {
+            if (value === undefined || value === null) {
+                return false;
+            }
+            if (typeof value === 'string') {
+                const normalized = value.trim().toLowerCase();
+                return Boolean(normalized && normalized !== 'n/a' && normalized !== 'none');
+            }
+            if (Array.isArray(value)) {
+                return value.length > 0;
+            }
+            if (typeof value === 'object') {
+                return Object.keys(value).length > 0;
+            }
+            return true;
+        };
+        const shouldClearThingSlotForRegisteredFields = (registeredFieldValues = {}) => (
+            registeredThingXmlParserFields.some(field => (
+                field?.clearThingSlotWhenPresent === true
+                && hasMeaningfulRegisteredThingFieldValue(registeredFieldValues[field.fieldName])
+            ))
+        );
+
         const parseContainedItemCount = (value, itemName = 'contained item') => {
             if (value === null || value === undefined) {
                 return 1;
@@ -20979,6 +21206,24 @@ async function parseThingsXml(xmlContent, { isInventory = false, promptEnv = nul
             }
             return parsed;
         };
+        const isEmptyContainerContentName = (value) => {
+            if (typeof value !== 'string') {
+                return false;
+            }
+            const normalized = value.trim().toLowerCase().replace(/[.!?]+$/g, '');
+            return new Set([
+                'empty',
+                'none',
+                'n/a',
+                'na',
+                'null',
+                'nothing',
+                'no item',
+                'no items',
+                'no contents',
+                'not applicable'
+            ]).has(normalized);
+        };
 
         const parseContainerContents = (parentNode, parentName) => {
             const containerContentsNode = getDirectChildElement(parentNode, 'containerContents');
@@ -20995,13 +21240,17 @@ async function parseThingsXml(xmlContent, { isInventory = false, promptEnv = nul
                 })
                 .map(containedNode => {
                     const name = getDirectChildText(containedNode, 'name');
-                    if (!name) {
+                    if (!name || isEmptyContainerContentName(name)) {
                         return null;
                     }
                     const countNode = getDirectChildElement(containedNode, 'count');
+                    const count = parseContainedItemCount(countNode?.textContent, name);
+                    if (count === 0) {
+                        return null;
+                    }
                     return {
                         name,
-                        count: parseContainedItemCount(countNode?.textContent, name)
+                        count
                     };
                 })
                 .filter(Boolean);
@@ -21175,6 +21424,26 @@ async function parseThingsXml(xmlContent, { isInventory = false, promptEnv = nul
                 console.warn(`Thing "${entryName}" has container contents but is not marked as a container. Marking it as a container.`);
             }
 
+            const registeredFieldValues = {};
+            for (const field of registeredThingXmlParserFields) {
+                const tagName = field.xmlPrompt.tagName;
+                const fieldNode = getDirectChildElement(node, tagName);
+                if (!fieldNode) {
+                    continue;
+                }
+                const parsedValue = parseRegisteredThingXmlFieldValue(
+                    fieldNode.textContent,
+                    field,
+                    entryName || 'unknown'
+                );
+                if (parsedValue !== undefined) {
+                    registeredFieldValues[field.fieldName] = parsedValue;
+                }
+            }
+            const parsedSlot = shouldClearThingSlotForRegisteredFields(registeredFieldValues)
+                ? null
+                : getDirectChildText(node, 'slot');
+
             const entry = {
                 name: entryName,
                 description: getDirectChildText(node, 'description'),
@@ -21183,7 +21452,7 @@ async function parseThingsXml(xmlContent, { isInventory = false, promptEnv = nul
                 thingType: resolvedKind,
                 type: getDirectChildText(node, 'type')
                     || (resolvedKind === 'scenery' ? 'scenery' : 'item'),
-                slot: getDirectChildText(node, 'slot'),
+                slot: parsedSlot,
                 rarity: getDirectChildText(node, 'rarity')
                     || (isInventory ? getDefaultRarityLabel() : ''),
                 value: getDirectChildText(node, 'value'),
@@ -21201,7 +21470,8 @@ async function parseThingsXml(xmlContent, { isInventory = false, promptEnv = nul
                 isHarvestable: parseBooleanTag('isHarvestable'),
                 isSalvageable: parseBooleanTag('isSalvageable'),
                 isContainer,
-                containerContents
+                containerContents,
+                ...registeredFieldValues
             };
 
             //console.log('Parsed item entry:', entry);
@@ -21495,6 +21765,11 @@ async function generateLocationThingsForLocation({ location } = {}) {
             metadata.relativeLevel = Math.max(-10, Math.min(10, Math.round(itemData.relativeLevel)));
         }
         const booleanFlags = extractThingBooleanFlags(itemData);
+        const extensionFieldInputs = getThingExtensionFieldInputsFromSource(
+            itemData,
+            getThingXmlParserFields(),
+            `generated location thing "${itemData.name || 'unknown'}"`
+        );
         Object.assign(metadata, booleanFlags);
 
         const baseReference = Number.isFinite(location.baseLevel)
@@ -21544,6 +21819,7 @@ async function generateLocationThingsForLocation({ location } = {}) {
             relativeLevel,
             containerContents: itemData.containerContents,
             metadata: cleanedMetadata,
+            ...extensionFieldInputs,
             ...booleanFlags
         });
 
@@ -29387,6 +29663,9 @@ app.get('/', (req, res) => {
             ? Globals.getSaveMetadata()
             : (Globals.saveMetadata || null),
         vehicleDebugEnabled: cliVehicleDebug,
+        thingImageBadges: modExtensionRegistry.getThingImageBadges(),
+        thingContextActions: modExtensionRegistry.getThingContextActions(),
+        thingEditFields: modExtensionRegistry.getEntityFields('thing', { exposeToEditModal: true }),
         modScripts: modScripts,
         modStyles: modStyles
     });

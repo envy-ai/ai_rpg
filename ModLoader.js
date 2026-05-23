@@ -164,11 +164,23 @@ class ModLoader {
             modPromptsDir,
             modPromptEnv,
             modPublicDir: path.join(modDir, 'public'),
+            modAssetsDir: path.join(modDir, 'assets'),
 
             // Helper to get mod's public URL path
             getModPublicUrl: (filePath = '') => {
                 const normalized = filePath.startsWith('/') ? filePath.slice(1) : filePath;
                 return `/mods/${modName}/${normalized}`;
+            },
+
+            getModAssetUrl: (filePath = '') => {
+                const normalized = String(filePath || '').replace(/^\/+/, '');
+                if (!normalized) {
+                    throw new Error(`Mod "${modName}" asset path cannot be empty.`);
+                }
+                if (normalized.split('/').includes('..')) {
+                    throw new Error(`Mod "${modName}" asset path cannot contain "..".`);
+                }
+                return `/mods/${modName}/assets/${normalized}`;
             },
 
             // Helper to render a mod prompt template
@@ -301,6 +313,26 @@ class ModLoader {
                 });
             },
 
+            registerThingImageBadge: (options = {}) => {
+                if (!modExtensionRegistry || typeof modExtensionRegistry.registerThingImageBadge !== 'function') {
+                    throw new Error(`Mod "${modName}" cannot register Thing image badges because no ModExtensionRegistry is available.`);
+                }
+                return modExtensionRegistry.registerThingImageBadge({
+                    ...options,
+                    modName
+                });
+            },
+
+            registerThingContextAction: (options = {}) => {
+                if (!modExtensionRegistry || typeof modExtensionRegistry.registerThingContextAction !== 'function') {
+                    throw new Error(`Mod "${modName}" cannot register Thing context actions because no ModExtensionRegistry is available.`);
+                }
+                return modExtensionRegistry.registerThingContextAction({
+                    ...options,
+                    modName
+                });
+            },
+
             registerStartupValidator: (validator) => {
                 if (!modExtensionRegistry || typeof modExtensionRegistry.registerStartupValidator !== 'function') {
                     throw new Error(`Mod "${modName}" cannot register startup validators because no ModExtensionRegistry is available.`);
@@ -396,6 +428,11 @@ class ModLoader {
                 const urlPath = `/mods/${manifest.name}`;
                 app.use(urlPath, express.static(publicDir));
                 console.log(`   📁 Serving static files: ${urlPath} -> ${publicDir}`);
+            }
+            const assetsDir = path.join(manifest.dir, 'assets');
+            if (fs.existsSync(assetsDir)) {
+                app.use(`/mods/${manifest.name}/assets`, express.static(assetsDir));
+                console.log(`   📁 Serving static files: /mods/${manifest.name}/assets -> ${assetsDir}`);
             }
         }
     }

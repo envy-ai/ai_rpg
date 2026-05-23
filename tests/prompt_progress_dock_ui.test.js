@@ -9,6 +9,14 @@ const chatSource = fs.readFileSync(path.join(rootDir, 'public', 'js', 'chat.js')
 const scssSource = fs.readFileSync(path.join(rootDir, 'public', 'css', 'main.scss'), 'utf8');
 const globalsSource = fs.readFileSync(path.join(rootDir, 'public', 'css', '_globals.scss'), 'utf8');
 
+function extractBlock(source, startNeedle, endNeedle) {
+    const start = source.indexOf(startNeedle);
+    assert.notEqual(start, -1, `Unable to locate ${startNeedle}`);
+    const end = source.indexOf(endNeedle, start);
+    assert.notEqual(end, -1, `Unable to locate ${endNeedle}`);
+    return source.slice(start, end);
+}
+
 test('prompt progress dock host is placed between chat log and input area', () => {
     const chatLogIndex = viewSource.indexOf('id="chatLog"');
     const dockIndex = viewSource.indexOf('id="promptProgressDock"');
@@ -150,4 +158,33 @@ test('multi-row prompt progress table omits target, average-output, run-count, a
     assert.doesNotMatch(rowSource, /formatPromptProgressOutputAverage/);
     assert.doesNotMatch(rowSource, /formatPromptProgressRunCount/);
     assert.doesNotMatch(rowSource, /formatPromptProgressAverage/);
+});
+
+test('prompt view action spawns persistent modeless prompt viewers', () => {
+    const createActionsBlock = extractBlock(
+        chatSource,
+        'createPromptProgressActions(entry, row = null) {',
+        'createPromptProgressTableRow(entry'
+    );
+    const syncViewerWindowBlock = extractBlock(
+        chatSource,
+        'syncPromptProgressViewerWindow(viewerState) {',
+        'openPromptProgressViewer(promptId) {'
+    );
+    const createViewerBlock = extractBlock(
+        chatSource,
+        'createPromptProgressViewerWindow(viewerState) {',
+        'syncPromptProgressViewerWindow(viewerState)'
+    );
+
+    assert.match(chatSource, /this\.promptProgressViewerWindows = new Map\(\)/);
+    assert.match(chatSource, /this\.promptProgressViewerCounter = 0/);
+    assert.match(createActionsBlock, /this\.openPromptProgressViewer\(entry\.id\)/);
+    assert.doesNotMatch(createActionsBlock, /togglePromptProgressViewer/);
+    assert.match(createViewerBlock, /viewer\.setAttribute\('role', 'dialog'\)/);
+    assert.match(createViewerBlock, /viewer\.setAttribute\('aria-modal', 'false'\)/);
+    assert.match(createViewerBlock, /closeButton\.addEventListener\('click', \(\) => this\.closePromptProgressViewer\(viewerState\.id\)\)/);
+    assert.match(syncViewerWindowBlock, /viewerState\.lastEntry/);
+    assert.doesNotMatch(syncViewerWindowBlock, /closePromptProgressViewer/);
+    assert.match(scssSource, /\.prompt-progress-viewer\s*\{[\s\S]*pointer-events:\s*auto/);
 });

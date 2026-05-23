@@ -1,6 +1,6 @@
 {% include "_includes/need-bar-definitions.njk" %}
 
-<task>You will be provided with an XML structure representing a an NPC, which may have some fields filled in and others left empty. Your task is to intelligently fill in the empty fields based on the context provided by the filled fields, ensuring that the completed XML is coherent and consistent.</task>
+<task>You will be provided with an XML structure representing an NPC, which may have some fields filled in and others left empty. Your task is to intelligently fill in the empty fields based on the context provided by the filled fields, ensuring that the completed XML is coherent and consistent.</task>
 
 If the <name> field is already filled in, repeat it exactly and do not change it. Do not add titles, epithets, or descriptors to a prefilled name.
 
@@ -22,7 +22,7 @@ Faction selection: use the full faction name from the <factions> list in the gam
 {% set npcFinalRootTag = "npcInfo" %}
 {% include "_includes/npc-generation-contemplation-steps.njk" %}
 
-Respond in the below format, making sure that <npcInfo> is the root tag and encloses both <npcs> and <memories> elements.
+Respond in the below format, making sure that <npcInfo> is the root tag and encloses both <npcs> and <memories> elements. If a field is filled in with a real value and not a comment, do not change it (except to make the name singular if it is plural). If a field is empty (just a comment), fill it in with an appropriate value based on the context and instructions. Do not include any additional <npc> entries or stray from the XML format. If the <name> field is already filled in, generate an NPC with that name now. The fields you fill in should be congruent with the existing filled-in fields, the setting, and the reference image if there is one.
     
 <npcInfo>
     <npcs>
@@ -89,4 +89,4 @@ Respond in the below format, making sure that <npcInfo> is the root tag and encl
     </memories>
 </npcInfo>
 
-Do not include any additional <npc> entries or stray from the XML format.
+Do not include any additional <npc> entries or stray from the XML format. {% if npc.name %}Generate an NPC with the name '{{ npc.name }}' now.{% endif %}

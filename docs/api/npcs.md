@@ -21,7 +21,7 @@ Response:
 Fetch full NPC status (uses `Player.getStatus()`).
 
 Response:
-- 200: `{ success: true, npc }` (PlayerStatus shape; may include `intrinsicStatusEffects`)
+- 200: `{ success: true, npc }` (PlayerStatus shape; may include `intrinsicStatusEffects` and registered mod `modStatusSections`)
 - 400/404/500 with `{ success: false, error }`
 
 ## PUT /api/npcs/:id

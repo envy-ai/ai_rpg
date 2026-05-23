@@ -101,3 +101,37 @@ test('npc memory prompt scheduling skips dead actors', () => {
         'Expected current and departed party-member memory loops to skip dead actors during current-turn processing'
     );
 });
+
+test('chat location-change memories do not also process party memories', () => {
+    const source = fs.readFileSync(require.resolve('../api.js'), 'utf8');
+    const respondSource = getApiFunctionSource(
+        source,
+        'const processLocationChangeMemoriesIfNeeded = async () => {',
+        '\n            let whileYouWereAwayProcessed = false;'
+    );
+
+    assert.match(
+        respondSource,
+        /generateNpcMemoriesForLocationChange\(\{[\s\S]*isNonEventTravel:\s*false,/,
+        'Expected the chat travel location-change pass to leave party memories to schedulePartyMemoriesForCurrentTurn'
+    );
+});
+
+test('location-change memory candidates exclude current and departed party members', () => {
+    const source = fs.readFileSync(require.resolve('../api.js'), 'utf8');
+    const locationChangeSource = getApiFunctionSource(
+        source,
+        'async function generateNpcMemoriesForLocationChange',
+        '\n        async function processPartyMemoriesForCurrentTurn'
+    );
+
+    assert.match(locationChangeSource, /const partyMemberIdsForCandidateDedupe = /);
+    assert.match(locationChangeSource, /const removedPartyMemberIdsForCandidateDedupe = /);
+    assert.match(locationChangeSource, /partyMemberIdsForCandidateDedupe\.forEach\(memberId => candidateIds\.delete\(memberId\)\);/);
+    assert.match(locationChangeSource, /removedPartyMemberIdsForCandidateDedupe\.forEach\(memberId => candidateIds\.delete\(memberId\)\);/);
+    assert.match(
+        locationChangeSource,
+        /if \(isNonEventTravel && typeof player\.clearPartyMembershipChangeTracking === 'function'\)/,
+        'Expected party membership tracking to be cleared only when this generator processed party memories'
+    );
+});

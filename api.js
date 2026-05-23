@@ -5928,7 +5928,7 @@ module.exports = function registerApiRoutes(scope) {
                 && typeof Globals?.getPlayerArrivalWasVisitedBeforeMove === 'function') {
                 resolvedWasVisitedBeforeArrival = Globals.getPlayerArrivalWasVisitedBeforeMove(resolvedLocationIdForVisitCheck);
             }
-            if (resolvedWasVisitedBeforeArrival === false) {
+            if (resolvedWasVisitedBeforeArrival !== true) {
                 return returnEntries
                     ? {
                         hiddenEntry: null,
@@ -18372,17 +18372,25 @@ module.exports = function registerApiRoutes(scope) {
             const candidateIds = new Set();
             npcIds.forEach(id => { if (id) candidateIds.add(id); });
 
+            const normalizeActorIdList = ids => (Array.isArray(ids) ? ids : [])
+                .map(id => (typeof id === 'string' ? id.trim() : ''))
+                .filter(Boolean);
+            const partyMemberIdsForCandidateDedupe = typeof player.getPartyMembers === 'function'
+                ? normalizeActorIdList(player.getPartyMembers())
+                : [];
+            const removedPartyMemberIdsForCandidateDedupe = typeof player.getPartyMembersRemovedThisTurn === 'function'
+                ? normalizeActorIdList(Array.from(player.getPartyMembersRemovedThisTurn()))
+                : [];
+            partyMemberIdsForCandidateDedupe.forEach(memberId => candidateIds.delete(memberId));
+            removedPartyMemberIdsForCandidateDedupe.forEach(memberId => candidateIds.delete(memberId));
+
             let partyMemberIds = [];
             let removedPartyMemberIds = [];
             let partyInterval = null;
 
             if (isNonEventTravel) {
-                partyMemberIds = typeof player.getPartyMembers === 'function'
-                    ? player.getPartyMembers()
-                    : [];
-                removedPartyMemberIds = typeof player.getPartyMembersRemovedThisTurn === 'function'
-                    ? Array.from(player.getPartyMembersRemovedThisTurn())
-                    : [];
+                partyMemberIds = partyMemberIdsForCandidateDedupe;
+                removedPartyMemberIds = removedPartyMemberIdsForCandidateDedupe;
 
                 const partyIntervalRaw = Number(config?.party_generate_memory_interval);
                 partyInterval = Number.isInteger(partyIntervalRaw) && partyIntervalRaw > 0
@@ -18685,7 +18693,7 @@ module.exports = function registerApiRoutes(scope) {
                 }
             }
 
-            if (typeof player.clearPartyMembershipChangeTracking === 'function') {
+            if (isNonEventTravel && typeof player.clearPartyMembershipChangeTracking === 'function') {
                 player.clearPartyMembershipChangeTracking();
             }
         }
@@ -20514,7 +20522,7 @@ module.exports = function registerApiRoutes(scope) {
                     previousLocationId: initialPlayerLocationId,
                     newLocationId: currentLocationId,
                     player,
-                    isNonEventTravel: !(currentActionIsTravel && travelMetadataIsEventDriven),
+                    isNonEventTravel: false,
                     entryCollector: newChatEntries,
                     clientId: stream?.clientId || null
                 }).catch(error => {
@@ -26603,10 +26611,15 @@ module.exports = function registerApiRoutes(scope) {
                 if (!npc) {
                     return res.status(404).json({ success: false, error: `Character with ID '${npcId}' not found` });
                 }
-                const status = typeof npc.getStatus === 'function' ? npc.getStatus() : npc.toJSON();
+                const rawStatus = typeof npc.getStatus === 'function' ? npc.getStatus() : npc.toJSON();
+                const status = rawStatus && typeof rawStatus === 'object' ? rawStatus : {};
                 if (typeof npc.getIntrinsicStatusEffects === 'function') {
                     status.intrinsicStatusEffects = npc.getIntrinsicStatusEffects();
                 }
+                const clientProfile = serializeNpcForClient(npc);
+                status.modStatusSections = Array.isArray(clientProfile?.modStatusSections)
+                    ? clientProfile.modStatusSections
+                    : [];
                 return res.json({ success: true, npc: status });
             } catch (error) {
                 console.warn('Failed to fetch NPC status:', error?.message || error);
@@ -36609,6 +36622,8 @@ module.exports = function registerApiRoutes(scope) {
                 } = req.body || {};
                 const normalizedShortDescription = shortDescription ?? null;
                 const booleanFlags = extractThingBooleanFlagsFromPayload(req.body || {});
+                const registeredCreateFields = getRegisteredThingPayloadFields({ create: true, edit: true });
+                const registeredCreateFieldPayload = extractRegisteredThingPayloadFieldValues(req.body || {}, registeredCreateFields);
 
                 const thing = new Thing({
                     name,
@@ -36619,7 +36634,7 @@ module.exports = function registerApiRoutes(scope) {
                     rarity,
                     itemTypeDetail,
                     metadata,
-                    slot,
+                    slot: registeredCreateFieldPayload.shouldClearSlot ? null : slot,
                     attributeBonuses,
                     causeStatusEffect: (function buildCauseEffect() {
                         if (causeStatusEffectOnTarget || causeStatusEffectOnEquipper) {
@@ -36639,6 +36654,7 @@ module.exports = function registerApiRoutes(scope) {
                     relativeLevel,
                     containerContents,
                     statusEffects,
+                    ...registeredCreateFieldPayload.values,
                     ...booleanFlags
                 });
 
@@ -36728,6 +36744,77 @@ module.exports = function registerApiRoutes(scope) {
             }
         });
 
+        app.post('/api/mod-thing-context-actions/:actionId', async (req, res) => {
+            try {
+                const actionId = typeof req.params.actionId === 'string' ? req.params.actionId.trim() : '';
+                if (!actionId) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Thing context action id is required.'
+                    });
+                }
+
+                const registry = modExtensionRegistry || Globals.modExtensionRegistry || null;
+                if (!registry || typeof registry.getThingContextActionRecord !== 'function') {
+                    throw new Error('Mod Thing context action registry is unavailable.');
+                }
+
+                const action = registry.getThingContextActionRecord(actionId);
+                if (!action) {
+                    return res.status(404).json({
+                        success: false,
+                        error: `Thing context action "${actionId}" is not registered.`
+                    });
+                }
+
+                const thingId = typeof req.body?.thingId === 'string' ? req.body.thingId.trim() : '';
+                if (!thingId) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'thingId is required.'
+                    });
+                }
+                const thing = things.get(thingId) || (typeof Thing.getById === 'function' ? Thing.getById(thingId) : null);
+                if (!thing) {
+                    return res.status(404).json({
+                        success: false,
+                        error: `Thing "${thingId}" was not found.`
+                    });
+                }
+
+                const actor = resolveActorForThingContextAction(req.body || {});
+                const result = await action.handler({
+                    action,
+                    thing,
+                    actor,
+                    currentPlayer,
+                    context: typeof req.body?.context === 'string' ? req.body.context.trim() : '',
+                    requestBody: req.body || {},
+                    players,
+                    things,
+                    Globals
+                });
+                const resultActor = result?.actor || actor || null;
+                const refreshedThing = things.get(thingId) || thing;
+                res.json({
+                    success: true,
+                    actionId: action.fullId,
+                    result: result || null,
+                    thing: refreshedThing && typeof refreshedThing.toJSON === 'function'
+                        ? refreshedThing.toJSON()
+                        : refreshedThing,
+                    actor: resultActor && typeof serializeNpcForClient === 'function'
+                        ? serializeNpcForClient(resultActor)
+                        : (resultActor && typeof resultActor.getStatus === 'function' ? resultActor.getStatus() : null)
+                });
+            } catch (error) {
+                res.status(400).json({
+                    success: false,
+                    error: error.message
+                });
+            }
+        });
+
         app.get('/api/gear-slots', (req, res) => {
             try {
                 const definitions = Player.gearSlotDefinitions;
@@ -36811,6 +36898,8 @@ module.exports = function registerApiRoutes(scope) {
                     statusEffects
                 } = req.body || {};
                 const booleanFlags = extractThingBooleanFlagsFromPayload(req.body || {});
+                const registeredEditFields = getRegisteredThingPayloadFields({ edit: true });
+                const registeredEditFieldPayload = extractRegisteredThingPayloadFieldValues(req.body || {}, registeredEditFields);
                 const thing = things.get(id);
 
                 if (!thing) {
@@ -36871,8 +36960,11 @@ module.exports = function registerApiRoutes(scope) {
                 if (imageId !== undefined) thing.imageId = imageId;
 
                 if (slot !== undefined) {
-                    thing.slot = slot;
+                    thing.slot = registeredEditFieldPayload.shouldClearSlot ? null : slot;
+                } else if (registeredEditFieldPayload.shouldClearSlot) {
+                    thing.slot = null;
                 }
+                applyRegisteredThingPayloadFieldValues(thing, registeredEditFieldPayload.values);
 
                 if (attributeBonuses !== undefined) {
                     if (Array.isArray(attributeBonuses)) {
@@ -37702,6 +37794,146 @@ module.exports = function registerApiRoutes(scope) {
                     throw createContainerMoveError('Cannot place a container inside one of its own descendants.', 400);
                 }
             }
+        }
+
+        function getRegisteredThingPayloadFields({ create = false, edit = false } = {}) {
+            const registry = modExtensionRegistry || Globals.modExtensionRegistry || null;
+            if (!registry || typeof registry.getEntityFields !== 'function') {
+                return [];
+            }
+            return registry.getEntityFields('thing')
+                .filter(field => (
+                    (create && field.exposeToCreateTool === true)
+                    || (edit && field.exposeToEditModal === true)
+                ));
+        }
+
+        function parseRegisteredThingPayloadFieldValue(rawValue, field) {
+            if (rawValue === undefined) {
+                return undefined;
+            }
+            if (rawValue === null) {
+                return null;
+            }
+            const fieldType = typeof field?.type === 'string' ? field.type.trim().toLowerCase() : 'string';
+            if (fieldType === 'boolean') {
+                return parseThingBooleanFlagValue(rawValue, field.fieldName);
+            }
+            if (typeof rawValue === 'string' && !rawValue.trim()) {
+                return null;
+            }
+            if (fieldType === 'string') {
+                return String(rawValue).trim();
+            }
+            if (fieldType === 'number') {
+                const numeric = Number(rawValue);
+                if (!Number.isFinite(numeric)) {
+                    throw new Error(`Registered Thing field "${field.fieldName}" must be a finite number.`);
+                }
+                return numeric;
+            }
+            if (fieldType === 'integer') {
+                const numeric = Number(rawValue);
+                if (!Number.isInteger(numeric)) {
+                    throw new Error(`Registered Thing field "${field.fieldName}" must be an integer.`);
+                }
+                return numeric;
+            }
+            if (fieldType === 'array') {
+                if (Array.isArray(rawValue)) {
+                    return rawValue;
+                }
+                const parsed = JSON.parse(String(rawValue));
+                if (!Array.isArray(parsed)) {
+                    throw new Error(`Registered Thing field "${field.fieldName}" must be an array.`);
+                }
+                return parsed;
+            }
+            if (fieldType === 'object') {
+                if (rawValue && typeof rawValue === 'object' && !Array.isArray(rawValue)) {
+                    return rawValue;
+                }
+                const parsed = JSON.parse(String(rawValue));
+                if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+                    throw new Error(`Registered Thing field "${field.fieldName}" must be an object.`);
+                }
+                return parsed;
+            }
+            throw new Error(`Registered Thing field "${field.fieldName}" has unsupported type "${fieldType}".`);
+        }
+
+        function hasMeaningfulRegisteredThingPayloadValue(value) {
+            if (value === undefined || value === null) {
+                return false;
+            }
+            if (typeof value === 'string') {
+                const normalized = value.trim().toLowerCase();
+                return Boolean(normalized && normalized !== 'n/a' && normalized !== 'none');
+            }
+            if (Array.isArray(value)) {
+                return value.length > 0;
+            }
+            if (typeof value === 'object') {
+                return Object.keys(value).length > 0;
+            }
+            return true;
+        }
+
+        function extractRegisteredThingPayloadFieldValues(payload = {}, fields = []) {
+            const values = {};
+            let shouldClearSlot = false;
+            for (const field of fields) {
+                if (!field || typeof field.fieldName !== 'string') {
+                    continue;
+                }
+                if (!Object.prototype.hasOwnProperty.call(payload, field.fieldName)) {
+                    continue;
+                }
+                const value = parseRegisteredThingPayloadFieldValue(payload[field.fieldName], field);
+                values[field.fieldName] = value;
+                if (
+                    field.clearThingSlotWhenPresent === true
+                    && hasMeaningfulRegisteredThingPayloadValue(value)
+                ) {
+                    shouldClearSlot = true;
+                }
+            }
+            return { values, shouldClearSlot };
+        }
+
+        function applyRegisteredThingPayloadFieldValues(thing, values = {}) {
+            for (const [fieldName, value] of Object.entries(values)) {
+                if (typeof thing.setExtensionField === 'function') {
+                    thing.setExtensionField(fieldName, value);
+                } else {
+                    thing[fieldName] = value;
+                }
+            }
+        }
+
+        function resolveActorForThingContextAction(body = {}) {
+            const ownerId = typeof body.ownerId === 'string' ? body.ownerId.trim() : '';
+            const npcId = typeof body.npcId === 'string' ? body.npcId.trim() : '';
+            const context = typeof body.context === 'string' ? body.context.trim() : '';
+            const ids = [ownerId, npcId].filter(Boolean);
+            for (const id of ids) {
+                if (currentPlayer && currentPlayer.id === id) {
+                    return currentPlayer;
+                }
+                if (players instanceof Map && players.has(id)) {
+                    return players.get(id);
+                }
+                if (typeof Player.getById === 'function') {
+                    const actor = Player.getById(id);
+                    if (actor) {
+                        return actor;
+                    }
+                }
+            }
+            if (context === 'player-inventory' || context === 'container-player-inventory') {
+                return currentPlayer || null;
+            }
+            return null;
         }
 
         function validateContainerMoveOutItems(container, items) {

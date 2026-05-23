@@ -18,7 +18,7 @@ Request:
   - Includes optional `calendarDefinition`, the same calendar object shape used by `/api/calendar`. `null` or omitted means the profile has no pre-generated calendar.
   - Includes `unifiedTonalScale`, an object keyed by tonal-axis id, where each selected axis is `{ level, comment? }`. Levels may be defined scale values or generated half-step values such as `3.5`.
   - Includes `hidingAttribute`, `hidingSkill`, `perceptionAttribute`, and `perceptionSkill`. The two attribute fields are required by the Worlds UI and must use defined attribute keys; skill fields are optional and come from `defaultExistingSkills`.
-  - Includes optional `modSettings`, a namespaced object used by enabled mod setting fields. Enabled mods may render those fields in their own World Profiles tabs, but the persisted payload remains this same object shape.
+  - Includes optional `modSettings`, a namespaced object used by enabled mod setting fields. Enabled mods may render those fields in their own World Profiles tabs, but the persisted payload remains this same object shape. Non-persisted mod action controls, such as preset-apply selects, update editable fields in the UI but are not included in `modSettings`.
 
 Response:
 - 201: `{ success: true, setting: SettingInfo, message }`
@@ -70,7 +70,7 @@ Request:
   - Supports `calendarDefinition`; invalid calendar JSON/shape is rejected with `400`.
   - Supports `unifiedTonalScale` updates with numeric levels, generated half-step values, and optional comments.
   - Supports the hide/perception mechanic selectors: required `hidingAttribute` / `perceptionAttribute` and optional `hidingSkill` / `perceptionSkill`.
-  - Supports `modSettings` updates. Invalid non-object `modSettings` payloads are rejected by `SettingInfo`; tab placement is UI metadata from enabled mods and does not change the API shape.
+  - Supports `modSettings` updates. Invalid non-object `modSettings` payloads are rejected by `SettingInfo`; tab placement, select options, and preset action controls are UI metadata from enabled mods and do not change the API shape.
 
 Response:
 - 200: `{ success: true, setting: SettingInfo, message }`
