@@ -1558,6 +1558,9 @@ p:not(:last-child) {
 .app-header-icon--worlds {
   --app-header-icon: url("/assets/material-icons/game-tab-icons/world_map.svg");
 }
+.app-header-icon--mods {
+  --app-header-icon: url("/assets/material-icons/misc/puzzle.svg");
+}
 .app-header-icon--lorebooks {
   --app-header-icon: url("/assets/material-icons/game-tab-icons/book.svg");
 }

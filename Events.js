@@ -4836,6 +4836,34 @@ class Events {
         return parts.join(" → ");
     }
 
+    static _formatRegisteredXmlEventRaw(node) {
+        const toPlainValue = (currentNode) => {
+            const children = this._getXmlElementChildren(currentNode);
+            if (!children.length) {
+                const text = currentNode?.textContent;
+                return typeof text === "string" ? text.trim() : "";
+            }
+            const result = {};
+            for (const child of children) {
+                const key = child?.tagName;
+                if (!key) {
+                    continue;
+                }
+                const value = toPlainValue(child);
+                if (Object.prototype.hasOwnProperty.call(result, key)) {
+                    if (!Array.isArray(result[key])) {
+                        result[key] = [result[key]];
+                    }
+                    result[key].push(value);
+                } else {
+                    result[key] = value;
+                }
+            }
+            return result;
+        };
+        return JSON.stringify(toPlainValue(node));
+    }
+
     static _mapXmlEventNodeToLegacyRaw(node) {
         const tagName = node?.tagName;
         switch (tagName) {
@@ -5313,6 +5341,18 @@ class Events {
                     ]),
                 };
             default:
+                {
+                    const registry = Globals.modExtensionRegistry || this._deps?.modExtensionRegistry || null;
+                    const registeredEvent = registry && typeof registry.getXmlEventByTagName === "function"
+                        ? registry.getXmlEventByTagName(tagName)
+                        : null;
+                    if (registeredEvent) {
+                        return {
+                            key: registeredEvent.eventKey,
+                            raw: this._formatRegisteredXmlEventRaw(node),
+                        };
+                    }
+                }
                 throw new Error(`Unknown event XML tag <${tagName}>.`);
         }
     }
@@ -5336,10 +5376,18 @@ class Events {
         const { trackItems = true } = options || {};
         const rawEntries = {};
         const parsedEntries = {};
-        const parsers =
+        const builtParsers =
             this._parsers && Object.keys(this._parsers).length
                 ? this._parsers
                 : this._buildParsers();
+        const registry = Globals.modExtensionRegistry || this._deps?.modExtensionRegistry || null;
+        const modParsers = registry && typeof registry.getXmlEventParsers === "function"
+            ? registry.getXmlEventParsers()
+            : {};
+        const parsers = {
+            ...builtParsers,
+            ...modParsers,
+        };
         const aggregators =
             this._aggregators && Object.keys(this._aggregators).length
                 ? this._aggregators
@@ -5865,7 +5913,11 @@ class Events {
             if (suppressedNpc?.has(key) || suppressedItems?.has(key) || suppressedMoves?.has(key)) {
                 continue;
             }
-            const handler = this._handlers[key];
+            const registry = Globals.modExtensionRegistry || this._deps?.modExtensionRegistry || null;
+            const modHandlers = registry && typeof registry.getXmlEventHandlers === "function"
+                ? registry.getXmlEventHandlers()
+                : {};
+            const handler = this._handlers[key] || modHandlers[key];
             if (typeof handler !== "function") {
                 continue;
             }
@@ -7499,12 +7551,14 @@ class Events {
     }
 
     static _getMysteryBoxIndexForPrompt() {
-        return MysteryBox.getAll().map((box) => ({
-            id: box.id,
-            name: box.name,
-            keys: [...box.keys],
-            text: box.text,
-        }));
+        return MysteryBox.getAll()
+            .filter((box) => !box.resolved)
+            .map((box) => ({
+                id: box.id,
+                name: box.name,
+                keys: [...box.keys],
+                text: box.text,
+            }));
     }
 
     static _resolveMysteryThreadMaxActive(config = this.config || {}) {
@@ -7529,6 +7583,7 @@ class Events {
             serialized.mysteryBoxes = thread.boxIds
                 .map((boxId) => MysteryBox.getById(boxId))
                 .filter(Boolean)
+                .filter((box) => !box.resolved)
                 .map((box) => ({
                     id: box.id,
                     name: box.name,
@@ -7633,9 +7688,9 @@ class Events {
     }
 
     static _parseMysteryThreadCheckResponse(responseText) {
-        const xml = Utils.extractFinalXmlRootBlock(responseText || "", "resolvedMysteryThreads");
+        const xml = Utils.extractFinalXmlRootBlock(responseText || "", "resolvedMysteries");
         if (!xml) {
-            throw new Error("Mystery thread check response missing <resolvedMysteryThreads> root.");
+            throw new Error("Mystery thread check response missing <resolvedMysteries> root.");
         }
 
         let doc;
@@ -7646,11 +7701,11 @@ class Events {
         }
 
         const root = doc?.documentElement;
-        if (!root || root.tagName !== "resolvedMysteryThreads") {
-            throw new Error("Mystery thread check response did not parse into <resolvedMysteryThreads>.");
+        if (!root || root.tagName !== "resolvedMysteries") {
+            throw new Error("Mystery thread check response did not parse into <resolvedMysteries>.");
         }
 
-        return this._getXmlElementChildren(root)
+        const threads = this._getXmlElementChildren(root)
             .filter((child) => child.tagName === "mysteryThread")
             .map((child) => ({
                 name: normalizeString(this._getXmlDirectChildText(child, "name")),
@@ -7663,6 +7718,21 @@ class Events {
                 console.warn("Mystery thread check returned a resolved mysteryThread entry without a name; ignoring it.");
                 return false;
             });
+
+        const boxes = this._getXmlElementChildren(root)
+            .filter((child) => child.tagName === "mysteryBox")
+            .map((child) => ({
+                name: normalizeString(this._getXmlDirectChildText(child, "name")),
+            }))
+            .filter((entry) => {
+                if (entry.name) {
+                    return true;
+                }
+                console.warn("Mystery thread check returned a resolved mysteryBox entry without a name; ignoring it.");
+                return false;
+            });
+
+        return { threads, boxes };
     }
 
     static _markResolvedMysteryThreadsInactive(resolvedThreads = []) {
@@ -7695,6 +7765,35 @@ class Events {
         }
 
         return inactivated;
+    }
+
+    static _markResolvedMysteryBoxes(resolvedBoxes = []) {
+        if (!Array.isArray(resolvedBoxes) || !resolvedBoxes.length) {
+            return [];
+        }
+
+        const resolved = [];
+        for (const entry of resolvedBoxes) {
+            const name = normalizeString(entry?.name);
+            if (!name) {
+                console.warn("Mystery thread check returned a resolved box without a name; ignoring it.");
+                continue;
+            }
+
+            const box = MysteryBox.getById(name) || MysteryBox.getByKey(name);
+            if (!box) {
+                console.warn(`Mystery thread check returned resolved box "${name}", but it does not match any mystery box; continuing.`);
+                continue;
+            }
+
+            box.markResolved();
+            resolved.push({
+                id: box.id,
+                name: box.name,
+            });
+        }
+
+        return resolved;
     }
 
     static _applyMysteryBoxUpdate(update, mention = {}, context = {}) {
@@ -7878,7 +7977,10 @@ class Events {
         const activeMysteryThreads = MysteryThread.getActive({ max: Number.MAX_SAFE_INTEGER })
             .map((thread) => this._serializeMysteryThreadForPrompt(thread, { includeBoxes: true }));
         if (!activeMysteryThreads.length) {
-            return [];
+            return {
+                inactivatedThreads: [],
+                resolvedBoxes: [],
+            };
         }
 
         const baseContext = await prepareBasePromptContext({
@@ -7909,7 +8011,7 @@ class Events {
             timeoutMs: this._baseTimeout,
             temperature: 0,
             validateXML: false,
-            requiredRegex: /<resolvedMysteryThreads[\s>]/,
+            requiredRegex: /<resolvedMysteries[\s>]/,
         });
 
         LLMClient.logPrompt({
@@ -7920,8 +8022,11 @@ class Events {
             response: responseText || "",
         });
 
-        const resolvedThreads = this._parseMysteryThreadCheckResponse(responseText);
-        return this._markResolvedMysteryThreadsInactive(resolvedThreads);
+        const resolvedMysteries = this._parseMysteryThreadCheckResponse(responseText);
+        return {
+            inactivatedThreads: this._markResolvedMysteryThreadsInactive(resolvedMysteries.threads),
+            resolvedBoxes: this._markResolvedMysteryBoxes(resolvedMysteries.boxes),
+        };
     }
 
     static async _runMysteryBoxUpdatePrompt(mention, context = {}) {
@@ -11579,12 +11684,20 @@ class Events {
                 context.mysteryBoxUpdates = Array.isArray(context.mysteryBoxUpdates)
                     ? context.mysteryBoxUpdates
                     : [];
-                const inactivatedThreads = await this._runMysteryThreadCheckPrompt(context);
+                const mysteryResolution = await this._runMysteryThreadCheckPrompt(context);
+                const inactivatedThreads = mysteryResolution.inactivatedThreads || [];
                 if (inactivatedThreads.length) {
                     context.inactivatedMysteryThreads = Array.isArray(context.inactivatedMysteryThreads)
                         ? context.inactivatedMysteryThreads
                         : [];
                     context.inactivatedMysteryThreads.push(...inactivatedThreads);
+                }
+                const resolvedBoxes = mysteryResolution.resolvedBoxes || [];
+                if (resolvedBoxes.length) {
+                    context.resolvedMysteryBoxes = Array.isArray(context.resolvedMysteryBoxes)
+                        ? context.resolvedMysteryBoxes
+                        : [];
+                    context.resolvedMysteryBoxes.push(...resolvedBoxes);
                 }
                 for (const entry of entries) {
                     const box = await this._runMysteryBoxUpdatePrompt(entry, context);

@@ -88,6 +88,23 @@ Rules:
 - Do not emit more than one player/party travel event in a single `<events>` block.
 - `newExitDiscovered` is a normal event and does not create a context boundary.
 - Emit one element for each observed event. Downstream processing may aggregate compatible entries later.
+{% if modEventPromptSchemas and modEventPromptSchemas.length %}
+
+## Registered Mod Event Elements
+
+The active mods also accept these event tags. Use them only when the prose explicitly supports the event.
+
+{% for schema in modEventPromptSchemas %}
+
+### `{{ schema.name }}`
+
+{{ schema.description }}
+
+```xml
+{{ schema.xml }}
+```
+{% endfor %}
+{% endif %}
 
 ## Travel Boundary
 

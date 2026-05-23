@@ -281,6 +281,26 @@ The below context is an account of the current game state, including the setting
         <needs>
 {% for sentence in npc.needs %}        - {{ sentence }}
 {% endfor %}        </needs>
+        {% if npc.modStatusSections and npc.modStatusSections.length %}
+        <modStatus>
+          {% for section in npc.modStatusSections %}
+          <section key="{{ section.key }}" label="{{ section.label }}">
+            {% for entry in section.entries %}
+            <entry>
+              {% if entry.slot %}<slot>{{ entry.slot }}</slot>{% endif %}
+              {% if entry.itemName %}<itemName>{{ entry.itemName }}</itemName>{% endif %}
+              {% if entry.name %}<name>{{ entry.name }}</name>{% endif %}
+              {% if entry.level %}<level>{{ entry.level }}</level>{% endif %}
+              {% if entry.manaUsage %}<manaUsage>{{ entry.manaUsage }}</manaUsage>{% endif %}
+              {% if entry.cost %}<cost>{{ entry.cost }}</cost>{% endif %}
+              {% if entry.description %}<description>{{ entry.description }}</description>{% endif %}
+              {% if entry.effectSummary %}<effectSummary>{{ entry.effectSummary }}</effectSummary>{% endif %}
+            </entry>
+            {% endfor %}
+          </section>
+          {% endfor %}
+        </modStatus>
+        {% endif %}
       </npc>
       {% endif %}
       {% endfor %}
@@ -411,6 +431,26 @@ The below context is an account of the current game state, including the setting
     <needs>
 {% for sentence in currentPlayer.needs %}      - {{ sentence }}
 {% endfor %}    </needs>
+    {% if currentPlayer.modStatusSections and currentPlayer.modStatusSections.length %}
+    <modStatus>
+      {% for section in currentPlayer.modStatusSections %}
+      <section key="{{ section.key }}" label="{{ section.label }}">
+        {% for entry in section.entries %}
+        <entry>
+          {% if entry.slot %}<slot>{{ entry.slot }}</slot>{% endif %}
+          {% if entry.itemName %}<itemName>{{ entry.itemName }}</itemName>{% endif %}
+          {% if entry.name %}<name>{{ entry.name }}</name>{% endif %}
+          {% if entry.level %}<level>{{ entry.level }}</level>{% endif %}
+          {% if entry.manaUsage %}<manaUsage>{{ entry.manaUsage }}</manaUsage>{% endif %}
+          {% if entry.cost %}<cost>{{ entry.cost }}</cost>{% endif %}
+          {% if entry.description %}<description>{{ entry.description }}</description>{% endif %}
+          {% if entry.effectSummary %}<effectSummary>{{ entry.effectSummary }}</effectSummary>{% endif %}
+        </entry>
+        {% endfor %}
+      </section>
+      {% endfor %}
+    </modStatus>
+    {% endif %}
     {% if not suppressQuestList %}
     <quests>
       {% for quest in currentPlayer.currentQuests %}
@@ -506,6 +546,26 @@ The below context is an account of the current game state, including the setting
       <needs>
 {% for sentence in member.needs %}        - {{ sentence }}
 {% endfor %}      </needs>
+      {% if member.modStatusSections and member.modStatusSections.length %}
+      <modStatus>
+        {% for section in member.modStatusSections %}
+        <section key="{{ section.key }}" label="{{ section.label }}">
+          {% for entry in section.entries %}
+          <entry>
+            {% if entry.slot %}<slot>{{ entry.slot }}</slot>{% endif %}
+            {% if entry.itemName %}<itemName>{{ entry.itemName }}</itemName>{% endif %}
+            {% if entry.name %}<name>{{ entry.name }}</name>{% endif %}
+            {% if entry.level %}<level>{{ entry.level }}</level>{% endif %}
+            {% if entry.manaUsage %}<manaUsage>{{ entry.manaUsage }}</manaUsage>{% endif %}
+            {% if entry.cost %}<cost>{{ entry.cost }}</cost>{% endif %}
+            {% if entry.description %}<description>{{ entry.description }}</description>{% endif %}
+            {% if entry.effectSummary %}<effectSummary>{{ entry.effectSummary }}</effectSummary>{% endif %}
+          </entry>
+          {% endfor %}
+        </section>
+        {% endfor %}
+      </modStatus>
+      {% endif %}
     </member>
     {% endfor %}
   </playerParty>
@@ -575,6 +635,7 @@ The below context is an account of the current game state, including the setting
       {% if thread.mysteryBoxes and thread.mysteryBoxes.length %}
       <mysteryBoxes>
         {% for box in thread.mysteryBoxes %}
+        {% if not box.resolved %}
         <mysteryBox id="{{ box.id }}">
           <name>{{ box.name }}</name>
           {% if box.keys and box.keys.length %}
@@ -582,6 +643,7 @@ The below context is an account of the current game state, including the setting
           {% endif %}
           <text>{{ box.text }}</text>
         </mysteryBox>
+        {% endif %}
         {% endfor %}
       </mysteryBoxes>
       {% endif %}

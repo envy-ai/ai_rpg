@@ -5,6 +5,8 @@
 server:
   port: 7777
   host: 0.0.0.0 # Use localhost for local development, 0.0.0.0 for external access
+  allowSelfRestart: false
+  selfRestartPortRetrySeconds: 10
 
 max_memories_to_recall: 10
 
@@ -509,6 +511,7 @@ barter:
 
 # When true, prose-prompt tool calls are written to a visible prompt-excluded debug chat entry as they run.
 debug_tool_calls: false
+max_tool_calls: 8
 
 # When true, player-action <hidden> notes are included in the client-visible chat log.
 show_hidden_notes: false

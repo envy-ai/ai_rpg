@@ -40,7 +40,9 @@ Active Mystery Threads:
   Constraints: {{ thread.constraints | join(' | ') }}
   Boxes:
   {%- for box in thread.mysteryBoxes %}
+  {%- if not box.resolved %}
   - {{ box.name }} (id: {{ box.id }}, keys: {{ box.keys | join(', ') }}): {{ box.text }}
+  {%- endif %}
   {%- endfor %}
 {% else %}
 - None
@@ -52,7 +54,8 @@ All Mystery Thread TOC:
 {% endfor -%}
 
 Mystery Box TOC:
-{%- for box in mysteryBoxes %} - {{ box.name }} (keys: {{ box.keys | join(', ') }})
+{%- for box in mysteryBoxes %}{% if not box.resolved %} - {{ box.name }} (keys: {{ box.keys | join(', ') }})
+{% endif %}
 {% endfor -%}
 
 Phase 1: Free text planning. Identify the core hidden truth that the mention implies, the correct mystery thread, and any consistency risks with existing active threads. Decide if this matches an existing mystery box or if a new one should be created. Use tool calls to query other information (including existing mystery boxes and mystery threads) if needed. Do not include XML tags in this phase.
@@ -67,16 +70,19 @@ Phase 2: Write the mystery box update XML precisely according to the format belo
     <status>active</status>
     <keys>
       <key>Useful thread alias</key>
+      ... no more than 5 keys total; if over this limit, pare down to 5 ...
     </keys>
-    <summary>Compact private summary of the whole thread after this update.</summary>
+    <summary>up to 4 paragraph summary of the mystery thread after this update. Omit any information from the text that is already known in the main context outside of the mystery thread (as this is redundant). Omit anything already described in a mystery box inside this thread. Omit any speculation or planning. Only include what is really going on that's not known in the greater story context. Do not pad to 4 paragraphs if not necessary</summary>
     <constraints>
       <constraint>Canonical fact or consistency rule the GM must preserve.</constraint>
+      ... up to 8 constraints total ...
     </constraints>
   </thread>
   <name>Exact, unique name for the mystery box</name>
   <keys>
     <key>Useful alias or related term</key>
     <key>more keys as necessary</key>
+    ... no more than 5 keys total ...
   </keys>
-  <text>Private GM note for this mystery box with necessary details.</text>
+  <text>up to 2 paragraph private GM note for this mystery box explaining what it really is. Omit any information from the text that is already known in the main context outside of the mystery box (as this is redundant). Omit any speculation or planning. Only include what the mystery box really is. Do not pad the length to 2 paragraphs if not necessary.</text>
 </mysteryBoxUpdate>

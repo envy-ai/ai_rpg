@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+{% set pageTitleValue = title | default("Mods") %}
+<head>
+    {% include "_includes/head-common.njk" %}
+    <link rel="stylesheet" href="/css/config.css">
+</head>
+<body>
+    <div class="container">
+        {% set appHeaderTitle = 'Mods' %}
+        {% set appHeaderSubtitle = 'Enable or disable runtime mods' %}
+        {% include "_includes/app-header.njk" %}
+
+        <main class="config-content">
+            <div id="mods-status-message" class="status-message" hidden></div>
+            <section class="config-section">
+                <h2>Mod Manager</h2>
+                <p class="help-text">Changing enabled mods updates config.yaml. Runtime hooks and defs overlays reload only after restart.</p>
+                <div id="mods-restart-warning" class="warning-message" {% if not modState.restartRequired %}hidden{% endif %}>
+                    Restart required for configured mod changes to become active.
+                </div>
+                <form id="mods-manager-form">
+                    <div id="mods-manager-list" class="form-grid">
+                        {% for mod in modState.mods %}
+                        <div class="form-group full-width">
+                            <label for="mod-enabled-{{ mod.name }}">{{ mod.name }}</label>
+                            <div class="checkbox-wrapper">
+                                <input type="checkbox"
+                                       id="mod-enabled-{{ mod.name }}"
+                                       value="{{ mod.name }}"
+                                       data-mod-enabled-checkbox="true"
+                                       {% if mod.configuredEnabled %}checked{% endif %}>
+                            </div>
+                            <span class="help-text">
+                                Active now: {{ "yes" if mod.activeEnabled else "no" }}.
+                                Contains: {{ "mod.js" if mod.hasModJs else "" }}{% if mod.hasModJs and mod.hasDefsDir %}, {% endif %}{{ "defs" if mod.hasDefsDir else "" }}.
+                                {% if mod.restartRequired %}Restart required for this change.{% endif %}
+                            </span>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    <div class="form-actions">
+                        <button type="submit" class="btn btn-primary">Save Mod Selection</button>
+                        <button type="button" class="btn btn-secondary" id="mods-refresh-button">Refresh</button>
+                    </div>
+                </form>
+            </section>
+        </main>
+    </div>
+
+    <script>
+    (function () {
+        const form = document.getElementById('mods-manager-form');
+        const list = document.getElementById('mods-manager-list');
+        const status = document.getElementById('mods-status-message');
+        const warning = document.getElementById('mods-restart-warning');
+        const refreshButton = document.getElementById('mods-refresh-button');
+
+        function setStatus(message, type = 'info') {
+            if (!status) return;
+            status.textContent = message || '';
+            status.className = `status-message ${type}`;
+            status.hidden = !message;
+        }
+
+        function collectEnabledMods() {
+            return Array.from(document.querySelectorAll('[data-mod-enabled-checkbox="true"]'))
+                .filter(checkbox => checkbox.checked)
+                .map(checkbox => checkbox.value);
+        }
+
+        function renderMods(state) {
+            if (!list || !state || !Array.isArray(state.mods)) return;
+            list.innerHTML = '';
+            state.mods.forEach(mod => {
+                const contains = [
+                    mod.hasModJs ? 'mod.js' : '',
+                    mod.hasDefsDir ? 'defs' : ''
+                ].filter(Boolean).join(', ');
+                const group = document.createElement('div');
+                group.className = 'form-group full-width';
+
+                const label = document.createElement('label');
+                label.setAttribute('for', `mod-enabled-${mod.name}`);
+                label.textContent = mod.name;
+
+                const wrapper = document.createElement('div');
+                wrapper.className = 'checkbox-wrapper';
+
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.id = `mod-enabled-${mod.name}`;
+                checkbox.value = mod.name;
+                checkbox.dataset.modEnabledCheckbox = 'true';
+                checkbox.checked = mod.configuredEnabled === true;
+                wrapper.appendChild(checkbox);
+
+                const help = document.createElement('span');
+                help.className = 'help-text';
+                help.textContent = `Active now: ${mod.activeEnabled ? 'yes' : 'no'}. Contains: ${contains || 'metadata only'}. ${mod.restartRequired ? 'Restart required for this change.' : ''}`;
+
+                group.appendChild(label);
+                group.appendChild(wrapper);
+                group.appendChild(help);
+                list.appendChild(group);
+            });
+            if (warning) {
+                warning.hidden = !state.restartRequired;
+            }
+        }
+
+        async function refreshMods() {
+            const response = await fetch('/api/mods/manager', { cache: 'no-store' });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok || !data?.success) {
+                throw new Error(data?.error || `HTTP ${response.status}`);
+            }
+            renderMods(data.modState);
+        }
+
+        if (refreshButton) {
+            refreshButton.addEventListener('click', () => {
+                refreshMods().catch(error => setStatus(`Refresh failed: ${error.message}`, 'error'));
+            });
+        }
+
+        if (form) {
+            form.addEventListener('submit', async (event) => {
+                event.preventDefault();
+                setStatus('Saving mod selection...', 'info');
+                try {
+                    const response = await fetch('/api/mods/enabled', {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ enabledMods: collectEnabledMods() })
+                    });
+                    const data = await response.json().catch(() => ({}));
+                    if (!response.ok || !data?.success) {
+                        throw new Error(data?.error || `HTTP ${response.status}`);
+                    }
+                    renderMods(data.modState);
+                    setStatus(data.restartRequired
+                        ? 'Mod selection saved. Restart required before changes are active.'
+                        : 'Mod selection saved.',
+                        'success');
+                } catch (error) {
+                    setStatus(`Save failed: ${error.message}`, 'error');
+                }
+            });
+        }
+    })();
+    </script>
+</body>
+</html>

@@ -109,8 +109,13 @@ class ModLoader {
             throw new Error(`mod.js must export a register(scope) function`);
         }
 
+        const modConfig = this.#loadModConfigFromDirectory(modName, modDir, mod);
+
         // Create a mod-specific scope with additional helpers
-        const modScope = this.createModScope(modName, modDir, scope);
+        const modScope = this.createModScope(modName, modDir, scope, {
+            mod,
+            modConfig
+        });
 
         // Call the mod's register function
         mod.register(modScope);
@@ -120,7 +125,8 @@ class ModLoader {
             name: modName,
             dir: modDir,
             mod: mod,
-            meta: mod.meta || {}
+            meta: mod.meta || {},
+            config: modConfig
         });
     }
 
@@ -131,8 +137,9 @@ class ModLoader {
      * @param {Object} scope - The base apiScope
      * @returns {Object} Extended scope for the mod
      */
-    createModScope(modName, modDir, scope) {
+    createModScope(modName, modDir, scope, { mod = {}, modConfig = null } = {}) {
         const nunjucks = scope.nunjucks;
+        const modExtensionRegistry = scope.modExtensionRegistry || null;
 
         // Create a Nunjucks environment for this mod's prompts
         const modPromptsDir = path.join(modDir, 'prompts');
@@ -205,7 +212,101 @@ class ModLoader {
             modLoader: this,
 
             // Mod configuration
-            modConfig: this.getModConfig(modName)
+            modConfig: modConfig || this.#loadModConfigFromDirectory(modName, modDir, mod),
+
+            modExtensionRegistry,
+
+            registerChatTool: (options = {}) => {
+                if (!modExtensionRegistry || typeof modExtensionRegistry.registerChatTool !== 'function') {
+                    throw new Error(`Mod "${modName}" cannot register chat tools because no ModExtensionRegistry is available.`);
+                }
+                return modExtensionRegistry.registerChatTool({
+                    ...options,
+                    modName
+                });
+            },
+
+            registerXmlEvent: (options = {}) => {
+                if (!modExtensionRegistry || typeof modExtensionRegistry.registerXmlEvent !== 'function') {
+                    throw new Error(`Mod "${modName}" cannot register XML events because no ModExtensionRegistry is available.`);
+                }
+                return modExtensionRegistry.registerXmlEvent({
+                    ...options,
+                    modName
+                });
+            },
+
+            registerBaseContextContributor: (contributor) => {
+                if (!modExtensionRegistry || typeof modExtensionRegistry.registerBaseContextContributor !== 'function') {
+                    throw new Error(`Mod "${modName}" cannot register base context contributors because no ModExtensionRegistry is available.`);
+                }
+                return modExtensionRegistry.registerBaseContextContributor({ modName, contributor });
+            },
+
+            registerActorStatusContributor: (contributor) => {
+                if (!modExtensionRegistry || typeof modExtensionRegistry.registerActorStatusContributor !== 'function') {
+                    throw new Error(`Mod "${modName}" cannot register actor status contributors because no ModExtensionRegistry is available.`);
+                }
+                return modExtensionRegistry.registerActorStatusContributor({ modName, contributor });
+            },
+
+            registerAttributeModifierContributor: (contributor) => {
+                if (!modExtensionRegistry || typeof modExtensionRegistry.registerAttributeModifierContributor !== 'function') {
+                    throw new Error(`Mod "${modName}" cannot register attribute modifier contributors because no ModExtensionRegistry is available.`);
+                }
+                return modExtensionRegistry.registerAttributeModifierContributor({ modName, contributor });
+            },
+
+            registerStatusEffectContributor: (contributor) => {
+                if (!modExtensionRegistry || typeof modExtensionRegistry.registerStatusEffectContributor !== 'function') {
+                    throw new Error(`Mod "${modName}" cannot register status effect contributors because no ModExtensionRegistry is available.`);
+                }
+                return modExtensionRegistry.registerStatusEffectContributor({ modName, contributor });
+            },
+
+            registerInventorySyncContributor: (contributor) => {
+                if (!modExtensionRegistry || typeof modExtensionRegistry.registerInventorySyncContributor !== 'function') {
+                    throw new Error(`Mod "${modName}" cannot register inventory sync contributors because no ModExtensionRegistry is available.`);
+                }
+                return modExtensionRegistry.registerInventorySyncContributor({ modName, contributor });
+            },
+
+            registerSettingTab: (options = {}) => {
+                if (!modExtensionRegistry || typeof modExtensionRegistry.registerSettingTab !== 'function') {
+                    throw new Error(`Mod "${modName}" cannot register setting tabs because no ModExtensionRegistry is available.`);
+                }
+                return modExtensionRegistry.registerSettingTab({
+                    ...options,
+                    modName
+                });
+            },
+
+            registerSettingField: (options = {}) => {
+                if (!modExtensionRegistry || typeof modExtensionRegistry.registerSettingField !== 'function') {
+                    throw new Error(`Mod "${modName}" cannot register setting fields because no ModExtensionRegistry is available.`);
+                }
+                return modExtensionRegistry.registerSettingField({
+                    ...options,
+                    modName
+                });
+            },
+
+            registerEntityField: (options = {}) => {
+                if (!modExtensionRegistry || typeof modExtensionRegistry.registerEntityField !== 'function') {
+                    throw new Error(`Mod "${modName}" cannot register entity fields because no ModExtensionRegistry is available.`);
+                }
+                return modExtensionRegistry.registerEntityField({
+                    ...options,
+                    modName
+                });
+            },
+
+            registerStartupValidator: (validator) => {
+                if (!modExtensionRegistry || typeof modExtensionRegistry.registerStartupValidator !== 'function') {
+                    throw new Error(`Mod "${modName}" cannot register startup validators because no ModExtensionRegistry is available.`);
+                }
+                return modExtensionRegistry.registerStartupValidator({ modName, validator });
+            }
         });
 
         return modScope;
@@ -219,7 +320,11 @@ class ModLoader {
         const modInfo = this.loadedMods.get(modName);
         if (!modInfo) return {};
 
-        const configPath = path.join(modInfo.dir, 'config.json');
+        return this.#loadModConfigFromDirectory(modName, modInfo.dir, modInfo.mod);
+    }
+
+    #loadModConfigFromDirectory(modName, modDir, mod = {}) {
+        const configPath = path.join(modDir, 'config.json');
         let config = {};
 
         // Load saved config if exists
@@ -232,8 +337,8 @@ class ModLoader {
         }
 
         // Apply defaults from schema if available
-        if (modInfo.mod.configSchema) {
-            for (const [key, schema] of Object.entries(modInfo.mod.configSchema)) {
+        if (mod.configSchema) {
+            for (const [key, schema] of Object.entries(mod.configSchema)) {
                 if (config[key] === undefined && schema.default !== undefined) {
                     config[key] = schema.default;
                 }

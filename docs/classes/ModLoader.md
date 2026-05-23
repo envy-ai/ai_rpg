@@ -20,6 +20,8 @@ Loads and initializes enabled mods from the `mods/` directory. Provides per-mod 
   - `renderModPrompt(templateName, context)`
   - `registerModRoute(method, path, handler)`
   - `modConfig` (resolved config)
+  - `modExtensionRegistry`
+  - hook helpers: `registerChatTool`, `registerXmlEvent`, `registerBaseContextContributor`, `registerActorStatusContributor`, `registerAttributeModifierContributor`, `registerStatusEffectContributor`, `registerInventorySyncContributor`, `registerSettingTab`, `registerSettingField`, `registerEntityField`, and `registerStartupValidator`
 - `getModConfig(modName)`: loads `config.json` and applies `configSchema` defaults.
 - `getModConfigs()`: returns list of `{ name, displayName, schema, config }`.
 - `saveModConfig(modName, newConfig)`: persists config to `config.json`.
@@ -35,3 +37,4 @@ Loads and initializes enabled mods from the `mods/` directory. Provides per-mod 
 - The active mod set is frozen at startup; toggling `config.json.enabled` on disk requires a restart to change the running set.
 - `registerModRoute` namespaces routes under `/api/mods/<modName>/...`.
 - Mod prompt environments receive the shared `eval` Nunjucks filter when the server provides it in scope.
+- `modConfig` is resolved before `register(scope)` runs, so mods can read schema defaults during registration.

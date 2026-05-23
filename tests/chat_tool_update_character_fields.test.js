@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const { CHAT_TOOL_DEFINITIONS, createChatToolRuntime } = require('../chat_tool_calls.js');
+const ModExtensionRegistry = require('../ModExtensionRegistry.js');
 
 function findToolDefinition(name) {
     return CHAT_TOOL_DEFINITIONS.find(entry => entry?.function?.name === name)?.function || null;
@@ -116,6 +117,13 @@ function makeThing(overrides = {}) {
         level: overrides.level ?? 1,
         relativeLevel: overrides.relativeLevel ?? 0,
         metadata: { ...(overrides.metadata || {}) },
+        extensionFields: { ...(overrides.extensionFields || {}) },
+        setExtensionField(fieldName, value) {
+            this.extensionFields[fieldName] = value;
+        },
+        getExtensionField(fieldName) {
+            return this.extensionFields[fieldName];
+        },
         setStatusEffects(value) {
             this.statusEffects = Array.from(value);
             return this.statusEffects;
@@ -278,7 +286,8 @@ function makeRuntime({
     things = [],
     locations = null,
     regions = null,
-    factions = []
+    factions = [],
+    modExtensionRegistry = null
 }) {
     const locationList = locations || [makeLocation()];
     const regionList = regions || [makeRegion({ locationIds: locationList.map(location => location.id) })];
@@ -330,7 +339,8 @@ function makeRuntime({
         getGameLocations: () => new Map(locationList.map(entry => [entry.id, entry])),
         getFactions: () => new Map(factions.map(entry => [entry.id, entry])),
         getRegionsMap: () => new Map(regionList.map(entry => [entry.id, entry])),
-        getPendingRegionStubs: () => new Map()
+        getPendingRegionStubs: () => new Map(),
+        getModExtensionRegistry: () => modExtensionRegistry
     });
 }
 
@@ -515,6 +525,37 @@ test('updateObjectFields applies allowed thing, location, region, and faction fi
         assert.equal(result.toolInvocations[0].metadata.objectType, objectType);
         assert.deepEqual(result.toolInvocations[0].metadata.updatedFields, Object.keys(fields));
     }
+});
+
+test('updateObjectFields applies registered first-class Thing fields', async () => {
+    const registry = new ModExtensionRegistry();
+    registry.registerEntityField({
+        modName: 'implants',
+        entityType: 'thing',
+        fieldName: 'implantSlot',
+        type: 'string',
+        description: 'Implant grouping slot.',
+        exposeToUpdateTool: true
+    });
+    const thing = makeThing();
+    const runtime = makeRuntime({
+        firstResponse: toolResponse({
+            objectType: 'thing',
+            object: thing.id,
+            fields: { implantSlot: 'neural' }
+        }, 'updateObjectFields'),
+        things: [thing],
+        modExtensionRegistry: registry
+    });
+
+    const result = await runtime.runChatCompletionWithToolLoop({
+        requestOptions: { messages: [{ role: 'user', content: '@Mark this thing as an implant.' }] },
+        metadataLabel: 'test_update_object_fields_registered_thing_field'
+    });
+
+    assert.equal(thing.extensionFields.implantSlot, 'neural');
+    assert.equal(result.toolInvocations[0].metadata.status, 'success');
+    assert.deepEqual(result.toolInvocations[0].metadata.updatedFields, ['implantSlot']);
 });
 
 test('updateObjectFields can update player-owned quests, objectives, and status effects by id', async () => {

@@ -85,6 +85,183 @@ test('revealEntity and hideEntity tool definitions require only an entity name',
     assert.equal(hideDefinition.parameters.additionalProperties, false);
 });
 
+test('updateMysteryBoxFields tool replaces selected mystery box fields', async () => {
+    IdGenerator.reset();
+    MysteryBox.clear();
+    MysteryThread.clear();
+
+    const box = new MysteryBox({
+        name: 'Captain Ellison',
+        keys: ['ELLISON-SEVEN', 'Omega-7 Captain'],
+        text: 'Initial private note.'
+    });
+
+    try {
+        const capturedMessagesByRound = [];
+        const runtime = createMinimalRuntime({
+            capturedMessagesByRound,
+            llmResponses: [
+                {
+                    data: {
+                        choices: [{
+                            message: {
+                                content: '',
+                                tool_calls: [{
+                                    id: 'call-update-mystery',
+                                    type: 'function',
+                                    function: {
+                                        name: 'updateMysteryBoxFields',
+                                        arguments: JSON.stringify({
+                                            mysteryBox: box.id,
+                                            fields: {
+                                                name: 'Director Ellison',
+                                                keys: ['Meridian Traitor'],
+                                                text: 'Updated private note.'
+                                            }
+                                        })
+                                    }
+                                }]
+                            }
+                        }]
+                    }
+                },
+                {
+                    data: {
+                        choices: [{
+                            message: {
+                                content: 'Done.',
+                                tool_calls: []
+                            }
+                        }]
+                    }
+                }
+            ]
+        });
+
+        const result = await runtime.runChatCompletionWithToolLoop({
+            requestOptions: {
+                messages: [{ role: 'user', content: 'Update the mystery box.' }],
+                tools: CHAT_TOOL_DEFINITIONS
+            },
+            metadataLabel: 'update_mystery_box_fields_test'
+        });
+
+        assert.equal(result.aiResponse, 'Done.');
+        assert.equal(result.toolInvocations[0].metadata.status, 'success');
+        assert.equal(box.name, 'Director Ellison');
+        assert.deepEqual(box.keys, ['Director Ellison', 'Meridian Traitor']);
+        assert.equal(box.text, 'Updated private note.');
+        assert.equal(MysteryBox.getByKey('Meridian Traitor'), box);
+        assert.equal(MysteryBox.getByKey('ELLISON-SEVEN'), null);
+
+        const toolMessage = capturedMessagesByRound[1].find(message => message.role === 'tool');
+        assert.ok(toolMessage, 'Expected a tool response message in the second round.');
+        assert.match(toolMessage.content, /<updateMysteryBoxFieldsResult>/);
+        assert.match(toolMessage.content, /<field>name<\/field>/);
+        assert.match(toolMessage.content, /<field>keys<\/field>/);
+        assert.match(toolMessage.content, /<field>text<\/field>/);
+    } finally {
+        MysteryBox.clear();
+        MysteryThread.clear();
+    }
+});
+
+test('updateMysteryThreadFields tool replaces selected mystery thread fields', async () => {
+    IdGenerator.reset();
+    MysteryBox.clear();
+    MysteryThread.clear();
+
+    const box = new MysteryBox({
+        name: 'Siphon Saboteur Identity',
+        keys: ['Drask'],
+        text: 'Kellen Drask is the siphoner.'
+    });
+    const thread = new MysteryThread({
+        name: 'Skyhawk Furnace Siphoning',
+        status: 'active',
+        keys: ['furnace siphon', 'old key'],
+        summary: 'Initial thread summary.',
+        constraints: ['Initial constraint.'],
+        boxIds: [box.id]
+    });
+
+    try {
+        const capturedMessagesByRound = [];
+        const runtime = createMinimalRuntime({
+            capturedMessagesByRound,
+            llmResponses: [
+                {
+                    data: {
+                        choices: [{
+                            message: {
+                                content: '',
+                                tool_calls: [{
+                                    id: 'call-update-mystery-thread',
+                                    type: 'function',
+                                    function: {
+                                        name: 'updateMysteryThreadFields',
+                                        arguments: JSON.stringify({
+                                            mysteryThread: thread.id,
+                                            fields: {
+                                                name: 'Skyhawk Furnace Betrayal',
+                                                status: 'inactive',
+                                                keys: ['Drask betrayal'],
+                                                summary: 'Updated private thread summary.',
+                                                constraints: ['Drask is confirmed as the siphoner.']
+                                            }
+                                        })
+                                    }
+                                }]
+                            }
+                        }]
+                    }
+                },
+                {
+                    data: {
+                        choices: [{
+                            message: {
+                                content: 'Done.',
+                                tool_calls: []
+                            }
+                        }]
+                    }
+                }
+            ]
+        });
+
+        const result = await runtime.runChatCompletionWithToolLoop({
+            requestOptions: {
+                messages: [{ role: 'user', content: 'Update the mystery thread.' }],
+                tools: CHAT_TOOL_DEFINITIONS
+            },
+            metadataLabel: 'update_mystery_thread_fields_test'
+        });
+
+        assert.equal(result.aiResponse, 'Done.');
+        assert.equal(result.toolInvocations[0].metadata.status, 'success');
+        assert.equal(thread.name, 'Skyhawk Furnace Betrayal');
+        assert.equal(thread.status, 'inactive');
+        assert.deepEqual(thread.keys, ['Skyhawk Furnace Betrayal', 'Drask betrayal']);
+        assert.equal(thread.summary, 'Updated private thread summary.');
+        assert.deepEqual(thread.constraints, ['Drask is confirmed as the siphoner.']);
+        assert.deepEqual(thread.boxIds, [box.id]);
+        assert.equal(MysteryThread.getByKey('Drask betrayal'), thread);
+        assert.equal(MysteryThread.getByKey('old key'), null);
+
+        const toolMessage = capturedMessagesByRound[1].find(message => message.role === 'tool');
+        assert.ok(toolMessage, 'Expected a tool response message in the second round.');
+        assert.match(toolMessage.content, /<updateMysteryThreadFieldsResult>/);
+        assert.match(toolMessage.content, /<field>name<\/field>/);
+        assert.match(toolMessage.content, /<field>status<\/field>/);
+        assert.match(toolMessage.content, /<field>keys<\/field>/);
+        assert.match(toolMessage.content, /<field>summary<\/field>/);
+        assert.match(toolMessage.content, /<field>constraints<\/field>/);
+    } finally {
+        MysteryBox.clear();
+        MysteryThread.clear();
+    }
+});
+
 test('revealEntity and hideEntity tool calls toggle hiddenFromPlayer without resolving checks', async () => {
     const capturedMessagesByRound = [];
     const shade = {
@@ -1391,6 +1568,135 @@ test('runChatCompletionWithToolLoop returns toolError and continues after tool-c
     );
 });
 
+test('runChatCompletionWithToolLoop uses top-level max_tool_calls for tool round exhaustion', async () => {
+    const capturedRounds = [];
+    const llmResponses = [
+        {
+            data: {
+                choices: [
+                    {
+                        message: {
+                            content: '',
+                            tool_calls: [
+                                {
+                                    id: 'call_allowed_top_level_limit',
+                                    type: 'function',
+                                    function: {
+                                        name: 'moreInfo',
+                                        arguments: JSON.stringify({
+                                            name: 'Missing First Thing',
+                                            type: 'thing'
+                                        })
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            data: {
+                choices: [
+                    {
+                        message: {
+                            content: '',
+                            tool_calls: [
+                                {
+                                    id: 'call_exhausted_top_level_limit',
+                                    type: 'function',
+                                    function: {
+                                        name: 'moreInfo',
+                                        arguments: JSON.stringify({
+                                            name: 'Missing Second Thing',
+                                            type: 'thing'
+                                        })
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            data: {
+                choices: [
+                    {
+                        message: {
+                            content: 'Finished after the configured top-level tool limit.',
+                            tool_calls: []
+                        }
+                    }
+                ]
+            }
+        }
+    ];
+
+    const runtime = createChatToolRuntime({
+        getConfig: () => ({
+            max_tool_calls: 1,
+            ai: { max_tool_rounds: 4 }
+        }),
+        getChatHistory: () => [],
+        isAssistantProseLikeEntry: () => true,
+        serializeNpcForClient: () => ({}),
+        buildLocationResponse: () => ({}),
+        getCurrentPlayer: () => ({ currentLocation: 'loc-origin' }),
+        createLocationFromEvent: async () => {
+            throw new Error('createLocationFromEvent should not be reached for this regression test.');
+        },
+        createRegionStubFromEvent: async () => {
+            throw new Error('createRegionStubFromEvent should not be reached for this regression test.');
+        },
+        generateItemsByNames: async () => [],
+        ensureExitConnection: () => {
+            throw new Error('ensureExitConnection should not be reached for this regression test.');
+        },
+        findRegionByLocationId: () => null,
+        LLMClient: {
+            chatCompletion: async (options) => {
+                capturedRounds.push({
+                    messages: structuredClone(options.messages),
+                    tools: Array.isArray(options.tools) ? structuredClone(options.tools) : options.tools,
+                    tool_choice: options.tool_choice
+                });
+                const response = llmResponses.shift();
+                assert.ok(response, 'Expected a queued LLM response for this round.');
+                options.onResponse?.(response);
+                return response.data.choices[0].message.content || '';
+            },
+            logPrompt: () => {},
+            writeLogFile: () => {},
+            formatMessagesForErrorLog: messages => JSON.stringify(messages)
+        },
+        Player: { getAll: () => [] },
+        Thing: { getAll: () => [] },
+        Location: { getAll: () => [], get: () => null },
+        Region: { getAll: () => [] },
+        getGameLocations: () => new Map(),
+        getFactions: () => [],
+        getRegionsMap: () => new Map(),
+        getPendingRegionStubs: () => new Map()
+    });
+
+    const result = await runtime.runChatCompletionWithToolLoop({
+        requestOptions: {
+            messages: [{ role: 'user', content: 'Look up two things.' }],
+            tools: CHAT_TOOL_DEFINITIONS
+        },
+        metadataLabel: 'top_level_tool_limit_test'
+    });
+
+    assert.equal(result.aiResponse, 'Finished after the configured top-level tool limit.');
+    assert.equal(result.toolInvocations.length, 2);
+    assert.equal(result.toolInvocations[0].metadata.error, undefined);
+    assert.equal(result.toolInvocations[1].metadata.code, 'tool_call_attempts_exhausted');
+    assert.match(result.toolInvocations[1].metadata.message, /after 1 tool-call round/i);
+    assert.equal(capturedRounds[2].tools, undefined);
+    assert.equal(capturedRounds[2].tool_choice, 'none');
+});
+
 test('getFullScene tool returns delineated actions and prose for a numbered scene', async () => {
     const chatHistory = [
         {
@@ -1552,6 +1858,7 @@ test('getFullScene out-of-range errors return toolError and continue the loop', 
     const capturedMessagesByRound = [];
     const debugEvents = [];
     const loggedPrompts = [];
+    const writtenErrorLogs = [];
     const sceneSummaries = {
         getScenesInOrder: () => [
             { startIndex: 1, endIndex: 1, startEntryId: 'a', endEntryId: 'a', summary: 'One.' },
@@ -1617,6 +1924,10 @@ test('getFullScene out-of-range errors return toolError and continue the loop', 
             logPrompt: (payload) => {
                 loggedPrompts.push(payload);
             },
+            writeLogFile: (payload) => {
+                writtenErrorLogs.push(payload);
+                return '/tmp/tool-call-failure.log';
+            },
             formatMessagesForErrorLog: messages => JSON.stringify(messages)
         },
         Player: { getAll: () => [] },
@@ -1661,6 +1972,12 @@ test('getFullScene out-of-range errors return toolError and continue the loop', 
         loggedPrompts.some(entry => entry?.prefix === 'get_full_scene_out_of_range_test_tool_call_error'),
         'Expected the tool execution error to be logged.'
     );
+    assert.equal(writtenErrorLogs.length, 1);
+    assert.equal(writtenErrorLogs[0].prefix, 'tool_call_failed');
+    assert.equal(writtenErrorLogs[0].serializeJson, true);
+    assert.equal(writtenErrorLogs[0].payload.toolCalled, 'getFullScene');
+    assert.deepEqual(writtenErrorLogs[0].payload.parameters, { sceneNumber: 7 });
+    assert.match(writtenErrorLogs[0].payload.backtrace, /sceneNumber 7 is out of range/);
 });
 
 test('getFullScene tool schema exists', () => {
@@ -2183,10 +2500,17 @@ test('getMysteryThread tool returns full private thread continuity and contained
 test('mystery thread tool schemas exist', () => {
     const listMysteryThreads = findToolDefinition('listMysteryThreads');
     const getMysteryThread = findToolDefinition('getMysteryThread');
+    const updateMysteryThreadFields = findToolDefinition('updateMysteryThreadFields');
     assert.ok(listMysteryThreads, 'listMysteryThreads tool definition should exist');
     assert.deepEqual(listMysteryThreads.parameters.required || [], []);
     assert.equal(listMysteryThreads.parameters.properties.query.type, 'string');
     assert.ok(getMysteryThread, 'getMysteryThread tool definition should exist');
     assert.deepEqual(getMysteryThread.parameters.required, ['key']);
     assert.equal(getMysteryThread.parameters.properties.key.type, 'string');
+    assert.ok(updateMysteryThreadFields, 'updateMysteryThreadFields tool definition should exist');
+    assert.deepEqual(updateMysteryThreadFields.parameters.required, ['mysteryThread', 'fields']);
+    assert.deepEqual(
+        Object.keys(updateMysteryThreadFields.parameters.properties.fields.properties).sort(),
+        ['constraints', 'keys', 'name', 'status', 'summary']
+    );
 });

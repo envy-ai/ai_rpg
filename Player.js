@@ -102,6 +102,7 @@ class Player {
     #factionId = null;
     #factionStandings = new Map();
     #thingListViewPreferences = {};
+    #modState = {};
 
     static #indexById = new Map();
     static #indexByName = new SanitizedStringMap();
@@ -181,6 +182,33 @@ class Player {
         } catch (error) {
             throw new Error(`barterProfile must be JSON-serializable: ${error.message}`);
         }
+    }
+
+    static #cloneJsonObject(value, fieldName) {
+        if (value === null || value === undefined) {
+            return {};
+        }
+        if (!value || typeof value !== 'object' || Array.isArray(value)) {
+            throw new Error(`${fieldName} must be an object.`);
+        }
+        try {
+            return JSON.parse(JSON.stringify(value));
+        } catch (error) {
+            throw new Error(`${fieldName} must be JSON-serializable: ${error.message}`);
+        }
+    }
+
+    static #normalizeModState(value) {
+        const normalized = Player.#cloneJsonObject(value || {}, 'modState');
+        for (const [namespace, namespaceState] of Object.entries(normalized)) {
+            if (!namespace || typeof namespace !== 'string') {
+                throw new Error('modState namespaces must be non-empty strings.');
+            }
+            if (namespaceState === null || typeof namespaceState !== 'object' || Array.isArray(namespaceState)) {
+                throw new Error(`modState.${namespace} must be an object.`);
+            }
+        }
+        return normalized;
     }
 
     static #rebuildIndexes() {
@@ -2174,6 +2202,8 @@ class Player {
         this.#needBarApplicability = Player.#normalizeNeedBarApplicability(options.needBarApplicability);
         this.#initializeNeedBars(options.needBars, this.#needBarApplicability);
         this.#thingListViewPreferences = Player.#normalizeThingListViewPreferences(options.thingListViewPreferences);
+        this.#modState = Player.#normalizeModState(options.modState);
+        this.#syncModStateWithInventory({ action: 'initialize' });
 
         // Creation timestamp
         this.#createdAt = options.createdAt || new Date().toISOString();
@@ -2355,6 +2385,14 @@ class Player {
                 slotData.itemId = null;
             }
         }
+    }
+
+    #syncModStateWithInventory(event = {}) {
+        const registry = Globals.modExtensionRegistry;
+        if (!registry || typeof registry.syncActorInventory !== 'function') {
+            return;
+        }
+        registry.syncActorInventory(this, event);
     }
 
     #initializeDispositions(source = {}) {
@@ -2726,6 +2764,11 @@ class Player {
         const removed = this.#inventory.delete(resolved);
         if (removed) {
             this.unequipItemId(resolved.id, { suppressTimestamp: true });
+            this.#syncModStateWithInventory({
+                action: 'remove',
+                item: resolved,
+                itemId: resolved.id
+            });
 
             const metadata = resolved.metadata || {};
             let metadataChanged = false;
@@ -2989,7 +3032,12 @@ class Player {
             return sum;
         }, 0);
 
-        return baseValue + equipmentBonus + statusBonus + locationBonus + equipperEffectBonus;
+        const modBonus = Globals.modExtensionRegistry
+            && typeof Globals.modExtensionRegistry.collectAttributeModifierContributions === 'function'
+            ? Globals.modExtensionRegistry.collectAttributeModifierContributions(this, attributeName)
+            : 0;
+
+        return baseValue + equipmentBonus + statusBonus + locationBonus + equipperEffectBonus + modBonus;
     }
 
     getAttributeBonus(attributeName) {
@@ -3779,6 +3827,67 @@ class Player {
         };
         this.#lastUpdated = new Date().toISOString();
         return normalizedViewMode;
+    }
+
+    get modState() {
+        return Player.#cloneJsonObject(this.#modState, 'modState');
+    }
+
+    set modState(value) {
+        this.#modState = Player.#normalizeModState(value);
+        this.#lastUpdated = new Date().toISOString();
+    }
+
+    getModState(namespace) {
+        const normalizedNamespace = typeof namespace === 'string' ? namespace.trim() : '';
+        if (!normalizedNamespace) {
+            throw new Error('Mod state namespace is required.');
+        }
+        const state = this.#modState[normalizedNamespace];
+        return state ? Player.#cloneJsonObject(state, `modState.${normalizedNamespace}`) : {};
+    }
+
+    setModState(namespace, value, { suppressTimestamp = false } = {}) {
+        const normalizedNamespace = typeof namespace === 'string' ? namespace.trim() : '';
+        if (!normalizedNamespace) {
+            throw new Error('Mod state namespace is required.');
+        }
+        if (!value || typeof value !== 'object' || Array.isArray(value)) {
+            throw new Error(`modState.${normalizedNamespace} must be an object.`);
+        }
+        this.#modState = {
+            ...this.#modState,
+            [normalizedNamespace]: Player.#cloneJsonObject(value, `modState.${normalizedNamespace}`)
+        };
+        if (!suppressTimestamp) {
+            this.#lastUpdated = new Date().toISOString();
+        }
+        return this.getModState(normalizedNamespace);
+    }
+
+    updateModState(namespace, updater, options = {}) {
+        if (typeof updater !== 'function') {
+            throw new Error('updateModState requires an updater function.');
+        }
+        const current = this.getModState(namespace);
+        const result = updater(current);
+        const nextState = result === undefined ? current : result;
+        return this.setModState(namespace, nextState, options);
+    }
+
+    withHealthRatioPreserved(mutator, { suppressTimestamp = false } = {}) {
+        if (typeof mutator !== 'function') {
+            throw new Error('withHealthRatioPreserved requires a mutator function.');
+        }
+        const previousHealth = this.health;
+        const previousMaxHealth = this.maxHealth;
+        const result = mutator();
+        this.#preserveHealthRatioAfterGearChange({
+            previousHealth,
+            previousMaxHealth,
+            suppressTimestamp
+        });
+        return result;
     }
 
     setFactionStandings(standings) {
@@ -5037,7 +5146,12 @@ class Player {
             }
         }
 
-        return [...baseEffects, ...equippedEffects];
+        const modEffects = Globals.modExtensionRegistry
+            && typeof Globals.modExtensionRegistry.collectStatusEffectContributions === 'function'
+            ? Globals.modExtensionRegistry.collectStatusEffectContributions(this)
+            : [];
+
+        return [...baseEffects, ...equippedEffects, ...modEffects];
     }
 
     /**
@@ -6249,6 +6363,7 @@ class Player {
             needBarRatesAppliedAt: this.#needBarRatesAppliedAt,
             healthRegenAppliedAt: this.#healthRegenAppliedAt,
             thingListViewPreferences: this.getThingListViewPreferences(),
+            modState: this.modState,
             factionStandings: this.getFactionStandings(),
             importantMemories: this.importantMemories,
             previousLocationId: this.#previousLocationId,
@@ -6339,6 +6454,9 @@ class Player {
             healthRegenAppliedAt: data.healthRegenAppliedAt,
             thingListViewPreferences: data.thingListViewPreferences && typeof data.thingListViewPreferences === 'object'
                 ? data.thingListViewPreferences
+                : {},
+            modState: data.modState && typeof data.modState === 'object' && !Array.isArray(data.modState)
+                ? data.modState
                 : {},
             isDead: data.isDead,
             persistWhenDead: data.persistWhenDead === true,
@@ -6459,6 +6577,7 @@ class Player {
         }
         this.#inventory.clear();
         this.#syncGearWithInventory();
+        this.#syncModStateWithInventory({ action: 'clear' });
         this.#lastUpdated = new Date().toISOString();
     }
 
@@ -6470,6 +6589,7 @@ class Player {
             }
         }
         this.#syncGearWithInventory();
+        this.#syncModStateWithInventory({ action: 'set' });
         this.#lastUpdated = new Date().toISOString();
         return this.getInventoryItems();
     }

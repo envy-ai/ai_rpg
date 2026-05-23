@@ -19,6 +19,16 @@ function clonePlain(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
+function normalizeResolved(value) {
+  if (value === undefined || value === null) {
+    return false;
+  }
+  if (typeof value !== 'boolean') {
+    throw new Error('MysteryBox resolved must be a boolean.');
+  }
+  return value;
+}
+
 class MysteryBox {
   static #instances = new Map();
   static #indexByKey = new Map();
@@ -38,6 +48,7 @@ class MysteryBox {
     this.name = name;
     this.keys = MysteryBox.#normalizeKeys([name, ...(Array.isArray(options.keys) ? options.keys : [])]);
     this.text = normalizeText(options.text);
+    this.resolved = normalizeResolved(options.resolved);
     this.mentions = MysteryBox.#normalizeMentions(options.mentions);
     this.createdAt = normalizeText(options.createdAt) || new Date().toISOString();
     this.updatedAt = normalizeText(options.updatedAt) || this.createdAt;
@@ -177,12 +188,19 @@ class MysteryBox {
     return this;
   }
 
+  markResolved() {
+    this.resolved = true;
+    this.updatedAt = new Date().toISOString();
+    return this;
+  }
+
   toJSON() {
     return {
       id: this.id,
       name: this.name,
       keys: [...this.keys],
       text: this.text,
+      resolved: this.resolved,
       mentions: clonePlain(this.mentions) || [],
       createdAt: this.createdAt,
       updatedAt: this.updatedAt

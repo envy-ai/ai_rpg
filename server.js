@@ -10,6 +10,7 @@ const fs = require('fs');
 const path = require('path');
 const sharp = require('sharp');
 const { randomUUID } = require('crypto');
+const { spawn } = require('child_process');
 const { XMLSerializer } = require('@xmldom/xmldom');
 const Utils = require('./Utils.js');
 const { loadMergedConfig } = require('./ConfigLoader.js');
@@ -108,7 +109,10 @@ const Events = require('./Events.js');
 const RealtimeHub = require('./RealtimeHub.js');
 const QuestConfirmationManager = require('./QuestConfirmationManager.js');
 const ModLoader = require('./ModLoader.js');
+const ModExtensionRegistry = require('./ModExtensionRegistry.js');
+const { CHAT_TOOL_DEFINITIONS } = require('./chat_tool_calls.js');
 const { diffFrozenEnabledModDirectoryNames } = require('./ModDiscovery.js');
+const { buildModManagerState } = require('./ModManager.js');
 const { initializeLorebookManager, getLorebookManager } = require('./lorebook.js');
 const { loadMergedDefinitionFile, validateDefinitionOverlays } = require('./DefinitionLoader.js');
 const {
@@ -118,6 +122,12 @@ const {
 
 Globals.baseDir = __dirname;
 Globals.sceneSummaries = new SceneSummaries();
+const modExtensionRegistry = new ModExtensionRegistry({
+    reservedChatToolNames: CHAT_TOOL_DEFINITIONS
+        .map(toolDefinition => toolDefinition?.function?.name)
+        .filter(Boolean)
+});
+Globals.modExtensionRegistry = modExtensionRegistry;
 
 attachAxiosMetricsLogger(axios);
 
@@ -3019,6 +3029,7 @@ function buildActiveMysteryThreadsForPrompt(sourceConfig = config) {
         mysteryBoxes: thread.boxIds
             .map(boxId => MysteryBox.getById(boxId))
             .filter(Boolean)
+            .filter(box => !box.resolved)
             .map(box => ({
                 id: box.id,
                 name: box.name,
@@ -4099,6 +4110,13 @@ function serializeNpcForClient(npc, options = {}) {
         }
     }
 
+    const modStatusSections = modExtensionRegistry && typeof modExtensionRegistry.collectActorStatusContributions === 'function'
+        ? modExtensionRegistry.collectActorStatusContributions(npc, {
+            setting: getActiveSettingSnapshot(),
+            currentSetting: getActiveSettingSnapshot()
+        }).map(entry => entry.value).filter(Boolean)
+        : [];
+
     const serialized = {
         id: npc.id,
         name: npc.name,
@@ -4164,6 +4182,7 @@ function serializeNpcForClient(npc, options = {}) {
         needBars: typeof npc.getNeedBars === 'function' ? npc.getNeedBars({ scope: 'active' }) : [],
         needBarApplicability: typeof npc.getNeedBarApplicability === 'function' ? npc.getNeedBarApplicability() : {},
         thingListViewPreferences: typeof npc.getThingListViewPreferences === 'function' ? npc.getThingListViewPreferences() : {},
+        modStatusSections,
         personality,
         personalityType: personality?.type ?? null,
         personalityTraits: personality?.traits ?? null,
@@ -5977,6 +5996,18 @@ function buildBasePromptContext({
         return sentences;
     };
 
+    const collectActorModStatusSections = (actor) => {
+        if (!actor || !modExtensionRegistry || typeof modExtensionRegistry.collectActorStatusContributions !== 'function') {
+            return [];
+        }
+        return modExtensionRegistry.collectActorStatusContributions(actor, {
+            setting: activeSetting,
+            currentSetting: activeSetting
+        })
+            .map(entry => entry.value)
+            .filter(Boolean);
+    };
+
     const currentPlayerNeedBars = collectNeedBarsForPrompt(currentPlayer, playerStatus);
     const currentPlayerNeeds = collectNeedSentencesForPrompt(
         currentPlayer,
@@ -6012,6 +6043,7 @@ function buildBasePromptContext({
         currency: playerStatus?.currency ?? currentPlayer?.currency ?? 0,
         needBars: currentPlayerNeedBars,
         needs: currentPlayerNeeds,
+        modStatusSections: collectActorModStatusSections(currentPlayer),
         currentQuests: currentPlayer.currentQuests,
     };
 
@@ -6119,6 +6151,7 @@ function buildBasePromptContext({
                 aiNotes: personality.aiNotes || '',
                 needBars,
                 needs,
+                modStatusSections: collectActorModStatusSections(npc),
                 importantMemories,
                 selectedImportantMemories: [],
                 last_seen_time: npc.last_seen_time,
@@ -6173,6 +6206,7 @@ function buildBasePromptContext({
                 dispositionsTowardsPlayer,
                 needBars,
                 needs,
+                modStatusSections: collectActorModStatusSections(member),
                 importantMemories,
                 selectedImportantMemories: []
             });
@@ -7058,6 +7092,21 @@ function buildBasePromptContext({
         worldOutline,
         factions: factionSummaries
     };
+
+    if (modExtensionRegistry && typeof modExtensionRegistry.collectBaseContextContributions === 'function') {
+        context.modContext = modExtensionRegistry.collectBaseContextContributions({
+            context,
+            setting: activeSetting,
+            currentSetting: activeSetting
+        })
+            .map(entry => entry.value)
+            .filter(Boolean);
+    } else {
+        context.modContext = [];
+    }
+    context.modEventPromptSchemas = modExtensionRegistry && typeof modExtensionRegistry.getXmlEventPromptSchemas === 'function'
+        ? modExtensionRegistry.getXmlEventPromptSchemas()
+        : [];
 
     return context;
 }
@@ -11915,6 +11964,125 @@ async function finalizeRegionEntry({ stubLocation, entranceLocation, region, ori
 }
 
 const HOST = config.server.host;
+let selfRestartRequested = false;
+let selfRestartChildProcessId = null;
+
+function resolveSelfRestartPortRetrySeconds() {
+    const rawSeconds = config?.server?.selfRestartPortRetrySeconds ?? 10;
+    const retrySeconds = Number(rawSeconds);
+    if (!Number.isFinite(retrySeconds) || retrySeconds < 0 || !Number.isInteger(retrySeconds)) {
+        throw new Error('server.selfRestartPortRetrySeconds must be a non-negative integer.');
+    }
+    return retrySeconds;
+}
+
+function listenWithPortRetry(serverInstance, {
+    port,
+    host,
+    retrySeconds = 0,
+    onListening = null
+} = {}) {
+    const resolvedRetrySeconds = Number(retrySeconds);
+    if (!Number.isFinite(resolvedRetrySeconds) || resolvedRetrySeconds < 0 || !Number.isInteger(resolvedRetrySeconds)) {
+        throw new Error('listenWithPortRetry retrySeconds must be a non-negative integer.');
+    }
+
+    return new Promise((resolve, reject) => {
+        let retryCount = 0;
+
+        const attemptListen = () => {
+            const handleListening = () => {
+                cleanup();
+                if (typeof onListening === 'function') {
+                    onListening();
+                }
+                resolve();
+            };
+            const handleError = (error) => {
+                cleanup();
+                if (error?.code === 'EADDRINUSE' && retryCount < resolvedRetrySeconds) {
+                    retryCount += 1;
+                    console.warn(
+                        `Port ${port} is in use; retrying bind in 1 second (${retryCount}/${resolvedRetrySeconds}).`
+                    );
+                    setTimeout(attemptListen, 1000);
+                    return;
+                }
+                reject(error);
+            };
+            const cleanup = () => {
+                serverInstance.off('listening', handleListening);
+                serverInstance.off('error', handleError);
+            };
+
+            serverInstance.once('listening', handleListening);
+            serverInstance.once('error', handleError);
+            serverInstance.listen(port, host);
+        };
+
+        attemptListen();
+    });
+}
+
+function requestServerRestart({ reason = 'manual', saveName = null, saveType = null } = {}) {
+    if (config?.server?.allowSelfRestart !== true) {
+        return {
+            started: false,
+            manualRestartRequired: true,
+            reason: 'self-restart-disabled'
+        };
+    }
+
+    if (selfRestartRequested) {
+        return {
+            started: true,
+            alreadyRequested: true,
+            pid: selfRestartChildProcessId,
+            reason
+        };
+    }
+
+    const child = spawn(process.execPath, process.argv.slice(1), {
+        cwd: process.cwd(),
+        detached: true,
+        env: {
+            ...process.env,
+            AIRPG_SELF_RESTART_CHILD: '1',
+            AIRPG_SELF_RESTART_REASON: String(reason || 'manual')
+        },
+        stdio: 'ignore'
+    });
+    child.unref();
+
+    selfRestartRequested = true;
+    selfRestartChildProcessId = child.pid || null;
+
+    const shutdownTimer = setTimeout(() => {
+        const forceExitTimer = setTimeout(() => process.exit(0), 1000);
+        if (typeof forceExitTimer.unref === 'function') {
+            forceExitTimer.unref();
+        }
+        server.close((error) => {
+            if (error) {
+                console.error('Error while closing server for self restart:', error.message);
+                process.exit(1);
+                return;
+            }
+            process.exit(0);
+        });
+    }, 500);
+    if (typeof shutdownTimer.unref === 'function') {
+        shutdownTimer.unref();
+    }
+
+    return {
+        started: true,
+        pid: selfRestartChildProcessId,
+        reason,
+        saveName,
+        saveType
+    };
+}
 
 // Configure Nunjucks for views
 const viewsEnv = nunjucks.configure('views', {
@@ -29274,6 +29442,18 @@ app.get('/config', (req, res) => {
     });
 });
 
+app.get('/mods', (req, res) => {
+    try {
+        res.render('mods.njk', {
+            title: 'Mod Manager',
+            currentPage: 'mods',
+            modState: buildModManagerState(__dirname, { runtimeConfig: config })
+        });
+    } catch (error) {
+        res.status(500).send(`Failed to render mod manager: ${error.message}`);
+    }
+});
+
 app.post('/config', (req, res) => {
     try {
         const TYPE_HINT_SEPARATOR = '::';
@@ -29651,7 +29831,9 @@ app.get('/settings', (req, res) => {
         defaultFactionCountFallback,
         unifiedTonalScaleDefinition,
         unifiedTonalScaleError,
-        attributeOptions
+        attributeOptions,
+        modSettingFields: modExtensionRegistry.getSettingFields({ includeTabbed: false }),
+        modSettingTabs: modExtensionRegistry.getSettingTabs()
     });
 });
 
@@ -29715,6 +29897,7 @@ Events.initialize({
     defaultStatusDuration: Events.DEFAULT_STATUS_DURATION,
     majorStatusDuration: Events.MAJOR_STATUS_DURATION,
     baseTimeoutMilliseconds,
+    modExtensionRegistry,
     baseDir: __dirname
 });
 
@@ -29749,6 +29932,7 @@ const apiScope = {
     addEvalFilter,
     promptEnv,
     modLoader,
+    modExtensionRegistry,
     viewsEnv,
     createImageJob,
     generateInventoryForCharacter,
@@ -29842,6 +30026,7 @@ const apiScope = {
     addJobSubscriber,
     vehicleDebugEnabled: cliVehicleDebug,
     resolveSystemPromptPrefix,
+    requestServerRestart,
 
 };
 
@@ -29874,6 +30059,13 @@ if (modLoadResults.failed.length > 0) {
 validateDefinitionOverlays({ baseDir: Globals.baseDir || __dirname });
 Thing.loadRarityDefinitions({ forceReload: true });
 Player.reloadDefinitionCaches({ refreshInstances: false });
+modExtensionRegistry.runStartupValidators({
+    config,
+    Globals,
+    Player,
+    Thing,
+    SettingInfo
+});
 
 if (typeof module !== 'undefined' && module.exports) {
     module.exports.performGameSave = (...args) => apiScope.performGameSave(...args);
@@ -29964,35 +30156,40 @@ async function startServer() {
         console.error('⚠️  Failed to initialize realtime hub:', error.message);
     }
 
-    server.listen(PORT, HOST, () => {
-        console.log(`🚀 Server is running on http://${HOST}:${PORT}`);
-        console.log(`📡 API endpoint available at http://${HOST}:${PORT}/api/hello`);
-        console.log(`🎮 Using AI model: ${config.ai.model}`);
-        console.log(`🤖 AI backend: ${LLMClient.resolveBackend(config.ai)}`);
-        if (LLMClient.resolveBackend(config.ai) === 'openai_compatible') {
-            console.log(`🌐 AI endpoint: ${config.ai.endpoint}`);
-        } else {
-            const codexHome = typeof config?.ai?.codex_bridge?.home === 'string' && config.ai.codex_bridge.home.trim()
-                ? config.ai.codex_bridge.home.trim()
-                : '(default)';
-            console.log(`🧰 Codex bridge home: ${codexHome}`);
-        }
+    await listenWithPortRetry(server, {
+        port: PORT,
+        host: HOST,
+        retrySeconds: resolveSelfRestartPortRetrySeconds(),
+        onListening: () => {
+            console.log(`🚀 Server is running on http://${HOST}:${PORT}`);
+            console.log(`📡 API endpoint available at http://${HOST}:${PORT}/api/hello`);
+            console.log(`🎮 Using AI model: ${config.ai.model}`);
+            console.log(`🤖 AI backend: ${LLMClient.resolveBackend(config.ai)}`);
+            if (LLMClient.resolveBackend(config.ai) === 'openai_compatible') {
+                console.log(`🌐 AI endpoint: ${config.ai.endpoint}`);
+            } else {
+                const codexHome = typeof config?.ai?.codex_bridge?.home === 'string' && config.ai.codex_bridge.home.trim()
+                    ? config.ai.codex_bridge.home.trim()
+                    : '(default)';
+                console.log(`🧰 Codex bridge home: ${codexHome}`);
+            }
 
-        if (config.imagegen && config.imagegen.enabled) {
-            if (comfyUIClient) {
-                if ((config.imagegen.engine || 'comfyui') === 'nanogpt') {
-                    console.log('🎨 Image generation ready (NanoGPT)');
+            if (config.imagegen && config.imagegen.enabled) {
+                if (comfyUIClient) {
+                    if ((config.imagegen.engine || 'comfyui') === 'nanogpt') {
+                        console.log('🎨 Image generation ready (NanoGPT)');
+                    } else {
+                        console.log(`🎨 Image generation ready (ComfyUI: ${config.imagegen.server.host}:${config.imagegen.server.port})`);
+                    }
                 } else {
-                    console.log(`🎨 Image generation ready (ComfyUI: ${config.imagegen.server.host}:${config.imagegen.server.port})`);
+                    console.log('🎨 Image generation disabled (engine unavailable)');
                 }
             } else {
-                console.log('🎨 Image generation disabled (engine unavailable)');
+                console.log(`🎨 Image generation disabled in configuration`);
             }
-        } else {
-            console.log(`🎨 Image generation disabled in configuration`);
-        }
 
-        console.log(`\n🌟 AI RPG Game Master is ready!`);
+            console.log(`\n🌟 AI RPG Game Master is ready!`);
+        }
     });
 }
 

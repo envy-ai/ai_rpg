@@ -31,7 +31,7 @@ Centralized client for LLM chat completions with concurrency limits, streaming p
 - `calculatePromptProgressFraction(receivedCharacters, targetCharacters)`: applies the character-based progress formula used by the UI.
 - `resolvePromptProgressCharacterTarget(label, config)`: resolves an exact or prefix `prompt_progress.character_targets` entry for a normalized prompt label; missing coverage throws.
 - `getPromptOutputCharacterStats(label)` / `listPromptOutputCharacterStats(options?)` / `recordPromptOutputCharacters(label, outputCharacters)` / `clearPromptOutputCharacterStats()`: read, list, update, and clear the persistent per-label output-character stats file.
-- `writeLogFile({ prefix, metadataLabel, payload, serializeJson, onFailureMessage, error, append })`: writes error logs named `ERROR_<prefix>_<metadataLabel>_<timestamp>.log`, with the label sanitized for filenames.
+- `writeLogFile({ prefix, metadataLabel, payload, serializeJson, onFailureMessage, error, append })`: writes error logs named `ERROR_<prefix>_<metadataLabel>_<timestamp>.log`, with the label sanitized for filenames. Chat tool execution failures use this for dedicated `ERROR_tool_call_failed_*` JSON files containing the tool name, parameters, and backtrace.
 - `formatMessagesForErrorLog(messages)`: formats messages into a readable log.
 - `logPrompt({...})`: writes prompt/response logs to `logs/`.
 - `baseTimeoutMilliseconds()` / `resolveTimeout(timeoutMs, multiplier)`.

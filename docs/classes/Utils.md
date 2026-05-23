@@ -33,6 +33,7 @@ Collection of static utility helpers used across the server: set math, text simi
 
 ## Game State Serialization
 - `serializeGameState(context)`.
+  - Accepts `enabledMods`, which is normalized into sorted unique `metadata.enabledMods` so later load attempts can compare the save's mod list against the active startup-frozen runtime list.
 - `writeSerializedGameState(saveDir, serialized)`.
 - `loadSerializedGameState(saveDir)`.
 - `hydrateGameState(serialized, context)`.

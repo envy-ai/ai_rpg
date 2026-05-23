@@ -4,9 +4,10 @@ This page maps routes to templates and the client scripts/styles they load.
 
 ## Shared head behavior
 - Shared head tags now live in `views/_includes/head-common.njk`.
-- All top-level page templates (`index`, `new-game`, `config`, `settings`, `lorebooks`, `debug`, `player-stats`) include that partial for shared `meta`, `title`, favicon, and `main.css` tags.
+- All top-level page templates (`index`, `new-game`, `config`, `settings`, `mods`, `lorebooks`, `debug`, `player-stats`) include that partial for shared `meta`, `title`, favicon, `main.css`, and the pending-load script.
 - The shared favicon target is `/assets/fluentui-emoji/crossed_swords_color_classic.svg`.
 - Top-level pages also include `views/_includes/app-header.njk` for the shared app header. The legacy `views/_navigation.njk` now delegates to that partial.
+- `public/js/pending-load.js` checks `GET /api/pending-load` at startup. When present, it navigates to the play page if needed, posts `/api/load`, then clears the intent with `DELETE /api/pending-load`.
 
 ## Main chat interface
 - Route: `/`
@@ -33,6 +34,7 @@ This page maps routes to templates and the client scripts/styles they load.
 - Notes: location and region edit forms share `views/_includes/vehicle-info-fields.njk` for vehicle editing (`isVehicle` toggle, `icon` dropdown, a single-select destination picker, `ETA`, and a `Vehicle Exit` select). The location edit form also exposes `Local Weather`, which stores `generationHints.hasWeather` as exposed, visible outside, sheltered, or automatic, plus a Region selector for moving a hydrated location into another live region through `/api/locations/:id/relocate`. Pending regions appear disabled until unstubbed, and cross-region moves expose selected exit cleanup plus an optional `Make this the region entrance` checkbox. The destination picker edits `vehicleInfo.currentDestination` for resolved trips and the active `pendingDestination` target for underway trips; unresolved pending targets without a concrete `locationId` still render in the picker from their saved region/location names so they can be seen, cleared, or replaced, while region-only pending targets are preserved until explicitly changed. Both the active destination picker and the fixed-route destination list include `New Region` actions: the active picker writes a region-only unresolved `pendingDestination`, while fixed routes store `pending-region:<region name>` entries so the route can remember a not-yet-generated region until timed arrival builds it. Vehicle-exit options render as `inside -> outside`; location/stub editors list exits from the edited location, while region editors list cross-region exits from locations in that region. Map-tab stub editing reuses the same vehicle editor in stub mode.
 - Notes: client-side name rendering for character/item/scenery cards applies a `font-size: 0.75em` span when a name exceeds 40 characters.
 - Notes: after a successful Load Game action, if save metadata indicates `npcAliasesGenerated=false` (or missing), the client shows a confirmation dialog; accepting runs `/api/npcs/generate-aliases` before page reload (20 NPCs per prompt batch), declining leaves aliases empty.
+- Notes: if `/api/load` returns `MOD_ENABLEMENT_MISMATCH`, the client opens the Save Mods Differ modal. `Use Save Mods` calls `/api/mods/apply-save-config` and requires restart, `Keep Current Mods` retries `/api/load` with `modMismatchChoice: 'keep-current'`, and `Cancel Load` stops without mutating config.
 - Notes: the shared player/NPC edit modal includes aliases (one alias per line) plus resistances/vulnerabilities text fields, submitted through `PUT /api/npcs/:id`. When editing an NPC, the same modal also exposes per-character need-bar applicability checkboxes; this section is omitted for the player.
 
 ## New game
@@ -68,6 +70,16 @@ This page maps routes to templates and the client scripts/styles they load.
 - Notes: Gameplay Tuning exposes `Debug Tool Calls`, which writes live prompt-excluded tool diagnostics into the chat log when enabled, and `Legacy Prompt Checks`, which switches action attack/skill checks back to the separate prompt path.
 - Notes: the `Game Configuration` tab exposes a fixed-width YAML textarea for the currently loaded game's runtime config override. It saves through `PUT /api/game-config-override`, reloads config immediately on change, persists to the save as `gameConfigOverride.yaml`, and stays disabled when no game is loaded.
 
+## Mod manager
+- Route: `/mods`
+- Template: `views/mods.njk`
+- Styles: `public/css/main.css`, `public/css/config.css`.
+- Script: inline in the template.
+- Data injected by `server.js`:
+  - `modState` from `ModManager.buildModManagerState`.
+- Notes: the page lists every discovered valid mod with a checkbox for configured enablement and an active-now indicator for the startup-frozen runtime state.
+- Notes: saving posts `PUT /api/mods/enabled`, which writes `config.yaml` and reports `restartRequired` when the configured mod set no longer matches the running process.
+
 ## World profiles manager
 - Route: `/settings`
 - Template: `views/settings.njk`
@@ -78,7 +90,8 @@ This page maps routes to templates and the client scripts/styles they load.
 - Notes: the global nav labels this route as `Worlds`, while the page title is `World Profiles`. The underlying API and internal ids still use `settings`.
 - Notes: uses a master-detail layout with a left world-profile library and a right editor panel.
 - Notes: the left panel includes search (`name/theme/genre/tone/difficulty`), sort controls, and selection-scoped actions (`Edit`, `Apply`, `Clone`, `Delete`), instead of per-row action buttons.
-- Notes: editor fields are grouped into tabbed sections (`Basics`, `New Game Defaults`, `Tone Scale`, `Factions`, `Character Options`, `Prompt Guidance`, `Calendar`, `Image Prefixes`) and a sticky action bar keeps `Clear`, `Create/Update`, and `Auto-Fill Blank Fields` visible while scrolling.
+- Notes: editor fields are grouped into tabbed sections (`Basics`, `New Game Defaults`, `Tone Scale`, `Factions`, `Character Options`, `Prompt Guidance`, optional mod-owned tabs, `Calendar`, `Image Prefixes`) and a sticky action bar keeps `Clear`, `Create/Update`, and `Auto-Fill Blank Fields` visible while scrolling.
+- Notes: mod setting fields with a registered tab render in their own World Profiles tab; legacy ungrouped mod fields still render in the Prompt Guidance `Mod Settings` block.
 - Notes: the `Tone Scale` tab renders axes from `defs/unified_tonal_scale.yaml`; dropdowns include defined levels plus generated half-step midpoint choices such as `3.5 - Hopeful/Mixed`. If any tonal axis is selected, every axis must have a numeric level, and optional comments are saved in `setting.unifiedTonalScale`.
 - Notes: the `Factions` tab includes:
   - `Number of Factions` input (`defaultFactionCount`) for new-game faction target count.
@@ -123,5 +136,5 @@ This page maps routes to templates and the client scripts/styles they load.
 ## Shared navigation
 - Template partials: `views/_includes/app-header.njk` and `views/_includes/app-header-nav.njk`.
 - Legacy shim: `views/_navigation.njk`.
-- Primary nav order is `Play`, `New Game`, `Worlds`, `Lorebooks`, `System`, and a native `Tools` disclosure containing `Debug` and `Player Stats`.
+- Primary nav order is `Play`, `New Game`, `Worlds`, `Mods`, `Lorebooks`, `System`, and a native `Tools` disclosure containing `Debug` and `Player Stats`.
 - The chat page action cluster includes `Save` and `Load` buttons with stable ids `saveGameBtn` and `loadGameBtn`; `New Game` is primary navigation, not a chat action button.

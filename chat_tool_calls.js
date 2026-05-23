@@ -8,9 +8,22 @@ const {
 const MysteryBox = require('./MysteryBox.js');
 const MysteryThread = require('./MysteryThread.js');
 
-const CHAT_TOOL_MAX_ROUNDS = 8;
 const MORE_INFO_MAX_MATCHES = 50;
 const CACHED_CHECK_TOOL_CALL_NOTE = 'You already made this tool call. Do not re-run tool calls for the same checks that you made in earlier drafts.';
+const UPDATE_MYSTERY_BOX_FIELD_NAMES = Object.freeze([
+    'name',
+    'keys',
+    'text'
+]);
+const UPDATE_MYSTERY_BOX_FIELD_SET = new Set(UPDATE_MYSTERY_BOX_FIELD_NAMES);
+const UPDATE_MYSTERY_THREAD_FIELD_NAMES = Object.freeze([
+    'name',
+    'status',
+    'keys',
+    'summary',
+    'constraints'
+]);
+const UPDATE_MYSTERY_THREAD_FIELD_SET = new Set(UPDATE_MYSTERY_THREAD_FIELD_NAMES);
 const MORE_INFO_COMPACT_OMITTED_FIELDS = new Set([
     'needBars',
     'needBarRatesAppliedAt',
@@ -350,6 +363,44 @@ const CHAT_TOOL_DEFINITIONS = Object.freeze([
     {
         type: 'function',
         function: {
+            name: 'updateMysteryBoxFields',
+            description: 'Directly update selected editable fields on one private GM-only mystery box. Available for explicit world-state editing; keys replace the editable alias list instead of merging.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    mysteryBox: {
+                        type: 'string',
+                        description: 'Mystery box id, name, key, or alias. Use an exact id when a name is ambiguous.'
+                    },
+                    fields: {
+                        type: 'object',
+                        properties: {
+                            name: {
+                                type: 'string',
+                                description: 'Optional new canonical mystery box name. Must be non-empty when provided.'
+                            },
+                            keys: {
+                                type: 'array',
+                                items: { type: 'string' },
+                                description: 'Optional replacement alias/key list. The canonical name is always retained automatically.'
+                            },
+                            text: {
+                                type: 'string',
+                                description: 'Optional replacement private note text. May be an empty string to clear the note.'
+                            }
+                        },
+                        minProperties: 1,
+                        additionalProperties: false
+                    }
+                },
+                required: ['mysteryBox', 'fields'],
+                additionalProperties: false
+            }
+        }
+    },
+    {
+        type: 'function',
+        function: {
             name: 'listMysteryThreads',
             description: 'List tracked GM-only mystery threads. Optionally filters by phrase. Returns lightweight thread summaries and contained box ids/names, not full box text.',
             parameters: {
@@ -378,6 +429,54 @@ const CHAT_TOOL_DEFINITIONS = Object.freeze([
                     }
                 },
                 required: ['key'],
+                additionalProperties: false
+            }
+        }
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'updateMysteryThreadFields',
+            description: 'Directly update selected editable fields on one private GM-only mystery thread. Available for explicit world-state editing; keys and constraints replace the existing lists instead of merging. Does not change contained mystery-box assignments.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    mysteryThread: {
+                        type: 'string',
+                        description: 'Mystery thread id, name, key, or alias. Use an exact id when a name is ambiguous.'
+                    },
+                    fields: {
+                        type: 'object',
+                        properties: {
+                            name: {
+                                type: 'string',
+                                description: 'Optional new canonical mystery thread name. Must be non-empty when provided.'
+                            },
+                            status: {
+                                type: 'string',
+                                enum: ['active', 'inactive', 'concluded'],
+                                description: 'Optional replacement thread status.'
+                            },
+                            keys: {
+                                type: 'array',
+                                items: { type: 'string' },
+                                description: 'Optional replacement alias/key list. The canonical name is always retained automatically.'
+                            },
+                            summary: {
+                                type: 'string',
+                                description: 'Optional replacement private thread summary. May be an empty string to clear the summary.'
+                            },
+                            constraints: {
+                                type: 'array',
+                                items: { type: 'string' },
+                                description: 'Optional replacement canonical fact/constraint list.'
+                            }
+                        },
+                        minProperties: 1,
+                        additionalProperties: false
+                    }
+                },
+                required: ['mysteryThread', 'fields'],
                 additionalProperties: false
             }
         }
@@ -1308,6 +1407,63 @@ const CHAT_TOOL_DEFINITIONS = Object.freeze([
     }
 ]);
 
+const cloneToolDefinition = (toolDefinition) => JSON.parse(JSON.stringify(toolDefinition));
+
+const entityFieldSchema = (field) => {
+    const type = typeof field?.type === 'string' && field.type.trim()
+        ? field.type.trim()
+        : 'string';
+    const schema = {
+        type: type === 'integer' ? 'integer' : type
+    };
+    if (typeof field?.description === 'string' && field.description.trim()) {
+        schema.description = field.description.trim();
+    }
+    if (schema.type === 'array') {
+        schema.items = {};
+    }
+    return schema;
+};
+
+const getRegisteredThingFields = (modExtensionRegistry, filter = {}) => {
+    if (!modExtensionRegistry || typeof modExtensionRegistry.getEntityFields !== 'function') {
+        return [];
+    }
+    return modExtensionRegistry.getEntityFields('thing', filter);
+};
+
+const applyRegisteredThingFieldsToToolDefinition = (toolDefinition, { modExtensionRegistry = null } = {}) => {
+    const functionName = toolDefinition?.function?.name;
+    if (functionName === 'createThing') {
+        const createFields = getRegisteredThingFields(modExtensionRegistry, { exposeToCreateTool: true });
+        if (!createFields.length) {
+            return toolDefinition;
+        }
+        const properties = toolDefinition.function.parameters.properties;
+        for (const field of createFields) {
+            properties[field.fieldName] = entityFieldSchema(field);
+        }
+        return toolDefinition;
+    }
+
+    if (functionName === 'updateObjectFields') {
+        const updateFields = getRegisteredThingFields(modExtensionRegistry, { exposeToUpdateTool: true });
+        if (updateFields.length) {
+            const fieldNames = updateFields.map(field => field.fieldName).join(', ');
+            toolDefinition.function.description = `${toolDefinition.function.description} Registered Thing fields may also be updated when exposed by enabled mods: ${fieldNames}.`;
+        }
+        return toolDefinition;
+    }
+
+    return toolDefinition;
+};
+
+const getChatToolDefinitions = ({ modExtensionRegistry = null } = {}) => CHAT_TOOL_DEFINITIONS
+    .map(toolDefinition => applyRegisteredThingFieldsToToolDefinition(
+        cloneToolDefinition(toolDefinition),
+        { modExtensionRegistry }
+    ));
+
 const ensureFunction = (value, name) => {
     if (typeof value !== 'function') {
         throw new Error(`Chat tool runtime requires ${name} function.`);
@@ -1613,7 +1769,8 @@ const createChatToolRuntime = ({
     getFactions,
     getRegionsMap,
     getPendingRegionStubs,
-    requestUserInput = null
+    requestUserInput = null,
+    getModExtensionRegistry = null
 } = {}) => {
     ensureFunction(getConfig, 'getConfig');
     ensureFunction(getChatHistory, 'getChatHistory');
@@ -1630,6 +1787,9 @@ const createChatToolRuntime = ({
     ensureFunction(getFactions, 'getFactions');
     ensureFunction(getRegionsMap, 'getRegionsMap');
     ensureFunction(getPendingRegionStubs, 'getPendingRegionStubs');
+    if (getModExtensionRegistry !== null && getModExtensionRegistry !== undefined) {
+        ensureFunction(getModExtensionRegistry, 'getModExtensionRegistry');
+    }
     ensureModel(LLMClient, 'LLMClient');
     ensureModel(Player, 'Player');
     ensureModel(Thing, 'Thing');
@@ -2092,6 +2252,55 @@ const createChatToolRuntime = ({
             `${functionName} "${fieldName}" must be a boolean when provided.`,
             { code: 'invalid_arguments' }
         );
+    };
+
+    const getRegistry = () => (typeof getModExtensionRegistry === 'function'
+        ? getModExtensionRegistry()
+        : null);
+
+    const getRegisteredEntityFieldsForRuntime = (entityType, filter = {}) => {
+        const registry = getRegistry();
+        if (!registry || typeof registry.getEntityFields !== 'function') {
+            return [];
+        }
+        return registry.getEntityFields(entityType, filter);
+    };
+
+    const normalizeRegisteredEntityFieldValue = (rawValue, field, { functionName } = {}) => {
+        if (rawValue === null || rawValue === undefined || rawValue === '') {
+            return null;
+        }
+        switch (field.type) {
+            case 'string':
+                return normalizeOptionalString(rawValue);
+            case 'number':
+                return normalizeOptionalNumber(rawValue, { functionName, fieldName: field.fieldName });
+            case 'integer':
+                return normalizeOptionalInteger(rawValue, { functionName, fieldName: field.fieldName });
+            case 'boolean':
+                return normalizeOptionalBoolean(rawValue, { functionName, fieldName: field.fieldName });
+            case 'array':
+                if (!Array.isArray(rawValue)) {
+                    throw new ToolVisibleError(
+                        `${functionName} "${field.fieldName}" must be an array when provided.`,
+                        { code: 'invalid_arguments' }
+                    );
+                }
+                return rawValue;
+            case 'object':
+                if (!rawValue || typeof rawValue !== 'object' || Array.isArray(rawValue)) {
+                    throw new ToolVisibleError(
+                        `${functionName} "${field.fieldName}" must be an object when provided.`,
+                        { code: 'invalid_arguments' }
+                    );
+                }
+                return rawValue;
+            default:
+                throw new ToolVisibleError(
+                    `${functionName} registered field "${field.fieldName}" has unsupported type "${field.type}".`,
+                    { code: 'invalid_arguments' }
+                );
+        }
     };
 
     const cloneToolResult = (value) => {
@@ -3767,7 +3976,8 @@ const createChatToolRuntime = ({
         attributeBonuses = null,
         causeStatusEffectOnTarget = null,
         causeStatusEffectOnEquipper = null,
-        properties = null
+        properties = null,
+        ...extensionFieldInputs
     } = {}) => {
         const functionName = 'createThing';
         const shortDescriptionValue = normalizeRequiredString(shortDescription, {
@@ -3837,6 +4047,27 @@ const createChatToolRuntime = ({
             shortDescription: shortDescriptionValue,
             itemOrScenery: itemOrSceneryValue
         };
+
+        const registeredCreateFields = getRegisteredEntityFieldsForRuntime('thing', { exposeToCreateTool: true });
+        const registeredCreateFieldMap = new Map(registeredCreateFields.map(field => [field.fieldName, field]));
+        const unknownExtensionFieldNames = Object.keys(extensionFieldInputs).filter(fieldName => !registeredCreateFieldMap.has(fieldName));
+        if (unknownExtensionFieldNames.length) {
+            throw new ToolVisibleError(
+                `createThing cannot use unsupported field "${unknownExtensionFieldNames[0]}".`,
+                { code: 'unsupported_field', details: { fieldName: unknownExtensionFieldNames[0] } }
+            );
+        }
+        const extensionFieldValues = {};
+        for (const field of registeredCreateFields) {
+            if (!Object.prototype.hasOwnProperty.call(extensionFieldInputs, field.fieldName)) {
+                continue;
+            }
+            const value = normalizeRegisteredEntityFieldValue(extensionFieldInputs[field.fieldName], field, { functionName });
+            if (value !== null) {
+                seed[field.fieldName] = value;
+                extensionFieldValues[field.fieldName] = value;
+            }
+        }
 
         const requestedName = normalizeOptionalString(name);
         if (requestedName) seed.name = requestedName;
@@ -3934,6 +4165,13 @@ const createChatToolRuntime = ({
                 'Thing generation completed but final name is missing.',
                 { code: 'thing_generation_failed' }
             );
+        }
+        for (const [fieldName, value] of Object.entries(extensionFieldValues)) {
+            if (typeof createdThing.setExtensionField === 'function') {
+                createdThing.setExtensionField(fieldName, value);
+            } else if (createdThing && typeof createdThing === 'object') {
+                createdThing[fieldName] = value;
+            }
         }
 
         const lines = [
@@ -4896,7 +5134,14 @@ const createChatToolRuntime = ({
             );
         }
 
-        const allowedFields = UPDATE_OBJECT_FIELD_NAMES_BY_TYPE[objectType] || [];
+        const registeredThingUpdateFields = objectType === 'thing'
+            ? getRegisteredEntityFieldsForRuntime('thing', { exposeToUpdateTool: true })
+            : [];
+        const registeredThingUpdateFieldMap = new Map(registeredThingUpdateFields.map(field => [field.fieldName, field]));
+        const allowedFields = [
+            ...(UPDATE_OBJECT_FIELD_NAMES_BY_TYPE[objectType] || []),
+            ...registeredThingUpdateFields.map(field => field.fieldName)
+        ];
         const allowedFieldSet = new Set(allowedFields);
         for (const [fieldName] of fieldEntries) {
             if (!allowedFieldSet.has(fieldName)) {
@@ -4916,9 +5161,20 @@ const createChatToolRuntime = ({
         };
 
         for (const [fieldName, rawValue] of fieldEntries) {
-            const value = normalizeUpdateObjectFieldValue(rawValue, { functionName, objectType, fieldName });
+            const registeredField = registeredThingUpdateFieldMap.get(fieldName) || null;
+            const value = registeredField
+                ? normalizeRegisteredEntityFieldValue(rawValue, registeredField, { functionName })
+                : normalizeUpdateObjectFieldValue(rawValue, { functionName, objectType, fieldName });
             addOperation(fieldName, () => {
-                if (objectType === 'thing' && fieldName === 'value') {
+                if (registeredField) {
+                    if (target.record && typeof target.record.setExtensionField === 'function') {
+                        target.record.setExtensionField(fieldName, value);
+                    } else if (target.record && typeof target.record === 'object') {
+                        target.record[fieldName] = value;
+                    } else {
+                        throw new Error(`Target does not support registered field "${fieldName}".`);
+                    }
+                } else if (objectType === 'thing' && fieldName === 'value') {
                     const metadata = isPlainObject(target.record.metadata) ? { ...target.record.metadata } : {};
                     metadata.value = value;
                     target.record.metadata = metadata;
@@ -6830,6 +7086,309 @@ const createChatToolRuntime = ({
         };
     };
 
+    const buildMysteryBoxUpdateCandidate = (box) => {
+        const data = typeof box?.toJSON === 'function' ? box.toJSON() : box;
+        return {
+            id: toTrimmedString(data?.id) || null,
+            name: toTrimmedString(data?.name) || null,
+            keys: Array.isArray(data?.keys) ? data.keys.filter(entry => typeof entry === 'string') : [],
+            toJSON: serializeUpdateObjectRecord(box)
+        };
+    };
+
+    const resolveMysteryBoxUpdateTarget = (rawQuery, { functionName } = {}) => {
+        const query = normalizeRequiredString(rawQuery, {
+            functionName,
+            fieldName: 'mysteryBox'
+        });
+        const exactMatch = MysteryBox.getById(query) || MysteryBox.getByKey(query);
+        if (exactMatch) {
+            return exactMatch;
+        }
+
+        const matches = MysteryBox.findByNameOrKey(query);
+        if (!matches.length) {
+            throw new ToolVisibleError(
+                `No mystery box matches "${query}".`,
+                { code: 'mystery_box_not_found' }
+            );
+        }
+        if (matches.length > 1) {
+            throw new ToolVisibleError(
+                `Multiple mystery boxes match "${query}". Call ${functionName} again with the exact id from one candidate.`,
+                {
+                    code: 'ambiguous_mystery_box',
+                    candidates: matches
+                        .map(buildMysteryBoxUpdateCandidate)
+                        .sort(candidateSort)
+                }
+            );
+        }
+        return matches[0];
+    };
+
+    const normalizeMysteryBoxFieldPatch = (box, fieldsObject, { functionName } = {}) => {
+        if (!isPlainObject(fieldsObject)) {
+            throw new ToolVisibleError(
+                `${functionName} requires "fields" to be an object.`,
+                { code: 'invalid_arguments' }
+            );
+        }
+
+        const fieldEntries = Object.entries(fieldsObject);
+        if (!fieldEntries.length) {
+            throw new ToolVisibleError(
+                `${functionName} requires at least one field to update.`,
+                { code: 'invalid_arguments' }
+            );
+        }
+
+        const next = {
+            name: box.name,
+            keys: Array.isArray(box.keys) ? [...box.keys] : [],
+            text: box.text
+        };
+        const updatedFields = [];
+        for (const [fieldName, rawValue] of fieldEntries) {
+            if (!UPDATE_MYSTERY_BOX_FIELD_SET.has(fieldName)) {
+                throw new ToolVisibleError(
+                    `${functionName} cannot update field "${fieldName}". Allowed fields: ${UPDATE_MYSTERY_BOX_FIELD_NAMES.join(', ')}.`,
+                    {
+                        code: 'unsupported_field',
+                        details: { fieldName }
+                    }
+                );
+            }
+
+            if (fieldName === 'name') {
+                next.name = normalizeCharacterFieldString(rawValue, {
+                    functionName,
+                    fieldName,
+                    requireNonEmpty: true
+                });
+            } else if (fieldName === 'keys') {
+                next.keys = normalizeCharacterFieldArrayOfStrings(rawValue, {
+                    functionName,
+                    fieldName
+                });
+            } else if (fieldName === 'text') {
+                next.text = normalizeCharacterFieldString(rawValue, {
+                    functionName,
+                    fieldName,
+                    allowNullAsEmpty: false,
+                    requireNonEmpty: false
+                });
+            }
+            updatedFields.push(fieldName);
+        }
+
+        return { next, updatedFields };
+    };
+
+    const executeUpdateMysteryBoxFieldsTool = ({
+        mysteryBox,
+        fields
+    } = {}) => {
+        const functionName = 'updateMysteryBoxFields';
+        const box = resolveMysteryBoxUpdateTarget(mysteryBox, { functionName });
+        const { next, updatedFields } = normalizeMysteryBoxFieldPatch(box, fields, { functionName });
+        try {
+            box.applyManualEdit(next);
+        } catch (error) {
+            throw new ToolVisibleError(
+                `Failed to update mystery box "${box.name || box.id || mysteryBox}": ${error?.message || error}`,
+                { code: 'field_update_failed' }
+            );
+        }
+
+        const data = box.toJSON();
+        const lines = [
+            '<updateMysteryBoxFieldsResult>',
+            '  <status>success</status>',
+            '  <mysteryBox>',
+            `    <id>${xmlEscapeText(data.id)}</id>`,
+            `    <name>${xmlEscapeText(data.name)}</name>`,
+            '  </mysteryBox>',
+            '  <updatedFields>',
+            ...updatedFields.map(fieldName => `    <field>${xmlEscapeText(fieldName)}</field>`),
+            '  </updatedFields>',
+            '</updateMysteryBoxFieldsResult>'
+        ];
+        return {
+            content: lines.join('\n'),
+            metadata: {
+                status: 'success',
+                id: data.id,
+                name: data.name,
+                updatedFields
+            }
+        };
+    };
+
+    const buildMysteryThreadUpdateCandidate = (thread) => {
+        const data = typeof thread?.toJSON === 'function' ? thread.toJSON() : thread;
+        return {
+            id: toTrimmedString(data?.id) || null,
+            name: toTrimmedString(data?.name) || null,
+            status: toTrimmedString(data?.status) || null,
+            keys: Array.isArray(data?.keys) ? data.keys.filter(entry => typeof entry === 'string') : [],
+            toJSON: serializeUpdateObjectRecord(thread)
+        };
+    };
+
+    const resolveMysteryThreadUpdateTarget = (rawQuery, { functionName } = {}) => {
+        const query = normalizeRequiredString(rawQuery, {
+            functionName,
+            fieldName: 'mysteryThread'
+        });
+        const exactMatch = MysteryThread.getById(query) || MysteryThread.getByKey(query);
+        if (exactMatch) {
+            return exactMatch;
+        }
+
+        const matches = MysteryThread.findByNameOrKey(query);
+        if (!matches.length) {
+            throw new ToolVisibleError(
+                `No mystery thread matches "${query}".`,
+                { code: 'mystery_thread_not_found' }
+            );
+        }
+        if (matches.length > 1) {
+            throw new ToolVisibleError(
+                `Multiple mystery threads match "${query}". Call ${functionName} again with the exact id from one candidate.`,
+                {
+                    code: 'ambiguous_mystery_thread',
+                    candidates: matches
+                        .map(buildMysteryThreadUpdateCandidate)
+                        .sort(candidateSort)
+                }
+            );
+        }
+        return matches[0];
+    };
+
+    const normalizeMysteryThreadFieldPatch = (thread, fieldsObject, { functionName } = {}) => {
+        if (!isPlainObject(fieldsObject)) {
+            throw new ToolVisibleError(
+                `${functionName} requires "fields" to be an object.`,
+                { code: 'invalid_arguments' }
+            );
+        }
+
+        const fieldEntries = Object.entries(fieldsObject);
+        if (!fieldEntries.length) {
+            throw new ToolVisibleError(
+                `${functionName} requires at least one field to update.`,
+                { code: 'invalid_arguments' }
+            );
+        }
+
+        const next = {
+            name: thread.name,
+            status: thread.status,
+            keys: Array.isArray(thread.keys) ? [...thread.keys] : [],
+            summary: thread.summary,
+            constraints: Array.isArray(thread.constraints) ? [...thread.constraints] : [],
+            boxIds: Array.isArray(thread.boxIds) ? [...thread.boxIds] : []
+        };
+        const updatedFields = [];
+        for (const [fieldName, rawValue] of fieldEntries) {
+            if (!UPDATE_MYSTERY_THREAD_FIELD_SET.has(fieldName)) {
+                throw new ToolVisibleError(
+                    `${functionName} cannot update field "${fieldName}". Allowed fields: ${UPDATE_MYSTERY_THREAD_FIELD_NAMES.join(', ')}.`,
+                    {
+                        code: 'unsupported_field',
+                        details: { fieldName }
+                    }
+                );
+            }
+
+            if (fieldName === 'name') {
+                next.name = normalizeCharacterFieldString(rawValue, {
+                    functionName,
+                    fieldName,
+                    requireNonEmpty: true
+                });
+            } else if (fieldName === 'status') {
+                const status = normalizeCharacterFieldString(rawValue, {
+                    functionName,
+                    fieldName,
+                    allowNullAsEmpty: false,
+                    requireNonEmpty: true
+                });
+                if (!['active', 'inactive', 'concluded'].includes(status)) {
+                    throw new ToolVisibleError(
+                        `${functionName} "status" must be one of: active, inactive, concluded.`,
+                        { code: 'invalid_arguments' }
+                    );
+                }
+                next.status = status;
+            } else if (fieldName === 'keys') {
+                next.keys = normalizeCharacterFieldArrayOfStrings(rawValue, {
+                    functionName,
+                    fieldName
+                });
+            } else if (fieldName === 'summary') {
+                next.summary = normalizeCharacterFieldString(rawValue, {
+                    functionName,
+                    fieldName,
+                    allowNullAsEmpty: false,
+                    requireNonEmpty: false
+                });
+            } else if (fieldName === 'constraints') {
+                next.constraints = normalizeCharacterFieldArrayOfStrings(rawValue, {
+                    functionName,
+                    fieldName
+                });
+            }
+            updatedFields.push(fieldName);
+        }
+
+        return { next, updatedFields };
+    };
+
+    const executeUpdateMysteryThreadFieldsTool = ({
+        mysteryThread,
+        fields
+    } = {}) => {
+        const functionName = 'updateMysteryThreadFields';
+        const thread = resolveMysteryThreadUpdateTarget(mysteryThread, { functionName });
+        const { next, updatedFields } = normalizeMysteryThreadFieldPatch(thread, fields, { functionName });
+        try {
+            thread.applyManualEdit(next);
+        } catch (error) {
+            throw new ToolVisibleError(
+                `Failed to update mystery thread "${thread.name || thread.id || mysteryThread}": ${error?.message || error}`,
+                { code: 'field_update_failed' }
+            );
+        }
+
+        const data = thread.toJSON();
+        const lines = [
+            '<updateMysteryThreadFieldsResult>',
+            '  <status>success</status>',
+            '  <mysteryThread>',
+            `    <id>${xmlEscapeText(data.id)}</id>`,
+            `    <name>${xmlEscapeText(data.name)}</name>`,
+            `    <threadStatus>${xmlEscapeText(data.status)}</threadStatus>`,
+            '  </mysteryThread>',
+            '  <updatedFields>',
+            ...updatedFields.map(fieldName => `    <field>${xmlEscapeText(fieldName)}</field>`),
+            '  </updatedFields>',
+            '</updateMysteryThreadFieldsResult>'
+        ];
+        return {
+            content: lines.join('\n'),
+            metadata: {
+                status: 'success',
+                id: data.id,
+                name: data.name,
+                threadStatus: data.status,
+                updatedFields
+            }
+        };
+    };
+
     const buildMysteryThreadXmlLines = (thread, level = 0, { includeBoxText = true } = {}) => {
         const data = thread.toJSON();
         const indent = (extra = 0) => xmlIndent(level + extra);
@@ -6995,10 +7554,14 @@ const createChatToolRuntime = ({
                 toolResult = executeFindMysteryBoxesTool(argumentsObject);
             } else if (toolCall.functionName === 'getMysteryBox') {
                 toolResult = executeGetMysteryBoxTool(argumentsObject);
+            } else if (toolCall.functionName === 'updateMysteryBoxFields') {
+                toolResult = executeUpdateMysteryBoxFieldsTool(argumentsObject);
             } else if (toolCall.functionName === 'listMysteryThreads') {
                 toolResult = executeListMysteryThreadsTool(argumentsObject);
             } else if (toolCall.functionName === 'getMysteryThread') {
                 toolResult = executeGetMysteryThreadTool(argumentsObject);
+            } else if (toolCall.functionName === 'updateMysteryThreadFields') {
+                toolResult = executeUpdateMysteryThreadFieldsTool(argumentsObject);
             } else if (toolCall.functionName === 'teleportCharacterToLocation') {
                 toolResult = executeTeleportCharacterToLocationTool(argumentsObject);
             } else if (toolCall.functionName === 'teleportThingToLocation') {
@@ -7048,7 +7611,27 @@ const createChatToolRuntime = ({
             } else if (toolCall.functionName === 'locateThings') {
                 toolResult = executeLocateThingsTool(argumentsObject);
             } else {
-                throw new Error(`Unsupported tool call function "${toolCall.functionName}".`);
+                const registry = typeof getModExtensionRegistry === 'function'
+                    ? getModExtensionRegistry()
+                    : null;
+                const registeredTool = registry && typeof registry.getChatToolRecord === 'function'
+                    ? registry.getChatToolRecord(toolCall.functionName)
+                    : null;
+                if (registeredTool && typeof registeredTool.executor === 'function') {
+                    toolResult = registeredTool.executor(argumentsObject, {
+                        toolCall,
+                        defaultActorName,
+                        includeAllHistoryEntryTypes,
+                        requestUserInputHandler,
+                        getCurrentPlayer,
+                        Player,
+                        Thing,
+                        Location,
+                        Region
+                    });
+                } else {
+                    throw new Error(`Unsupported tool call function "${toolCall.functionName}".`);
+                }
             }
             const resolvedToolResult = await toolResult;
             if (cacheKey) {
@@ -7092,10 +7675,20 @@ const createChatToolRuntime = ({
         }
 
         const config = getConfig();
-        const configuredMaxRounds = Number(config?.ai?.max_tool_rounds);
-        const maxRounds = Number.isInteger(configuredMaxRounds) && configuredMaxRounds > 0
-            ? configuredMaxRounds
-            : CHAT_TOOL_MAX_ROUNDS;
+        const hasMaxToolCalls = config && Object.prototype.hasOwnProperty.call(config, 'max_tool_calls');
+        const configuredMaxToolCalls = Number(config?.max_tool_calls);
+        const legacyConfiguredMaxRounds = Number(config?.ai?.max_tool_rounds);
+        let maxRounds = null;
+        if (hasMaxToolCalls) {
+            if (!Number.isInteger(configuredMaxToolCalls) || configuredMaxToolCalls <= 0) {
+                throw new Error('Configuration error: max_tool_calls must be a positive integer.');
+            }
+            maxRounds = configuredMaxToolCalls;
+        } else if (Number.isInteger(legacyConfiguredMaxRounds) && legacyConfiguredMaxRounds > 0) {
+            maxRounds = legacyConfiguredMaxRounds;
+        } else {
+            throw new Error('Configuration error: max_tool_calls must be configured as a positive integer.');
+        }
         const originalOnResponse = typeof requestOptions.onResponse === 'function'
             ? requestOptions.onResponse
             : null;
@@ -7136,6 +7729,32 @@ const createChatToolRuntime = ({
             console.warn(`Chat tool call "${functionName}" failed (${code}): ${message}`);
             if (stack) {
                 console.warn(stack);
+            }
+            if (LLMClient && typeof LLMClient.writeLogFile === 'function') {
+                try {
+                    LLMClient.writeLogFile({
+                        prefix: 'tool_call_failed',
+                        metadataLabel: `${metadataLabel || 'chat'}_${functionName}`,
+                        serializeJson: true,
+                        onFailureMessage: `Failed to write chat tool failure log for "${functionName}"`,
+                        payload: {
+                            metadataLabel: metadataLabel || 'chat',
+                            toolCalled: functionName,
+                            toolCallId: toTrimmedString(toolCall?.id) || null,
+                            parameters: toolCall?.argumentsObject && typeof toolCall.argumentsObject === 'object'
+                                ? toolCall.argumentsObject
+                                : {},
+                            rawArguments: toTrimmedString(toolCall?.argumentsText) || '{}',
+                            error: {
+                                code,
+                                message
+                            },
+                            backtrace: stack || '(no backtrace captured)'
+                        }
+                    });
+                } catch (logError) {
+                    console.warn(`Failed to write chat tool failure log for "${functionName}":`, logError?.message || logError);
+                }
             }
             if (LLMClient && typeof LLMClient.logPrompt === 'function') {
                 try {
@@ -7360,11 +7979,14 @@ const createChatToolRuntime = ({
     return {
         CHAT_TOOL_DEFINITIONS,
         collectHistoryMatches,
+        executeChatToolCall,
+        getChatToolDefinitions,
         runChatCompletionWithToolLoop
     };
 };
 
 module.exports = {
     CHAT_TOOL_DEFINITIONS,
-    createChatToolRuntime
+    createChatToolRuntime,
+    getChatToolDefinitions
 };

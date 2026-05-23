@@ -443,7 +443,7 @@ test('mystery_box_mention event runs update prompt and creates a mystery box', a
             prepareBasePromptContext: async () => ({
                 setting: { name: 'Test Setting' }
             }),
-            getConfig: () => ({ ai: {} }),
+            getConfig: () => ({ ai: {}, max_tool_calls: 8 }),
             getCurrentPlayer: () => ({ name: 'Wanderer' }),
             findActorByName: () => null,
             ensureNpcByName: async () => null
@@ -518,6 +518,30 @@ test('mystery box update parser accepts skip without creating a box', () => {
     assert.match(parsed.reason, /threads are full/);
 });
 
+test('mystery thread check parser accepts resolved threads and boxes', () => {
+    const parsed = Events._parseMysteryThreadCheckResponse(`<resolvedMysteries>
+  <mysteryThread>
+    <name>Ellison Conspiracy</name>
+    <reasoning>Ellison confessed and the remaining evidence only confirms it.</reasoning>
+  </mysteryThread>
+  <mysteryBox>
+    <name>ELLISON-SEVEN</name>
+  </mysteryBox>
+</resolvedMysteries>`);
+
+    assert.deepEqual(parsed.threads, [
+        {
+            name: 'Ellison Conspiracy',
+            reasoning: 'Ellison confessed and the remaining evidence only confirms it.'
+        }
+    ]);
+    assert.deepEqual(parsed.boxes, [
+        {
+            name: 'ELLISON-SEVEN'
+        }
+    ]);
+});
+
 test('mystery_box_mention update prompt can use mystery box search tool', async () => {
     const previousChatCompletion = LLMClient.chatCompletion;
     const previousLogPrompt = LLMClient.logPrompt;
@@ -550,8 +574,8 @@ test('mystery_box_mention update prompt can use mystery box search tool', async 
                 choices: [
                     {
                         message: {
-                            content: `<resolvedMysteryThreads>
-</resolvedMysteryThreads>`,
+                            content: `<resolvedMysteries>
+</resolvedMysteries>`,
                             tool_calls: []
                         }
                     }
@@ -629,7 +653,7 @@ test('mystery_box_mention update prompt can use mystery box search tool', async 
             prepareBasePromptContext: async () => ({
                 setting: { name: 'Test Setting' }
             }),
-            getConfig: () => ({ ai: {} }),
+            getConfig: () => ({ ai: {}, max_tool_calls: 8 }),
             getCurrentPlayer: () => ({ name: 'Wanderer' }),
             findActorByName: () => null,
             ensureNpcByName: async () => null
@@ -700,8 +724,8 @@ test('mystery_box_mention skips unrelated mentions when active thread capacity i
 
     try {
         const responses = [
-            `<resolvedMysteryThreads>
-</resolvedMysteryThreads>`,
+            `<resolvedMysteries>
+</resolvedMysteries>`,
             `<mysteryBoxUpdate>
   <action>skip</action>
   <reason>Active mystery thread capacity is full and this unrelated mention does not belong to any active thread.</reason>
@@ -727,7 +751,7 @@ test('mystery_box_mention skips unrelated mentions when active thread capacity i
             prepareBasePromptContext: async () => ({
                 setting: { name: 'Test Setting' }
             }),
-            getConfig: () => ({ ai: {}, mystery_threads: { max_active: 1 } }),
+            getConfig: () => ({ ai: {}, max_tool_calls: 8, mystery_threads: { max_active: 1 } }),
             getCurrentPlayer: () => ({ name: 'Wanderer' }),
             findActorByName: () => null,
             ensureNpcByName: async () => null
@@ -791,12 +815,12 @@ test('mystery_box_mention runs mystery thread check before update and frees reso
     });
 
     const responses = [
-        `<resolvedMysteryThreads>
+        `<resolvedMysteries>
   <mysteryThread>
     <name>Existing Active Thread</name>
     <reasoning>The culprit confessed on screen, so this no longer needs active continuity.</reasoning>
   </mysteryThread>
-</resolvedMysteryThreads>`,
+</resolvedMysteries>`,
         `<mysteryBoxUpdate>
   <action>create</action>
   <thread>
@@ -838,7 +862,7 @@ test('mystery_box_mention runs mystery thread check before update and frees reso
             prepareBasePromptContext: async () => ({
                 setting: { name: 'Test Setting' }
             }),
-            getConfig: () => ({ ai: {}, mystery_threads: { max_active: 1 } }),
+            getConfig: () => ({ ai: {}, max_tool_calls: 8, mystery_threads: { max_active: 1 } }),
             getCurrentPlayer: () => ({ name: 'Wanderer' }),
             findActorByName: () => null,
             ensureNpcByName: async () => null
@@ -889,6 +913,112 @@ test('mystery_box_mention runs mystery thread check before update and frees reso
     }
 });
 
+test('mystery thread check can resolve a box while leaving its active thread visible without that box', async () => {
+    const previousChatCompletion = LLMClient.chatCompletion;
+    const previousLogPrompt = LLMClient.logPrompt;
+    const previousDeps = Events._deps;
+    const previousTimeout = Events._baseTimeout;
+    const previousParsers = Events._parsers;
+    const previousAggregators = Events._aggregators;
+    const previousHandlers = Events._handlers;
+    const renderedContexts = [];
+
+    IdGenerator.reset();
+    MysteryBox.clear();
+    MysteryThread.clear();
+    const resolvedBox = new MysteryBox({
+        name: 'ELLISON-SEVEN',
+        keys: ['Captain Ellison protocol'],
+        text: 'The private phrase proves Ellison authored the vault protocol.'
+    });
+    const unresolvedBox = new MysteryBox({
+        name: 'Omega Witness',
+        keys: ['unknown witness'],
+        text: 'An unidentified witness still knows who funded the protocol.'
+    });
+    const thread = new MysteryThread({
+        name: 'Ellison Conspiracy',
+        status: 'active',
+        summary: 'Ellison used a secret protocol, but the witness remains unidentified.',
+        constraints: ['ELLISON-SEVEN was Ellison’s phrase.'],
+        boxIds: [resolvedBox.id, unresolvedBox.id]
+    });
+
+    const responses = [
+        `<resolvedMysteries>
+  <mysteryBox>
+    <name>ELLISON-SEVEN</name>
+  </mysteryBox>
+</resolvedMysteries>`,
+        `<mysteryBoxUpdate>
+  <action>skip</action>
+  <reason>The new mention only confirms an already resolved box.</reason>
+</mysteryBoxUpdate>`
+    ];
+
+    try {
+        LLMClient.chatCompletion = async () => {
+            const response = responses.shift();
+            assert.ok(response, 'Expected a queued LLM response.');
+            return response;
+        };
+        LLMClient.logPrompt = () => {};
+        Events.initialize({
+            promptEnv: {
+                render: (_template, context) => {
+                    renderedContexts.push(context);
+                    return JSON.stringify(context);
+                }
+            },
+            parseXMLTemplate: (rendered) => ({
+                systemPrompt: 'system',
+                generationPrompt: rendered
+            }),
+            prepareBasePromptContext: async () => ({
+                setting: { name: 'Test Setting' }
+            }),
+            getConfig: () => ({ ai: {}, max_tool_calls: 8, mystery_threads: { max_active: 1 } }),
+            getCurrentPlayer: () => ({ name: 'Wanderer' }),
+            findActorByName: () => null,
+            ensureNpcByName: async () => null
+        });
+
+        await Events.applyEventOutcomes({
+            rawEntries: {
+                mystery_box_mention: 'ELLISON-SEVEN → Ellison admits the phrase is his.'
+            },
+            parsed: {
+                mystery_box_mention: [
+                    {
+                        name: 'ELLISON-SEVEN',
+                        context: 'Ellison admits the phrase is his.'
+                    }
+                ]
+            }
+        }, {
+            textToCheck: 'Ellison says ELLISON-SEVEN was his private phrase.',
+            sourceEntryId: 'entry_resolved_box'
+        });
+
+        assert.equal(resolvedBox.resolved, true);
+        assert.equal(thread.status, 'active');
+        const updateContext = renderedContexts.find((context) => context.promptType === 'mystery-box-update');
+        assert.ok(updateContext);
+        assert.deepEqual(updateContext.activeMysteryThreads[0].mysteryBoxes.map(box => box.name), ['Omega Witness']);
+        assert.deepEqual(updateContext.mysteryBoxes.map(box => box.name), ['Omega Witness']);
+    } finally {
+        Events._deps = previousDeps;
+        Events._baseTimeout = previousTimeout;
+        Events._parsers = previousParsers;
+        Events._aggregators = previousAggregators;
+        Events._handlers = previousHandlers;
+        LLMClient.chatCompletion = previousChatCompletion;
+        LLMClient.logPrompt = previousLogPrompt;
+        MysteryBox.clear();
+        MysteryThread.clear();
+    }
+});
+
 test('mystery thread check warns and continues when resolved name does not match an active thread', async () => {
     const previousChatCompletion = LLMClient.chatCompletion;
     const previousLogPrompt = LLMClient.logPrompt;
@@ -911,12 +1041,12 @@ test('mystery thread check warns and continues when resolved name does not match
     });
 
     const responses = [
-        `<resolvedMysteryThreads>
+        `<resolvedMysteries>
   <mysteryThread>
     <name>Imaginary Thread</name>
     <reasoning>The model named a thread that is not active.</reasoning>
   </mysteryThread>
-</resolvedMysteryThreads>`,
+</resolvedMysteries>`,
         `<mysteryBoxUpdate>
   <action>skip</action>
   <reason>Active mystery thread capacity is full and this unrelated mention does not belong to any active thread.</reason>
@@ -944,7 +1074,7 @@ test('mystery thread check warns and continues when resolved name does not match
             prepareBasePromptContext: async () => ({
                 setting: { name: 'Test Setting' }
             }),
-            getConfig: () => ({ ai: {}, mystery_threads: { max_active: 1 } }),
+            getConfig: () => ({ ai: {}, max_tool_calls: 8, mystery_threads: { max_active: 1 } }),
             getCurrentPlayer: () => ({ name: 'Wanderer' }),
             findActorByName: () => null,
             ensureNpcByName: async () => null

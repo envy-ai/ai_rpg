@@ -18,15 +18,27 @@ Only name mystery threads from the active mystery thread list above. Use the exa
 
 If so, respond as follows:
 
-<resolvedMysteryThreads>
+Step 1:
+
+List each mystery box by name and determine whether it's now known to the player.
+
+Step 2:
+
+Output XML in this format: 
+<resolvedMysteries>
   <mysteryThread>
     <name><!-- exact name of the mystery thread --></name>
-    <reasoning><!-- one or two sentences about why this mystery thread can be considered resolved for now. --></reasoning>
+    <reasoning><!-- one or two sentences about why this mystery thread can be considered resolved. --></reasoning>
   </mysteryThread>
   ... repeat for each resolved mystery thread ...
-</resolvedMysteryThreads>
+  <mysteryBox> 
+    <!-- a mystery box is considered resolved if the thing that was a mystery about it is now known in the general story context -->
+    <name><!-- exact name of the mystery box --></name>
+  </mysteryBox>
+  ... repeat for each resolved mystery box ...
+</resolvedMysteries>
 
-Otherwise, respond with:
+If no threads or boxes are resolved, respond with:
 
-<resolvedMysteryThreads>
-</resolvedMysteryThreads>
+<resolvedMysteries>
+</resolvedMysteries>

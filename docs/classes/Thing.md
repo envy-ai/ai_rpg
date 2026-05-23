@@ -6,6 +6,7 @@ Represents items and scenery in the game world. Supports rarity metadata, attrib
 ## Key State
 - Core fields: `#id`, `#name`, `#description`, `#shortDescription`, `#thingType`, `#imageId`, `#count`, `#containedThingIds`, `#containerContents`.
 - Metadata: `#metadata` (mirrors slot, applied bonuses, raw prompt-scale `unscaledAttributeBonuses`, cause effects, flags, levels).
+- Extension fields: `#extensionFields` stores first-class mod-registered fields such as `implantSlot` without using `metadata`.
 - Rarity and level: `#rarity`, `#itemTypeDetail`, `#level`, `#relativeLevel`.
 - Harvest history: `#previouslyHarvestedItems` (deduped list of item names harvested from this node) and `#lastHarvested` (absolute world minutes at the last successful harvest).
 - Status: `#statusEffects`, `#causeStatusEffect` (applied to target/equipper).
@@ -37,6 +38,7 @@ Represents items and scenery in the game world. Supports rarity metadata, attrib
 - Container helpers: `containedThingIds`, `containerContents` (pending generated-content seeds), `getInventoryItems()`, `addInventoryItem()`, `removeInventoryItem()`, `hasInventoryItem()`, `setInventory()`, `clearInventory()`, `clearContainerContents()`, `whoseContainer()`.
 - Rarity/level: `rarity`, `itemTypeDetail`, `level`, `relativeLevel` (get/set).
 - Metadata: `metadata` (get/set), `slot` (get/set), `attributeBonuses` (get/set), `unscaledAttributeBonuses` (get/set; prompt-scale source bonuses mirrored into metadata when known).
+- Mod extension fields: `getExtensionField(fieldName)`, `setExtensionField(fieldName, value)`, `getExtensionFields({ includeDefaults })`, plus direct accessors like `thing.implantSlot` for fields registered before the Thing is constructed or loaded.
 - Stack size: `count` (get/set; persisted integer quantity, defaults to `1`).
 - Cause effects: `causeStatusEffect` (get/set), `causeStatusEffectOnTarget`, `causeStatusEffectOnEquipper`.
 - Harvest helpers: `previouslyHarvestedItems` (get/set), `lastHarvested` (get/set), `getLastHarvestedAgoText(...)`.
@@ -48,6 +50,7 @@ Represents items and scenery in the game world. Supports rarity metadata, attrib
 - Harvest tracking: `recordSuccessfulHarvest(itemNames, { harvestedAtMinutes })` appends newly seen harvested item names and stamps `lastHarvested` at the successful completion time.
 - Distinct target/equipper cause effects remain separate through constructor ingestion and metadata sync; dual-effect items are not collapsed into one shared payload.
 - Serialization: `toJSON()`, `copy({...})`, `delete()`.
+- Registered extension fields serialize as top-level properties. `Thing.fromJSON(...)` restores only currently registered extension fields; mods that need a field should register it before saves are loaded.
 - Container inventories: only explicit `isContainer` things can hold contents; contents must be item-type things, equipped items are rejected, and nested containers are allowed only when they do not create self/descendant cycles. `containerContents` stores pending `{ name, count }` seeds parsed from generated thing XML before real contents are instantiated; omitted or empty values normalize to an empty list, omitted counts default to `1`, and count text such as `3 flares` is reduced to the integer count. A Thing with non-empty pending contents is promoted to `isContainer` with a console warning.
 - Status effects: `getStatusEffects()`, `setStatusEffects(effects)`, `addStatusEffect(effect, defaultDuration)`, `removeStatusEffect(description)`, `tickStatusEffects(elapsedMinutes)`, `clearExpiredStatusEffects()`.
 - Consumption: `consumeOne({ things })` decrements persisted `count` by `1` when the stack is larger than `1`; otherwise it fully deletes the thing from inventories/locations, static indexes, and the provided runtime `things` container.
@@ -67,6 +70,7 @@ Represents items and scenery in the game world. Supports rarity metadata, attrib
 ## Private Helpers
 - Index helpers: `#getNameBucket`, `#addThingToNameIndex`, `#removeThingFromNameIndex`, `#normalizeNameIndexEntry`.
 - Metadata helpers: `#applyMetadataFieldsFromMetadata`, `#syncFieldsToMetadata`.
+- Extension field helpers: `#installExtensionFieldAccessors`, `#applyExtensionFieldInputs`, `#setExtensionFieldValue`, and registry lookup/normalization helpers.
 - Normalizers: `#normalizeBooleanFlag`, `#normalizeAttributeBonuses`, `#normalizeStatusEffects`, `#sanitizeSlot`, `#normalizeCauseStatusEffectEntry`, `#normalizePreviouslyHarvestedItems`, `#normalizeLastHarvested`.
 - Cause effect helpers: `#upsertCauseStatusEffectEntry`, `#getCauseStatusEffectEntry`, `#ingestCauseStatusEffects`.
 - Status enrichment: `#triggerStatusEffectEnrichment`, `#enrichStatusEffectsUsingGlobals`.
@@ -81,3 +85,4 @@ Represents items and scenery in the game world. Supports rarity metadata, attrib
 - `checksum` is a fast non-cryptographic FNV-1a hash of canonicalized `toJSON()` data. It intentionally excludes volatile identity/timestamp fields (`id`, `createdAt`, `lastUpdated`), the persisted `count`, prompt-roundtrip-only metadata (`unscaledAttributeBonuses`), and placement/ownership metadata (`location*`, `owner*`, `player*`, `inventoryOwnerId`) so equivalent things remain stable across saves and movement.
 - `copy({...})` creates a new `Thing` with a fresh id/timestamps but the same hashable data and image by default; stack-splitting paths use it to preserve item identity details while changing only count/placement metadata as needed. Container contents are not copied unless `containedThingIds` is explicitly supplied.
 - Shared consumption code should call `consumeOne({ things })` instead of directly deleting a consumed thing; this preserves stacked items by decrementing `count` in place when possible.
+- Hook-based attachment mods should register first-class extension fields instead of overloading `Thing.slot`. The bundled implants mod registers `implantSlot`; items with only `implantSlot` remain ordinary inventory items in the UI and do not show normal Equip/Unequip gear controls.

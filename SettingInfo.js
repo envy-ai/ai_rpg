@@ -51,6 +51,7 @@ class SettingInfo {
   #availableClasses;
   #availableRaces;
   #customSlopWords;
+  #modSettings;
 
   // Static indexing maps
   static #indexByID = new Map();
@@ -73,6 +74,33 @@ class SettingInfo {
     return entries
       .map(entry => (typeof entry === 'string' ? entry.trim() : ''))
       .filter(entry => entry.length > 0);
+  }
+
+  static #cloneJsonObject(value, fieldName) {
+    if (value === null || value === undefined) {
+      return {};
+    }
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      throw new Error(`${fieldName} must be an object.`);
+    }
+    try {
+      return JSON.parse(JSON.stringify(value));
+    } catch (error) {
+      throw new Error(`${fieldName} must be JSON-serializable: ${error.message}`);
+    }
+  }
+
+  static #normalizeModSettings(value) {
+    const normalized = SettingInfo.#cloneJsonObject(value || {}, 'modSettings');
+    for (const [namespace, namespaceSettings] of Object.entries(normalized)) {
+      if (!namespace || typeof namespace !== 'string') {
+        throw new Error('modSettings namespaces must be non-empty strings.');
+      }
+      if (namespaceSettings === null || typeof namespaceSettings !== 'object' || Array.isArray(namespaceSettings)) {
+        throw new Error(`modSettings.${namespace} must be an object.`);
+      }
+    }
+    return normalized;
   }
 
   static #normalizeFactionCount(value) {
@@ -388,6 +416,7 @@ class SettingInfo {
     this.#availableClasses = SettingInfo.#normalizeStringList(options.availableClasses);
     this.#availableRaces = SettingInfo.#normalizeStringList(options.availableRaces);
     this.#customSlopWords = SettingInfo.#normalizeStringList(options.customSlopWords);
+    this.#modSettings = SettingInfo.#normalizeModSettings(options.modSettings);
 
     // Timestamps
     this.#createdAt = new Date().toISOString();
@@ -447,6 +476,75 @@ class SettingInfo {
   get availableClasses() { return [...this.#availableClasses]; }
   get availableRaces() { return [...this.#availableRaces]; }
   get customSlopWords() { return [...this.#customSlopWords]; }
+  get modSettings() { return SettingInfo.#cloneJsonObject(this.#modSettings, 'modSettings'); }
+
+  set modSettings(value) {
+    this.#modSettings = SettingInfo.#normalizeModSettings(value);
+    this.#updateTimestamp();
+  }
+
+  getModSettings(namespace) {
+    const normalizedNamespace = typeof namespace === 'string' ? namespace.trim() : '';
+    if (!normalizedNamespace) {
+      throw new Error('Mod settings namespace is required.');
+    }
+    const settings = this.#modSettings[normalizedNamespace];
+    return settings ? SettingInfo.#cloneJsonObject(settings, `modSettings.${normalizedNamespace}`) : {};
+  }
+
+  getModSetting(namespace, key, defaultValue = undefined) {
+    const normalizedKey = typeof key === 'string' ? key.trim() : '';
+    if (!normalizedKey) {
+      throw new Error('Mod setting key is required.');
+    }
+    const settings = this.getModSettings(namespace);
+    return Object.prototype.hasOwnProperty.call(settings, normalizedKey)
+      ? settings[normalizedKey]
+      : defaultValue;
+  }
+
+  setModSetting(namespace, key, value, { suppressTimestamp = false } = {}) {
+    const normalizedNamespace = typeof namespace === 'string' ? namespace.trim() : '';
+    const normalizedKey = typeof key === 'string' ? key.trim() : '';
+    if (!normalizedNamespace) {
+      throw new Error('Mod settings namespace is required.');
+    }
+    if (!normalizedKey) {
+      throw new Error('Mod setting key is required.');
+    }
+    const namespaceSettings = this.getModSettings(normalizedNamespace);
+    namespaceSettings[normalizedKey] = value;
+    this.#modSettings = {
+      ...this.#modSettings,
+      [normalizedNamespace]: SettingInfo.#cloneJsonObject(namespaceSettings, `modSettings.${normalizedNamespace}`)
+    };
+    if (!suppressTimestamp) {
+      this.#updateTimestamp();
+    }
+    return this.getModSetting(normalizedNamespace, normalizedKey);
+  }
+
+  updateModSettings(namespace, updates, options = {}) {
+    const normalizedNamespace = typeof namespace === 'string' ? namespace.trim() : '';
+    if (!normalizedNamespace) {
+      throw new Error('Mod settings namespace is required.');
+    }
+    if (!updates || typeof updates !== 'object' || Array.isArray(updates)) {
+      throw new Error(`modSettings.${normalizedNamespace} updates must be an object.`);
+    }
+    const namespaceSettings = {
+      ...this.getModSettings(normalizedNamespace),
+      ...SettingInfo.#cloneJsonObject(updates, `modSettings.${normalizedNamespace}`)
+    };
+    this.#modSettings = {
+      ...this.#modSettings,
+      [normalizedNamespace]: namespaceSettings
+    };
+    if (!options.suppressTimestamp) {
+      this.#updateTimestamp();
+    }
+    return this.getModSettings(normalizedNamespace);
+  }
 
   // Setters with validation
   set name(value) {
@@ -712,7 +810,7 @@ class SettingInfo {
       }
 
       if (key in this) {
-        if (key === 'unifiedTonalScale' || key === 'calendarDefinition') {
+        if (key === 'unifiedTonalScale' || key === 'calendarDefinition' || key === 'modSettings') {
           this[key] = value;
           return;
         }
@@ -769,6 +867,7 @@ class SettingInfo {
       availableClasses: [...this.#availableClasses],
       availableRaces: [...this.#availableRaces],
       customSlopWords: [...this.#customSlopWords],
+      modSettings: this.modSettings,
       createdAt: this.#createdAt,
       lastUpdated: this.#lastUpdated
     };
@@ -834,7 +933,8 @@ class SettingInfo {
       settingDescription: this.#description,
       availableClasses: [...this.#availableClasses],
       availableRaces: [...this.#availableRaces],
-      customSlopWords: [...this.#customSlopWords]
+      customSlopWords: [...this.#customSlopWords],
+      modSettings: this.modSettings
     };
   }
 

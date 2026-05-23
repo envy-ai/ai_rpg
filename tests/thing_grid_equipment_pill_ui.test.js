@@ -33,7 +33,9 @@ test('grid equipment pills toggle equipment and show centered transient feedback
 
 test('inventory-style grid views append the equipment pill only where equipment actions already exist', () => {
     assert.match(viewSource, /if \(isThingGridEquipmentPillViewMode\(activeViewMode\)\) \{[\s\S]+appendThingEquipToggle\(\{[\s\S]+host:\s*controlsHost \|\| card,[\s\S]+actorId: currentNpcInventoryNpcId,[\s\S]+activeViewMode[\s\S]+\}\);[\s\S]+return;/);
-    assert.match(viewSource, /if \(activeViewMode === 'table' \|\| isThingGridEquipmentPillViewMode\(activeViewMode\)\) \{[\s\S]+appendThingEquipToggle\(\{[\s\S]+host:\s*\(activeViewMode === 'table' && equipmentControlsHost\)[\s\S]+actorId: typeof window\.currentPlayerData\?\.id === 'string'/);
+    assert.match(viewSource, /if \(craftingSourceType !== 'location' && \(activeViewMode === 'table' \|\| isThingGridEquipmentPillViewMode\(activeViewMode\)\)\) \{[\s\S]+appendThingEquipToggle\(\{[\s\S]+host:\s*\(activeViewMode === 'table' && equipmentControlsHost\)[\s\S]+actorId: typeof window\.currentPlayerData\?\.id === 'string'/);
+    assert.match(viewSource, /const isEquippableThing = \(thing = \{\}\) => \{[\s\S]+thing\.metadata\?\.slot[\s\S]+return normalizedSlot !== 'n\/a' && normalizedSlot !== 'none';[\s\S]+\};/);
+    assert.doesNotMatch(viewSource, /implantSlot/);
 });
 
 test('chat interface docs mention grid equipment pills', () => {

@@ -29,6 +29,9 @@ Mods can now provide `defs/*.yaml` overlays that merge into the root `defs/*.yam
   - `public/` assets are not served
 - The active mod set is frozen at process startup.
 - Changing `enabled` on disk requires a server restart to take effect.
+- The `/mods` page provides a top-level checkbox manager for discovered mods. Saving that page writes explicit `mods.<name>.enabled` flags to `config.yaml`, reloads merged config for validation, and reports whether the running process still differs from the configured mod set.
+- Saves persist `metadata.enabledMods`, the startup-frozen active mod list used when the save was written. Loading a save with a different active mod list opens a client modal with three choices: apply the save's mod config, keep the current active config for this load, or cancel.
+- Applying a save's mod config writes `config.yaml`, persists a pending-load intent in `tmp/pending-load.json`, and requires restart. If `server.allowSelfRestart` is enabled, the server starts a replacement process; otherwise the UI tells the user to restart manually and the pending save loads after startup.
 
 ## Merge rules
 
@@ -47,6 +50,29 @@ Mod order for defs overlays is deterministic:
 - `/reload_config` validates the same overlays before mutating the live runtime config/caches.
 - If reload validation fails, the command reports the error and leaves the running game state untouched.
 - `/reload_config` can report that mod enable/disable changes were detected on disk, but those changes still require a restart because the running process keeps its startup mod set.
+
+## Runtime hooks
+
+Mods with `mod.js` can register runtime hooks through their scoped helper methods:
+
+- `registerChatTool(...)`
+- `registerXmlEvent(...)`
+- `registerBaseContextContributor(...)`
+- `registerActorStatusContributor(...)`
+- `registerAttributeModifierContributor(...)`
+- `registerStatusEffectContributor(...)`
+- `registerInventorySyncContributor(...)`
+- `registerSettingTab(...)`
+- `registerSettingField(...)`
+- `registerEntityField(...)`
+- `registerStartupValidator(...)`
+
+See [`modding_hooks.md`](modding_hooks.md) and [`classes/ModExtensionRegistry.md`](classes/ModExtensionRegistry.md) for the hook contract. Chat tools are combined with built-ins at request time, XML event tags are looked up live while parsing the event-check response, world-profile setting fields can be grouped into mod-owned tabs, and registered Thing fields can be exposed to live `createThing` / `updateObjectFields` schemas.
+
+The repository includes two hook-based mods:
+
+- `mods/implants`: inventory-backed actor attachments using a first-class `Thing.implantSlot` field, with prose-only install/remove tools, matching XML events, and an `Implants` World Profiles tab.
+- `mods/spells`: actor-owned spells with mana spending, spell generation, and a `Spells` World Profiles tab for per-world cost settings.
 
 ## Example
 

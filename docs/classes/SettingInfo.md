@@ -8,6 +8,7 @@ Represents a game setting/world configuration, including theme, genre, prompts, 
 - Prompt and style fields: `#currencyName`, `#currencyNamePlural`, `#currencyValueNotes`, `#writingStyleNotes`, `#baseContextPreamble`, `#characterGenInstructions`, `#imagePromptPrefix*`, `#customSlopWords`, `#unifiedTonalScale`.
 - Defaults: `#playerStartingLevel`, `#defaultStartingCurrency`, `#defaultPlayerName`, `#defaultPlayerDescription`, `#defaultStartingLocation` (generation instructions), `#defaultExistingSkills`, `#hidingAttribute`, `#hidingSkill`, `#perceptionAttribute`, `#perceptionSkill`, `#defaultFactionCount`, `#defaultFactions`, `#calendarDefinition`.
 - Lists: `#availableClasses`, `#availableRaces`, `#customSlopWords`.
+- Mod settings: `#modSettings` (namespaced JSON object for world-profile settings registered by mods).
 - Metadata: `#createdAt`, `#lastUpdated`.
 - Static indexes: `#indexByID`, `#indexByName`.
 
@@ -16,6 +17,8 @@ Represents a game setting/world configuration, including theme, genre, prompts, 
 
 ## Accessors
 - Getters and setters exist for all fields above. Setters normalize strings and update `#lastUpdated`.
+- `modSettings` returns/clones the full namespaced mod settings object.
+- `getModSettings(namespace)`, `getModSetting(namespace, key, defaultValue)`, `setModSetting(namespace, key, value)`, and `updateModSettings(namespace, updates)` provide namespaced access for mod labels, formulas, and resource identifiers.
 
 ## Instance API
 - `update(updates)`: applies updates via setters, skipping id and timestamps.
@@ -48,5 +51,6 @@ Represents a game setting/world configuration, including theme, genre, prompts, 
 - `unifiedTonalScale` is stored as an object keyed by `defs/unified_tonal_scale.yaml` axis key. Each populated axis stores `{ level, comment? }`; comments require a selected numeric level. Decimal half-step values are preserved so the Tone Scale UI can store generated midpoint selections such as `3.5`.
 - Faction draft normalization validates ids/names, relation targets/statuses/notes, assets, and reputation tiers; invalid payloads throw explicit errors.
 - `calendarDefinition` stores an optional world-profile calendar draft using the same shape as the active-game calendar (`yearName`, `months`, `weekdays`, `seasons`, `holidays`). It is normalized through `Globals.normalizeCalendarDefinition`, saved with the setting JSON, and returned as a deep clone. `null` means new-game creation should generate a calendar normally.
+- Mod setting fields registered through `ModExtensionRegistry.registerSettingField(...)` are rendered on the Worlds UI and persisted under `modSettings`. Mods can group those fields into their own World Profiles tabs through `ModExtensionRegistry.registerSettingTab(...)`; ungrouped fields remain in the Prompt Guidance `Mod Settings` block.
 - `baseContextPreamble` is prepended to image-generation prompts at execution time for the OpenAI and NanoGPT backends; ComfyUI skips it.
 - Legacy saved games whose current setting lacks hiding/perception attributes are backfilled on `/api/load` through the `setting_hide_perception` prompt, then written back to the loaded save.

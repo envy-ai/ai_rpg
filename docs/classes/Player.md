@@ -14,6 +14,7 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
 - Social: `#dispositions`, `#personalityType`, `#personalityTraits`, `#personalityNotes`, `#aiNotes`, `#resistances`, `#vulnerabilities`, NPC-only `#hiddenFromPlayer`.
 - Factions: `#factionId`, `#factionStandings` (map of `factionId -> number`).
 - UI state: `#thingListViewPreferences` (per-panel shared thing-list view modes for location/inventory/crafting/barter panels).
+- Mod state: `#modState` (namespaced JSON object persisted for hook-based mods).
 - Party/quests: `#partyMembers`, `#quests`, `#goals`, `#characterArc`.
 - Movement/turns: `#currentLocation`, `#previousLocationId`, `#lastSeenTime` (`last_seen_time` absolute world minutes), `#lastSeenLocation` (`last_seen_location` id), `#wasInPlayerLocationPreviousRound`, `#elapsedTime` (minutes), `#lastVisitedTime` (minutes), `#inCombat`, `#lastActionWasTravel`, `#consecutiveTravelActions`.
 - Lifecycle: `#isDead`, `#persistWhenDead`, `#corpseCountdown`.
@@ -76,6 +77,10 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
 - UI state:
   - `getThingListViewPreferences()`, `setThingListViewPreferences(mapOrObject)`.
   - `setThingListViewPreference(panelKey, viewMode)`.
+- Mod state:
+  - `modState` returns a cloned full namespaced state object.
+  - `getModState(namespace)`, `setModState(namespace, value)`, and `updateModState(namespace, updater)` are for mod-owned actor state. Missing old-save state reads as `{}`.
+  - `withHealthRatioPreserved(mutator)` lets attachment-style mods update actor state while preserving the current-health ratio if contributed max-health modifiers change.
 - Attributes/skills/abilities:
   - `getAttributeNames()`, `getAttributeDefinition(name)`, `getAttributeModifier(name)`, `getAttributeModifiers()`.
   - `setAttribute(name, value)` (if this increases max health, current health is increased by the same delta; decreases still clamp to max).
@@ -132,6 +137,7 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
 ## Private Helpers (Selected)
 - Initialization: `#loadDefinitions`, `#initializeAttributes`, `#initializeInventory`, `#initializeGear`, `#initializeSkills`, `#initializeDispositions`, `#initializeNeedBars`.
 - Gear helpers: `#resolveItemIdFromGearValue`, `#normalizeSlotType`, `#resolveSlotName`, `#syncGearWithInventory`, `#preserveHealthRatioAfterGearChange`.
+- Mod sync helpers: `#syncModStateWithInventory` calls registered inventory-sync contributors after inventory removal/replacement.
 - Need bar helpers: `#normalizeNeedBarChangeList`, `#normalizeNeedMagnitudeKey`, `#normalizeNeedValueMap`, `#buildNeedBarDefinition`, `#cloneNeedBarDefinition`, `#loadNeedBarDefinitionState`, `#formatNeedBarForContext`, `#resolveNeedBarByIdentifier`, `#resolveNeedBarMagnitudeDelta`, `#resolveNeedBarThreshold`, `#applyNeedBarValue`.
 - Attributes/health: `#normalizeHealthValue`, `#getHealthRegenPercentPerMinute`, `#defaultHealthAttribute`, `#resolveHealthAttribute`, `#calculateBaseHealth`, `#validateAttributeValue`, `#calculateAttributeModifier`.
 - Status/abilities: `#normalizeStatusEffects`, `#normalizeAbilities`, `#getIntrinsicStatusEffects`.
@@ -144,6 +150,7 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
 ## Notes
 - The class supports NPCs and players; many behaviors are shared with `isNPC` gating certain flows.
 - Gear and inventory are tightly coupled; equip/unequip flows update health and modifiers.
+- Registered mod attribute/status contributors are included in `getModifiedAttribute()` and `getStatusEffects()`. Inventory-backed attachment mods should remove stale installed item ids through `registerInventorySyncContributor`.
 - NPC/player inventory generation uses the shared base-context prompt wrapper with `promptType: "inventory-generator"` and the task-specific include at `prompts/_includes/inventory-generator.njk`; generated item XML is still parsed by the existing inventory item parser and stored as `Thing` records.
 - Current health is stored and serialized as a finite float. Health setters/modifiers accept finite non-negative numbers, while client-facing health readouts round displayed current/max health upward with `Math.ceil`.
 - `healthRegenPercentPerMinute` config applies passive health regeneration as a percentage of current max health for each elapsed world minute; per-actor `healthRegenAppliedAt` is persisted so reloads do not replay already-processed regeneration.

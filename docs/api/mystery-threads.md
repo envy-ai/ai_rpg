@@ -8,7 +8,7 @@ Lists mystery threads as lightweight summaries, alphabetized by name. Optional `
 
 Response:
 - 200: `{ success: true, mysteryThreads, count, maxActive }`
-- Each summary includes `id`, `name`, `status`, `keys`, `summary`, `constraints`, `boxIds`, `boxes` as lightweight box summaries, `boxCount`, `createdAt`, and `updatedAt`.
+- Each summary includes `id`, `name`, `status`, `keys`, `summary`, `constraints`, `boxIds`, `boxes` as lightweight box summaries including each box's `resolved` flag, `boxCount`, `createdAt`, and `updatedAt`.
 
 ## GET /api/mystery-threads/:id
 
@@ -19,7 +19,7 @@ Response:
 - 400 when `id` is blank
 - 404 when no thread exists
 
-`mysteryThread.boxes` contains full mystery-box payloads with private text and mention history.
+`mysteryThread.boxes` contains full mystery-box payloads with private text, mention history, and `resolved` state.
 
 ## PUT /api/mystery-threads/:id
 

@@ -21,6 +21,7 @@
             {{ appNavLink('/', 'chat', 'Play', 'app-header-icon--play', currentPage, '') }}
             {{ appNavLink('/new-game', 'new-game', 'New Game', 'app-header-icon--new-game', currentPage, 'accent') }}
             {{ appNavLink('/settings', 'settings', 'Worlds', 'app-header-icon--worlds', currentPage, '') }}
+            {{ appNavLink('/mods', 'mods', 'Mods', 'app-header-icon--mods', currentPage, '') }}
             {{ appNavLink('/lorebooks', 'lorebooks', 'Lorebooks', 'app-header-icon--lorebooks', currentPage, '') }}
             {{ appNavLink('/config', 'config', 'System', 'app-header-icon--system', currentPage, '') }}
             <details class="app-tools-menu {{ 'is-active' if toolsActive else '' }}" {% if toolsActive %}open{% endif %}>
@@ -49,4 +50,3 @@
         {% endif %}
     </div>
 </header>
-

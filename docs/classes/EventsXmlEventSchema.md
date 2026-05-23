@@ -26,6 +26,7 @@ Rules:
 - Do not emit more than one player/party travel event in a single `<events>` block.
 - `newExitDiscovered` is a normal event and does not create a context boundary.
 - Emit one element for each observed event. Downstream processing may aggregate compatible entries later.
+- Enabled mods can inject additional event tags into the prompt schema through `ModExtensionRegistry.registerXmlEvent(...)`. These tags are parsed live by tag name and should be emitted only when the prose explicitly supports the mod event.
 
 ## Travel Boundary
 

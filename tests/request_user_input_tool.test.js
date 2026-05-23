@@ -22,8 +22,8 @@ test('regular and generic chat tool payloads filter requestUserInput by config',
     assert.match(apiSource, /function isRequestUserInputToolEnabled\(\)/);
     assert.match(apiSource, /function filterEnabledChatTools\(/);
     assert.match(apiSource, /requestUserInput/);
-    assert.match(apiSource, /CHAT_TOOL_DEFINITIONS\.filter\(toolDefinition =>/);
-    assert.match(apiSource, /return isRegularProseChatToolAllowed\(functionName\)/);
+    assert.match(apiSource, /getChatToolDefinitions\(\{ modExtensionRegistry \}\)\.filter\(toolDefinition =>/);
+    assert.match(apiSource, /return isRegularProseChatToolAllowed\(functionName, modExtensionRegistry\)/);
 });
 
 test('api exposes a response endpoint and emits input requests to the originating client id', () => {

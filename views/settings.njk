@@ -14,6 +14,21 @@ Rooms/Locations: [comma-separated list of rooms]
 
 Region exits: [comma-separated list of connected regions]{%- endset %}
     {% set baseContextPreamblePlaceholder = '[Title: The Verdant Metropolis; Tags: heroic, dark, edgy; Genre: sci-fi, adventure, dystopian]' %}
+    {% macro renderModSettingField(field) %}
+    {% set fieldId = "modSetting_" + field.namespace + "_" + field.key %}
+    {% set fieldDefaultJson = field.defaultValue | default(null) | dump %}
+    <div class="form-group full-width">
+        <label for="{{ fieldId }}">{{ field.label or field.key }}</label>
+        {% if field.type == 'object' %}
+        <textarea id="{{ fieldId }}" rows="4" data-mod-setting-field="true" data-mod-setting-namespace="{{ field.namespace }}" data-mod-setting-key="{{ field.key }}" data-mod-setting-type="{{ field.type }}" data-mod-setting-default="{{ fieldDefaultJson | escape }}">{{ field.defaultValue | default({}) | dump(2) }}</textarea>
+        {% else %}
+        <input type="text" id="{{ fieldId }}" value="{{ field.defaultValue | default('') }}" data-mod-setting-field="true" data-mod-setting-namespace="{{ field.namespace }}" data-mod-setting-key="{{ field.key }}" data-mod-setting-type="{{ field.type }}" data-mod-setting-default="{{ fieldDefaultJson | escape }}">
+        {% endif %}
+        {% if field.description %}
+        <div class="help-text">{{ field.description }}</div>
+        {% endif %}
+    </div>
+    {% endmacro %}
     <div class="container">
         {% set appHeaderTitle = 'World Profiles' %}
         {% set appHeaderSubtitle = 'Create and manage reusable RPG world profiles' %}
@@ -79,6 +94,11 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                     <button type="button" class="editor-tab-btn" data-editor-tab="factions" aria-selected="false">Factions</button>
                     <button type="button" class="editor-tab-btn" data-editor-tab="characters" aria-selected="false">Character Options</button>
                     <button type="button" class="editor-tab-btn" data-editor-tab="prompts" aria-selected="false">Prompt Guidance</button>
+                    {% if modSettingTabs and modSettingTabs.length %}
+                    {% for tab in modSettingTabs %}
+                    <button type="button" class="editor-tab-btn" data-editor-tab="mod-{{ tab.id }}" aria-selected="false">{{ tab.label }}</button>
+                    {% endfor %}
+                    {% endif %}
                     <button type="button" class="editor-tab-btn" data-editor-tab="calendar" aria-selected="false">Calendar</button>
                     <button type="button" class="editor-tab-btn" data-editor-tab="images" aria-selected="false">Image Prefixes</button>
                 </div>
@@ -425,8 +445,35 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                                 <textarea id="customSlopWords" name="customSlopWords" rows="5" placeholder="echoing silence\nstarlight protocol"></textarea>
                                 <div class="help-text">Single-word entries are checked as slop words. Multi-word entries are checked as ngrams.</div>
                             </div>
+                            {% if modSettingFields and modSettingFields.length %}
+                            <div class="form-group full-width">
+                                <h3>Mod Settings</h3>
+                                <div class="help-text">World-specific settings registered by enabled mods.</div>
+                            </div>
+                            {% for field in modSettingFields %}
+                            {{ renderModSettingField(field) }}
+                            {% endfor %}
+                            {% endif %}
                         </div>
                     </section>
+
+                    {% if modSettingTabs and modSettingTabs.length %}
+                    {% for tab in modSettingTabs %}
+                    <section class="editor-tab-panel" data-editor-panel="mod-{{ tab.id }}">
+                        <div class="field-grid">
+                            <div class="form-group full-width">
+                                <h3>{{ tab.label }}</h3>
+                                {% if tab.description %}
+                                <div class="help-text">{{ tab.description }}</div>
+                                {% endif %}
+                            </div>
+                            {% for field in tab.fields %}
+                            {{ renderModSettingField(field) }}
+                            {% endfor %}
+                        </div>
+                    </section>
+                    {% endfor %}
+                    {% endif %}
 
                     <section class="editor-tab-panel" data-editor-panel="calendar">
                         <div class="settings-calendar-editor-shell">
@@ -1171,6 +1218,7 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
             assignValue('imagePromptPrefixLocation', setting.imagePromptPrefixLocation || '');
             assignValue('imagePromptPrefixItem', setting.imagePromptPrefixItem || '');
             assignValue('imagePromptPrefixScenery', setting.imagePromptPrefixScenery || '');
+            applyModSettingsToForm(setting);
             if (settingsFactionEditor) {
                 settingsFactionEditor.load(Array.isArray(setting.defaultFactions) ? setting.defaultFactions : []);
             }
@@ -1455,6 +1503,76 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                 .split(/\r?\n/)
                 .map(line => line.trim())
                 .filter(line => line.length > 0);
+        }
+
+        function collectModSettingsFromForm() {
+            const modSettings = {};
+            document.querySelectorAll('[data-mod-setting-field="true"]').forEach(field => {
+                const namespace = (field.dataset.modSettingNamespace || '').trim();
+                const key = (field.dataset.modSettingKey || '').trim();
+                const type = (field.dataset.modSettingType || 'string').trim();
+                if (!namespace || !key) {
+                    return;
+                }
+                if (!modSettings[namespace]) {
+                    modSettings[namespace] = {};
+                }
+                if (type === 'object') {
+                    const raw = field.value.trim();
+                    if (!raw) {
+                        modSettings[namespace][key] = {};
+                        return;
+                    }
+                    try {
+                        modSettings[namespace][key] = JSON.parse(raw);
+                    } catch (error) {
+                        const label = field.closest('.form-group')?.querySelector('label')?.textContent?.trim() || `${namespace}.${key}`;
+                        const wrapped = new Error(`${label} must be valid JSON: ${error.message}`);
+                        wrapped.editorTab = field.closest('.editor-tab-panel')?.dataset?.editorPanel || 'prompts';
+                        throw wrapped;
+                    }
+                    return;
+                }
+                modSettings[namespace][key] = field.value;
+            });
+            return modSettings;
+        }
+
+        function getModSettingFieldDefaultValue(field) {
+            const type = (field.dataset.modSettingType || 'string').trim();
+            const rawDefault = field.dataset.modSettingDefault || 'null';
+            const parsedDefault = JSON.parse(rawDefault);
+            if (type === 'object') {
+                const objectDefault = parsedDefault && typeof parsedDefault === 'object' && !Array.isArray(parsedDefault)
+                    ? parsedDefault
+                    : {};
+                return JSON.stringify(objectDefault, null, 2);
+            }
+            return parsedDefault === null || parsedDefault === undefined
+                ? ''
+                : String(parsedDefault);
+        }
+
+        function applyModSettingsToForm(setting = {}) {
+            const modSettings = setting.modSettings && typeof setting.modSettings === 'object'
+                ? setting.modSettings
+                : {};
+            document.querySelectorAll('[data-mod-setting-field="true"]').forEach(field => {
+                const namespace = (field.dataset.modSettingNamespace || '').trim();
+                const key = (field.dataset.modSettingKey || '').trim();
+                const type = (field.dataset.modSettingType || 'string').trim();
+                if (!namespace || !key) {
+                    return;
+                }
+                const configured = modSettings?.[namespace]?.[key];
+                if (configured === undefined) {
+                    field.value = getModSettingFieldDefaultValue(field);
+                    return;
+                }
+                field.value = type === 'object'
+                    ? JSON.stringify(configured, null, 2)
+                    : String(configured ?? '');
+            });
         }
 
         function getCurrentDefaultExistingSkills() {
@@ -3041,6 +3159,13 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                 settingData.availableClasses = splitLines(settingData.availableClasses);
                 settingData.availableRaces = splitLines(settingData.availableRaces);
                 settingData.customSlopWords = splitLines(settingData.customSlopWords);
+                try {
+                    settingData.modSettings = collectModSettingsFromForm();
+                } catch (error) {
+                    showMessage(error?.message || 'Mod settings JSON is invalid.', 'error');
+                    setActiveEditorTab(error.editorTab || 'prompts');
+                    return;
+                }
                 try {
                     validateHidePerceptionSelections(settingData);
                 } catch (error) {

@@ -1609,6 +1609,11 @@
                         <dl class="npc-view-equipment" id="npcViewEquipment"></dl>
                         <div class="npc-view-empty" id="npcViewEquipmentEmpty">No equipment equipped.</div>
                     </section>
+                    <section class="npc-view-section" id="npcViewModStatusSection">
+                        <h4>Special Systems</h4>
+                        <div class="npc-view-mod-status" id="npcViewModStatus"></div>
+                        <div class="npc-view-empty" id="npcViewModStatusEmpty">No special systems listed.</div>
+                    </section>
                     <section class="npc-view-section" id="npcViewAbilitiesSection">
                         <h4>Abilities</h4>
                         <div class="npc-view-ability-cards" id="npcViewAbilities" role="list"></div>
@@ -1938,6 +1943,28 @@
             <div class="modal__actions load-game-actions">
                 <button type="button" class="button button-secondary" id="loadGameCancelBtn">Cancel</button>
                 <button type="button" class="button button-primary" id="loadGameConfirmBtn">Load Game</button>
+            </div>
+        </div>
+    </div>
+    <div id="loadModMismatchModal" class="modal load-game-modal" role="dialog" aria-modal="true" aria-hidden="true" hidden>
+        <div class="modal__dialog">
+            <header class="modal__header">
+                <h2 id="loadModMismatchTitle">Save Mods Differ</h2>
+                <button type="button" class="modal__close" id="loadModMismatchCloseBtn" aria-label="Close save mod mismatch dialog">
+                    <span aria-hidden="true">X</span>
+                </button>
+            </header>
+            <div class="modal__body load-game-body">
+                <p id="loadModMismatchSummary" class="modal__instruction"></p>
+                <ul id="loadModMismatchDetails" class="load-game-mismatch-list"></ul>
+                <p class="modal__instruction">
+                    Accepting the save configuration changes config.yaml and requires a restart. After restart, this save will load automatically.
+                </p>
+            </div>
+            <div class="modal__actions load-game-actions">
+                <button type="button" class="button button-secondary" id="loadModMismatchCancelBtn">Cancel Load</button>
+                <button type="button" class="button button-secondary" id="loadModMismatchKeepBtn">Keep Current Mods</button>
+                <button type="button" class="button button-primary" id="loadModMismatchAcceptBtn">Use Save Mods</button>
             </div>
         </div>
     </div>
@@ -6292,6 +6319,7 @@
         let currentLoadGameSource = 'saves';
         let loadGameTriggerButton = null;
         let loadGameInFlight = false;
+        let loadModMismatchResolve = null;
 
         function ensureGearSlotTypes() {
             if (gearSlotTypesLoaded) {
@@ -8786,6 +8814,13 @@
         const loadGameCancelBtn = document.getElementById('loadGameCancelBtn');
         const loadGameConfirmBtn = document.getElementById('loadGameConfirmBtn');
         const loadGameCloseBtn = document.getElementById('loadGameCloseBtn');
+        const loadModMismatchModal = document.getElementById('loadModMismatchModal');
+        const loadModMismatchSummary = document.getElementById('loadModMismatchSummary');
+        const loadModMismatchDetails = document.getElementById('loadModMismatchDetails');
+        const loadModMismatchAcceptBtn = document.getElementById('loadModMismatchAcceptBtn');
+        const loadModMismatchKeepBtn = document.getElementById('loadModMismatchKeepBtn');
+        const loadModMismatchCancelBtn = document.getElementById('loadModMismatchCancelBtn');
+        const loadModMismatchCloseBtn = document.getElementById('loadModMismatchCloseBtn');
         const playerAbilitySelectionModal = document.getElementById('playerAbilitySelectionModal');
         const playerAbilitySelectionTitle = document.getElementById('playerAbilitySelectionTitle');
         const playerAbilitySelectionIntro = document.getElementById('playerAbilitySelectionIntro');
@@ -9189,6 +9224,8 @@
         const npcViewFactionEmpty = document.getElementById('npcViewFactionEmpty');
         const npcViewEquipment = document.getElementById('npcViewEquipment');
         const npcViewEquipmentEmpty = document.getElementById('npcViewEquipmentEmpty');
+        const npcViewModStatus = document.getElementById('npcViewModStatus');
+        const npcViewModStatusEmpty = document.getElementById('npcViewModStatusEmpty');
         const npcViewSkillAllocationSection = document.getElementById('npcViewSkillAllocationSection');
         const npcViewSkillsGrid = document.getElementById('npcViewSkillsGrid');
         const npcViewSkillPointsRemaining = document.getElementById('npcViewSkillPointsRemaining');
@@ -14456,7 +14493,8 @@
             const newExitHidden = !newExitModal || newExitModal.hasAttribute('hidden');
             const addNpcHidden = !addNpcModal || addNpcModal.hasAttribute('hidden');
             const loadGameHidden = !loadGameModal || loadGameModal.hasAttribute('hidden');
-            if (npcModalBackdrop && inventoryHidden && viewHidden && editHidden && thingHidden && dispositionHidden && needsHidden && memoriesHidden && goalsHidden && newExitHidden && addNpcHidden && loadGameHidden) {
+            const loadModMismatchHidden = !loadModMismatchModal || loadModMismatchModal.hasAttribute('hidden');
+            if (npcModalBackdrop && inventoryHidden && viewHidden && editHidden && thingHidden && dispositionHidden && needsHidden && memoriesHidden && goalsHidden && newExitHidden && addNpcHidden && loadGameHidden && loadModMismatchHidden) {
                 npcModalBackdrop.setAttribute('hidden', '');
                 document.body.classList.remove('modal-open');
             }
@@ -14465,6 +14503,122 @@
                 loadGameTriggerButton.focus();
             }
             loadGameTriggerButton = null;
+        }
+
+        function renderLoadModMismatchDetails(modMismatch = {}) {
+            if (loadModMismatchDetails) {
+                loadModMismatchDetails.innerHTML = '';
+                const rows = [
+                    {
+                        label: 'Required by save but inactive now',
+                        values: Array.isArray(modMismatch.missingFromActive) ? modMismatch.missingFromActive : []
+                    },
+                    {
+                        label: 'Active now but not saved with this game',
+                        values: Array.isArray(modMismatch.extraActive) ? modMismatch.extraActive : []
+                    }
+                ];
+                rows.forEach(row => {
+                    const item = document.createElement('li');
+                    const values = row.values.length ? row.values.join(', ') : 'none';
+                    item.textContent = `${row.label}: ${values}`;
+                    loadModMismatchDetails.appendChild(item);
+                });
+            }
+        }
+
+        function closeLoadModMismatchModal(choice = 'cancel') {
+            if (!loadModMismatchModal) {
+                return;
+            }
+            loadModMismatchModal.setAttribute('aria-hidden', 'true');
+            loadModMismatchModal.setAttribute('hidden', '');
+            if (npcModalBackdrop) {
+                npcModalBackdrop.classList.remove('modal-backdrop--load-game-top');
+            }
+            if (typeof hideNpcBackdropIfNoSharedModalOpen === 'function') {
+                hideNpcBackdropIfNoSharedModalOpen();
+            }
+            if (loadModMismatchResolve) {
+                const resolve = loadModMismatchResolve;
+                loadModMismatchResolve = null;
+                resolve(choice);
+            }
+        }
+
+        function showLoadModMismatchModal({ modMismatch = {}, saveName = '', saveSource = 'saves' } = {}) {
+            if (!loadModMismatchModal || !npcModalBackdrop) {
+                return Promise.resolve('cancel');
+            }
+            const sourceLabel = getLoadGameSourceLabel({ source: saveSource, plural: false });
+            if (loadModMismatchSummary) {
+                loadModMismatchSummary.textContent = `The selected ${sourceLabel} "${saveName}" was saved with a different enabled mod list.`;
+            }
+            renderLoadModMismatchDetails(modMismatch);
+            npcModalBackdrop.removeAttribute('hidden');
+            npcModalBackdrop.classList.add('modal-backdrop--load-game-top');
+            loadModMismatchModal.removeAttribute('hidden');
+            loadModMismatchModal.setAttribute('aria-hidden', 'false');
+            document.body.classList.add('modal-open');
+            scrollModalToTop(loadModMismatchModal);
+
+            return new Promise(resolve => {
+                loadModMismatchResolve = resolve;
+                setTimeout(() => {
+                    if (loadModMismatchAcceptBtn) {
+                        loadModMismatchAcceptBtn.focus();
+                    }
+                }, 50);
+            });
+        }
+
+        async function requestGameLoad({ saveName, saveSource, clientId, modMismatchChoice = null } = {}) {
+            const body = { saveName, saveType: saveSource, clientId };
+            if (modMismatchChoice) {
+                body.modMismatchChoice = modMismatchChoice;
+            }
+            const response = await fetch('/api/load', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+            const result = await response.json().catch(() => ({}));
+            return { response, result };
+        }
+
+        async function applySaveModConfiguration({ saveName, saveSource } = {}) {
+            const response = await fetch('/api/mods/apply-save-config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ saveName, saveType: saveSource })
+            });
+            const result = await response.json().catch(() => ({}));
+            if (!response.ok || !result?.success) {
+                throw new Error(result?.error || `HTTP ${response.status}`);
+            }
+            return result;
+        }
+
+        async function finishSuccessfulGameLoad(loadResult) {
+            const aliasesGenerated = loadResult?.metadata?.npcAliasesGenerated === true;
+            if (!aliasesGenerated) {
+                const shouldGenerateAliases = window.confirm(
+                    'This save does not have NPC aliases yet.\n\nGenerate aliases now? This will run in batches of 20 NPCs per prompt.'
+                );
+                if (shouldGenerateAliases) {
+                    const aliasResponse = await fetch('/api/npcs/generate-aliases', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({})
+                    });
+                    const aliasResult = await aliasResponse.json().catch(() => ({}));
+                    if (!aliasResponse.ok || !aliasResult?.success) {
+                        const aliasErrorMessage = aliasResult?.error || `HTTP ${aliasResponse.status}`;
+                        throw new Error(`Failed to generate NPC aliases: ${aliasErrorMessage}`);
+                    }
+                }
+            }
+            window.location.reload();
         }
 
         window.openLoadGameModal = openLoadGameModal;
@@ -15841,6 +15995,37 @@
             });
         }
 
+        if (loadModMismatchAcceptBtn) {
+            loadModMismatchAcceptBtn.addEventListener('click', () => {
+                closeLoadModMismatchModal('accept');
+            });
+        }
+
+        if (loadModMismatchKeepBtn) {
+            loadModMismatchKeepBtn.addEventListener('click', () => {
+                closeLoadModMismatchModal('keep');
+            });
+        }
+
+        if (loadModMismatchCancelBtn) {
+            loadModMismatchCancelBtn.addEventListener('click', () => {
+                closeLoadModMismatchModal('cancel');
+            });
+        }
+
+        if (loadModMismatchCloseBtn) {
+            loadModMismatchCloseBtn.addEventListener('click', () => {
+                closeLoadModMismatchModal('cancel');
+            });
+        }
+
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape' && loadModMismatchModal && !loadModMismatchModal.hasAttribute('hidden')) {
+                event.preventDefault();
+                closeLoadModMismatchModal('cancel');
+            }
+        });
+
         if (loadGameSourceRadios && loadGameSourceRadios.length) {
             loadGameSourceRadios.forEach(radio => {
                 radio.addEventListener('change', (event) => {
@@ -15906,34 +16091,46 @@
                 try {
                     await cancelAllPromptsBeforeLoad();
 
-                    const loadResponse = await fetch('/api/load', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ saveName, saveType: saveSource, clientId })
+                    const { response: loadResponse, result: loadResult } = await requestGameLoad({
+                        saveName,
+                        saveSource,
+                        clientId
                     });
 
-                    const loadResult = await loadResponse.json().catch(() => ({}));
-
                     if (loadResponse.ok && loadResult?.success) {
-                        const aliasesGenerated = loadResult?.metadata?.npcAliasesGenerated === true;
-                        if (!aliasesGenerated) {
-                            const shouldGenerateAliases = window.confirm(
-                                'This save does not have NPC aliases yet.\n\nGenerate aliases now? This will run in batches of 20 NPCs per prompt.'
-                            );
-                            if (shouldGenerateAliases) {
-                                const aliasResponse = await fetch('/api/npcs/generate-aliases', {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({})
-                                });
-                                const aliasResult = await aliasResponse.json().catch(() => ({}));
-                                if (!aliasResponse.ok || !aliasResult?.success) {
-                                    const aliasErrorMessage = aliasResult?.error || `HTTP ${aliasResponse.status}`;
-                                    throw new Error(`Failed to generate NPC aliases: ${aliasErrorMessage}`);
+                        await finishSuccessfulGameLoad(loadResult);
+                    } else if (loadResponse.status === 409 && loadResult?.code === 'MOD_ENABLEMENT_MISMATCH') {
+                        const choice = await showLoadModMismatchModal({
+                            modMismatch: loadResult.modMismatch,
+                            saveName,
+                            saveSource
+                        });
+                        if (choice === 'keep') {
+                            const { response: keepResponse, result: keepResult } = await requestGameLoad({
+                                saveName,
+                                saveSource,
+                                clientId,
+                                modMismatchChoice: 'keep-current'
+                            });
+                            if (!keepResponse.ok || !keepResult?.success) {
+                                throw new Error(keepResult?.error || `HTTP ${keepResponse.status}`);
+                            }
+                            await finishSuccessfulGameLoad(keepResult);
+                        } else if (choice === 'accept') {
+                            const applyResult = await applySaveModConfiguration({ saveName, saveSource });
+                            if (applyResult.selfRestartStarted) {
+                                window.alert('Save mod configuration applied. The server is restarting; this save will load automatically when it comes back up.');
+                                if (window.AIRPG_PENDING_LOAD && typeof window.AIRPG_PENDING_LOAD.check === 'function') {
+                                    setTimeout(() => {
+                                        window.AIRPG_PENDING_LOAD.check().catch(error => {
+                                            console.warn('Pending load check failed after restart request:', error);
+                                        });
+                                    }, 2000);
                                 }
+                            } else {
+                                window.alert('Save mod configuration applied. Restart the server manually; after restart, this save will load automatically.');
                             }
                         }
-                        window.location.reload();
                     } else {
                         const errorMessage = loadResult?.error || `HTTP ${loadResponse.status}`;
                         throw new Error(errorMessage);
@@ -17024,7 +17221,9 @@
         if (npcModalBackdrop) {
             npcModalBackdrop.addEventListener('click', (event) => {
                 if (event.target === npcModalBackdrop) {
-                    if (addNpcModal && !addNpcModal.hasAttribute('hidden')) {
+                    if (loadModMismatchModal && !loadModMismatchModal.hasAttribute('hidden')) {
+                        closeLoadModMismatchModal('cancel');
+                    } else if (addNpcModal && !addNpcModal.hasAttribute('hidden')) {
                         closeAddNpcModal({ focusTrigger: true });
                     } else if (newExitModal && !newExitModal.hasAttribute('hidden')) {
                         closeNewExitModal();
@@ -20350,7 +20549,8 @@
                 npcGoalsModal,
                 newExitModal,
                 addNpcModal,
-                loadGameModal
+                loadGameModal,
+                loadModMismatchModal
             ].every(isSharedNpcBackdropModalHidden);
 
             if (npcModalBackdrop && allHidden) {
@@ -22563,6 +22763,59 @@
             });
         }
 
+        function renderModStatusSections(container, emptyState, sections = []) {
+            if (!container) {
+                return;
+            }
+            container.innerHTML = '';
+            const safeSections = Array.isArray(sections)
+                ? sections.filter(section => section && Array.isArray(section.entries) && section.entries.length)
+                : [];
+            if (!safeSections.length) {
+                if (emptyState) {
+                    emptyState.removeAttribute('hidden');
+                }
+                container.setAttribute('hidden', '');
+                return;
+            }
+
+            container.removeAttribute('hidden');
+            if (emptyState) {
+                emptyState.setAttribute('hidden', '');
+            }
+
+            safeSections.forEach(section => {
+                const block = document.createElement('div');
+                block.className = 'npc-view-mod-status-section';
+
+                const heading = document.createElement('h5');
+                heading.textContent = section.label || section.key || 'Special';
+                block.appendChild(heading);
+
+                const list = document.createElement('ul');
+                list.className = 'npc-view-list';
+                section.entries.forEach(entry => {
+                    if (!entry) {
+                        return;
+                    }
+                    const name = entry.itemName || entry.name || entry.id || 'Entry';
+                    const details = [];
+                    if (entry.slot) details.push(entry.slot);
+                    if (entry.level) details.push(`level ${entry.level}`);
+                    if (entry.manaUsage) details.push(`${entry.manaUsage} usage`);
+                    if (entry.cost) details.push(`cost ${entry.cost}`);
+                    const description = entry.effectSummary || entry.description || '';
+                    const li = document.createElement('li');
+                    li.innerHTML = `<strong>${escapeHtml(name)}</strong>`
+                        + (details.length ? `<span class="npc-view-list-description">${escapeHtml(details.join(' · '))}</span>` : '')
+                        + (description ? `<span class="npc-view-list-description">${escapeHtml(description)}</span>` : '');
+                    list.appendChild(li);
+                });
+                block.appendChild(list);
+                container.appendChild(block);
+            });
+        }
+
         function renderList(container, emptyState, items = [], options = {}) {
             if (!container) {
                 return;
@@ -23233,6 +23486,7 @@
             }
             equipmentEntries.sort((a, b) => a.slotLabel.localeCompare(b.slotLabel));
             renderEquipmentList(npcViewEquipment, npcViewEquipmentEmpty, equipmentEntries);
+            renderModStatusSections(npcViewModStatus, npcViewModStatusEmpty, latestNpc?.modStatusSections);
 
             renderAbilityCards(npcViewAbilities, npcViewAbilitiesEmpty, latestNpc?.abilities);
 

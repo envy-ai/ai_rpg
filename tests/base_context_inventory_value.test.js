@@ -345,6 +345,13 @@ test('base-context includes active mystery threads and contained boxes only', ()
                     name: 'Siphon Saboteur Identity',
                     keys: ['Drask'],
                     text: 'Kellen Drask is the siphoner.'
+                },
+                {
+                    id: 'mystery_2',
+                    name: 'Resolved Furnace Password',
+                    keys: ['furnace password'],
+                    text: 'The password was spoken in the council chamber.',
+                    resolved: true
                 }
             ]
         }
@@ -359,4 +366,6 @@ test('base-context includes active mystery threads and contained boxes only', ()
     assert.match(rendered, /<constraint>Drask is the siphoner\.<\/constraint>/);
     assert.match(rendered, /<name>Siphon Saboteur Identity<\/name>/);
     assert.match(rendered, /<text>Kellen Drask is the siphoner\.<\/text>/);
+    assert.doesNotMatch(rendered, /Resolved Furnace Password/);
+    assert.doesNotMatch(rendered, /The password was spoken in the council chamber\./);
 });

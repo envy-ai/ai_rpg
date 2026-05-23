@@ -25,12 +25,22 @@ const {
     resolveCriticalThresholdFormulas,
     validateCriticalThresholdValues
 } = require('./utils/critical-threshold-formulas.js');
-const { CHAT_TOOL_DEFINITIONS, createChatToolRuntime } = require('./chat_tool_calls.js');
+const { createChatToolRuntime, getChatToolDefinitions } = require('./chat_tool_calls.js');
 const {
     countSceneSummaryIndexEntries
 } = require('./scene_summary_index.js');
 const { normalizeUnifiedTonalScaleSelections } = require('./UnifiedTonalScale.js');
 const { loadMergedDefinitionFile } = require('./DefinitionLoader.js');
+const {
+    buildModManagerState,
+    clearPendingLoadIntent,
+    diffEnabledMods,
+    normalizeEnabledModNames,
+    readPendingLoadIntent,
+    updateConfigYamlModEnablement,
+    writePendingLoadIntent
+} = require('./ModManager.js');
+const { getEnabledModDirectoryNames } = require('./ModDiscovery.js');
 const e = require('express');
 const { getLorebookManager } = require('./lorebook.js');
 const console = require('console');
@@ -139,12 +149,22 @@ function shouldIncludePlayerActionForEventChecks({
     return true;
 }
 
-function isRegularProseChatToolAllowed(functionName) {
-    if (typeof functionName !== 'string' || !INFORMATION_GATHERING_CHAT_TOOL_NAMES.has(functionName)) {
+function isRegularProseChatToolAllowed(functionName, modExtensionRegistry = null) {
+    if (typeof functionName !== 'string' || !functionName.trim()) {
+        return false;
+    }
+    const trimmedName = functionName.trim();
+    const registeredTool = modExtensionRegistry && typeof modExtensionRegistry.getChatToolRecord === 'function'
+        ? modExtensionRegistry.getChatToolRecord(trimmedName)
+        : null;
+    if (registeredTool) {
+        return registeredTool.allowedInRegularProse === true;
+    }
+    if (!INFORMATION_GATHERING_CHAT_TOOL_NAMES.has(trimmedName)) {
         return false;
     }
     if (Globals.config?.use_legacy_prompt_checks === true
-        && LEGACY_PROMPT_CHECK_CHAT_TOOL_NAMES.has(functionName)) {
+        && LEGACY_PROMPT_CHECK_CHAT_TOOL_NAMES.has(trimmedName)) {
         return false;
     }
     return true;
@@ -158,8 +178,8 @@ function isPlotAnalysisPromptEnabled() {
     return Globals.config?.plot_analysis?.enabled !== false;
 }
 
-function filterEnabledChatTools({ allowWorldMutationTools = false } = {}) {
-    return CHAT_TOOL_DEFINITIONS.filter(toolDefinition => {
+function filterEnabledChatTools({ allowWorldMutationTools = false, modExtensionRegistry = null } = {}) {
+    const builtInTools = getChatToolDefinitions({ modExtensionRegistry }).filter(toolDefinition => {
         const functionName = typeof toolDefinition?.function?.name === 'string'
             ? toolDefinition.function.name.trim()
             : '';
@@ -172,8 +192,14 @@ function filterEnabledChatTools({ allowWorldMutationTools = false } = {}) {
         if (allowWorldMutationTools) {
             return true;
         }
-        return isRegularProseChatToolAllowed(functionName);
+        return isRegularProseChatToolAllowed(functionName, modExtensionRegistry);
     });
+    const modTools = modExtensionRegistry && typeof modExtensionRegistry.getChatToolDefinitions === 'function'
+        ? modExtensionRegistry.getChatToolDefinitions(allowWorldMutationTools
+            ? { genericPromptOnly: true }
+            : { regularProseOnly: true })
+        : [];
+    return [...builtInTools, ...modTools];
 }
 
 function normalizeNewExitSummaryText(value) {
@@ -1848,7 +1874,8 @@ module.exports = function registerApiRoutes(scope) {
             getGameLocations: () => gameLocations,
             getFactions: () => factions,
             getRegionsMap: () => regions,
-            getPendingRegionStubs: () => pendingRegionStubs
+            getPendingRegionStubs: () => pendingRegionStubs,
+            getModExtensionRegistry: () => modExtensionRegistry || Globals.modExtensionRegistry || null
         });
 
         const shortDescriptionBackfillByClient = new Map();
@@ -19170,7 +19197,7 @@ module.exports = function registerApiRoutes(scope) {
                 if (Number.isFinite(repetitionPenalty) && repetitionPenalty > 0) {
                     additionalPayload.repetition_penalty = repetitionPenalty;
                 }
-                const enabledChatTools = filterEnabledChatTools();
+                const enabledChatTools = filterEnabledChatTools({ modExtensionRegistry });
                 if (enabledChatTools.length > 0) {
                     additionalPayload.tools = enabledChatTools;
                     additionalPayload.tool_choice = 'auto';
@@ -21863,7 +21890,7 @@ module.exports = function registerApiRoutes(scope) {
                 const allowWorldMutationTools = Boolean(isGenericPromptAction && !isNoContextPromptAction);
                 const enabledChatTools = isNoContextPromptAction
                     ? []
-                    : filterEnabledChatTools({ allowWorldMutationTools });
+                    : filterEnabledChatTools({ allowWorldMutationTools, modExtensionRegistry });
                 if (Array.isArray(enabledChatTools) && enabledChatTools.length > 0) {
                     additionalPayload.tools = enabledChatTools;
                     additionalPayload.tool_choice = 'auto';
@@ -23589,6 +23616,7 @@ module.exports = function registerApiRoutes(scope) {
                 id: typeof data.id === 'string' ? data.id : null,
                 name: typeof data.name === 'string' ? data.name : '',
                 keys: Array.isArray(data.keys) ? data.keys.filter(entry => typeof entry === 'string') : [],
+                resolved: data.resolved === true,
                 threadId: thread?.id || null,
                 threadName: thread?.name || null,
                 createdAt: typeof data.createdAt === 'string' ? data.createdAt : null,
@@ -23607,6 +23635,7 @@ module.exports = function registerApiRoutes(scope) {
                 id: typeof data.id === 'string' ? data.id : null,
                 name: typeof data.name === 'string' ? data.name : '',
                 keys: Array.isArray(data.keys) ? data.keys.filter(entry => typeof entry === 'string') : [],
+                resolved: data.resolved === true,
                 threadId: thread?.id || null,
                 threadName: thread?.name || null,
                 text: typeof data.text === 'string' ? data.text : '',
@@ -40886,6 +40915,92 @@ module.exports = function registerApiRoutes(scope) {
             return latest ? latest.path : null;
         };
 
+        const getActiveEnabledModNames = () => normalizeEnabledModNames(
+            getEnabledModDirectoryNames(resolveBaseDirectory()),
+            'active enabled mods'
+        );
+
+        const readSaveMetadataFile = (saveDir) => {
+            if (typeof saveDir !== 'string' || !saveDir.trim()) {
+                throw new Error('Save directory is required to read metadata.');
+            }
+            const metadataPath = path.join(saveDir, 'metadata.json');
+            if (!fs.existsSync(metadataPath)) {
+                const error = new Error(`Save metadata not found: ${metadataPath}`);
+                error.code = 'SAVE_METADATA_NOT_FOUND';
+                throw error;
+            }
+            let parsed;
+            try {
+                parsed = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
+            } catch (parseError) {
+                const error = new Error(`Failed to parse save metadata: ${parseError.message}`);
+                error.code = 'SAVE_METADATA_INVALID';
+                throw error;
+            }
+            if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+                const error = new Error('Save metadata must contain a JSON object.');
+                error.code = 'SAVE_METADATA_INVALID';
+                throw error;
+            }
+            return parsed;
+        };
+
+        const resolveSaveDirForRequest = (requestedSaveName, saveRoot) => {
+            const normalizedName = typeof requestedSaveName === 'string' ? requestedSaveName.trim() : '';
+            if (!normalizedName) {
+                const error = new Error('Save name is required');
+                error.code = 'SAVE_NAME_REQUIRED';
+                throw error;
+            }
+            const baseDir = resolveBaseDirectory();
+            const saveRootPath = resolveSaveRootPath(saveRoot, baseDir);
+            const saveDir = path.join(saveRootPath, normalizedName);
+            if (!fs.existsSync(saveDir)) {
+                const directoryLabel = path.basename(saveRootPath) || 'saves';
+                const error = new Error(`Save '${normalizedName}' not found in ${directoryLabel}`);
+                error.code = 'SAVE_NOT_FOUND';
+                throw error;
+            }
+            return {
+                baseDir,
+                normalizedName,
+                saveDir,
+                saveRootPath
+            };
+        };
+
+        const buildModMismatchLoadError = (diff) => {
+            const error = new Error(
+                'Enabled mods for this save differ from the currently active mods. Choose whether to apply the save configuration, keep the current configuration, or cancel the load.'
+            );
+            error.code = 'MOD_ENABLEMENT_MISMATCH';
+            error.modMismatch = diff;
+            return error;
+        };
+
+        const resolveSaveEnabledModDiff = (metadata) => {
+            if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) {
+                return null;
+            }
+            if (!Object.prototype.hasOwnProperty.call(metadata, 'enabledMods')) {
+                return null;
+            }
+            const savedEnabledMods = normalizeEnabledModNames(metadata?.enabledMods, 'save metadata.enabledMods');
+            return diffEnabledMods({
+                activeEnabledMods: getActiveEnabledModNames(),
+                savedEnabledMods
+            });
+        };
+
+        const assertSaveEnabledModsCompatible = (metadata, { modMismatchChoice = null } = {}) => {
+            const diff = resolveSaveEnabledModDiff(metadata);
+            if (!diff || !diff.hasMismatch || modMismatchChoice === 'keep-current') {
+                return diff;
+            }
+            throw buildModMismatchLoadError(diff);
+        };
+
         const readLastChatHistoryEntryId = (saveDir) => {
             if (!saveDir || typeof saveDir !== 'string') {
                 throw new Error('Save directory is required to read chat history.');
@@ -41029,6 +41144,7 @@ module.exports = function registerApiRoutes(scope) {
                 factions,
                 currentSetting,
                 pendingRegionStubs,
+                enabledMods: getActiveEnabledModNames(),
                 gameConfigOverrideYaml: typeof Globals.getGameConfigOverrideYaml === 'function'
                     ? Globals.getGameConfigOverrideYaml()
                     : ''
@@ -41312,6 +41428,7 @@ module.exports = function registerApiRoutes(scope) {
                 factions,
                 currentSetting,
                 pendingRegionStubs,
+                enabledMods: getActiveEnabledModNames(),
                 gameConfigOverrideYaml: typeof Globals.getGameConfigOverrideYaml === 'function'
                     ? Globals.getGameConfigOverrideYaml()
                     : ''
@@ -41325,25 +41442,16 @@ module.exports = function registerApiRoutes(scope) {
             Utils.writeSerializedGameState(saveDir, serializedBackfill);
         }
 
-        async function performGameLoad(requestedSaveName, { skipSummary = false, saveRoot = null, clientId = null } = {}) {
-            const normalizedName = typeof requestedSaveName === 'string' ? requestedSaveName.trim() : '';
-            if (!normalizedName) {
-                const error = new Error('Save name is required');
-                error.code = 'SAVE_NAME_REQUIRED';
-                throw error;
-            }
-
-            const baseDir = resolveBaseDirectory();
-            const saveRootPath = resolveSaveRootPath(saveRoot, baseDir);
-            const saveDir = path.join(saveRootPath, normalizedName);
-            if (!fs.existsSync(saveDir)) {
-                const directoryLabel = path.basename(saveRootPath) || 'saves';
-                const error = new Error(`Save '${normalizedName}' not found in ${directoryLabel}`);
-                error.code = 'SAVE_NOT_FOUND';
-                throw error;
-            }
+        async function performGameLoad(requestedSaveName, { skipSummary = false, saveRoot = null, clientId = null, modMismatchChoice = null } = {}) {
+            const {
+                baseDir,
+                normalizedName,
+                saveDir,
+                saveRootPath
+            } = resolveSaveDirForRequest(requestedSaveName, saveRoot);
 
             const serialized = Utils.loadSerializedGameState(saveDir);
+            assertSaveEnabledModsCompatible(serialized.metadata, { modMismatchChoice });
             const savedGameConfigOverrideYaml = typeof serialized.gameConfigOverrideYaml === 'string'
                 ? serialized.gameConfigOverrideYaml
                 : '';
@@ -42326,6 +42434,156 @@ module.exports = function registerApiRoutes(scope) {
             }
         });
 
+        app.get('/api/mods/manager', (req, res) => {
+            try {
+                const baseDir = resolveBaseDirectory();
+                return res.json({
+                    success: true,
+                    modState: buildModManagerState(baseDir, { runtimeConfig: config })
+                });
+            } catch (error) {
+                console.error('Error loading mod manager state:', error);
+                return res.status(500).json({
+                    success: false,
+                    error: error.message
+                });
+            }
+        });
+
+        app.put('/api/mods/enabled', (req, res) => {
+            try {
+                const baseDir = resolveBaseDirectory();
+                const enabledMods = normalizeEnabledModNames(req.body?.enabledMods, 'enabledMods');
+                const updateResult = updateConfigYamlModEnablement(baseDir, enabledMods);
+                if (typeof Globals.reloadConfigAndDefs !== 'function') {
+                    throw new Error('Globals.reloadConfigAndDefs is not available to reload mod configuration.');
+                }
+                const reloadResult = Globals.reloadConfigAndDefs({
+                    gameConfigOverrideYaml: typeof Globals.getGameConfigOverrideYaml === 'function'
+                        ? Globals.getGameConfigOverrideYaml()
+                        : '',
+                    needBarSentenceValidationMode: 'warn'
+                });
+                const modState = buildModManagerState(baseDir, { runtimeConfig: config });
+                return res.json({
+                    success: true,
+                    enabledMods: updateResult.enabledMods,
+                    modState,
+                    reloadResult,
+                    restartRequired: modState.restartRequired
+                });
+            } catch (error) {
+                console.error('Error updating enabled mods:', error);
+                return res.status(400).json({
+                    success: false,
+                    error: error.message
+                });
+            }
+        });
+
+        app.get('/api/pending-load', (req, res) => {
+            try {
+                return res.json({
+                    success: true,
+                    pendingLoad: readPendingLoadIntent(resolveBaseDirectory())
+                });
+            } catch (error) {
+                console.error('Error reading pending load intent:', error);
+                return res.status(500).json({
+                    success: false,
+                    error: error.message
+                });
+            }
+        });
+
+        app.delete('/api/pending-load', (req, res) => {
+            try {
+                const cleared = clearPendingLoadIntent(resolveBaseDirectory());
+                return res.json({
+                    success: true,
+                    cleared
+                });
+            } catch (error) {
+                console.error('Error clearing pending load intent:', error);
+                return res.status(500).json({
+                    success: false,
+                    error: error.message
+                });
+            }
+        });
+
+        app.post('/api/mods/apply-save-config', (req, res) => {
+            try {
+                const { saveName, saveType } = req.body || {};
+                const normalizedType = typeof saveType === 'string' && saveType.toLowerCase() === 'autosaves'
+                    ? 'autosaves'
+                    : 'saves';
+                const { baseDir, normalizedName, saveDir } = resolveSaveDirForRequest(saveName, normalizedType);
+                const metadata = readSaveMetadataFile(saveDir);
+                if (!Object.prototype.hasOwnProperty.call(metadata, 'enabledMods')) {
+                    const error = new Error('This save does not contain enabled mod metadata; its mod configuration cannot be applied automatically.');
+                    error.code = 'SAVE_MOD_METADATA_NOT_FOUND';
+                    throw error;
+                }
+                const savedEnabledMods = normalizeEnabledModNames(metadata.enabledMods, 'save metadata.enabledMods');
+                const updateResult = updateConfigYamlModEnablement(baseDir, savedEnabledMods);
+                if (typeof Globals.reloadConfigAndDefs !== 'function') {
+                    throw new Error('Globals.reloadConfigAndDefs is not available to reload mod configuration.');
+                }
+                const reloadResult = Globals.reloadConfigAndDefs({
+                    gameConfigOverrideYaml: typeof Globals.getGameConfigOverrideYaml === 'function'
+                        ? Globals.getGameConfigOverrideYaml()
+                        : '',
+                    needBarSentenceValidationMode: 'warn'
+                });
+                const pendingLoad = writePendingLoadIntent(baseDir, {
+                    saveName: normalizedName,
+                    saveType: normalizedType,
+                    reason: 'mod-config-change'
+                });
+                const modState = buildModManagerState(baseDir, { runtimeConfig: config });
+                let restartResult = {
+                    started: false,
+                    manualRestartRequired: true
+                };
+
+                if (config?.server?.allowSelfRestart === true) {
+                    if (typeof requestServerRestart !== 'function') {
+                        throw new Error('Self restart is enabled, but requestServerRestart is not available.');
+                    }
+                    restartResult = requestServerRestart({
+                        reason: 'mod-config-change',
+                        saveName: normalizedName,
+                        saveType: normalizedType
+                    });
+                }
+
+                return res.json({
+                    success: true,
+                    enabledMods: updateResult.enabledMods,
+                    modState,
+                    reloadResult,
+                    pendingLoad,
+                    restartRequired: true,
+                    selfRestartStarted: restartResult?.started === true,
+                    manualRestartRequired: restartResult?.started !== true,
+                    restartResult
+                });
+            } catch (error) {
+                console.error('Error applying save mod configuration:', error);
+                let statusCode = 400;
+                if (error.code === 'SAVE_NOT_FOUND') {
+                    statusCode = 404;
+                } else if (error.code === 'SAVE_METADATA_INVALID') {
+                    statusCode = 422;
+                }
+                return res.status(statusCode).json({
+                    success: false,
+                    error: error.message
+                });
+            }
+        });
+
         // Save current game state
         app.post('/api/save', (req, res) => {
             try {
@@ -42350,11 +42608,15 @@ module.exports = function registerApiRoutes(scope) {
         // Load game state from a save
         app.post('/api/load', async (req, res) => {
             try {
-                const { saveName, saveType, clientId } = req.body || {};
+                const { saveName, saveType, clientId, modMismatchChoice } = req.body || {};
                 const normalizedType = typeof saveType === 'string' && saveType.toLowerCase() === 'autosaves'
                     ? 'autosaves'
                     : 'saves';
-                const result = await performGameLoad(saveName, { saveRoot: normalizedType, clientId });
+                const result = await performGameLoad(saveName, {
+                    saveRoot: normalizedType,
+                    clientId,
+                    modMismatchChoice
+                });
                 res.json({
                     success: true,
                     saveName: result.saveName,
@@ -42372,11 +42634,18 @@ module.exports = function registerApiRoutes(scope) {
                     statusCode = 404;
                 } else if (error.code === 'PLAYER_NOT_FOUND') {
                     statusCode = 404;
+                } else if (error.code === 'MOD_ENABLEMENT_MISMATCH') {
+                    statusCode = 409;
                 }
-                res.status(statusCode).json({
+                const responsePayload = {
                     success: false,
                     error: error.message
-                });
+                };
+                if (error.code === 'MOD_ENABLEMENT_MISMATCH') {
+                    responsePayload.code = error.code;
+                    responsePayload.modMismatch = error.modMismatch;
+                }
+                res.status(statusCode).json(responsePayload);
             }
         });
 

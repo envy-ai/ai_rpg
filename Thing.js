@@ -39,6 +39,7 @@ class Thing {
   #isEnrichingStatusEffects = false;
   #shortDescription;
   #count;
+  #extensionFields;
   static #booleanFlagMap = Object.freeze({
     isVehicle: 'vehicle',
     isCraftingStation: 'crafting_station',
@@ -578,7 +579,8 @@ class Thing {
     containerContents = [],
     containedThingIds = [],
     flags = new SanitizedStringSet(),
-    enrichStatusEffects = true
+    enrichStatusEffects = true,
+    ...extensionFieldInputs
   } = {}) {
     // Validate required parameters
     if (!name || typeof name !== 'string') {
@@ -634,6 +636,8 @@ class Thing {
     this.#containedThingIds = new Set();
     this.#containerContents = [];
     this.#flags = flags instanceof SanitizedStringSet ? flags : new SanitizedStringSet(flags);
+    this.#extensionFields = {};
+    this.#installExtensionFieldAccessors();
     this.isVehicle = isVehicle;
     this.isCraftingStation = isCraftingStation;
     this.isProcessingStation = isProcessingStation;
@@ -672,6 +676,7 @@ class Thing {
     if (lastHarvested !== null && lastHarvested !== undefined) {
       this.lastHarvested = lastHarvested;
     }
+    this.#applyExtensionFieldInputs(extensionFieldInputs);
     this.#syncFieldsToMetadata();
     this.#triggerStatusEffectEnrichment();
 
@@ -896,6 +901,40 @@ class Thing {
     }
 
     this.#lastUpdated = new Date().toISOString();
+  }
+
+  getExtensionField(fieldName) {
+    const field = Thing.#getRegisteredExtensionField(fieldName);
+    if (!field) {
+      throw new Error(`Thing extension field "${fieldName}" is not registered.`);
+    }
+    if (Object.prototype.hasOwnProperty.call(this.#extensionFields, field.fieldName)) {
+      return Thing.#cloneExtensionFieldValue(this.#extensionFields[field.fieldName]);
+    }
+    if (field.defaultValue !== undefined) {
+      return Thing.#cloneExtensionFieldValue(field.defaultValue);
+    }
+    return undefined;
+  }
+
+  setExtensionField(fieldName, value) {
+    const field = Thing.#getRegisteredExtensionField(fieldName);
+    if (!field) {
+      throw new Error(`Thing extension field "${fieldName}" is not registered.`);
+    }
+    this.#setExtensionFieldValue(field, value, { updateTimestamp: true });
+  }
+
+  getExtensionFields({ includeDefaults = false } = {}) {
+    const output = {};
+    for (const field of Thing.#getRegisteredExtensionFields()) {
+      if (Object.prototype.hasOwnProperty.call(this.#extensionFields, field.fieldName)) {
+        output[field.fieldName] = Thing.#cloneExtensionFieldValue(this.#extensionFields[field.fieldName]);
+      } else if (includeDefaults && field.defaultValue !== undefined) {
+        output[field.fieldName] = Thing.#cloneExtensionFieldValue(field.defaultValue);
+      }
+    }
+    return output;
   }
 
   get attributeBonuses() {
@@ -1621,6 +1660,134 @@ class Thing {
     return normalized;
   }
 
+  static #getRegisteredExtensionFields() {
+    const registry = Globals.modExtensionRegistry;
+    if (!registry || typeof registry.getEntityFields !== 'function') {
+      return [];
+    }
+    return registry.getEntityFields('thing');
+  }
+
+  static #getRegisteredExtensionField(fieldName) {
+    const normalized = typeof fieldName === 'string' ? fieldName.trim() : '';
+    if (!normalized) {
+      return null;
+    }
+    const registry = Globals.modExtensionRegistry;
+    if (!registry || typeof registry.getEntityField !== 'function') {
+      return null;
+    }
+    return registry.getEntityField('thing', normalized);
+  }
+
+  static #cloneExtensionFieldValue(value) {
+    if (value === undefined) {
+      return undefined;
+    }
+    if (value === null || typeof value !== 'object') {
+      return value;
+    }
+    return JSON.parse(JSON.stringify(value));
+  }
+
+  static #normalizeExtensionFieldValue(field, value) {
+    if (value === undefined || value === null) {
+      return value;
+    }
+    switch (field.type) {
+      case 'string':
+        return String(value).trim();
+      case 'number': {
+        const numeric = Number(value);
+        if (!Number.isFinite(numeric)) {
+          throw new Error(`Thing extension field "${field.fieldName}" must be a finite number.`);
+        }
+        return numeric;
+      }
+      case 'integer': {
+        const numeric = Number(value);
+        if (!Number.isFinite(numeric) || !Number.isInteger(numeric)) {
+          throw new Error(`Thing extension field "${field.fieldName}" must be an integer.`);
+        }
+        return numeric;
+      }
+      case 'boolean':
+        if (typeof value !== 'boolean') {
+          throw new Error(`Thing extension field "${field.fieldName}" must be a boolean.`);
+        }
+        return value;
+      case 'array':
+        if (!Array.isArray(value)) {
+          throw new Error(`Thing extension field "${field.fieldName}" must be an array.`);
+        }
+        return Thing.#cloneExtensionFieldValue(value);
+      case 'object':
+        if (!value || typeof value !== 'object' || Array.isArray(value)) {
+          throw new Error(`Thing extension field "${field.fieldName}" must be an object.`);
+        }
+        return Thing.#cloneExtensionFieldValue(value);
+      default:
+        throw new Error(`Thing extension field "${field.fieldName}" has unsupported type "${field.type}".`);
+    }
+  }
+
+  static #shouldStoreExtensionFieldValue(value) {
+    if (value === undefined || value === null) {
+      return false;
+    }
+    return !(typeof value === 'string' && value.length === 0);
+  }
+
+  static #extractExtensionFieldInputs(data) {
+    const inputs = {};
+    if (!data || typeof data !== 'object') {
+      return inputs;
+    }
+    for (const field of Thing.#getRegisteredExtensionFields()) {
+      if (Object.prototype.hasOwnProperty.call(data, field.fieldName)) {
+        inputs[field.fieldName] = data[field.fieldName];
+      }
+    }
+    return inputs;
+  }
+
+  #installExtensionFieldAccessors() {
+    for (const field of Thing.#getRegisteredExtensionFields()) {
+      if (field.fieldName in this) {
+        throw new Error(`Thing extension field "${field.fieldName}" conflicts with an existing Thing property.`);
+      }
+      Object.defineProperty(this, field.fieldName, {
+        configurable: true,
+        enumerable: false,
+        get: () => this.getExtensionField(field.fieldName),
+        set: value => this.setExtensionField(field.fieldName, value)
+      });
+    }
+  }
+
+  #setExtensionFieldValue(field, value, { updateTimestamp = false } = {}) {
+    const normalized = Thing.#normalizeExtensionFieldValue(field, value);
+    if (Thing.#shouldStoreExtensionFieldValue(normalized)) {
+      this.#extensionFields[field.fieldName] = normalized;
+    } else {
+      delete this.#extensionFields[field.fieldName];
+    }
+    if (updateTimestamp) {
+      this.#lastUpdated = new Date().toISOString();
+    }
+  }
+
+  #applyExtensionFieldInputs(inputs = {}) {
+    if (!inputs || typeof inputs !== 'object') {
+      return;
+    }
+    for (const field of Thing.#getRegisteredExtensionFields()) {
+      if (Object.prototype.hasOwnProperty.call(inputs, field.fieldName)) {
+        this.#setExtensionFieldValue(field, inputs[field.fieldName], { updateTimestamp: false });
+      }
+    }
+  }
+
   // Instance methods
   delete() {
     if (this.isContainer && this.#containedThingIds.size > 0) {
@@ -1670,6 +1837,7 @@ class Thing {
       containerContents: this.containerContents,
       containedThingIds: Array.from(this.#containedThingIds),
       flags: this.#flags && this.#flags.size ? Array.from(this.#flags) : undefined,
+      ...this.getExtensionFields(),
       metadata: this.#metadata && Object.keys(this.#metadata).length ? { ...this.#metadata } : undefined,
       statusEffects: this.getStatusEffects()
     };
@@ -1689,6 +1857,7 @@ class Thing {
         booleanFlagOptions[key] = data.metadata[key];
       }
     }
+    const extensionFieldOptions = Thing.#extractExtensionFieldInputs(data);
 
     const thing = new Thing({
       id: data.id,
@@ -1728,6 +1897,7 @@ class Thing {
       containedThingIds: data.containedThingIds ?? data.metadata?.containedThingIds ?? [],
       flags: Array.isArray(data.flags) ? data.flags : (Array.isArray(data.metadata?.flags) ? data.metadata.flags : []),
       ...booleanFlagOptions,
+      ...extensionFieldOptions,
       enrichStatusEffects: false
     });
 

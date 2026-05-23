@@ -105,11 +105,12 @@ test('serialized game state writes and loads mystery boxes', () => {
             serialize: () => ({}),
             load: () => {}
         };
-        new MysteryBox({
+        const box = new MysteryBox({
             name: 'The Red-Circled Photo',
             keys: ['Velikka photo'],
             text: 'The red circle marks Ellison choosing Velikka before the cascade.'
         });
+        box.markResolved();
 
         Utils.writeSerializedGameState(saveDir, Utils.serializeGameState({
             gameLocations: new Map(),
@@ -142,6 +143,8 @@ test('serialized game state writes and loads mystery boxes', () => {
         const restored = MysteryBox.getByKey('Velikka photo');
         assert.ok(restored);
         assert.equal(restored.name, 'The Red-Circled Photo');
+        assert.equal(restored.resolved, true);
+        assert.equal(restored.toJSON().resolved, true);
         assert.match(restored.text, /choosing Velikka/);
     } finally {
         Globals.sceneSummaries = previousSceneSummaries;

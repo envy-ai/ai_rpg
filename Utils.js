@@ -1015,7 +1015,8 @@ class Utils {
       factions = new Map(),
       currentSetting = null,
       pendingRegionStubs = null,
-      gameConfigOverrideYaml = ''
+      gameConfigOverrideYaml = '',
+      enabledMods = []
     } = context;
 
     const serialized = {};
@@ -1126,6 +1127,13 @@ class Utils {
       totalSkills: skills.size,
       currentSettingId: currentSetting?.id || null,
       currentSettingName: currentSetting?.name || null,
+      enabledMods: Array.isArray(enabledMods)
+        ? Array.from(new Set(
+            enabledMods
+              .map(name => (typeof name === 'string' ? name.trim() : ''))
+              .filter(Boolean)
+          )).sort((a, b) => a.localeCompare(b))
+        : [],
       idCounters: IdGenerator.snapshotCounters(),
       plotAnalysis: typeof Globals.getPlotAnalysis === 'function'
         ? Globals.getPlotAnalysis()

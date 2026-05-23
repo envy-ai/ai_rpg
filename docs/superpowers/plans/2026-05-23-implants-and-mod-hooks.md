@@ -4,7 +4,7 @@
 
 **Goal:** Add mod hooks that let mods define new actor-owned systems, then ship two bundled mods: `implants` for inventory-backed body attachments and `spells` for generated mana-consuming spells.
 
-**Architecture:** Core provides generic extension points plus optional helper libraries. The bundled mods own their domain systems: storage namespaces, metadata keys, display labels, tools, XML events, prompt/status output, generation prompts, and modifier/resource behavior. Implementing both mods is required so the hook system is proven against two different use cases instead of fitting only implants.
+**Architecture:** Core provides generic extension points plus optional helper libraries. The bundled mods own their domain systems: storage namespaces, first-class mod fields, display labels, tools, XML events, prompt/status output, generation prompts, and modifier/resource behavior. Implementing both mods is required so the hook system is proven against two different use cases instead of fitting only implants.
 
 **Tech Stack:** Node.js CommonJS, Express routes in `api.js`, Nunjucks prompts, browser UI in `views/index.njk`, SCSS in `public/css/*.scss`, Node test runner.
 
@@ -16,7 +16,7 @@
 - Core must not know about implant slots, implant labels, spell lists, mana costs, `implantSlot`, `equipImplant`, `castSpell`, or related XML tags except through registered mod data.
 - Store actor extension state in generic persisted `Player.modState` namespaces. The implant mod uses `modState.implants`; the spell mod uses `modState.spells`.
 - Store user-facing mod settings in generic persisted `SettingInfo.modSettings` namespaces. Mods register their own setting fields.
-- Installed implants remain inventory-backed and use `metadata.implantSlot`; they never use normal `Thing.slot`.
+- Installed implants remain inventory-backed and use a registered first-class `Thing.implantSlot` field; they never use normal `Thing.slot`.
 - Spells are actor-owned generated records, not inventory Things. They are similar to implants in that they are mod-owned actor capabilities surfaced in status/prompt context and activated through prose tools/events.
 - The spell mod ensures a `mana` need bar through its own `defs/need_bars.yaml` overlay and a startup/runtime validator that fails loudly if the active merged definitions do not expose the configured mana bar.
 - Spell activation consumes mana using a configurable formula with variables from the spell’s `manaUsage` value (`low`, `medium`, `high`) and `level`.
@@ -29,22 +29,24 @@
 - [ ] Create `ModExtensionRegistry` and expose one instance through server scope, API routes, event parsing, base context building, and mod scopes.
 - [ ] Add registration methods:
   - `registerChatTool({ modName, definition, executor, allowedInRegularProse, allowedInGenericPrompt })`
-  - `registerXmlEvent({ modName, tagName, eventKey, promptSchema, parser, handler })`
+  - `registerXmlEvent({ modName, tagName, eventKey, promptSchema, parser, handler })`, where `promptSchema` is `{ name, description, xml }`
   - `registerBaseContextContributor({ modName, contributor })`
   - `registerActorStatusContributor({ modName, contributor })`
   - `registerAttributeModifierContributor({ modName, contributor })`
   - `registerStatusEffectContributor({ modName, contributor })`
   - `registerInventorySyncContributor({ modName, contributor })`
   - `registerSettingField({ modName, namespace, key, label, type, defaultValue, normalize })`
+  - `registerEntityField({ modName, entityType, fieldName, type, defaultValue, description, exposeToCreateTool, exposeToUpdateTool, exposeToGeneratorPrompt, exposeToXmlParser })`
   - `registerStartupValidator({ modName, validator })`
 - [ ] Validate duplicate names loudly:
   - chat tool function names
   - XML tag names
   - XML event keys
   - setting namespace/key pairs
+  - entity type/field-name pairs
 - [ ] Update chat tool filtering/runtime to merge built-in tools with registry tools at request time.
 - [ ] Update XML event parsing so registered XML tags map into registered event keys and handlers.
-- [ ] Update event prompt rendering so registered `promptSchema` snippets are included in the events XML schema prompt.
+- [ ] Update event prompt rendering so registered `promptSchema` names, descriptions, and XML examples are included in the events XML schema prompt.
 - [ ] Run startup validators after mods load and definition caches reload, and expose a reload-time path so validation also catches broken mod state after `/reload_config`.
 - [ ] Update base prompt context and actor serialization so registry contributors can add mod-owned sections without changing core player fields for each new system.
 - [ ] Update player inventory removal, clear, and replacement paths to call inventory sync contributors after normal gear sync.
@@ -61,7 +63,7 @@
 - [ ] Create `modding/ActorAttachmentSystem.js`.
 - [ ] Export `createActorAttachmentSystem(scope, options)` where `options` includes:
   - `namespace`
-  - `itemSlotMetadataKey`
+  - `itemSlotFieldName`
   - `displayLabelSettingKey`
   - `defaultDisplayLabel`
   - `installToolName`
@@ -73,7 +75,7 @@
 - [ ] The helper registers install/remove chat tools, install/remove XML event tags, actor status/base-context contributors, attribute/status contributors, inventory sync, and a display-label setting field.
 - [ ] The helper stores state under `actor.modState[namespace].slots`, with each slot value as an ordered array of Thing IDs.
 - [ ] The helper resolves actors and items through existing scope helpers where available, defaults actor to current player when omitted, and requires the item to be in the actor inventory.
-- [ ] The helper verifies the item metadata slot key exists and matches any requested slot.
+- [ ] The helper verifies the item slot field exists and matches any requested slot.
 - [ ] The helper preserves health ratio when attachment changes alter max-health-affecting modifiers.
 - [ ] The helper produces generic status/base-context output shaped as mod-owned attachment sections, not as core gear.
 
@@ -114,7 +116,7 @@
 - [ ] Add bundled `mods/implants/mod.js`.
 - [ ] Configure `ActorAttachmentSystem` with:
   - `namespace: "implants"`
-  - `itemSlotMetadataKey: "implantSlot"`
+  - `itemSlotFieldName: "implantSlot"`
   - `displayLabelSettingKey: "displayLabel"`
   - `defaultDisplayLabel: "implants"`
   - `installToolName: "equipImplant"`
@@ -124,6 +126,7 @@
   - `installEventKey: "implant_equipped"`
   - `removeEventKey: "implant_unequipped"`
 - [ ] Register the implant display-label setting under `modSettings.implants.displayLabel`.
+- [ ] Register `Thing.implantSlot` as a first-class mod entity field and expose it to `createThing` and `updateObjectFields`.
 - [ ] Define `equipImplant` parameters: `actorName` optional, `itemName` required, `implantSlot` optional, `reason` optional.
 - [ ] Define `unequipImplant` parameters: `actorName` optional, `itemName` required, `reason` optional.
 - [ ] Define XML tags with the same actor/item/slot/reason fields as the tools.
@@ -176,7 +179,7 @@
 - [ ] Render actor mod-status sections in player/NPC profile surfaces using contributor labels, so installed implants and known spells appear under their configured labels.
 - [ ] Include actor mod-status sections in base prompt context so prose can see installed attachments and known spells.
 - [ ] Include registered events schema snippets in `prompts/_includes/events-xml.njk`.
-- [ ] Ensure inventory UI equipment controls only respond to normal gear data (`slot`, `metadata.slot`, `equippedSlot`) and do not treat `metadata.implantSlot` as normal equipment.
+- [ ] Ensure inventory UI equipment controls only respond to normal gear data (`slot`, `metadata.slot`, `equippedSlot`) and do not treat `implantSlot` as normal equipment.
 - [ ] Optionally show implant-compatible inventory items as normal inventory rows/cards with no install/remove button.
 - [ ] Do not add a spell management UI in v1; spell generation/casting is prose/tool driven.
 
@@ -187,13 +190,13 @@
 - [ ] Unit test `Player.modState` persistence and old-save defaulting.
 - [ ] Unit test inventory sync contributors running after item removal, inventory clear, and inventory replacement.
 - [ ] Unit test `ActorAttachmentSystem` install/remove:
-  - successful install into metadata slot
+  - successful install into first-class item slot
   - multiple installed items in one slot
   - duplicate install failure
   - missing actor failure
   - ambiguous item failure
   - item not in actor inventory failure
-  - missing metadata slot failure
+  - missing item slot field failure
   - requested slot mismatch failure
   - removal keeps the Thing in inventory
   - inventory sync clears stale Thing IDs
@@ -212,7 +215,7 @@
 - [ ] Chat tool runtime tests proving `equipImplant`, `unequipImplant`, `generateSpell`, and `castSpell` are available in regular prose and generic prompts through registry tools.
 - [ ] XML event tests proving implant and spell event tags parse through registry events and call their helper paths.
 - [ ] Two-mod integration test proving implant and spell sections can coexist in actor status/base context without name collisions.
-- [ ] UI/static tests proving `metadata.implantSlot` does not render normal Equip/Unequip controls and actor mod-status sections render under configured labels.
+- [ ] UI/static tests proving `implantSlot` does not render normal Equip/Unequip controls and actor mod-status sections render under configured labels.
 - [ ] Run targeted Node tests for changed behavior.
 - [ ] Run `node --check` on altered JS files.
 - [ ] If SCSS changes, compile the corresponding CSS before finishing.

@@ -64,6 +64,24 @@ Rules:
 - This merged-config value takes precedence over `mods/<name>/config.json` `enabled`.
 - Disabled mods are skipped for `mod.js` loading, defs overlays, and `public/` asset serving.
 - The active mod set is frozen at startup, so changing mod enablement on disk still requires a server restart to apply. `/reload_config` reports drift but does not hot-toggle mods.
+- The `/mods` page writes these same flags to `config.yaml` through the mod manager API.
+- Save metadata includes the active enabled-mod list. Loading a save with a different list asks whether to apply the save configuration, keep the current configuration for that load, or cancel.
+
+## Self restart
+
+`server.allowSelfRestart` controls whether API-triggered mod configuration changes may start a replacement server process.
+
+```yaml
+server:
+  allowSelfRestart: false
+  selfRestartPortRetrySeconds: 10
+```
+
+Rules:
+- `allowSelfRestart` defaults to `false` in `config.default.yaml`.
+- When disabled, accepting a save's mod configuration writes a pending-load intent and the UI tells the user to restart manually.
+- When enabled, accepting a save's mod configuration spawns a detached replacement `node server.js` process, then the current process closes after the response is sent.
+- Startup uses `selfRestartPortRetrySeconds` to retry binding the configured host/port once per second before aborting. The value must be a non-negative integer.
 
 ## Dispositions
 
@@ -785,6 +803,19 @@ Rules:
 - When `true`, `/api/chat` creates one `tool-call-debug` chat entry per prose prompt that uses tools, updates that same entry as each tool starts and completes, and emits the existing `chat_history_updated` realtime event after each update.
 - The debug entry stores the tool name, parameters, result content, and result metadata in structured `toolCalls` records. It is marked with `metadata.excludeFromBaseContextHistory: true`, so it is visible in the chat log but excluded from future prompt context.
 - The chat client renders each tool call as its own collapsible sub-box, marks cached results as `cache hit`, and uses `@andypf/json-viewer` to format the parameters/result JSON.
+
+## Tool-call round limit
+
+`max_tool_calls` controls how many tool-call rounds a prompt may execute before the server returns `tool_call_attempts_exhausted` tool errors and disables tools for the follow-up completion.
+
+```yaml
+max_tool_calls: 8
+```
+
+Rules:
+- Must be a positive integer.
+- This is a round limit, matching the chat-completion tool-loop behavior. A single round may contain multiple parallel tool calls.
+- The configured value replaces the built-in tool-loop limit; invalid values fail loudly when a tool loop tries to run.
 
 ## Extra system instructions and tonal scale
 

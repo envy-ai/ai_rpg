@@ -83,19 +83,24 @@ Notes:
 - Save metadata now includes `npcAliasesGenerated` (boolean). It is set to `true` after alias-generation prompts run.
 - Save metadata now includes `totalMysteryBoxes` and `totalMysteryThreads`, and the save payload includes `mysteryBoxes.json` plus `mysteryThreads.json` for persisted private mystery continuity.
 - Saves now also persist the current per-game YAML override as `gameConfigOverride.yaml`.
+- Save metadata now includes `enabledMods`, the startup-frozen list of active enabled mod directory names.
 
 ## POST /api/load
 Load a saved game.
 
 Request:
-- Body: `{ saveName: string, saveType?: 'autosaves'|'saves', clientId?: string }`
+- Body: `{ saveName: string, saveType?: 'autosaves'|'saves', clientId?: string, modMismatchChoice?: 'keep-current' }`
 
 Response:
 - 200: `{ success: true, saveName, source, metadata, loadedData, message }`
   - `loadedData`: `{ currentPlayer: NpcProfile|null, totalPlayers, totalThings, totalLocations, totalLocationExits, chatHistoryLength, totalGeneratedImages, currentSetting }`
+- 409: `{ success: false, code: 'MOD_ENABLEMENT_MISMATCH', error, modMismatch }`
+  - `modMismatch`: `{ hasMismatch, activeEnabledMods, savedEnabledMods, missingFromActive, extraActive }`
 - 400/404/500 with `{ success: false, error }`
 
 Notes:
+- `/api/load` compares `metadata.enabledMods` against the running startup-frozen active mod list before hydration. Old saves without `enabledMods` skip this check.
+- Passing `modMismatchChoice: 'keep-current'` loads despite the mismatch, leaving the running mod configuration unchanged.
 - `/api/load` reapplies the save's `gameConfigOverride.yaml` through the same merged-config reload path used by `/reload_config` before the world is hydrated.
 - `/api/load` also runs strict need-bar prompt-sentence validation before hydration, so saves do not load into a runtime where base-context need summaries would be missing prose.
 - `/api/load` migrates old saves during hydration, including pre-`1.1` need-bar scale upgrades and pre-`1.2` compact domain-object ID upgrades (`char_n`, `thing_n`, `loc_n`, etc.), then bumps the in-memory save metadata version to the current save version so later saves persist the upgraded data.
@@ -105,6 +110,55 @@ Notes:
 - `/api/load` now also resolves pending player level-up ability draft state for the loaded player (`player_ability_options_per_level` / `player_abilities_per_level`) without generating options yet; option generation runs when the client requests `/api/player/ability-selection` with generation enabled.
 - `metadata.npcAliasesGenerated` is normalized to a boolean on load (`true` only when explicitly set `true` in the save metadata).
 - `metadata.totalMysteryBoxes` and `metadata.totalMysteryThreads` are refreshed after hydration from the loaded mystery continuity registries.
+
+## GET /api/mods/manager
+Return discovered mods and their configured/runtime enablement state.
+
+Response:
+- 200: `{ success: true, modState }`
+  - `modState.mods[]`: `{ name, dir, hasModJs, hasDefsDir, configPath, configuredEnabled, activeEnabled, restartRequired, fileConfigEnabled }`
+  - `modState.restartRequired`: `true` when configured enablement differs from the startup-frozen active mod set.
+
+## PUT /api/mods/enabled
+Write the selected enabled mod set to `config.yaml`.
+
+Request:
+- Body: `{ enabledMods: string[] }`
+
+Response:
+- 200: `{ success: true, enabledMods, modState, reloadResult, restartRequired }`
+- 400 with `{ success: false, error }` for invalid names, unknown mods, or invalid payloads.
+
+Notes:
+- The route writes explicit `mods.<name>.enabled` flags for every discovered mod.
+- The running mod hooks and defs overlays do not hot-toggle; `restartRequired` reports whether a restart is needed.
+
+## POST /api/mods/apply-save-config
+Apply a save's persisted enabled mod list to `config.yaml` and prepare that save to load after restart.
+
+Request:
+- Body: `{ saveName: string, saveType?: 'autosaves'|'saves' }`
+
+Response:
+- 200: `{ success: true, enabledMods, modState, pendingLoad, restartRequired, selfRestartStarted, manualRestartRequired, restartResult }`
+- 400/404/422 with `{ success: false, error }`
+
+Notes:
+- The save must contain `metadata.enabledMods`; old saves without it cannot be auto-applied.
+- The route writes `tmp/pending-load.json` before attempting restart. The shared pending-load script consumes that intent on startup and posts `/api/load`.
+- If `server.allowSelfRestart` is false, the response sets `manualRestartRequired: true`.
+
+## GET /api/pending-load
+Return the pending post-restart load intent, if any.
+
+Response:
+- 200: `{ success: true, pendingLoad: null|{ saveName, saveType, reason, createdAt } }`
+
+## DELETE /api/pending-load
+Clear the pending post-restart load intent.
+
+Response:
+- 200: `{ success: true, cleared: boolean }`
 
 ## GET /api/calendar
 Return the active in-game calendar definition and current world-time payload.

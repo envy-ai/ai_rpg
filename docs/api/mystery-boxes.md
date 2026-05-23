@@ -8,7 +8,7 @@ Lists all mystery boxes as lightweight summaries, alphabetized by name.
 
 Response:
 - 200: `{ success: true, mysteryBoxes, count }`
-- Each summary: `{ id, name, keys, threadId, threadName, createdAt, updatedAt, mentionCount }`
+- Each summary: `{ id, name, keys, resolved, threadId, threadName, createdAt, updatedAt, mentionCount }`
 
 ## GET /api/mystery-boxes/:id
 
@@ -19,7 +19,7 @@ Response:
 - 400 when `id` is blank
 - 404 when no box exists
 
-`mysteryBox` includes `{ id, name, keys, threadId, threadName, text, mentions, createdAt, updatedAt }`.
+`mysteryBox` includes `{ id, name, keys, resolved, threadId, threadName, text, mentions, createdAt, updatedAt }`.
 
 ## PUT /api/mystery-boxes/:id
 
