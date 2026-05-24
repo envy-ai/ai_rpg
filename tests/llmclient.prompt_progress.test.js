@@ -91,6 +91,7 @@ test('default config prompt progress targets cover known prompt families', () =>
     assert.equal(LLMClient.resolvePromptProgressCharacterTarget('player_action_tool_loop_round', config), 5000);
     assert.equal(LLMClient.resolvePromptProgressCharacterTarget('generic_prompt_tool_call_error', config), 5000);
     assert.equal(LLMClient.resolvePromptProgressCharacterTarget('inventory_generation_Barkeep', config), 5000);
+    assert.equal(LLMClient.resolvePromptProgressCharacterTarget('scheduled_event_resolution', config), 5000);
     assert.equal(LLMClient.resolvePromptProgressCharacterTarget('scene_illustration_prompt', config), 5000);
 });
 

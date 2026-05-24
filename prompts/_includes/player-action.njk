@@ -120,7 +120,7 @@ These characters are present and aware of the action. This is not necessary an e
 {% for npc in npcs %}- {{ npc.name }} ({{ npc.race }}/{{ npc.class }})
 {% endfor %}{% for member in party %}{% if member not in npcs %}- {{ member.name }} ({{ member.race }}/{{ member.class }})
 {% endif %}{% endfor %}
-Pick ONE, TWO, or AT MOST THREE (and only if having a third adds something meaningful) of the above characters to respond or act, unless the action involves moving to a new location or region. In this case, only pick characters who are IN THE PLAYER's PARTY to respond or act. If two or three characters speak with each other, be sure to properly break the dialogue into multiple paragraphs.
+Pick ONE, TWO, or AT MOST THREE (Exception: If character specifically addresses *everyone* or specific people, choose appropriately) of the above characters to respond or act, unless the action involves moving to a new location or region. In this case, only pick characters who are IN THE PLAYER's PARTY to respond or act. If two or three characters speak with each other, be sure to properly break the dialogue into multiple paragraphs.
 
 If it's been several turns since a party member last spoke or acted, priotirize having them speak or act now, if it makes sense given the current situation.
 
@@ -142,7 +142,7 @@ Follow these steps:
 {% if actionText %}
 0. Before you begin, do a quick sanity check on the playerAction text. If it looks like an incomplete sentence or just a fragment of an action or doesn't make sense, stop the instructions here and return <rejected><!-- your reason for rejecting --></rejected> and end the response. Furthermore, the player may only act on behalf of themselves, not other characters or NPCs, unless explicitly able to control them due to an item, ability, etc OR if it would be very reasonable to assume they would go along with what the player is doing. If they attempt to do do something unreasonable on behalf of the party without an ability, reject the action (this is different from being implausible in that we don't process the attempt). However, if they ask an NPC to do something, this is plausible, and may require a skill check depending on the NPC's disposition and relationship with the player.
 {% endif %}
-1a. List each of the 1-3 NPCs you picked to respond or act by name and 1-2 sentences about their current emotional or plot position, desires, and what they're grappling with, if anything.
+1a. List each of the 1-3 NPCs (or more, if specifically addressed) you picked to respond or act by name and 1-2 sentences about their current emotional or plot position, desires, and what they're grappling with, if anything.
 
 1b. Information gathering and tool calling: If necessary, call any tools that might provide necessary information for writing the prose that's missing from the context. Just write N/A for this item if you have all the information you need (which will be the typical case). Note that the context contains the entire story history, although earlier parts may be abbreviated. Tool calls are slow, so avoid them if you have enough information to write the prose without them. Use a maximum of 2 tool calls, preferably 0 or 1.
 
@@ -221,7 +221,15 @@ Use this format:
 3c, 3d, and so on...
 4. ...
 5. ...
-<finalProse>...</finalProse>
+<finalProse>
+  story prose here
+  <hidden>any hidden notes here; omit if none</hidden>
+  <timePassed>
+    Required. Use reasoning and duration to report how much elapsed in-world wall-clock time the concrete non-travel actions in the text realistically consumed. Estimate elapsed wall-clock time, not reading time and not the sum of each participant's labor when characters work in parallel. 
+    <reasoning>Brief breakdown of time-consuming actions</reasoning>
+    <duration>Exact duration rounded to the nearest minute, 1 minute minimum (typical for conversation and quick scenes). No time ranges, unknowns, or other nonspecific answers. Format with one of: "HH:MM", "[INTEGER] [minutes/hours]", or "[INTEGER] hours, [INTEGER] minutes".</duration>
+  </timePassed>
+</finalProse>
 
 OR, if the player travels to a place that would constitute a different location or region (even if that location or region doesn't exist yet), indicate that this happened by answering instead with a <travelProse>...</travelProse> block, as follows (note that talking about traveling is NOT the same as actually traveling, so if the player just discusses traveling, that should be in the finalProse block, not the travelProse block):
 

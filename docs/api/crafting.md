@@ -38,7 +38,7 @@ Notes:
 - Craft/process can run with no selected slot inputs; the prompts judge the attempt from the station, current scene, player abilities, and notes.
 - Selected inputs may come from the active player inventory, loose current-location items or scenery, or item contents inside containers in the current location. Player-owned selected inputs must be unequipped; offscreen/nonlocal thing ids are rejected.
 - Current-location container contents are available even when the container itself is scenery, but container contents remain item-only in the workbench picker. Loose current-location scenery, including scenery containers, is shown as a selectable room input and non-empty containers remain visible but disabled until emptied.
-- Non-empty containers cannot be selected as crafting inputs; the client greys them out and the server rejects them if submitted directly. Empty the container first if the container itself should be consumed or processed.
+- Non-empty containers cannot be selected as crafting inputs; the client greys them out and the server rejects them if submitted directly. Empty the container first if the container itself should be consumed or processed. Container emptiness is based on normalized, nonblank `containedThingIds`, so blank placeholder entries do not make a container count as non-empty.
 - Salvage/harvest require exactly one slot item.
 - When `actionType` is supplied, it overrides `mode` in some cases.
 - Inline die-roll override is supported in crafting description fields: `notes`, `salvageNotes`, and `harvestNotes`. Tokens matching `<-?\d+>` are stripped from those fields before prompt processing, and the first parsed value is used as the player d20 roll for crafting plausibility/skill-check resolution (no clamping).

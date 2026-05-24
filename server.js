@@ -66,6 +66,7 @@ const HIDDEN_CHAT_ENTRY_TYPES = new Set([
     'supplemental-story-info',
     'offscreen-npc-activity-daily',
     'offscreen-npc-activity-weekly',
+    'scheduled-event',
     'while-you-were-away',
     'plot-summary',
     'plot-expander'

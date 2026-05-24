@@ -1,0 +1,38 @@
+<scheduledEventResolution>
+  <scheduledEvent>
+    <id>{{ scheduledEvent.id }}</id>
+    <event>{{ scheduledEvent.event }}</event>
+    <regionId>{{ scheduledEvent.regionId }}</regionId>
+    <regionName>{{ scheduledEvent.regionName }}</regionName>
+    <locationId>{{ scheduledEvent.locationId }}</locationId>
+    <locationName>{{ scheduledEvent.locationName }}</locationName>
+    <targetWorldMinute>{{ scheduledEvent.targetWorldMinute }}</targetWorldMinute>
+    <targetWorldTime>
+      <dayIndex>{{ scheduledEvent.targetWorldTime.dayIndex }}</dayIndex>
+      <timeMinutes>{{ scheduledEvent.targetWorldTime.timeMinutes }}</timeMinutes>
+    </targetWorldTime>
+  </scheduledEvent>
+  <resolutionContext>
+    <playerPresent>{{ scheduledEventPlayerPresent }}</playerPresent>
+    <currentWorldTime>
+      <dayIndex>{{ scheduledEventCurrentWorldTime.dayIndex }}</dayIndex>
+      <timeMinutes>{{ scheduledEventCurrentWorldTime.timeMinutes }}</timeMinutes>
+      <dateLabel>{{ scheduledEventCurrentWorldTime.dateLabel }}</dateLabel>
+      <currentTime>{{ scheduledEventCurrentWorldTime.timeLabel }}</currentTime>
+    </currentWorldTime>
+  </resolutionContext>
+  <instructions>
+    This scheduled event is now due. Decide whether it still makes sense in the current game state.
+    If it no longer makes sense, return exactly <scheduledEventResult/>.
+    If it does make sense, decide what happens now and use tool calls to update the game state to match that decision before returning the final XML.
+    Always include a concise summary of what happened for the chat log.
+    If playerPresent is true, also include proseForPlayer describing what the player perceives. If playerPresent is false, do not include player-facing prose.
+    Return only the scheduledEventResult XML after all needed tool calls are complete.
+  </instructions>
+  <responseFormat>
+    <scheduledEventResult>
+      <summary>Concise hidden chat-log summary of what happened.</summary>
+      <proseForPlayer>Visible prose only when playerPresent is true.</proseForPlayer>
+    </scheduledEventResult>
+  </responseFormat>
+</scheduledEventResolution>

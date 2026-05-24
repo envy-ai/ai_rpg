@@ -16,11 +16,12 @@ Need bar instructions:{% for bar in needBarDefinitions or [] %}
 These instructions take precedence over existing game state descriptions, which described the characters at the time they were last seen and are not intended to lock characters in that state. Even if a character is narratively 'starving,' if food is available in the scene, their food bar should be at least 50%, etc.
 {% endif -%}
 
-
-
 Return a response in this format:
 
 <response>
+  <proseForPlayer>
+    <!-- Story purpose describing what the player sees, learns, or experiences upon returning to this location after being away. The player is not omniscient, so describe events and changes from their perspective. -->
+  </proseForPlayer>
   <characterUpdates>
     {% for npc in listedNpcs -%}
     <characterUpdate>
@@ -40,7 +41,7 @@ Return a response in this format:
     </characterUpdate>
     {% endfor -%}
 
-    {% if listedNpcs | length -%}<!-- Optionally, if any character who is NOT listed above ARRIVED at this location since the player was last here, you can include them here like this: -->{% else %}<!-- If any character not already in the party ARRIVED at this location since the player was last here, include them here as below. OMIT all party current party members. -->{% endif -%}
+    {% if listedNpcs | length -%}<!-- Optionally, if any character who is NOT listed above ARRIVED at this location since the player was last here, you can include them here like this: -->{% else %}<!-- If any character not already in the party ARRIVED at this location since the player was last here, include them here as below. OMIT all party current party members, but otherwise check the prose against the game state and make sure the game state is updated to match. -->{% endif -%}
     <characterUpdate>
       <name><!-- The exact name of the arriving character --></name>
       <needBarChanges>
@@ -58,11 +59,8 @@ Return a response in this format:
     
     <!-- If there are no listed characters and no exact-location arrivals, leave characterUpdates empty. -->
   </characterUpdates>
-  <proseForPlayer>
-    <!-- Story purpose describing what the player sees, learns, or experiences upon returning to this location after being away. The player is not omniscient, so describe events and changes from their perspective. -->
-  </proseForPlayer>
   <itemSceneryMoves>
-    <!-- Did any items or scenery move along with the player/party from their previous location to this one? If so, list their exact names here. -->
+    <!-- Did any items or scenery move along with the player/party from their previous location to this one? If so, list their exact names here. Check the prose against the game state to ensure accuracy. -->
     <itemName><!-- Exact name of the item or scenery that moved --></itemName>
     <!-- Repeat for each item or scenery that moved -->
   </itemSceneryMoves>

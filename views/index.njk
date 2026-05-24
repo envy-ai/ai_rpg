@@ -2228,6 +2228,7 @@
                     <div class="npc-edit-field">
                         <label for="thingEditType">Type</label>
                         <select id="thingEditType">
+                            <option value="">Not specified</option>
                             <option value="item">Item</option>
                             <option value="scenery">Scenery</option>
                         </select>
@@ -11160,6 +11161,24 @@
             }
         }
 
+        function normalizeThingTypeSelection(value) {
+            const normalized = typeof value === 'string' ? value.trim().toLowerCase() : '';
+            return normalized === 'item' || normalized === 'scenery' ? normalized : '';
+        }
+
+        function syncThingTypeSelectForMode(mode = 'edit') {
+            if (!thingEditTypeSelect) {
+                return;
+            }
+            const unspecifiedOption = thingEditTypeSelect.querySelector('option[value=""]');
+            if (!unspecifiedOption) {
+                return;
+            }
+            const allowUnspecified = mode === 'create';
+            unspecifiedOption.hidden = !allowUnspecified;
+            unspecifiedOption.disabled = !allowUnspecified;
+        }
+
         function isThingEquippable() {
             const typeValue = (thingEditTypeSelect?.value || '').toLowerCase();
             const slotValue = (thingEditSlotSelect?.value || '').trim();
@@ -11213,7 +11232,10 @@
 
             if (thingEditModalTitle) {
                 if (mode === 'create') {
-                    const defaultTitle = options.itemOrScenery === 'scenery' ? 'Create Scenery' : 'Create Item';
+                    const explicitCreateType = normalizeThingTypeSelection(options.itemOrScenery);
+                    const defaultTitle = explicitCreateType === 'scenery'
+                        ? 'Create Scenery'
+                        : (explicitCreateType === 'item' ? 'Create Item' : 'Create Item/Scenery');
                     thingEditModalTitle.textContent = options.title || defaultTitle;
                 } else {
                     thingEditModalTitle.textContent = thing?.name ? `Edit ${thing.name}` : 'Edit Item';
@@ -11229,10 +11251,11 @@
             }
 
             if (thingEditTypeSelect) {
-                const explicitType = options.itemOrScenery ? String(options.itemOrScenery).toLowerCase() : null;
-                const typeValue = explicitType
-                    || (thing?.thingType || thing?.type || thing?.itemOrScenery || 'item').toString().toLowerCase();
-                thingEditTypeSelect.value = typeValue === 'scenery' ? 'scenery' : 'item';
+                syncThingTypeSelectForMode(mode);
+                const explicitType = normalizeThingTypeSelection(options.itemOrScenery);
+                const storedType = normalizeThingTypeSelection(thing?.thingType || thing?.type || thing?.itemOrScenery);
+                const typeValue = explicitType || storedType || (mode === 'create' ? '' : 'item');
+                thingEditTypeSelect.value = typeValue;
             }
 
             const rarityValue = thing?.rarity || thing?.metadata?.rarity || '';
@@ -11410,7 +11433,7 @@
                 delete thingEditForm.dataset.thingId;
 
                 if (thingEditTypeSelect) {
-                    const defaultType = options.itemOrScenery === 'scenery' ? 'scenery' : 'item';
+                    const defaultType = normalizeThingTypeSelection(options.itemOrScenery);
                     thingEditTypeSelect.value = defaultType;
                 }
             }
@@ -15207,7 +15230,7 @@
             }, 50);
         }
 
-        async function openAddThingModal({ itemOrScenery = 'item' } = {}) {
+        async function openAddThingModal({ itemOrScenery = '' } = {}) {
             if (!thingEditModal || !npcModalBackdrop) {
                 return;
             }
@@ -18086,12 +18109,11 @@
                     const creationLocationId = currentThingCreationLocation.id;
                     const trimmedName = thingEditNameInput?.value?.trim();
 
-                    const typeSelection = (thingEditTypeSelect?.value || '').toLowerCase() === 'scenery'
-                        ? 'scenery'
-                        : 'item';
-                    const seed = {
-                        itemOrScenery: typeSelection
-                    };
+                    const typeSelection = normalizeThingTypeSelection(thingEditTypeSelect?.value || '');
+                    const seed = {};
+                    if (typeSelection) {
+                        seed.itemOrScenery = typeSelection;
+                    }
                     if (trimmedName) {
                         seed.name = trimmedName;
                     }
@@ -18168,7 +18190,9 @@
                         }
                     }
 
-                    const creationLabel = typeSelection === 'scenery' ? 'scenery' : 'item';
+                    const creationLabel = typeSelection === 'scenery'
+                        ? 'scenery'
+                        : (typeSelection === 'item' ? 'item' : 'thing');
                     closeThingEditModal();
 
                     void (async () => {
@@ -22415,11 +22439,32 @@
             openSalvageIntentModal({ mode: 'harvest', thingId, thing: targetThing });
         }
 
+        function getCraftingContainedThingIds(thing) {
+            if (!thing) {
+                return [];
+            }
+            const thingId = typeof thing.id === 'string' ? thing.id.trim() : '';
+            const cachedThing = thingId
+                && typeof thingDataCache !== 'undefined'
+                && thingDataCache instanceof Map
+                ? thingDataCache.get(thingId)
+                : null;
+            const sourceThing = cachedThing && Array.isArray(cachedThing.containedThingIds)
+                ? cachedThing
+                : thing;
+            if (!Array.isArray(sourceThing.containedThingIds)) {
+                return [];
+            }
+            return sourceThing.containedThingIds
+                .map(thingId => (typeof thingId === 'string' ? thingId.trim() : ''))
+                .filter(Boolean);
+        }
+
         function isCraftingNonEmptyContainer(thing) {
             if (!thing || !resolveThingBooleanFlag(thing, 'isContainer')) {
                 return false;
             }
-            return Array.isArray(thing.containedThingIds) && thing.containedThingIds.length > 0;
+            return getCraftingContainedThingIds(thing).length > 0;
         }
 
         function getCurrentLocationCraftingItems() {
@@ -31944,7 +31989,11 @@
                     const response = await fetch('/api/player/move', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ destinationId, expectedOriginLocationId })
+                        body: JSON.stringify({
+                            destinationId,
+                            expectedOriginLocationId,
+                            clientId: window.AIRPG_CLIENT_ID || null
+                        })
                     });
 
                     const result = await response.json();

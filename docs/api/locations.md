@@ -226,6 +226,7 @@ Notes:
 
 Request:
 - Body: `{ seed: { name?, description?, shortDescription?, type?, slot?, rarity?, itemOrScenery?, value?, weight?, level?, relativeLevel?, isVehicle?, isHarvestable?, isCraftingStation?, isProcessingStation?, isSalvageable?, isContainer?, notes? }, level? }`
+- When `seed.itemOrScenery` is omitted, thing generation leaves the item/scenery classification unspecified so the generator can choose from the prompt context. When provided, it must be `item` or `scenery`.
 
 Responses:
 - 200: `{ success: true, thing: ThingJson, location: LocationResponse, message }`

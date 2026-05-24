@@ -36,4 +36,9 @@ Return XML only:
 <result>
   <description>Brief prose describing the player's modification attempt and visible result.</description>
   <otherEffectDescription>{% if otherEffect %}Brief prose for the additional effect, if it should be narrated separately.{% else %}N/A{% endif %}</otherEffectDescription>
+  <timePassed>
+    <!-- Required. Use reasoning and duration to report how much elapsed in-world wall-clock time the concrete non-travel actions in the text realistically consumed. Estimate elapsed wall-clock time, not reading time and not the sum of each participant's labor when characters work in parallel. -->
+    <reasoning><!-- Brief breakdown of time-consuming actions --></reasoning>
+    <duration><!-- Exact duration rounded to the nearest minute, 1 minute minimum (typical for conversation and quick scenes). No time ranges, unknowns, or other nonspecific answers. Format with one of: "HH:MM", "[INTEGER] [minutes/hours]", or "[INTEGER] hours, [INTEGER] minutes". --></duration>
+  </timePassed>
 </result>

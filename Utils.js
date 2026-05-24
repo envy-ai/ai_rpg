@@ -16,6 +16,7 @@ let cachedSkillModule = null;
 let cachedFactionModule = null;
 let cachedMysteryBoxModule = null;
 let cachedMysteryThreadModule = null;
+let cachedScheduledEventModule = null;
 const chatSummaryStore = new Map();
 const chatSummaryQueue = [];
 const COMMON_WORDS = new Set([
@@ -1001,6 +1002,13 @@ class Utils {
     return cachedMysteryThreadModule;
   }
 
+  static #getScheduledEventModule() {
+    if (!cachedScheduledEventModule) {
+      cachedScheduledEventModule = require('./ScheduledEvent.js');
+    }
+    return cachedScheduledEventModule;
+  }
+
   static serializeGameState(context = {}) {
     const {
       currentPlayer = null,
@@ -1099,6 +1107,12 @@ class Utils {
     }
     serialized.mysteryThreads = MysteryThread.serializeAll();
 
+    const ScheduledEvent = this.#getScheduledEventModule();
+    if (!ScheduledEvent || typeof ScheduledEvent.serializeAll !== 'function') {
+      throw new Error('ScheduledEvent serialization is unavailable.');
+    }
+    serialized.scheduledEvents = ScheduledEvent.serializeAll();
+
     const availableSkills = Array.from(skills.values()).map(skill => {
       if (skill && typeof skill.toJSON === 'function') {
         return skill.toJSON();
@@ -1123,6 +1137,7 @@ class Utils {
       totalFactions: factions.size,
       totalMysteryBoxes: Object.keys(serialized.mysteryBoxes || {}).length,
       totalMysteryThreads: Object.keys(serialized.mysteryThreads || {}).length,
+      totalScheduledEvents: Object.keys(serialized.scheduledEvents || {}).length,
       totalGeneratedImages: generatedImages.size,
       totalSkills: skills.size,
       currentSettingId: currentSetting?.id || null,
@@ -1196,6 +1211,7 @@ class Utils {
     ensureFile('factions.json', serialized.factions || {});
     ensureFile('mysteryBoxes.json', serialized.mysteryBoxes || {});
     ensureFile('mysteryThreads.json', serialized.mysteryThreads || {});
+    ensureFile('scheduledEvents.json', serialized.scheduledEvents || {});
     ensureFile('skills.json', serialized.skills || []);
     ensureFile('metadata.json', serialized.metadata || {});
     ensureFile('pendingRegionStubs.json', serialized.pendingRegionStubs || {});
@@ -1252,6 +1268,7 @@ class Utils {
       factions: readJson('factions.json', {}),
       mysteryBoxes: readJson('mysteryBoxes.json', {}),
       mysteryThreads: readJson('mysteryThreads.json', {}),
+      scheduledEvents: readJson('scheduledEvents.json', {}),
       skills: readJson('skills.json', []),
       metadata: readJson('metadata.json', {}),
       setting: readJson('setting.json', null),
@@ -1908,6 +1925,7 @@ class Utils {
     const Faction = this.#getFactionModule();
     const MysteryBox = this.#getMysteryBoxModule();
     const MysteryThread = this.#getMysteryThreadModule();
+    const ScheduledEvent = this.#getScheduledEventModule();
 
     this.loadChatSummaries(serialized.chatSummaries || {});
     const sceneSummaries = Globals.getSceneSummaries();
@@ -1979,6 +1997,10 @@ class Utils {
     if (MysteryThread.getAll().length === 0 && MysteryBox.getAll().length > 0) {
       MysteryThread.ensureLegacyThreadForBoxes(MysteryBox.getAll());
     }
+    if (!ScheduledEvent || typeof ScheduledEvent.loadAll !== 'function') {
+      throw new Error('ScheduledEvent hydration is unavailable.');
+    }
+    ScheduledEvent.loadAll(serialized.scheduledEvents || {});
 
     if (things?.clear) {
       things.clear();

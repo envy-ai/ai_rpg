@@ -667,6 +667,7 @@ Use this when a character's triggered ability fires during the turn. Include onl
 </triggeredAbility>
 ```
 
+{#
 ### `time_passed` (REQUIRED FIELD, 1x ONLY)
 
 Use this to report how much elapsed in-world wall-clock time the concrete non-travel actions in the text realistically consumed. Estimate elapsed wall-clock time, not reading time and not the sum of each participant's labor when characters work in parallel. 
@@ -676,7 +677,7 @@ Use this to report how much elapsed in-world wall-clock time the concrete non-tr
   <reasoning>Brief breakdown of time-consuming actions</reasoning>
   <duration>Exact duration rounded to the nearest minute, 1 minute minimum (typical for conversation and quick scenes). No time ranges, unknowns, or other nonspecific answers. Format with one of: "HH:MM", "[INTEGER] [minutes/hours]", or "[INTEGER] hours, [INTEGER] minutes".</duration>
 </timePassed>
-
+#}
 ### `in_combat` (REQUIRED FIELD, 1x ONLY)
 
 Use this to indicate whether the player should currently be considered in physical combat, even if the player did not personally attack during the text.
@@ -689,6 +690,8 @@ Use this to indicate whether the player should currently be considered in physic
 
 
 ## End XML schema
+
+As a rule, the events are meant to ensure that the tracked game starts matches the prose, so  for insurance, before assuming an item is already tracked, check whether it appears in itemsInScene or any character's inventory. Items referenced in prose or offscreen updates that don't appear in these lists should be recorded when they first become physically present. Give similar consideration to NPCs and other entities that are not already known to be present. If the text describes something that should be tracked but is not already tracked, include an event for its first appearance.
 
 <task>
 1. Go through the list of tags above and, for each tag, make an informal non-xml list of any events in the text that would quality. If unsure if something is an event, include it. In some cases, events must be *inferred* from the text rather than explicitly stated. In those cases, annotate your XML for that inference with a note in <!-- XML comment --> format with a sentence or two explaining the inference and the text that supports it. The ultimate purpose of event extraction is to keep the game state up to date with the prose.

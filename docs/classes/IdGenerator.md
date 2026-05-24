@@ -15,6 +15,7 @@ Central allocator for compact persisted domain-object IDs. It replaces timestamp
 - `status`: status effects.
 - `mystery`: mystery boxes.
 - `mthread`: mystery threads.
+- `sevent`: scheduled events.
 
 Operational IDs such as chat message IDs, prompt/session IDs, generated-image request IDs, and similar transient runtime identifiers are not allocated here.
 

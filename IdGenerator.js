@@ -16,6 +16,8 @@ class IdGenerator {
     ['mystery', 'mystery'],
     ['mysteryThread', 'mthread'],
     ['mthread', 'mthread'],
+    ['scheduledEvent', 'sevent'],
+    ['sevent', 'sevent'],
     ['quest', 'quest'],
     ['objective', 'obj'],
     ['obj', 'obj'],

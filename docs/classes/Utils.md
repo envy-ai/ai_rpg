@@ -40,6 +40,7 @@ Collection of static utility helpers used across the server: set math, text simi
   - On older saves, migrates persisted domain-object IDs to compact counter IDs (`char_1`, `thing_1`, `loc_1`, etc.) before object hydration and stores the resulting counters in `metadata.idCounters`.
   - Saves and hydrates persisted mystery boxes through `mysteryBoxes.json`.
   - Saves and hydrates persisted mystery threads through `mysteryThreads.json`, including old-save migration that groups existing boxes into one inactive `Legacy Mystery Boxes` thread when a save has boxes but no threads.
+  - Saves and hydrates scheduled events through `scheduledEvents.json`.
 
 ## Pending Region Stub Maintenance
 - `rebuildPendingRegionStubs({ pendingRegionStubs, regions, gameLocations, gameLocationExits })`.
@@ -55,11 +56,11 @@ Collection of static utility helpers used across the server: set math, text simi
 ## Private Helpers (Selected)
 - K-gram internals: `#normalizeKgramTokens`, `#buildKgramSet`, `#containsSubgram`.
 - XML internals: `#getDomParserInstance`, `#normalizeXmlWithCheerio`.
-- Lazy module getters: `#getLocationModule`, `#getLocationExitModule`, `#getRegionModule`, `#getThingModule`, `#getPlayerModule`, `#getSkillModule`, `#getMysteryBoxModule`, `#getMysteryThreadModule`.
+- Lazy module getters: `#getLocationModule`, `#getLocationExitModule`, `#getRegionModule`, `#getThingModule`, `#getPlayerModule`, `#getSkillModule`, `#getMysteryBoxModule`, `#getMysteryThreadModule`, `#getScheduledEventModule`.
 
 ## Notes
-- `serializeGameState`/`writeSerializedGameState` also persist canonical world time, calendar definition, mystery boxes, and mystery threads (`worldTime.json`, `calendarDefinition.json`, `mysteryBoxes.json`, `mysteryThreads.json`), and hydration restores them through `Globals.hydrateWorldTime(...)`, `MysteryBox.loadAll(...)`, and `MysteryThread.loadAll(...)`.
-- `serializeGameState` and `hydrateGameState` coordinate `Location`, `Region`, `Thing`, `Player`, `Skill`, `MysteryBox`, `MysteryThread`, and stubs into a consistent save/load flow.
+- `serializeGameState`/`writeSerializedGameState` also persist canonical world time, calendar definition, mystery boxes, mystery threads, and scheduled events (`worldTime.json`, `calendarDefinition.json`, `mysteryBoxes.json`, `mysteryThreads.json`, `scheduledEvents.json`), and hydration restores them through `Globals.hydrateWorldTime(...)`, `MysteryBox.loadAll(...)`, `MysteryThread.loadAll(...)`, and `ScheduledEvent.loadAll(...)`.
+- `serializeGameState` and `hydrateGameState` coordinate `Location`, `Region`, `Thing`, `Player`, `Skill`, `MysteryBox`, `MysteryThread`, `ScheduledEvent`, and stubs into a consistent save/load flow.
 - `serializeGameState` persists `metadata.idCounters` from `IdGenerator` so compact IDs are not reused after deleted objects disappear from the live world.
 - `hydrateGameState` includes legacy save migration passes that convert hour-based fields to minute-canonical data (`worldTime`, elapsed/visited timestamps, status-effect duration/appliedAt, weather duration fields, and offscreen scheduler snapshots), scale pre-`1.1` saved player/NPC need-bar values by `10`, migrate pre-`1.2` domain object IDs and exact structured references to compact counters, and default missing saved exit `travelTimeMinutes` values to `0`, then bump the in-memory save metadata version to `1.2` so migrations do not reapply after the next save.
 - `hydrateGameState` clears `Player` runtime registries before re-instantiating saved actors, preventing stale in-memory duplicate instances from surviving loads.

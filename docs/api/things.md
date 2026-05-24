@@ -182,6 +182,9 @@ Response:
 - 200: `{ success: true, thing: Thing, location: LocationResponse, message, owner?: NpcProfile }`
 - 400/404/500 with `{ success: false, error }`
 
+Notes:
+- Dropping a contained item removes it from any containing Thing containers before adding it to the target location and clearing container ownership metadata.
+
 ## POST /api/things/:id/teleport
 Teleport a thing to a location (removing from inventories).
 

@@ -883,6 +883,55 @@ const CHAT_TOOL_DEFINITIONS = Object.freeze([
     {
         type: 'function',
         function: {
+            name: 'scheduleEvent',
+            description: 'Schedule a planned future event at a specific region and location. Provide exactly one timing mode: either in for a future duration such as "2 hours", or at for canonical world time { dayIndex, timeMinutes }.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    event: {
+                        type: 'string',
+                        description: 'What is planned to happen later. Include enough concrete context for the later resolution prompt to decide if it still makes sense.'
+                    },
+                    region: {
+                        type: 'string',
+                        description: 'Region ID or exact region name where the event is planned.'
+                    },
+                    location: {
+                        type: 'string',
+                        description: 'Location ID or exact location name where the event is planned.'
+                    },
+                    in: {
+                        oneOf: [
+                            { type: 'string' },
+                            { type: 'number' }
+                        ],
+                        description: 'Optional duration in the future, such as "2 hours", "45 minutes", or numeric minutes. Do not provide when at is provided.'
+                    },
+                    at: {
+                        type: 'object',
+                        properties: {
+                            dayIndex: {
+                                type: 'integer',
+                                description: 'Absolute world day index, matching base context.'
+                            },
+                            timeMinutes: {
+                                type: 'integer',
+                                description: 'Minutes after midnight on dayIndex, matching base context.'
+                            }
+                        },
+                        required: ['dayIndex', 'timeMinutes'],
+                        additionalProperties: false,
+                        description: 'Optional canonical absolute world time. Do not provide when in is provided.'
+                    }
+                },
+                required: ['event', 'region', 'location'],
+                additionalProperties: false
+            }
+        }
+    },
+    {
+        type: 'function',
+        function: {
             name: 'alterThing',
             description: 'Alter an existing thing by ID or name using the existing thing alteration prompt flow. Alters the whole resolved thing stack.',
             parameters: {
@@ -1760,6 +1809,7 @@ const createChatToolRuntime = ({
     resolveAreaAttack = null,
     resolvePlausibilityCheck = null,
     resolveOpposedPlausibilityCheck = null,
+    scheduleEvent = null,
     LLMClient,
     Player,
     Thing,
@@ -1789,6 +1839,9 @@ const createChatToolRuntime = ({
     ensureFunction(getPendingRegionStubs, 'getPendingRegionStubs');
     if (getModExtensionRegistry !== null && getModExtensionRegistry !== undefined) {
         ensureFunction(getModExtensionRegistry, 'getModExtensionRegistry');
+    }
+    if (scheduleEvent !== null && scheduleEvent !== undefined) {
+        ensureFunction(scheduleEvent, 'scheduleEvent');
     }
     ensureModel(LLMClient, 'LLMClient');
     ensureModel(Player, 'Player');
@@ -7522,6 +7575,92 @@ const createChatToolRuntime = ({
         };
     };
 
+    const hasProvidedScheduleTimingValue = (value) => {
+        if (value === null || value === undefined) {
+            return false;
+        }
+        if (typeof value === 'string') {
+            return value.trim() !== '';
+        }
+        return true;
+    };
+
+    const executeScheduleEventTool = async (args = {}) => {
+        if (typeof scheduleEvent !== 'function') {
+            throw new Error('scheduleEvent handler is not configured.');
+        }
+        const event = toTrimmedString(args.event);
+        const region = toTrimmedString(args.region);
+        const location = toTrimmedString(args.location);
+        if (!event) {
+            throw new ToolVisibleError('scheduleEvent requires a non-empty event string.', { code: 'invalid_schedule_event' });
+        }
+        if (!region) {
+            throw new ToolVisibleError('scheduleEvent requires a non-empty region string.', { code: 'invalid_schedule_event' });
+        }
+        if (!location) {
+            throw new ToolVisibleError('scheduleEvent requires a non-empty location string.', { code: 'invalid_schedule_event' });
+        }
+
+        const hasIn = hasProvidedScheduleTimingValue(args.in);
+        const hasAt = hasProvidedScheduleTimingValue(args.at);
+        if (hasIn === hasAt) {
+            throw new ToolVisibleError('Provide exactly one of in or at for scheduleEvent.', { code: 'invalid_schedule_event_timing' });
+        }
+
+        const scheduleArgs = { event, region, location };
+        if (hasIn) {
+            scheduleArgs.in = args.in;
+        } else {
+            scheduleArgs.at = args.at;
+        }
+
+        const scheduled = await scheduleEvent(scheduleArgs);
+        if (!scheduled || typeof scheduled !== 'object') {
+            throw new Error('scheduleEvent handler must return the scheduled event details.');
+        }
+        const id = toTrimmedString(scheduled.id);
+        if (!id) {
+            throw new Error('scheduleEvent handler returned a scheduled event without an id.');
+        }
+
+        const lines = [
+            '<scheduleEventResult>',
+            `  <id>${xmlEscapeText(id)}</id>`,
+            `  <event>${xmlEscapeText(toTrimmedString(scheduled.event) || event)}</event>`,
+            `  <region>${xmlEscapeText(toTrimmedString(scheduled.region) || region)}</region>`,
+            `  <location>${xmlEscapeText(toTrimmedString(scheduled.location) || location)}</location>`
+        ];
+        if (Number.isInteger(scheduled.dayIndex)) {
+            lines.push(`  <dayIndex>${scheduled.dayIndex}</dayIndex>`);
+        }
+        if (Number.isInteger(scheduled.timeMinutes)) {
+            lines.push(`  <timeMinutes>${scheduled.timeMinutes}</timeMinutes>`);
+        }
+        const dateLabel = toTrimmedString(scheduled.dateLabel);
+        if (dateLabel) {
+            lines.push(`  <dateLabel>${xmlEscapeText(dateLabel)}</dateLabel>`);
+        }
+        const timeLabel = toTrimmedString(scheduled.timeLabel);
+        if (timeLabel) {
+            lines.push(`  <timeLabel>${xmlEscapeText(timeLabel)}</timeLabel>`);
+        }
+        lines.push('</scheduleEventResult>');
+
+        return {
+            content: lines.join('\n'),
+            metadata: {
+                status: 'success',
+                id,
+                event: toTrimmedString(scheduled.event) || event,
+                region: toTrimmedString(scheduled.region) || region,
+                location: toTrimmedString(scheduled.location) || location,
+                dayIndex: Number.isInteger(scheduled.dayIndex) ? scheduled.dayIndex : null,
+                timeMinutes: Number.isInteger(scheduled.timeMinutes) ? scheduled.timeMinutes : null
+            }
+        };
+    };
+
     const buildToolExecutionErrorResult = (functionName, error) => {
         const visibleError = error instanceof ToolVisibleError
             ? error
@@ -7622,6 +7761,8 @@ const createChatToolRuntime = ({
                 toolResult = executeHideEntityTool(argumentsObject);
             } else if (toolCall.functionName === 'createThing') {
                 toolResult = executeCreateThingTool(argumentsObject);
+            } else if (toolCall.functionName === 'scheduleEvent') {
+                toolResult = executeScheduleEventTool(argumentsObject);
             } else if (toolCall.functionName === 'alterThing') {
                 toolResult = executeAlterThingTool(argumentsObject);
             } else if (toolCall.functionName === 'alterNpc') {

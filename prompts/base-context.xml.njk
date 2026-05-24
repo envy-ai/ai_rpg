@@ -660,6 +660,8 @@ The below context is an account of the current game state, including the setting
 {% endif %}
 <currentConditions>
   <worldTime>
+    <dayIndex>{{ worldTime.dayIndex }}</dayIndex>
+    <timeMinutes>{{ worldTime.timeMinutes }}</timeMinutes>
     <dateLabel>{{ worldTime.dateLabel }}</dateLabel>
     <currentTime>{{ worldTime.timeLabel }}</currentTime>
     <timeSegment>{{ worldTime.segment }}</timeSegment>
