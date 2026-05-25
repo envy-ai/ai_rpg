@@ -16,11 +16,12 @@ Responses:
 ## GET /api/locations
 
 Request:
-- Query: `scope=current|named|names` (optional)
+- Query: `scope=current|named|names|favorites` (optional)
 
 Responses:
 - 200 (scope=current): `{ success: true, location: LocationResponse }`
-- 200 (default list): `{ success: true, locations: Array<{ id, name, regionId, regionName, label }> }`
+- 200 (default list): `{ success: true, locations: Array<{ id, name, shortDescription, description, regionId, regionName, label, favorite, visited, isStub, imageId, image? }> }`
+- 200 (scope=favorites): same list shape, filtered to visited, non-stub locations with `favorite=true`.
 - 404: `{ success: false, error }` (scope=current with no current location)
 - 500: `{ success: false, error }`
 
@@ -74,6 +75,20 @@ Notes:
 - Vehicle edits use `isVehicle` + `vehicleInfo` together:
   - `isVehicle=false` clears vehicle info.
   - `isVehicle=true` requires valid vehicle data (`vehicleInfo` object or existing values when omitted, including optional `icon`).
+
+## PUT /api/locations/:id/favorite
+
+Toggles the persisted favorite marker used by the Play tab Favorites subtab.
+
+Request:
+- Path: `id`
+- Body: `{ favorite: boolean }`
+
+Responses:
+- 200: `{ success: true, location: LocationResponse, favorite }`
+- 400: `{ success: false, error }` when `favorite` is missing or not boolean
+- 404: `{ success: false, error }` when the location is missing
+- 500: `{ success: false, error }`
 
 ## GET /api/locations/:id/relocation-options
 

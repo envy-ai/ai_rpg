@@ -20,6 +20,7 @@
                 <button class="tab-button active" id="tab-adventure-tab" data-tab="adventure" role="tab" aria-selected="true" aria-controls="tab-adventure" aria-label="Adventure" title="Adventure"><img src="/assets/material-icons/game-tab-icons/adventure.svg" class="tab-button__icon" alt="" aria-hidden="true"></button>
                 <button class="tab-button" id="tab-map-tab" data-tab="map" role="tab" aria-selected="false" aria-controls="tab-map" aria-label="Map" title="Map"><img src="/assets/material-icons/game-tab-icons/map.svg" class="tab-button__icon" alt="" aria-hidden="true"></button>
                 <button class="tab-button" id="tab-world-map-tab" data-tab="world-map" role="tab" aria-selected="false" aria-controls="tab-world-map" aria-label="World Map" title="World Map"><img src="/assets/material-icons/game-tab-icons/world_map.svg" class="tab-button__icon" alt="" aria-hidden="true"></button>
+                <button class="tab-button" id="tab-favorites-tab" data-tab="favorites" role="tab" aria-selected="false" aria-controls="tab-favorites" aria-label="Favorites" title="Favorites"><img src="/assets/material-icons/misc/star_solid.svg" class="tab-button__icon" alt="" aria-hidden="true"></button>
                 <button class="tab-button" id="tab-character-tab" data-tab="character" role="tab" aria-selected="false" aria-controls="tab-character" aria-label="Character" title="Character"><img src="/assets/material-icons/game-tab-icons/character.svg" class="tab-button__icon" alt="" aria-hidden="true"></button>
                 <button class="tab-button" id="tab-quests-tab" data-tab="quests" role="tab" aria-selected="false" aria-controls="tab-quests" aria-label="Quests" title="Quests"><img src="/assets/material-icons/game-tab-icons/quests.svg" class="tab-button__icon" alt="" aria-hidden="true"></button>
                 <button class="tab-button" id="tab-factions-tab" data-tab="factions" role="tab" aria-selected="false" aria-controls="tab-factions" aria-label="Factions" title="Factions"><img src="/assets/material-icons/game-tab-icons/factions.svg" class="tab-button__icon" alt="" aria-hidden="true"></button>
@@ -64,6 +65,9 @@
                                         <div class="location-image-vehicle-pip" id="locationVehiclePip" hidden aria-hidden="true">
                                             <div class="location-image-vehicle-pip__image" id="locationVehiclePipImage"></div>
                                         </div>
+                                        <button type="button" class="location-favorite-toggle" id="locationFavoriteToggle" aria-pressed="false" aria-label="Add current location to favorites" title="Add to Favorites" disabled>
+                                            <img src="/assets/material-icons/misc/star.svg" class="location-favorite-toggle__icon" id="locationFavoriteToggleIcon" alt="" aria-hidden="true">
+                                        </button>
                                         <button type="button" class="entity-context-menu-button location-image-menu-button" id="locationImageMenuButton" aria-haspopup="true" aria-expanded="false" aria-label="Location options">•••</button>
                                         <div class="entity-context-menu location-image-menu" id="locationImageMenu" hidden>
                                             <button type="button" class="entity-context-menu-item location-image-menu-item" id="locationImageEditButton">Edit Location</button>
@@ -393,6 +397,14 @@
                             </button>
                         </div>
                         <div id="worldMapContainer" class="map-placeholder" aria-live="polite"></div>
+                    </div>
+                </section>
+                <section class="tab-panel" id="tab-favorites" role="tabpanel" aria-labelledby="tab-favorites-tab" hidden>
+                    <div class="favorites-panel">
+                        <div class="map-header">
+                            <h2 id="favoritesTitle" class="map-title">Favorites</h2>
+                        </div>
+                        <div id="favoritesList" class="favorites-list" aria-live="polite"></div>
                     </div>
                 </section>
                 <div class="map-location-context-menu entity-context-menu location-image-menu" id="mapLocationContextMenu" hidden>
@@ -3033,6 +3045,8 @@
                 imageUrl,
                 label: typeof badge.label === 'string' ? badge.label : '',
                 key: typeof badge.key === 'string' ? badge.key : null,
+                lockedContainer: badge.lockedContainer === true,
+                lockIconUrl: typeof badge.lockIconUrl === 'string' ? badge.lockIconUrl.trim() : '',
                 position: normalizeImageBadgePosition(badge.position),
                 renderMode: normalizeImageBadgeRenderMode(badge.renderMode),
                 order: Number.isFinite(order) ? order : 1000
@@ -3079,7 +3093,7 @@
                     mask.style.webkitMaskImage = cssUrl;
                     mask.style.maskImage = cssUrl;
                     span.appendChild(mask);
-                    return;
+                    return mask;
                 }
                 const image = document.createElement('img');
                 image.className = 'entity-image-badge__image';
@@ -3088,10 +3102,25 @@
                 image.draggable = false;
                 image.setAttribute('draggable', 'false');
                 span.appendChild(image);
-                return;
+                return image;
             }
 
             span.textContent = badge.icon || '';
+            return null;
+        }
+
+        function renderImageBadgeLockOverlay(span, badge) {
+            if (!badge.lockedContainer || !badge.lockIconUrl) {
+                return;
+            }
+            span.classList.add('entity-image-badge--locked-container');
+            const lock = document.createElement('span');
+            lock.className = 'entity-image-badge__lock';
+            const cssUrl = buildCssUrl(badge.lockIconUrl);
+            lock.style.webkitMaskImage = cssUrl;
+            lock.style.maskImage = cssUrl;
+            lock.setAttribute('aria-hidden', 'true');
+            span.appendChild(lock);
         }
 
         function renderImageBadgesOverlay(element, badges = null) {
@@ -3134,6 +3163,7 @@
                     const span = document.createElement('span');
                     span.className = 'entity-image-badge';
                     renderImageBadgeVisual(span, badge);
+                    renderImageBadgeLockOverlay(span, badge);
                     if (badge.label) {
                         span.title = badge.label;
                     }
@@ -9187,6 +9217,8 @@
         const npcViewCloseBtn = document.getElementById('npcViewCloseBtn');
         const npcViewImage = document.getElementById('npcViewImage');
         const locationImageWrapper = document.getElementById('locationImageWrapper');
+        const locationFavoriteToggle = document.getElementById('locationFavoriteToggle');
+        const locationFavoriteToggleIcon = document.getElementById('locationFavoriteToggleIcon');
         const locationImageMenuButton = document.getElementById('locationImageMenuButton');
         const locationImageMenu = document.getElementById('locationImageMenu');
         const locationImageEditButton = document.getElementById('locationImageEditButton');
@@ -9199,6 +9231,7 @@
         const locationImageRegenerateButton = document.getElementById('locationImageRegenerateButton');
         const mapLocationContextMenu = document.getElementById('mapLocationContextMenu');
         const worldMapReloadButton = document.getElementById('worldMapReloadButton');
+        const favoritesList = document.getElementById('favoritesList');
         const mapLocationMenuUnstubButton = document.getElementById('mapLocationMenuUnstubButton');
         const mapLocationMenuEditButton = document.getElementById('mapLocationMenuEditButton');
         const mapLocationMenuRegionButton = document.getElementById('mapLocationMenuRegionButton');
@@ -10785,7 +10818,9 @@
                 .map(definition => ({
                     key: definition.key,
                     icon: definition.icon,
-                    label: definition.label
+                    label: definition.label,
+                    lockedContainer: definition.key === 'isContainer' && resolveThingBooleanFlag(thing, 'requiresCheckToOpen'),
+                    lockIconUrl: definition.key === 'isContainer' ? '/assets/material-icons/misc/lock.svg' : ''
                 }));
             return builtInBadges.concat(getModThingImageBadges(thing));
         }
@@ -24518,6 +24553,18 @@
 
         });
 
+        let pendingFavoriteLocationsRefreshOptions = null;
+
+        function requestFavoriteLocationsRefresh(options = {}) {
+            if (typeof window.refreshFavoriteLocations === 'function') {
+                return window.refreshFavoriteLocations(options);
+            }
+            pendingFavoriteLocationsRefreshOptions = options && typeof options === 'object'
+                ? { ...options }
+                : {};
+            return Promise.resolve([]);
+        }
+
         function initTabs() {
             const tabButtons = document.querySelectorAll('.tab-button');
             const tabPanels = document.querySelectorAll('.tab-panel');
@@ -24558,6 +24605,8 @@
                     }
                 } else if (tabName === 'world-map') {
                     window.loadWorldMap?.();
+                } else if (tabName === 'favorites') {
+                    requestFavoriteLocationsRefresh();
                 } else if (tabName === 'party') {
                     window.refreshParty?.();
                 } else if (tabName === 'story-tools') {
@@ -24577,6 +24626,8 @@
                     if (button.classList.contains('active')) {
                         if (tabName === 'world-map') {
                             window.loadWorldMap?.();
+                        } else if (tabName === 'favorites') {
+                            requestFavoriteLocationsRefresh();
                         }
                         return;
                     }
@@ -24809,6 +24860,235 @@
                 name: details.name || null,
                 regionName: details.regionName || null
             };
+        }
+
+        const LOCATION_FAVORITE_ICON_OUTLINE = '/assets/material-icons/misc/star.svg';
+        const LOCATION_FAVORITE_ICON_SOLID = '/assets/material-icons/misc/star_solid.svg';
+        let favoriteLocationsRequestId = 0;
+
+        function isLocationFavorite(location) {
+            return Boolean(location?.favorite || location?.isFavorite);
+        }
+
+        function isFavoritesTabActive() {
+            const favoritesTab = document.querySelector('[data-tab="favorites"]');
+            return Boolean(favoritesTab?.classList.contains('active'));
+        }
+
+        function syncLocationFavoriteToggle(location = lastRenderedLocation) {
+            if (!locationFavoriteToggle || !locationFavoriteToggleIcon) {
+                return;
+            }
+
+            const hasLocation = Boolean(location?.id);
+            const favorite = isLocationFavorite(location);
+            locationFavoriteToggle.disabled = !hasLocation;
+            locationFavoriteToggle.classList.toggle('is-favorite', favorite);
+            locationFavoriteToggle.setAttribute('aria-pressed', favorite ? 'true' : 'false');
+            locationFavoriteToggle.setAttribute(
+                'aria-label',
+                favorite ? 'Remove current location from favorites' : 'Add current location to favorites'
+            );
+            locationFavoriteToggle.title = favorite ? 'Remove from Favorites' : 'Add to Favorites';
+            locationFavoriteToggleIcon.src = favorite ? LOCATION_FAVORITE_ICON_SOLID : LOCATION_FAVORITE_ICON_OUTLINE;
+        }
+
+        async function setCurrentLocationFavorite(nextFavorite) {
+            const activeLocation = lastRenderedLocation || window.lastRenderedLocation || null;
+            const locationId = activeLocation?.id || null;
+            if (!locationId) {
+                throw new Error('Current location is unavailable.');
+            }
+
+            if (locationFavoriteToggle) {
+                locationFavoriteToggle.disabled = true;
+            }
+
+            try {
+                const response = await fetch(`/api/locations/${encodeURIComponent(locationId)}/favorite`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ favorite: Boolean(nextFavorite) })
+                });
+                const result = await response.json().catch(() => ({}));
+                if (!response.ok || !result?.success || !result?.location) {
+                    throw new Error(result?.error || `HTTP ${response.status}`);
+                }
+
+                const locationSnapshot = JSON.parse(JSON.stringify(result.location));
+                lastRenderedLocation = locationSnapshot;
+                window.lastRenderedLocation = JSON.parse(JSON.stringify(locationSnapshot));
+                window.AIRPG_LAST_LOCATION_ID = locationSnapshot.id || null;
+                window.AIRPG_LAST_LOCATION = JSON.parse(JSON.stringify(locationSnapshot));
+                cacheLocationDetails(locationSnapshot.id, {
+                    name: locationSnapshot.name || null,
+                    regionName: locationSnapshot.regionName || locationSnapshot.region?.name || null,
+                    imageId: locationSnapshot.imageId || null
+                });
+                syncLocationFavoriteToggle(locationSnapshot);
+
+                if (isFavoritesTabActive()) {
+                    await refreshFavoriteLocations({ silent: true });
+                }
+                return locationSnapshot;
+            } finally {
+                syncLocationFavoriteToggle(lastRenderedLocation || window.lastRenderedLocation || null);
+            }
+        }
+
+        function buildFavoriteLocationCard(location) {
+            const currentLocationId = lastRenderedLocation?.id || window.lastRenderedLocation?.id || null;
+            const locationId = typeof location?.id === 'string' ? location.id.trim() : '';
+            const isCurrent = Boolean(locationId && currentLocationId && locationId === currentLocationId);
+
+            const card = document.createElement('button');
+            card.type = 'button';
+            card.className = 'favorite-location-card';
+            if (isCurrent) {
+                card.classList.add('is-current');
+                card.disabled = true;
+            }
+            card.dataset.locationId = locationId;
+
+            const image = document.createElement('div');
+            image.className = 'favorite-location-card__image';
+            const imageUrl = typeof location?.image?.url === 'string' && location.image.url.trim()
+                ? location.image.url.trim()
+                : null;
+            if (imageUrl) {
+                const img = document.createElement('img');
+                img.src = imageUrl;
+                img.alt = '';
+                img.loading = 'lazy';
+                image.appendChild(img);
+            } else {
+                const placeholder = document.createElement('span');
+                placeholder.className = 'favorite-location-card__placeholder';
+                placeholder.textContent = '★';
+                image.appendChild(placeholder);
+            }
+
+            const body = document.createElement('div');
+            body.className = 'favorite-location-card__body';
+
+            const title = document.createElement('div');
+            title.className = 'favorite-location-card__title';
+            setRenderedName(title, location?.name, 'Unknown Location', {
+                longWordCharacterLimit: LONG_NAME_WORD_CHARACTER_LIMIT
+            });
+
+            const meta = document.createElement('div');
+            meta.className = 'favorite-location-card__meta';
+            meta.textContent = isCurrent
+                ? `${location?.regionName || 'Unknown Region'} · Current location`
+                : (location?.regionName || 'Unknown Region');
+
+            const descriptionText = typeof location?.shortDescription === 'string' && location.shortDescription.trim()
+                ? location.shortDescription.trim()
+                : (typeof location?.description === 'string' ? location.description.trim() : '');
+            if (descriptionText) {
+                const description = document.createElement('div');
+                description.className = 'favorite-location-card__description';
+                description.textContent = descriptionText;
+                body.append(title, meta, description);
+            } else {
+                body.append(title, meta);
+            }
+
+            card.append(image, body);
+            if (!isCurrent && locationId) {
+                card.addEventListener('click', () => {
+                    travelToFavoriteLocation(locationId);
+                });
+            }
+
+            return card;
+        }
+
+        function renderFavoriteLocations(locations = []) {
+            if (!favoritesList) {
+                return;
+            }
+
+            const usableLocations = Array.isArray(locations)
+                ? locations.filter(location => location?.id && location.favorite && location.visited === true && location.isStub !== true)
+                : [];
+
+            favoritesList.replaceChildren();
+            favoritesList.classList.toggle('is-empty', usableLocations.length === 0);
+            if (!usableLocations.length) {
+                const empty = document.createElement('div');
+                empty.className = 'favorites-empty';
+                empty.textContent = 'No favorite locations yet.';
+                favoritesList.appendChild(empty);
+                return;
+            }
+
+            for (const location of usableLocations) {
+                cacheLocationDetails(location.id, {
+                    name: location.name || null,
+                    regionName: location.regionName || null,
+                    imageId: location.imageId || location.image?.id || null
+                });
+                favoritesList.appendChild(buildFavoriteLocationCard(location));
+            }
+        }
+
+        async function refreshFavoriteLocations({ silent = false } = {}) {
+            if (!favoritesList) {
+                return [];
+            }
+
+            const requestId = ++favoriteLocationsRequestId;
+            if (!silent) {
+                favoritesList.classList.add('is-loading');
+                favoritesList.textContent = 'Loading favorites...';
+            }
+
+            try {
+                const response = await fetch('/api/locations?scope=favorites', { cache: 'no-store' });
+                const data = await response.json().catch(() => ({}));
+                if (requestId !== favoriteLocationsRequestId) {
+                    return [];
+                }
+                if (!response.ok || !data?.success || !Array.isArray(data.locations)) {
+                    throw new Error(data?.error || `HTTP ${response.status}`);
+                }
+                renderFavoriteLocations(data.locations);
+                return data.locations;
+            } catch (error) {
+                if (requestId === favoriteLocationsRequestId) {
+                    favoritesList.replaceChildren();
+                    const errorEl = document.createElement('div');
+                    errorEl.className = 'favorites-empty favorites-empty--error';
+                    errorEl.textContent = `Failed to load favorites: ${error?.message || error}`;
+                    favoritesList.appendChild(errorEl);
+                }
+                return [];
+            } finally {
+                if (requestId === favoriteLocationsRequestId) {
+                    favoritesList.classList.remove('is-loading');
+                }
+            }
+        }
+        window.refreshFavoriteLocations = refreshFavoriteLocations;
+        if (pendingFavoriteLocationsRefreshOptions !== null || isFavoritesTabActive()) {
+            const queuedOptions = pendingFavoriteLocationsRefreshOptions || {};
+            pendingFavoriteLocationsRefreshOptions = null;
+            refreshFavoriteLocations(queuedOptions);
+        }
+
+        function travelToFavoriteLocation(locationId) {
+            if (!locationId || typeof window.travelToAdjacentLocationFromMap !== 'function') {
+                return;
+            }
+            window.activateTab?.('adventure');
+            const travelResult = window.travelToAdjacentLocationFromMap(locationId, { focusAdventureTab: false });
+            if (travelResult && typeof travelResult.then === 'function') {
+                travelResult.catch(error => {
+                    console.warn('Favorite location travel failed:', error);
+                });
+            }
         }
         const MOVE_PLAUSIBILITY_POLICY = (window.CHECK_MOVE_PLAUSIBILITY || 'never').toLowerCase();
 
@@ -30191,6 +30471,20 @@
             });
         }
 
+        if (locationFavoriteToggle) {
+            locationFavoriteToggle.addEventListener('click', async (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                try {
+                    const activeLocation = lastRenderedLocation || window.lastRenderedLocation || null;
+                    await setCurrentLocationFavorite(!isLocationFavorite(activeLocation));
+                } catch (error) {
+                    console.warn('Failed to update location favorite:', error);
+                    alert(`Failed to update favorite: ${error?.message || error}`);
+                }
+            });
+        }
+
         if (locationImageEditButton) {
             locationImageEditButton.addEventListener('click', (event) => {
                 event.stopPropagation();
@@ -31412,6 +31706,13 @@
                 };
 
                 if (location) {
+                    syncLocationFavoriteToggle(location);
+                    cacheLocationDetails(location.id, {
+                        name: location.name || null,
+                        regionName: location.regionName || location.region?.name || null,
+                        imageId: location.imageId || null
+                    });
+
                     const locationDescriptionHtml = location.description || 'No description available.';
                     const locationDescriptionText = locationDescriptionHtml
                         .replace(/<[^>]+>/g, ' ')
@@ -31975,12 +32276,19 @@
                     const locationSnapshot = location ? JSON.parse(JSON.stringify(location)) : null;
                     lastRenderedLocation = locationSnapshot;
                     try {
+                        window.lastRenderedLocation = locationSnapshot
+                            ? JSON.parse(JSON.stringify(locationSnapshot))
+                            : null;
                         window.AIRPG_LAST_LOCATION_ID = locationSnapshot?.id || null;
                         window.AIRPG_LAST_LOCATION = locationSnapshot
                             ? JSON.parse(JSON.stringify(locationSnapshot))
                             : null;
                     } catch (_) {
                         // Ignore failures to persist location snapshot globally
+                    }
+                    syncLocationFavoriteToggle(locationSnapshot);
+                    if (isFavoritesTabActive()) {
+                        refreshFavoriteLocations({ silent: true });
                     }
                 } else {
                     locationName.textContent = 'Unknown Location';
@@ -32071,11 +32379,13 @@
                     hideLocationOverlay();
                     lastRenderedLocation = null;
                     try {
+                        window.lastRenderedLocation = null;
                         window.AIRPG_LAST_LOCATION_ID = null;
                         window.AIRPG_LAST_LOCATION = null;
                     } catch (_) {
                         // Ignore failures to clear location snapshot
                     }
+                    syncLocationFavoriteToggle(null);
                     updateAdventureBackground(null);
                 }
             };

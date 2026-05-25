@@ -31302,6 +31302,7 @@ module.exports = function registerApiRoutes(scope) {
             try {
                 const scope = typeof req.query?.scope === 'string' ? req.query.scope.trim().toLowerCase() : null;
                 const requestCurrentLocation = scope === 'current';
+                const requestFavorites = scope === 'favorites';
 
                 if (requestCurrentLocation) {
                     const currentLocation = Globals.location;
@@ -31355,6 +31356,10 @@ module.exports = function registerApiRoutes(scope) {
                         return;
                     }
 
+                    if (requestFavorites && (!location.favorite || location.isStub || location.visited !== true)) {
+                        return;
+                    }
+
                     const rawName = typeof location.name === 'string' ? location.name.trim() : '';
                     if (includeNamedOnly && !rawName) {
                         return;
@@ -31362,14 +31367,34 @@ module.exports = function registerApiRoutes(scope) {
 
                     const regionId = location.regionId || location.stubMetadata?.regionId || null;
                     const regionName = resolveRegionName(regionId) || 'Unknown Region';
-                    const label = rawName ? `[${regionName}]: ${rawName}` : `[${regionName}]`;
+                    const displayName = rawName
+                        || (typeof location.shortDescription === 'string' ? location.shortDescription.trim() : '')
+                        || (typeof location.description === 'string' ? location.description.trim() : '')
+                        || location.id;
+                    const label = displayName ? `[${regionName}]: ${displayName}` : `[${regionName}]`;
+                    const metadata = location.imageId && generatedImages?.get
+                        ? generatedImages.get(location.imageId)
+                        : null;
+                    const firstImage = metadata?.images?.[0] || null;
 
                     summaries.push({
                         id: location.id,
-                        name: rawName,
+                        name: displayName,
+                        shortDescription: location.shortDescription || null,
+                        description: location.description || null,
                         regionId,
                         regionName,
-                        label
+                        label,
+                        favorite: Boolean(location.favorite),
+                        visited: Boolean(location.visited),
+                        isStub: Boolean(location.isStub),
+                        imageId: location.imageId || null,
+                        image: location.imageId
+                            ? {
+                                id: location.imageId,
+                                url: firstImage?.url || null
+                            }
+                            : null
                     });
                     seenIds.add(location.id);
                 };
@@ -31725,6 +31750,42 @@ module.exports = function registerApiRoutes(scope) {
             } catch (error) {
                 console.error('Error updating location:', error);
                 res.status(500).json({ success: false, error: error.message || 'Unknown error updating location' });
+            }
+        });
+
+        app.put('/api/locations/:id/favorite', (req, res) => {
+            try {
+                const locationId = req.params.id;
+                if (!locationId || typeof locationId !== 'string') {
+                    return res.status(400).json({ success: false, error: 'Location ID is required' });
+                }
+
+                const location = gameLocations.get(locationId) || Location.get(locationId);
+                if (!location) {
+                    return res.status(404).json({ success: false, error: `Location with ID '${locationId}' not found` });
+                }
+
+                const body = req.body || {};
+                if (!Object.prototype.hasOwnProperty.call(body, 'favorite') || typeof body.favorite !== 'boolean') {
+                    return res.status(400).json({ success: false, error: 'favorite must be a boolean' });
+                }
+
+                const resolvedFavorite = body.favorite;
+                location.favorite = resolvedFavorite;
+
+                const locationPayload = buildLocationResponse(location);
+                if (!locationPayload) {
+                    return res.status(500).json({ success: false, error: 'Failed to serialize location after favorite update.' });
+                }
+
+                res.json({
+                    success: true,
+                    location: locationPayload,
+                    favorite: resolvedFavorite
+                });
+            } catch (error) {
+                console.error('Error updating location favorite:', error);
+                res.status(500).json({ success: false, error: error.message || 'Unknown error updating location favorite' });
             }
         });
 
@@ -35096,6 +35157,7 @@ module.exports = function registerApiRoutes(scope) {
                 isVehicle: locationRepresentsVehicle,
                 vehicleIcon: locationVehicleIcon,
                 visited: Boolean(location.visited),
+                favorite: Boolean(location.favorite),
                 regionId: location.regionId || stubMetadata.regionId || null,
                 exits
             };

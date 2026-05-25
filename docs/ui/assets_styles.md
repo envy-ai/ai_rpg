@@ -11,6 +11,7 @@
   - The shared `.app-header` uses SCSS placeholder inheritance (`%app-header-control-base`, `%app-header-control-interactive`, `%app-header-link-surface`, `%app-header-action-surface`, `%app-header-accent-surface`) plus CSS custom properties on `.app-header` so future themes can override colors without rewriting component selectors. Header controls are namespaced and do not depend on generic `.btn` styles.
   - The app header renders a dark glass band with a crossed-swords brand crest, primary nav labels `Play`, `New Game`, `Worlds`, `Mods`, `Lorebooks`, `System`, a native `Tools` disclosure, and chat-only `Save` / `Load` actions. Tablet-width viewports move nav to a horizontally scrollable second row; phone-width viewports switch nav to a wrapping flex layout and render the open Tools menu as an embedded two-column panel so it stays inside the viewport.
   - The chat tab bar uses icon-only `.tab-button` controls with shared `.tab-button__icon` sizing, transparent button chrome, and a flush `.tab-bar` layout with no gap or bottom margin plus a subtle inset shadow.
+  - The Favorites tab uses `.favorites-panel` as a dark rounded content box matching the Factions tab detail-panel treatment: `18px` radius, translucent dark background, subtle white border, internal padding, and a soft dark shadow.
   - Live skill/attack check chat bubbles use `.check-results-*` and `.check-result-*` classes for grouped rows, collapsed `<details>` summaries, status/error/cache-hit borders, and expanded detail bodies that reuse the existing skill/attack breakdown markup.
   - The play-page spinner/status feedback uses `.chat-spinner-status-bar` between the prompt-progress dock and chat input. It is hidden by default, switches to `.is-visible` for flex layout, uses a small `.chat-spinner-status-bar__spinner`, italic text, and `pointer-events: none` so it does not block chat or sidebar interaction. Request-scoped chat progress text is routed into this same strip instead of using temporary loading bubbles.
   - The one-line prompt-progress tracker places tightly spaced eye/cancel/retry controls before the prompt name, keeps those white SVG icons fully bright with a slight white glow on hover/active, gives the prompt name a fixed 60% desktop allocation with medium-bold weight and ellipsis overflow, appends `(and N more)` when multiple prompts are running, and relaxes the label width on mobile.
@@ -40,7 +41,7 @@
 - `mods/<mod>/assets/` stores mod-owned image/icon assets served at `/mods/<mod>/assets/...`. Runtime hooks such as Thing image badges use `scope.getModAssetUrl(...)` to reference these files.
 - `public/icons/` stores static UI icon assets (for example, `sword-shield.svg`).
 - `assets/material-icons/app-nav-icons/` stores mask-friendly app-header icons for New Game, System, Tools, Save, Load, Debug, and Player Stats. App-header masks also reuse existing game-tab icons for Play, Worlds, and Lorebooks, and `assets/material-icons/misc/puzzle.svg` for Mods.
-- `assets/material-icons/misc/compress.svg` and `assets/material-icons/misc/expand.svg` are used by the docked prompt-progress tracker mode buttons and rendered as white right-aligned controls in the one-line state. `assets/material-icons/misc/view_prompt.svg`, `restart.svg`, and `cancel.svg` are used by the prompt row action buttons, rendered as white icons on transparent borderless buttons.
+- `assets/material-icons/misc/compress.svg` and `assets/material-icons/misc/expand.svg` are used by the docked prompt-progress tracker mode buttons and rendered as white right-aligned controls in the one-line state. `assets/material-icons/misc/view_prompt.svg`, `restart.svg`, and `cancel.svg` are used by the prompt row action buttons, rendered as white icons on transparent borderless buttons. `star.svg` and `star_solid.svg` provide matching outlined/solid star variants, including the borderless transparent current-location favorite toggle inset `4px` from the image corner.
 - `public/js/image-manager.js` coordinates image job requests and updates.
 - `public/js/lightbox.js` provides the full-screen lightbox viewer.
 
@@ -112,6 +113,9 @@ Loaded on the chat page:
   uses this path to place a configurable badge in the upper-left corner of implant-compatible
   item images. Its default preset uses `mods/implants/assets/microchip.svg`; the tattoo preset
   uses `mods/implants/assets/image.svg`.
+- Built-in container badges can render `.entity-image-badge__lock` when the Thing has
+  `requiresCheckToOpen`; the lock uses `assets/material-icons/misc/lock.svg` as a CSS mask,
+  `#ff4444` fill, and `25%` badge-relative sizing in the badge's upper-right corner.
 - Inventory, location item/scenery sections, and the crafting inventory now share the same
   inventory-style thing-card DOM builder in `views/index.njk`, with shared control/popup
   classes in `public/css/main.scss` such as `.thing-list-panel`, `.thing-list-panel__header`,

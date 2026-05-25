@@ -226,6 +226,7 @@ Fields:
 ## LocationResponse (buildLocationResponse)
 Extends `LocationDetails` with:
 - `pendingImageJobId`
+- `favorite` (boolean; persisted UI marker used by the Play tab Favorites subtab)
 - `regionName` (resolved name)
 - `region` (object: `id`, `name`, `description`, `parentRegionId`, `averageLevel`, `isVehicle`, `vehicleInfo`)
 - `regionPath` (array of `{ id, name }`)

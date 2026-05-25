@@ -30,3 +30,18 @@ test('checked containers use a dedicated open-attempt modal and API route', () =
     assert.match(promptSource, /<containerOpenResult>/);
     assert.match(promptSource, /resolveSkillCheck/);
 });
+
+test('checked container cards show a red lock overlay on the container badge', () => {
+    const viewSource = read('views/index.njk');
+    const scssSource = read('public/css/main.scss');
+
+    assert.match(viewSource, /function getThingPropertyBadges\(thing\)/);
+    assert.match(viewSource, /requiresCheckToOpen/);
+    assert.match(viewSource, /lockedContainer/);
+    assert.match(viewSource, /entity-image-badge__lock/);
+    assert.match(viewSource, /\/assets\/material-icons\/misc\/lock\.svg/);
+    assert.match(scssSource, /\.entity-image-badge--locked-container/);
+    assert.match(scssSource, /\.entity-image-badge__lock/);
+    assert.match(scssSource, /#ff4444/);
+    assert.match(scssSource, /25%/);
+});

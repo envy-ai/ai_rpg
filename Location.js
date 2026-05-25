@@ -21,6 +21,7 @@ class Location {
   #baseLevel;
   #exits;
   #visited;
+  #favorite;
   #imageId;
   #imageVariants;
   #createdAt;
@@ -274,7 +275,7 @@ class Location {
    * @param {string} [options.id] - Custom ID (if not provided, one will be generated)
    * @param {string} [options.imageId] - Image ID for generated location scene (defaults to null)
    */
-  constructor({ description, shortDescription = null, baseLevel = 1, id = null, imageId = null, imageVariants = null, name = null, isStub = false, stubMetadata = null, hasGeneratedStubs = false, statusEffects = [], npcIds = [], thingIds = [], generationHints = null, randomEvents = [], regionId = null, controllingFactionId = null, vehicleInfo = null, checkRegionId = true, visited = false, lastVisitedTime = null, characterConcepts = [], enemyConcepts = [] } = {}) {
+  constructor({ description, shortDescription = null, baseLevel = 1, id = null, imageId = null, imageVariants = null, name = null, isStub = false, stubMetadata = null, hasGeneratedStubs = false, statusEffects = [], npcIds = [], thingIds = [], generationHints = null, randomEvents = [], regionId = null, controllingFactionId = null, vehicleInfo = null, checkRegionId = true, visited = false, favorite = false, lastVisitedTime = null, characterConcepts = [], enemyConcepts = [] } = {}) {
     const creatingStub = Boolean(isStub);
 
     if (!creatingStub) {
@@ -351,6 +352,7 @@ class Location {
       ? controllingFactionId.trim()
       : null;
     this.#visited = Boolean(visited);
+    this.#favorite = Boolean(favorite);
     this.#stubMetadata = resolvedStubMetadata;
     this.#hasGeneratedStubs = Boolean(hasGeneratedStubs);
     this.#npcIds = Array.isArray(npcIds)
@@ -1025,6 +1027,14 @@ class Location {
     return this.#visited;
   }
 
+  get favorite() {
+    return this.#favorite;
+  }
+
+  get isFavorite() {
+    return this.#favorite;
+  }
+
   get createdAt() {
     return new Date(this.#createdAt);
   }
@@ -1156,6 +1166,11 @@ class Location {
 
   set visited(value) {
     this.#visited = Boolean(value);
+    this.#lastUpdated = new Date();
+  }
+
+  set favorite(value) {
+    this.#favorite = Boolean(value);
     this.#lastUpdated = new Date();
   }
 
@@ -1354,6 +1369,7 @@ class Location {
       shortDescription: this.#shortDescription,
       baseLevel: this.#baseLevel,
       visited: this.#visited,
+      favorite: this.#favorite,
       lastVisitedTime: this.#lastVisitedTime,
       imageId: this.#imageId,
       imageVariants: this.imageVariants,
@@ -1408,6 +1424,7 @@ class Location {
       imageId: this.#imageId,
       imageVariants: this.imageVariants,
       visited: this.#visited,
+      favorite: this.#favorite,
       lastVisitedTime: this.#lastVisitedTime,
       exits: exits,
       regionId: this.#regionId,

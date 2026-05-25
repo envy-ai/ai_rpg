@@ -4,12 +4,13 @@ ngram_default: 5
 
 # A list of forbidden tropes
 forbidden_tropes:
-  - "you’re either x or y. i can’t decide which yet."
-  - "REALLY looked."
-  - "mouth opens. closes. opens again."
-  - "a beat."
-  - "most people do this… but YOU. you do THAT.."
-  - "you did x. in y. in my z."
+  - \"you’re either x or y. i can’t decide which yet.\"
+  - \"REALLY looked.\"
+  - \"mouth opens. closes. opens again.\"
+  - \"a beat.\"
+  - \"most people do this… but YOU. you do THAT..\"
+  - \"you did x. in y. in my z.\"
+  - characters obsessively logging things
 
 # A list of slop words (ngrams are listed below as well) and their allowable parts per million before being flagged as repetitive
 regexes:

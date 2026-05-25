@@ -13,11 +13,12 @@ Represents a game location, including description, exits, NPCs, items/scenery, a
 - Stub support: `#isStub`, `#stubMetadata`, `#hasGeneratedStubs`, `#generationHints`.
 - Random events: `#randomEvents`.
 - Visit tracking: `#visited`, `#lastVisitedTime` (minute timestamp).
+- UI markers: `#favorite`.
 - Concept tags: `#characterConcepts`, `#enemyConcepts`.
 - Static indexes: `#indexById`, `#indexByName`.
 
 ## Construction
-- `new Location({...})` validates required fields, links to a `Region`, assigns a compact `loc_n` id when missing, initializes indexes, and normalizes status effects and hints. `visited` defaults to `false` unless explicitly provided.
+- `new Location({...})` validates required fields, links to a `Region`, assigns a compact `loc_n` id when missing, initializes indexes, and normalizes status effects and hints. `visited` and `favorite` default to `false` unless explicitly provided.
 - `static fromXMLSnippet(xmlSnippet, options)` parses XML and constructs a Location with normalized hints and events.
 
 ## Static API
@@ -33,6 +34,7 @@ Represents a game location, including description, exits, NPCs, items/scenery, a
 - `controllingFactionId` (get/set).
 - Basic fields: `id`, `name`, `description`, `shortDescription`, `baseLevel`, `imageId`, `imageVariants`, `createdAt`, `lastUpdated`.
 - Visit tracking: `visited` (get/set), `lastVisitedTime` (get/set, minutes), `minutesSinceLastVisit(currentTime?)`.
+- Favorite marker: `favorite` (get/set) and `isFavorite` (read alias).
 - Stub metadata: `isStub`, `stubMetadata` (get/set), `hasGeneratedStubs` (get/set).
 - Vehicle metadata: `isVehicle` (derived get), `vehicleInfo` (get/set; serialized object or `null`).
 - `generationHints` (get/set).
@@ -46,7 +48,7 @@ Represents a game location, including description, exits, NPCs, items/scenery, a
 - Visit tracking: `markVisited(visitedAt?)` marks the location visited and, when a minute timestamp is available, updates `lastVisitedTime`.
 - Image variants: `getImageVariant(variantKey)`, `setImageVariant(variantKey, entry)`, `removeImageVariant(variantKey)`, and `clearImageVariants({ sourceImageId? })` manage persisted display-only image variants such as weather/lighting renders.
 - Exit management: `addExit(direction, exit)`, `removeExit(direction)`, `getExit(direction)`, `getAvailableDirections()`, `hasExit(direction)`, `clearExits()`.
-- Summaries: `getSummary()`, `getDetails()`, `toJSON()` now include `visited`, `lastVisitedTime`, serialized `imageVariants`, and `generationHints`.
+- Summaries: `getSummary()`, `getDetails()`, `toJSON()` now include `visited`, `favorite`, `lastVisitedTime`, serialized `imageVariants`, and `generationHints`.
 - Random events: `addRandomEvent(event)`, `removeRandomEvent(event)`.
 - NPC helpers: `getNPCIds()`, `getNPCs()`, `getNPCNames()`, `addNpcId(id)`, `removeNpcId(id)`, `setNpcIds(ids)`, `clearNpcIds()`.
 - Thing helpers: `addThingId(id)`, `removeThingId(id)`, `setThingIds(ids)`, `clearThingIds()`.
@@ -69,6 +71,7 @@ Represents a game location, including description, exits, NPCs, items/scenery, a
 - Legacy stubs without `stubDescription` continue to expand, but only their long description is fixed; the LLM still generates a short description.
 - Player-driven `Player.setLocation(...)` calls mark the destination as visited and stamp `lastVisitedTime` from `Globals.elapsedTime`; NPC and vehicle-only movement do not.
 - Legacy saves that predate persisted `visited` flags now load non-stub locations as visited and stub locations as unvisited by default.
+- Legacy saves that predate persisted `favorite` flags load locations as not favorite. Favorite locations are stored on the `Location` record, not on the player, so they persist with the world save and appear in the Play tab's Favorites subtab when visited and non-stub.
 - `findShortestTravelTimeMinutes(...)` treats exits as directed weighted edges and throws on malformed graph data such as dangling destinations or invalid travel-time values, instead of silently skipping them.
 - `findShortestTravelTimeMinutesByRegionAndLocationNames(...)` fails loudly when a named region is missing, a location name does not exist within the named region, or the same location name appears more than once inside that region.
 - Adding/removing thing ids updates Thing metadata (location ownership) and removes from other locations via `Thing.removeFromWorldById`.

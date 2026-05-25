@@ -7104,6 +7104,8 @@ function buildBasePromptContext({
         rarityDefinitions: Thing.getAllRarityDefinitions(),
         experiencePointValues,
         generatedThingRarity,
+        thingGeneratorPromptFields: getThingGeneratorPromptFields(),
+        thingSeed: {},
         npcRepresentation: buildNpcRepresentationSummaryForPrompt(),
         calendarSeasons,
         worldOutline,

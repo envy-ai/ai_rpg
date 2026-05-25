@@ -45,6 +45,103 @@ this.parseThingsXml = parseThingsXml;`,
     return context.parseThingsXml;
 }
 
+function loadBuildBasePromptContext(registry) {
+    const source = fs.readFileSync(require.resolve('../server.js'), 'utf8');
+    const start = source.indexOf('function buildBasePromptContext');
+    const end = source.indexOf('\nfunction getBaseContextTurnKey', start);
+    assert.notEqual(start, -1, 'Could not locate buildBasePromptContext');
+    assert.notEqual(end, -1, 'Could not locate getBaseContextTurnKey');
+
+    const context = {
+        Boolean,
+        Error,
+        Map,
+        Number,
+        Object,
+        Set,
+        String,
+        console,
+        config: {},
+        currentPlayer: {
+            id: 'player_1',
+            name: 'Tester',
+            currentQuests: [],
+            getAbilities: () => [],
+            getPartyMembers: () => [],
+            getStatus: () => ({
+                name: 'Tester',
+                description: '',
+                inventory: [],
+                gear: {},
+                skills: []
+            })
+        },
+        currentTurnToken: null,
+        chatHistory: [],
+        factions: new Map(),
+        gameLocations: new Map(),
+        pendingRegionStubs: new Map(),
+        players: new Map(),
+        regions: new Map(),
+        skills: new Map(),
+        things: new Map(),
+        attributeDefinitionsForPrompt: {
+            intelligence: {},
+            strength: {}
+        },
+        Globals: {
+            ensureWorldTimeInitialized: () => ({}),
+            getPlotAnalysis: () => null,
+            getSerializedCalendarDefinition: () => ({}),
+            saveFileSaveVersion: 1
+        },
+        Player: {
+            getAvailableSkills: () => new Map([['Cybernetics', {}]]),
+            getDispositionDefinitions: () => ({ types: {}, range: {} }),
+            getNeedBarDefinitionsForContext: () => []
+        },
+        StatusEffect: {
+            normalizeDuration: value => value
+        },
+        Thing: {
+            generateRandomRarityDefinition: () => ({ label: 'Common' }),
+            getAllRarityDefinitions: () => [{ label: 'Common', description: 'Common item.' }]
+        },
+        buildActiveMysteryThreadsForPrompt: () => [],
+        buildNpcRepresentationSummaryForPrompt: () => '',
+        buildSettingPromptContext: () => ({
+            name: 'Test Setting',
+            description: 'A test setting.',
+            genre: 'science fantasy',
+            tone: 'neutral',
+            skills: ['Cybernetics'],
+            attributes: ['intelligence', 'strength']
+        }),
+        collectNpcNamesForContext: () => [],
+        describeSettingForPrompt: () => 'A test setting.',
+        extractPersonality: () => ({}),
+        findRegionByLocationId: () => null,
+        getActiveSettingSnapshot: () => ({ name: 'Test Setting' }),
+        getExperiencePointValues: () => ({}),
+        getGearSlotNames: () => ['head', 'body'],
+        getGearSlotTypes: () => ['head', 'body'],
+        getThingGeneratorPromptFields: () => registry.getEntityFields('thing', { exposeToGeneratorPrompt: true }),
+        getWorldOutline: () => ({ regions: [] }),
+        modExtensionRegistry: registry,
+        normalizeLocationWeatherExposure: () => 'no',
+        resolveLocationHasWeather: () => null,
+        resolveMysteryThreadMaxActive: () => 0,
+        resolveRegionWeatherForPrompt: () => null
+    };
+    vm.createContext(context);
+    vm.runInContext(
+        `${source.slice(start, end)}
+this.buildBasePromptContext = buildBasePromptContext;`,
+        context
+    );
+    return context.buildBasePromptContext;
+}
+
 function registerImplantField(registry) {
     registry.registerEntityField({
         modName: 'implants',
@@ -84,6 +181,38 @@ test('item XML prompt renders registered generator fields with placeholders and 
         }
     });
     assert.match(seeded, /<implantSlot>neural<\/implantSlot>/);
+});
+
+test('base prompt context exposes registered generator fields to crafting item XML prompts', () => {
+    const registry = new ModExtensionRegistry();
+    registerImplantField(registry);
+    const buildBasePromptContext = loadBuildBasePromptContext(registry);
+    const promptEnv = createPromptEnv();
+    const baseContext = buildBasePromptContext({
+        locationOverride: {
+            id: 'loc_1',
+            name: 'Test Lab',
+            description: 'A test workshop.',
+            items: [],
+            scenery: [],
+            getDetails: () => ({
+                name: 'Test Lab',
+                description: 'A test workshop.',
+                exits: {}
+            })
+        }
+    });
+
+    const rendered = promptEnv.render('_includes/plausibility-check-craft.njk', {
+        ...baseContext,
+        intendedItemName: 'Improvised Psionic Relay Implant',
+        stationName: 'Modular Workbench',
+        craftingItems: [],
+        craftingNotes: '',
+        craftTargetType: 'item'
+    });
+
+    assert.match(rendered, /<implantSlot><!--N\/A unless this item can be installed as an implant; otherwise use neural, dermal, ocular, skeletal, or arcane\.--><\/implantSlot>/);
 });
 
 test('thing XML parser maps registered item prompt fields onto first-class parsed properties', async () => {

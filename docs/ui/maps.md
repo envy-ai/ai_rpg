@@ -56,6 +56,7 @@ Rendered inside `#worldMapContainer` in the World Map tab.
   - region exit nodes.
 - World-map location nodes reuse the same floating location context menu as the region map, so `Set Last Seen` is available there too.
 - Tapping a visited non-current location node immediately returns the UI to the Adventure tab before the shared map fast-travel flow resolves.
+- The Play tab Favorites subtab reuses this same shared map fast-travel helper when a favorite location card is clicked, so favorite-card travel matches world-map travel behavior and timing.
 - Vehicle-capable location nodes and vehicle region labels get centered emoji overlays from vehicle icon metadata.
 - Convex hull overlays are drawn around region groupings using
   `public/js/cytoscape-convex-hull.js`.

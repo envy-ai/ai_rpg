@@ -2114,6 +2114,9 @@ class Utils {
         visited: Object.prototype.hasOwnProperty.call(locationData, 'visited')
           ? Boolean(locationData.visited)
           : !Boolean(locationData.isStub),
+        favorite: Object.prototype.hasOwnProperty.call(locationData, 'favorite')
+          ? Boolean(locationData.favorite)
+          : false,
         lastVisitedTime: Number.isFinite(Number(locationData.lastVisitedTime))
           ? Number(locationData.lastVisitedTime)
           : null

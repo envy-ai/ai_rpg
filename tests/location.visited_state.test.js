@@ -186,9 +186,16 @@ test('Utils.hydrateGameState infers visited state for legacy saves without a vis
 
         hydratedLocations.push(...gameLocations.values());
 
-        assert.equal(gameLocations.get(legacyExpanded.id).visited, true);
-        assert.equal(gameLocations.get(explicitUnvisited.id).visited, false);
-        assert.equal(gameLocations.get(legacyStub.id).visited, false);
+        const restoredLegacyExpanded = Array.from(gameLocations.values()).find(location => location.name === legacyExpanded.name);
+        const restoredExplicitUnvisited = Array.from(gameLocations.values()).find(location => location.name === explicitUnvisited.name);
+        const restoredLegacyStub = Array.from(gameLocations.values()).find(location => location.name === legacyStub.name);
+
+        assert.ok(restoredLegacyExpanded, 'legacy expanded location should hydrate');
+        assert.ok(restoredExplicitUnvisited, 'explicit unvisited location should hydrate');
+        assert.ok(restoredLegacyStub, 'legacy stub location should hydrate');
+        assert.equal(restoredLegacyExpanded.visited, true);
+        assert.equal(restoredExplicitUnvisited.visited, false);
+        assert.equal(restoredLegacyStub.visited, false);
     } finally {
         Globals.config = previousConfig;
         Globals.sceneSummaries = previousSceneSummaries;
@@ -292,12 +299,13 @@ test('Utils.hydrateGameState defaults missing saved exit travel times to 0 minut
 
         hydratedLocations.push(...gameLocations.values());
 
-        const hydratedOrigin = gameLocations.get(origin.id);
+        const hydratedOrigin = Array.from(gameLocations.values()).find(location => location.name === origin.name);
         const hydratedExit = hydratedOrigin?.getExit('south');
 
         assert.ok(hydratedExit);
         assert.equal(hydratedExit.travelTimeMinutes, 0);
-        assert.equal(gameLocationExits.get(exit.id)?.travelTimeMinutes, 0);
+        const hydratedGlobalExit = Array.from(gameLocationExits.values()).find(entry => entry.description === exit.description);
+        assert.equal(hydratedGlobalExit?.travelTimeMinutes, 0);
     } finally {
         Globals.config = previousConfig;
         Globals.sceneSummaries = previousSceneSummaries;
