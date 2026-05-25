@@ -65,7 +65,7 @@ Most modals live in `views/index.njk` and are wired up by the inline script or `
   - In NPC view mode, the Faction section shows that NPC's faction name.
   - In player view mode, the Faction section lists all factions with resolved reputation tier labels and tier perks as benefits.
   - Attribute and skill allocation areas no longer use nested internal scrollbars; they inherit the modal body's single scroll container.
-  - NPCs render those controls in read-only mode, and the unspent attribute/skill point totals are hidden.
+  - NPCs render those controls in read-only mode, with visible server-derived unspent attribute/skill point totals.
   - Player view mode enables spending unspent attribute/skill points directly in the modal, with live skill-pool previews that include formula deltas from provisional edits (for example, Intelligence bonus effects in the skill pool formula).
   - Player save flow blocks submit on negative pools and prompts confirmation if pools remain positive.
 - `#npcDispositionModal`: adjust dispositions.

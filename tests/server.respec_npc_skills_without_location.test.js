@@ -56,7 +56,7 @@ test('respecNpcSkillsForCharacter supports NPCs without a current location', asy
                 assignments: new Map([
                     ['velska', {
                         name: 'Velska',
-                        skills: [{ name: 'Scavenging', priority: 3 }]
+                        skills: [{ name: 'Scavenging', points: 5 }]
                     }]
                 ]),
                 prompt: '<prompt />',
@@ -75,11 +75,14 @@ test('respecNpcSkillsForCharacter supports NPCs without a current location', asy
             skillPoints: 5,
             maxSkill: 4
         }),
-        applyNpcSkillAllocations: (character, skills, budget) => {
+        applyNpcSkillPointAllocationsWithBudget: (character, skills, budget) => {
             calls.applyCharacter = character;
             calls.applySkills = skills;
             calls.applyBudget = budget;
             return 5;
+        },
+        applyNpcSkillAllocations: () => {
+            throw new Error('respecNpcSkillsForCharacter should use point-based skill allocation.');
         },
         restoreCharacterSkillSnapshot: () => {
             calls.restoreCalled = true;
@@ -100,9 +103,15 @@ test('respecNpcSkillsForCharacter supports NPCs without a current location', asy
     assert.equal(calls.seedLocation, null);
     assert.equal(calls.requestOptions.locationOverride, null);
     assert.equal(calls.requestOptions.currentRegion, null);
+    assert.equal(calls.requestOptions.progressionAssignmentMode, 'skill_points');
+    assert.deepEqual(JSON.parse(JSON.stringify(calls.requestOptions.skillPointBudgets)), [{
+        name: 'Velska',
+        skillPoints: 5,
+        maxSkill: 4
+    }]);
     assert.equal(calls.resetCount, 1);
     assert.equal(calls.applyCharacter, npc);
-    assert.deepEqual(calls.applySkills, [{ name: 'Scavenging', priority: 3 }]);
+    assert.deepEqual(calls.applySkills, [{ name: 'Scavenging', points: 5 }]);
     assert.deepEqual(JSON.parse(JSON.stringify(calls.applyBudget)), {
         points: 5,
         maxSkill: 4

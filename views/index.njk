@@ -24013,18 +24013,10 @@
                 updateNpcViewAllocationStatus('');
             }
             if (npcViewAttributePointsGroup) {
-                if (isPlayerView) {
-                    npcViewAttributePointsGroup.removeAttribute('hidden');
-                } else {
-                    npcViewAttributePointsGroup.setAttribute('hidden', '');
-                }
+                npcViewAttributePointsGroup.removeAttribute('hidden');
             }
             if (npcViewSkillPointsGroup) {
-                if (isPlayerView) {
-                    npcViewSkillPointsGroup.removeAttribute('hidden');
-                } else {
-                    npcViewSkillPointsGroup.setAttribute('hidden', '');
-                }
+                npcViewSkillPointsGroup.removeAttribute('hidden');
             }
 
             let factionDirectory = null;
@@ -24109,14 +24101,14 @@
                 const allocator = await ensureNpcViewAllocator({
                     level: safeLevel,
                     skillNames,
-                    attributePoolBaseValue: isPlayerView && Number.isFinite(unspentAttributePoints)
+                    attributePoolBaseValue: Number.isFinite(unspentAttributePoints)
                         ? unspentAttributePoints
                         : null,
-                    skillPoolBaseValue: isPlayerView && Number.isFinite(unspentSkillPoints)
+                    skillPoolBaseValue: Number.isFinite(unspentSkillPoints)
                         ? unspentSkillPoints
                         : null,
-                    attributeFloorValues: isPlayerView ? attributeValues : {},
-                    skillFloorValues: isPlayerView ? skillValues : {},
+                    attributeFloorValues: attributeValues,
+                    skillFloorValues: skillValues,
                     readOnly: !isPlayerView
                 });
                 allocator.applyLoadedValues({

@@ -113,6 +113,7 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
   - `getNeedSentencePromptContext({ actorName, onMissingSentence })` resolves active need-bar threshold sentences with `%CHARACTER%` substitution for base-context prompt rendering.
 - Inventory/gear:
   - Inventory: `addInventoryItem(...)`, `removeInventoryItem(...)`, `hasInventoryItem(...)`, `getInventoryItems()`, `clearInventory()`, `setInventory(items)`.
+  - `addInventoryItem(...)` automatically merges incoming non-container, unequipped item stacks into existing same-name/same-checksum stacks in the actor inventory unless called with `mergeStacks: false`.
   - Barter inventory: `addBarterInventoryItem(...)`, `removeBarterInventoryItem(...)`, `hasBarterInventoryItem(...)`, `getBarterInventoryItems()`, `clearBarterInventory()`, `setBarterInventory(items)`, `barterInventorySize`.
   - Gear: `getGear()`, `getGearSlotsByType()`, `getEquippedSlotForThing(...)`, `hasEquippedThing(...)`, `getEquippedItemIdForType(slotType)`.
   - Equip flows: `equipItem(...)`, `equipItemInSlot(...)`, `unequipItemId(...)`, `unequipSlot(...)`.

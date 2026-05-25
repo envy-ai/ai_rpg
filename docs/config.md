@@ -167,7 +167,7 @@ npc_generation:
   max_quantity: 20
 ```
 
-Location, region, and single-NPC generation prompts may return `<quantity>`. Missing or blank values default to `1`; non-integer text is warning-logged after stripping non-numeric characters; values are clamped to `1..npc_generation.max_quantity`. Quantity groups expand only after name cleanup, progression, abilities, inventory generation, and equipment assignment, so each numbered NPC receives copied numbered gear.
+Location, region, and single-NPC generation prompts may return `<quantity>`. Missing or blank values default to `1`; non-integer text is warning-logged after stripping non-numeric characters; values are clamped to `1..npc_generation.max_quantity`. Quantity groups expand only after name cleanup, progression, abilities, inventory generation, and equipment assignment, so each numbered NPC receives its own copied gear with the original item names preserved. Those copied items remain separate while held by different NPCs but are stack-compatible when later dropped or moved into the same destination.
 
 ## Mystery Threads
 

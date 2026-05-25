@@ -82,6 +82,7 @@ Notes:
 - Prompt output may be either a normal `<items>` list or a top-level `<stack>` node. `<stack>` updates only `name`, `description`, `shortDescription`, and `count`; all other stats are preserved directly from the source thing without attribute-bonus rescaling.
 - When the source thing already has `count > 1`, the route skips the prompt entirely and splits it into that many identical `count: 1` things, reusing the original `imageId`, copying the source thing's current `statusEffects` onto every split thing without re-enrichment, and leaving the source `value` unchanged on each copied stack entry.
 - Source things inside containers preserve their source container. Non-empty container things cannot be separated.
+- Separated outputs opt out of automatic same-destination stack merging because the purpose of the route is to produce distinct separated things.
 
 ## POST /api/things/:id/split-stack
 Split an item stack into a second stack with an exact requested quantity.
@@ -99,6 +100,7 @@ Notes:
 - Split stacks are created via `Thing.copy(...)`, so they keep the same image and hashable item data as the source stack. Only `count`/placement metadata changes.
 - Stack splitting leaves existing `value` metadata unchanged.
 - Source stacks inside containers preserve their source container. Non-empty container stacks cannot be split.
+- Explicit split-stack placement opts out of automatic same-destination stack merging so the two stack fragments remain separate until one is moved or explicitly merged.
 
 ## POST /api/things/:id/merge-stacks
 Merge same-name, same-checksum stacks from the same inventory or location into the selected item stack.
@@ -147,6 +149,7 @@ Notes:
 - When `thingIds` is provided, the route validates the full list before moving anything and returns one refreshed container payload.
 - Rejects non-container destinations, missing items, non-item contents, equipped items, duplicate containment, self-containment, descendant cycles, missing current player state, player-source items outside the current player's inventory, and location-source items that are not loose in the current location.
 - Partial movement is handled by splitting the stack first, then moving the split stack.
+- Moving an item stack into a container automatically merges it into an existing same-name/same-checksum stack in that container. Containers and equipped items are excluded from automatic merging.
 
 ## POST /api/things/:containerId/container/move-out
 Move a whole contained item stack into the current player's inventory.
@@ -161,6 +164,7 @@ Response:
 Notes:
 - When `thingIds` is provided, the route validates the full list before moving anything and returns one refreshed container payload.
 - The moved item is removed from the container, has `metadata.containerId` cleared, and gains player inventory ownership metadata.
+- Moving a contained item stack into player inventory automatically merges it into an existing same-name/same-checksum stack in that inventory. Containers and equipped items are excluded from automatic merging.
 
 ## POST /api/things/:id/give
 Move an item into an inventory.
@@ -171,6 +175,9 @@ Request:
 Response:
 - 200: `{ success: true, thing: Thing, owner: NpcProfile, location?: LocationResponse, message }`
 - 400/404/409/500 with `{ success: false, error }`
+
+Notes:
+- Moving an item into an inventory automatically merges it into an existing same-name/same-checksum stack owned by the destination actor. Containers and equipped items are excluded from automatic merging.
 
 ## POST /api/things/:id/drop
 Drop an item into a location.
@@ -184,6 +191,7 @@ Response:
 
 Notes:
 - Dropping a contained item removes it from any containing Thing containers before adding it to the target location and clearing container ownership metadata.
+- Dropping an item into a location automatically merges it into an existing loose same-name/same-checksum item stack in that location. Containers and equipped items are excluded from automatic merging.
 
 ## POST /api/things/:id/teleport
 Teleport a thing to a location (removing from inventories).
@@ -194,6 +202,9 @@ Request:
 Response:
 - 200: `{ success: true, thing: Thing, destination: LocationResponse, previousLocation: LocationResponse, removedOwnerIds: string[], locationIds: string[], message }`
 - 400/404/500 with `{ success: false, error }`
+
+Notes:
+- Teleporting an item to a location uses the same automatic loose-location stack merge as dropping.
 
 ## DELETE /api/things/:id
 Delete a thing.

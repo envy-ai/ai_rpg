@@ -4135,14 +4135,60 @@ module.exports = function registerApiRoutes(scope) {
             return `${regionText}|${locationText}`;
         }
 
-        function extractProseNodeContentPreservingTags(node) {
+        function extractProseNodeContentPreservingTags(node, { excludeDirectChildTags = [] } = {}) {
             if (!node) {
                 return '';
             }
-            const content = typeof Utils.extractXmlNodeContent === 'function'
-                ? Utils.extractXmlNodeContent(node)
-                : (node.textContent || '');
+            const excludedTags = new Set(
+                (Array.isArray(excludeDirectChildTags) ? excludeDirectChildTags : [])
+                    .map(tag => (typeof tag === 'string' ? tag.trim().toLowerCase() : ''))
+                    .filter(Boolean)
+            );
+            let content = '';
+            if (excludedTags.size && node.childNodes) {
+                const childNodes = Array.from(node.childNodes || []);
+                content = childNodes
+                    .filter(child => {
+                        if (!child || child.nodeType !== 1) {
+                            return true;
+                        }
+                        const childName = typeof child.nodeName === 'string'
+                            ? child.nodeName.toLowerCase()
+                            : '';
+                        return !excludedTags.has(childName);
+                    })
+                    .map(child => {
+                        if (typeof Utils.innerXML === 'function') {
+                            return Utils.innerXML({ childNodes: [child] });
+                        }
+                        return child.textContent || '';
+                    })
+                    .join('');
+            } else {
+                content = typeof Utils.extractXmlNodeContent === 'function'
+                    ? Utils.extractXmlNodeContent(node)
+                    : (node.textContent || '');
+            }
             return trimLeadingParagraphSpaces(content || '').trim();
+        }
+
+        function parsePlayerActionTimePassedNode(timePassedNode, { fieldLabel = 'player action <timePassed>' } = {}) {
+            if (!timePassedNode) {
+                return null;
+            }
+            const durationNode = getDirectChildElementByTagName(timePassedNode, 'duration');
+            if (!durationNode) {
+                throw new Error(`${fieldLabel} must include a direct <duration> child.`);
+            }
+            const durationText = typeof durationNode.textContent === 'string'
+                ? durationNode.textContent.trim()
+                : '';
+            if (!durationText) {
+                throw new Error(`${fieldLabel} <duration> must not be empty.`);
+            }
+            return Utils.parseDurationToMinutes(durationText, {
+                fieldName: `${fieldLabel} <duration>`
+            });
         }
 
         function extractXmlFatalErrorText(error) {
@@ -4271,9 +4317,15 @@ module.exports = function registerApiRoutes(scope) {
                 };
             }
             const finalNode = doc.getElementsByTagName('finalProse')[0] || null;
-            const finalText = extractProseNodeContentPreservingTags(finalNode);
+            const finalTimePassedNode = getDirectChildElementByTagName(finalNode, 'timePassed');
+            const finalTimePassedMinutes = parsePlayerActionTimePassedNode(finalTimePassedNode, {
+                fieldLabel: 'player action <finalProse><timePassed>'
+            });
+            const finalText = extractProseNodeContentPreservingTags(finalNode, {
+                excludeDirectChildTags: ['timePassed']
+            });
             if (finalText) {
-                return { prose: finalText, travel: null };
+                return { prose: finalText, travel: null, timePassedMinutes: finalTimePassedMinutes };
             }
             const travelNode = doc.getElementsByTagName('travelProse')[0] || null;
             if (travelNode) {
@@ -5815,7 +5867,11 @@ module.exports = function registerApiRoutes(scope) {
                 );
             }
 
-            if (things instanceof Map && thing.id) {
+            const thingStillRegistered = typeof Thing === 'undefined'
+                || !Thing
+                || typeof Thing.getById !== 'function'
+                || Thing.getById(thing.id) === thing;
+            if (things instanceof Map && thing.id && thingStillRegistered) {
                 things.set(thing.id, thing);
             }
             if (gameLocations instanceof Map && destinationLocation.id) {
@@ -6389,7 +6445,8 @@ module.exports = function registerApiRoutes(scope) {
             stream = null,
             clientId = null,
             requestId = null,
-            source = 'scheduled_event'
+            source = 'scheduled_event',
+            suppressVisibleProse = false
         } = {}) {
             if (!scheduledEvent || typeof scheduledEvent !== 'object') {
                 throw new Error('Scheduled event resolution requires a scheduled event.');
@@ -6500,6 +6557,7 @@ module.exports = function registerApiRoutes(scope) {
                     scheduledEvent: scheduledEvent.event || null,
                     playerPresent,
                     source,
+                    visibleProseSuppressed: Boolean(playerPresent && suppressVisibleProse),
                     hiddenFromClient: true
                 }
             };
@@ -6510,7 +6568,7 @@ module.exports = function registerApiRoutes(scope) {
 
             let visibleEntry = null;
             let slopRemovalInfo = null;
-            if (playerPresent && playerFacingProse) {
+            if (playerPresent && playerFacingProse && !suppressVisibleProse) {
                 if (Globals.config?.slop_buster === true) {
                     const slopResult = await applySlopRemoval(playerFacingProse, { returnDiagnostics: true });
                     playerFacingProse = slopResult.text;
@@ -6567,7 +6625,201 @@ module.exports = function registerApiRoutes(scope) {
                 happened: true,
                 hiddenEntry,
                 visibleEntry,
-                locationRefreshRequested: Boolean(visibleEntry)
+                playerProse: playerPresent ? playerFacingProse : '',
+                summary,
+                locationRefreshRequested: Boolean(visibleEntry) || Boolean(playerPresent && suppressVisibleProse)
+            };
+        }
+
+        function findScheduledEventInterruptionForPlayerAction({
+            startWorldMinute,
+            elapsedMinutes,
+            locationId
+        } = {}) {
+            const normalizedLocationId = typeof locationId === 'string' ? locationId.trim() : '';
+            if (!normalizedLocationId) {
+                return null;
+            }
+            const startMinute = Number(startWorldMinute);
+            if (!Number.isFinite(startMinute) || startMinute < 0 || !Number.isInteger(startMinute)) {
+                throw new Error('Scheduled event interruption lookup requires a non-negative integer startWorldMinute.');
+            }
+            const actionElapsedMinutes = normalizePlayerActionTimePassedMinutes(elapsedMinutes);
+            if (actionElapsedMinutes === null) {
+                return null;
+            }
+            const endWorldMinute = startMinute + actionElapsedMinutes;
+            const localDueEvents = ScheduledEvent.getPendingBetween(startMinute, endWorldMinute)
+                .filter(event => event.locationId === normalizedLocationId);
+            if (!localDueEvents.length) {
+                return null;
+            }
+
+            const targetWorldMinute = localDueEvents[0].targetWorldMinute;
+            const interruptedEvents = localDueEvents
+                .filter(event => event.targetWorldMinute === targetWorldMinute);
+            return {
+                startWorldMinute: startMinute,
+                endWorldMinute,
+                targetWorldMinute,
+                elapsedBeforeEventMinutes: targetWorldMinute - startMinute,
+                remainingMinutes: endWorldMinute - targetWorldMinute,
+                events: interruptedEvents
+            };
+        }
+
+        async function rewritePlayerActionXmlForScheduledEventInterruption({
+            originalXmlPayload,
+            interruption,
+            scheduledEventResults
+        } = {}) {
+            const originalXml = typeof originalXmlPayload === 'string' ? originalXmlPayload.trim() : '';
+            if (!originalXml) {
+                throw new Error('Scheduled event interruption rewrite requires original action XML.');
+            }
+            if (!interruption || typeof interruption !== 'object') {
+                throw new Error('Scheduled event interruption rewrite requires interruption metadata.');
+            }
+            const happenedResults = Array.isArray(scheduledEventResults)
+                ? scheduledEventResults.filter(result => result?.happened)
+                : [];
+            if (!happenedResults.length) {
+                return originalXml;
+            }
+
+            const interruptionMinutes = Number(interruption.elapsedBeforeEventMinutes);
+            if (!Number.isFinite(interruptionMinutes) || interruptionMinutes < 0 || !Number.isInteger(interruptionMinutes)) {
+                throw new Error('Scheduled event interruption rewrite requires a non-negative integer interruption offset.');
+            }
+            const interruptionDuration = Utils.formatMinutesAsNaturalDuration(interruptionMinutes);
+            const renderedTemplate = promptEnv.render('_includes/scheduled-event-interruption-rewrite.njk', {
+                originalXml,
+                interruptionMinutes,
+                interruptionDuration,
+                scheduledEvents: happenedResults.map(result => ({
+                    id: result.scheduledEventId || '',
+                    summary: result.summary || '',
+                    proseForPlayer: result.playerProse || ''
+                }))
+            });
+            const parsedTemplate = parseXMLTemplate(renderedTemplate);
+            if (!parsedTemplate?.systemPrompt || !parsedTemplate?.generationPrompt) {
+                throw new Error('Scheduled event interruption rewrite prompt template is missing prompts.');
+            }
+
+            const requestOptions = {
+                messages: [
+                    { role: 'system', content: parsedTemplate.systemPrompt },
+                    { role: 'user', content: parsedTemplate.generationPrompt }
+                ],
+                metadataLabel: 'player_action_interruption_rewrite',
+                validateXML: false,
+                requiredRegex: playerActionProseRegex
+            };
+            if (typeof parsedTemplate.temperature === 'number') {
+                requestOptions.temperature = parsedTemplate.temperature;
+            }
+
+            let rawResponse = '';
+            try {
+                rawResponse = await LLMClient.chatCompletion(requestOptions);
+                const rewrittenXml = extractPlayerActionXmlPayload(rawResponse);
+                if (!rewrittenXml) {
+                    throw new Error('Scheduled event interruption rewrite response missing player action XML.');
+                }
+                return rewrittenXml;
+            } finally {
+                LLMClient.logPrompt({
+                    prefix: 'player_action_interruption_rewrite',
+                    metadataLabel: 'player_action_interruption_rewrite',
+                    systemPrompt: parsedTemplate.systemPrompt || '',
+                    generationPrompt: parsedTemplate.generationPrompt || '',
+                    response: rawResponse || '',
+                    model: requestOptions.model,
+                    endpoint: requestOptions.endpoint
+                });
+            }
+        }
+
+        async function maybeRewritePlayerActionForScheduledEventInterruption({
+            actionXmlPayload,
+            timePassedMinutes,
+            travelProsePayload = null,
+            locationId,
+            entryCollector = null,
+            parentEntryId = null,
+            stream = null,
+            clientId = null,
+            requestId = null
+        } = {}) {
+            if (travelProsePayload || !actionXmlPayload) {
+                return null;
+            }
+
+            const startWorldMinute = Globals.getTotalWorldMinutes();
+            const interruption = findScheduledEventInterruptionForPlayerAction({
+                startWorldMinute,
+                elapsedMinutes: timePassedMinutes,
+                locationId
+            });
+            if (!interruption) {
+                return null;
+            }
+            if (scheduledEventResolutionInProgress) {
+                return null;
+            }
+
+            const timeProgressSegments = [];
+            const statusNeedAdjustments = [];
+            const leadingTimeAdjustment = advancePlayerActionTimeByExactMinutes(
+                interruption.elapsedBeforeEventMinutes,
+                { source: 'player_action' }
+            );
+            if (leadingTimeAdjustment?.timeProgress) {
+                timeProgressSegments.push(leadingTimeAdjustment.timeProgress);
+            }
+            if (Array.isArray(leadingTimeAdjustment?.statusNeedAdjustments)
+                && leadingTimeAdjustment.statusNeedAdjustments.length) {
+                statusNeedAdjustments.push(...leadingTimeAdjustment.statusNeedAdjustments);
+            }
+
+            const scheduledEventResults = [];
+            scheduledEventResolutionInProgress = true;
+            try {
+                for (const scheduledEvent of interruption.events) {
+                    const result = await runScheduledEventResolutionPrompt({
+                        scheduledEvent,
+                        entryCollector,
+                        parentEntryId,
+                        stream,
+                        clientId,
+                        requestId,
+                        source: 'player_action_interruption',
+                        suppressVisibleProse: true
+                    });
+                    scheduledEventResults.push(result);
+                }
+            } finally {
+                scheduledEventResolutionInProgress = false;
+            }
+
+            const happenedResults = scheduledEventResults.filter(result => result?.happened);
+            const rewrittenXmlPayload = happenedResults.length
+                ? await rewritePlayerActionXmlForScheduledEventInterruption({
+                    originalXmlPayload: actionXmlPayload,
+                    interruption,
+                    scheduledEventResults: happenedResults
+                })
+                : actionXmlPayload;
+
+            return {
+                rewrittenXmlPayload,
+                interruption,
+                scheduledEventResults,
+                timeProgressSegments,
+                statusNeedAdjustments,
+                remainingMinutes: interruption.remainingMinutes,
+                locationRefreshRequested: scheduledEventResults.some(result => result?.locationRefreshRequested)
             };
         }
 
@@ -7647,6 +7899,71 @@ module.exports = function registerApiRoutes(scope) {
                 context.weatherDescription = weather.weatherDescription;
             }
             return context;
+        }
+
+        function normalizePlayerActionTimePassedMinutes(minutes) {
+            if (minutes === null || minutes === undefined) {
+                return null;
+            }
+            const amount = Number(minutes);
+            if (!Number.isFinite(amount) || amount < 0 || !Number.isInteger(amount)) {
+                throw new Error('Player action timePassed requires a non-negative integer minute amount.');
+            }
+            return amount === 0 ? 1 : amount;
+        }
+
+        function advancePlayerActionTimeByExactMinutes(minutes, { source = 'player_action' } = {}) {
+            const amount = Number(minutes);
+            if (!Number.isFinite(amount) || amount < 0 || !Number.isInteger(amount)) {
+                throw new Error('Player action time advancement requires a non-negative integer minute amount.');
+            }
+            if (amount === 0) {
+                return null;
+            }
+            const timeProgress = Globals.advanceTime(amount, { source });
+            const statusNeedAdjustments = Player.applyStatusEffectNeedBarsToAll() || [];
+            return {
+                timeProgress,
+                statusNeedAdjustments
+            };
+        }
+
+        function applyPlayerActionTimePassedMinutes(minutes, { source = 'player_action' } = {}) {
+            const advancementAmount = normalizePlayerActionTimePassedMinutes(minutes);
+            if (advancementAmount === null) {
+                return null;
+            }
+            return advancePlayerActionTimeByExactMinutes(advancementAmount, { source });
+        }
+
+        function combinePlayerActionTimeProgressSegments(segments, { source = 'player_action' } = {}) {
+            const validSegments = Array.isArray(segments)
+                ? segments.filter(segment => segment && typeof segment === 'object')
+                : [];
+            if (!validSegments.length) {
+                return null;
+            }
+            if (validSegments.length === 1) {
+                return validSegments[0];
+            }
+            const advancedMinutes = validSegments.reduce((sum, segment) => {
+                const amount = Number(segment.advancedMinutes);
+                return sum + (Number.isFinite(amount) ? amount : 0);
+            }, 0);
+            const transitions = validSegments.flatMap(segment => (
+                Array.isArray(segment.transitions)
+                    ? segment.transitions.map(entry => ({ ...entry }))
+                    : []
+            ));
+            const first = validSegments[0];
+            const last = validSegments[validSegments.length - 1];
+            return {
+                source,
+                advancedMinutes,
+                transitions,
+                previous: first.previous || null,
+                current: last.current || null
+            };
         }
 
         app.get('/api/calendar', (req, res) => {
@@ -13701,6 +14018,7 @@ module.exports = function registerApiRoutes(scope) {
             travelDestinationOverride = null,
             suppressPlayerMove = false,
             suppressTimeAdvance = false,
+            initialTimeProgress = null,
             originLabelFallback = 'Origin',
             destinationLabelFallback = 'Destination'
         } = {}) {
@@ -14021,7 +14339,8 @@ module.exports = function registerApiRoutes(scope) {
                     suppressMoveEvents: true,
                     allowMoveTurnAppearances: true,
                     suppressTimeAdvance: Boolean(suppressTimeAdvance || suppressOriginTimeAdvance),
-                    locationOverride: location || null
+                    locationOverride: location || null,
+                    initialTimeProgress
                 });
             }
 
@@ -14133,7 +14452,8 @@ module.exports = function registerApiRoutes(scope) {
                         suppressTimeAdvance: Boolean(suppressTimeAdvance),
                         locationOverride: travelProseEventLocationRepresentsVehicle
                             ? travelProseEventLocation
-                            : location || null
+                            : location || null,
+                        initialTimeProgress
                     });
                 }
                 return {
@@ -14165,7 +14485,8 @@ module.exports = function registerApiRoutes(scope) {
                     suppressMoveEvents: true,
                     allowMoveTurnAppearances: true,
                     suppressTimeAdvance: Boolean(suppressTimeAdvance),
-                    locationOverride: destinationLocation || null
+                    locationOverride: destinationLocation || null,
+                    initialTimeProgress
                 });
             }
 
@@ -22349,6 +22670,12 @@ module.exports = function registerApiRoutes(scope) {
                     aiResponse = await LLMClient.chatCompletion(requestOptions);
                 }
                 let travelProsePayload = null;
+                let playerActionXmlPayload = null;
+                let playerActionTimePassedMinutes = null;
+                let playerActionTimeProgress = null;
+                let playerActionRemainingTimePassedMinutes = null;
+                let playerActionTimeProgressSegments = [];
+                let scheduledEventInterruptionInfo = null;
                 const respondWithRejectedPlayerActionXml = (parsedProse, rawXmlResponse) => {
                     const rejectionReasonRaw = parsedProse?.rejected?.reason || 'Action rejected.';
                     const rejectionReason = typeof rejectionReasonRaw === 'string' && rejectionReasonRaw.trim().length
@@ -22453,12 +22780,14 @@ module.exports = function registerApiRoutes(scope) {
                     }
 
                     if (shouldUseRepetitionBusterXml) {
+                        playerActionXmlPayload = extractPlayerActionXmlPayload(aiResponse);
                         const parsedProse = await parsePlayerActionProseFromXml(aiResponse, { logJson: true });
                         if (parsedProse.rejected) {
                             return respondWithRejectedPlayerActionXml(parsedProse, aiResponse);
                         }
                         aiResponse = parsedProse.prose;
                         travelProsePayload = parsedProse.travel;
+                        playerActionTimePassedMinutes = parsedProse.timePassedMinutes ?? null;
                     }
 
                     if (!Globals.config.repetition_buster && recentProseContents.length && promptTemplateName && promptVariablesSnapshot) {
@@ -22497,20 +22826,76 @@ module.exports = function registerApiRoutes(scope) {
                                     }
                                     if (typeof rerunResponse === 'string' && rerunResponse.trim()) {
                                         if (usesActionXmlResponse) {
+                                            playerActionXmlPayload = extractPlayerActionXmlPayload(rerunResponse);
                                             const parsedProse = await parsePlayerActionProseFromXml(rerunResponse, { logJson: true });
                                             if (parsedProse.rejected) {
                                                 return respondWithRejectedPlayerActionXml(parsedProse, rerunResponse);
                                             }
                                             aiResponse = parsedProse.prose;
                                             travelProsePayload = parsedProse.travel;
+                                            playerActionTimePassedMinutes = parsedProse.timePassedMinutes ?? null;
                                         } else {
                                             aiResponse = rerunResponse;
+                                            playerActionXmlPayload = null;
+                                            playerActionTimePassedMinutes = null;
                                         }
                                     }
                                 }
                             }
                         } catch (repetitionError) {
                             console.warn('Repetition mitigation failed:', repetitionError?.message || repetitionError);
+                        }
+                    }
+
+                    if (playerActionXmlPayload
+                        && playerActionTimePassedMinutes !== null
+                        && playerActionTimePassedMinutes !== undefined
+                        && !travelProsePayload
+                        && !isQuestionAction
+                        && !isGenericPromptAction) {
+                        const interruptionLocationId = requireLocationId(
+                            location?.id || currentPlayer?.currentLocation,
+                            'scheduled event interruption location'
+                        );
+                        scheduledEventInterruptionInfo = await maybeRewritePlayerActionForScheduledEventInterruption({
+                            actionXmlPayload: playerActionXmlPayload,
+                            timePassedMinutes: playerActionTimePassedMinutes,
+                            travelProsePayload,
+                            locationId: interruptionLocationId,
+                            entryCollector: newChatEntries,
+                            parentEntryId: storedUserEntry?.id || null,
+                            stream,
+                            clientId: stream?.clientId || null,
+                            requestId: stream?.requestId || null
+                        });
+                        if (scheduledEventInterruptionInfo) {
+                            playerActionRemainingTimePassedMinutes = scheduledEventInterruptionInfo.remainingMinutes;
+                            if (Array.isArray(scheduledEventInterruptionInfo.timeProgressSegments)) {
+                                playerActionTimeProgressSegments.push(...scheduledEventInterruptionInfo.timeProgressSegments);
+                            }
+                            if (Array.isArray(scheduledEventInterruptionInfo.statusNeedAdjustments)
+                                && scheduledEventInterruptionInfo.statusNeedAdjustments.length) {
+                                statusNeedAdjustments.push(...scheduledEventInterruptionInfo.statusNeedAdjustments);
+                            }
+                            const interruptionHadHappenedEvent = Array.isArray(scheduledEventInterruptionInfo.scheduledEventResults)
+                                && scheduledEventInterruptionInfo.scheduledEventResults.some(result => result?.happened);
+                            if (interruptionHadHappenedEvent) {
+                                const rewrittenXmlPayload = scheduledEventInterruptionInfo.rewrittenXmlPayload;
+                                const rewrittenParsedProse = await parsePlayerActionProseFromXml(rewrittenXmlPayload, { logJson: true });
+                                if (rewrittenParsedProse.rejected) {
+                                    throw new Error('Scheduled event interruption rewrite must not return a rejected player action.');
+                                }
+                                if (rewrittenParsedProse.travel) {
+                                    throw new Error('Scheduled event interruption rewrite must preserve finalProse and must not return travelProse.');
+                                }
+                                if (rewrittenParsedProse.timePassedMinutes !== playerActionTimePassedMinutes) {
+                                    throw new Error('Scheduled event interruption rewrite must preserve the original finalProse timePassed duration.');
+                                }
+                                playerActionXmlPayload = rewrittenXmlPayload;
+                                aiResponse = rewrittenParsedProse.prose;
+                                travelProsePayload = rewrittenParsedProse.travel;
+                                playerActionTimePassedMinutes = rewrittenParsedProse.timePassedMinutes;
+                            }
                         }
                     }
 
@@ -22526,6 +22911,27 @@ module.exports = function registerApiRoutes(scope) {
                             };
                         }
                     }
+
+                    if (playerActionTimePassedMinutes !== null && playerActionTimePassedMinutes !== undefined) {
+                        const timePassedAdjustment = playerActionRemainingTimePassedMinutes !== null
+                            && playerActionRemainingTimePassedMinutes !== undefined
+                            ? advancePlayerActionTimeByExactMinutes(playerActionRemainingTimePassedMinutes, {
+                                source: 'player_action'
+                            })
+                            : applyPlayerActionTimePassedMinutes(playerActionTimePassedMinutes, {
+                                source: 'player_action'
+                            });
+                        if (timePassedAdjustment?.timeProgress) {
+                            playerActionTimeProgressSegments.push(timePassedAdjustment.timeProgress);
+                        }
+                        if (Array.isArray(timePassedAdjustment?.statusNeedAdjustments)
+                            && timePassedAdjustment.statusNeedAdjustments.length) {
+                            statusNeedAdjustments.push(...timePassedAdjustment.statusNeedAdjustments);
+                        }
+                    }
+                    playerActionTimeProgress = combinePlayerActionTimeProgressSegments(playerActionTimeProgressSegments, {
+                        source: 'player_action'
+                    });
 
                     stream.status('player_action:llm_complete', 'Continuing with turn resolution.');
 
@@ -22574,6 +22980,9 @@ module.exports = function registerApiRoutes(scope) {
                     const responseData = {
                         response: aiResponse
                     };
+                    if (scheduledEventInterruptionInfo?.locationRefreshRequested) {
+                        responseData.locationRefreshRequested = true;
+                    }
                     let playerActionEventCheckResolutions = [];
 
                     if (toolInvocations.length) {
@@ -22808,7 +23217,8 @@ module.exports = function registerApiRoutes(scope) {
                                         ? buildTravelDestinationOverrideFromMetadata()
                                         : null,
                                     suppressPlayerMove: suppressDirectTravelPromptMutation,
-                                    suppressTimeAdvance: suppressTravelPromptTimeAdvance
+                                    suppressTimeAdvance: suppressTravelPromptTimeAdvance,
+                                    initialTimeProgress: playerActionTimeProgress
                                 });
                                 eventResult = travelResult.eventResult;
                                 originEventResult = travelResult.originEventResult;
@@ -22837,7 +23247,8 @@ module.exports = function registerApiRoutes(scope) {
                                         // For non-travelProse turns, let event checks apply any narrated movement.
                                         suppressMoveEvents: suppressDirectTravelPromptMutation,
                                         suppressTimeAdvance: suppressDirectTravelPromptMutation
-                                            || (suppressEventDrivenExitTimeAdvance && eventDrivenTravelWillSucceed)
+                                            || (suppressEventDrivenExitTimeAdvance && eventDrivenTravelWillSucceed),
+                                        initialTimeProgress: playerActionTimeProgress
                                     }),
                                     Events.runQuestChecks()
                                 ]);
@@ -22846,6 +23257,15 @@ module.exports = function registerApiRoutes(scope) {
                             console.warn('Failed to run event checks:', eventError.message);
                             console.debug(eventError);
                         }
+                    }
+
+                    if (playerActionTimeProgress
+                        && typeof playerActionTimeProgress === 'object'
+                        && (!eventResult || !eventResult.timeProgress)) {
+                        if (!eventResult || typeof eventResult !== 'object') {
+                            eventResult = {};
+                        }
+                        eventResult.timeProgress = { ...playerActionTimeProgress };
                     }
 
                     if (vehicleMovement) {
@@ -37773,20 +38193,20 @@ module.exports = function registerApiRoutes(scope) {
 
                 if (separatedOutputContainer) {
                     for (const nestedThing of nestedSeparatedThings) {
-                        separatedOutputContainer.addInventoryItem(nestedThing);
+                        separatedOutputContainer.addInventoryItem(nestedThing, { mergeStacks: false });
                     }
                 }
 
                 for (const stagedThing of destinationSeparatedThings) {
                     if (sourceOwner) {
-                        const added = sourceOwner.addInventoryItem(stagedThing, { suppressNpcEquip: true });
+                        const added = sourceOwner.addInventoryItem(stagedThing, { suppressNpcEquip: true, mergeStacks: false });
                         if (!added) {
                             throw new Error(`Failed to add separated thing "${stagedThing.name}" to ${sourceOwner.name || sourceOwner.id}.`);
                         }
                     } else if (sourceContainer) {
-                        sourceContainer.addInventoryItem(stagedThing);
+                        sourceContainer.addInventoryItem(stagedThing, { mergeStacks: false });
                     } else if (sourceLocation) {
-                        sourceLocation.addThingId(stagedThing.id);
+                        sourceLocation.addThingId(stagedThing.id, { mergeStacks: false });
                     } else {
                         throw new Error(`No destination available for separated thing "${stagedThing.name}".`);
                     }
@@ -37919,14 +38339,14 @@ module.exports = function registerApiRoutes(scope) {
 
                 things.set(splitThing.id, splitThing);
                 if (sourceOwner) {
-                    const added = sourceOwner.addInventoryItem(splitThing, { suppressNpcEquip: true });
+                    const added = sourceOwner.addInventoryItem(splitThing, { suppressNpcEquip: true, mergeStacks: false });
                     if (!added) {
                         throw new Error(`Failed to add split stack "${splitThing.name}" to ${sourceOwner.name || sourceOwner.id}.`);
                     }
                 } else if (sourceContainer) {
-                    sourceContainer.addInventoryItem(splitThing);
+                    sourceContainer.addInventoryItem(splitThing, { mergeStacks: false });
                 } else if (sourceLocation) {
-                    sourceLocation.addThingId(splitThing.id);
+                    sourceLocation.addThingId(splitThing.id, { mergeStacks: false });
                 } else {
                     throw new Error(`No destination available for split stack "${splitThing.name}".`);
                 }
@@ -38472,7 +38892,9 @@ module.exports = function registerApiRoutes(scope) {
                 }
                 if (things instanceof Map) {
                     for (const item of itemsToMove) {
-                        things.set(item.id, item);
+                        if (Thing.getById(item.id) === item) {
+                            things.set(item.id, item);
+                        }
                     }
                     things.set(container.id, container);
                 }
@@ -38501,13 +38923,15 @@ module.exports = function registerApiRoutes(scope) {
 
                 for (const item of itemsToMove) {
                     const added = currentPlayer.addInventoryItem(item, { suppressNpcEquip: true });
-                    if (!added || !currentPlayer.hasInventoryItem(item.id)) {
+                    if (!added || (Thing.getById(item.id) === item && !currentPlayer.hasInventoryItem(item.id))) {
                         throw createContainerMoveError(`Failed to move ${item.name || 'item'} into player inventory.`, 500);
                     }
                 }
                 if (things instanceof Map) {
                     for (const item of itemsToMove) {
-                        things.set(item.id, item);
+                        if (Thing.getById(item.id) === item) {
+                            things.set(item.id, item);
+                        }
                     }
                     things.set(container.id, container);
                 }
@@ -38673,27 +39097,34 @@ module.exports = function registerApiRoutes(scope) {
                     });
                 }
 
-                owner.addInventoryItem(thing);
+                const addedToOwner = owner.addInventoryItem(thing);
+                const liveThing = Thing.getById(thing.id);
+                const mergedThing = liveThing === thing
+                    ? null
+                    : Thing.findMergeTarget(thing, typeof owner.getInventoryItems === 'function' ? owner.getInventoryItems() : []);
+                const responseThing = liveThing === thing ? thing : mergedThing;
 
-                if (!owner.hasInventoryItem(thing.id)) {
+                if (!addedToOwner || !responseThing || (liveThing === thing && !owner.hasInventoryItem(thing.id))) {
                     return res.status(500).json({
                         success: false,
                         error: 'Failed to move item into inventory.'
                     });
                 }
 
-                const updatedMetadata = { ...previousMetadata };
-                updatedMetadata.ownerId = owner.id;
-                delete updatedMetadata.owner;
-                delete updatedMetadata.ownerID;
-                delete updatedMetadata.locationId;
-                delete updatedMetadata.locationID;
-                delete updatedMetadata.containerId;
-                delete updatedMetadata.containerID;
-                delete updatedMetadata.container_id;
-                thing.metadata = updatedMetadata;
+                if (liveThing === thing) {
+                    const updatedMetadata = { ...previousMetadata };
+                    updatedMetadata.ownerId = owner.id;
+                    delete updatedMetadata.owner;
+                    delete updatedMetadata.ownerID;
+                    delete updatedMetadata.locationId;
+                    delete updatedMetadata.locationID;
+                    delete updatedMetadata.containerId;
+                    delete updatedMetadata.containerID;
+                    delete updatedMetadata.container_id;
+                    thing.metadata = updatedMetadata;
+                }
 
-                if (things instanceof Map) {
+                if (things instanceof Map && liveThing === thing) {
                     things.set(thing.id, thing);
                 }
 
@@ -38707,10 +39138,10 @@ module.exports = function registerApiRoutes(scope) {
 
                 const responsePayload = {
                     success: true,
-                    thing: typeof thing.toJSON === 'function' ? thing.toJSON() : { id: thing.id },
+                    thing: typeof responseThing.toJSON === 'function' ? responseThing.toJSON() : { id: responseThing.id },
                     owner: serializeNpcForClient(owner),
                     location: locationPayload,
-                    message: `${thing.name || 'Item'} moved to inventory.`
+                    message: `${responseThing.name || thing.name || 'Item'} moved to inventory.`
                 };
 
                 res.json(responsePayload);
@@ -38819,17 +39250,30 @@ module.exports = function registerApiRoutes(scope) {
                     gameLocations.set(destinationLocation.id, destinationLocation);
                 }
 
-                const updatedMetadata = { ...previousMetadata };
-                delete updatedMetadata.owner;
-                delete updatedMetadata.ownerId;
-                delete updatedMetadata.ownerID;
-                delete updatedMetadata.containerId;
-                delete updatedMetadata.containerID;
-                delete updatedMetadata.container_id;
-                updatedMetadata.locationId = destinationLocation.id;
-                thing.metadata = updatedMetadata;
+                const liveThing = Thing.getById(thing.id);
+                const mergedThing = liveThing === thing
+                    ? null
+                    : Thing.findMergeTarget(
+                        thing,
+                        Array.isArray(destinationLocation.thingIds)
+                            ? destinationLocation.thingIds.map(id => Thing.getById(id)).filter(Boolean)
+                            : []
+                    );
+                const responseThing = liveThing === thing ? thing : (mergedThing || thing);
 
-                if (things instanceof Map) {
+                if (liveThing === thing) {
+                    const updatedMetadata = { ...previousMetadata };
+                    delete updatedMetadata.owner;
+                    delete updatedMetadata.ownerId;
+                    delete updatedMetadata.ownerID;
+                    delete updatedMetadata.containerId;
+                    delete updatedMetadata.containerID;
+                    delete updatedMetadata.container_id;
+                    updatedMetadata.locationId = destinationLocation.id;
+                    thing.metadata = updatedMetadata;
+                }
+
+                if (things instanceof Map && liveThing === thing) {
                     things.set(thing.id, thing);
                 }
 
@@ -38853,7 +39297,7 @@ module.exports = function registerApiRoutes(scope) {
 
                 const responsePayload = {
                     success: true,
-                    thing: typeof thing.toJSON === 'function' ? thing.toJSON() : { id: thing.id },
+                    thing: typeof responseThing.toJSON === 'function' ? responseThing.toJSON() : { id: responseThing.id },
                     destination: destinationPayload,
                     previousLocation: previousLocationPayload,
                     removedOwnerIds: Array.from(affectedOwnerIds),
@@ -39042,6 +39486,16 @@ module.exports = function registerApiRoutes(scope) {
                 if (typeof targetLocation.addThingId === 'function') {
                     targetLocation.addThingId(thing.id);
                 }
+                const liveThing = Thing.getById(thing.id);
+                const mergedThing = liveThing === thing
+                    ? null
+                    : Thing.findMergeTarget(
+                        thing,
+                        Array.isArray(targetLocation.thingIds)
+                            ? targetLocation.thingIds.map(id => Thing.getById(id)).filter(Boolean)
+                            : []
+                    );
+                const responseThing = liveThing === thing ? thing : (mergedThing || thing);
                 if (gameLocations instanceof Map) {
                     gameLocations.set(targetLocation.id, targetLocation);
                 }
@@ -39055,9 +39509,9 @@ module.exports = function registerApiRoutes(scope) {
 
                 const responsePayload = {
                     success: true,
-                    thing: thing.toJSON ? thing.toJSON() : { id: thing.id, name: thing.name },
+                    thing: responseThing.toJSON ? responseThing.toJSON() : { id: responseThing.id, name: responseThing.name },
                     location: typeof buildLocationResponse === 'function' ? buildLocationResponse(targetLocation) : null,
-                    message: `${thing.name || 'Item'} dropped successfully.`
+                    message: `${responseThing.name || thing.name || 'Item'} dropped successfully.`
                 };
 
                 if (owner) {

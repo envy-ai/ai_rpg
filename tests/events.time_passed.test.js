@@ -71,3 +71,28 @@ test('time_passed handler treats full trip-sized durations as ordinary elapsed t
         Globals.worldTime = previousWorldTime;
     }
 });
+
+test('time_passed handler leaves existing action time progress authoritative', () => {
+    const handler = Events._buildHandlers().time_passed;
+    const previousAdvanceTime = Globals.advanceTime;
+    let advanceCalls = 0;
+    const existingTimeProgress = {
+        source: 'player_action',
+        advancedMinutes: 7
+    };
+
+    Globals.advanceTime = () => {
+        advanceCalls += 1;
+        throw new Error('event-check time should not advance');
+    };
+
+    try {
+        const context = { timeProgress: existingTimeProgress };
+        handler(15, context);
+
+        assert.equal(advanceCalls, 0);
+        assert.equal(context.timeProgress, existingTimeProgress);
+    } finally {
+        Globals.advanceTime = previousAdvanceTime;
+    }
+});

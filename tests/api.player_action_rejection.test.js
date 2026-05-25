@@ -105,6 +105,17 @@ test('player action XML parser ignores draft finalProse blocks before the final 
     assert.equal(parsed.travel, null);
 });
 
+test('player action XML parser extracts finalProse timePassed without exposing it as prose', async () => {
+    const context = loadPlayerActionXmlParser();
+    const parsed = await context.parsePlayerActionProseFromXml(
+        '<finalProse>Final prose.<timePassed><reasoning>A short exchange.</reasoning><duration>12 minutes</duration></timePassed><hidden>Keep this note.</hidden></finalProse>'
+    );
+
+    assert.equal(parsed.prose, 'Final prose.<hidden>Keep this note.</hidden>');
+    assert.equal(parsed.travel, null);
+    assert.equal(parsed.timePassedMinutes, 12);
+});
+
 test('player action XML parser chooses final travelProse after earlier draft prose XML', async () => {
     const context = loadPlayerActionXmlParser();
     const parsed = await context.parsePlayerActionProseFromXml([
@@ -165,4 +176,20 @@ test('chat route aborts rejected player-action XML before normal response storag
     assert.match(helper, /markChatEntryExcludedFromBaseContextHistory\(storedUserEntry\)/);
     assert.match(helper, /excludeFromBaseContextHistory:\s*true/);
     assert.match(helper, /return respond\(responseData\)/);
+});
+
+test('chat route rewrites same-location scheduled event interruptions before slop removal', () => {
+    const source = fs.readFileSync(require.resolve('../api.js'), 'utf8');
+    const parseIndex = source.indexOf('const parsedProse = await parsePlayerActionProseFromXml(aiResponse, { logJson: true });');
+    assert.notEqual(parseIndex, -1, 'Unable to locate player-action XML parse call.');
+    const rewriteIndex = source.indexOf('maybeRewritePlayerActionForScheduledEventInterruption', parseIndex);
+    assert.notEqual(rewriteIndex, -1, 'Unable to locate scheduled-event interruption rewrite call.');
+    const slopIndex = source.indexOf('let slopRemovalInfo = null;', parseIndex);
+    assert.notEqual(slopIndex, -1, 'Unable to locate slop removal block.');
+    assert.ok(rewriteIndex < slopIndex, 'Scheduled-event interruption rewrite must run before slop removal.');
+
+    const routeSlice = source.slice(parseIndex, slopIndex);
+    assert.match(routeSlice, /playerActionRemainingTimePassedMinutes/);
+    assert.match(source, /metadataLabel:\s*'player_action_interruption_rewrite'/);
+    assert.match(source, /suppressVisibleProse:\s*true/);
 });

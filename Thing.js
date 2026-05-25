@@ -80,6 +80,7 @@ class Thing {
   // Static indexing maps
   static #indexByID = new Map();
   static #indexByName = new SanitizedStringMap();
+  static #runtimeRegistries = new Set();
 
   // Rarity definitions loaded from defs/rarities.yaml
   static #rarityDefinitions = new Map();
@@ -1345,6 +1346,30 @@ class Thing {
     return Thing.#indexByID.get(id) || null;
   }
 
+  static registerRuntimeRegistry(registry) {
+    if (!(registry instanceof Map)) {
+      throw new Error('Thing.registerRuntimeRegistry requires a Map.');
+    }
+    Thing.#runtimeRegistries.add(registry);
+  }
+
+  static unregisterRuntimeRegistry(registry) {
+    if (registry instanceof Map) {
+      Thing.#runtimeRegistries.delete(registry);
+    }
+  }
+
+  static #forgetFromRuntimeRegistries(id) {
+    if (!id) {
+      return;
+    }
+    for (const registry of Thing.#runtimeRegistries) {
+      if (registry instanceof Map) {
+        registry.delete(id);
+      }
+    }
+  }
+
   static getByName(name) {
     const bucket = Thing.#getNameBucket(name);
     if (!bucket || bucket.length === 0) {
@@ -1517,6 +1542,42 @@ class Thing {
 
   static getAllItems() {
     return Thing.getByType('item');
+  }
+
+  static canMergeStacks(targetThing, incomingThing) {
+    if (!targetThing || !incomingThing || targetThing.id === incomingThing.id) {
+      return false;
+    }
+    if (targetThing.thingType !== 'item' || incomingThing.thingType !== 'item') {
+      return false;
+    }
+    if (targetThing.isContainer || incomingThing.isContainer) {
+      return false;
+    }
+    if (targetThing.isEquipped || incomingThing.isEquipped) {
+      return false;
+    }
+    if (targetThing.name !== incomingThing.name) {
+      return false;
+    }
+    return targetThing.checksum === incomingThing.checksum;
+  }
+
+  static findMergeTarget(incomingThing, candidates = []) {
+    if (!incomingThing || !Array.isArray(candidates)) {
+      return null;
+    }
+    return candidates.find(candidate => Thing.canMergeStacks(candidate, incomingThing)) || null;
+  }
+
+  static mergeIntoExistingStack(incomingThing, candidates = []) {
+    const target = Thing.findMergeTarget(incomingThing, candidates);
+    if (!target) {
+      return null;
+    }
+    target.count = target.count + incomingThing.count;
+    incomingThing.delete();
+    return target;
   }
 
   static clear() {
@@ -1813,6 +1874,7 @@ class Thing {
       throw new Error(`Cannot delete non-empty container "${this.#name}". Empty it first.`);
     }
     this.removeFromWorld();
+    Thing.#forgetFromRuntimeRegistries(this.#id);
     Thing.#indexByID.delete(this.#id);
     Thing.#removeThingFromNameIndex(this, this.#name);
   }
@@ -2477,7 +2539,7 @@ class Thing {
     return this.#containedThingIds.has(resolved.id);
   }
 
-  addInventoryItem(thingLike, { updateTimestamp = true } = {}) {
+  addInventoryItem(thingLike, { updateTimestamp = true, mergeStacks = true } = {}) {
     if (!this.isContainer) {
       throw new Error(`Thing "${this.#name}" is not a container.`);
     }
@@ -2503,6 +2565,16 @@ class Thing {
     }
 
     resolved.removeFromWorld();
+    if (mergeStacks) {
+      const mergedTarget = Thing.mergeIntoExistingStack(resolved, this.getInventoryItems());
+      if (mergedTarget) {
+        if (updateTimestamp) {
+          this.#lastUpdated = new Date().toISOString();
+        }
+        return true;
+      }
+    }
+
     this.#containedThingIds.add(resolved.id);
 
     const metadata = resolved.metadata || {};
@@ -2588,7 +2660,7 @@ class Thing {
     }
     this.clearInventory();
     for (const entry of items) {
-      this.addInventoryItem(entry, { updateTimestamp: false });
+      this.addInventoryItem(entry, { updateTimestamp: false, mergeStacks: false });
     }
     this.#lastUpdated = new Date().toISOString();
     return this.getInventoryItems();
@@ -2881,8 +2953,7 @@ class Thing {
       throw new Error(`Player with ID ${playerId} does not exist`);
     }
 
-    // player.addToInventory calls removeFromWorld internally
-    player.addToInventory(this.#id);
+    player.addInventoryItem(this.#id);
   }
 
   static putInInventoryById(thingId, playerId) {

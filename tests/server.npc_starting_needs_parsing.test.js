@@ -249,7 +249,7 @@ test('NPC XML quantity defaults to one, strips non-numbers with warning, and cla
     }
 });
 
-test('generated NPC quantity expansion numbers NPCs and copies numbered equipped gear per NPC', () => {
+test('generated NPC quantity expansion numbers NPCs and copies stack-compatible equipped gear per NPC', () => {
     const previousConfig = Globals.config;
     Globals.config = { ...(previousConfig || {}), ...TEST_CONFIG };
     const { expandGeneratedNpcQuantityGroup, players, things, Thing } = loadNpcParsers();
@@ -312,17 +312,17 @@ test('generated NPC quantity expansion numbers NPCs and copies numbered equipped
 
         const inventoryNames = expanded.map(npc => npc.getInventoryItems().map(item => item.name).sort());
         assert.deepEqual(JSON.parse(JSON.stringify(inventoryNames)), [
-            ['Heavy Pulse Rifle 1', 'Patrol Armor 1'],
-            ['Heavy Pulse Rifle 2', 'Patrol Armor 2'],
-            ['Heavy Pulse Rifle 3', 'Patrol Armor 3']
+            ['Heavy Pulse Rifle', 'Patrol Armor'],
+            ['Heavy Pulse Rifle', 'Patrol Armor'],
+            ['Heavy Pulse Rifle', 'Patrol Armor']
         ]);
 
         const equippedWeaponIds = expanded.map(npc => npc.getEquippedItemIdForType('hands'));
         assert.equal(new Set(equippedWeaponIds).size, 3);
         assert.deepEqual(JSON.parse(JSON.stringify(equippedWeaponIds.map(id => things.get(id)?.name))), [
-            'Heavy Pulse Rifle 1',
-            'Heavy Pulse Rifle 2',
-            'Heavy Pulse Rifle 3'
+            'Heavy Pulse Rifle',
+            'Heavy Pulse Rifle',
+            'Heavy Pulse Rifle'
         ]);
     } finally {
         Globals.config = previousConfig;

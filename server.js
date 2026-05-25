@@ -2938,6 +2938,7 @@ function getSuggestedPlayerLevel(settingSnapshot = null) {
 }
 const players = new Map(); // Store multiple players by ID
 const things = new Map(); // Store things (items and scenery) by ID
+Thing.registerRuntimeRegistry(things);
 const skills = new Map(); // Store skill definitions by name
 const factions = new Map(); // Store factions by ID
 
@@ -9525,6 +9526,125 @@ function allocateByPriority({
     return allocations;
 }
 
+function hasNpcPointAllocations(assignments) {
+    return Array.isArray(assignments)
+        && assignments.some(entry => entry && Object.prototype.hasOwnProperty.call(entry, 'points'));
+}
+
+function normalizeNpcAllocationPointValue(value) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric) || numeric <= 0) {
+        return 0;
+    }
+    return Math.floor(numeric);
+}
+
+function collectPointAllocationCandidates(assignments, resolveName) {
+    if (!Array.isArray(assignments) || !assignments.length || typeof resolveName !== 'function') {
+        return [];
+    }
+
+    const aggregate = new Map();
+    for (const entry of assignments) {
+        const rawName = typeof entry?.name === 'string' ? entry.name.trim() : '';
+        if (!rawName) {
+            continue;
+        }
+        const resolvedName = resolveName(rawName);
+        if (!resolvedName) {
+            continue;
+        }
+        const points = normalizeNpcAllocationPointValue(entry.points);
+        const existing = aggregate.get(resolvedName) || 0;
+        aggregate.set(resolvedName, existing + points);
+    }
+
+    return Array.from(aggregate.entries()).map(([name, points]) => ({
+        name,
+        points
+    }));
+}
+
+function rebalanceNpcPointAllocations({
+    npc = null,
+    assignments = [],
+    targetPoints = 0,
+    category = 'progression'
+} = {}) {
+    const budget = toAllocationPointBudget(targetPoints);
+    const normalized = Array.isArray(assignments)
+        ? assignments
+            .map(entry => ({
+                name: typeof entry?.name === 'string' ? entry.name.trim() : '',
+                points: normalizeNpcAllocationPointValue(entry?.points)
+            }))
+            .filter(entry => entry.name)
+        : [];
+
+    const characterName = npc?.name || npc?.id || 'unknown';
+    if (!normalized.length) {
+        if (budget > 0) {
+            console.warn(
+                `[NPC Progression] ${characterName} under-allocated ${category} points: `
+                + `assigned 0 of ${budget}, but no valid ${category} targets were provided.`
+            );
+        }
+        return [];
+    }
+
+    const totalAssigned = normalized.reduce((sum, entry) => sum + entry.points, 0);
+    if (totalAssigned < budget) {
+        console.warn(
+            `[NPC Progression] ${characterName} under-allocated ${category} points: `
+            + `assigned ${totalAssigned} of ${budget}; randomly distributing ${budget - totalAssigned} remaining point(s).`
+        );
+        let remaining = budget - totalAssigned;
+        while (remaining > 0) {
+            const index = randomIntInclusive(0, normalized.length - 1);
+            normalized[index].points += 1;
+            remaining -= 1;
+        }
+    } else if (totalAssigned > budget) {
+        console.warn(
+            `[NPC Progression] ${characterName} over-allocated ${category} points: `
+            + `assigned ${totalAssigned} of ${budget}; randomly removing ${totalAssigned - budget} point(s).`
+        );
+        let remaining = totalAssigned - budget;
+        while (remaining > 0) {
+            const candidates = normalized.filter(entry => entry.points > 0);
+            if (!candidates.length) {
+                break;
+            }
+            const selected = candidates[randomIntInclusive(0, candidates.length - 1)];
+            selected.points -= 1;
+            remaining -= 1;
+        }
+    }
+
+    return normalized;
+}
+
+function applyNpcSkillPointAllocationsWithBudget(npc, skillAssignment, { points = 0, maxSkill = null } = {}) {
+    if (!npc || !Array.isArray(skillAssignment) || !skillAssignment.length) {
+        return 0;
+    }
+
+    const balancedSkillAssignment = rebalanceNpcPointAllocations({
+        npc,
+        assignments: skillAssignment,
+        targetPoints: points,
+        category: 'skill'
+    });
+    if (!balancedSkillAssignment.length) {
+        return 0;
+    }
+
+    return applyNpcSkillAllocations(npc, balancedSkillAssignment, {
+        points,
+        maxSkill
+    });
+}
+
 function buildAttributePriorityLookup(character) {
     const lookup = new Map();
     const runtime = getPointPoolFormulaRuntime();
@@ -9574,6 +9694,46 @@ function applyNpcAttributeAllocations(npc, assignment, { points = 0, maxAttribut
     }
 
     const formulaMaxAttribute = Number.isFinite(maxAttribute) ? Math.floor(maxAttribute) : Infinity;
+    if (hasNpcPointAllocations(assignment)) {
+        const pointCandidates = collectPointAllocationCandidates(assignment, resolveName);
+        let pointsSpent = 0;
+        for (const entry of pointCandidates) {
+            if (!entry.points || entry.points <= 0) {
+                continue;
+            }
+            const current = typeof npc.getAttribute === 'function' ? npc.getAttribute(entry.name) : null;
+            const currentValue = Number.isFinite(current) ? Number(current) : ATTRIBUTE_POOL_BASELINE_VALUE;
+            const definition = typeof npc.getAttributeDefinition === 'function'
+                ? npc.getAttributeDefinition(entry.name)
+                : null;
+            const definitionMax = Number(definition?.max);
+            const maxValue = Number.isFinite(definitionMax)
+                ? Math.min(formulaMaxAttribute, definitionMax)
+                : formulaMaxAttribute;
+            const allowedIncrement = Number.isFinite(maxValue)
+                ? Math.max(0, Math.min(entry.points, Math.floor(maxValue) - currentValue))
+                : entry.points;
+            if (allowedIncrement < entry.points) {
+                console.warn(
+                    `[NPC Progression] ${npc.name || npc.id || 'unknown'} could only apply `
+                    + `${allowedIncrement} of ${entry.points} ${entry.name} attribute point(s) before reaching the maximum.`
+                );
+            }
+            if (allowedIncrement <= 0) {
+                continue;
+            }
+            const targetValue = currentValue + allowedIncrement;
+            try {
+                npc.setAttribute(entry.name, targetValue);
+                pointsSpent += allowedIncrement;
+            } catch (error) {
+                console.warn(`Failed to apply NPC attribute allocation for ${npc.name || npc.id || 'unknown'} (${entry.name}):`, error?.message || error);
+            }
+        }
+
+        return pointsSpent;
+    }
+
     const allocations = allocateByPriority({
         candidates,
         points,
@@ -9642,11 +9802,18 @@ function applyNpcCreationProgressionAllocations(npc, progressionEntry) {
     }
 
     const refreshedBudget = computeNpcCreationProgressionBudget(npc);
-    if (skillAssignment.length && refreshedBudget.skillPoints > 0) {
-        applyNpcSkillAllocations(npc, skillAssignment, {
-            points: refreshedBudget.skillPoints,
-            maxSkill: refreshedBudget.maxSkill
-        });
+    if (skillAssignment.length) {
+        if (hasNpcPointAllocations(skillAssignment)) {
+            applyNpcSkillPointAllocationsWithBudget(npc, skillAssignment, {
+                points: refreshedBudget.skillPoints,
+                maxSkill: refreshedBudget.maxSkill
+            });
+        } else if (refreshedBudget.skillPoints > 0) {
+            applyNpcSkillAllocations(npc, skillAssignment, {
+                points: refreshedBudget.skillPoints,
+                maxSkill: refreshedBudget.maxSkill
+            });
+        }
     }
 }
 
@@ -9687,6 +9854,22 @@ function applyNpcLevelUpProgressionAllocations({
             previousSnapshot
         });
     }
+
+    if (attributeAssignment.length) {
+        const balancedAttributeAssignment = rebalanceNpcPointAllocations({
+            npc,
+            assignments: attributeAssignment,
+            targetPoints: attributeBudget.points,
+            category: 'attribute'
+        });
+        if (balancedAttributeAssignment.length) {
+            applyNpcAttributeAllocations(npc, balancedAttributeAssignment, {
+                points: attributeBudget.points,
+                maxAttribute: attributeBudget.maxAttribute
+            });
+        }
+    }
+
     if (skillAssignment.length) {
         skillBudget = computeNpcLevelUpSkillBudget({
             character: npc,
@@ -9702,18 +9885,15 @@ function applyNpcLevelUpProgressionAllocations({
         `attributePoints=${attributeBudget.points} skillPoints=${skillBudget.points}`
     );
 
-    if (attributeAssignment.length) {
-        if (attributeBudget.points > 0) {
-            applyNpcAttributeAllocations(npc, attributeAssignment, {
-                points: attributeBudget.points,
-                maxAttribute: attributeBudget.maxAttribute
-            });
-        }
-    }
-
     if (skillAssignment.length) {
-        if (skillBudget.points > 0) {
-            applyNpcSkillAllocations(npc, skillAssignment, {
+        const balancedSkillAssignment = rebalanceNpcPointAllocations({
+            npc,
+            assignments: skillAssignment,
+            targetPoints: skillBudget.points,
+            category: 'skill'
+        });
+        if (balancedSkillAssignment.length) {
+            applyNpcSkillAllocations(npc, balancedSkillAssignment, {
                 points: skillBudget.points,
                 maxSkill: skillBudget.maxSkill
             });
@@ -15598,7 +15778,8 @@ async function generateNpcFromEvent({
                     generatedRegionOrLocation: '',
                     locationOverride: resolvedLocation || null,
                     currentRegion: currentRegionForNpcFollowup,
-                    npcNames: [trimmedName]
+                    npcNames: [trimmedName],
+                    progressionAssignmentMode: 'attribute_priorities'
                 });
                 if (skillResult?.assignments instanceof Map) {
                     skillAssignments = skillResult.assignments;
@@ -15734,6 +15915,19 @@ async function generateNpcFromEvent({
             if (progressionEntry) {
                 applyNpcCreationProgressionAllocations(npc, progressionEntry);
             }
+        }
+
+        try {
+            await requestAndApplyNpcInitialSkillPointAssignments({
+                npcs: [npc],
+                generatedNpcResults: buildNpcGenerationSeedXml(npc, { location: resolvedLocation || null }),
+                generatedRegionOrLocation: '',
+                locationOverride: resolvedLocation || null,
+                currentRegion: currentRegionForNpcFollowup,
+                npcNames: [npc.name]
+            });
+        } catch (skillPointError) {
+            console.warn('Failed to generate initial skill point allocation for single NPC:', skillPointError?.message || skillPointError);
         }
 
         const inventoryDescriptor = {
@@ -16460,7 +16654,7 @@ function applyGeneratedNpcQuantityIdentity(npc, baseSnapshot, quantityIndex) {
     return numberedName;
 }
 
-function applyGeneratedNpcQuantityItemNames(npc, baseSnapshot, quantityIndex) {
+function applyGeneratedNpcQuantityItemNames(npc, baseSnapshot) {
     if (!npc || typeof npc.getInventoryItems !== 'function') {
         return;
     }
@@ -16472,9 +16666,9 @@ function applyGeneratedNpcQuantityItemNames(npc, baseSnapshot, quantityIndex) {
             ? (baseSnapshot.itemNamesById.get(item.id) || item.name)
             : item.name;
         try {
-            item.name = appendGeneratedNpcQuantitySuffix(baseItemName, quantityIndex);
+            item.name = baseItemName;
         } catch (error) {
-            console.warn(`Failed to number generated NPC gear item "${baseItemName}":`, error.message);
+            console.warn(`Failed to preserve generated NPC gear item name "${baseItemName}":`, error.message);
         }
     }
 }
@@ -16492,9 +16686,7 @@ function cloneGeneratedNpcInventoryAndGear(sourceNpc, targetNpc, baseSnapshot, q
         const baseItemName = baseSnapshot?.itemNamesById instanceof Map && sourceItem.id
             ? (baseSnapshot.itemNamesById.get(sourceItem.id) || sourceItem.name)
             : sourceItem.name;
-        const copiedItem = sourceItem.copy({
-            name: appendGeneratedNpcQuantitySuffix(baseItemName, quantityIndex)
-        });
+        const copiedItem = sourceItem.copy({ name: baseItemName });
         if (things && typeof things.set === 'function') {
             things.set(copiedItem.id, copiedItem);
         }
@@ -16568,7 +16760,7 @@ function expandGeneratedNpcQuantityGroup({
     const expanded = [];
 
     applyGeneratedNpcQuantityIdentity(npc, baseSnapshot, 1);
-    applyGeneratedNpcQuantityItemNames(npc, baseSnapshot, 1);
+    applyGeneratedNpcQuantityItemNames(npc, baseSnapshot);
     if (originalContext) {
         originalContext.name = npc.name;
     }
@@ -17424,9 +17616,25 @@ function parseNpcSkillAssignments(xmlContent) {
             const skillNodes = Array.from(npcNode.getElementsByTagName('skill'));
             for (const skillNode of skillNodes) {
                 const skillNameNode = skillNode.getElementsByTagName('name')[0];
+                const pointsNode = skillNode.getElementsByTagName('points')[0];
                 const priorityNode = skillNode.getElementsByTagName('priority')[0];
                 const skillName = skillNameNode ? skillNameNode.textContent.trim() : '';
                 if (!skillName) {
+                    continue;
+                }
+
+                if (pointsNode) {
+                    const rawPoints = pointsNode.textContent.trim();
+                    const parsedPoints = Number.parseInt(rawPoints, 10);
+                    if (!Number.isInteger(parsedPoints) || parsedPoints < 0) {
+                        console.warn(`Skipping invalid NPC skill point allocation for ${npcName} (${skillName}): ${rawPoints}`);
+                        continue;
+                    }
+
+                    skillEntries.push({
+                        name: skillName,
+                        points: parsedPoints
+                    });
                     continue;
                 }
 
@@ -17444,9 +17652,25 @@ function parseNpcSkillAssignments(xmlContent) {
             const attributeNodes = Array.from(npcNode.getElementsByTagName('attribute'));
             for (const attributeNode of attributeNodes) {
                 const attributeNameNode = attributeNode.getElementsByTagName('name')[0];
+                const pointsNode = attributeNode.getElementsByTagName('points')[0];
                 const priorityNode = attributeNode.getElementsByTagName('priority')[0];
                 const attributeName = attributeNameNode ? attributeNameNode.textContent.trim() : '';
                 if (!attributeName) {
+                    continue;
+                }
+
+                if (pointsNode) {
+                    const rawPoints = pointsNode.textContent.trim();
+                    const parsedPoints = Number.parseInt(rawPoints, 10);
+                    if (!Number.isInteger(parsedPoints) || parsedPoints < 0) {
+                        console.warn(`Skipping invalid NPC attribute point allocation for ${npcName} (${attributeName}): ${rawPoints}`);
+                        continue;
+                    }
+
+                    attributeEntries.push({
+                        name: attributeName,
+                        points: parsedPoints
+                    });
                     continue;
                 }
 
@@ -17479,10 +17703,15 @@ async function requestNpcSkillAssignments({
     locationOverride = null,
     currentRegion = null,
     timeoutScale = 1,
-    npcNames = []
+    npcNames = [],
+    progressionAssignmentMode = 'attribute_priorities',
+    skillPointBudgets = []
 } = {}) {
     console.log(`Requesting NPC progression assignments from LLM... (timeoutScale=${timeoutScale})`);
     try {
+        const normalizedMode = typeof progressionAssignmentMode === 'string' && progressionAssignmentMode.trim()
+            ? progressionAssignmentMode.trim()
+            : 'attribute_priorities';
         const availableSkillsMap = Player.getAvailableSkills();
         const skillsForPrompt = availableSkillsMap && availableSkillsMap.size > 0
             ? Array.from(availableSkillsMap.values())
@@ -17493,6 +17722,23 @@ async function requestNpcSkillAssignments({
                 }))
             : [];
         const attributesForPrompt = buildNpcAttributePromptEntries();
+        const normalizedSkillPointBudgets = Array.isArray(skillPointBudgets)
+            ? skillPointBudgets
+                .map(entry => {
+                    const name = typeof entry?.name === 'string' ? entry.name.trim() : '';
+                    const skillPoints = Number(entry?.skillPoints);
+                    const maxSkill = Number(entry?.maxSkill);
+                    if (!name || !Number.isFinite(skillPoints)) {
+                        return null;
+                    }
+                    return {
+                        name,
+                        skillPoints: Math.floor(skillPoints),
+                        maxSkill: Number.isFinite(maxSkill) ? Math.floor(maxSkill) : null
+                    };
+                })
+                .filter(Boolean)
+            : [];
 
         if (!skillsForPrompt.length && !attributesForPrompt.length) {
             console.log('No skills or attributes available for NPC progression assignment.');
@@ -17509,7 +17755,9 @@ async function requestNpcSkillAssignments({
             currentRegion,
             extraTemplateFields: {
                 skills: skillsForPrompt,
-                attributes: attributesForPrompt
+                attributes: attributesForPrompt,
+                progressionAssignmentMode: normalizedMode,
+                skillPointBudgets: normalizedSkillPointBudgets
             }
         });
 
@@ -17559,6 +17807,93 @@ async function requestNpcSkillAssignments({
             assignments: new Map()
         };
     }
+}
+
+function buildNpcSkillPointBudgetEntries(npcs = []) {
+    if (!Array.isArray(npcs) || !npcs.length) {
+        return [];
+    }
+
+    const entries = [];
+    for (const npc of npcs) {
+        if (!npc || typeof npc.name !== 'string' || !npc.name.trim()) {
+            continue;
+        }
+        const budget = computeNpcCreationProgressionBudget(npc);
+        entries.push({
+            name: npc.name.trim(),
+            skillPoints: budget.skillPoints,
+            maxSkill: budget.maxSkill
+        });
+    }
+    return entries;
+}
+
+async function requestAndApplyNpcInitialSkillPointAssignments({
+    npcs = [],
+    generatedNpcResults = '',
+    generatedRegionOrLocation = '',
+    locationOverride = null,
+    currentRegion = null,
+    timeoutScale = 1
+} = {}) {
+    const targetNpcs = Array.isArray(npcs)
+        ? npcs.filter(npc => npc && typeof npc.name === 'string' && npc.name.trim())
+        : [];
+    if (!targetNpcs.length) {
+        return {
+            assignments: new Map(),
+            prompt: '',
+            response: '',
+            applied: 0
+        };
+    }
+
+    const skillPointBudgets = buildNpcSkillPointBudgetEntries(targetNpcs);
+    if (!skillPointBudgets.length || !skillPointBudgets.some(entry => Number(entry.skillPoints) > 0)) {
+        return {
+            assignments: new Map(),
+            prompt: '',
+            response: '',
+            applied: 0
+        };
+    }
+
+    const skillResult = await requestNpcSkillAssignments({
+        generatedNpcResults,
+        generatedRegionOrLocation,
+        locationOverride,
+        currentRegion,
+        timeoutScale,
+        npcNames: targetNpcs.map(npc => npc.name),
+        progressionAssignmentMode: 'skill_points',
+        skillPointBudgets
+    });
+
+    const assignments = skillResult?.assignments instanceof Map
+        ? skillResult.assignments
+        : new Map();
+    let applied = 0;
+    for (const npc of targetNpcs) {
+        const assignmentEntry = resolveAssignmentEntry(assignments, npc.name);
+        if (!assignmentEntry || !Array.isArray(assignmentEntry.skills) || assignmentEntry.skills.length === 0) {
+            console.warn(`No initial skill point assignments were returned for NPC "${npc.name}".`);
+            continue;
+        }
+
+        const budget = computeNpcCreationProgressionBudget(npc);
+        applied += applyNpcSkillPointAllocationsWithBudget(npc, assignmentEntry.skills, {
+            points: budget.skillPoints,
+            maxSkill: budget.maxSkill
+        });
+    }
+
+    return {
+        assignments,
+        prompt: skillResult?.prompt || '',
+        response: skillResult?.response || '',
+        applied
+    };
 }
 
 function escapeXmlText(value) {
@@ -17732,25 +18067,31 @@ async function respecNpcSkillsForCharacter(character, { timeoutScale = 1 } = {})
         throw new Error(`Could not resolve a region for NPC "${character.name}" at location "${location.name}".`);
     }
 
-    const generatedNpcResults = buildNpcGenerationSeedXml(character, { location });
-    const promptRequest = await requestNpcSkillAssignments({
-        generatedNpcResults,
-        locationOverride: location,
-        currentRegion: region ? buildRegionShortDescriptionItem(region) : null,
-        timeoutScale,
-        npcNames: [character.name]
-    });
-
-    const assignmentEntry = resolveAssignmentEntry(promptRequest?.assignments, character.name);
-    if (!assignmentEntry || !Array.isArray(assignmentEntry.skills) || assignmentEntry.skills.length === 0) {
-        throw new Error(`No skill assignments were returned for NPC "${character.name}".`);
-    }
-
     const skillSnapshot = captureSkillSnapshot(character);
     try {
         resetCharacterSkillsToBaseline(character);
         const budget = computeNpcCreationProgressionBudget(character);
-        const spent = applyNpcSkillAllocations(character, assignmentEntry.skills, {
+        const generatedNpcResults = buildNpcGenerationSeedXml(character, { location });
+        const promptRequest = await requestNpcSkillAssignments({
+            generatedNpcResults,
+            locationOverride: location,
+            currentRegion: region ? buildRegionShortDescriptionItem(region) : null,
+            timeoutScale,
+            npcNames: [character.name],
+            progressionAssignmentMode: 'skill_points',
+            skillPointBudgets: [{
+                name: character.name,
+                skillPoints: budget.skillPoints,
+                maxSkill: budget.maxSkill
+            }]
+        });
+
+        const assignmentEntry = resolveAssignmentEntry(promptRequest?.assignments, character.name);
+        if (!assignmentEntry || !Array.isArray(assignmentEntry.skills) || assignmentEntry.skills.length === 0) {
+            throw new Error(`No skill assignments were returned for NPC "${character.name}".`);
+        }
+
+        const spent = applyNpcSkillPointAllocationsWithBudget(character, assignmentEntry.skills, {
             points: budget.skillPoints,
             maxSkill: budget.maxSkill
         });
@@ -17810,6 +18151,41 @@ function applyNpcSkillAllocations(npc, assignment, { points = null, maxSkill = n
     }
 
     const formulaMaxSkill = Number.isFinite(maxSkill) ? Math.floor(maxSkill) : Infinity;
+    if (hasNpcPointAllocations(assignment)) {
+        const pointCandidates = collectPointAllocationCandidates(assignment, (rawName) => {
+            const normalized = typeof rawName === 'string' ? rawName.trim().toLowerCase() : '';
+            return availableLookup.get(normalized) || null;
+        });
+
+        let spent = 0;
+        for (const entry of pointCandidates) {
+            if (!entry.points || entry.points <= 0) {
+                continue;
+            }
+            const currentValue = npc.getSkillValue(entry.name);
+            const baseValue = Number.isFinite(currentValue) ? Number(currentValue) : SKILL_POOL_BASELINE_VALUE;
+            const allowedIncrement = Number.isFinite(formulaMaxSkill)
+                ? Math.max(0, Math.min(entry.points, formulaMaxSkill - baseValue))
+                : entry.points;
+            if (allowedIncrement < entry.points) {
+                console.warn(
+                    `[NPC Progression] ${npc.name || npc.id || 'unknown'} could only apply `
+                    + `${allowedIncrement} of ${entry.points} ${entry.name} skill point(s) before reaching the maximum.`
+                );
+            }
+            if (allowedIncrement <= 0) {
+                continue;
+            }
+            const targetValue = baseValue + allowedIncrement;
+            const applied = npc.setSkillValue(entry.name, targetValue);
+            if (applied) {
+                spent += allowedIncrement;
+            }
+        }
+
+        return spent;
+    }
+
     const allocations = allocateByPriority({
         candidates,
         points: totalPoints,
@@ -18546,6 +18922,31 @@ async function buildLevelUpAbilityPromptRequest({
             description: skill.description || ''
         }));
     const availableAttributesForPrompt = buildNpcAttributePromptEntries();
+    let npcLevelUpProgressionBudget = null;
+    if (character.isNPC
+        && Number.isFinite(priorLevel)
+        && Number.isFinite(currentLevel)
+        && currentLevel > priorLevel) {
+        const previousSnapshot = captureCharacterProgressionSnapshot(character);
+        const attributeBudget = computeNpcLevelUpAttributeBudget({
+            character,
+            previousLevel: priorLevel,
+            newLevel: currentLevel,
+            previousSnapshot
+        });
+        const skillBudget = computeNpcLevelUpSkillBudget({
+            character,
+            previousLevel: priorLevel,
+            newLevel: currentLevel,
+            previousSnapshot
+        });
+        npcLevelUpProgressionBudget = {
+            attributePoints: attributeBudget.points,
+            skillPoints: skillBudget.points,
+            maxAttribute: attributeBudget.maxAttribute,
+            maxSkill: skillBudget.maxSkill
+        };
+    }
 
     const promptTemplateBase = {
         ...baseContext,
@@ -18571,6 +18972,7 @@ async function buildLevelUpAbilityPromptRequest({
         currentPlayer: currentPlayerContext,
         availableSkillsForPrompt,
         availableAttributesForPrompt,
+        npcLevelUpProgressionBudget,
         ...extraTemplateFields
     };
 
@@ -23940,7 +24342,8 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
                         locationOverride: location,
                         currentRegion: currentRegionForNpcFollowup,
                         timeoutScale: npctimeoutScale,
-                        npcNames: npcNamesForPrompt
+                        npcNames: npcNamesForPrompt,
+                        progressionAssignmentMode: 'attribute_priorities'
                     });
                     const rawAssignments = skillResult.assignments || new Map();
                     npcSkillAssignments = rekeyNpcLookupMap(rawAssignments, npcRenameMap) || new Map();
@@ -24077,6 +24480,22 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
                         console.warn(`Failed to assign memories to location NPC ${npc.name}:`, memoryError.message);
                     }
                 }
+            }
+        }
+
+        if (created.length) {
+            try {
+                Globals.updateSpinnerText({ message: `Assigning NPC skill points for location ${location.name || location.id}...` });
+                await requestAndApplyNpcInitialSkillPointAssignments({
+                    npcs: created,
+                    generatedNpcResults: npcResponse,
+                    generatedRegionOrLocation: generatedRegionOrLocationXml,
+                    locationOverride: location,
+                    currentRegion: currentRegionForNpcFollowup,
+                    timeoutScale: npctimeoutScale
+                });
+            } catch (skillPointError) {
+                console.warn(`Failed to assign skill points for location NPCs (${location.id}):`, skillPointError?.message || skillPointError);
             }
         }
 
@@ -24355,7 +24774,8 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
                         locationOverride: regionLocationForNpcFollowup,
                         currentRegion: currentRegionForNpcFollowup,
                         timeoutScale: npctimeoutScale,
-                        npcNames: npcNamesForLabel
+                        npcNames: npcNamesForLabel,
+                        progressionAssignmentMode: 'attribute_priorities'
                     });
                     const rawAssignments = skillResult.assignments || new Map();
                     regionNpcSkillAssignments = rekeyNpcLookupMap(rawAssignments, regionNpcRenameMap) || new Map();
@@ -24533,6 +24953,22 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
                         console.warn(`Failed to assign memories to region NPC ${npc.name}:`, memoryError.message);
                     }
                 }
+            }
+        }
+
+        if (created.length) {
+            try {
+                Globals.updateSpinnerText({ message: `Assigning NPC skill points for region ${region.name || region.id}...` });
+                await requestAndApplyNpcInitialSkillPointAssignments({
+                    npcs: created,
+                    generatedNpcResults: npcResponse,
+                    generatedRegionOrLocation: generatedRegionOrLocationXml,
+                    locationOverride: regionLocationForNpcFollowup,
+                    currentRegion: currentRegionForNpcFollowup,
+                    timeoutScale: npctimeoutScale
+                });
+            } catch (skillPointError) {
+                console.warn(`Failed to assign skill points for region NPCs (${region.id}):`, skillPointError?.message || skillPointError);
             }
         }
 

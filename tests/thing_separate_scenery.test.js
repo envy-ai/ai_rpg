@@ -57,6 +57,6 @@ test('separated container output receives the rest of the item outputs', () => {
     assertIncludes(apiSource, "const canNestSeparatedThing = (thing) => thing && thing !== separatedOutputContainer && thing.thingType === 'item';");
     assertIncludes(apiSource, 'const nestedSeparatedThings = separatedOutputContainer');
     assertIncludes(apiSource, 'const destinationSeparatedThings = separatedOutputContainer');
-    assertIncludes(apiSource, 'separatedOutputContainer.addInventoryItem(nestedThing);');
+    assertIncludes(apiSource, 'separatedOutputContainer.addInventoryItem(nestedThing, { mergeStacks: false });');
     assertIncludes(apiSource, 'for (const stagedThing of destinationSeparatedThings)');
 });

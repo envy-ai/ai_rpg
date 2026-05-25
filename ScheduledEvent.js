@@ -124,6 +124,16 @@ class ScheduledEvent {
       .filter(event => event.targetWorldMinute <= normalizedMinute);
   }
 
+  static getPendingBetween(startWorldMinute, endWorldMinute) {
+    const normalizedStart = normalizeWorldMinute(startWorldMinute, 'interval startWorldMinute');
+    const normalizedEnd = normalizeWorldMinute(endWorldMinute, 'interval endWorldMinute');
+    if (normalizedEnd < normalizedStart) {
+      throw new Error('ScheduledEvent interval endWorldMinute must be greater than or equal to startWorldMinute.');
+    }
+    return ScheduledEvent.getPending()
+      .filter(event => event.targetWorldMinute > normalizedStart && event.targetWorldMinute <= normalizedEnd);
+  }
+
   static fromJSON(payload) {
     if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
       throw new Error('ScheduledEvent.fromJSON requires an object payload.');

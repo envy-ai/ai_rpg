@@ -1565,17 +1565,28 @@ class Location {
     this.#lastUpdated = new Date();
   }
 
-  addThingId(id) {
+  addThingId(id, { mergeStacks = true } = {}) {
     if (!id || typeof id !== 'string') {
-      return;
+      return false;
     }
 
     const Thing = require('./Thing.js');
+    const thing = Thing.getById(id);
     Thing.removeFromWorldById(id);
+    if (thing && mergeStacks) {
+      const candidates = this.#thingIds
+        .map(existingId => Thing.getById(existingId))
+        .filter(Boolean);
+      const mergedTarget = Thing.mergeIntoExistingStack(thing, candidates);
+      if (mergedTarget) {
+        this.#lastUpdated = new Date();
+        return true;
+      }
+    }
+
     this.#thingIds.push(id);
     this.#lastUpdated = new Date();
 
-    const thing = Thing.getById(id);
     if (thing) {
       const metadata = thing.metadata || {};
       let metadataChanged = false;
@@ -1614,6 +1625,7 @@ class Location {
         thing.metadata = metadata;
       }
     }
+    return true;
   }
 
   removeThingId(id) {

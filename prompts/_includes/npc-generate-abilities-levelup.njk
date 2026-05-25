@@ -3,8 +3,10 @@
 {% if character.isNPC %}
 Generate three things for this NPC:
 1. Abilities: for each gained level, generate 2 to 4 abilities (total {{ (character.level - character.previousLevel) * 2 }} to {{ (character.level - character.previousLevel) * 4 }} abilities across this entire level-up). Abilities should be unique, level-appropriate, and tied to class/race/history/personality.
-2. Skill priorities: pick 3 to 8 skills and assign priority 1 to 3.
-3. Attribute priorities: pick 2 to 6 attributes and assign priority 1 to 3.
+2. Skill point allocation: distribute exactly {{ npcLevelUpProgressionBudget.skillPoints if npcLevelUpProgressionBudget else 0 }} skill point{% if not npcLevelUpProgressionBudget or npcLevelUpProgressionBudget.skillPoints != 1 %}s{% endif %} among fitting skills. Base your decisions on the character's class and personality, and more importantly, what they've been doing in the story since their last level-up.
+3. Attribute point allocation: distribute exactly {{ npcLevelUpProgressionBudget.attributePoints if npcLevelUpProgressionBudget else 0 }} attribute point{% if not npcLevelUpProgressionBudget or npcLevelUpProgressionBudget.attributePoints != 1 %}s{% endif %} among fitting attributes. As above, base your decisions on the character's class and personality, and more importantly, what they've been doing in the story since their last level-up.
+
+Use nonnegative whole numbers for point allocations. The sum of all `<skill><points>` values must equal the skill point allocation above, and the sum of all `<attribute><points>` values must equal the attribute point allocation above. If a point allocation is 0, omit that skill or attribute entry.
 
 If in need of ideas, consider the information provided in context. Do not duplicate existing ability names. You may add abilities that synergize with existing abilities.
 {% if npcAbilityGeneration and npcAbilityGeneration.excludedAbilityNames and npcAbilityGeneration.excludedAbilityNames.length %}
@@ -27,6 +29,14 @@ If a generated ability would duplicate one of these names, choose a different na
     <description>{{ attribute.description }}</description>
   </attribute>
 {% endfor %}</availableAttributes>
+{% if npcLevelUpProgressionBudget %}
+<levelUpPointPools>
+  <attributePoints>{{ npcLevelUpProgressionBudget.attributePoints }}</attributePoints>
+  <skillPoints>{{ npcLevelUpProgressionBudget.skillPoints }}</skillPoints>
+  <maxAttribute>{{ npcLevelUpProgressionBudget.maxAttribute }}</maxAttribute>
+  <maxSkill>{{ npcLevelUpProgressionBudget.maxSkill }}</maxSkill>
+</levelUpPointPools>
+{% endif %}
 
 Output exactly in this XML structure:
 
@@ -36,14 +46,14 @@ Output exactly in this XML structure:
     <skills>
       <skill>
         <name>Exact name of the skill from availableSkills</name>
-        <priority>Integer 1-3</priority>
+        <points>Integer number of skill points assigned to this skill</points>
       </skill>
       [... more skills ...]
     </skills>
     <attributes>
       <attribute>
         <name>Exact name of the attribute from availableAttributes</name>
-        <priority>Integer 1-3</priority>
+        <points>Integer number of attribute points assigned to this attribute</points>
       </attribute>
       [... more attributes ...]
     </attributes>

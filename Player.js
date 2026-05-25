@@ -2260,7 +2260,7 @@ class Player {
             return;
         }
         for (const entry of items) {
-            this.#addInventoryThing(entry, { updateTimestamp: false, suppressNpcEquip: true });
+            this.#addInventoryThing(entry, { updateTimestamp: false, suppressNpcEquip: true, mergeStacks: false });
         }
     }
 
@@ -2686,7 +2686,7 @@ class Player {
         return null;
     }
 
-    #addInventoryThing(thingLike, { updateTimestamp = true, suppressNpcEquip = false } = {}) {
+    #addInventoryThing(thingLike, { updateTimestamp = true, suppressNpcEquip = false, mergeStacks = true } = {}) {
         const resolved = this.#resolveThing(thingLike);
         if (!resolved) {
             return false;
@@ -2694,6 +2694,16 @@ class Player {
 
         const previousSize = this.#inventory.size;
         resolved.removeFromWorld();
+        if (mergeStacks) {
+            const mergedTarget = Thing.mergeIntoExistingStack(resolved, Array.from(this.#inventory));
+            if (mergedTarget) {
+                if (updateTimestamp) {
+                    this.#lastUpdated = new Date().toISOString();
+                }
+                return true;
+            }
+        }
+
         this.#inventory.add(resolved);
 
         const added = this.#inventory.size !== previousSize;
@@ -6585,7 +6595,7 @@ class Player {
         this.#inventory.clear();
         if (Array.isArray(items)) {
             for (const entry of items) {
-                this.#addInventoryThing(entry, { updateTimestamp: false, suppressNpcEquip: true });
+                this.#addInventoryThing(entry, { updateTimestamp: false, suppressNpcEquip: true, mergeStacks: false });
             }
         }
         this.#syncGearWithInventory();

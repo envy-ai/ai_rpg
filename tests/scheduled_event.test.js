@@ -112,6 +112,60 @@ test('ScheduledEvent stores pending events, returns due events chronologically, 
     }
 });
 
+test('ScheduledEvent returns pending events inside an exclusive-start inclusive-end interval', () => {
+    IdGenerator.reset();
+    ScheduledEvent.clear();
+
+    try {
+        const before = makeScheduledEvent({
+            event: 'The old bell rings.',
+            targetWorldMinute: 100,
+            targetWorldTime: { dayIndex: 0, timeMinutes: 100 }
+        });
+        const atStart = makeScheduledEvent({
+            event: 'The watch changes shifts.',
+            targetWorldMinute: 120,
+            targetWorldTime: { dayIndex: 0, timeMinutes: 120 }
+        });
+        const insideLate = makeScheduledEvent({
+            event: 'The crane alarm starts ringing.',
+            targetWorldMinute: 180,
+            targetWorldTime: { dayIndex: 0, timeMinutes: 180 }
+        });
+        const insideEarly = makeScheduledEvent({
+            event: 'The foghorn gives three short blasts.',
+            targetWorldMinute: 150,
+            targetWorldTime: { dayIndex: 0, timeMinutes: 150 }
+        });
+        const atEnd = makeScheduledEvent({
+            event: 'The harbor gate locks.',
+            targetWorldMinute: 200,
+            targetWorldTime: { dayIndex: 0, timeMinutes: 200 }
+        });
+        const after = makeScheduledEvent({
+            event: 'The late ferry leaves.',
+            targetWorldMinute: 201,
+            targetWorldTime: { dayIndex: 0, timeMinutes: 201 }
+        });
+
+        before.markResolved({
+            summary: 'The old bell rang before the turn.',
+            worldMinute: 110,
+            worldTime: { dayIndex: 0, timeMinutes: 110 }
+        });
+
+        assert.deepEqual(
+            ScheduledEvent.getPendingBetween(120, 200).map(event => event.id),
+            [insideEarly.id, insideLate.id, atEnd.id]
+        );
+        assert.ok(!ScheduledEvent.getPendingBetween(120, 200).includes(atStart));
+        assert.ok(!ScheduledEvent.getPendingBetween(120, 200).includes(after));
+    } finally {
+        ScheduledEvent.clear();
+        IdGenerator.reset();
+    }
+});
+
 test('serialized game state writes, loads, and hydrates scheduled events', () => {
     IdGenerator.reset();
     ScheduledEvent.clear();

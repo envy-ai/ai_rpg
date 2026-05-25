@@ -12,8 +12,8 @@ Slash command `/respec_skills` to rebuild an NPC's skill allocation from scratch
 - If multiple matches still remain after the location tie-break, aborts and reports the ambiguous candidates instead of guessing.
 - Rejects player characters; this command is NPC-only.
 - Does not require the target NPC to currently be placed in a location; when location data is absent, the respec prompt proceeds without NPC-specific location/region overrides.
-- Reuses the NPC creation progression prompt to request a fresh skill priority assignment for that NPC.
-- Resets all registered skills to the formula baseline, then reapplies skill points as if the NPC had leveled from 1 to its current level.
+- Resets all registered skills to the formula baseline, computes the current formula skill pool from the NPC's level and attributes, then reuses the NPC progression prompt in exact skill-point mode.
+- Applies the returned skill `<points>` allocation, with the same warning-logged random correction used by NPC progression when returned totals are under or over budget.
 - Rolls back to the prior skill map if the respec fails after mutation begins.
 
 ## Notes

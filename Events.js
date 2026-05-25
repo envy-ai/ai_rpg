@@ -3103,6 +3103,7 @@ class Events {
         ignoredEventKeys,
         eventCheckIgnoreInstructions,
         suppressNeedBarEventChecks,
+        initialTimeProgress,
     }) {
         const normalizedIgnoredEventKeys =
             this._normalizeIgnoredEventKeys(ignoredEventKeys);
@@ -3196,6 +3197,9 @@ class Events {
         const cleaned = xmlEvents.xml;
         const html = this.escapeHtml(cleaned).replace(/\n/g, "<br>");
         const accumulator = this._createEventCheckAccumulator();
+        if (initialTimeProgress && typeof initialTimeProgress === "object") {
+            accumulator.timeProgress = initialTimeProgress;
+        }
         const suppressActiveVehicleDestinationTravelMove =
             Boolean(xmlEvents.hasTravelBoundary) &&
             structuredTravelMoveTargetsActiveVehicleDestination(
@@ -3218,6 +3222,7 @@ class Events {
                 xmlEvents.hasTravelBoundary &&
                 !suppressActiveVehicleDestinationTravelMove,
             ),
+            timeProgress: initialTimeProgress || null,
             stream,
             followupQueue: activeFollowupQueue,
             _originatedFromEventChecks: true,
@@ -3446,6 +3451,7 @@ class Events {
         ignoredEventKeys = [],
         eventCheckIgnoreInstructions = "",
         suppressNeedBarEventChecks = false,
+        initialTimeProgress = null,
         _depth = 0,
         followupQueue = null,
     } = {}) {
@@ -3470,6 +3476,13 @@ class Events {
         const includePlayerActionBlock = normalizedActionText.length > 0;
         const normalizedIgnoredEventKeys =
             this._normalizeIgnoredEventKeys(ignoredEventKeys);
+        let normalizedInitialTimeProgress = null;
+        if (initialTimeProgress !== null && initialTimeProgress !== undefined) {
+            if (typeof initialTimeProgress !== "object" || Array.isArray(initialTimeProgress)) {
+                throw new Error("runEventChecks initialTimeProgress must be an object when provided.");
+            }
+            normalizedInitialTimeProgress = initialTimeProgress;
+        }
 
         this._resetTrackingSets();
         const depth = Number.isFinite(_depth) ? _depth : 0;
@@ -3570,6 +3583,7 @@ class Events {
                 ignoredEventKeys: normalizedIgnoredEventKeys,
                 eventCheckIgnoreInstructions,
                 suppressNeedBarEventChecks: Boolean(suppressNeedBarEventChecks),
+                initialTimeProgress: normalizedInitialTimeProgress,
             });
         }
 
@@ -3738,7 +3752,7 @@ class Events {
         let itemTriggeredStatusChanges = [];
         let hiddenNpcChecks = [];
         let outcomeLocationRefreshRequested = false;
-        let timeProgress = null;
+        let timeProgress = normalizedInitialTimeProgress;
 
         try {
             const outcomeContext = await this.applyEventOutcomes(structured, {
@@ -3756,6 +3770,7 @@ class Events {
                 suppressMoveEvents: Boolean(suppressMoveEvents),
                 allowMoveTurnAppearances: Boolean(allowMoveTurnAppearances),
                 suppressTimeAdvance: Boolean(suppressTimeAdvance),
+                timeProgress: normalizedInitialTimeProgress,
                 textToCheck,
                 actionText: normalizedActionText,
                 stream,
@@ -8994,6 +9009,9 @@ class Events {
                 if (!Number.isFinite(amount) || amount < 0 || !Number.isInteger(amount)) {
                     console.warn("Invalid time_passed value:", value);
                     console.trace();
+                    return;
+                }
+                if (context.timeProgress && typeof context.timeProgress === "object") {
                     return;
                 }
                 if (context.isNpcTurn || context.suppressTimeAdvance || context.suppressTimePassedEvents) {
@@ -14518,6 +14536,7 @@ class Events {
         if (owner && typeof owner.addInventoryItem === "function") {
             const added = owner.addInventoryItem(splitThing, {
                 suppressNpcEquip: true,
+                mergeStacks: false,
             });
             if (!added) {
                 throw new Error(
@@ -14531,7 +14550,7 @@ class Events {
         }
 
         if (container && typeof container.addInventoryItem === "function") {
-            const added = container.addInventoryItem(splitThing);
+            const added = container.addInventoryItem(splitThing, { mergeStacks: false });
             if (!added) {
                 throw new Error(
                     `Unable to place split stack "${splitThing.name}" in container "${container.name || container.id}".`,
@@ -14544,7 +14563,7 @@ class Events {
         }
 
         if (location && typeof location.addThingId === "function") {
-            location.addThingId(splitThing.id);
+            location.addThingId(splitThing.id, { mergeStacks: false });
             if (this.things instanceof Map) {
                 this.things.set(splitThing.id, splitThing);
             }
@@ -14746,6 +14765,9 @@ class Events {
             return;
         }
         location.addThingId(thing.id);
+        if (Thing.getById(thing.id) !== thing) {
+            return;
+        }
         const metadata = thing.metadata || {};
         metadata.locationId = location.id;
         delete metadata.ownerId;

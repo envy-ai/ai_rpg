@@ -23,12 +23,126 @@ function makeTempSaveDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'ai-rpg-thing-container-save-'));
 }
 
+function ensurePlayerTestConfig() {
+  Globals.config = {
+    ...(originalConfig && typeof originalConfig === 'object' ? originalConfig : {}),
+    baseHealthPerLevel: Number.isFinite(originalConfig?.baseHealthPerLevel)
+      ? originalConfig.baseHealthPerLevel
+      : 10
+  };
+}
+
 test.afterEach(() => {
   Thing.clear();
   Player.clearRuntimeRegistries();
   clearLocationRegistry();
   Region.clear();
   Globals.config = originalConfig;
+});
+
+test('adding a matching item stack to player inventory merges into the existing stack', () => {
+  ensurePlayerTestConfig();
+
+  const player = new Player({
+    id: 'player-stack-merge',
+    name: 'Stack Merge Tester'
+  });
+  const firstStack = new Thing({
+    id: 'thing-player-copper-1',
+    name: 'Copper Coin',
+    description: 'A plain copper coin.',
+    thingType: 'item',
+    count: 2
+  });
+  const secondStack = new Thing({
+    id: 'thing-player-copper-2',
+    name: 'Copper Coin',
+    description: 'A plain copper coin.',
+    thingType: 'item',
+    count: 3
+  });
+
+  player.addInventoryItem(firstStack);
+  player.addInventoryItem(secondStack);
+
+  assert.deepEqual(player.getInventoryItems().map(item => item.id), [firstStack.id]);
+  assert.equal(firstStack.count, 5);
+  assert.equal(Thing.getById(secondStack.id), null);
+});
+
+test('adding a matching item stack to a container merges into the existing stack', () => {
+  const pouch = new Thing({
+    id: 'thing-stack-pouch',
+    name: 'Coin Pouch',
+    description: 'A small coin pouch.',
+    thingType: 'item',
+    isContainer: true
+  });
+  const firstStack = new Thing({
+    id: 'thing-container-silver-1',
+    name: 'Silver Coin',
+    description: 'A plain silver coin.',
+    thingType: 'item',
+    count: 4
+  });
+  const secondStack = new Thing({
+    id: 'thing-container-silver-2',
+    name: 'Silver Coin',
+    description: 'A plain silver coin.',
+    thingType: 'item',
+    count: 6
+  });
+
+  pouch.addInventoryItem(firstStack);
+  pouch.addInventoryItem(secondStack);
+
+  assert.deepEqual(pouch.getInventoryItems().map(item => item.id), [firstStack.id]);
+  assert.equal(firstStack.count, 10);
+  assert.equal(Thing.getById(secondStack.id), null);
+});
+
+test('adding a matching loose item stack to a location merges into the existing stack', () => {
+  const runtimeThings = new Map();
+  Thing.registerRuntimeRegistry(runtimeThings);
+  try {
+    const region = new Region({
+      id: 'region-stack-merge',
+      name: 'Stack Merge Region',
+      description: 'A region for stack merging.'
+    });
+    const location = new Location({
+      id: 'location-stack-merge',
+      name: 'Stack Merge Location',
+      description: 'A location for stack merging.',
+      regionId: region.id
+    });
+    const firstStack = new Thing({
+      id: 'thing-location-iron-1',
+      name: 'Iron Spike',
+      description: 'A plain iron spike.',
+      thingType: 'item',
+      count: 5
+    });
+    const secondStack = new Thing({
+      id: 'thing-location-iron-2',
+      name: 'Iron Spike',
+      description: 'A plain iron spike.',
+      thingType: 'item',
+      count: 7
+    });
+    runtimeThings.set(firstStack.id, firstStack);
+    runtimeThings.set(secondStack.id, secondStack);
+
+    location.addThingId(firstStack.id);
+    location.addThingId(secondStack.id);
+
+    assert.deepEqual(location.thingIds, [firstStack.id]);
+    assert.equal(firstStack.count, 12);
+    assert.equal(Thing.getById(secondStack.id), null);
+    assert.equal(runtimeThings.has(secondStack.id), false);
+  } finally {
+    Thing.unregisterRuntimeRegistry(runtimeThings);
+  }
 });
 
 test('container flag and inventory ids persist through JSON and saves', () => {
@@ -189,12 +303,7 @@ test('pending container contents ignore empty sentinels and zero-count seeds', (
 });
 
 test('adding and removing contained items updates placement metadata loudly', () => {
-  Globals.config = {
-    ...(originalConfig && typeof originalConfig === 'object' ? originalConfig : {}),
-    baseHealthPerLevel: Number.isFinite(originalConfig?.baseHealthPerLevel)
-      ? originalConfig.baseHealthPerLevel
-      : 10
-  };
+  ensurePlayerTestConfig();
 
   const player = new Player({
     id: 'player-1',

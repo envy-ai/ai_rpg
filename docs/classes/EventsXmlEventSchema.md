@@ -590,7 +590,7 @@ Use this when something in the turn changes a need bar for the player, party mem
 
 ### `time_passed`
 
-Use this to report how much elapsed in-world wall-clock time the concrete non-travel actions in the text realistically consumed. Estimate elapsed wall-clock time, not reading time and not the sum of each participant's labor when characters work in parallel. If the player travels by exit/route or the XML block includes `<moveLocation>`/`<moveNewLocation>`, use `0` here because travel time is resolved from the route or exit instead. Use `0` when nothing non-travel and time-consuming happened.
+Use this to report fallback elapsed in-world wall-clock time for concrete non-travel actions when no earlier action parser already supplied elapsed time. Estimate elapsed wall-clock time, not reading time and not the sum of each participant's labor when characters work in parallel. If the player travels by exit/route or the XML block includes `<moveLocation>`/`<moveNewLocation>`, use `0` here because travel time is resolved from the route or exit instead. Use `0` when nothing non-travel and time-consuming happened.
 
 ```xml
 <timePassed>
