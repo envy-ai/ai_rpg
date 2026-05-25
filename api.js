@@ -1306,6 +1306,7 @@ module.exports = function registerApiRoutes(scope) {
             } else {
                 pending.resolve({
                     answer: outcome.answer,
+                    confirmed: outcome.confirmed === true,
                     requestId: id
                 });
             }
@@ -1330,8 +1331,17 @@ module.exports = function registerApiRoutes(scope) {
             return cancelled;
         }
 
-        function requestPlayerInputFromClient({ stream = null, promptLabel = 'chat', question = '' } = {}) {
-            if (!isRequestUserInputToolEnabled()) {
+        function requestPlayerInputFromClient({
+            stream = null,
+            promptLabel = 'chat',
+            question = '',
+            mode = 'text',
+            title = '',
+            confirmLabel: rawConfirmLabel = '',
+            cancelLabel: rawCancelLabel = ''
+        } = {}) {
+            const inputMode = mode === 'confirmation' ? 'confirmation' : 'text';
+            if (inputMode !== 'confirmation' && !isRequestUserInputToolEnabled()) {
                 throw createPlayerInputError(
                     'requestUserInput is disabled by configuration.',
                     'user_input_disabled'
@@ -1363,6 +1373,15 @@ module.exports = function registerApiRoutes(scope) {
                 ? stream.requestId.trim()
                 : null;
             const timeoutMs = resolvePlayerInputTimeoutMs();
+            const titleText = typeof title === 'string' && title.trim()
+                ? title.trim()
+                : (inputMode === 'confirmation' ? 'Confirm Action' : 'Question from AI');
+            const confirmLabel = typeof rawConfirmLabel === 'string' && rawConfirmLabel.trim()
+                ? rawConfirmLabel.trim()
+                : (inputMode === 'confirmation' ? 'Confirm' : 'Submit');
+            const cancelLabel = typeof rawCancelLabel === 'string' && rawCancelLabel.trim()
+                ? rawCancelLabel.trim()
+                : 'Cancel';
 
             return new Promise((resolve, reject) => {
                 const timeoutId = setTimeout(() => {
@@ -1381,6 +1400,10 @@ module.exports = function registerApiRoutes(scope) {
                         ? promptLabel.trim()
                         : 'chat',
                     question: questionText,
+                    mode: inputMode,
+                    title: titleText,
+                    confirmLabel: confirmLabel,
+                    cancelLabel: cancelLabel,
                     resolve,
                     reject,
                     timeoutId
@@ -1396,6 +1419,10 @@ module.exports = function registerApiRoutes(scope) {
                             ? promptLabel.trim()
                             : 'chat',
                         question: questionText,
+                        mode: inputMode,
+                        title: titleText,
+                        confirmLabel: confirmLabel,
+                        cancelLabel: cancelLabel,
                         timeoutMs
                     }
                 );
@@ -1411,10 +1438,14 @@ module.exports = function registerApiRoutes(scope) {
         }
 
         function createRequestUserInputHandler({ stream = null, promptLabel = 'chat' } = {}) {
-            return ({ question }) => requestPlayerInputFromClient({
+            return ({ question, mode = 'text', title = '', confirmLabel = '', cancelLabel = '' }) => requestPlayerInputFromClient({
                 stream,
                 promptLabel,
-                question
+                question,
+                mode,
+                title,
+                confirmLabel,
+                cancelLabel
             });
         }
 
@@ -1561,6 +1592,7 @@ module.exports = function registerApiRoutes(scope) {
                 `      <isHarvestable>${resolveBoolean(data?.isHarvestable ?? metadata.isHarvestable ?? thing.isHarvestable)}</isHarvestable>`,
                 `      <isSalvageable>${resolveBoolean(data?.isSalvageable ?? metadata.isSalvageable ?? thing.isSalvageable)}</isSalvageable>`,
                 `      <isContainer>${resolveBoolean(data?.isContainer ?? metadata.isContainer ?? thing.isContainer)}</isContainer>`,
+                `      <requiresCheckToOpen>${resolveBoolean(data?.requiresCheckToOpen ?? metadata.requiresCheckToOpen ?? thing.requiresCheckToOpen)}</requiresCheckToOpen>`,
                 '      <attributeBonuses>'
             ];
 
@@ -1942,6 +1974,7 @@ module.exports = function registerApiRoutes(scope) {
             resolvePlausibilityCheck: resolvePlausibilityToolCall,
             resolveOpposedPlausibilityCheck: resolvePlausibilityToolCall,
             scheduleEvent: scheduledEventScheduler.scheduleEvent,
+            deleteThingById,
             LLMClient,
             Player,
             Thing,
@@ -20749,6 +20782,32 @@ module.exports = function registerApiRoutes(scope) {
                     });
                 }
 
+                if (pending.mode === 'confirmation') {
+                    const confirmed = body.confirmed === true;
+                    if (!confirmed) {
+                        finishPlayerInputRequest(inputRequestId, {
+                            error: createPlayerInputError(
+                                'The player cancelled the confirmation request.',
+                                'user_input_cancelled'
+                            ),
+                            reason: 'cancelled'
+                        });
+                        return res.json({
+                            success: true,
+                            cancelled: true
+                        });
+                    }
+                    finishPlayerInputRequest(inputRequestId, {
+                        answer: 'confirmed',
+                        confirmed: true,
+                        reason: 'answered'
+                    });
+                    return res.json({
+                        success: true,
+                        confirmed: true
+                    });
+                }
+
                 if (typeof body.answer !== 'string') {
                     return res.status(400).json({
                         success: false,
@@ -32363,6 +32422,90 @@ module.exports = function registerApiRoutes(scope) {
             return null;
         }
 
+        function normalizeRegionTargetId(value) {
+            return typeof value === 'string' && value.trim()
+                ? value.trim()
+                : '';
+        }
+
+        function removeStubFromRegionMemberships(stubId, previousTargetRegionId = null) {
+            const normalizedStubId = normalizeRegionTargetId(stubId);
+            if (!normalizedStubId) {
+                throw new Error('removeStubFromRegionMemberships requires a stub id.');
+            }
+            const normalizedPreviousRegionId = normalizeRegionTargetId(previousTargetRegionId);
+
+            for (const region of regions.values()) {
+                if (!region || !Array.isArray(region.locationIds)) {
+                    continue;
+                }
+                if (normalizedPreviousRegionId
+                    && region.id !== normalizedPreviousRegionId
+                    && !region.locationIds.includes(normalizedStubId)) {
+                    continue;
+                }
+                if (typeof region.removeLocationId !== 'function') {
+                    throw new Error(`Region "${region.id || 'unknown'}" cannot remove stub membership.`);
+                }
+                region.removeLocationId(normalizedStubId);
+            }
+
+            if (pendingRegionStubs instanceof Map) {
+                for (const [pendingRegionId, pendingRegion] of pendingRegionStubs.entries()) {
+                    if (!pendingRegion || typeof pendingRegion !== 'object') {
+                        continue;
+                    }
+                    const locationIds = Array.isArray(pendingRegion.locationIds)
+                        ? pendingRegion.locationIds
+                        : [];
+                    if (normalizedPreviousRegionId
+                        && pendingRegionId !== normalizedPreviousRegionId
+                        && !locationIds.includes(normalizedStubId)) {
+                        continue;
+                    }
+                    const nextLocationIds = locationIds.filter(locationId => locationId !== normalizedStubId);
+                    if (nextLocationIds.length !== locationIds.length) {
+                        pendingRegionStubs.set(pendingRegionId, {
+                            ...pendingRegion,
+                            locationIds: nextLocationIds
+                        });
+                    }
+                }
+            }
+        }
+
+        function addStubToRegionMembership(stubId, resolvedTargetRegionId) {
+            const normalizedStubId = normalizeRegionTargetId(stubId);
+            const normalizedRegionId = normalizeRegionTargetId(resolvedTargetRegionId);
+            if (!normalizedStubId || !normalizedRegionId) {
+                throw new Error('addStubToRegionMembership requires a stub id and target region id.');
+            }
+
+            const liveRegion = regions.get(normalizedRegionId) || null;
+            if (liveRegion) {
+                if (typeof liveRegion.addLocationId !== 'function') {
+                    throw new Error(`Region "${normalizedRegionId}" cannot add stub membership.`);
+                }
+                liveRegion.addLocationId(normalizedStubId);
+                return;
+            }
+
+            if (!(pendingRegionStubs instanceof Map) || !pendingRegionStubs.has(normalizedRegionId)) {
+                throw new Error(`Target region '${normalizedRegionId}' not found`);
+            }
+            const pendingRegion = pendingRegionStubs.get(normalizedRegionId) || {};
+            const locationIds = Array.isArray(pendingRegion.locationIds)
+                ? pendingRegion.locationIds.filter(locationId => typeof locationId === 'string' && locationId.trim())
+                : [];
+            if (!locationIds.includes(normalizedStubId)) {
+                locationIds.push(normalizedStubId);
+            }
+            pendingRegionStubs.set(normalizedRegionId, {
+                ...pendingRegion,
+                locationIds
+            });
+        }
+
         function exitTargetsPendingRegion(exit, pendingRegionId) {
             const normalizedRegionId = typeof pendingRegionId === 'string' && pendingRegionId.trim()
                 ? pendingRegionId.trim()
@@ -33604,6 +33747,7 @@ module.exports = function registerApiRoutes(scope) {
                 const hasName = hasOwn.call(body, 'name');
                 const hasDescription = hasOwn.call(body, 'description');
                 const hasControllingFaction = hasOwn.call(body, 'controllingFactionId');
+                const hasTargetRegion = hasOwn.call(body, 'targetRegionId');
                 let resolvedControllingFactionId = null;
                 if (hasControllingFaction) {
                     try {
@@ -33615,6 +33759,29 @@ module.exports = function registerApiRoutes(scope) {
                         return res.status(400).json({
                             success: false,
                             error: validationError?.message || 'Invalid controlling faction value'
+                        });
+                    }
+                }
+                let resolvedTargetRegionId = null;
+                if (hasTargetRegion) {
+                    const existingStubMetadata = stubLocation.stubMetadata || {};
+                    if (existingStubMetadata.isRegionEntryStub) {
+                        return res.status(400).json({
+                            success: false,
+                            error: 'Cannot change the target region of a region-entry stub.'
+                        });
+                    }
+                    resolvedTargetRegionId = normalizeRegionTargetId(body.targetRegionId);
+                    if (!resolvedTargetRegionId) {
+                        return res.status(400).json({
+                            success: false,
+                            error: 'Stub target region is required'
+                        });
+                    }
+                    if (!regions.has(resolvedTargetRegionId) && !pendingRegionStubs.has(resolvedTargetRegionId)) {
+                        return res.status(404).json({
+                            success: false,
+                            error: `Target region '${resolvedTargetRegionId}' not found`
                         });
                     }
                 }
@@ -33700,7 +33867,20 @@ module.exports = function registerApiRoutes(scope) {
                     }
                 }
 
-                const stubMetadata = stubLocation.stubMetadata || {};
+                let stubMetadata = stubLocation.stubMetadata || {};
+                if (hasTargetRegion) {
+                    const previousTargetRegionId = stubMetadata.targetRegionId
+                        || stubMetadata.regionId
+                        || stubLocation.regionId
+                        || null;
+                    removeStubFromRegionMemberships(stubId, previousTargetRegionId);
+                    if (typeof stubLocation.setStubRegionId !== 'function') {
+                        throw new Error('Stub location does not support region reassignment.');
+                    }
+                    stubLocation.setStubRegionId(resolvedTargetRegionId, { requireLiveRegion: false });
+                    addStubToRegionMembership(stubId, resolvedTargetRegionId);
+                    stubMetadata = stubLocation.stubMetadata || {};
+                }
                 if (vehicleUpdate.hasUpdate) {
                     try {
                         stubLocation.vehicleInfo = vehicleUpdate.vehicleInfo;
@@ -34158,7 +34338,8 @@ module.exports = function registerApiRoutes(scope) {
                     isCraftingStation: Boolean(rawSeed.isCraftingStation),
                     isProcessingStation: Boolean(rawSeed.isProcessingStation),
                     isSalvageable: Boolean(rawSeed.isSalvageable),
-                    isContainer: Boolean(rawSeed.isContainer)
+                    isContainer: Boolean(rawSeed.isContainer),
+                    requiresCheckToOpen: Boolean(rawSeed.requiresCheckToOpen)
                 };
                 if (rawName) {
                     seed.name = rawName;
@@ -35613,7 +35794,8 @@ module.exports = function registerApiRoutes(scope) {
                         isProcessingStation: itemBlueprint.isProcessingStation,
                         isHarvestable: itemBlueprint.isHarvestable,
                         isSalvageable: itemBlueprint.isSalvageable,
-                        isContainer: itemBlueprint.isContainer
+                        isContainer: itemBlueprint.isContainer,
+                        requiresCheckToOpen: itemBlueprint.requiresCheckToOpen
                     });
                 };
 
@@ -38101,7 +38283,8 @@ module.exports = function registerApiRoutes(scope) {
                             isProcessingStation: Boolean(sourceThing.isProcessingStation),
                             isHarvestable: Boolean(sourceThing.isHarvestable),
                             isSalvageable: Boolean(sourceThing.isSalvageable),
-                            isContainer: Boolean(sourceThing.isContainer)
+                            isContainer: Boolean(sourceThing.isContainer),
+                            requiresCheckToOpen: Boolean(sourceThing.requiresCheckToOpen)
                         }
                         : extractThingBooleanFlagsFromPayload(itemData);
                     const metadata = sanitizeMetadataObject({
@@ -38844,6 +39027,293 @@ module.exports = function registerApiRoutes(scope) {
                 location: location && typeof buildLocationResponse === 'function' ? buildLocationResponse(location) : null
             };
         }
+
+        function parseContainerOpenResultXml(responseText) {
+            if (typeof responseText !== 'string' || !responseText.trim()) {
+                throw new Error('Container open-check response is empty.');
+            }
+            const trimmedResponse = responseText.trim();
+            let xmlPayload = Utils.extractFinalXmlBlockFromResponse(trimmedResponse) || trimmedResponse;
+            if (!/<containerOpenResult\b/i.test(xmlPayload)) {
+                const match = trimmedResponse.match(/<containerOpenResult\b[\s\S]*<\/containerOpenResult>/i);
+                if (match) {
+                    xmlPayload = match[0];
+                }
+            }
+
+            const parsedDocument = Utils.parseXmlDocumentStrict(sanitizeForXml(xmlPayload), 'text/xml');
+            let root = parsedDocument?.documentElement || null;
+            if (root && String(root.tagName || '').trim() === 'root') {
+                root = getDirectChildElementByTagName(root, 'containerOpenResult');
+            }
+            if (!root || String(root.tagName || '').trim() !== 'containerOpenResult') {
+                throw new Error('Container open-check response must contain <containerOpenResult>.');
+            }
+
+            const successText = getDirectChildTextByTagName(root, 'success').trim().toLowerCase();
+            if (!successText) {
+                throw new Error('Container open-check response is missing <success>.');
+            }
+            const success = ['true', 'yes', 'success', 'succeeded', 'open', 'opened'].includes(successText);
+            const failure = ['false', 'no', 'failure', 'failed', 'fail', 'closed'].includes(successText);
+            if (!success && !failure) {
+                throw new Error(`Container open-check <success> must be true or false, got "${successText}".`);
+            }
+
+            const permanentlyOpenedText = getDirectChildTextByTagName(root, 'permanentlyOpened').trim().toLowerCase();
+            if (!permanentlyOpenedText) {
+                throw new Error('Container open-check response is missing <permanentlyOpened>.');
+            }
+            const permanentlyOpenedTrue = ['true', 'yes'].includes(permanentlyOpenedText);
+            const permanentlyOpenedFalse = ['false', 'no'].includes(permanentlyOpenedText);
+            if (!permanentlyOpenedTrue && !permanentlyOpenedFalse) {
+                throw new Error(`Container open-check <permanentlyOpened> must be true or false, got "${permanentlyOpenedText}".`);
+            }
+            const permanentlyOpened = permanentlyOpenedTrue;
+
+            const proseNode = getDirectChildElementByTagName(root, 'prose');
+            const prose = extractProseNodeContentPreservingTags(proseNode).trim();
+            if (!prose) {
+                throw new Error('Container open-check response is missing non-empty <prose>.');
+            }
+
+            return { success, permanentlyOpened, prose };
+        }
+
+        app.post('/api/things/:id/container/open-check', async (req, res) => {
+            const newChatEntries = [];
+            try {
+                if (!currentPlayer) {
+                    return res.status(404).json({
+                        success: false,
+                        error: 'No current player found'
+                    });
+                }
+
+                const container = resolveRequestContainer(req.params.id);
+                if (!container.requiresCheckToOpen) {
+                    return res.json({
+                        success: true,
+                        opened: true,
+                        skipped: true,
+                        container: typeof container.toJSON === 'function' ? container.toJSON() : { id: container.id }
+                    });
+                }
+
+                const requestBody = req.body && typeof req.body === 'object' ? req.body : {};
+                const actionText = typeof requestBody.actionText === 'string'
+                    ? requestBody.actionText.trim()
+                    : '';
+                if (!actionText) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Describe how you are trying to open the container.'
+                    });
+                }
+
+                const clientId = typeof requestBody.clientId === 'string' && requestBody.clientId.trim()
+                    ? requestBody.clientId.trim()
+                    : null;
+                const requestId = typeof requestBody.requestId === 'string' && requestBody.requestId.trim()
+                    ? requestBody.requestId.trim()
+                    : (clientId ? `container_open_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}` : null);
+                const stream = createStreamEmitter({ clientId, requestId });
+                stream.status('container_open_check', `Checking ${container.name || 'container'}...`);
+
+                const location = currentPlayer.currentLocation
+                    ? resolveThingLocationById(currentPlayer.currentLocation)
+                    : null;
+                const baseContext = await prepareBasePromptContext({ locationOverride: location || null });
+                const renderedTemplate = promptEnv.render('base-context.xml.njk', {
+                    ...baseContext,
+                    promptType: 'player-action-open-container',
+                    characterName: currentPlayer.name || 'The player',
+                    container: typeof container.toJSON === 'function' ? container.toJSON() : container,
+                    containerOpenAction: actionText
+                });
+                const parsedTemplate = parseXMLTemplate(renderedTemplate);
+                if (!parsedTemplate?.systemPrompt || !parsedTemplate?.generationPrompt) {
+                    throw new Error('Container open-check prompt template is missing prompts.');
+                }
+
+                const enabledChatTools = filterEnabledChatTools({ modExtensionRegistry });
+                const enabledChatToolNames = new Set(enabledChatTools
+                    .map(tool => typeof tool?.function?.name === 'string' ? tool.function.name.trim() : '')
+                    .filter(Boolean));
+                for (const toolDefinition of getChatToolDefinitions({ modExtensionRegistry })) {
+                    const toolName = typeof toolDefinition?.function?.name === 'string'
+                        ? toolDefinition.function.name.trim()
+                        : '';
+                    if (
+                        (toolName === 'resolveSkillCheck' || toolName === 'resolveOpposedSkillCheck')
+                        && !enabledChatToolNames.has(toolName)
+                    ) {
+                        enabledChatTools.push(toolDefinition);
+                        enabledChatToolNames.add(toolName);
+                    }
+                }
+                const hasSkillCheckTool = enabledChatTools.some(tool => {
+                    const name = typeof tool?.function?.name === 'string' ? tool.function.name.trim() : '';
+                    return name === 'resolveSkillCheck' || name === 'resolveOpposedSkillCheck';
+                });
+                if (!hasSkillCheckTool) {
+                    throw new Error('Container open-check requires resolveSkillCheck or resolveOpposedSkillCheck to be enabled.');
+                }
+
+                const requestOptions = {
+                    messages: [
+                        { role: 'system', content: parsedTemplate.systemPrompt },
+                        { role: 'user', content: parsedTemplate.generationPrompt }
+                    ],
+                    metadataLabel: 'player_action_open_container',
+                    validateXML: false,
+                    tools: enabledChatTools,
+                    tool_choice: 'auto'
+                };
+                if (typeof parsedTemplate.temperature === 'number') {
+                    requestOptions.temperature = parsedTemplate.temperature;
+                }
+
+                const checkResultsRecorder = createCheckResultsRecorder({
+                    promptLabel: 'player_action_open_container',
+                    locationId: location?.id || currentPlayer.currentLocation,
+                    stream,
+                    entryCollector: newChatEntries,
+                    requestId
+                });
+                const toolLoopResult = await runChatCompletionWithToolLoop({
+                    requestOptions,
+                    streamEmitter: stream,
+                    metadataLabel: 'player_action_open_container',
+                    toolResultCache: {
+                        roundKey: [
+                            'player_action_open_container',
+                            currentPlayer.id || currentPlayer.name || 'player',
+                            requestId || Date.now().toString(36),
+                            Math.random().toString(36).slice(2, 10)
+                        ].join(':'),
+                        entries: new Map()
+                    },
+                    defaultToolActor: currentPlayer.name || null,
+                    requestUserInput: clientId
+                        ? createRequestUserInputHandler({
+                            stream,
+                            promptLabel: 'player_action_open_container'
+                        })
+                        : null,
+                    onToolCallEvent: event => checkResultsRecorder.record(event)
+                });
+
+                const rawResponse = toolLoopResult.aiResponse || '';
+                LLMClient.logPrompt({
+                    prefix: 'player_action_open_container',
+                    metadataLabel: 'player_action_open_container',
+                    systemPrompt: parsedTemplate.systemPrompt || '',
+                    generationPrompt: parsedTemplate.generationPrompt || '',
+                    response: rawResponse,
+                    model: requestOptions.model,
+                    endpoint: requestOptions.endpoint
+                });
+
+                if (!checkResultsRecorder.hasRecords()) {
+                    throw new Error('Container open-check response did not call resolveSkillCheck or resolveOpposedSkillCheck.');
+                }
+
+                const parsedResult = parseContainerOpenResultXml(rawResponse);
+                if (parsedResult.success && parsedResult.permanentlyOpened) {
+                    container.requiresCheckToOpen = false;
+                    if (things instanceof Map && container.id) {
+                        things.set(container.id, container);
+                    }
+                }
+                let playerFacingProse = parsedResult.prose;
+                let slopRemovalInfo = null;
+                if (playerFacingProse && Globals.config?.slop_buster === true) {
+                    const slopResult = await applySlopRemoval(playerFacingProse, { returnDiagnostics: true });
+                    playerFacingProse = slopResult.text;
+                    if (slopResult.ran) {
+                        slopRemovalInfo = {
+                            slopWords: slopResult.slopWords || [],
+                            slopRegexes: slopResult.slopRegexes || [],
+                            slopNgrams: slopResult.slopNgrams || []
+                        };
+                    }
+                }
+
+                const resolvedLocationId = requireLocationId(location?.id || currentPlayer.currentLocation, 'container open-check entry');
+                const chatEntry = pushChatEntry({
+                    role: 'assistant',
+                    content: playerFacingProse,
+                    summary: playerFacingProse,
+                    type: 'player-action-open-container',
+                    locationId: resolvedLocationId,
+                    metadata: {
+                        containerId: container.id || null,
+                        containerName: container.name || null,
+                        opened: Boolean(parsedResult.success),
+                        permanentlyOpened: Boolean(parsedResult.permanentlyOpened)
+                    }
+                }, newChatEntries, resolvedLocationId);
+
+                if (slopRemovalInfo && chatEntry) {
+                    recordSlopRemovalEntry({
+                        data: slopRemovalInfo,
+                        parentId: chatEntry.id || null,
+                        locationId: resolvedLocationId
+                    }, newChatEntries);
+                }
+
+                notifyVisibleProseEntryStored(chatEntry, {
+                    stream,
+                    clientId,
+                    requestId,
+                    proseType: 'player-action-open-container',
+                    locationRefreshRequested: true
+                });
+
+                const eventResult = await Events.runEventChecks({
+                    textToCheck: playerFacingProse,
+                    actionText,
+                    stream,
+                    locationOverride: location || null
+                });
+
+                if (eventResult) {
+                    appendEventSummariesToChat({
+                        summaryLabel: '📋 Events – Container Open Check',
+                        statusLabel: '🌀 Status Changes – Container Open Check',
+                        events: eventResult.structured || null,
+                        experienceAwards: eventResult.experienceAwards || null,
+                        currencyChanges: eventResult.currencyChanges || null,
+                        environmentalDamageEvents: eventResult.environmentalDamageEvents || null,
+                        needBarChanges: eventResult.needBarChanges || null,
+                        dispositionChanges: eventResult.dispositionChanges || null,
+                        factionReputationChanges: eventResult.factionReputationChanges || null,
+                        timeProgress: eventResult.timeProgress || null,
+                        timestamp: chatEntry?.timestamp || new Date().toISOString(),
+                        parentId: chatEntry?.id || null,
+                        locationId: resolvedLocationId
+                    }, newChatEntries);
+                }
+
+                return res.json({
+                    success: true,
+                    opened: Boolean(parsedResult.success),
+                    permanentlyOpened: Boolean(parsedResult.permanentlyOpened),
+                    prose: playerFacingProse,
+                    container: typeof container.toJSON === 'function' ? container.toJSON() : { id: container.id },
+                    locationRefreshRequested: true,
+                    eventChecks: eventResult?.html || null,
+                    requestId
+                });
+            } catch (error) {
+                console.error('Failed to resolve container open check:', error);
+                return res.status(error.status || 500).json({
+                    success: false,
+                    error: error.message || 'Failed to resolve container open check'
+                });
+            }
+        });
 
         app.get('/api/things/:id/container', async (req, res) => {
             try {

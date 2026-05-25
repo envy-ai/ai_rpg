@@ -46,7 +46,8 @@ class Thing {
     isProcessingStation: 'processing_station',
     isHarvestable: 'harvestable',
     isSalvageable: 'salvageable',
-    isContainer: 'container'
+    isContainer: 'container',
+    requiresCheckToOpen: 'requires_check_to_open'
   });
   static #checksumExcludedTopLevelKeys = new Set([
     'id',
@@ -577,6 +578,7 @@ class Thing {
     isHarvestable = null,
     isSalvageable = null,
     isContainer = null,
+    requiresCheckToOpen = null,
     containerContents = [],
     containedThingIds = [],
     flags = new SanitizedStringSet(),
@@ -645,6 +647,7 @@ class Thing {
     this.isHarvestable = isHarvestable;
     this.isSalvageable = isSalvageable;
     this.isContainer = isContainer;
+    this.requiresCheckToOpen = requiresCheckToOpen;
     this.containerContents = containerContents;
     this.#containedThingIds = new Set(this.#normalizeContainedThingIds(containedThingIds));
 
@@ -795,6 +798,15 @@ class Thing {
     const normalized = Thing.#normalizeBooleanFlag(value);
     const enabled = normalized === null ? false : normalized;
     this.#setBooleanFlag(Thing.#booleanFlagMap.isContainer, enabled, 'isContainer');
+  }
+
+  get requiresCheckToOpen() {
+    return this.#flags.has(Thing.#booleanFlagMap.requiresCheckToOpen);
+  }
+  set requiresCheckToOpen(value) {
+    const normalized = Thing.#normalizeBooleanFlag(value);
+    const enabled = normalized === null ? false : normalized;
+    this.#setBooleanFlag(Thing.#booleanFlagMap.requiresCheckToOpen, enabled, 'requiresCheckToOpen');
   }
 
   get containedThingIds() {
@@ -1915,6 +1927,7 @@ class Thing {
       isHarvestable: normalizeBoolean(this.isHarvestable),
       isSalvageable: normalizeBoolean(this.isSalvageable),
       isContainer: normalizeBoolean(this.isContainer),
+      requiresCheckToOpen: normalizeBoolean(this.requiresCheckToOpen),
       containerContents: this.containerContents,
       containedThingIds: Array.from(this.#containedThingIds),
       flags: this.#flags && this.#flags.size ? Array.from(this.#flags) : undefined,
@@ -1929,7 +1942,7 @@ class Thing {
       throw new Error('Invalid data provided to Thing.fromJSON');
     }
 
-    const booleanFlagKeys = ['isVehicle', 'isCraftingStation', 'isProcessingStation', 'isHarvestable', 'isSalvageable', 'isContainer'];
+    const booleanFlagKeys = Thing.booleanFlagKeys;
     const booleanFlagOptions = {};
     for (const key of booleanFlagKeys) {
       if (Object.prototype.hasOwnProperty.call(data, key)) {
@@ -2312,6 +2325,9 @@ class Thing {
     if (meta.isContainer !== undefined) {
       this.isContainer = Thing.#normalizeBooleanFlag(meta.isContainer);
     }
+    if (meta.requiresCheckToOpen !== undefined) {
+      this.requiresCheckToOpen = Thing.#normalizeBooleanFlag(meta.requiresCheckToOpen);
+    }
     if (this.#containerContents.length && !this.isContainer) {
       console.warn(
         `Thing "${this.#name}" has container contents but is not marked as a container. Marking it as a container.`
@@ -2394,6 +2410,7 @@ class Thing {
     this.isHarvestable = this.isHarvestable;
     this.isSalvageable = this.isSalvageable;
     this.isContainer = this.isContainer;
+    this.requiresCheckToOpen = this.requiresCheckToOpen;
   }
 
   #normalizeStatusEffects(effects = []) {

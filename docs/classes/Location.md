@@ -29,7 +29,7 @@ Represents a game location, including description, exits, NPCs, items/scenery, a
 - `removeFromIndex(locationOrId)` to prevent stale lookups.
 
 ## Accessors
-- `regionId` (get/set) and `region` (get). Reassigning `regionId` now keeps region membership indexes in sync by removing the location from the old region, adding it to the new region, and repairing the old region's `entranceLocationId` if it pointed at the moved location. If the previous `regionId` is already stale/missing, reassignment logs a warning and still repairs the location into the new live region instead of failing.
+- `regionId` (get/set) and `region` (get). Reassigning `regionId` now keeps region membership indexes in sync by removing the location from the old region, adding it to the new region, and repairing the old region's `entranceLocationId` if it pointed at the moved location. If the previous `regionId` is already stale/missing, reassignment logs a warning and still repairs the location into the new live region instead of failing. Stub locations that need to point at a pending region use `setStubRegionId(...)` instead of the live-region-only setter.
 - `controllingFactionId` (get/set).
 - Basic fields: `id`, `name`, `description`, `shortDescription`, `baseLevel`, `imageId`, `imageVariants`, `createdAt`, `lastUpdated`.
 - Visit tracking: `visited` (get/set), `lastVisitedTime` (get/set, minutes), `minutesSinceLastVisit(currentTime?)`.
@@ -42,6 +42,7 @@ Represents a game location, including description, exits, NPCs, items/scenery, a
 
 ## Instance API
 - Stub lifecycle: `promoteFromStub(...)`, `markStubsGenerated()`, `resetStubGeneration()`.
+- `setStubRegionId(regionId, { requireLiveRegion = false })`: reassigns a stub location's internal `regionId` and `stubMetadata.regionId`. When the target is a live region it also adds the stub to that region's membership; callers that allow pending-region ids must maintain `pendingRegionStubs.locationIds` separately.
 - Visit tracking: `markVisited(visitedAt?)` marks the location visited and, when a minute timestamp is available, updates `lastVisitedTime`.
 - Image variants: `getImageVariant(variantKey)`, `setImageVariant(variantKey, entry)`, `removeImageVariant(variantKey)`, and `clearImageVariants({ sourceImageId? })` manage persisted display-only image variants such as weather/lighting renders.
 - Exit management: `addExit(direction, exit)`, `removeExit(direction)`, `getExit(direction)`, `getAvailableDirections()`, `hasExit(direction)`, `clearExits()`.

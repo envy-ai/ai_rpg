@@ -248,6 +248,7 @@ Request:
   - `name` (required)
   - `description` (required string; may be empty)
   - `relativeLevel?` (number)
+  - `targetRegionId?` (live or pending region id; ordinary location stubs only)
   - `controllingFactionId?` (string or null)
   - `isVehicle?` (boolean)
   - `vehicleInfo?` (object or null)
@@ -258,6 +259,7 @@ Responses:
 
 Notes:
 - `controllingFactionId` must reference an existing faction id or be `null` to clear.
+- `targetRegionId` moves an ordinary location stub between live or pending regions by updating the stub's region metadata and the relevant live `Region.locationIds` or pending-region `locationIds`. Region-entry stubs reject this field because their target region identity is the region they represent.
 - Empty `description` values are accepted for stub edits and clear the stub's existing presentation description fields.
 - Vehicle edits follow the same `isVehicle` + `vehicleInfo` validation semantics as location/region updates.
 - For region-entry stubs, successful vehicle edits are mirrored into pending-region stub records so expansion uses the updated vehicle metadata.

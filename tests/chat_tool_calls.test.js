@@ -17,8 +17,10 @@ function createMinimalRuntime({
     chatHistory = [],
     isAssistantProseLikeEntry = () => true,
     requestUserInput = null,
+    deleteThingById = null,
     characters = [],
-    currentPlayer = { currentLocation: 'loc-origin' }
+    currentPlayer = { currentLocation: 'loc-origin' },
+    things = []
 } = {}) {
     return createChatToolRuntime({
         getConfig: () => ({ ai: { max_tool_rounds: 4 } }),
@@ -50,14 +52,15 @@ function createMinimalRuntime({
             formatMessagesForErrorLog: (messages) => JSON.stringify(messages)
         },
         Player: { getAll: () => characters },
-        Thing: { getAll: () => [] },
+        Thing: { getAll: () => things },
         Location: { getAll: () => [], get: () => null },
         Region: { getAll: () => [] },
         getGameLocations: () => new Map(),
         getFactions: () => [],
         getRegionsMap: () => new Map(),
         getPendingRegionStubs: () => new Map(),
-        requestUserInput
+        requestUserInput,
+        deleteThingById
     });
 }
 
@@ -68,6 +71,17 @@ test('requestUserInput tool definition asks a required question only', () => {
     assert.match(definition.description, /ask/i);
     assert.deepEqual(definition.parameters.required, ['question']);
     assert.deepEqual(Object.keys(definition.parameters.properties).sort(), ['question']);
+    assert.equal(definition.parameters.additionalProperties, false);
+});
+
+test('deleteThing tool definition requires only a thing identifier', () => {
+    const definition = findToolDefinition('deleteThing');
+
+    assert.ok(definition, 'Expected deleteThing chat tool definition.');
+    assert.match(definition.description, /delete/i);
+    assert.deepEqual(definition.parameters.required, ['thing']);
+    assert.deepEqual(Object.keys(definition.parameters.properties).sort(), ['thing']);
+    assert.equal(definition.parameters.properties.thing.type, 'string');
     assert.equal(definition.parameters.additionalProperties, false);
 });
 
@@ -520,6 +534,177 @@ test('requestUserInput returns a tool error when no request handler is configure
     const toolMessage = capturedMessagesByRound[1].find(message => message.role === 'tool');
     assert.match(toolMessage.content, /<toolError>/);
     assert.match(toolMessage.content, /requestUserInput/);
+});
+
+test('deleteThing asks for client confirmation before deleting the resolved thing', async () => {
+    const targetThing = {
+        id: 'thing-queen-legacy',
+        name: "Queen's Legacy",
+        thingType: 'item',
+        toJSON() {
+            return {
+                id: this.id,
+                name: this.name,
+                thingType: this.thingType
+            };
+        }
+    };
+    const capturedMessagesByRound = [];
+    const confirmationRequests = [];
+    const deleteCalls = [];
+    let confirmationReturned = false;
+    const runtime = createMinimalRuntime({
+        things: [targetThing],
+        capturedMessagesByRound,
+        requestUserInput: async (request) => {
+            confirmationRequests.push(request);
+            assert.equal(deleteCalls.length, 0, 'deleteThingById must not run before confirmation resolves.');
+            confirmationReturned = true;
+            return {
+                confirmed: true,
+                requestId: 'confirm-delete-1'
+            };
+        },
+        deleteThingById: (thingId) => {
+            assert.equal(confirmationReturned, true, 'deleteThingById should run only after client confirmation.');
+            deleteCalls.push(thingId);
+            return {
+                success: true,
+                thing: targetThing,
+                locationIds: ['loc-origin'],
+                playerIds: [],
+                npcIds: [],
+                containerIds: []
+            };
+        },
+        llmResponses: [
+            {
+                data: {
+                    choices: [{
+                        message: {
+                            content: '',
+                            tool_calls: [{
+                                id: 'call-delete-thing',
+                                type: 'function',
+                                function: {
+                                    name: 'deleteThing',
+                                    arguments: JSON.stringify({
+                                        thing: "Queen's Legacy"
+                                    })
+                                }
+                            }]
+                        }
+                    }]
+                }
+            },
+            {
+                data: {
+                    choices: [{
+                        message: {
+                            content: 'Deleted.',
+                            tool_calls: []
+                        }
+                    }]
+                }
+            }
+        ]
+    });
+
+    const result = await runtime.runChatCompletionWithToolLoop({
+        requestOptions: {
+            messages: [{ role: 'user', content: '@Delete the bad generated item.' }]
+        },
+        metadataLabel: 'generic_prompt'
+    });
+
+    assert.equal(result.aiResponse, 'Deleted.');
+    assert.deepEqual(deleteCalls, ['thing-queen-legacy']);
+    assert.equal(confirmationRequests.length, 1);
+    assert.equal(confirmationRequests[0].mode, 'confirmation');
+    assert.equal(confirmationRequests[0].confirmLabel, 'Delete Thing');
+    assert.match(confirmationRequests[0].question, /Queen's Legacy/);
+    assert.equal(result.toolInvocations[0].name, 'deleteThing');
+    assert.equal(result.toolInvocations[0].metadata.status, 'deleted');
+    assert.equal(result.toolInvocations[0].metadata.thingId, 'thing-queen-legacy');
+
+    const toolMessage = capturedMessagesByRound[1].find(message => message.role === 'tool');
+    assert.ok(toolMessage, 'Expected a deleteThing tool response message.');
+    assert.match(toolMessage.content, /<deleteThingResult>/);
+    assert.match(toolMessage.content, /<status>deleted<\/status>/);
+    assert.match(toolMessage.content, /<name>Queen's Legacy<\/name>/);
+});
+
+test('deleteThing cancellation returns a tool error without deleting', async () => {
+    const targetThing = {
+        id: 'thing-keep',
+        name: 'Keep Me',
+        thingType: 'scenery',
+        toJSON() {
+            return { id: this.id, name: this.name, thingType: this.thingType };
+        }
+    };
+    const capturedMessagesByRound = [];
+    const deleteCalls = [];
+    const runtime = createMinimalRuntime({
+        things: [targetThing],
+        capturedMessagesByRound,
+        requestUserInput: async () => ({
+            confirmed: false,
+            requestId: 'confirm-delete-cancelled'
+        }),
+        deleteThingById: (thingId) => {
+            deleteCalls.push(thingId);
+            throw new Error('deleteThingById should not run when the player cancels.');
+        },
+        llmResponses: [
+            {
+                data: {
+                    choices: [{
+                        message: {
+                            content: '',
+                            tool_calls: [{
+                                id: 'call-delete-thing-cancel',
+                                type: 'function',
+                                function: {
+                                    name: 'deleteThing',
+                                    arguments: JSON.stringify({
+                                        thing: 'Keep Me'
+                                    })
+                                }
+                            }]
+                        }
+                    }]
+                }
+            },
+            {
+                data: {
+                    choices: [{
+                        message: {
+                            content: 'Kept it.',
+                            tool_calls: []
+                        }
+                    }]
+                }
+            }
+        ]
+    });
+
+    const result = await runtime.runChatCompletionWithToolLoop({
+        requestOptions: {
+            messages: [{ role: 'user', content: '@Try to delete a thing.' }]
+        },
+        metadataLabel: 'generic_prompt'
+    });
+
+    assert.equal(result.aiResponse, 'Kept it.');
+    assert.deepEqual(deleteCalls, []);
+    assert.equal(result.toolInvocations[0].metadata.error, true);
+    assert.equal(result.toolInvocations[0].metadata.code, 'thing_deletion_cancelled');
+
+    const toolMessage = capturedMessagesByRound[1].find(message => message.role === 'tool');
+    assert.ok(toolMessage, 'Expected a deleteThing tool error response message.');
+    assert.match(toolMessage.content, /<toolError>/);
+    assert.match(toolMessage.content, /cancelled/i);
 });
 
 test('getHistory can include all log entry types when the tool loop opts in', async () => {

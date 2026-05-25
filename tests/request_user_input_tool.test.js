@@ -34,6 +34,14 @@ test('api exposes a response endpoint and emits input requests to the originatin
     assert.match(apiSource, /clientId !== pending\.clientId/);
 });
 
+test('api supports confirmation-mode player input requests', () => {
+    assert.match(apiSource, /mode:\s*inputMode/);
+    assert.match(apiSource, /confirmLabel:\s*confirmLabel/);
+    assert.match(apiSource, /cancelLabel:\s*cancelLabel/);
+    assert.match(apiSource, /if \(pending\.mode === 'confirmation'\)/);
+    assert.match(apiSource, /body\.confirmed === true/);
+});
+
 test('request-user-input floating panel is non-modal and draggable', () => {
     assert.match(viewSource, /id="playerInputRequestPanel"/);
     assert.match(viewSource, /aria-modal="false"/);
@@ -50,4 +58,15 @@ test('request-user-input floating panel is non-modal and draggable', () => {
     assert.match(scssSource, /z-index:\s*11120/);
     assert.match(scssSource, /\.player-input-request-panel__header\s*\{[^}]*cursor:\s*grab/s);
     assert.doesNotMatch(scssSource, /\.player-input-request-backdrop/);
+});
+
+test('request-user-input panel renders confirmation-mode requests without free text input', () => {
+    assert.match(chatSource, /mode:\s*payload\.mode === 'confirmation' \? 'confirmation' : 'text'/);
+    assert.match(chatSource, /const isConfirmation = request\.mode === 'confirmation'/);
+    assert.match(chatSource, /playerInputRequestPanel\.classList\.toggle\('is-confirmation', isConfirmation\)/);
+    assert.match(chatSource, /confirmed:\s*true/);
+    assert.match(chatSource, /request\.confirmLabel \|\| 'Confirm'/);
+    assert.match(chatSource, /request\.cancelLabel \|\| 'Cancel'/);
+    assert.match(scssSource, /\.player-input-request-panel\.is-confirmation \.player-input-request-panel__label/);
+    assert.match(scssSource, /\.player-input-request-panel\.is-confirmation \.player-input-request-panel__answer/);
 });

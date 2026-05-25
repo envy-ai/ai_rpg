@@ -38,6 +38,9 @@ Slash Commands Quick Guide
   - `/promptstats` shows the persistent output-character averages recorded in `logs/prompt-output-character-stats.json` as a markdown table.
   - `/promptstats clear` clears all stored prompt output-character averages through `LLMClient.clearPromptOutputCharacterStats()`.
 
+- Scheduled events
+  - `/scheduled` lists pending `ScheduledEvent` records as readable markdown, using a numbered list with per-event fields so long event text wraps cleanly.
+
 - Best practices
   - Fail loudly with clear errors (throw or reply with `ephemeral: true`).
   - Normalize string inputs (trim/strip quotes) before lookups; validate types and existence.

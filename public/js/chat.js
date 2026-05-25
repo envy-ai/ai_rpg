@@ -320,9 +320,11 @@ class AIRPGChat {
         this.slashUploadSubmitButton = document.getElementById('slashUploadSubmitBtn');
         this.playerInputRequestPanel = document.getElementById('playerInputRequestPanel');
         this.playerInputRequestHeader = document.getElementById('playerInputRequestHeader');
+        this.playerInputRequestTitle = document.getElementById('playerInputRequestTitle');
         this.playerInputRequestPromptLabel = document.getElementById('playerInputRequestPromptLabel');
         this.playerInputRequestQuestion = document.getElementById('playerInputRequestQuestion');
         this.playerInputRequestForm = document.getElementById('playerInputRequestForm');
+        this.playerInputRequestLabel = document.querySelector('label[for="playerInputRequestAnswer"]');
         this.playerInputRequestAnswer = document.getElementById('playerInputRequestAnswer');
         this.playerInputRequestStatus = document.getElementById('playerInputRequestStatus');
         this.playerInputRequestCloseButton = document.getElementById('playerInputRequestCloseBtn');
@@ -728,6 +730,16 @@ class AIRPGChat {
         return {
             inputRequestId,
             question,
+            mode: payload.mode === 'confirmation' ? 'confirmation' : 'text',
+            title: typeof payload.title === 'string' && payload.title.trim()
+                ? payload.title.trim()
+                : null,
+            confirmLabel: typeof payload.confirmLabel === 'string' && payload.confirmLabel.trim()
+                ? payload.confirmLabel.trim()
+                : null,
+            cancelLabel: typeof payload.cancelLabel === 'string' && payload.cancelLabel.trim()
+                ? payload.cancelLabel.trim()
+                : null,
             requestId: typeof payload.requestId === 'string' && payload.requestId.trim()
                 ? payload.requestId.trim()
                 : null,
@@ -777,8 +789,13 @@ class AIRPGChat {
         if (!this.playerInputRequestPanel) {
             return;
         }
+        const isConfirmation = request.mode === 'confirmation';
         this.activePlayerInputRequest = request;
         this.playerInputRequestSubmitting = false;
+        this.playerInputRequestPanel.classList.toggle('is-confirmation', isConfirmation);
+        if (this.playerInputRequestTitle) {
+            this.playerInputRequestTitle.textContent = request.title || (isConfirmation ? 'Confirm Action' : 'Question from AI');
+        }
         if (this.playerInputRequestQuestion) {
             this.playerInputRequestQuestion.textContent = request.question;
         }
@@ -788,6 +805,10 @@ class AIRPGChat {
         if (this.playerInputRequestAnswer) {
             this.playerInputRequestAnswer.value = '';
             this.playerInputRequestAnswer.disabled = false;
+            this.playerInputRequestAnswer.hidden = isConfirmation;
+        }
+        if (this.playerInputRequestLabel) {
+            this.playerInputRequestLabel.hidden = isConfirmation;
         }
         if (this.playerInputRequestStatus) {
             this.playerInputRequestStatus.textContent = '';
@@ -796,14 +817,22 @@ class AIRPGChat {
         }
         if (this.playerInputRequestSubmitButton) {
             this.playerInputRequestSubmitButton.disabled = false;
+            this.playerInputRequestSubmitButton.textContent = isConfirmation
+                ? (request.confirmLabel || 'Confirm')
+                : 'Submit';
         }
         if (this.playerInputRequestCancelButton) {
             this.playerInputRequestCancelButton.disabled = false;
+            this.playerInputRequestCancelButton.textContent = request.cancelLabel || 'Cancel';
         }
         this.playerInputRequestPanel.removeAttribute('hidden');
         this.playerInputRequestPanel.setAttribute('aria-hidden', 'false');
         window.setTimeout(() => {
-            this.playerInputRequestAnswer?.focus({ preventScroll: true });
+            if (isConfirmation) {
+                this.playerInputRequestSubmitButton?.focus({ preventScroll: true });
+            } else {
+                this.playerInputRequestAnswer?.focus({ preventScroll: true });
+            }
         }, 0);
     }
 
@@ -815,9 +844,23 @@ class AIRPGChat {
         this.playerInputRequestSubmitting = false;
         this.playerInputRequestPanel.setAttribute('hidden', '');
         this.playerInputRequestPanel.setAttribute('aria-hidden', 'true');
+        this.playerInputRequestPanel.classList.remove('is-confirmation');
         if (this.playerInputRequestAnswer) {
             this.playerInputRequestAnswer.value = '';
             this.playerInputRequestAnswer.disabled = false;
+            this.playerInputRequestAnswer.hidden = false;
+        }
+        if (this.playerInputRequestLabel) {
+            this.playerInputRequestLabel.hidden = false;
+        }
+        if (this.playerInputRequestTitle) {
+            this.playerInputRequestTitle.textContent = 'Question from AI';
+        }
+        if (this.playerInputRequestSubmitButton) {
+            this.playerInputRequestSubmitButton.textContent = 'Submit';
+        }
+        if (this.playerInputRequestCancelButton) {
+            this.playerInputRequestCancelButton.textContent = 'Cancel';
         }
     }
 
@@ -845,6 +888,10 @@ class AIRPGChat {
         if (!request || this.playerInputRequestSubmitting) {
             return;
         }
+        if (request.mode === 'confirmation') {
+            await this.sendPlayerInputRequestResponse(request, { confirmed: true });
+            return;
+        }
         const answer = this.playerInputRequestAnswer?.value?.trim() || '';
         if (!answer) {
             this.setPlayerInputRequestStatus('Enter an answer before submitting.', 'error');
@@ -862,7 +909,7 @@ class AIRPGChat {
         await this.sendPlayerInputRequestResponse(request, { cancelled: true });
     }
 
-    async sendPlayerInputRequestResponse(request, { answer = '', cancelled = false } = {}) {
+    async sendPlayerInputRequestResponse(request, { answer = '', cancelled = false, confirmed = false } = {}) {
         if (!request || !request.inputRequestId) {
             return;
         }
@@ -876,7 +923,7 @@ class AIRPGChat {
         if (this.playerInputRequestAnswer) {
             this.playerInputRequestAnswer.disabled = true;
         }
-        this.setPlayerInputRequestStatus(cancelled ? 'Cancelling...' : 'Submitting...');
+        this.setPlayerInputRequestStatus(cancelled ? 'Cancelling...' : (confirmed ? 'Confirming...' : 'Submitting...'));
         try {
             const response = await fetch('/api/chat/user-input-response', {
                 method: 'POST',
@@ -886,6 +933,7 @@ class AIRPGChat {
                     requestId: request.requestId || null,
                     clientId: this.clientId,
                     answer,
+                    confirmed: Boolean(confirmed),
                     cancelled: Boolean(cancelled)
                 })
             });

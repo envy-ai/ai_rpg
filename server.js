@@ -5762,6 +5762,9 @@ function buildBasePromptContext({
         const metadataIsContainer = typeof metadata.isContainer === 'boolean'
             ? metadata.isContainer
             : null;
+        const metadataRequiresCheckToOpen = typeof metadata.requiresCheckToOpen === 'boolean'
+            ? metadata.requiresCheckToOpen
+            : null;
 
         const resolveTypeValue = (value) => {
             if (typeof value !== 'string') {
@@ -5812,6 +5815,16 @@ function buildBasePromptContext({
             isContainer = false;
         }
 
+        let requiresCheckToOpen = null;
+        if (typeof item?.requiresCheckToOpen === 'boolean') {
+            requiresCheckToOpen = item.requiresCheckToOpen;
+        } else if (metadataRequiresCheckToOpen !== null) {
+            requiresCheckToOpen = metadataRequiresCheckToOpen;
+        }
+        if (requiresCheckToOpen === null) {
+            requiresCheckToOpen = false;
+        }
+
         const actualThing = item?.id
             ? (things.get(item.id) || (typeof Thing.getById === 'function' ? Thing.getById(item.id) : null))
             : null;
@@ -5834,6 +5847,7 @@ function buildBasePromptContext({
                     shortDescription: mappedContained.shortDescription,
                     description: mappedContained.description,
                     isContainer: mappedContained.isContainer,
+                    requiresCheckToOpen: mappedContained.requiresCheckToOpen,
                     containerContents: mappedContained.containerContents
                 });
             }
@@ -5848,6 +5862,7 @@ function buildBasePromptContext({
             isScenery,
             isVehicle,
             isContainer,
+            requiresCheckToOpen,
             count: Number.isInteger(Number(item.count ?? metadata.count)) && Number(item.count ?? metadata.count) > 0
                 ? Number(item.count ?? metadata.count)
                 : 1,
@@ -13309,6 +13324,7 @@ async function generateItemsByNames({
                 const metadata = sanitizeMetadataObject({
                     rarity: itemData?.rarity || null,
                     itemType: itemData?.type || null,
+                    itemTypeDetail: itemData?.type || null,
                     value: itemData?.value || null,
                     weight: itemData?.weight || null,
                     properties: itemData?.properties || null,
@@ -13334,7 +13350,7 @@ async function generateItemsByNames({
                     shortDescription: itemData?.shortDescription ?? null,
                     thingType: effectiveThingType,
                     rarity: itemData?.rarity,
-                    type: itemData?.type,
+                    itemTypeDetail: itemData?.type || null,
                     slot: itemData?.slot,
                     attributeBonuses: scaledAttributeBonuses,
                     unscaledAttributeBonuses: rawAttributeBonuses,
@@ -13747,6 +13763,7 @@ function buildThingPromptItem(thing) {
         isHarvestable: resolveBooleanFlag('isHarvestable'),
         isSalvageable: resolveBooleanFlag('isSalvageable'),
         isContainer: resolveBooleanFlag('isContainer'),
+        requiresCheckToOpen: resolveBooleanFlag('requiresCheckToOpen'),
         containerContents: Array.isArray(thing.containerContents) ? thing.containerContents : [],
         attributeBonuses: attributeBonuses,
         causeStatusEffectOnTarget,
@@ -14007,6 +14024,7 @@ async function alterThingByPrompt({
         isHarvestable: itemForPrompt.isHarvestable ? 'true' : 'false',
         isSalvageable: itemForPrompt.isSalvageable ? 'true' : 'false',
         isContainer: itemForPrompt.isContainer ? 'true' : 'false',
+        requiresCheckToOpen: itemForPrompt.requiresCheckToOpen ? 'true' : 'false',
         properties: itemForPrompt.properties,
         attributeBonuses: itemForPrompt.attributeBonuses,
         causeStatusEffect: itemForPrompt.causeStatusEffect
@@ -21823,6 +21841,7 @@ async function parseThingsXml(xmlContent, { isInventory = false, promptEnv = nul
             const containerContents = parseContainerContents(node, entryName);
             const parsedIsContainer = parseBooleanTag('isContainer');
             const isContainer = parsedIsContainer || containerContents.length > 0;
+            const requiresCheckToOpen = parseBooleanTag('requiresCheckToOpen');
             if (!parsedIsContainer && containerContents.length > 0) {
                 console.warn(`Thing "${entryName}" has container contents but is not marked as a container. Marking it as a container.`);
             }
@@ -21873,6 +21892,7 @@ async function parseThingsXml(xmlContent, { isInventory = false, promptEnv = nul
                 isHarvestable: parseBooleanTag('isHarvestable'),
                 isSalvageable: parseBooleanTag('isSalvageable'),
                 isContainer,
+                requiresCheckToOpen,
                 containerContents,
                 ...registeredFieldValues
             };
@@ -21977,7 +21997,8 @@ async function parseThingSeparateResponse(xmlContent, options = {}) {
             isProcessingStation: Boolean(thing.isProcessingStation),
             isHarvestable: Boolean(thing.isHarvestable),
             isSalvageable: Boolean(thing.isSalvageable),
-            isContainer: Boolean(thing.isContainer)
+            isContainer: Boolean(thing.isContainer),
+            requiresCheckToOpen: Boolean(thing.requiresCheckToOpen)
         }];
     }
 

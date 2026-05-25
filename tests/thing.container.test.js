@@ -302,6 +302,24 @@ test('pending container contents ignore empty sentinels and zero-count seeds', (
   ]);
 });
 
+test('requiresCheckToOpen persists through Thing JSON', () => {
+  const safe = new Thing({
+    id: 'thing-locked-safe',
+    name: 'Locked Safe',
+    description: 'A safe with a stubborn dial.',
+    thingType: 'scenery',
+    isContainer: true,
+    requiresCheckToOpen: true
+  });
+
+  assert.equal(safe.requiresCheckToOpen, true);
+  assert.equal(safe.toJSON().requiresCheckToOpen, true);
+  assert.equal(safe.toJSON().metadata.requiresCheckToOpen, true);
+
+  const restored = Thing.fromJSON(safe.toJSON());
+  assert.equal(restored.requiresCheckToOpen, true);
+});
+
 test('adding and removing contained items updates placement metadata loudly', () => {
   ensurePlayerTestConfig();
 

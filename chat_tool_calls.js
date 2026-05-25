@@ -127,6 +127,7 @@ const UPDATE_OBJECT_FIELD_NAMES_BY_TYPE = Object.freeze({
         'isHarvestable',
         'isSalvageable',
         'isContainer',
+        'requiresCheckToOpen',
         'attributeBonuses',
         'unscaledAttributeBonuses',
         'statusEffects'
@@ -840,6 +841,10 @@ const CHAT_TOOL_DEFINITIONS = Object.freeze([
                         type: 'boolean',
                         description: 'Optional container flag. Set true for items or scenery that can visibly hold item stacks, such as chests, shelves, satchels, desk drawers, and cabinets.'
                     },
+                    requiresCheckToOpen: {
+                        type: 'boolean',
+                        description: 'Optional checked-open flag for containers. Set true when the player must describe an opening attempt and pass a skill check before the container inventory is shown.'
+                    },
                     attributeBonuses: {
                         type: 'array',
                         items: {
@@ -876,6 +881,24 @@ const CHAT_TOOL_DEFINITIONS = Object.freeze([
                     }
                 },
                 required: ['shortDescription', 'itemOrScenery'],
+                additionalProperties: false
+            }
+        }
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'deleteThing',
+            description: 'Delete an existing item or scenery thing after explicit player confirmation. Use an exact Thing id when possible; ambiguous names must be retried with an id.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    thing: {
+                        type: 'string',
+                        description: 'Thing ID or exact name for the item/scenery to delete.'
+                    }
+                },
+                required: ['thing'],
                 additionalProperties: false
             }
         }
@@ -1810,6 +1833,7 @@ const createChatToolRuntime = ({
     resolvePlausibilityCheck = null,
     resolveOpposedPlausibilityCheck = null,
     scheduleEvent = null,
+    deleteThingById = null,
     LLMClient,
     Player,
     Thing,
@@ -1842,6 +1866,9 @@ const createChatToolRuntime = ({
     }
     if (scheduleEvent !== null && scheduleEvent !== undefined) {
         ensureFunction(scheduleEvent, 'scheduleEvent');
+    }
+    if (deleteThingById !== null && deleteThingById !== undefined) {
+        ensureFunction(deleteThingById, 'deleteThingById');
     }
     ensureModel(LLMClient, 'LLMClient');
     ensureModel(Player, 'Player');
@@ -4043,6 +4070,7 @@ const createChatToolRuntime = ({
         isHarvestable = null,
         isSalvageable = null,
         isContainer = null,
+        requiresCheckToOpen = null,
         attributeBonuses = null,
         causeStatusEffectOnTarget = null,
         causeStatusEffectOnEquipper = null,
@@ -4177,6 +4205,8 @@ const createChatToolRuntime = ({
         if (isSalvageableValue !== null) seed.isSalvageable = isSalvageableValue;
         const isContainerValue = normalizeOptionalBoolean(isContainer, { functionName, fieldName: 'isContainer' });
         if (isContainerValue !== null) seed.isContainer = isContainerValue;
+        const requiresCheckToOpenValue = normalizeOptionalBoolean(requiresCheckToOpen, { functionName, fieldName: 'requiresCheckToOpen' });
+        if (requiresCheckToOpenValue !== null) seed.requiresCheckToOpen = requiresCheckToOpenValue;
 
         if (attributeBonuses !== null && attributeBonuses !== undefined) {
             if (!Array.isArray(attributeBonuses)) {
@@ -5033,7 +5063,7 @@ const createChatToolRuntime = ({
 
         if (matches.length > 1) {
             throw new ToolVisibleError(
-                `Multiple ${objectType} matches found for "${query}". Call updateObjectFields again with the exact id from one candidate.`,
+                `Multiple ${objectType} matches found for "${query}". Call ${functionName || 'the tool'} again with the exact id from one candidate.`,
                 {
                     code: 'ambiguous_object',
                     candidates: matches
@@ -5126,6 +5156,7 @@ const createChatToolRuntime = ({
             'isHarvestable',
             'isSalvageable',
             'isContainer',
+            'requiresCheckToOpen',
             'visited',
             'hasGeneratedStubs',
             'bidirectional',
@@ -7053,6 +7084,123 @@ const createChatToolRuntime = ({
         };
     };
 
+    const executeDeleteThingTool = async (args = {}, { requestUserInputHandler = null } = {}) => {
+        const functionName = 'deleteThing';
+        const target = resolveUpdateObjectTarget('thing', args.thing, { functionName });
+        const targetThing = target.record;
+        const thingId = getRecordId(targetThing) || target.id;
+        const thingName = getRecordName(targetThing) || target.name || args.thing;
+        const thingType = toTrimmedString(targetThing?.thingType).toLowerCase();
+        if (!thingId) {
+            throw new ToolVisibleError(
+                `deleteThing could not resolve a stable id for "${thingName || args.thing}".`,
+                { code: 'invalid_target' }
+            );
+        }
+        if (!['item', 'scenery'].includes(thingType)) {
+            throw new ToolVisibleError(
+                `deleteThing can only delete items or scenery; "${thingName || thingId}" is "${thingType || 'unknown'}".`,
+                { code: 'invalid_target' }
+            );
+        }
+        if (typeof deleteThingById !== 'function') {
+            throw new ToolVisibleError(
+                'deleteThing is unavailable in this prompt.',
+                { code: 'thing_deletion_unavailable' }
+            );
+        }
+
+        const handler = typeof requestUserInputHandler === 'function'
+            ? requestUserInputHandler
+            : (typeof requestUserInput === 'function' ? requestUserInput : null);
+        if (!handler) {
+            throw new ToolVisibleError(
+                'deleteThing requires active client confirmation before deleting.',
+                { code: 'user_confirmation_unavailable' }
+            );
+        }
+
+        let confirmation = null;
+        const readableType = thingType === 'scenery' ? 'scenery' : 'item';
+        try {
+            confirmation = await handler({
+                mode: 'confirmation',
+                title: 'Delete Thing',
+                question: `Delete ${readableType} "${thingName || thingId}"? This cannot be undone.`,
+                confirmLabel: 'Delete Thing',
+                cancelLabel: 'Cancel'
+            });
+        } catch (error) {
+            throw new ToolVisibleError(
+                error?.message || 'The player did not confirm deletion.',
+                { code: toTrimmedString(error?.code) || 'user_confirmation_unavailable' }
+            );
+        }
+
+        if (!confirmation || confirmation.confirmed !== true) {
+            throw new ToolVisibleError(
+                `The player cancelled deletion of "${thingName || thingId}".`,
+                { code: 'thing_deletion_cancelled' }
+            );
+        }
+
+        let deleteResult = null;
+        try {
+            deleteResult = deleteThingById(thingId);
+        } catch (error) {
+            throw new ToolVisibleError(
+                error?.message || `Failed to delete "${thingName || thingId}".`,
+                { code: 'thing_deletion_failed' }
+            );
+        }
+
+        if (!deleteResult || deleteResult.success !== true) {
+            throw new ToolVisibleError(
+                deleteResult?.error || `Failed to delete "${thingName || thingId}".`,
+                {
+                    code: deleteResult?.status === 409
+                        ? 'thing_deletion_conflict'
+                        : 'thing_deletion_failed'
+                }
+            );
+        }
+
+        const affectedLocationIds = Array.isArray(deleteResult.locationIds) ? deleteResult.locationIds : [];
+        const affectedPlayerIds = Array.isArray(deleteResult.playerIds) ? deleteResult.playerIds : [];
+        const affectedNpcIds = Array.isArray(deleteResult.npcIds) ? deleteResult.npcIds : [];
+        const affectedContainerIds = Array.isArray(deleteResult.containerIds) ? deleteResult.containerIds : [];
+        const lines = [
+            '<deleteThingResult>',
+            '  <status>deleted</status>',
+            '  <thing>',
+            `    <id>${xmlEscapeText(thingId)}</id>`,
+            `    <name>${xmlEscapeText(thingName)}</name>`,
+            `    <thingType>${xmlEscapeText(thingType)}</thingType>`,
+            '  </thing>',
+            ...renderXmlNode('affectedLocationIds', affectedLocationIds, 1),
+            ...renderXmlNode('affectedPlayerIds', affectedPlayerIds, 1),
+            ...renderXmlNode('affectedNpcIds', affectedNpcIds, 1),
+            ...renderXmlNode('affectedContainerIds', affectedContainerIds, 1),
+            '</deleteThingResult>'
+        ];
+
+        return {
+            content: lines.join('\n'),
+            metadata: {
+                functionName,
+                status: 'deleted',
+                thingId,
+                thingName,
+                thingType,
+                confirmationRequestId: toTrimmedString(confirmation?.requestId) || null,
+                affectedLocationIds,
+                affectedPlayerIds,
+                affectedNpcIds,
+                affectedContainerIds
+            }
+        };
+    };
+
     const buildMysteryBoxXmlLines = (box, level = 0) => {
         const data = box.toJSON();
         const indent = (extra = 0) => xmlIndent(level + extra);
@@ -7761,6 +7909,10 @@ const createChatToolRuntime = ({
                 toolResult = executeHideEntityTool(argumentsObject);
             } else if (toolCall.functionName === 'createThing') {
                 toolResult = executeCreateThingTool(argumentsObject);
+            } else if (toolCall.functionName === 'deleteThing') {
+                toolResult = executeDeleteThingTool(argumentsObject, {
+                    requestUserInputHandler
+                });
             } else if (toolCall.functionName === 'scheduleEvent') {
                 toolResult = executeScheduleEventTool(argumentsObject);
             } else if (toolCall.functionName === 'alterThing') {

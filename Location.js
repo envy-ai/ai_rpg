@@ -748,6 +748,48 @@ class Location {
     this.#lastUpdated = new Date();
   }
 
+  setStubRegionId(newRegionId, { requireLiveRegion = false } = {}) {
+    if (!this.#isStub) {
+      throw new Error('setStubRegionId can only be used for stub locations');
+    }
+    if (!newRegionId || typeof newRegionId !== 'string') {
+      throw new Error('Stub region ID must be a non-empty string');
+    }
+    const normalizedRegionId = newRegionId.trim();
+    if (!normalizedRegionId) {
+      throw new Error('Stub region ID must be a non-empty string');
+    }
+
+    const nextRegion = Region.get(normalizedRegionId);
+    if (requireLiveRegion && !nextRegion) {
+      throw new Error('Invalid stub region ID: ' + normalizedRegionId);
+    }
+
+    const currentRegionId = typeof this.#regionId === 'string' ? this.#regionId.trim() : '';
+    if (currentRegionId && currentRegionId !== normalizedRegionId) {
+      const currentRegion = Region.get(currentRegionId);
+      if (currentRegion && typeof currentRegion.removeLocationId === 'function') {
+        currentRegion.removeLocationId(this.#id);
+      }
+    }
+
+    this.#regionId = normalizedRegionId;
+    if (!this.#stubMetadata || typeof this.#stubMetadata !== 'object' || Array.isArray(this.#stubMetadata)) {
+      this.#stubMetadata = {};
+    }
+    this.#stubMetadata.regionId = normalizedRegionId;
+    if (!this.#stubMetadata.isRegionEntryStub && this.#stubMetadata.targetRegionId) {
+      delete this.#stubMetadata.targetRegionId;
+    }
+    if (nextRegion) {
+      if (typeof nextRegion.addLocationId !== 'function') {
+        throw new Error(`Region "${normalizedRegionId}" cannot add location membership.`);
+      }
+      nextRegion.addLocationId(this.#id);
+    }
+    this.#lastUpdated = new Date();
+  }
+
   get region() {
     return Region.get(this.#regionId) || null;
   }

@@ -1,0 +1,32 @@
+<task>Resolve the player's attempt to open a container that requires a check before its inventory can be shown.</task>
+
+Character acting:
+{{ characterName | default('The player', true) }}
+
+Container:
+<container>
+  <id>{{ container.id }}</id>
+  <name>{{ container.name }}</name>
+  <description>{{ container.description }}</description>
+  <shortDescription>{{ container.shortDescription | default('', true) }}</shortDescription>
+  <thingType>{{ container.thingType | default('', true) }}</thingType>
+  <isContainer>{{ container.isContainer | default(true) }}</isContainer>
+  <requiresCheckToOpen>{{ container.requiresCheckToOpen | default(true) }}</requiresCheckToOpen>
+</container>
+
+The player describes their opening attempt as:
+<playerAction>
+{{ containerOpenAction }}
+</playerAction>
+
+Use the `resolveSkillCheck` tool during your draft to resolve the concrete attempt to open the container. Pick the attribute and skill that best match the described method. If another character is directly and actively opposing the opening attempt, use `resolveOpposedSkillCheck` instead.
+
+Strictly adhere to the check result. Do not show or describe the container's contents unless the attempt succeeds. A failed attempt may still produce visible consequences in the prose, but it must not open the container.
+
+Respond only with this XML:
+
+<containerOpenResult>
+  <success><!--true if the attempt opens the container now; false otherwise--></success>
+  <permanentlyOpened><!--true if the container is now permanently open and can be opened freely in the future without checks, false otherwise--></permanentlyOpened>
+  <prose><!--Brief visible prose describing the attempt and outcome. Do not mention numerical stats. Do not reveal contents on failure.--></prose>
+</containerOpenResult>

@@ -17,6 +17,7 @@
   <isHarvestable>{{ item.isHarvestable }}</isHarvestable>
   <isSalvageable>{{ item.isSalvageable }}</isSalvageable>
   <isContainer>{{ item.isContainer }}</isContainer>
+  <requiresCheckToOpen>{{ item.requiresCheckToOpen }}</requiresCheckToOpen>
   {% if item.isContainer %}<containerContents>
     {% for content in item.containerContents %}<containedItem>
       <name>{{ content.name }}</name>

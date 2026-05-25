@@ -155,3 +155,31 @@ test('thing XML parser ignores empty container content sentinels and zero-count 
         Globals.config = previousConfig;
     }
 });
+
+test('thing XML parser reads requiresCheckToOpen for containers', async () => {
+    const parseThingsXml = loadParseThingsXml();
+    const previousConfig = Globals.config;
+
+    Globals.config = { ...(previousConfig || {}), strictXMLParsing: false };
+    try {
+        const parsed = await parseThingsXml(`
+<items>
+  <item>
+    <name>Combination Safe</name>
+    <description>A safe with a stiff dial.</description>
+    <shortDescription>Dial-locked metal safe</shortDescription>
+    <itemOrScenery>scenery</itemOrScenery>
+    <type>safe</type>
+    <isContainer>true</isContainer>
+    <requiresCheckToOpen>true</requiresCheckToOpen>
+    <containerContents></containerContents>
+  </item>
+</items>`);
+
+        assert.equal(parsed.length, 1);
+        assert.equal(parsed[0].isContainer, true);
+        assert.equal(parsed[0].requiresCheckToOpen, true);
+    } finally {
+        Globals.config = previousConfig;
+    }
+});

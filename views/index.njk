@@ -1383,6 +1383,30 @@
             </div>
         </div>
     </div>
+    <div id="containerOpenCheckModal" class="modal container-open-check-modal" role="dialog" aria-modal="true" aria-hidden="true" hidden>
+        <div class="modal__dialog container-open-check-modal__dialog">
+            <header class="modal__header">
+                <div>
+                    <h2 id="containerOpenCheckTitle">Open Container</h2>
+                    <p id="containerOpenCheckSubtitle" class="npc-edit-hint">Describe how you try to open it.</p>
+                </div>
+                <button type="button" class="modal__close" id="containerOpenCheckCloseBtn" aria-label="Close open-container check">
+                    <span aria-hidden="true">X</span>
+                </button>
+            </header>
+            <form id="containerOpenCheckForm" class="container-open-check-modal__form">
+                <div class="modal__body container-open-check-modal__body">
+                    <label for="containerOpenCheckInput">Attempt</label>
+                    <textarea id="containerOpenCheckInput" rows="5" placeholder="Pick the lock, force the lid, search for the hidden latch..."></textarea>
+                    <div id="containerOpenCheckStatus" class="container-open-check-modal__status" role="status" aria-live="polite"></div>
+                </div>
+                <footer class="modal__footer">
+                    <button type="button" class="btn-secondary" id="containerOpenCheckCancelBtn">Cancel</button>
+                    <button type="submit" class="btn-primary" id="containerOpenCheckSubmitBtn">Try to Open</button>
+                </footer>
+            </form>
+        </div>
+    </div>
     <div id="barterModal" class="modal barter-modal" role="dialog" aria-modal="true" aria-hidden="true" hidden>
         <div class="modal__dialog barter-modal__dialog">
             <header class="modal__header">
@@ -2311,6 +2335,13 @@
                             <div class="thing-toggle-details">
                                 <span class="thing-toggle-label">Container</span>
                                 <span class="thing-toggle-hint">Can hold item stacks in its own inventory.</span>
+                            </div>
+                        </label>
+                        <label class="thing-toggle">
+                            <input type="checkbox" id="thingEditRequiresCheckToOpen">
+                            <div class="thing-toggle-details">
+                                <span class="thing-toggle-label">Requires Check to Open</span>
+                                <span class="thing-toggle-hint">Prompts the player for an opening attempt before showing the container inventory.</span>
                             </div>
                         </label>
                     </div>
@@ -6243,6 +6274,7 @@
                 thing.category,
                 thing.metadata?.type,
                 thing.metadata?.itemTypeDetail,
+                thing.metadata?.itemType,
                 thing.metadata?.category
             ];
             const slotCandidates = [
@@ -8545,8 +8577,11 @@
             if (thing.rarity) {
                 metaParts.push(escapeHtml(thing.rarity));
             }
-            if (thing.itemTypeDetail) {
-                metaParts.push(escapeHtml(thing.itemTypeDetail));
+            const itemTypeDetail = thing.itemTypeDetail
+                || thing.metadata?.itemTypeDetail
+                || thing.metadata?.itemType;
+            if (itemTypeDetail) {
+                metaParts.push(escapeHtml(itemTypeDetail));
             }
 
             const detailItems = [];
@@ -9051,6 +9086,15 @@
         const containerContentsShowAllRadio = document.getElementById('containerContentsShowAll');
         const containerContentsEquippableOnlyRadio = document.getElementById('containerContentsEquippableOnly');
         const containerContentsNonEquippableOnlyRadio = document.getElementById('containerContentsNonEquippableOnly');
+        const containerOpenCheckModal = document.getElementById('containerOpenCheckModal');
+        const containerOpenCheckForm = document.getElementById('containerOpenCheckForm');
+        const containerOpenCheckTitle = document.getElementById('containerOpenCheckTitle');
+        const containerOpenCheckSubtitle = document.getElementById('containerOpenCheckSubtitle');
+        const containerOpenCheckInput = document.getElementById('containerOpenCheckInput');
+        const containerOpenCheckStatus = document.getElementById('containerOpenCheckStatus');
+        const containerOpenCheckSubmitBtn = document.getElementById('containerOpenCheckSubmitBtn');
+        const containerOpenCheckCancelBtn = document.getElementById('containerOpenCheckCancelBtn');
+        const containerOpenCheckCloseBtn = document.getElementById('containerOpenCheckCloseBtn');
         const barterModal = document.getElementById('barterModal');
         const barterModalTitle = document.getElementById('barterModalTitle');
         const barterCloseBtn = document.getElementById('barterCloseBtn');
@@ -9389,6 +9433,7 @@
         const thingEditIsHarvestableInput = document.getElementById('thingEditIsHarvestable');
         const thingEditIsSalvageableInput = document.getElementById('thingEditIsSalvageable');
         const thingEditIsContainerInput = document.getElementById('thingEditIsContainer');
+        const thingEditRequiresCheckToOpenInput = document.getElementById('thingEditRequiresCheckToOpen');
         const thingEditModFieldsSection = document.getElementById('thingEditModFieldsSection');
         const thingEditModFieldsList = document.getElementById('thingEditModFieldsList');
         const thingMetadataList = document.getElementById('thingEditMetadataList');
@@ -11300,6 +11345,9 @@
             if (thingEditIsContainerInput) {
                 thingEditIsContainerInput.checked = resolveThingBooleanFlag(thing, 'isContainer');
             }
+            if (thingEditRequiresCheckToOpenInput) {
+                thingEditRequiresCheckToOpenInput.checked = resolveThingBooleanFlag(thing, 'requiresCheckToOpen');
+            }
             renderThingEditModFields(mode === 'edit' ? (thing || {}) : {});
 
             currentThingLockedMetadata = {};
@@ -11471,6 +11519,9 @@
         let thingContainerPayloadApplyVersion = 0;
         let thingContainerLastAppliedPayloadVersion = 0;
         let currentThingContainerDragSource = null;
+        let pendingContainerOpenCheckThing = null;
+        let pendingContainerOpenCheckOptions = null;
+        let containerOpenCheckInFlight = false;
         let modalInventoryDragState = null;
         const modalInventoryDropInFlightThingIds = new Set();
         let modalInventoryTouchDragState = null;
@@ -17650,6 +17701,22 @@
             });
         }
 
+        if (containerOpenCheckForm) {
+            containerOpenCheckForm.addEventListener('submit', submitContainerOpenCheckAttempt);
+        }
+
+        if (containerOpenCheckCancelBtn) {
+            containerOpenCheckCancelBtn.addEventListener('click', () => {
+                closeContainerOpenCheckModal();
+            });
+        }
+
+        if (containerOpenCheckCloseBtn) {
+            containerOpenCheckCloseBtn.addEventListener('click', () => {
+                closeContainerOpenCheckModal();
+            });
+        }
+
         if (barterCloseBtn) {
             barterCloseBtn.addEventListener('click', () => {
                 closeBarterModal();
@@ -18164,6 +18231,9 @@
                     if (thingEditIsContainerInput) {
                         seed.isContainer = Boolean(thingEditIsContainerInput.checked);
                     }
+                    if (thingEditRequiresCheckToOpenInput) {
+                        seed.requiresCheckToOpen = Boolean(thingEditRequiresCheckToOpenInput.checked);
+                    }
                     let modFieldValues = {};
                     try {
                         modFieldValues = collectThingEditModFieldValues();
@@ -18333,6 +18403,11 @@
                     const flag = Boolean(thingEditIsContainerInput.checked);
                     finalMetadata.isContainer = flag;
                     payload.isContainer = flag;
+                }
+                if (thingEditRequiresCheckToOpenInput) {
+                    const flag = Boolean(thingEditRequiresCheckToOpenInput.checked);
+                    finalMetadata.requiresCheckToOpen = flag;
+                    payload.requiresCheckToOpen = flag;
                 }
                 payload.metadata = finalMetadata;
 
@@ -21138,6 +21213,7 @@
                 npcEditModal,
                 thingEditModal,
                 thingContainerModal,
+                containerOpenCheckModal,
                 barterModal,
                 barterStartConfirmModal,
                 barterQuantityModal,
@@ -21579,7 +21655,142 @@
             return payload;
         }
 
-        async function openThingContainerModal(thingOrId, { pushHistory = false, resetHistory = true } = {}) {
+        function requiresContainerOpenCheck(thing) {
+            return Boolean(
+                thing
+                && resolveThingBooleanFlag(thing, 'isContainer')
+                && resolveThingBooleanFlag(thing, 'requiresCheckToOpen')
+            );
+        }
+
+        function setContainerOpenCheckStatus(message = '', type = null) {
+            if (!containerOpenCheckStatus) {
+                return;
+            }
+            containerOpenCheckStatus.textContent = message || '';
+            containerOpenCheckStatus.classList.remove('is-error', 'is-success');
+            if (type === 'error') {
+                containerOpenCheckStatus.classList.add('is-error');
+            } else if (type === 'success') {
+                containerOpenCheckStatus.classList.add('is-success');
+            }
+        }
+
+        function showContainerOpenCheckModal(thing, options = {}) {
+            if (!containerOpenCheckModal || !npcModalBackdrop || !containerOpenCheckInput) {
+                throw new Error('Container open-check modal is unavailable.');
+            }
+            pendingContainerOpenCheckThing = thing && typeof thing === 'object' ? { ...thing } : null;
+            pendingContainerOpenCheckOptions = { ...(options || {}) };
+            containerOpenCheckInFlight = false;
+            if (containerOpenCheckTitle) {
+                containerOpenCheckTitle.textContent = `Open ${thing?.name || 'Container'}`;
+            }
+            if (containerOpenCheckSubtitle) {
+                containerOpenCheckSubtitle.textContent = 'Describe how you try to open it.';
+            }
+            containerOpenCheckInput.value = '';
+            setContainerOpenCheckStatus('', null);
+            if (containerOpenCheckSubmitBtn) {
+                containerOpenCheckSubmitBtn.disabled = false;
+            }
+            containerOpenCheckModal.removeAttribute('hidden');
+            containerOpenCheckModal.setAttribute('aria-hidden', 'false');
+            npcModalBackdrop.removeAttribute('hidden');
+            document.body.classList.add('modal-open');
+            scrollModalToTop(containerOpenCheckModal);
+            window.setTimeout(() => containerOpenCheckInput?.focus(), 50);
+        }
+
+        function closeContainerOpenCheckModal() {
+            if (!containerOpenCheckModal) {
+                return;
+            }
+            containerOpenCheckModal.setAttribute('aria-hidden', 'true');
+            containerOpenCheckModal.setAttribute('hidden', '');
+            containerOpenCheckInFlight = false;
+            pendingContainerOpenCheckThing = null;
+            pendingContainerOpenCheckOptions = null;
+            setContainerOpenCheckStatus('', null);
+            if (containerOpenCheckSubmitBtn) {
+                containerOpenCheckSubmitBtn.disabled = false;
+            }
+            hideNpcBackdropIfNoSharedModalOpen();
+        }
+
+        async function submitContainerOpenCheckAttempt(event = null) {
+            event?.preventDefault?.();
+            if (containerOpenCheckInFlight) {
+                return null;
+            }
+            const targetThing = pendingContainerOpenCheckThing;
+            const containerId = typeof targetThing?.id === 'string' ? targetThing.id.trim() : '';
+            if (!containerId) {
+                setContainerOpenCheckStatus('Container reference is missing.', 'error');
+                return null;
+            }
+            const actionText = typeof containerOpenCheckInput?.value === 'string'
+                ? containerOpenCheckInput.value.trim()
+                : '';
+            if (!actionText) {
+                setContainerOpenCheckStatus('Describe what you do first.', 'error');
+                containerOpenCheckInput?.focus();
+                return null;
+            }
+
+            const requestId = `container_open_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+            containerOpenCheckInFlight = true;
+            if (containerOpenCheckSubmitBtn) {
+                containerOpenCheckSubmitBtn.disabled = true;
+            }
+            setContainerOpenCheckStatus('Resolving the attempt...', null);
+            try {
+                const response = await fetch(`/api/things/${encodeURIComponent(containerId)}/container/open-check`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        actionText,
+                        clientId: window.AIRPG_CLIENT_ID || null,
+                        requestId
+                    })
+                });
+                const payload = await response.json().catch(() => ({}));
+                if (!response.ok || !payload?.success) {
+                    throw new Error(payload?.error || `Request failed with status ${response.status}`);
+                }
+
+                if (payload.container) {
+                    cacheThingData(payload.container);
+                }
+                await window.AIRPG_CHAT?.refreshChatHistory?.();
+                if (payload.locationRefreshRequested) {
+                    await window.AIRPG_CHAT?.checkLocationUpdate?.();
+                }
+
+                const openOptions = pendingContainerOpenCheckOptions || {};
+                const nextThing = payload.container || targetThing;
+                closeContainerOpenCheckModal();
+                if (payload.opened) {
+                    return openThingContainerModal(nextThing, {
+                        pushHistory: Boolean(openOptions.pushHistory),
+                        resetHistory: openOptions.resetHistory !== false,
+                        skipOpenCheck: true
+                    });
+                }
+                return payload;
+            } catch (error) {
+                console.warn('Failed to resolve container open check:', error);
+                setContainerOpenCheckStatus(error?.message || 'Failed to resolve the opening attempt.', 'error');
+                if (containerOpenCheckSubmitBtn) {
+                    containerOpenCheckSubmitBtn.disabled = false;
+                }
+                return null;
+            } finally {
+                containerOpenCheckInFlight = false;
+            }
+        }
+
+        async function openThingContainerModal(thingOrId, { pushHistory = false, resetHistory = true, skipOpenCheck = false } = {}) {
             const thing = typeof thingOrId === 'string'
                 ? (thingDataCache.get(thingOrId) || { id: thingOrId, name: 'Container', isContainer: true })
                 : thingOrId;
@@ -21592,6 +21803,14 @@
             }
 
             const modalAlreadyOpen = thingContainerModal && !thingContainerModal.hasAttribute('hidden');
+            if (
+                !skipOpenCheck
+                && requiresContainerOpenCheck(thing)
+                && !(modalAlreadyOpen && currentThingContainerId === containerId)
+            ) {
+                showContainerOpenCheckModal(thing, { pushHistory, resetHistory });
+                return null;
+            }
             if (pushHistory && modalAlreadyOpen && currentThingContainerId && currentThingContainerId !== containerId) {
                 thingContainerHistory.push({
                     id: currentThingContainerId,
@@ -27025,6 +27244,14 @@
             if (!locationEditRelocationSection || !locationEditRelocationExitList || !targetLocation) {
                 return;
             }
+            if (targetLocation.isStub) {
+                toggleLocationEditSection(locationEditRelocationSection, false);
+                locationEditRelocationExitList.innerHTML = '';
+                if (locationEditMakeRegionEntranceInput) {
+                    locationEditMakeRegionEntranceInput.checked = false;
+                }
+                return;
+            }
 
             const originalRegionId = resolveRegionIdFromLocationRecord(targetLocation);
             const selectedRegionId = resolveLocationEditSelectedRegionId();
@@ -27089,6 +27316,7 @@
             if (!locationEditRegionSelect || !targetLocation) {
                 return;
             }
+            const allowPendingRegions = Boolean(targetLocation?.isStub && !targetLocation?.stubMetadata?.isRegionEntryStub);
             const originalRegionId = resolveRegionIdFromLocationRecord(targetLocation);
             locationEditRegionSelect.disabled = true;
             locationEditRegionSelect.innerHTML = '';
@@ -27113,9 +27341,9 @@
                 const option = document.createElement('option');
                 option.value = region.id;
                 option.textContent = region.isStub
-                    ? `${region.name || region.id} (unstub first)`
+                    ? `${region.name || region.id} (${allowPendingRegions ? 'pending' : 'unstub first'})`
                     : (region.name || region.id);
-                option.disabled = Boolean(region.isStub);
+                option.disabled = Boolean(region.isStub) && !allowPendingRegions;
                 option.dataset.isStub = region.isStub ? 'true' : 'false';
                 if (region.isStub) {
                     pendingGroup.appendChild(option);
@@ -27147,6 +27375,11 @@
 
         async function loadLocationRelocationOptions(targetLocation) {
             if (!targetLocation?.id || !locationEditRelocationExitList) {
+                return;
+            }
+            if (targetLocation.isStub) {
+                locationEditRelocationOptions = [];
+                renderLocationRelocationExitOptions(targetLocation);
                 return;
             }
             locationEditRelocationLocationId = targetLocation.id;
@@ -27225,6 +27458,7 @@
             stubEditContext = normalizedMode === 'stub' ? (context || null) : null;
             const isStubMode = normalizedMode === 'stub';
             const isRegionStub = Boolean(stubEditContext?.isRegionEntryStub);
+            const showStubRegionSelector = isStubMode && !isRegionStub;
 
             if (locationEditModalTitle) {
                 locationEditModalTitle.textContent = isStubMode
@@ -27250,7 +27484,7 @@
             toggleLocationEditSection(locationEditStatusSection, !isStubMode);
             toggleLocationEditSection(locationEditShortDescriptionGroup, !isStubMode);
             toggleLocationEditSection(locationEditRelativeLevelGroup, isStubMode);
-            toggleLocationEditSection(locationEditRegionGroup, !isStubMode);
+            toggleLocationEditSection(locationEditRegionGroup, !isStubMode || showStubRegionSelector);
             toggleLocationEditSection(locationEditHasWeatherGroup, !isStubMode);
             toggleLocationEditSection(locationVehicleEditor.section, true);
 
@@ -27274,8 +27508,8 @@
                 }
             }
             if (locationEditRegionSelect) {
-                locationEditRegionSelect.disabled = isStubMode;
-                if (isStubMode) {
+                locationEditRegionSelect.disabled = isRegionStub;
+                if (isRegionStub) {
                     locationEditRegionSelect.innerHTML = '';
                 }
             }
@@ -27297,6 +27531,7 @@
                 clearLocationMenuContext();
                 return;
             }
+            setLocationMenuContext(targetLocation);
 
             const stubContext = getStubEditContext(targetLocation);
             setLocationEditMode(stubContext ? 'stub' : 'location', stubContext);
@@ -27351,6 +27586,12 @@
                 loadLocationRelocationOptions(targetLocation).catch(error => {
                     console.warn('Failed to load relocation options:', error);
                     setLocationEditStatus(`Failed to load relocation options: ${error?.message || 'Unknown error'}`, 'error');
+                });
+            }
+            if (stubContext && !stubContext.isRegionEntryStub) {
+                populateLocationEditRegionSelect(targetLocation).catch(error => {
+                    console.warn('Failed to populate stub region selector:', error);
+                    setLocationEditStatus(`Failed to load stub regions: ${error?.message || 'Unknown error'}`, 'error');
                 });
             }
             if (locationEditFactionSelect) {
@@ -27495,6 +27736,19 @@
                 }
                 if (locationEditFactionSelect) {
                     payload.controllingFactionId = controllingFactionId;
+                }
+                if (!stubEditContext?.isRegionEntryStub && locationEditRegionSelect && !locationEditRegionGroup?.hasAttribute('hidden')) {
+                    if (locationEditRegionSelect.disabled) {
+                        setLocationEditStatus('Stub region options are still loading.', 'error');
+                        locationEditRegionSelect.focus();
+                        return;
+                    }
+                    payload.targetRegionId = resolveLocationEditSelectedRegionId();
+                    if (!payload.targetRegionId) {
+                        setLocationEditStatus('Stub region is required.', 'error');
+                        locationEditRegionSelect.focus();
+                        return;
+                    }
                 }
                 const vehicleResult = collectVehicleInfoFromEditor(locationVehicleEditor, locationEditVehicleInfoSnapshot);
                 if (vehicleResult.error) {

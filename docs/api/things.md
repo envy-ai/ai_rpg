@@ -6,7 +6,7 @@ Common payloads: see `docs/api/common.md`.
 Create a new thing.
 
 Request:
-- Body supports: `name`, `description`, `shortDescription`, `thingType`, `imageId`, `rarity`, `itemTypeDetail`, `metadata`, `slot`, `attributeBonuses`, `causeStatusEffect`, `causeStatusEffectOnTarget`, `causeStatusEffectOnEquipper`, `count`, `level`, `relativeLevel`, `containerContents`, `statusEffects`, plus boolean flags (`isVehicle`, `isCraftingStation`, `isProcessingStation`, `isHarvestable`, `isSalvageable`, `isContainer`) and registered Thing fields exposed to create/edit flows.
+- Body supports: `name`, `description`, `shortDescription`, `thingType`, `imageId`, `rarity`, `itemTypeDetail`, `metadata`, `slot`, `attributeBonuses`, `causeStatusEffect`, `causeStatusEffectOnTarget`, `causeStatusEffectOnEquipper`, `count`, `level`, `relativeLevel`, `containerContents`, `statusEffects`, plus boolean flags (`isVehicle`, `isCraftingStation`, `isProcessingStation`, `isHarvestable`, `isSalvageable`, `isContainer`, `requiresCheckToOpen`) and registered Thing fields exposed to create/edit flows.
 
 Response:
 - 200: `{ success: true, thing: Thing, message, imageNeedsGeneration }`
@@ -52,7 +52,7 @@ Notes:
 Update a thing.
 
 Request:
-- Body supports: `name`, `description`, `shortDescription`, `thingType`, `imageId`, `rarity`, `itemTypeDetail`, `metadata`, `slot`, `attributeBonuses`, `causeStatusEffect`, `causeStatusEffectOnTarget`, `causeStatusEffectOnEquipper`, `count`, `level`, `relativeLevel`, `containerContents`, `statusEffects`, plus boolean flags (`isVehicle`, `isCraftingStation`, `isProcessingStation`, `isHarvestable`, `isSalvageable`, `isContainer`) and registered Thing fields exposed to the edit modal.
+- Body supports: `name`, `description`, `shortDescription`, `thingType`, `imageId`, `rarity`, `itemTypeDetail`, `metadata`, `slot`, `attributeBonuses`, `causeStatusEffect`, `causeStatusEffectOnTarget`, `causeStatusEffectOnEquipper`, `count`, `level`, `relativeLevel`, `containerContents`, `statusEffects`, plus boolean flags (`isVehicle`, `isCraftingStation`, `isProcessingStation`, `isHarvestable`, `isSalvageable`, `isContainer`, `requiresCheckToOpen`) and registered Thing fields exposed to the edit modal.
 
 Response:
 - 200: `{ success: true, thing: Thing, message, imageNeedsUpdate }`
@@ -132,6 +132,24 @@ Notes:
 - Only things with `isContainer: true` can be opened.
 - `contents` contains item-type things held by the container; scenery containers can hold items, but scenery itself cannot be contained.
 - If the container has pending `containerContents` seeds, this route runs the dedicated `thing-generator-contents` prompt once, creates all listed contents as real item Things inside the container, clears the pending seeds, then returns the refreshed contents. Empty sentinels such as `empty`, `none`, or `n/a` and zero-count seeds are discarded during parsing/loading, so loaded empty containers return normally without firing that prompt.
+- This route remains the raw inventory fetch. Client UI calls the open-check route first for containers with `requiresCheckToOpen: true`.
+
+## POST /api/things/:containerId/container/open-check
+Resolve a checked opening attempt for a container before showing the container inventory UI.
+
+Request:
+- Body: `{ actionText: string, clientId?: string, requestId?: string }`
+
+Response:
+- 200: `{ success: true, opened, prose, container, locationRefreshRequested, eventChecks, requestId }`
+- 200: `{ success: true, opened: true, skipped: true, container }` when the target is a container that does not require a check.
+- 400/404/500 with `{ success: false, error }`
+
+Notes:
+- Only container Things can use this route, and `actionText` is required for checked containers.
+- The server renders the `player-action-open-container` prompt through base context, logs it with `LLMClient.logPrompt()` under `player_action_open_container`, exposes regular prose information tools plus `resolveSkillCheck` / `resolveOpposedSkillCheck` even when legacy prompt checks are enabled elsewhere, and fails loudly if no skill check was recorded.
+- The prompt returns `<containerOpenResult><success>...</success><permanentlyOpened>...</permanentlyOpened><prose>...</prose></containerOpenResult>`. Prose runs through the normal slop-removal pipeline, is stored visibly as a `player-action-open-container` chat entry, and then runs ordinary event checks. The `success` flag gates whether the client proceeds to `GET /api/things/:containerId/container`.
+- When `success` and `permanentlyOpened` are both true, the route persists `requiresCheckToOpen: false` on the container so future UI opens skip this check. Temporary successes should return `permanentlyOpened: false`.
 
 ## POST /api/things/:containerId/container/move-in
 Move a whole item stack from the current player's unequipped inventory or a loose current-location item into a container.
@@ -216,6 +234,7 @@ Response:
 Notes:
 - Deletes remove the thing from known locations, inventories, and containers before dropping the static Thing index entry.
 - Non-empty containers are rejected with `409`; contained non-container items can be deleted and are removed from their parent container.
+- The generic/scheduled chat tool `deleteThing({ thing })` delegates to this same deletion path after resolving an item/scenery target and receiving explicit client confirmation through `player_input_request` confirmation mode, so these protections and affected-id response fields remain authoritative.
 
 ## GET /api/things/scenery
 List all scenery things.

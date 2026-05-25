@@ -45,6 +45,7 @@ class ModExtensionRegistry {
         'isHarvestable',
         'isSalvageable',
         'isContainer',
+        'requiresCheckToOpen',
         'containerContents',
         'containedThingIds',
         'flags'
@@ -68,6 +69,7 @@ class ModExtensionRegistry {
         'isHarvestable',
         'isSalvageable',
         'isContainer',
+        'requiresCheckToOpen',
         'containerContents',
         'containedItem',
         'attributeBonuses',

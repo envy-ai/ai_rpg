@@ -163,6 +163,10 @@ test('remove_item_from_container moves a partial contained stack to the current 
 
     Events.initialize({
         getConfig: () => ({ omit_npc_generation: true }),
+        findThingByName: (name) => {
+            const normalized = String(name || '').trim().toLowerCase();
+            return normalized === 'doomed chest' ? chest : null;
+        },
     });
 
     await Events.applyEventOutcomes({
@@ -242,4 +246,50 @@ test('remove_item_from_container generates missing container contents before giv
     assert.equal(player.hasInventoryItem(generatedItems[0].id), true);
     assert.equal(generatedItems[0].metadata.ownerId, player.id);
     assert.equal(generatedItems[0].metadata.containerId, undefined);
+});
+
+test('consume_item drops container contents into its location before deleting it', async () => {
+    const { location } = makeWorld();
+    const chest = new Thing({
+        id: 'thing-doomed-chest',
+        name: 'Doomed Chest',
+        description: 'A chest about to be destroyed.',
+        thingType: 'scenery',
+        isContainer: true,
+    });
+    const gear = new Thing({
+        id: 'thing-contained-gear',
+        name: 'Contained Gear',
+        description: 'A gear inside the chest.',
+        thingType: 'item',
+    });
+
+    location.addThingId(chest.id);
+    chest.addInventoryItem(gear);
+
+    Events.initialize({
+        getConfig: () => ({ omit_npc_generation: true }),
+        findThingByName: (name) => {
+            const normalized = String(name || '').trim().toLowerCase();
+            return normalized === 'doomed chest' ? chest : null;
+        },
+    });
+
+    await Events.applyEventOutcomes({
+        parsed: {
+            consume_item: [{
+                item: 'Doomed Chest',
+                quantity: 1,
+                consumption: 'smashed apart',
+            }],
+        },
+        rawEntries: {},
+    }, { location });
+
+    assert.equal(Thing.getById(chest.id), null);
+    assert.equal(Thing.getById(gear.id), gear);
+    assert.equal(location.thingIds.includes(chest.id), false);
+    assert.equal(location.thingIds.includes(gear.id), true);
+    assert.equal(gear.metadata.locationId, location.id);
+    assert.equal(gear.metadata.containerId, undefined);
 });

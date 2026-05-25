@@ -9184,7 +9184,9 @@ class Events {
                         }
                         const candidateCount = this._getThingCount(candidate);
                         const amountToConsume = Math.min(candidateCount, remaining);
-                        const result = this._consumeThingQuantity(candidate, amountToConsume);
+                        const result = this._consumeThingQuantity(candidate, amountToConsume, {
+                            location: context.location || null,
+                        });
                         if (result.decremented) {
                             console.debug(
                                 `[consume_item] Decremented "${itemName}" from ${result.priorCount} to ${result.remainingCount}.`,
@@ -14618,7 +14620,7 @@ class Events {
         return selected;
     }
 
-    static _consumeThingQuantity(thing, quantity) {
+    static _consumeThingQuantity(thing, quantity, context = {}) {
         const priorCount = this._getThingCount(thing);
         if (!Number.isInteger(quantity) || quantity <= 0 || quantity > priorCount) {
             throw new Error(
@@ -14627,6 +14629,7 @@ class Events {
         }
 
         if (quantity === priorCount) {
+            this._spillContainerContentsBeforeDeleting(thing, context);
             this._detachThingFromWorld(thing);
             return {
                 deleted: true,
@@ -14650,6 +14653,138 @@ class Events {
             remainingCount: thing.count,
             consumedCount: quantity,
         };
+    }
+
+    static _resolveThingPlacement(thing, context = {}) {
+        if (!thing) {
+            return null;
+        }
+
+        const containingThing = this._resolveContainingThing(thing);
+        if (containingThing) {
+            return { type: "container", container: containingThing };
+        }
+
+        if (typeof thing.whoseInventory === "function") {
+            const owners = thing.whoseInventory().filter(Boolean);
+            if (owners.length > 0) {
+                return { type: "owner", owner: owners[0] };
+            }
+        }
+
+        const metadata = thing.metadata && typeof thing.metadata === "object"
+            ? thing.metadata
+            : {};
+        const ownerIdCandidates = [
+            metadata.ownerId,
+            metadata.ownerID,
+            metadata.owner_id,
+            metadata.playerId,
+            metadata.player_id,
+            metadata.inventoryOwnerId,
+            metadata.inventory_owner_id,
+        ];
+        const findActorById = this._deps?.findActorById;
+        for (const candidate of ownerIdCandidates) {
+            const ownerId = typeof candidate === "string" ? candidate.trim() : "";
+            if (!ownerId || typeof findActorById !== "function") {
+                continue;
+            }
+            const owner = findActorById(ownerId);
+            if (owner && typeof owner.addInventoryItem === "function") {
+                return { type: "owner", owner };
+            }
+        }
+
+        const locationId = this._thingLocationId(thing);
+        if (locationId) {
+            const location = this.resolveLocationCandidate(locationId);
+            if (location) {
+                return { type: "location", location };
+            }
+        }
+
+        const contextLocation = this.resolveLocationCandidate(context.location || null);
+        if (contextLocation) {
+            return { type: "location", location: contextLocation };
+        }
+
+        return null;
+    }
+
+    static _placeSpilledContainerItem(item, placement) {
+        if (!item || !placement) {
+            throw new Error("_placeSpilledContainerItem requires an item and destination placement.");
+        }
+
+        if (placement.type === "container") {
+            const targetContainer = placement.container;
+            if (!targetContainer || typeof targetContainer.addInventoryItem !== "function") {
+                throw new Error("Container spill destination is not a valid container.");
+            }
+            targetContainer.addInventoryItem(item);
+        } else if (placement.type === "owner") {
+            const owner = placement.owner;
+            if (!owner || typeof owner.addInventoryItem !== "function") {
+                throw new Error("Container spill destination is not a valid inventory owner.");
+            }
+            const added = owner.addInventoryItem(item, { suppressNpcEquip: true });
+            if (!added) {
+                throw new Error(`Failed to spill "${item.name || item.id}" into owner inventory.`);
+            }
+        } else if (placement.type === "location") {
+            const location = placement.location;
+            if (!location || typeof location.addThingId !== "function") {
+                throw new Error("Container spill destination is not a valid location.");
+            }
+            location.addThingId(item.id);
+        } else {
+            throw new Error(`Unsupported container spill destination "${placement.type}".`);
+        }
+
+        if (this.things instanceof Map && Thing.getById(item.id) === item) {
+            this.things.set(item.id, item);
+        }
+    }
+
+    static _spillContainerContentsBeforeDeleting(thing, context = {}) {
+        if (!thing || !thing.isContainer || typeof thing.getInventoryItems !== "function") {
+            return [];
+        }
+
+        const contents = thing.getInventoryItems();
+        if (!contents.length) {
+            return [];
+        }
+
+        const placement = this._resolveThingPlacement(thing, context);
+        if (!placement) {
+            throw new Error(
+                `Cannot delete non-empty container "${thing.name || thing.id}" because its current placement could not be resolved.`,
+            );
+        }
+
+        const spilled = [];
+        for (const item of contents) {
+            if (!item) {
+                throw new Error(
+                    `Cannot delete non-empty container "${thing.name || thing.id}" because one contained item could not be resolved.`,
+                );
+            }
+            const removed = thing.removeInventoryItem(item, { updateTimestamp: false });
+            if (!removed) {
+                throw new Error(
+                    `Failed to remove "${item.name || item.id}" from container "${thing.name || thing.id}" before deletion.`,
+                );
+            }
+            this._placeSpilledContainerItem(item, placement);
+            spilled.push(item);
+        }
+
+        if (typeof thing.clearInventory === "function") {
+            thing.clearInventory();
+        }
+        return spilled;
     }
 
     static _removeItemFromInventories(thing) {

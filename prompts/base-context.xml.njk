@@ -58,6 +58,7 @@ The below context is an account of the current game state, including the setting
             <count>{{ contained.count | default(1) }}</count>
             <description>{{ contained.shortDescription | default(contained.description, true) }}</description>
             <isContainer>{{ contained.isContainer | default(false) }}</isContainer>
+            <requiresCheckToOpen>{{ contained.requiresCheckToOpen | default(false) }}</requiresCheckToOpen>
             {{ renderContainerContentsXml(contained.containerContents | default([], true)) }}
           </containedItem>
           {% endfor %}
@@ -182,6 +183,7 @@ The below context is an account of the current game state, including the setting
         <isScenery>{{ item.isScenery | default(false) }}</isScenery>
         <isVehicle>{{ item.isVehicle | default(false) }}</isVehicle>
         <isContainer>{{ item.isContainer | default(false) }}</isContainer>
+        <requiresCheckToOpen>{{ item.requiresCheckToOpen | default(false) }}</requiresCheckToOpen>
         <rarity>{{ item.rarity | default('common') }}</rarity>
         <value>{{ item.value | default(0) }}</value>
 {{ renderContainerContentsXml(item.containerContents | default([], true)) }}
@@ -317,6 +319,7 @@ The below context is an account of the current game state, including the setting
         <isScenery>{{ item.isScenery | default(false) }}</isScenery>
         <isVehicle>{{ item.isVehicle | default(false) }}</isVehicle>
         <isContainer>{{ item.isContainer | default(false) }}</isContainer>
+        <requiresCheckToOpen>{{ item.requiresCheckToOpen | default(false) }}</requiresCheckToOpen>
         <rarity>{{ item.rarity | default('common') }}</rarity>
         <value>{{ item.value | default(0) }}</value>
 {{ renderContainerContentsXml(item.containerContents | default([], true)) }}
@@ -346,6 +349,7 @@ The below context is an account of the current game state, including the setting
         <isScenery>{{ item.isScenery | default(true) }}</isScenery>
         <isVehicle>{{ item.isVehicle | default(false) }}</isVehicle>
         <isContainer>{{ item.isContainer | default(false) }}</isContainer>
+        <requiresCheckToOpen>{{ item.requiresCheckToOpen | default(false) }}</requiresCheckToOpen>
         <rarity>{{ item.rarity | default('common') }}</rarity>
         <value>{{ item.value | default(0) }}</value>
 {{ renderContainerContentsXml(item.containerContents | default([], true)) }}

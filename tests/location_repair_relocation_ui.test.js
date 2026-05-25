@@ -72,6 +72,46 @@ test('location edit modal supports region relocation and exit cleanup', () => {
     assert.match(viewSource, /makeRegionEntrance: Boolean\(locationEditMakeRegionEntranceInput\?\.checked\)/);
 });
 
+test('ordinary location stub edits can move the stub between live or pending regions', () => {
+    const routeStart = apiSource.indexOf("app.put('/api/stubs/:id'");
+    const routeEnd = apiSource.indexOf("app.post('/api/stubs/:id/expand'", routeStart);
+
+    assert.notEqual(routeStart, -1, 'stub update route should exist');
+    assert.notEqual(routeEnd, -1, 'stub update route should appear before stub expansion');
+
+    const routeSource = apiSource.slice(routeStart, routeEnd);
+    assert.match(routeSource, /const hasTargetRegion = hasOwn\.call\(body, 'targetRegionId'\);/);
+    assert.match(routeSource, /Cannot change the target region of a region-entry stub/);
+    assert.match(routeSource, /regions\.has\(resolvedTargetRegionId\)/);
+    assert.match(routeSource, /pendingRegionStubs\.has\(resolvedTargetRegionId\)/);
+    assert.match(routeSource, /removeStubFromRegionMemberships\(stubId, previousTargetRegionId\)/);
+    assert.match(routeSource, /addStubToRegionMembership\(stubId, resolvedTargetRegionId\)/);
+    assert.match(routeSource, /stubLocation\.setStubRegionId\(resolvedTargetRegionId, \{ requireLiveRegion: false \}\)/);
+});
+
+test('ordinary location stub editor exposes region selector and submits target region', () => {
+    const setModeSource = viewSource.slice(
+        viewSource.indexOf('function setLocationEditMode'),
+        viewSource.indexOf('function openLocationEditModalForTarget')
+    );
+    const openSource = viewSource.slice(
+        viewSource.indexOf('function openLocationEditModalForTarget'),
+        viewSource.indexOf('function openLocationEditModal()')
+    );
+    const stubSubmitSource = viewSource.slice(
+        viewSource.indexOf("if (locationEditMode === 'stub')"),
+        viewSource.indexOf('const vehicleResult = collectVehicleInfoFromEditor', viewSource.indexOf("if (locationEditMode === 'stub')"))
+    );
+
+    assert.match(setModeSource, /const showStubRegionSelector = isStubMode && !isRegionStub;/);
+    assert.match(setModeSource, /toggleLocationEditSection\(locationEditRegionGroup, !isStubMode \|\| showStubRegionSelector\)/);
+    assert.match(setModeSource, /locationEditRegionSelect\.disabled = isRegionStub;/);
+    assert.match(openSource, /if \(stubContext && !stubContext\.isRegionEntryStub\)/);
+    assert.match(openSource, /populateLocationEditRegionSelect\(targetLocation\)/);
+    assert.match(stubSubmitSource, /payload\.targetRegionId = resolveLocationEditSelectedRegionId\(\);/);
+    assert.match(stubSubmitSource, /Stub region is required/);
+});
+
 test('location relocation controls have dedicated styling hooks', () => {
     assert.match(scssSource, /\.location-edit-relocation-section/);
     assert.match(scssSource, /\.location-edit-relocation-exit-list/);
