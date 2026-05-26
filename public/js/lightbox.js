@@ -127,6 +127,10 @@
     if (lightboxInner) {
         lightboxInner.addEventListener('click', (event) => {
             event.stopPropagation();
+            if (event.target === lightboxInner) {
+                hideLightbox();
+                return;
+            }
         });
     }
     if (mediaEl) {

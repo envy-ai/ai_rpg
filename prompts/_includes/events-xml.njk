@@ -264,7 +264,10 @@ Use this when a character takes one or more items out of a container, such as a 
 
 ### `reveal_hidden_npc`
 
-Use this when a previously hidden NPC or entity is revealed or becomes visible to the player. This is not for NPCs that were already present and visible in the scene, or for NPCs that are newly arrived but immediately visible (use `npcArrival` for that). This event should be triggered any time a hidden NPC (marked hidden in the XML) is described visibly in the text, even if previous prose already mentioned that they became visible, to ensure that their visibility is properly tracked in the system.
+Use this when a previously hidden NPC or entity is revealed or becomes visible to the player. This is not for NPCs that were already present and visible in the scene, or for NPCs that are newly arrived but immediately visible (use `npcArrival` for that). This event should be triggered any time a hidden NPC (marked hidden in the XML) is described visibly in the text, even if previous prose already mentioned that they became visible, to ensure that their visibility is properly tracked in the system. The following characters are currently believed by the system to be present but hidden:
+{% for npc in npcs %}{% if npc.hiddenFromPlayer %}- {{ npc.name }}
+{% endif %}{% endfor %}
+Check the text for each of them and emit 'revealHiddenNpc' for any that can be inferred to be visible from the text to check.
 
 ```xml
 <revealHiddenNpc>

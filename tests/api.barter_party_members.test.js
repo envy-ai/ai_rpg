@@ -39,6 +39,19 @@ test('barter trade buttons can render on party cards', () => {
     assert.match(partyTabBlock, /registerNpcTradeButton\(card, member\)/);
 });
 
+test('barter NPC resolver uses client-visible disposition hostility heuristic', () => {
+    const apiSource = fs.readFileSync(path.join(rootDir, 'api.js'), 'utf8');
+    const helperBlock = extractBlock(
+        apiSource,
+        'function isNpcHostileToCurrentPlayer',
+        'function isNpcInCurrentPlayerParty'
+    );
+
+    assert.match(helperBlock, /def\.hostileThreshold/);
+    assert.match(helperBlock, /npc\.getDisposition\(currentPlayer\.id, key\)/);
+    assert.doesNotMatch(helperBlock, /Boolean\(npc\.isHostile\)/);
+});
+
 test('concluded barter sessions force the merchant through NPC turns', () => {
     const source = fs.readFileSync(path.join(rootDir, 'api.js'), 'utf8');
     const executeBlock = extractBlock(

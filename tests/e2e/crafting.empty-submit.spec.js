@@ -33,6 +33,30 @@ test.describe('crafting modal empty-slot submits', () => {
         expect(requestPayload.slots).toEqual([]);
     });
 
+    test('ctrl-enter in crafting notes submits the primary prose action', async ({ page }) => {
+        let requestPayload = null;
+        await page.route('**/api/craft', async (route) => {
+            requestPayload = route.request().postDataJSON();
+            await route.fulfill({
+                status: 200,
+                contentType: 'application/json',
+                body: JSON.stringify({ success: true })
+            });
+        });
+
+        await page.goto('/', { waitUntil: 'domcontentloaded' });
+        await openCraftingModalFromDisabledTrigger(page, '#craftItemButton');
+        await page.locator('#craftingNotesInput').fill('test craft shortcut');
+        await page.locator('#craftingNotesInput').press('Control+Enter');
+
+        await expect.poll(() => requestPayload).not.toBeNull();
+        expect(requestPayload.mode).toBe('craft');
+        expect(requestPayload.noProse).not.toBe(true);
+        expect(requestPayload.notes).toBe('test craft shortcut');
+        expect(requestPayload.itemIds).toEqual([]);
+        expect(requestPayload.slots).toEqual([]);
+    });
+
     test('modify-location submits no selected materials as an intentional empty payload', async ({ page }) => {
         let requestPayload = null;
         await page.route('**/api/locations/test-location/modify', async (route) => {

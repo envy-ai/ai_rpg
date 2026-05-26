@@ -802,7 +802,7 @@ Rules:
 - Default is `false`.
 - When `true`, `/api/chat` creates one `tool-call-debug` chat entry per prose prompt that uses tools, updates that same entry as each tool starts and completes, and emits the existing `chat_history_updated` realtime event after each update.
 - The debug entry stores the tool name, parameters, result content, and result metadata in structured `toolCalls` records. It is marked with `metadata.excludeFromBaseContextHistory: true`, so it is visible in the chat log but excluded from future prompt context.
-- The chat client renders each tool call as its own collapsible sub-box, marks cached results as `cache hit`, and uses `@andypf/json-viewer` to format the parameters/result JSON.
+- The chat client renders each tool call as its own collapsible sub-box, marks cached results as `cache hit`, and uses `@andypf/json-viewer` to format the parameters/result JSON. Result/Error `content` fields are XML-entity-decoded for display only and shown as separate preformatted text blocks, with the JSON tree retaining a `[shown below]` marker at those fields; the stored tool payload remains unchanged.
 
 ## Tool-call round limit
 

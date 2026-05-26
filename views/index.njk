@@ -16846,6 +16846,20 @@
             });
         }
 
+        function isCtrlEnterSubmitShortcut(event) {
+            return Boolean(event && !event.isComposing && event.key === 'Enter' && (event.ctrlKey || event.metaKey));
+        }
+
+        function clickPrimaryButtonForShortcut(event, button) {
+            if (!isCtrlEnterSubmitShortcut(event) || !button || button.disabled) {
+                return false;
+            }
+            event.preventDefault();
+            event.stopPropagation();
+            button.click();
+            return true;
+        }
+
         if (craftingCancelButton) {
             craftingCancelButton.addEventListener('click', () => {
                 closeCraftingModal();
@@ -16870,6 +16884,15 @@
         }
         if (craftingInventoryFilterInput) {
             craftingInventoryFilterInput.addEventListener('input', () => renderCraftingInventory());
+        }
+        const handleCraftingNotesCtrlEnter = (event) => {
+            if (!craftingIsOpen) {
+                return;
+            }
+            clickPrimaryButtonForShortcut(event, craftingActionButton);
+        };
+        if (craftingNotesInput) {
+            craftingNotesInput.addEventListener('keydown', handleCraftingNotesCtrlEnter);
         }
         if (craftingInventorySlotFilter) {
             craftingInventorySlotFilter.addEventListener('change', () => renderCraftingInventory());
@@ -16912,6 +16935,17 @@
             salvageIntentBackdrop.addEventListener('click', () => closeSalvageIntentModal());
         }
 
+        const handleSalvageIntentCtrlEnter = (event) => {
+            const salvageModalOpen = salvageIntentModal && salvageIntentModal.getAttribute('aria-hidden') === 'false';
+            if (!salvageModalOpen) {
+                return;
+            }
+            clickPrimaryButtonForShortcut(event, salvageIntentSubmitBtn);
+        };
+        if (salvageIntentInput) {
+            salvageIntentInput.addEventListener('keydown', handleSalvageIntentCtrlEnter);
+        }
+
         document.addEventListener('keydown', (event) => {
             if (event.key !== 'Escape') {
                 return;
@@ -16930,7 +16964,7 @@
 
         function setupCtrlEnterSubmission() {
             const handleCtrlEnter = (event) => {
-                if (event.isComposing || event.key !== 'Enter' || !(event.ctrlKey || event.metaKey)) {
+                if (!isCtrlEnterSubmitShortcut(event)) {
                     return;
                 }
 
@@ -16941,9 +16975,7 @@
                     const submitBtn = root.querySelector('button[type="submit"]:not([disabled])')
                         || root.querySelector('.button-primary:not([disabled])');
                     if (submitBtn) {
-                        event.preventDefault();
-                        submitBtn.click();
-                        return true;
+                        return clickPrimaryButtonForShortcut(event, submitBtn);
                     }
                     return false;
                 };

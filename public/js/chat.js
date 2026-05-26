@@ -61,6 +61,83 @@ function formatNewExitLocationEndpoint(locationName, regionName, currentRegionNa
         : normalizedLocationName;
 }
 
+function decodeToolCallDebugXmlEntities(value) {
+    if (typeof value !== 'string' || !value) {
+        return value;
+    }
+    return value
+        .replace(/&lt;/gi, '<')
+        .replace(/&gt;/gi, '>')
+        .replace(/&quot;/gi, '"')
+        .replace(/&apos;/gi, "'")
+        .replace(/&#39;/gi, "'")
+        .replace(/&amp;/gi, '&');
+}
+
+function cloneToolCallDebugDisplayValue(value, { unescapeContentFields = false } = {}) {
+    if (Array.isArray(value)) {
+        return value.map(entry => cloneToolCallDebugDisplayValue(entry, { unescapeContentFields }));
+    }
+    if (!value || typeof value !== 'object') {
+        return value;
+    }
+
+    const clone = {};
+    for (const [key, nestedValue] of Object.entries(value)) {
+        if (unescapeContentFields && key === 'content' && typeof nestedValue === 'string') {
+            clone[key] = decodeToolCallDebugXmlEntities(nestedValue);
+        } else {
+            clone[key] = cloneToolCallDebugDisplayValue(nestedValue, { unescapeContentFields });
+        }
+    }
+    return clone;
+}
+
+function prepareToolCallDebugSectionValue(label, value) {
+    const normalizedLabel = typeof label === 'string' ? label.trim().toLowerCase() : '';
+    return cloneToolCallDebugDisplayValue(value, {
+        unescapeContentFields: normalizedLabel === 'result' || normalizedLabel === 'error'
+    });
+}
+
+function prepareToolCallDebugSectionDisplay(label, value) {
+    const normalizedLabel = typeof label === 'string' ? label.trim().toLowerCase() : '';
+    const jsonValue = prepareToolCallDebugSectionValue(label, value);
+    if (normalizedLabel !== 'result' && normalizedLabel !== 'error') {
+        return { jsonValue, contentFields: [] };
+    }
+
+    const contentFields = [];
+    const replaceContentFields = (nestedValue, pathPrefix = '') => {
+        if (Array.isArray(nestedValue)) {
+            return nestedValue.map((entry, index) => {
+                const nextPathPrefix = pathPrefix ? `${pathPrefix}[${index}]` : `[${index}]`;
+                return replaceContentFields(entry, nextPathPrefix);
+            });
+        }
+        if (!nestedValue || typeof nestedValue !== 'object') {
+            return nestedValue;
+        }
+
+        const clone = {};
+        for (const [key, childValue] of Object.entries(nestedValue)) {
+            const path = pathPrefix ? `${pathPrefix}.${key}` : key;
+            if (key === 'content' && typeof childValue === 'string' && childValue.trim()) {
+                contentFields.push({ path, content: childValue });
+                clone[key] = '[shown below]';
+            } else {
+                clone[key] = replaceContentFields(childValue, path);
+            }
+        }
+        return clone;
+    };
+
+    return {
+        jsonValue: replaceContentFields(jsonValue),
+        contentFields
+    };
+}
+
 function getCurrentNewExitSummaryContext() {
     const currentLocation = window.AIRPG_LAST_LOCATION && typeof window.AIRPG_LAST_LOCATION === 'object'
         ? window.AIRPG_LAST_LOCATION
@@ -2514,9 +2591,30 @@ class AIRPGChat {
         heading.textContent = label;
         section.appendChild(heading);
 
-        section.appendChild(this.createToolCallDebugJsonViewer(value));
+        const display = prepareToolCallDebugSectionDisplay(label, value);
+        display.contentFields.forEach(field => {
+            section.appendChild(this.createToolCallDebugContentFieldElement(field));
+        });
+        section.appendChild(this.createToolCallDebugJsonViewer(display.jsonValue));
 
         return section;
+    }
+
+    createToolCallDebugContentFieldElement(field) {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'tool-call-debug-content-field';
+
+        const title = document.createElement('div');
+        title.className = 'tool-call-debug-content-field-title';
+        title.textContent = field && field.path ? field.path : 'content';
+        wrapper.appendChild(title);
+
+        const body = document.createElement('pre');
+        body.className = 'tool-call-debug-content-field-body';
+        body.textContent = field && typeof field.content === 'string' ? field.content : '';
+        wrapper.appendChild(body);
+
+        return wrapper;
     }
 
     createToolCallDebugJsonViewer(value) {

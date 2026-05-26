@@ -107,8 +107,8 @@ Most modals live in `views/index.njk` and are wired up by the inline script or `
 
 ## Crafting / processing
 
-- `#craftingModal`: drag-and-drop crafting UI for craft/process and `Modify Location`; craft and process show an available-items/scenery picker that combines active player inventory with current-location items and scenery plus item contents inside current-location containers, including contents of scenery containers while nested container contents remain item-only. `Modify Location` still uses optional selected player-inventory materials/tools. Craft, process, and location modification submits may run with no selected slot inputs when the player is relying on the station, location, abilities, or notes.
-- `#salvageIntentModal`: optional prompt before salvage; salvage and harvest still require exactly one target item.
+- `#craftingModal`: drag-and-drop crafting UI for craft/process and `Modify Location`; craft and process show an available-items/scenery picker that combines active player inventory with current-location items and scenery plus item contents inside current-location containers, including contents of scenery containers while nested container contents remain item-only. `Modify Location` still uses optional selected player-inventory materials/tools. Craft, process, and location modification submits may run with no selected slot inputs when the player is relying on the station, location, abilities, or notes. Ctrl/Cmd+Enter in the notes textarea triggers the primary prose submit button.
+- `#salvageIntentModal`: optional prompt before salvage; salvage and harvest still require exactly one target item. Ctrl/Cmd+Enter in the intent textarea triggers the primary prose submit button.
 
 ## Save/load
 
@@ -130,7 +130,7 @@ Most modals live in `views/index.njk` and are wired up by the inline script or `
 
 ## Image lightbox
 
-- `#imageLightbox`: full-screen image viewer bound by `public/js/lightbox.js`.
+- `#imageLightbox`: full-screen image viewer bound by `public/js/lightbox.js`. Clicking either visible pane or the surrounding backdrop closes the viewer.
 
 ## Notes
 

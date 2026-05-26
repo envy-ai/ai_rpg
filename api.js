@@ -155,6 +155,51 @@ function shouldIncludePlayerActionForEventChecks({
     return true;
 }
 
+function hasMeaningfulRegisteredThingBlueprintFieldValue(value) {
+    if (value === undefined || value === null) {
+        return false;
+    }
+    if (typeof value === 'string') {
+        const normalized = value.trim().toLowerCase();
+        return Boolean(normalized && normalized !== 'n/a' && normalized !== 'none');
+    }
+    if (Array.isArray(value)) {
+        return value.length > 0;
+    }
+    if (typeof value === 'object') {
+        return Object.keys(value).length > 0;
+    }
+    return true;
+}
+
+function extractRegisteredThingBlueprintFields(blueprint = {}) {
+    const registry = Globals.modExtensionRegistry;
+    const fields = registry && typeof registry.getEntityFields === 'function'
+        ? registry.getEntityFields('thing')
+        : [];
+    const values = {};
+    let shouldClearSlot = false;
+
+    for (const field of fields) {
+        if (!field || typeof field.fieldName !== 'string') {
+            continue;
+        }
+        if (!Object.prototype.hasOwnProperty.call(blueprint, field.fieldName)) {
+            continue;
+        }
+        const value = blueprint[field.fieldName];
+        if (!hasMeaningfulRegisteredThingBlueprintFieldValue(value)) {
+            continue;
+        }
+        values[field.fieldName] = value;
+        if (field.clearThingSlotWhenPresent === true) {
+            shouldClearSlot = true;
+        }
+    }
+
+    return { values, shouldClearSlot };
+}
+
 function isRegularProseChatToolAllowed(functionName, modExtensionRegistry = null) {
     if (typeof functionName !== 'string' || !functionName.trim()) {
         return false;
@@ -2361,9 +2406,6 @@ module.exports = function registerApiRoutes(scope) {
 
         function isNpcHostileToCurrentPlayer(npc) {
             if (!npc) {
-                return true;
-            }
-            if (Boolean(npc.isHostile)) {
                 return true;
             }
             if (!currentPlayer || !currentPlayer.id || currentPlayer.id === npc.id) {
@@ -35821,6 +35863,7 @@ module.exports = function registerApiRoutes(scope) {
                         }
                         return entries.length ? entries : null;
                     })();
+                    const registeredBlueprintFields = extractRegisteredThingBlueprintFields(itemBlueprint);
 
                     const metadata = sanitizeMetadataObject({
                         rarity: itemBlueprint.rarity || null,
@@ -35842,7 +35885,7 @@ module.exports = function registerApiRoutes(scope) {
                         thingType,
                         rarity: itemBlueprint.rarity || null,
                         itemTypeDetail: itemBlueprint.type || null,
-                        slot: itemBlueprint.slot || null,
+                        slot: registeredBlueprintFields.shouldClearSlot ? null : (itemBlueprint.slot || null),
                         attributeBonuses: attributeBonuses.length ? attributeBonuses : null,
                         unscaledAttributeBonuses: rawAttributeBonuses,
                         causeStatusEffect: combinedCauseEffect,
@@ -35857,7 +35900,8 @@ module.exports = function registerApiRoutes(scope) {
                         isHarvestable: itemBlueprint.isHarvestable,
                         isSalvageable: itemBlueprint.isSalvageable,
                         isContainer: itemBlueprint.isContainer,
-                        requiresCheckToOpen: itemBlueprint.requiresCheckToOpen
+                        requiresCheckToOpen: itemBlueprint.requiresCheckToOpen,
+                        ...registeredBlueprintFields.values
                     });
                 };
 
@@ -46020,3 +46064,4 @@ module.exports.resolveBarterOfferItemReference = resolveBarterOfferItemReference
 module.exports.buildBarterCurrencySettlement = buildBarterCurrencySettlement;
 module.exports.sanitizeBarterPricingXmlForParsing = sanitizeBarterPricingXmlForParsing;
 module.exports.shouldIncludePlayerActionForEventChecks = shouldIncludePlayerActionForEventChecks;
+module.exports.extractRegisteredThingBlueprintFields = extractRegisteredThingBlueprintFields;

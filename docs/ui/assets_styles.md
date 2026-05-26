@@ -53,7 +53,7 @@
 ## Vendor libraries (public/vendor)
 Loaded on the chat page:
 - `cytoscape.min.js` + layout plugins (`cose-base`, `fcose`, `euler`) for maps.
-- `json-viewer.js`, vendored from `@andypf/json-viewer`, registers the `andypf-json-viewer` web component used for tool-call debug JSON sections.
+- `json-viewer.js`, vendored from `@andypf/json-viewer`, registers the `andypf-json-viewer` web component used for tool-call debug JSON sections. Result/Error `content` fields are pulled into adjacent `.tool-call-debug-content-field` preformatted blocks so escaped XML remains readable while the surrounding JSON stays inspectable.
 - `markdown-it.min.js` for chat markdown rendering.
 - `nunjucks.js` for client-side templating.
 - `vaadin.js` (loaded for UI assets; check usage before removal).
@@ -79,7 +79,7 @@ Loaded on the chat page:
   reusing the existing tooltip-card markup inside the right-hand pane. Desktop keeps the image
   in a left column capped to `67vw` and vertically centers the tooltip pane without stretching it
   full-height, while mobile switches the panes vertical and makes the overall viewer scrollable.
-  Clicking either pane dismisses the lightbox.
+  Clicking either pane or the surrounding backdrop dismisses the lightbox.
 - Shared theming primitives for entity cards/menus live in `public/css/main.scss`:
   `.entity-card`, `.entity-icon`, `.entity-image`, `.entity-name`,
   `.entity-context-menu-button`, `.entity-context-menu`, `.entity-context-menu-item`.

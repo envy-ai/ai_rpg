@@ -45,13 +45,13 @@ Notes:
 - If provided, `hiddenFromPlayer` must be a boolean. Dead NPCs/corpses remain visible because the `Player` model normalizes hidden state to `false` while dead.
 
 ## POST /api/npcs/:id/trade/session
-Start or refresh a barter session with a non-hostile NPC at the current location or in the player party.
+Start or refresh a barter session with an NPC at the current location or in the player party whose current disposition toward the player is not hostile.
 
 Request:
 - Path: `id`
 
 Behavior:
-- The target must be an NPC at the current player location or in the current player party, alive, not hostile, and currently willing to trade.
+- The target must be an NPC at the current player location or in the current player party, alive, not hostile according to the same disposition-threshold heuristic exposed to the client as `isHostileToPlayer`, and currently willing to trade. A stale raw `isHostile` flag alone does not block barter once current dispositions are no longer hostile.
 - The route refreshes expired trade refusals, performs daily barter-stock refresh when enough world time has passed, renders the base-context `barter-prices` prompt, logs it through `LLMClient.logPrompt` with metadata label `barter_prices`, and stores a temporary quoted session.
 - The pricing prompt receives player inventory, merchant normal inventory, merchant persisted barter stock, standard item values, the merchant's current currency, and the configured generated-stock count range. Existing item offers are expected to return only items the merchant is willing to buy or sell, with both exact item name and item id; omitted existing items are treated as unavailable for trade. The parser matches by unique exact name first and only falls back to id when the name is blank or ambiguous. Bad ids are logged as warnings and the affected offer is skipped instead of failing the whole prompt. Unicode replacement characters in returned pricing XML are removed with a warning before strict parsing so encoding glitches in text content do not abort the whole session. Generated stock seeds are instantiated as Things through batched `inventory-generator` prompts capped by `barter.generated_stock.max_items_per_prompt`, then moved into the NPC's separate barter inventory.
 - When the route is doing initial or daily barter-stock generation, the prompt must also return a refreshed merchant currency value; the server applies it to the NPC before returning the session.
