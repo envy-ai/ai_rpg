@@ -12105,6 +12105,229 @@
             return result;
         }
 
+        const moduleCardDropInFlightIds = new Set();
+
+        function getModuleDropHolderItems(options = {}) {
+            const context = typeof options.context === 'string' ? options.context.trim() : '';
+            if (context === 'npc-inventory' || context === 'npc-equipment') {
+                return Array.isArray(currentNpcInventory) ? currentNpcInventory : [];
+            }
+            if (context === 'container-player-inventory') {
+                return Array.isArray(currentThingContainerPlayerInventory)
+                    ? currentThingContainerPlayerInventory
+                    : (Array.isArray(window.currentPlayerData?.inventory) ? window.currentPlayerData.inventory : []);
+            }
+            if (context === 'location') {
+                return Array.isArray(currentLocationThingCollections.allItems)
+                    ? currentLocationThingCollections.allItems
+                    : (Array.isArray(currentLocationThingCollections.items) ? currentLocationThingCollections.items : []);
+            }
+            return Array.isArray(window.currentPlayerData?.inventory) ? window.currentPlayerData.inventory : [];
+        }
+
+        function resolveModuleDropBaseItem(baseItem, options = {}) {
+            const baseItemId = typeof baseItem?.id === 'string' ? baseItem.id.trim() : '';
+            if (!baseItemId) {
+                return null;
+            }
+            return getModuleDropHolderItems(options).find(item => item?.id === baseItemId)
+                || thingDataCache.get(baseItemId)
+                || baseItem
+                || null;
+        }
+
+        function getModuleCardItemSourceForOptions(options = {}) {
+            return options.context === 'location' ? 'location' : 'inventory';
+        }
+
+        function resolveModuleDropSourceFromModalDragState(dragState = null) {
+            const context = typeof dragState?.context === 'string' ? dragState.context.trim() : '';
+            if (context === 'npc-inventory' || context === 'player-inventory' || context === 'container-player-inventory') {
+                return 'inventory';
+            }
+            return '';
+        }
+
+        function canDropModuleIntoBaseItem(moduleItem, baseItem, options = {}) {
+            const resolvedBaseItem = resolveModuleDropBaseItem(baseItem, options);
+            if (!moduleItem?.id || !resolvedBaseItem?.id || moduleItem.id === resolvedBaseItem.id) {
+                return false;
+            }
+            const moduleType = getThingModuleType(moduleItem);
+            if (!moduleType || getThingInstalledModuleBaseId(moduleItem)) {
+                return false;
+            }
+            if (moduleItem.isEquipped || moduleItem.equippedSlot) {
+                return false;
+            }
+            const moduleCount = Number(moduleItem.count || 1);
+            if (Number.isFinite(moduleCount) && moduleCount > 1) {
+                return false;
+            }
+            try {
+                return countOpenModuleSlots(resolvedBaseItem, getModuleDropHolderItems(options), moduleType) > 0;
+            } catch (error) {
+                console.warn('Failed to evaluate module drop compatibility:', error);
+                return false;
+            }
+        }
+
+        function resolveThingModuleDropSource(baseItem, options = {}) {
+            const baseItemId = typeof baseItem?.id === 'string' ? baseItem.id.trim() : '';
+            if (!baseItemId) {
+                return null;
+            }
+
+            if (draggedLocationThing?.id && draggedLocationThing.id !== baseItemId) {
+                const draggedType = normalizeThingTypeForDrag(draggedLocationThing.thingType);
+                const moduleItem = thingDataCache.get(draggedLocationThing.id)
+                    || draggedLocationThing.thing
+                    || { id: draggedLocationThing.id };
+                if (draggedType === 'item' && canDropModuleIntoBaseItem(moduleItem, baseItem, options)) {
+                    return {
+                        moduleItem,
+                        moduleItemSource: 'location',
+                        dragState: draggedLocationThing,
+                        modalDragState: null
+                    };
+                }
+            }
+
+            if (modalInventoryDragState?.thingId && modalInventoryDragState.thingId !== baseItemId) {
+                const moduleItem = thingDataCache.get(modalInventoryDragState.thingId)
+                    || modalInventoryDragState.thing
+                    || { id: modalInventoryDragState.thingId };
+                const moduleItemSource = resolveModuleDropSourceFromModalDragState(modalInventoryDragState);
+                if (moduleItemSource && canDropModuleIntoBaseItem(moduleItem, baseItem, options)) {
+                    return {
+                        moduleItem,
+                        moduleItemSource,
+                        dragState: null,
+                        modalDragState: modalInventoryDragState
+                    };
+                }
+            }
+
+            return null;
+        }
+
+        async function installModuleFromCardDrop({ baseItem, moduleItem, moduleItemSource, options = {} } = {}) {
+            const resolvedBaseItem = resolveModuleDropBaseItem(baseItem, options);
+            if (!resolvedBaseItem?.id || !moduleItem?.id) {
+                throw new Error('Module drop requires a modular item and a module item.');
+            }
+            const owner = resolveModThingContextActionOwner(options);
+            if (!owner.ownerId) {
+                throw new Error('Module drop requires a player or NPC inventory owner.');
+            }
+            const baseItemSource = getModuleWorkbenchItemSource(
+                resolvedBaseItem,
+                getModuleCardItemSourceForOptions(options)
+            );
+            const response = await fetch(`/api/mod-thing-context-actions/${encodeURIComponent('modules:install-module')}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    thingId: resolvedBaseItem.id,
+                    context: options.context || 'general',
+                    locationId: options.locationId || null,
+                    npcId: options.npcId || null,
+                    baseItemId: resolvedBaseItem.id,
+                    baseItemSource: baseItemSource,
+                    moduleItemId: moduleItem.id,
+                    moduleItemSource,
+                    slotType: getThingModuleType(moduleItem),
+                    ...owner
+                })
+            });
+            const result = await response.json().catch(() => ({}));
+            if (!response.ok || !result?.success) {
+                throw new Error(result?.error || `HTTP ${response.status}`);
+            }
+            await refreshAfterModThingContextAction(result, options, resolvedBaseItem);
+            return result;
+        }
+
+        function registerThingModuleDropTarget(card, thing, options = {}) {
+            if (!(card instanceof HTMLElement) || !thing?.id || !getThingModuleSlots(thing).length) {
+                return;
+            }
+            card.classList.add('thing-module-drop-target');
+
+            const getDropSource = () => resolveThingModuleDropSource(thingDataCache.get(thing.id) || thing, options);
+            const clearHover = () => card.classList.remove('is-drop-hover');
+
+            card.addEventListener('dragover', (event) => {
+                const dropSource = getDropSource();
+                if (!dropSource) {
+                    return;
+                }
+                event.preventDefault();
+                event.stopPropagation();
+                event.stopImmediatePropagation?.();
+                if (event.dataTransfer) {
+                    event.dataTransfer.dropEffect = 'move';
+                }
+                card.classList.add('is-drop-hover');
+            });
+
+            card.addEventListener('dragenter', (event) => {
+                const dropSource = getDropSource();
+                if (!dropSource) {
+                    return;
+                }
+                event.preventDefault();
+                event.stopPropagation();
+                event.stopImmediatePropagation?.();
+                card.classList.add('is-drop-hover');
+            });
+
+            card.addEventListener('dragleave', (event) => {
+                if (!card.contains(event.relatedTarget)) {
+                    clearHover();
+                }
+            });
+
+            card.addEventListener('drop', async (event) => {
+                const dropSource = getDropSource();
+                if (!dropSource) {
+                    return;
+                }
+                event.preventDefault();
+                event.stopPropagation();
+                event.stopImmediatePropagation?.();
+                clearHover();
+                const moduleItemId = dropSource.moduleItem?.id || '';
+                if (moduleItemId && moduleCardDropInFlightIds.has(moduleItemId)) {
+                    return;
+                }
+                if (moduleItemId) {
+                    moduleCardDropInFlightIds.add(moduleItemId);
+                }
+                try {
+                    await installModuleFromCardDrop({
+                        baseItem: thingDataCache.get(thing.id) || thing,
+                        moduleItem: dropSource.moduleItem,
+                        moduleItemSource: dropSource.moduleItemSource,
+                        options
+                    });
+                } catch (error) {
+                    console.warn('Failed to install dropped module:', error);
+                    window.alert(error?.message || 'Failed to install module.');
+                } finally {
+                    if (moduleItemId) {
+                        moduleCardDropInFlightIds.delete(moduleItemId);
+                    }
+                    if (dropSource.dragState) {
+                        resetThingDragState(moduleItemId);
+                    }
+                    if (dropSource.modalDragState) {
+                        clearModalInventoryDragState(moduleItemId);
+                    }
+                }
+            });
+        }
+
         function populateAttributeSelect(selectElement, selectedAttribute = '') {
             if (!selectElement) {
                 return;
@@ -32088,7 +32311,6 @@
 
         let draggedLocationThing = null;
         const locationThingDropInFlightIds = new Set();
-        const moduleCardDropInFlightIds = new Set();
 
         const resetThingDragState = (expectedThingId = null) => {
             if (!expectedThingId || draggedLocationThing?.id === expectedThingId) {
@@ -32277,227 +32499,6 @@
                 return !dragState.npcId || !currentPlayerId || dragState.npcId === currentPlayerId;
             }
             return false;
-        }
-
-        function getModuleDropHolderItems(options = {}) {
-            const context = typeof options.context === 'string' ? options.context.trim() : '';
-            if (context === 'npc-inventory' || context === 'npc-equipment') {
-                return Array.isArray(currentNpcInventory) ? currentNpcInventory : [];
-            }
-            if (context === 'container-player-inventory') {
-                return Array.isArray(currentThingContainerPlayerInventory)
-                    ? currentThingContainerPlayerInventory
-                    : (Array.isArray(window.currentPlayerData?.inventory) ? window.currentPlayerData.inventory : []);
-            }
-            if (context === 'location') {
-                return Array.isArray(currentLocationThingCollections.allItems)
-                    ? currentLocationThingCollections.allItems
-                    : (Array.isArray(currentLocationThingCollections.items) ? currentLocationThingCollections.items : []);
-            }
-            return Array.isArray(window.currentPlayerData?.inventory) ? window.currentPlayerData.inventory : [];
-        }
-
-        function resolveModuleDropBaseItem(baseItem, options = {}) {
-            const baseItemId = typeof baseItem?.id === 'string' ? baseItem.id.trim() : '';
-            if (!baseItemId) {
-                return null;
-            }
-            return getModuleDropHolderItems(options).find(item => item?.id === baseItemId)
-                || thingDataCache.get(baseItemId)
-                || baseItem
-                || null;
-        }
-
-        function getModuleCardItemSourceForOptions(options = {}) {
-            return options.context === 'location' ? 'location' : 'inventory';
-        }
-
-        function resolveModuleDropSourceFromModalDragState(dragState = null) {
-            const context = typeof dragState?.context === 'string' ? dragState.context.trim() : '';
-            if (context === 'npc-inventory' || context === 'player-inventory' || context === 'container-player-inventory') {
-                return 'inventory';
-            }
-            return '';
-        }
-
-        function canDropModuleIntoBaseItem(moduleItem, baseItem, options = {}) {
-            const resolvedBaseItem = resolveModuleDropBaseItem(baseItem, options);
-            if (!moduleItem?.id || !resolvedBaseItem?.id || moduleItem.id === resolvedBaseItem.id) {
-                return false;
-            }
-            const moduleType = getThingModuleType(moduleItem);
-            if (!moduleType || getThingInstalledModuleBaseId(moduleItem)) {
-                return false;
-            }
-            if (moduleItem.isEquipped || moduleItem.equippedSlot) {
-                return false;
-            }
-            const moduleCount = Number(moduleItem.count || 1);
-            if (Number.isFinite(moduleCount) && moduleCount > 1) {
-                return false;
-            }
-            try {
-                return countOpenModuleSlots(resolvedBaseItem, getModuleDropHolderItems(options), moduleType) > 0;
-            } catch (error) {
-                console.warn('Failed to evaluate module drop compatibility:', error);
-                return false;
-            }
-        }
-
-        function resolveThingModuleDropSource(baseItem, options = {}) {
-            const baseItemId = typeof baseItem?.id === 'string' ? baseItem.id.trim() : '';
-            if (!baseItemId) {
-                return null;
-            }
-
-            if (draggedLocationThing?.id && draggedLocationThing.id !== baseItemId) {
-                const draggedType = normalizeThingTypeForDrag(draggedLocationThing.thingType);
-                const moduleItem = thingDataCache.get(draggedLocationThing.id)
-                    || draggedLocationThing.thing
-                    || { id: draggedLocationThing.id };
-                if (draggedType === 'item' && canDropModuleIntoBaseItem(moduleItem, baseItem, options)) {
-                    return {
-                        moduleItem,
-                        moduleItemSource: 'location',
-                        dragState: draggedLocationThing,
-                        modalDragState: null
-                    };
-                }
-            }
-
-            if (modalInventoryDragState?.thingId && modalInventoryDragState.thingId !== baseItemId) {
-                const moduleItem = thingDataCache.get(modalInventoryDragState.thingId)
-                    || modalInventoryDragState.thing
-                    || { id: modalInventoryDragState.thingId };
-                const moduleItemSource = resolveModuleDropSourceFromModalDragState(modalInventoryDragState);
-                if (moduleItemSource && canDropModuleIntoBaseItem(moduleItem, baseItem, options)) {
-                    return {
-                        moduleItem,
-                        moduleItemSource,
-                        dragState: null,
-                        modalDragState: modalInventoryDragState
-                    };
-                }
-            }
-
-            return null;
-        }
-
-        async function installModuleFromCardDrop({ baseItem, moduleItem, moduleItemSource, options = {} } = {}) {
-            const resolvedBaseItem = resolveModuleDropBaseItem(baseItem, options);
-            if (!resolvedBaseItem?.id || !moduleItem?.id) {
-                throw new Error('Module drop requires a modular item and a module item.');
-            }
-            const owner = resolveModThingContextActionOwner(options);
-            if (!owner.ownerId) {
-                throw new Error('Module drop requires a player or NPC inventory owner.');
-            }
-            const baseItemSource = getModuleWorkbenchItemSource(
-                resolvedBaseItem,
-                getModuleCardItemSourceForOptions(options)
-            );
-            const response = await fetch(`/api/mod-thing-context-actions/${encodeURIComponent('modules:install-module')}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    thingId: resolvedBaseItem.id,
-                    context: options.context || 'general',
-                    locationId: options.locationId || null,
-                    npcId: options.npcId || null,
-                    baseItemId: resolvedBaseItem.id,
-                    baseItemSource: baseItemSource,
-                    moduleItemId: moduleItem.id,
-                    moduleItemSource,
-                    slotType: getThingModuleType(moduleItem),
-                    ...owner
-                })
-            });
-            const result = await response.json().catch(() => ({}));
-            if (!response.ok || !result?.success) {
-                throw new Error(result?.error || `HTTP ${response.status}`);
-            }
-            await refreshAfterModThingContextAction(result, options, resolvedBaseItem);
-            return result;
-        }
-
-        function registerThingModuleDropTarget(card, thing, options = {}) {
-            if (!(card instanceof HTMLElement) || !thing?.id || !getThingModuleSlots(thing).length) {
-                return;
-            }
-            card.classList.add('thing-module-drop-target');
-
-            const getDropSource = () => resolveThingModuleDropSource(thingDataCache.get(thing.id) || thing, options);
-            const clearHover = () => card.classList.remove('is-drop-hover');
-
-            card.addEventListener('dragover', (event) => {
-                const dropSource = getDropSource();
-                if (!dropSource) {
-                    return;
-                }
-                event.preventDefault();
-                event.stopPropagation();
-                event.stopImmediatePropagation?.();
-                if (event.dataTransfer) {
-                    event.dataTransfer.dropEffect = 'move';
-                }
-                card.classList.add('is-drop-hover');
-            });
-
-            card.addEventListener('dragenter', (event) => {
-                const dropSource = getDropSource();
-                if (!dropSource) {
-                    return;
-                }
-                event.preventDefault();
-                event.stopPropagation();
-                event.stopImmediatePropagation?.();
-                card.classList.add('is-drop-hover');
-            });
-
-            card.addEventListener('dragleave', (event) => {
-                if (!card.contains(event.relatedTarget)) {
-                    clearHover();
-                }
-            });
-
-            card.addEventListener('drop', async (event) => {
-                const dropSource = getDropSource();
-                if (!dropSource) {
-                    return;
-                }
-                event.preventDefault();
-                event.stopPropagation();
-                event.stopImmediatePropagation?.();
-                clearHover();
-                const moduleItemId = dropSource.moduleItem?.id || '';
-                if (moduleItemId && moduleCardDropInFlightIds.has(moduleItemId)) {
-                    return;
-                }
-                if (moduleItemId) {
-                    moduleCardDropInFlightIds.add(moduleItemId);
-                }
-                try {
-                    await installModuleFromCardDrop({
-                        baseItem: thingDataCache.get(thing.id) || thing,
-                        moduleItem: dropSource.moduleItem,
-                        moduleItemSource: dropSource.moduleItemSource,
-                        options
-                    });
-                } catch (error) {
-                    console.warn('Failed to install dropped module:', error);
-                    window.alert(error?.message || 'Failed to install module.');
-                } finally {
-                    if (moduleItemId) {
-                        moduleCardDropInFlightIds.delete(moduleItemId);
-                    }
-                    if (dropSource.dragState) {
-                        resetThingDragState(moduleItemId);
-                    }
-                    if (dropSource.modalDragState) {
-                        clearModalInventoryDragState(moduleItemId);
-                    }
-                }
-            });
         }
 
         function resolveThingContainerDropSource(containerThing) {

@@ -164,3 +164,19 @@ test('module items can be dropped directly onto modular item cards with open slo
     assert.match(chatDocs, /Dropping a loose module item card onto a modular item card/i);
     assert.match(moduleDocs, /Loose module item cards can also be dropped directly onto compatible modular item cards/i);
 });
+
+test('module card drop target helper is shared before inventory renderers use it', () => {
+    const source = read('views/index.njk');
+    const helperIndex = source.indexOf('function registerThingModuleDropTarget(card, thing, options = {})');
+    const inventoryIndex = source.indexOf('function renderNpcInventory(items = [])');
+    const containerIndex = source.indexOf('function renderThingContainerModal()');
+    const locationDragIndex = source.indexOf('let draggedLocationThing = null');
+
+    assert.notEqual(helperIndex, -1, 'expected module card drop target helper');
+    assert.notEqual(inventoryIndex, -1, 'expected NPC/player inventory renderer');
+    assert.notEqual(containerIndex, -1, 'expected container modal renderer');
+    assert.notEqual(locationDragIndex, -1, 'expected location drag/drop state');
+    assert.ok(helperIndex < inventoryIndex, 'inventory renderers must not reference a later location-scoped module drop helper');
+    assert.ok(helperIndex < containerIndex, 'container inventory renderers must not reference a later location-scoped module drop helper');
+    assert.ok(helperIndex < locationDragIndex, 'module card drop helper must live in shared item-card code, not the location drag/drop section');
+});
