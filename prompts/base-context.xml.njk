@@ -243,13 +243,20 @@ The below context is an account of the current game state, including the setting
         {% if not omitInventoryItems %}
         <inventory>{% if useShortDescriptions -%}
 {%- for item in npc.inventory -%}
+{%- set installedModuleBaseId = item.moduleInstalledOnItemId | default('', true) | lower -%}
+{%- if installedModuleBaseId in ['', 'n/a', 'none', 'null'] -%}
 {{ item.name }}{% if item.count and item.count > 1 %} x{{ item.count }}{% endif %}: {{ item.rarity | default('common', true) }} level {{ item.level | default(1, true) }} {{ itemValueSummary(item) }} - {{ item.shortDescription | default(item.description, true) }}{% if item.equippedSlot %} (Equipped to {{ item.equippedSlot }}){% endif %}{% if item.isContainer %} (Container{% if item.containerContents and item.containerContents.length %}: contains {{ containerContentsSummary(item.containerContents) }}{% else %}: empty{% endif %}){% endif %}{% if not loop.last %}{{ "\n" }}{% endif %}
+{%- endif -%}
 {%- endfor -%}
 {%- else %}
-          {% for item in npc.inventory %}<item>
+          {% for item in npc.inventory %}
+            {% set installedModuleBaseId = item.moduleInstalledOnItemId | default('', true) | lower %}
+            {% if installedModuleBaseId in ['', 'n/a', 'none', 'null'] %}
+          <item>
             <name>{{ item.name }}</name>
             <equippedSlot>{{ item.equippedSlot | default('none') }}</equippedSlot>
           </item>
+            {% endif %}
         {% endfor %}{% endif %}</inventory>
         {% endif %}
         <skills>
@@ -408,10 +415,15 @@ The below context is an account of the current game state, including the setting
     {% if not omitInventoryItems %}
     <inventory>{% if useShortDescriptions -%}
 {%- for item in currentPlayer.inventory -%}
+{%- set installedModuleBaseId = item.moduleInstalledOnItemId | default('', true) | lower -%}
+{%- if installedModuleBaseId in ['', 'n/a', 'none', 'null'] -%}
 {{ item.name }}: {{ item.rarity | default('common', true) }} level {{ item.level | default(1, true) }} {{ itemValueSummary(item) }} - {{ item.shortDescription | default(item.description, true) }}{% if item.equippedSlot %} (Equipped to {{ item.equippedSlot }}){% endif %}{% if not loop.last %}{{ "\n" }}{% endif %}
+{%- endif -%}
 {%- endfor -%}
 {%- else %}
       {% for item in currentPlayer.inventory %}
+      {% set installedModuleBaseId = item.moduleInstalledOnItemId | default('', true) | lower %}
+      {% if installedModuleBaseId in ['', 'n/a', 'none', 'null'] %}
       <item>
         <name>{{ item.name }}</name>
         <description>{{ item.description }}</description>
@@ -429,6 +441,7 @@ The below context is an account of the current game state, including the setting
         <weight>{{ item.weight | default(0) }}</weight>
         <properties>{{ item.properties | default('', true) }}</properties>
       </item>
+      {% endif %}
       {% endfor %}
     {% endif %}</inventory>
     {% endif %}
@@ -510,13 +523,20 @@ The below context is an account of the current game state, including the setting
       {% if not omitInventoryItems %}
       <inventory>{% if useShortDescriptions -%}
 {%- for item in member.inventory -%}
+{%- set installedModuleBaseId = item.moduleInstalledOnItemId | default('', true) | lower -%}
+{%- if installedModuleBaseId in ['', 'n/a', 'none', 'null'] -%}
 {{ item.name }}: {{ item.rarity | default('common', true) }} level {{ item.level | default(1, true) }} {{ itemValueSummary(item) }} - {{ item.shortDescription | default(item.description, true) }}{% if item.equippedSlot %} (Equipped to {{ item.equippedSlot }}){% endif %}{% if not loop.last %}{{ "\n" }}{% endif %}
+{%- endif -%}
 {%- endfor -%}
 {%- else %}
-        {% for item in member.inventory %}<item>
+        {% for item in member.inventory %}
+          {% set installedModuleBaseId = item.moduleInstalledOnItemId | default('', true) | lower %}
+          {% if installedModuleBaseId in ['', 'n/a', 'none', 'null'] %}
+        <item>
           <name>{{ item.name }}</name>
           <equippedSlot>{{ item.equippedSlot | default('none') }}</equippedSlot>
         </item>
+          {% endif %}
       {% endfor %}{% endif %}</inventory>
       {% endif %}
       <skills>

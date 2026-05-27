@@ -102,6 +102,8 @@ function buildRenderContext() {
         plotSummary: '',
         plotExpander: '',
         worldTime: {
+            dayIndex: 0,
+            timeMinutes: 720,
             dateLabel: 'Day 1',
             timeLabel: '12:00 PM',
             segment: 'Noon',
@@ -165,6 +167,41 @@ test('base-context status effect XML includes effect names', () => {
     assert.match(rendered, /<effect>\s*<name>Bleeding Wounds<\/name>\s*<description>Open cuts continue to bleed\.<\/description>/);
     assert.match(rendered, /<effect>\s*<name>Shaken<\/name>\s*<description>Hands tremble after the ambush\.<\/description>/);
     assert.match(rendered, /<effect>\s*<name>True North<\/name>\s*<description>The needle refuses to point anywhere else\.<\/description>/);
+});
+
+test('base-context inventory omits installed modules as standalone items', () => {
+    const promptEnv = createPromptEnv();
+    const context = buildRenderContext();
+    context.currentPlayer.inventory = [
+        {
+            id: 'blade_1',
+            name: 'Socketed Blade',
+            rarity: 'Rare',
+            level: 3,
+            value: 50,
+            shortDescription: 'A sword with a bright module installed.',
+            description: 'A sword with a bright module installed.',
+            installedModuleIds: ['ruby_core_1'],
+            statusEffects: []
+        },
+        {
+            id: 'ruby_core_1',
+            name: 'Ruby Core',
+            rarity: 'Rare',
+            level: 3,
+            value: 25,
+            shortDescription: 'An installed module that should not be listed as loose inventory.',
+            description: 'An installed module that should not be listed as loose inventory.',
+            moduleType: 'core',
+            moduleInstalledOnItemId: 'blade_1',
+            statusEffects: []
+        }
+    ];
+
+    const rendered = promptEnv.render('base-context.xml.njk', context);
+
+    assert.match(rendered, /Socketed Blade/);
+    assert.doesNotMatch(rendered, /Ruby Core/);
 });
 
 test('base-context generationPrompt CDATA preserves literal XML-shaped instructions', () => {

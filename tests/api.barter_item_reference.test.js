@@ -135,6 +135,17 @@ test('barter pricing prompt omits unavailable item offers instead of asking for 
     assert.doesNotMatch(apiSource, /did not include a usable offer for player item/);
 });
 
+test('barter pricing excludes installed modules from standalone inventory offers', () => {
+    const rootDir = path.join(__dirname, '..');
+    const apiSource = fs.readFileSync(path.join(rootDir, 'api.js'), 'utf8');
+
+    assert.match(apiSource, /function isInstalledModuleInventoryItem/);
+    assert.match(apiSource, /function getStandaloneInventoryItems/);
+    assert.match(apiSource, /getStandaloneInventoryItems\(currentPlayer\.getInventoryItems\(\)\)/);
+    assert.match(apiSource, /getStandaloneInventoryItems\(npc\.getInventoryItems\(\)\)/);
+    assert.match(apiSource, /getStandaloneInventoryItems\(npc\.getBarterInventoryItems\(\)\)/);
+});
+
 test('barter pricing XML sanitizer removes Unicode replacement characters before strict parsing', () => {
     const warnings = [];
     const sanitized = sanitizeBarterPricingXmlForParsing(

@@ -100,6 +100,7 @@ Response:
 
 Notes:
 - `/api/load` compares `metadata.enabledMods` against the running startup-frozen active mod list before hydration. Old saves without `enabledMods` skip this check.
+- In the client Save Mods Differ modal, `extraActive` is shown as newly added mods and `missingFromActive` is shown as missing mods.
 - Passing `modMismatchChoice: 'keep-current'` loads despite the mismatch, leaving the running mod configuration unchanged.
 - `/api/load` reapplies the save's `gameConfigOverride.yaml` through the same merged-config reload path used by `/reload_config` before the world is hydrated.
 - `/api/load` also runs strict need-bar prompt-sentence validation before hydration, so saves do not load into a runtime where base-context need summaries would be missing prose.

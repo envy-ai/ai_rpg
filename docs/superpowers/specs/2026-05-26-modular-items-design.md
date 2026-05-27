@@ -20,7 +20,7 @@ The mod registers first-class Thing fields under the `modules` namespace:
 
 - `moduleSlots`: array on base items. Each entry is an object with:
   - `type`: configured module slot type.
-  - `label`: optional display label; defaults to the configured type label.
+  - Individual module slots are not named; the configured slot type supplies the display label.
 - `moduleType`: string on module items. It must match one configured module slot type.
 - `installedModuleIds`: array on base items. Each id points to an installed module Thing.
 - `moduleInstalledOnItemId`: string backlink on module items. It points at the base item id.
@@ -122,7 +122,7 @@ Attack mechanics:
 
 World Profiles:
 
-- The `Modules` tab edits display terminology, item label, badge image path, preset selection, and the slot-type list.
+- The `Modules` tab edits display terminology, item label, preset selection, and the slot-type list.
 - Slot-type rows support add/remove and edit id/label/description.
 - Saving an empty or invalid slot-type list fails in the UI before sending and fails again on the server if reached.
 
@@ -135,15 +135,14 @@ Item editor:
 
 Inventory/location cards:
 
-- Base item cards show installed modules as a compact strip with a small image and module name.
-- Classic/table/grid/small-grid layouts use stable dimensions so strips do not shift item card geometry.
-- Module items show a badge indicating their module type.
-- Base items with module slots show a configurable badge indicating module compatibility.
+- Base item cards do not render installed module strips; installed module details stay in tooltip/lightbox content.
+- Module items show the `module.svg` badge in the upper-left image corner.
+- Base items with module slots show the `modular.svg` badge in the upper-left image corner, with occupied/total slot text on the badge.
 
 Tooltip and lightbox:
 
 - Item tooltips include a `Modules` section under the base item details.
-- Each installed module row shows small image, name, slot label/type, attribute bonuses, and target/equipper effects when present.
+- Each installed module row shows a small module icon to the left of the name, plus slot type, attribute bonuses, and target/equipper effects when present.
 - The image lightbox reuses the tooltip content, so installed modules appear there automatically.
 
 Context menu actions:
@@ -208,8 +207,8 @@ UI/source tests:
 
 - World Profiles renders the module slot-type list editor.
 - Item edit modal renders module slot/type controls.
-- Thing cards render installed module strips.
-- Tooltip/lightbox source includes installed module sections.
+- Thing cards omit installed module strips.
+- Tooltip/lightbox source includes installed module sections with module icons beside module names.
 - Context menus expose install/remove module actions from registered mod actions.
 - SCSS compiles to CSS.
 

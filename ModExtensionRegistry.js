@@ -7,6 +7,7 @@ class ModExtensionRegistry {
     #actorStatusContributors = [];
     #attributeModifierContributors = [];
     #statusEffectContributors = [];
+    #thingTargetStatusEffectContributors = [];
     #inventorySyncContributors = [];
     #settingFields = new Map();
     #settingTabs = new Map();
@@ -150,13 +151,24 @@ class ModExtensionRegistry {
         fieldName,
         exposeToGeneratorPrompt,
         exposeToXmlParser,
-        xmlPrompt
+        xmlPrompt,
+        xmlPromptPlaceholderProvider
     }) {
         if (!exposeToGeneratorPrompt && !exposeToXmlParser) {
             if (xmlPrompt !== undefined && xmlPrompt !== null && xmlPrompt !== '') {
                 throw new Error(`Entity field "${entityType}.${fieldName}" xmlPrompt requires exposeToGeneratorPrompt or exposeToXmlParser.`);
             }
+            if (xmlPromptPlaceholderProvider !== undefined && xmlPromptPlaceholderProvider !== null) {
+                throw new Error(`Entity field "${entityType}.${fieldName}" xmlPromptPlaceholderProvider requires exposeToGeneratorPrompt or exposeToXmlParser.`);
+            }
             return null;
+        }
+        if (
+            xmlPromptPlaceholderProvider !== undefined
+            && xmlPromptPlaceholderProvider !== null
+            && typeof xmlPromptPlaceholderProvider !== 'function'
+        ) {
+            throw new Error(`Entity field "${entityType}.${fieldName}" xmlPromptPlaceholderProvider must be a function when provided.`);
         }
 
         const rawPrompt = xmlPrompt === undefined ? null : xmlPrompt;
@@ -176,7 +188,7 @@ class ModExtensionRegistry {
             throw new Error(`Entity field "${entityType}.${fieldName}" xmlPrompt must be a string or object.`);
         }
 
-        if (exposeToGeneratorPrompt && !rawPlaceholder) {
+        if (exposeToGeneratorPrompt && !rawPlaceholder && typeof xmlPromptPlaceholderProvider !== 'function') {
             throw new Error(`Entity field "${entityType}.${fieldName}" exposeToGeneratorPrompt requires xmlPrompt.placeholder.`);
         }
 
@@ -193,7 +205,8 @@ class ModExtensionRegistry {
 
         return {
             tagName,
-            placeholder: rawPlaceholder
+            placeholder: rawPlaceholder,
+            placeholderProvider: xmlPromptPlaceholderProvider || null
         };
     }
 
@@ -242,14 +255,49 @@ class ModExtensionRegistry {
         };
     }
 
-    static #cloneEntityField(field) {
-        return field
-            ? {
-                ...field,
-                edit: field.edit ? { ...field.edit } : null,
-                xmlPrompt: field.xmlPrompt ? { ...field.xmlPrompt } : null
-            }
-            : null;
+    static #resolveDynamicEntityFieldText(provider, fallback, context, field, label) {
+        if (typeof provider !== 'function') {
+            return fallback;
+        }
+        const value = provider(context || {}, field);
+        if (value === null || value === undefined) {
+            return fallback;
+        }
+        if (typeof value !== 'string') {
+            throw new Error(`${label} provider for entity field "${field.entityType}.${field.fieldName}" must return a string.`);
+        }
+        return value.trim();
+    }
+
+    static #cloneEntityField(field, { descriptionContext = {} } = {}) {
+        if (!field) {
+            return null;
+        }
+        const cloned = {
+            ...field,
+            edit: field.edit ? { ...field.edit } : null,
+            xmlPrompt: field.xmlPrompt ? { ...field.xmlPrompt } : null,
+            toolSchema: field.toolSchema ? ModExtensionRegistry.#cloneJsonish(field.toolSchema) : null
+        };
+        cloned.description = ModExtensionRegistry.#resolveDynamicEntityFieldText(
+            field.descriptionProvider,
+            field.description,
+            descriptionContext,
+            field,
+            'description'
+        );
+        if (cloned.xmlPrompt) {
+            cloned.xmlPrompt.placeholder = ModExtensionRegistry.#resolveDynamicEntityFieldText(
+                field.xmlPrompt?.placeholderProvider,
+                field.xmlPrompt.placeholder,
+                descriptionContext,
+                field,
+                'xmlPrompt.placeholder'
+            );
+            delete cloned.xmlPrompt.placeholderProvider;
+        }
+        delete cloned.descriptionProvider;
+        return cloned;
     }
 
     static #normalizeAssetUrlForMod(value, modName, fieldName) {
@@ -419,6 +467,16 @@ class ModExtensionRegistry {
         return value === true;
     }
 
+    static #normalizeEntityFieldToolSchema({ entityType, fieldName, toolSchema }) {
+        if (toolSchema === undefined || toolSchema === null || toolSchema === '') {
+            return null;
+        }
+        if (!toolSchema || typeof toolSchema !== 'object' || Array.isArray(toolSchema)) {
+            throw new Error(`Entity field "${entityType}.${fieldName}" toolSchema must be an object.`);
+        }
+        return ModExtensionRegistry.#cloneJsonish(toolSchema);
+    }
+
     clear() {
         this.#chatTools.clear();
         this.#xmlEventsByTag.clear();
@@ -427,6 +485,7 @@ class ModExtensionRegistry {
         this.#actorStatusContributors = [];
         this.#attributeModifierContributors = [];
         this.#statusEffectContributors = [];
+        this.#thingTargetStatusEffectContributors = [];
         this.#inventorySyncContributors = [];
         this.#settingFields.clear();
         this.#settingTabs.clear();
@@ -580,6 +639,10 @@ class ModExtensionRegistry {
         this.#registerContributor(this.#statusEffectContributors, 'status effect', { modName, contributor });
     }
 
+    registerThingTargetStatusEffectContributor({ modName, contributor } = {}) {
+        this.#registerContributor(this.#thingTargetStatusEffectContributors, 'Thing target status effect', { modName, contributor });
+    }
+
     registerInventorySyncContributor({ modName, contributor } = {}) {
         this.#registerContributor(this.#inventorySyncContributors, 'inventory sync', { modName, contributor });
     }
@@ -598,6 +661,10 @@ class ModExtensionRegistry {
 
     getStatusEffectContributors() {
         return [...this.#statusEffectContributors];
+    }
+
+    getThingTargetStatusEffectContributors() {
+        return [...this.#thingTargetStatusEffectContributors];
     }
 
     getInventorySyncContributors() {
@@ -638,6 +705,22 @@ class ModExtensionRegistry {
         const effects = [];
         for (const record of this.#statusEffectContributors) {
             const value = record.contributor(actor, context);
+            if (value === null || value === undefined) {
+                continue;
+            }
+            if (Array.isArray(value)) {
+                effects.push(...value);
+                continue;
+            }
+            effects.push(value);
+        }
+        return effects;
+    }
+
+    collectThingTargetStatusEffectContributions(actor, thing, context = {}) {
+        const effects = [];
+        for (const record of this.#thingTargetStatusEffectContributors) {
+            const value = record.contributor(actor, thing, context);
             if (value === null || value === undefined) {
                 continue;
             }
@@ -787,7 +870,10 @@ class ModExtensionRegistry {
         exposeToEditModal = false,
         clearThingSlotWhenPresent = false,
         edit = undefined,
-        xmlPrompt = undefined
+        xmlPrompt = undefined,
+        toolSchema = undefined,
+        descriptionProvider = undefined,
+        xmlPromptPlaceholderProvider = undefined
     } = {}) {
         const normalizedModName = ModExtensionRegistry.#normalizeModName(modName);
         const normalizedEntityType = ModExtensionRegistry.#normalizeEntityType(entityType);
@@ -812,6 +898,9 @@ class ModExtensionRegistry {
             throw new Error(`Entity field "${normalizedEntityType}.${normalizedFieldName}" clearThingSlotWhenPresent is only valid for Thing fields.`);
         }
         const normalizedType = ModExtensionRegistry.#normalizeEntityFieldType(type);
+        if (descriptionProvider !== undefined && descriptionProvider !== null && typeof descriptionProvider !== 'function') {
+            throw new Error(`Entity field "${normalizedEntityType}.${normalizedFieldName}" descriptionProvider must be a function when provided.`);
+        }
 
         const record = {
             modName: normalizedModName,
@@ -820,6 +909,7 @@ class ModExtensionRegistry {
             type: normalizedType,
             defaultValue,
             description: typeof description === 'string' ? description.trim() : '',
+            descriptionProvider: descriptionProvider || null,
             exposeToCreateTool: ModExtensionRegistry.#normalizeBoolean(exposeToCreateTool),
             exposeToUpdateTool: ModExtensionRegistry.#normalizeBoolean(exposeToUpdateTool),
             exposeToGeneratorPrompt: normalizedExposeToGeneratorPrompt,
@@ -838,7 +928,13 @@ class ModExtensionRegistry {
                 fieldName: normalizedFieldName,
                 exposeToGeneratorPrompt: normalizedExposeToGeneratorPrompt,
                 exposeToXmlParser: normalizedExposeToXmlParser,
-                xmlPrompt
+                xmlPrompt,
+                xmlPromptPlaceholderProvider
+            }),
+            toolSchema: ModExtensionRegistry.#normalizeEntityFieldToolSchema({
+                entityType: normalizedEntityType,
+                fieldName: normalizedFieldName,
+                toolSchema
             })
         };
         fields.set(normalizedFieldName, record);
@@ -861,7 +957,8 @@ class ModExtensionRegistry {
         exposeToUpdateTool = undefined,
         exposeToGeneratorPrompt = undefined,
         exposeToXmlParser = undefined,
-        exposeToEditModal = undefined
+        exposeToEditModal = undefined,
+        descriptionContext = {}
     } = {}) {
         const normalizedEntityType = typeof entityType === 'string' && entityType.trim()
             ? entityType.trim().toLowerCase()
@@ -888,7 +985,7 @@ class ModExtensionRegistry {
                 }
                 return true;
             })
-            .map(field => ModExtensionRegistry.#cloneEntityField(field));
+            .map(field => ModExtensionRegistry.#cloneEntityField(field, { descriptionContext }));
     }
 
     registerThingImageBadge({

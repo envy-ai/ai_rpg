@@ -20,8 +20,13 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
     {% set shouldPersist = field.persist != false %}
     <div class="form-group full-width">
         <label for="{{ fieldId }}">{{ field.label or field.key }}</label>
-        {% if field.type == 'object' %}
+        {% if field.namespace == 'modules' and field.key == 'slotTypes' %}
+        <textarea id="{{ fieldId }}" rows="4" class="modules-slot-types-source" hidden data-mod-setting-field="{{ 'true' if shouldPersist else 'false' }}" data-mod-setting-persist="{{ 'true' if shouldPersist else 'false' }}" data-mod-setting-namespace="{{ field.namespace }}" data-mod-setting-key="{{ field.key }}" data-mod-setting-type="{{ field.type }}" data-mod-setting-default="{{ fieldDefaultJson | escape }}" data-mod-setting-action="{{ field.action | default('', true) }}">{{ field.defaultValue | default([]) | dump(2) }}</textarea>
+        <div class="modules-slot-types-editor" data-modules-slot-types-editor="{{ fieldId }}"></div>
+        {% elif field.type == 'object' %}
         <textarea id="{{ fieldId }}" rows="4" data-mod-setting-field="{{ 'true' if shouldPersist else 'false' }}" data-mod-setting-persist="{{ 'true' if shouldPersist else 'false' }}" data-mod-setting-namespace="{{ field.namespace }}" data-mod-setting-key="{{ field.key }}" data-mod-setting-type="{{ field.type }}" data-mod-setting-default="{{ fieldDefaultJson | escape }}" data-mod-setting-action="{{ field.action | default('', true) }}">{{ field.defaultValue | default({}) | dump(2) }}</textarea>
+        {% elif field.type == 'array' %}
+        <textarea id="{{ fieldId }}" rows="4" data-mod-setting-field="{{ 'true' if shouldPersist else 'false' }}" data-mod-setting-persist="{{ 'true' if shouldPersist else 'false' }}" data-mod-setting-namespace="{{ field.namespace }}" data-mod-setting-key="{{ field.key }}" data-mod-setting-type="{{ field.type }}" data-mod-setting-default="{{ fieldDefaultJson | escape }}" data-mod-setting-action="{{ field.action | default('', true) }}">{{ field.defaultValue | default([]) | dump(2) }}</textarea>
         {% elif field.type == 'select' %}
         <select id="{{ fieldId }}" data-mod-setting-field="{{ 'true' if shouldPersist else 'false' }}" data-mod-setting-persist="{{ 'true' if shouldPersist else 'false' }}" data-mod-setting-namespace="{{ field.namespace }}" data-mod-setting-key="{{ field.key }}" data-mod-setting-type="{{ field.type }}" data-mod-setting-default="{{ fieldDefaultJson | escape }}" data-mod-setting-action="{{ field.action | default('', true) }}">
             <option value="">{{ field.placeholder or 'Select...' }}</option>
@@ -1532,11 +1537,124 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                 return;
             }
             const type = (field.dataset.modSettingType || 'string').trim();
-            field.value = type === 'object'
-                ? JSON.stringify(value && typeof value === 'object' && !Array.isArray(value) ? value : {}, null, 2)
+            field.value = (type === 'object' || type === 'array')
+                ? JSON.stringify(value && typeof value === 'object' ? value : (type === 'array' ? [] : {}), null, 2)
                 : String(value ?? '');
             field.dispatchEvent(new Event('input', { bubbles: true }));
             field.dispatchEvent(new Event('change', { bubbles: true }));
+            renderModulesSlotTypesEditor(field);
+        }
+
+        function parseModulesSlotTypesFieldValue(field) {
+            const raw = field?.value?.trim() || '';
+            if (!raw) {
+                return [];
+            }
+            const parsed = JSON.parse(raw);
+            if (!Array.isArray(parsed)) {
+                throw new Error('Modules slot types must be a JSON array.');
+            }
+            return parsed;
+        }
+
+        function collectModulesSlotTypesEditorValue(field) {
+            const editor = field ? document.querySelector(`[data-modules-slot-types-editor="${field.id}"]`) : null;
+            if (!editor) {
+                return parseModulesSlotTypesFieldValue(field);
+            }
+            const rows = Array.from(editor.querySelectorAll('.modules-slot-types-editor__row'));
+            const values = rows.map((row, index) => {
+                const id = row.querySelector('[data-module-slot-type-id]')?.value?.trim() || '';
+                const label = row.querySelector('[data-module-slot-type-label]')?.value?.trim() || '';
+                const description = row.querySelector('[data-module-slot-type-description]')?.value?.trim() || '';
+                if (!id) {
+                    throw new Error(`Modules slotTypes[${index}].id is required.`);
+                }
+                return { id, label, description };
+            });
+            if (!values.length) {
+                throw new Error('Modules slot types must include at least one entry.');
+            }
+            const seen = new Set();
+            values.forEach(entry => {
+                const key = entry.id.toLowerCase();
+                if (seen.has(key)) {
+                    throw new Error(`Modules slot types contain duplicate id "${entry.id}".`);
+                }
+                seen.add(key);
+            });
+            field.value = JSON.stringify(values, null, 2);
+            return values;
+        }
+
+        function renderModulesSlotTypesEditor(field) {
+            if (!field || field.dataset.modSettingNamespace !== 'modules' || field.dataset.modSettingKey !== 'slotTypes') {
+                return;
+            }
+            const editor = document.querySelector(`[data-modules-slot-types-editor="${field.id}"]`);
+            if (!editor) {
+                return;
+            }
+            let slotTypes;
+            try {
+                slotTypes = parseModulesSlotTypesFieldValue(field);
+            } catch (error) {
+                slotTypes = [];
+            }
+            if (!slotTypes.length) {
+                slotTypes = [{ id: 'module', label: 'Module', description: 'General-purpose module slot.' }];
+            }
+
+            const addRow = (entry = {}) => {
+                const row = document.createElement('div');
+                row.className = 'modules-slot-types-editor__row';
+                const makeField = (labelText, value, attrName) => {
+                    const label = document.createElement('label');
+                    const span = document.createElement('span');
+                    span.textContent = labelText;
+                    const input = document.createElement('input');
+                    input.type = 'text';
+                    input.value = value || '';
+                    input.dataset[attrName] = 'true';
+                    label.appendChild(span);
+                    label.appendChild(input);
+                    return label;
+                };
+                row.appendChild(makeField('ID', entry.id, 'moduleSlotTypeId'));
+                row.appendChild(makeField('Label', entry.label, 'moduleSlotTypeLabel'));
+                row.appendChild(makeField('Description', entry.description, 'moduleSlotTypeDescription'));
+                const remove = document.createElement('button');
+                remove.type = 'button';
+                remove.className = 'btn btn-secondary small modules-slot-types-editor__remove';
+                remove.textContent = 'Remove';
+                remove.addEventListener('click', () => {
+                    row.remove();
+                    try {
+                        collectModulesSlotTypesEditorValue(field);
+                    } catch (_) {}
+                });
+                row.appendChild(remove);
+                row.querySelectorAll('input').forEach(input => {
+                    input.addEventListener('input', () => {
+                        try {
+                            collectModulesSlotTypesEditorValue(field);
+                        } catch (_) {}
+                    });
+                });
+                editor.insertBefore(row, editor.querySelector('.modules-slot-types-editor__add') || null);
+            };
+
+            editor.innerHTML = '';
+            slotTypes.forEach(addRow);
+            const addButton = document.createElement('button');
+            addButton.type = 'button';
+            addButton.className = 'btn btn-secondary small modules-slot-types-editor__add';
+            addButton.textContent = 'Add Slot Type';
+            addButton.addEventListener('click', () => {
+                addRow({ id: `module${editor.querySelectorAll('.modules-slot-types-editor__row').length + 1}`, label: '', description: '' });
+                collectModulesSlotTypesEditorValue(field);
+            });
+            editor.appendChild(addButton);
         }
 
         function applyModSettingPreset(selector) {
@@ -1601,10 +1719,14 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                 if (!modSettings[namespace]) {
                     modSettings[namespace] = {};
                 }
-                if (type === 'object') {
+                if (namespace === 'modules' && key === 'slotTypes') {
+                    modSettings[namespace][key] = collectModulesSlotTypesEditorValue(field);
+                    return;
+                }
+                if (type === 'object' || type === 'array') {
                     const raw = field.value.trim();
                     if (!raw) {
-                        modSettings[namespace][key] = {};
+                        modSettings[namespace][key] = type === 'array' ? [] : {};
                         return;
                     }
                     try {
@@ -1612,6 +1734,18 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                     } catch (error) {
                         const label = field.closest('.form-group')?.querySelector('label')?.textContent?.trim() || `${namespace}.${key}`;
                         const wrapped = new Error(`${label} must be valid JSON: ${error.message}`);
+                        wrapped.editorTab = field.closest('.editor-tab-panel')?.dataset?.editorPanel || 'prompts';
+                        throw wrapped;
+                    }
+                    if (type === 'array' && !Array.isArray(modSettings[namespace][key])) {
+                        const label = field.closest('.form-group')?.querySelector('label')?.textContent?.trim() || `${namespace}.${key}`;
+                        const wrapped = new Error(`${label} must be a JSON array.`);
+                        wrapped.editorTab = field.closest('.editor-tab-panel')?.dataset?.editorPanel || 'prompts';
+                        throw wrapped;
+                    }
+                    if (type === 'object' && (!modSettings[namespace][key] || typeof modSettings[namespace][key] !== 'object' || Array.isArray(modSettings[namespace][key]))) {
+                        const label = field.closest('.form-group')?.querySelector('label')?.textContent?.trim() || `${namespace}.${key}`;
+                        const wrapped = new Error(`${label} must be a JSON object.`);
                         wrapped.editorTab = field.closest('.editor-tab-panel')?.dataset?.editorPanel || 'prompts';
                         throw wrapped;
                     }
@@ -1626,11 +1760,11 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
             const type = (field.dataset.modSettingType || 'string').trim();
             const rawDefault = field.dataset.modSettingDefault || 'null';
             const parsedDefault = JSON.parse(rawDefault);
-            if (type === 'object') {
-                const objectDefault = parsedDefault && typeof parsedDefault === 'object' && !Array.isArray(parsedDefault)
-                    ? parsedDefault
-                    : {};
-                return JSON.stringify(objectDefault, null, 2);
+            if (type === 'object' || type === 'array') {
+                const structuredDefault = type === 'array'
+                    ? (Array.isArray(parsedDefault) ? parsedDefault : [])
+                    : (parsedDefault && typeof parsedDefault === 'object' && !Array.isArray(parsedDefault) ? parsedDefault : {});
+                return JSON.stringify(structuredDefault, null, 2);
             }
             return parsedDefault === null || parsedDefault === undefined
                 ? ''
@@ -1655,11 +1789,13 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                 const configured = modSettings?.[namespace]?.[key];
                 if (configured === undefined) {
                     field.value = getModSettingFieldDefaultValue(field);
+                    renderModulesSlotTypesEditor(field);
                     return;
                 }
-                field.value = type === 'object'
+                field.value = (type === 'object' || type === 'array')
                     ? JSON.stringify(configured, null, 2)
                     : String(configured ?? '');
+                renderModulesSlotTypesEditor(field);
             });
         }
 

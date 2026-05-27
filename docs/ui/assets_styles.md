@@ -30,7 +30,11 @@
   - Compiled output: `public/css/main.css`.
 - `public/css/settings.scss`
   - World Profiles page layout and field styling, including the structured Calendar tab editor rows, sub-tabs, dynamic select stale-state styling, and compact responsive layouts.
+  - The modules mod's `slotTypes` setting uses `.modules-slot-types-editor` row controls in the Worlds editor for add/remove/edit behavior while persisting as the normal namespaced `modSettings.modules.slotTypes` array.
   - Compiled output: `public/css/settings.css`.
+- `mods/modules/public/css/modules.scss`
+  - Styles installed-module tooltip/lightbox rows, including the small module icon shown to the left of each module name, plus module slot-type editor rows.
+  - Compiled output: `mods/modules/public/css/modules.css`.
 - `public/css/lorebooks.css`
   - Lorebooks page styling (no SCSS source in repo).
 - `public/css/map.css`
@@ -39,6 +43,8 @@
 ## Images
 - `public/generated-images/` is the image output directory for entity images; persisted image IDs are displayed through `/api/images/:imageId/file` so PNG/JPEG/WebP/GIF files do not require extension-specific client URLs.
 - `mods/<mod>/assets/` stores mod-owned image/icon assets served at `/mods/<mod>/assets/...`. Runtime hooks such as Thing image badges use `scope.getModAssetUrl(...)` to reference these files.
+- `mods/modules/assets/module.svg` is the bundled installable-module badge icon and tooltip fallback thumbnail.
+- `mods/modules/assets/modular.svg` is the bundled modular-item badge icon for items with module slots.
 - `public/icons/` stores static UI icon assets (for example, `sword-shield.svg`).
 - `assets/material-icons/app-nav-icons/` stores mask-friendly app-header icons for New Game, System, Tools, Save, Load, Debug, and Player Stats. App-header masks also reuse existing game-tab icons for Play, Worlds, and Lorebooks, and `assets/material-icons/misc/puzzle.svg` for Mods.
 - `assets/material-icons/misc/compress.svg` and `assets/material-icons/misc/expand.svg` are used by the docked prompt-progress tracker mode buttons and rendered as white right-aligned controls in the one-line state. `assets/material-icons/misc/view_prompt.svg`, `restart.svg`, and `cancel.svg` are used by the prompt row action buttons, rendered as white icons on transparent borderless buttons. `star.svg` and `star_solid.svg` provide matching outlined/solid star variants, including the borderless transparent current-location favorite toggle inset `4px` from the image corner.
@@ -113,6 +119,14 @@ Loaded on the chat page:
   uses this path to place a configurable badge in the upper-left corner of implant-compatible
   item images. Its default preset uses `mods/implants/assets/microchip.svg`; the tattoo preset
   uses `mods/implants/assets/image.svg`.
+- The bundled modules mod uses separate badge assets: `modular.svg` for module-compatible base
+  items and `module.svg` for installable module items. Both badges render in the upper-left image
+  corner. Installed module summaries use `.modules-tooltip-module__*` classes in tooltip/lightbox
+  content, and occupied module-workbench slot previews contain-scale installed module thumbnails
+  so the full image remains visible inside the small preview. Direct modular-card drop installs use
+  `.thing-module-drop-target.is-drop-hover` for the purple valid-target outline. Module-compatible badges can also render
+  `.entity-image-badge__slot-count` in the badge's upper-right corner, using white text with a
+  black shadow to show occupied/total slots such as `1/3`.
 - Built-in container badges can render `.entity-image-badge__lock` when the Thing has
   `requiresCheckToOpen`; the lock uses `assets/material-icons/misc/lock.svg` as a CSS mask,
   `#ff4444` fill, and `25%` badge-relative sizing in the badge's upper-right corner.

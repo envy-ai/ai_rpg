@@ -38,15 +38,16 @@ Execute a registered mod-owned Thing context-menu action.
 
 Request:
 - Path `actionId` is the registry full id, such as `implants:install-implant`.
-- Body: `{ thingId, context?, ownerId?, ownerType?, npcId?, locationId? }`.
+- Body: `{ thingId, context?, ownerId?, ownerType?, npcId?, locationId?, ...actionFields }`.
 
 Response:
-- 200: `{ success: true, actionId, result, thing, actor? }`
+- 200: `{ success: true, actionId, result, thing, actor?, location? }`
 - 400/404 with `{ success: false, error }`
 
 Notes:
 - The route looks up the action live from `ModExtensionRegistry` and calls its handler with the Thing, owner actor when resolvable, current player, runtime maps, and request context.
 - Mod handlers are authoritative and should throw explicit errors for invalid owners, incompatible items, duplicate state, or unsupported contexts.
+- The clicked `thingId` remains required for generic routing. Action-specific fields are passed through as `requestBody`; the bundled modules mod uses `baseItemId`, `moduleItemId`, `slotType`, `baseItemSource`, and `moduleItemSource` to install inventory or loose-location modules, and removes modules from the visible base item by reading its `installedModuleIds` plus the selected `moduleItemId`.
 
 ## PUT /api/things/:id
 Update a thing.

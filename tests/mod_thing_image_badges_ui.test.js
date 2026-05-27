@@ -28,6 +28,7 @@ test('play page resolves mod Thing image badges from active setting asset path f
     assert.match(viewSource, /\/mods\/\$\{badge\.modName\}\/assets\/\$\{normalizedAssetPath\}/);
     assert.match(viewSource, /function resolveModThingBadgeLabel\(badge\)/);
     assert.match(viewSource, /badge\.labelSetting/);
+    assert.match(viewSource, /isModuleCompatibleBadge\s*\?\s*`\$\{configuredLabel\.trim\(\)\}-compatible`\s*:\s*configuredLabel\.trim\(\)/);
 });
 
 test('item image badge renderer supports positioned SVG masks and raster images', () => {

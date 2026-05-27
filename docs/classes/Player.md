@@ -151,7 +151,7 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
 ## Notes
 - The class supports NPCs and players; many behaviors are shared with `isNPC` gating certain flows.
 - Gear and inventory are tightly coupled; equip/unequip flows update health and modifiers.
-- Registered mod attribute/status contributors are included in `getModifiedAttribute()` and `getStatusEffects()`. Inventory-backed attachment mods should remove stale installed item ids through `registerInventorySyncContributor`.
+- Registered mod attribute/status contributors are included in `getModifiedAttribute()` and `getStatusEffects()`. Inventory-backed attachment/module mods should remove stale installed item ids through `registerInventorySyncContributor`; the modules mod contributes installed module bonuses/status effects only when the base item is equipped.
 - NPC/player inventory generation uses the shared base-context prompt wrapper with `promptType: "inventory-generator"` and the task-specific include at `prompts/_includes/inventory-generator.njk`; generated item XML is still parsed by the existing inventory item parser and stored as `Thing` records.
 - Current health is stored and serialized as a finite float. Health setters/modifiers accept finite non-negative numbers, while client-facing health readouts round displayed current/max health upward with `Math.ceil`.
 - `healthRegenPercentPerMinute` config applies passive health regeneration as a percentage of current max health for each elapsed world minute; per-actor `healthRegenAppliedAt` is persisted so reloads do not replay already-processed regeneration.

@@ -276,6 +276,13 @@ class ModLoader {
                 return modExtensionRegistry.registerStatusEffectContributor({ modName, contributor });
             },
 
+            registerThingTargetStatusEffectContributor: (contributor) => {
+                if (!modExtensionRegistry || typeof modExtensionRegistry.registerThingTargetStatusEffectContributor !== 'function') {
+                    throw new Error(`Mod "${modName}" cannot register Thing target status effect contributors because no ModExtensionRegistry is available.`);
+                }
+                return modExtensionRegistry.registerThingTargetStatusEffectContributor({ modName, contributor });
+            },
+
             registerInventorySyncContributor: (contributor) => {
                 if (!modExtensionRegistry || typeof modExtensionRegistry.registerInventorySyncContributor !== 'function') {
                     throw new Error(`Mod "${modName}" cannot register inventory sync contributors because no ModExtensionRegistry is available.`);

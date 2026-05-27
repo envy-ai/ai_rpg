@@ -935,5 +935,25 @@
     width: 100%;
   }
 }
+/* Modules mod setting controls */
+.modules-slot-types-editor {
+  display: grid;
+  gap: 0.65rem;
+}
 
-/*# sourceMappingURL=settings.css.map */
+.modules-slot-types-editor__row {
+  display: grid;
+  grid-template-columns: minmax(7rem, 1fr) minmax(7rem, 1fr) minmax(10rem, 2fr) auto;
+  gap: 0.6rem;
+  align-items: end;
+}
+
+.modules-slot-types-editor__row label {
+  display: grid;
+  gap: 0.25rem;
+  font-size: 0.86rem;
+}
+
+.modules-slot-types-editor__row input {
+  width: 100%;
+}/*# sourceMappingURL=settings.css.map */

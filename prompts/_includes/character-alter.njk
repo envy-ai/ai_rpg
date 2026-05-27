@@ -70,7 +70,10 @@
   <inventory>
     {% if alteredCharacter.inventory %}
       {% for item in alteredCharacter.inventory %}
+      {% set installedModuleBaseId = item.moduleInstalledOnItemId | default('', true) | lower %}
+      {% if installedModuleBaseId in ['', 'n/a', 'none', 'null'] %}
       <item>{{ item.name or item }}</item>
+      {% endif %}
       {% endfor %}
     {% endif %}
   </inventory>

@@ -1813,6 +1813,62 @@
             </footer>
         </div>
     </div>
+    <div id="moduleWorkbenchModalBackdrop" class="modal-backdrop" hidden></div>
+    <div id="moduleWorkbenchModal" class="modal crafting-modal module-workbench" role="dialog" aria-modal="true" aria-hidden="true" hidden>
+        <div class="modal__dialog crafting-modal__dialog module-workbench__dialog">
+            <header class="modal__header">
+                <h2 id="moduleWorkbenchTitle">Item Modules</h2>
+                <button type="button" class="modal__close" id="moduleWorkbenchCloseBtn" aria-label="Close module workbench">
+                    <span aria-hidden="true">X</span>
+                </button>
+            </header>
+            <div class="modal__body crafting-modal__body module-workbench__body">
+                <div class="crafting-modal__content module-workbench__content">
+                    <section class="crafting-modal__inventory module-workbench__inventory">
+                        <div class="crafting-modal__section-header thing-list-panel__header">
+                            <div class="thing-list-panel__heading-group crafting-modal__heading-group">
+                                <div class="crafting-modal__heading-row">
+                                    <h3>Available Modules</h3>
+                                    <span class="inventory-count" id="moduleWorkbenchInventoryCount">0 modules</span>
+                                </div>
+                                <p class="crafting-modal__hint" id="moduleWorkbenchHint">Drag compatible modules into open slots.</p>
+                            </div>
+                            <div class="thing-list-panel__controls">
+                                {{ thingListViewToggle("moduleWorkbenchInventoryViewToggle", "moduleWorkbenchInventoryView", "Change module inventory view") }}
+                                {{ thingListSortToggle("moduleWorkbenchInventorySortToggle", "moduleWorkbenchInventorySort", "Sort module inventory") }}
+                                {{ thingListFiltersToggle("moduleWorkbenchInventoryFiltersToggle", "moduleWorkbenchInventoryFilters", "Search module inventory") }}
+                            </div>
+                        </div>
+                        <div class="thing-list-panel module-workbench__inventory-panel" id="moduleWorkbenchInventoryPanel">
+                            {{ thingListViewShell("moduleWorkbenchInventoryView", "Change module inventory view") }}
+                            {{ thingListSortShell("moduleWorkbenchInventorySort", "Sort module inventory") }}
+                            <div class="thing-list-filters-shell" id="moduleWorkbenchInventoryFilters">
+                                <div class="thing-list-filters-row">
+                                    <div class="npc-selection-filter npc-inventory-filter-input-wrapper crafting-inventory-filter">
+                                        <label class="sr-only" for="moduleWorkbenchInventoryFilterInput">Filter modules</label>
+                                        <input type="search" id="moduleWorkbenchInventoryFilterInput" class="npc-selection-filter-input" placeholder="Filter modules" aria-label="Filter modules">
+                                    </div>
+                                </div>
+                            </div>
+                            <div id="moduleWorkbenchInventoryGrid" class="crafting-modal__inventory-grid module-workbench__inventory-grid"></div>
+                            <div id="moduleWorkbenchInventoryEmpty" class="crafting-modal__empty module-workbench__empty">No loose modules are available.</div>
+                        </div>
+                    </section>
+                    <section class="crafting-modal__workspace module-workbench__workspace">
+                        <div class="crafting-modal__section-header module-workbench__base-header">
+                            <h3 id="moduleWorkbenchBaseTitle">Module Slots</h3>
+                            <div id="moduleWorkbenchBaseSummary" class="module-workbench__base-summary"></div>
+                        </div>
+                        <div id="moduleWorkbenchSlots" class="crafting-modal__slots module-workbench__slots"></div>
+                    </section>
+                </div>
+                <div id="moduleWorkbenchStatus" class="module-workbench__status" role="status" aria-live="polite"></div>
+            </div>
+            <footer class="modal__footer crafting-modal__footer module-workbench__footer">
+                <button type="button" class="button button-secondary" id="moduleWorkbenchCancelButton">Close</button>
+            </footer>
+        </div>
+    </div>
     <div id="salvageIntentBackdrop" class="modal-backdrop" hidden></div>
     <div id="salvageIntentModal" class="modal" role="dialog" aria-modal="true" aria-hidden="true" hidden>
         <div class="modal__dialog">
@@ -3019,7 +3075,7 @@
         function normalizeImageBadgeEntry(badge) {
             if (typeof badge === 'string') {
                 const icon = badge.trim();
-                return icon ? { icon, label: '', position: 'bottom-left', renderMode: 'auto' } : null;
+                return icon ? { icon, label: '', slotCountText: '', position: 'bottom-left', renderMode: 'auto' } : null;
             }
             if (!badge || typeof badge !== 'object') {
                 return null;
@@ -3044,6 +3100,7 @@
                 iconUrl,
                 imageUrl,
                 label: typeof badge.label === 'string' ? badge.label : '',
+                slotCountText: typeof badge.slotCountText === 'string' ? badge.slotCountText.trim() : '',
                 key: typeof badge.key === 'string' ? badge.key : null,
                 lockedContainer: badge.lockedContainer === true,
                 lockIconUrl: typeof badge.lockIconUrl === 'string' ? badge.lockIconUrl.trim() : '',
@@ -3155,6 +3212,7 @@
                     || entry.key === 'isSalvageable'
                     || entry.key === 'isHarvestable'
                     || entry.key === 'isContainer'
+                    || entry.key === 'mod:modules:module-compatible'
                 );
                 if (hasInteractiveBadges) {
                     overlay.classList.add('entity-image-badges--interactive');
@@ -3164,6 +3222,13 @@
                     span.className = 'entity-image-badge';
                     renderImageBadgeVisual(span, badge);
                     renderImageBadgeLockOverlay(span, badge);
+                    if (badge.slotCountText) {
+                        const slotCount = document.createElement('span');
+                        slotCount.className = 'entity-image-badge__slot-count';
+                        slotCount.textContent = badge.slotCountText;
+                        slotCount.setAttribute('aria-hidden', 'true');
+                        span.appendChild(slotCount);
+                    }
                     if (badge.label) {
                         span.title = badge.label;
                     }
@@ -3175,11 +3240,24 @@
                     const isSalvageAction = badge.key === 'isSalvageable';
                     const isHarvestAction = badge.key === 'isHarvestable';
                     const isContainerAction = badge.key === 'isContainer';
-                    if (isCraftingAction || isProcessingAction || isSalvageAction || isHarvestAction || isContainerAction) {
+                    const isModuleWorkbenchAction = badge.key === 'mod:modules:module-compatible';
+                    if (isCraftingAction || isProcessingAction || isSalvageAction || isHarvestAction || isContainerAction || isModuleWorkbenchAction) {
                         span.classList.add('entity-image-badge--action');
                         span.setAttribute('role', 'button');
                         span.setAttribute('tabindex', '0');
-                        if (isContainerAction) {
+                        if (isModuleWorkbenchAction) {
+                            const activateBadge = (event) => {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                openModuleWorkbenchModalFromBadge(element);
+                            };
+                            span.addEventListener('click', activateBadge);
+                            span.addEventListener('keydown', (event) => {
+                                if (event.key === 'Enter' || event.key === ' ') {
+                                    activateBadge(event);
+                                }
+                            });
+                        } else if (isContainerAction) {
                             const activateBadge = (event) => {
                                 event.preventDefault();
                                 event.stopPropagation();
@@ -7596,6 +7674,21 @@
 
             card.dataset.thingId = thingIdString;
             card.dataset.thingMenuAttached = 'true';
+            if (typeof options.context === 'string' && options.context.trim()) {
+                card.dataset.thingContext = options.context.trim();
+            } else {
+                delete card.dataset.thingContext;
+            }
+            if (typeof options.npcId === 'string' && options.npcId.trim()) {
+                card.dataset.thingNpcId = options.npcId.trim();
+            } else {
+                delete card.dataset.thingNpcId;
+            }
+            if (typeof options.locationId === 'string' && options.locationId.trim()) {
+                card.dataset.thingLocationId = options.locationId.trim();
+            } else {
+                delete card.dataset.thingLocationId;
+            }
 
             const button = document.createElement('button');
             button.type = 'button';
@@ -8754,6 +8847,7 @@
                 statusSections.push(renderEffectSection(equipperStatusEffect, 'EQUIP STATUS EFFECT'));
             }
             const statusEffectsHtml = statusSections.filter(Boolean).join('');
+            const installedModulesHtml = isItem ? formatInstalledModulesTooltipSection(thing) : '';
             const attributeBonuses = getAttributeBonuses(thing).filter(Boolean);
             const hasAttributeBonuses = attributeBonuses.length > 0;
             const bonusesHtml = isItem && hasAttributeBonuses
@@ -8790,6 +8884,7 @@
                     ${baseDamageHtml}
                     ${descriptionHtml}
                     ${statusEffectsHtml ? '<hr>' + statusEffectsHtml : ''}
+                    ${installedModulesHtml}
                     ${bonusesHtml}
                     ${detailsHtml}
                 </div>
@@ -9662,6 +9757,26 @@
         const craftingNoProseButton = document.getElementById('craftingNoProseButton');
         const craftingCancelButton = document.getElementById('craftingCancelButton');
         const craftingNotesInput = document.getElementById('craftingNotesInput');
+        const moduleWorkbenchModalBackdrop = document.getElementById('moduleWorkbenchModalBackdrop');
+        const moduleWorkbenchModal = document.getElementById('moduleWorkbenchModal');
+        const moduleWorkbenchTitle = document.getElementById('moduleWorkbenchTitle');
+        const moduleWorkbenchCloseBtn = document.getElementById('moduleWorkbenchCloseBtn');
+        const moduleWorkbenchCancelButton = document.getElementById('moduleWorkbenchCancelButton');
+        const moduleWorkbenchInventoryPanel = document.getElementById('moduleWorkbenchInventoryPanel');
+        const moduleWorkbenchInventoryGrid = document.getElementById('moduleWorkbenchInventoryGrid');
+        const moduleWorkbenchInventoryCount = document.getElementById('moduleWorkbenchInventoryCount');
+        const moduleWorkbenchInventoryEmpty = document.getElementById('moduleWorkbenchInventoryEmpty');
+        const moduleWorkbenchInventoryFilterInput = document.getElementById('moduleWorkbenchInventoryFilterInput');
+        const moduleWorkbenchInventoryView = document.getElementById('moduleWorkbenchInventoryView');
+        const moduleWorkbenchInventoryViewToggle = document.getElementById('moduleWorkbenchInventoryViewToggle');
+        const moduleWorkbenchInventorySort = document.getElementById('moduleWorkbenchInventorySort');
+        const moduleWorkbenchInventorySortToggle = document.getElementById('moduleWorkbenchInventorySortToggle');
+        const moduleWorkbenchInventoryFilters = document.getElementById('moduleWorkbenchInventoryFilters');
+        const moduleWorkbenchInventoryFiltersToggle = document.getElementById('moduleWorkbenchInventoryFiltersToggle');
+        const moduleWorkbenchBaseTitle = document.getElementById('moduleWorkbenchBaseTitle');
+        const moduleWorkbenchBaseSummary = document.getElementById('moduleWorkbenchBaseSummary');
+        const moduleWorkbenchSlots = document.getElementById('moduleWorkbenchSlots');
+        const moduleWorkbenchStatus = document.getElementById('moduleWorkbenchStatus');
         const salvageIntentBackdrop = document.getElementById('salvageIntentBackdrop');
         const salvageIntentModal = document.getElementById('salvageIntentModal');
         const salvageIntentTitle = document.getElementById('salvageIntentTitle');
@@ -9681,6 +9796,16 @@
         let craftingInventoryAllItems = [];
         let craftingSourceThing = null;
         let craftingIsOpen = false;
+        let moduleWorkbenchState = {
+            isOpen: false,
+            baseItem: null,
+            options: {},
+            inventory: [],
+            inventoryLookup: new Map(),
+            cardRefs: new Map(),
+            draggedModuleId: null,
+            busy: false
+        };
         let salvageIntentContext = { mode: 'salvage', thingId: null, thing: null };
         // Allow concurrent craft/harvest requests; only dedupe identical payloads to avoid double-clicks.
         const craftingRequestsInFlight = new Set();
@@ -10557,6 +10682,259 @@
             return hasMeaningfulThingModBadgeValue(value);
         }
 
+        function getActiveModuleSlotTypes() {
+            const configured = window.currentSetting?.modSettings?.modules?.slotTypes;
+            const source = Array.isArray(configured) && configured.length
+                ? configured
+                : [{ id: 'module', label: 'Module', description: 'General-purpose module slot.' }];
+            const seen = new Set();
+            const normalized = source.map(entry => {
+                if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+                    throw new Error('Modules slot types must be objects.');
+                }
+                const id = typeof entry.id === 'string' ? entry.id.trim() : '';
+                if (!id) {
+                    throw new Error('Modules slot type id is required.');
+                }
+                const key = id.toLowerCase();
+                if (seen.has(key)) {
+                    throw new Error(`Duplicate Modules slot type "${id}".`);
+                }
+                seen.add(key);
+                return {
+                    id,
+                    label: typeof entry.label === 'string' && entry.label.trim() ? entry.label.trim() : id,
+                    description: typeof entry.description === 'string' ? entry.description.trim() : ''
+                };
+            });
+            if (!normalized.length) {
+                throw new Error('Modules slot types must include at least one entry.');
+            }
+            return normalized;
+        }
+
+        function getThingModuleSlots(thing = {}) {
+            const raw = getThingModFieldValue(thing, 'moduleSlots');
+            return Array.isArray(raw)
+                ? raw.filter(entry => entry && typeof entry === 'object' && typeof entry.type === 'string' && entry.type.trim())
+                    .map(entry => ({
+                        type: entry.type.trim(),
+                        label: typeof entry.label === 'string' && entry.label.trim() ? entry.label.trim() : entry.type.trim()
+                    }))
+                : [];
+        }
+
+        function getThingModuleType(thing = {}) {
+            const value = getThingModFieldValue(thing, 'moduleType');
+            return typeof value === 'string' && hasMeaningfulThingModFieldValue(value) ? value.trim() : '';
+        }
+
+        function getThingInstalledModuleIds(thing = {}) {
+            const raw = getThingModFieldValue(thing, 'installedModuleIds');
+            return Array.isArray(raw)
+                ? raw.map(id => (typeof id === 'string' ? id.trim() : '')).filter(Boolean)
+                : [];
+        }
+
+        function getModuleBadgeSlotCountText(thing = {}) {
+            const totalSlots = getThingModuleSlots(thing).length;
+            if (!totalSlots) {
+                return '';
+            }
+            const occupiedSlots = getThingInstalledModuleIds(thing).length;
+            return `${occupiedSlots}/${totalSlots}`;
+        }
+
+        function getThingInstalledModuleBaseId(thing = {}) {
+            const value = getThingModFieldValue(thing, 'moduleInstalledOnItemId');
+            if (typeof value !== 'string') {
+                return '';
+            }
+            const normalized = value.trim();
+            const normalizedLower = normalized.toLowerCase();
+            return normalized && normalizedLower !== 'n/a' && normalizedLower !== 'none' && normalizedLower !== 'null'
+                ? normalized
+                : '';
+        }
+
+        function isInstalledModuleThing(thing = {}) {
+            return Boolean(getThingInstalledModuleBaseId(thing));
+        }
+
+        function getStandaloneInventoryItems(items = []) {
+            return Array.isArray(items)
+                ? items.filter(item => !isInstalledModuleThing(item))
+                : [];
+        }
+
+        function resolveInstalledModulesForThing(thing = {}) {
+            return getThingInstalledModuleIds(thing)
+                .map(moduleId => thingDataCache.get(moduleId) || null)
+                .filter(Boolean)
+                .map(moduleThing => ({
+                    thing: moduleThing,
+                    moduleType: getThingModuleType(moduleThing)
+                }));
+        }
+
+        function getInstalledModuleTooltipIconUrl(moduleThing = {}) {
+            const generatedImageUrl = getGeneratedImageUrl(moduleThing.imageId);
+            if (generatedImageUrl) {
+                return generatedImageUrl;
+            }
+            const moduleBadge = getThingPropertyBadges(moduleThing).find(badge => (
+                badge?.key === 'mod:modules:module-type'
+                || badge?.key === 'mod:modules:module-compatible'
+            ));
+            return moduleBadge?.imageUrl || moduleBadge?.iconUrl || '/mods/modules/assets/module.svg';
+        }
+
+        function formatInstalledModulesTooltipSection(thing = {}) {
+            const modules = resolveInstalledModulesForThing(thing);
+            if (!modules.length) {
+                return '';
+            }
+            const rows = modules.map(entry => {
+                const iconUrl = getInstalledModuleTooltipIconUrl(entry.thing);
+                const moduleTypeText = entry.moduleType ? ` (${entry.moduleType})` : '';
+                const titleText = `${entry.thing.name || 'Module'}${moduleTypeText}`;
+                const bonuses = getAttributeBonuses(entry.thing).filter(Boolean);
+                const bonusText = bonuses.length
+                    ? `<ul class="tooltip-thing-bonuses-list">${bonuses.map(bonus => {
+                        const attrName = formatAttributeName(bonus?.attribute || bonus?.name || 'Attribute');
+                        const rawBonus = Number.parseFloat(bonus?.bonus ?? bonus?.value ?? 0);
+                        const formattedBonus = Number.isFinite(rawBonus)
+                            ? (rawBonus > 0 ? `+${rawBonus}` : `${rawBonus}`)
+                            : escapeHtml(bonus?.bonus ?? bonus?.value ?? '0');
+                        return `<li class="tooltip-thing-bonus-item"><span class="tooltip-thing-bonus-attr">${escapeHtml(attrName)}</span><span class="tooltip-thing-bonus-value">${escapeHtml(formattedBonus)}</span></li>`;
+                    }).join('')}</ul>`
+                    : '';
+                const targetEffect = entry.thing.causeStatusEffectOnTarget || entry.thing.metadata?.causeStatusEffectOnTarget || null;
+                const equipperEffect = entry.thing.causeStatusEffectOnEquipper || entry.thing.metadata?.causeStatusEffectOnEquipper || null;
+                const effectText = [targetEffect, equipperEffect]
+                    .filter(effect => effect && (effect.name || effect.description))
+                    .map(effect => `<div class="tooltip-status-desc">${escapeHtml(effect.name || 'Status Effect')}: ${escapeHtml(effect.description || effect.text || '')}</div>`)
+                    .join('');
+                return `
+                    <div class="tooltip-thing-status modules-tooltip-module">
+                        <div class="tooltip-thing-bonuses-title modules-tooltip-module__header">
+                            <img class="modules-tooltip-module__icon" src="${escapeHtml(iconUrl)}" alt="" loading="lazy">
+                            <span class="modules-tooltip-module__title">${escapeHtml(titleText)}</span>
+                        </div>
+                        ${bonusText}
+                        ${effectText}
+                    </div>
+                `;
+            }).join('');
+            return `<hr><div class="tooltip-thing-bonuses"><div class="tooltip-thing-bonuses-title">Installed Modules</div>${rows}</div>`;
+        }
+
+        function renderModulesThingEditFields(field, thing = {}) {
+            const fieldName = field?.fieldName;
+            if (fieldName !== 'moduleSlots' && fieldName !== 'moduleType') {
+                return null;
+            }
+            const slotTypes = getActiveModuleSlotTypes();
+            const wrapper = document.createElement('div');
+            wrapper.className = 'npc-edit-field npc-edit-field--wide';
+            if (fieldName === 'moduleType') {
+                const label = document.createElement('label');
+                label.setAttribute('for', 'thingEdit_moduleType');
+                label.textContent = 'Module Type';
+                const select = document.createElement('select');
+                select.id = 'thingEdit_moduleType';
+                select.className = 'thing-edit-module-type';
+                select.dataset.fieldName = 'moduleType';
+                select.dataset.fieldType = 'string';
+                const blank = document.createElement('option');
+                blank.value = '';
+                blank.textContent = 'Not a module';
+                select.appendChild(blank);
+                const selectedType = getThingModuleType(thing);
+                slotTypes.forEach(slotType => {
+                    const option = document.createElement('option');
+                    option.value = slotType.id;
+                    option.textContent = slotType.label || slotType.id;
+                    if (slotType.id === selectedType) {
+                        option.selected = true;
+                    }
+                    select.appendChild(option);
+                });
+                wrapper.appendChild(label);
+                wrapper.appendChild(select);
+                return wrapper;
+            }
+
+            const header = document.createElement('div');
+            header.className = 'npc-edit-section-header';
+            const title = document.createElement('h4');
+            title.textContent = 'Module Slots';
+            const addButton = document.createElement('button');
+            addButton.type = 'button';
+            addButton.className = 'npc-edit-add-btn';
+            addButton.textContent = 'Add Slot';
+            header.appendChild(title);
+            header.appendChild(addButton);
+            const list = document.createElement('div');
+            list.className = 'thing-edit-module-slots';
+            list.dataset.fieldName = 'moduleSlots';
+            list.dataset.fieldType = 'array';
+
+            const addRow = (slot = {}) => {
+                const row = document.createElement('div');
+                row.className = 'thing-edit-module-slots__row';
+                const typeSelect = document.createElement('select');
+                typeSelect.className = 'thing-edit-module-slot-type';
+                slotTypes.forEach(slotType => {
+                    const option = document.createElement('option');
+                    option.value = slotType.id;
+                    option.textContent = slotType.label || slotType.id;
+                    if (slotType.id === slot.type) {
+                        option.selected = true;
+                    }
+                    typeSelect.appendChild(option);
+                });
+                const removeButton = document.createElement('button');
+                removeButton.type = 'button';
+                removeButton.className = 'npc-edit-remove-btn';
+                removeButton.textContent = 'Remove';
+                removeButton.addEventListener('click', () => row.remove());
+                row.appendChild(typeSelect);
+                row.appendChild(removeButton);
+                list.appendChild(row);
+            };
+
+            getThingModuleSlots(thing).forEach(addRow);
+            addButton.addEventListener('click', () => addRow({ type: slotTypes[0]?.id || 'module' }));
+            wrapper.appendChild(header);
+            wrapper.appendChild(list);
+            const hint = document.createElement('p');
+            hint.className = 'npc-edit-hint';
+            hint.textContent = 'Only equippable items may keep module slots.';
+            wrapper.appendChild(hint);
+            return wrapper;
+        }
+
+        function collectModulesThingEditFieldValues() {
+            const values = {};
+            const moduleTypeSelect = thingEditModFieldsList?.querySelector('.thing-edit-module-type');
+            if (moduleTypeSelect) {
+                values.moduleType = moduleTypeSelect.value || null;
+            }
+            const slotsList = thingEditModFieldsList?.querySelector('.thing-edit-module-slots');
+            if (slotsList) {
+                const selectedSlot = thingEditSlotSelect?.value?.trim().toLowerCase() || '';
+                const selectedModuleType = values.moduleType || '';
+                values.moduleSlots = (!selectedSlot || selectedSlot === 'n/a' || selectedSlot === 'none' || selectedModuleType)
+                    ? []
+                    : Array.from(slotsList.querySelectorAll('.thing-edit-module-slots__row')).map(row => {
+                    const type = row.querySelector('.thing-edit-module-slot-type')?.value?.trim() || '';
+                    return { type };
+                }).filter(slot => slot.type);
+            }
+            return values;
+        }
+
         function getRegisteredThingEditFields() {
             const fields = Array.isArray(window.AIRPG_CONFIG?.thingEditFields)
                 ? window.AIRPG_CONFIG.thingEditFields
@@ -10602,6 +10980,11 @@
             fields.forEach(field => {
                 const fieldName = field.fieldName.trim();
                 const edit = field.edit || {};
+                const modulesField = renderModulesThingEditFields(field, thing);
+                if (modulesField) {
+                    thingEditModFieldsList.appendChild(modulesField);
+                    return;
+                }
                 const inputType = typeof edit.inputType === 'string' && edit.inputType.trim()
                     ? edit.inputType.trim().toLowerCase()
                     : (field.type === 'boolean' ? 'checkbox' : 'text');
@@ -10694,7 +11077,7 @@
 
         function collectThingEditModFieldValues() {
             const fields = getRegisteredThingEditFields();
-            const values = {};
+            const values = collectModulesThingEditFieldValues();
             const escapeSelectorValue = (value) => {
                 if (window.CSS && typeof window.CSS.escape === 'function') {
                     return window.CSS.escape(value);
@@ -10704,6 +11087,9 @@
             for (const field of fields) {
                 const fieldName = typeof field.fieldName === 'string' ? field.fieldName.trim() : '';
                 if (!fieldName) {
+                    continue;
+                }
+                if (fieldName === 'moduleSlots' || fieldName === 'moduleType') {
                     continue;
                 }
                 const input = thingEditModFieldsList?.querySelector(`[data-field-name="${escapeSelectorValue(fieldName)}"]`);
@@ -10767,7 +11153,9 @@
         function resolveModThingBadgeLabel(badge) {
             const configuredLabel = getActiveModSettingValue(badge && badge.labelSetting);
             if (typeof configuredLabel === 'string' && configuredLabel.trim()) {
-                return `${configuredLabel.trim()}-compatible`;
+                const isModuleCompatibleBadge = badge?.fullId === 'modules:module-compatible'
+                    || badge?.id === 'module-compatible';
+                return isModuleCompatibleBadge ? `${configuredLabel.trim()}-compatible` : configuredLabel.trim();
             }
             return typeof badge?.label === 'string' ? badge.label : '';
         }
@@ -10797,9 +11185,12 @@
                 .map(badge => {
                     const resolvedAssetUrl = resolveModThingBadgeAssetUrl(badge);
                     const useImageUrl = Boolean(badge.imageUrl) && !badge.iconUrl;
+                    const isModuleCompatibleBadge = badge.fullId === 'modules:module-compatible'
+                        || badge.id === 'module-compatible';
                     return {
                         key: `mod:${badge.fullId || badge.id || badge.fieldName}`,
                         label: resolveModThingBadgeLabel(badge),
+                        slotCountText: isModuleCompatibleBadge ? getModuleBadgeSlotCountText(thing) : '',
                         iconUrl: useImageUrl ? '' : resolvedAssetUrl,
                         imageUrl: useImageUrl ? resolvedAssetUrl : '',
                         renderMode: typeof badge.renderMode === 'string' ? badge.renderMode : 'auto',
@@ -10873,11 +11264,759 @@
                 const ownerId = options.npcId || currentNpcInventoryNpcId || currentNpcViewId || '';
                 return ownerId ? { ownerId, ownerType: 'npc' } : {};
             }
-            if (context === 'player-inventory' || context === 'container-player-inventory') {
+            if (context === 'player-inventory' || context === 'container-player-inventory' || context === 'location') {
                 const ownerId = window.currentPlayerData?.id || '';
                 return ownerId ? { ownerId, ownerType: 'player' } : {};
             }
             return {};
+        }
+
+        function annotateModuleWorkbenchItemSource(item, sourceType = 'inventory') {
+            if (!item || typeof item !== 'object') {
+                return null;
+            }
+            const normalizedSource = sourceType === 'location' ? 'location' : 'inventory';
+            const clone = cloneThingRecord(item) || { ...item };
+            clone.moduleWorkbenchSourceType = normalizedSource;
+            return clone;
+        }
+
+        function getCurrentLocationModuleWorkbenchItems(options = {}) {
+            const requestedLocationId = typeof options.locationId === 'string' && options.locationId.trim()
+                ? options.locationId.trim()
+                : (window.lastRenderedLocation?.id || lastRenderedLocation?.id || null);
+            if (!requestedLocationId || currentLocationThingCollections?.locationId !== requestedLocationId) {
+                return [];
+            }
+            const sourceItems = Array.isArray(currentLocationThingCollections.allItems)
+                ? currentLocationThingCollections.allItems
+                : (Array.isArray(currentLocationThingCollections.items) ? currentLocationThingCollections.items : []);
+            return sourceItems
+                .map(item => annotateModuleWorkbenchItemSource(item, 'location'))
+                .filter(Boolean);
+        }
+
+        function getModulesContextInventory(options = {}) {
+            const context = typeof options.context === 'string' ? options.context.trim() : '';
+            const merged = [];
+            const seenIds = new Set();
+            const appendItems = (items, sourceType) => {
+                if (!Array.isArray(items)) {
+                    return;
+                }
+                items.forEach(item => {
+                    if (!item?.id || seenIds.has(item.id)) {
+                        return;
+                    }
+                    const annotated = annotateModuleWorkbenchItemSource(item, sourceType);
+                    if (!annotated) {
+                        return;
+                    }
+                    merged.push(annotated);
+                    seenIds.add(item.id);
+                });
+            };
+            if (context === 'npc-inventory' || context === 'npc-equipment') {
+                appendItems(Array.isArray(currentNpcInventory) ? currentNpcInventory : [], 'inventory');
+            } else {
+                appendItems(Array.isArray(window.currentPlayerData?.inventory) ? window.currentPlayerData.inventory : [], 'inventory');
+            }
+            appendItems(getCurrentLocationModuleWorkbenchItems(options), 'location');
+            return merged;
+        }
+
+        function countOpenModuleSlots(baseItem, inventory, moduleType) {
+            const slots = getThingModuleSlots(baseItem).filter(slot => slot.type === moduleType);
+            if (!slots.length) {
+                return 0;
+            }
+            const installedIds = new Set(getThingInstalledModuleIds(baseItem));
+            const used = inventory.filter(item => installedIds.has(item?.id) && getThingModuleType(item) === moduleType).length;
+            return slots.length - used;
+        }
+
+        function chooseModulesContextCandidate(candidates, label) {
+            if (!candidates.length) {
+                throw new Error(`No compatible ${label} found.`);
+            }
+            if (candidates.length === 1) {
+                return candidates[0];
+            }
+            const choices = candidates.map((candidate, index) => `${index + 1}. ${candidate.name || candidate.id}`).join('\n');
+            const raw = window.prompt(`Choose ${label}:\n${choices}`);
+            const index = Number.parseInt(raw, 10) - 1;
+            if (!Number.isInteger(index) || index < 0 || index >= candidates.length) {
+                throw new Error(`Choose a valid ${label}.`);
+            }
+            return candidates[index];
+        }
+
+        async function prepareModulesContextActionRequest(action, thing, options = {}) {
+            if (action?.fullId !== 'modules:install-module' && action?.fullId !== 'modules:remove-module') {
+                return {};
+            }
+            const inventory = getModulesContextInventory(options);
+            inventory.forEach(cacheThingData);
+
+            if (action?.fullId === 'modules:remove-module') {
+                const installedModuleIds = getThingInstalledModuleIds(thing);
+                if (installedModuleIds.length) {
+                    const moduleCandidates = installedModuleIds
+                        .map(moduleId => inventory.find(item => item?.id === moduleId) || thingDataCache.get(moduleId) || null)
+                        .filter(Boolean);
+                    const moduleItem = chooseModulesContextCandidate(moduleCandidates, 'installed module');
+                    return {
+                        baseItemId: thing.id,
+                        baseItemSource: getModuleWorkbenchItemSource(thing, options.context === 'location' ? 'location' : 'inventory'),
+                        moduleItemId: moduleItem.id,
+                        moduleItemSource: getModuleWorkbenchItemSource(moduleItem)
+                    };
+                }
+
+                const baseItemId = getThingInstalledModuleBaseId(thing);
+                if (baseItemId) {
+                    return {
+                        baseItemId,
+                        baseItemSource: 'inventory',
+                        moduleItemId: thing.id,
+                        moduleItemSource: getModuleWorkbenchItemSource(thing, options.context === 'location' ? 'location' : 'inventory')
+                    };
+                }
+                throw new Error('This item has no installed modules.');
+            }
+
+            const moduleType = getThingModuleType(thing);
+            if (moduleType) {
+                const baseCandidates = inventory.filter(item => (
+                    item?.id
+                    && item.id !== thing.id
+                    && countOpenModuleSlots(item, inventory, moduleType) > 0
+                ));
+                const baseItem = chooseModulesContextCandidate(baseCandidates, 'base item');
+                return {
+                    baseItemId: baseItem.id,
+                    baseItemSource: getModuleWorkbenchItemSource(baseItem),
+                    moduleItemId: thing.id,
+                    moduleItemSource: getModuleWorkbenchItemSource(thing, options.context === 'location' ? 'location' : 'inventory'),
+                    slotType: moduleType
+                };
+            }
+
+            const baseSlots = getThingModuleSlots(thing);
+            if (!baseSlots.length) {
+                throw new Error('This item has no module slots.');
+            }
+            const openTypes = new Set(baseSlots
+                .map(slot => slot.type)
+                .filter(type => countOpenModuleSlots(thing, inventory, type) > 0));
+            const moduleCandidates = inventory.filter(item => {
+                const candidateType = getThingModuleType(item);
+                return item?.id && item.id !== thing.id && candidateType && openTypes.has(candidateType) && !getThingModFieldValue(item, 'moduleInstalledOnItemId');
+            });
+            const moduleItem = chooseModulesContextCandidate(moduleCandidates, 'module item');
+            return {
+                baseItemId: thing.id,
+                baseItemSource: getModuleWorkbenchItemSource(thing, options.context === 'location' ? 'location' : 'inventory'),
+                moduleItemId: moduleItem.id,
+                moduleItemSource: getModuleWorkbenchItemSource(moduleItem),
+                slotType: getThingModuleType(moduleItem)
+            };
+        }
+        window.prepareModulesContextActionRequest = prepareModulesContextActionRequest;
+
+        function getModuleSlotTypeLabel(slotType = '') {
+            const normalized = typeof slotType === 'string' ? slotType.trim() : '';
+            if (!normalized) {
+                return 'Module';
+            }
+            try {
+                const match = getActiveModuleSlotTypes().find(entry => entry.id === normalized);
+                return match?.label || normalized;
+            } catch (_) {
+                return normalized;
+            }
+        }
+
+        function getModuleWorkbenchOptionsFromElement(hostElement) {
+            const entry = hostElement?.closest?.('.thing-collection-entry') || null;
+            const context = typeof entry?.dataset?.thingContext === 'string' ? entry.dataset.thingContext.trim() : '';
+            const npcId = typeof entry?.dataset?.thingNpcId === 'string' ? entry.dataset.thingNpcId.trim() : '';
+            const locationId = typeof entry?.dataset?.thingLocationId === 'string' ? entry.dataset.thingLocationId.trim() : '';
+            if (context) {
+                return {
+                    context,
+                    npcId: npcId || null,
+                    locationId: locationId || null
+                };
+            }
+            const thingId = hostElement?.dataset?.imageEntityId || entry?.dataset?.thingId || '';
+            if (thingId && Array.isArray(window.currentPlayerData?.inventory) && window.currentPlayerData.inventory.some(item => item?.id === thingId)) {
+                return { context: 'player-inventory', npcId: null, locationId: null };
+            }
+            if (thingId && Array.isArray(currentNpcInventory) && currentNpcInventory.some(item => item?.id === thingId)) {
+                return { context: 'npc-inventory', npcId: currentNpcInventoryNpcId || null, locationId: null };
+            }
+            return { context: context || 'general', npcId: npcId || null, locationId: locationId || null };
+        }
+
+        function openModuleWorkbenchModalFromBadge(hostElement) {
+            const thingId = hostElement?.dataset?.imageEntityId || '';
+            if (!thingId) {
+                alert('Unable to open modules: missing item reference.');
+                return;
+            }
+            const thing = thingDataCache.get(thingId) || { id: thingId };
+            const options = getModuleWorkbenchOptionsFromElement(hostElement);
+            try {
+                openModuleWorkbenchModal(thingDataCache.get(thing.id) || thing, options);
+            } catch (error) {
+                console.warn('Failed to open module workbench:', error);
+                alert(error?.message || 'Failed to open module workbench.');
+            }
+        }
+
+        function setModuleWorkbenchStatus(message = '', type = '') {
+            if (!moduleWorkbenchStatus) {
+                return;
+            }
+            moduleWorkbenchStatus.textContent = message || '';
+            moduleWorkbenchStatus.dataset.statusType = type || '';
+            moduleWorkbenchStatus.hidden = !message;
+        }
+
+        function getModuleWorkbenchInventory() {
+            return Array.isArray(moduleWorkbenchState.inventory)
+                ? moduleWorkbenchState.inventory
+                : [];
+        }
+
+        function getLooseModuleWorkbenchModules() {
+            return getModuleWorkbenchInventory()
+                .filter(item => getThingModuleType(item) && !isInstalledModuleThing(item));
+        }
+
+        function resolveModuleWorkbenchBaseItem(baseItemId = '') {
+            const normalizedId = typeof baseItemId === 'string' ? baseItemId.trim() : '';
+            if (!normalizedId) {
+                return null;
+            }
+            return getModuleWorkbenchInventory().find(item => item?.id === normalizedId)
+                || thingDataCache.get(normalizedId)
+                || null;
+        }
+
+        function getModuleWorkbenchSlotEntries() {
+            const baseItem = moduleWorkbenchState.baseItem;
+            const inventory = getModuleWorkbenchInventory();
+            const installedIds = getThingInstalledModuleIds(baseItem);
+            const installedModules = installedIds
+                .map(moduleId => inventory.find(item => item?.id === moduleId) || thingDataCache.get(moduleId) || null)
+                .filter(Boolean);
+            const usedModuleIds = new Set();
+
+            return getThingModuleSlots(baseItem).map((slot, index) => {
+                const installedModule = installedModules.find(moduleItem => {
+                    if (!moduleItem?.id || usedModuleIds.has(moduleItem.id)) {
+                        return false;
+                    }
+                    return getThingModuleType(moduleItem) === slot.type;
+                }) || null;
+                if (installedModule?.id) {
+                    usedModuleIds.add(installedModule.id);
+                }
+                return {
+                    index,
+                    type: slot.type,
+                    label: getModuleSlotTypeLabel(slot.type),
+                    moduleItem: installedModule
+                };
+            });
+        }
+
+        function canInstallModuleInWorkbenchSlot(moduleItem, slotIndex) {
+            if (!moduleItem?.id || !moduleWorkbenchState.baseItem?.id) {
+                return false;
+            }
+            const slot = getModuleWorkbenchSlotEntries().find(entry => entry.index === slotIndex);
+            if (!slot || slot.moduleItem) {
+                return false;
+            }
+            return getThingModuleType(moduleItem) === slot.type;
+        }
+
+        function isModuleCompatibleWithWorkbenchBase(moduleItem) {
+            if (!moduleItem?.id || !moduleWorkbenchState.baseItem?.id) {
+                return false;
+            }
+            const moduleType = getThingModuleType(moduleItem);
+            return Boolean(moduleType && countOpenModuleSlots(moduleWorkbenchState.baseItem, getModuleWorkbenchInventory(), moduleType) > 0);
+        }
+
+        function findFirstCompatibleModuleWorkbenchSlot(moduleItem) {
+            return getModuleWorkbenchSlotEntries().find(slot => canInstallModuleInWorkbenchSlot(moduleItem, slot.index)) || null;
+        }
+
+        function updateModuleWorkbenchDragHighlights(moduleItem = null) {
+            if (!moduleWorkbenchSlots) {
+                return;
+            }
+            moduleWorkbenchSlots.querySelectorAll('.module-workbench__slot').forEach(slotElement => {
+                const slotIndex = Number(slotElement.dataset.slotIndex);
+                const isValid = Boolean(moduleItem && canInstallModuleInWorkbenchSlot(moduleItem, slotIndex));
+                slotElement.classList.toggle('module-workbench__slot--drop-valid', isValid);
+                if (!isValid) {
+                    slotElement.classList.remove('module-workbench__slot--drop-hover');
+                }
+            });
+        }
+
+        function getModuleWorkbenchDraggedModule(event = null) {
+            const draggedId = moduleWorkbenchState.draggedModuleId
+                || event?.dataTransfer?.getData('text/x-thing-id')
+                || event?.dataTransfer?.getData('text/plain')
+                || '';
+            return moduleWorkbenchState.inventoryLookup.get(draggedId)
+                || thingDataCache.get(draggedId)
+                || null;
+        }
+
+        function getModuleWorkbenchItemSource(item, fallbackSource = 'inventory') {
+            const source = typeof item?.moduleWorkbenchSourceType === 'string'
+                ? item.moduleWorkbenchSourceType.trim().toLowerCase()
+                : '';
+            if (source === 'location' || source === 'inventory') {
+                return source;
+            }
+            return fallbackSource === 'location' ? 'location' : 'inventory';
+        }
+
+        function refreshModuleWorkbenchFromActionResult(result = {}) {
+            const actor = result?.actor || null;
+            if (Array.isArray(actor?.inventory)) {
+                actor.inventory.forEach(cacheThingData);
+            }
+            const refreshedInventory = getModulesContextInventory(moduleWorkbenchState.options || {});
+            moduleWorkbenchState.inventory = refreshedInventory;
+            moduleWorkbenchState.inventory.forEach(cacheThingData);
+            const baseItemId = moduleWorkbenchState.baseItem?.id || result?.result?.metadata?.baseItemId || result?.thing?.id || '';
+            const refreshedBaseItem = resolveModuleWorkbenchBaseItem(baseItemId) || result?.thing || moduleWorkbenchState.baseItem;
+            if (refreshedBaseItem?.id) {
+                moduleWorkbenchState.baseItem = refreshedBaseItem;
+                cacheThingData(refreshedBaseItem);
+            }
+            renderModuleWorkbenchSlots();
+            renderModuleWorkbenchInventory();
+        }
+
+        async function executeModuleWorkbenchAction(actionId, payload = {}) {
+            const fullId = typeof actionId === 'string' ? actionId.trim() : '';
+            if (!fullId) {
+                throw new Error('Module action id is required.');
+            }
+            const baseItem = moduleWorkbenchState.baseItem;
+            if (!baseItem?.id) {
+                throw new Error('Module workbench requires a base item.');
+            }
+            const options = moduleWorkbenchState.options || {};
+            const owner = resolveModThingContextActionOwner(options);
+            if (!owner.ownerId) {
+                throw new Error('Module workbench requires a player or NPC inventory owner.');
+            }
+            const response = await fetch(`/api/mod-thing-context-actions/${encodeURIComponent(fullId)}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    thingId: baseItem.id,
+                    context: options.context || 'general',
+                    locationId: options.locationId || null,
+                    npcId: options.npcId || null,
+                    ...payload,
+                    ...owner
+                })
+            });
+            const result = await response.json().catch(() => ({}));
+            if (!response.ok || !result?.success) {
+                throw new Error(result?.error || `HTTP ${response.status}`);
+            }
+            await refreshAfterModThingContextAction(result, options, baseItem);
+            refreshModuleWorkbenchFromActionResult(result);
+            return result;
+        }
+
+        async function installModuleFromWorkbench(moduleItem, slotType = '') {
+            if (moduleWorkbenchState.busy) {
+                return;
+            }
+            if (!moduleItem?.id) {
+                throw new Error('Choose a module to install.');
+            }
+            const normalizedSlotType = typeof slotType === 'string' && slotType.trim()
+                ? slotType.trim()
+                : getThingModuleType(moduleItem);
+            if (!normalizedSlotType || !isModuleCompatibleWithWorkbenchBase(moduleItem)) {
+                throw new Error(`${moduleItem.name || 'This module'} does not fit any open slot on this item.`);
+            }
+            moduleWorkbenchState.busy = true;
+            setModuleWorkbenchStatus(`Installing ${moduleItem.name || 'module'}...`);
+            try {
+                await executeModuleWorkbenchAction('modules:install-module', {
+                    baseItemId: moduleWorkbenchState.baseItem.id,
+                    baseItemSource: getModuleWorkbenchItemSource(moduleWorkbenchState.baseItem),
+                    moduleItemId: moduleItem.id,
+                    moduleItemSource: getModuleWorkbenchItemSource(moduleItem),
+                    slotType: normalizedSlotType
+                });
+                setModuleWorkbenchStatus(`Installed ${moduleItem.name || 'module'}.`, 'success');
+            } catch (error) {
+                setModuleWorkbenchStatus(`Install failed: ${error?.message || error}`, 'error');
+                throw error;
+            } finally {
+                moduleWorkbenchState.busy = false;
+            }
+        }
+
+        async function removeModuleFromWorkbench(moduleItem) {
+            if (moduleWorkbenchState.busy) {
+                return;
+            }
+            if (!moduleItem?.id) {
+                throw new Error('Choose an installed module to remove.');
+            }
+            moduleWorkbenchState.busy = true;
+            setModuleWorkbenchStatus(`Removing ${moduleItem.name || 'module'}...`);
+            try {
+                await executeModuleWorkbenchAction('modules:remove-module', {
+                    baseItemId: moduleWorkbenchState.baseItem.id,
+                    baseItemSource: getModuleWorkbenchItemSource(moduleWorkbenchState.baseItem),
+                    moduleItemId: moduleItem.id,
+                    moduleItemSource: getModuleWorkbenchItemSource(moduleItem)
+                });
+                setModuleWorkbenchStatus(`Removed ${moduleItem.name || 'module'}.`, 'success');
+            } catch (error) {
+                setModuleWorkbenchStatus(`Remove failed: ${error?.message || error}`, 'error');
+                throw error;
+            } finally {
+                moduleWorkbenchState.busy = false;
+            }
+        }
+
+        function renderModuleWorkbenchInventory() {
+            if (!moduleWorkbenchInventoryGrid || !moduleWorkbenchInventoryEmpty) {
+                return;
+            }
+            moduleWorkbenchState.inventoryLookup = new Map();
+            moduleWorkbenchState.cardRefs = new Map();
+            const modules = getLooseModuleWorkbenchModules();
+            renderThingCollectionPanel({
+                items: modules,
+                panelKey: 'moduleWorkbenchInventory',
+                grid: moduleWorkbenchInventoryGrid,
+                empty: moduleWorkbenchInventoryEmpty,
+                countEl: moduleWorkbenchInventoryCount,
+                searchInput: moduleWorkbenchInventoryFilterInput,
+                viewShell: moduleWorkbenchInventoryView,
+                sortShell: moduleWorkbenchInventorySort,
+                emptyMessage: 'No loose modules are available.',
+                filteredEmptyMessage: 'No modules match your filters.',
+                singularLabel: 'module',
+                pluralLabel: 'modules',
+                enableEquipmentFilters: false,
+                tableConfig: {
+                    showHeaders: true,
+                    showLevel: true,
+                    showValue: true,
+                    showEquipment: false
+                },
+                buildCard: (item, { viewMode, tableConfig } = {}) => {
+                    const clone = cloneThingRecord(item) || { ...item };
+                    if (clone.id) {
+                        moduleWorkbenchState.inventoryLookup.set(clone.id, clone);
+                    }
+                    const built = buildThingCollectionEntry(clone, {
+                        viewMode,
+                        tableConfig,
+                        extraClasses: ['module-workbench__module-card'],
+                        focusable: true,
+                        tooltipOptions: {
+                            equipmentOwner: () => moduleWorkbenchState.options?.context === 'npc-inventory'
+                                ? (window.currentNpcData?.get?.(moduleWorkbenchState.options?.npcId || currentNpcInventoryNpcId) || null)
+                                : (window.currentPlayerData || null)
+                        },
+                        decorateCard: ({ card, icon, name, controlsHost, thing }) => {
+                            const isCompatible = isModuleCompatibleWithWorkbenchBase(thing);
+                            card.classList.toggle('module-workbench__module-card--disabled', !isCompatible);
+                            card.setAttribute('aria-disabled', isCompatible ? 'false' : 'true');
+                            card.draggable = isCompatible;
+                            if (!isCompatible) {
+                                card.title = 'No open compatible slots on this item.';
+                            } else {
+                                card.removeAttribute('title');
+                            }
+                            if (thing?.id) {
+                                moduleWorkbenchState.cardRefs.set(thing.id, card);
+                            }
+                            card.addEventListener('dragstart', handleModuleWorkbenchModuleDragStart);
+                            card.addEventListener('dragend', handleModuleWorkbenchModuleDragEnd);
+                            card.addEventListener('click', async (event) => {
+                                if (event.target?.closest?.('button, a, input, select, textarea, .entity-context-menu-button, .thing-card-menu-button')) {
+                                    return;
+                                }
+                                if (!isCompatible) {
+                                    return;
+                                }
+                                const slot = findFirstCompatibleModuleWorkbenchSlot(thing);
+                                if (!slot) {
+                                    return;
+                                }
+                                try {
+                                    await installModuleFromWorkbench(thing, slot.type);
+                                } catch (error) {
+                                    console.warn('Failed to install module from workbench click:', error);
+                                    alert(error?.message || 'Failed to install module.');
+                                }
+                            });
+                            icon?.addEventListener?.('click', event => {
+                                if (isCompatible) {
+                                    event.preventDefault();
+                                    event.stopPropagation();
+                                    card.click();
+                                }
+                            });
+                        }
+                    });
+                    return built;
+                }
+            });
+        }
+
+        function renderModuleWorkbenchSlots() {
+            if (!moduleWorkbenchSlots) {
+                return;
+            }
+            moduleWorkbenchSlots.innerHTML = '';
+            const entries = getModuleWorkbenchSlotEntries();
+            entries.forEach(entry => {
+                const slot = document.createElement('div');
+                slot.className = 'module-workbench__slot';
+                slot.dataset.slotIndex = String(entry.index);
+                slot.dataset.slotType = entry.type;
+                slot.addEventListener('dragover', handleModuleWorkbenchSlotDragOver);
+                slot.addEventListener('dragenter', handleModuleWorkbenchSlotDragEnter);
+                slot.addEventListener('dragleave', handleModuleWorkbenchSlotDragLeave);
+                slot.addEventListener('drop', handleModuleWorkbenchSlotDrop);
+
+                const heading = document.createElement('div');
+                heading.className = 'module-workbench__slot-heading';
+                heading.textContent = entry.label;
+                slot.appendChild(heading);
+
+                if (entry.moduleItem) {
+                    slot.classList.add('module-workbench__slot--filled');
+                    slot.dataset.moduleId = entry.moduleItem.id || '';
+                    const preview = document.createElement('div');
+                    preview.className = 'module-workbench__installed-module';
+                    const image = document.createElement('div');
+                    image.className = 'module-workbench__installed-image';
+                    renderEntityImage({
+                        element: image,
+                        entityType: 'thing',
+                        entityId: entry.moduleItem.id || '',
+                        imageId: entry.moduleItem.imageId || null,
+                        altText: entry.moduleItem.name || 'Module',
+                        placeholderIcon: '◆',
+                        placeholderClass: 'crafting-slot__item-image-placeholder',
+                        lightboxDataProvider: createThingLightboxDataProvider(entry.moduleItem, {
+                            equipmentOwner: () => moduleWorkbenchState.options?.context === 'npc-inventory'
+                                ? (window.currentNpcData?.get?.(moduleWorkbenchState.options?.npcId || currentNpcInventoryNpcId) || null)
+                                : (window.currentPlayerData || null)
+                        }),
+                        badges: getThingPropertyBadges(entry.moduleItem)
+                    });
+                    const name = document.createElement('div');
+                    name.className = 'module-workbench__installed-name';
+                    name.textContent = entry.moduleItem.name || 'Module';
+                    preview.appendChild(image);
+                    preview.appendChild(name);
+                    bindThingTooltip(preview, entry.moduleItem);
+                    slot.appendChild(preview);
+
+                    const removeButton = document.createElement('button');
+                    removeButton.type = 'button';
+                    removeButton.className = 'module-workbench__remove-button';
+                    removeButton.textContent = 'Remove';
+                    removeButton.addEventListener('click', async event => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        try {
+                            await removeModuleFromWorkbench(entry.moduleItem);
+                        } catch (error) {
+                            console.warn('Failed to remove module from workbench:', error);
+                            alert(error?.message || 'Failed to remove module.');
+                        }
+                    });
+                    slot.appendChild(removeButton);
+                } else {
+                    const placeholder = document.createElement('div');
+                    placeholder.className = 'module-workbench__slot-placeholder';
+                    placeholder.textContent = 'Empty';
+                    slot.appendChild(placeholder);
+                }
+                moduleWorkbenchSlots.appendChild(slot);
+            });
+            updateModuleWorkbenchDragHighlights(getModuleWorkbenchDraggedModule());
+        }
+
+        function handleModuleWorkbenchModuleDragStart(event) {
+            const card = event.currentTarget;
+            const moduleId = card?.dataset?.thingId || '';
+            const moduleItem = moduleWorkbenchState.inventoryLookup.get(moduleId) || thingDataCache.get(moduleId) || null;
+            if (!moduleItem || !isModuleCompatibleWithWorkbenchBase(moduleItem)) {
+                event.preventDefault();
+                return;
+            }
+            moduleWorkbenchState.draggedModuleId = moduleId;
+            card.classList.add('is-dragging');
+            event.dataTransfer?.setData('text/x-thing-id', moduleId);
+            event.dataTransfer?.setData('text/plain', moduleId);
+            if (event.dataTransfer) {
+                event.dataTransfer.effectAllowed = 'move';
+            }
+            updateModuleWorkbenchDragHighlights(moduleItem);
+        }
+
+        function handleModuleWorkbenchModuleDragEnd(event) {
+            event.currentTarget?.classList.remove('is-dragging');
+            moduleWorkbenchState.draggedModuleId = null;
+            updateModuleWorkbenchDragHighlights(null);
+        }
+
+        function handleModuleWorkbenchSlotDragOver(event) {
+            const slotElement = event.currentTarget;
+            const slotIndex = Number(slotElement?.dataset?.slotIndex);
+            const moduleItem = getModuleWorkbenchDraggedModule(event);
+            if (!canInstallModuleInWorkbenchSlot(moduleItem, slotIndex)) {
+                return;
+            }
+            event.preventDefault();
+            if (event.dataTransfer) {
+                event.dataTransfer.dropEffect = 'move';
+            }
+        }
+
+        function handleModuleWorkbenchSlotDragEnter(event) {
+            const slotElement = event.currentTarget;
+            const slotIndex = Number(slotElement?.dataset?.slotIndex);
+            const moduleItem = getModuleWorkbenchDraggedModule(event);
+            if (!canInstallModuleInWorkbenchSlot(moduleItem, slotIndex)) {
+                return;
+            }
+            event.preventDefault();
+            slotElement.classList.add('module-workbench__slot--drop-hover');
+        }
+
+        function handleModuleWorkbenchSlotDragLeave(event) {
+            event.currentTarget?.classList.remove('module-workbench__slot--drop-hover');
+        }
+
+        async function handleModuleWorkbenchSlotDrop(event) {
+            const slotElement = event.currentTarget;
+            slotElement?.classList.remove('module-workbench__slot--drop-hover');
+            const slotIndex = Number(slotElement?.dataset?.slotIndex);
+            const moduleItem = getModuleWorkbenchDraggedModule(event);
+            if (!canInstallModuleInWorkbenchSlot(moduleItem, slotIndex)) {
+                return;
+            }
+            event.preventDefault();
+            const slotType = slotElement?.dataset?.slotType || getThingModuleType(moduleItem);
+            try {
+                await installModuleFromWorkbench(moduleItem, slotType);
+            } catch (error) {
+                console.warn('Failed to install module from workbench drop:', error);
+                alert(error?.message || 'Failed to install module.');
+            } finally {
+                moduleWorkbenchState.draggedModuleId = null;
+                updateModuleWorkbenchDragHighlights(null);
+            }
+        }
+
+        function openModuleWorkbenchModal(baseItem, options = {}) {
+            if (!moduleWorkbenchModal || !moduleWorkbenchModalBackdrop) {
+                throw new Error('Module workbench UI is unavailable.');
+            }
+            if (!baseItem?.id) {
+                throw new Error('Module workbench requires an item.');
+            }
+            if (!getThingModuleSlots(baseItem).length) {
+                throw new Error('This item has no module slots.');
+            }
+            const owner = resolveModThingContextActionOwner(options);
+            if (!owner.ownerId) {
+                throw new Error('Module workbench requires a player or NPC inventory owner.');
+            }
+            const inventory = getModulesContextInventory(options);
+            const inventoryBaseItem = inventory.find(item => item?.id === baseItem.id) || baseItem;
+            moduleWorkbenchState = {
+                isOpen: true,
+                baseItem: inventoryBaseItem,
+                options: {
+                    context: options.context || 'player-inventory',
+                    npcId: options.npcId || null,
+                    locationId: options.locationId || null
+                },
+                inventory: Array.isArray(inventory) ? inventory : [],
+                inventoryLookup: new Map(),
+                cardRefs: new Map(),
+                draggedModuleId: null,
+                busy: false
+            };
+            moduleWorkbenchState.inventory.forEach(cacheThingData);
+            cacheThingData(inventoryBaseItem);
+
+            if (moduleWorkbenchTitle) {
+                moduleWorkbenchTitle.textContent = `${inventoryBaseItem.name || 'Item'} Modules`;
+            }
+            if (moduleWorkbenchBaseTitle) {
+                moduleWorkbenchBaseTitle.textContent = 'Module Slots';
+            }
+            if (moduleWorkbenchBaseSummary) {
+                const slots = getThingModuleSlots(inventoryBaseItem);
+                moduleWorkbenchBaseSummary.textContent = `${slots.length} ${slots.length === 1 ? 'slot' : 'slots'}`;
+            }
+            if (moduleWorkbenchInventoryFilterInput) {
+                moduleWorkbenchInventoryFilterInput.value = '';
+            }
+            setModuleWorkbenchStatus('');
+            renderModuleWorkbenchSlots();
+            renderModuleWorkbenchInventory();
+
+            moduleWorkbenchModal.removeAttribute('hidden');
+            moduleWorkbenchModal.setAttribute('aria-hidden', 'false');
+            moduleWorkbenchModalBackdrop.removeAttribute('hidden');
+            document.body.classList.add('modal-open');
+            scrollModalToTop(moduleWorkbenchModal);
+        }
+
+        function closeModuleWorkbenchModal() {
+            if (!moduleWorkbenchModal || !moduleWorkbenchModalBackdrop) {
+                return;
+            }
+            moduleWorkbenchModal.setAttribute('hidden', '');
+            moduleWorkbenchModal.setAttribute('aria-hidden', 'true');
+            moduleWorkbenchModalBackdrop.setAttribute('hidden', '');
+            moduleWorkbenchState = {
+                isOpen: false,
+                baseItem: null,
+                options: {},
+                inventory: [],
+                inventoryLookup: new Map(),
+                cardRefs: new Map(),
+                draggedModuleId: null,
+                busy: false
+            };
+            closeThingListFilterPopoverForPanel(moduleWorkbenchInventoryPanel);
+            closeThingListSortPopoverForPanel(moduleWorkbenchInventoryPanel);
+            closeThingListViewPopoverForPanel(moduleWorkbenchInventoryPanel);
+            document.body.classList.remove('modal-open');
         }
 
         async function refreshAfterModThingContextAction(result, options = {}, thing = {}) {
@@ -10886,6 +12025,14 @@
                 cacheThingData(updatedThing);
                 if (thing && thing.id === updatedThing.id) {
                     Object.assign(thing, updatedThing);
+                }
+            }
+
+            if (result?.location && typeof window.updateLocationDisplay === 'function') {
+                try {
+                    await window.updateLocationDisplay(result.location);
+                } catch (error) {
+                    console.warn('Failed to refresh location after mod action:', error);
                 }
             }
 
@@ -10937,6 +12084,7 @@
                 throw new Error('Mod Thing context action requires a Thing id.');
             }
             const owner = resolveModThingContextActionOwner(options);
+            const moduleActionPayload = await prepareModulesContextActionRequest(action, thing, options);
             const response = await fetch(`/api/mod-thing-context-actions/${encodeURIComponent(fullId)}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -10945,6 +12093,7 @@
                     context: options.context || 'general',
                     locationId: options.locationId || null,
                     npcId: options.npcId || null,
+                    ...moduleActionPayload,
                     ...owner
                 })
             });
@@ -12003,7 +13152,7 @@
             if (!isModalInventoryDragOutsideSourceModal(event)) {
                 return;
             }
-            if (event.target instanceof Element && event.target.closest('.thing-container-drop-target')) {
+            if (event.target instanceof Element && event.target.closest('.thing-container-drop-target, .thing-module-drop-target')) {
                 return;
             }
 
@@ -12051,6 +13200,7 @@
         let currentLocationThingCollections = {
             locationId: null,
             items: [],
+            allItems: [],
             scenery: [],
             containerContents: []
         };
@@ -15157,21 +16307,51 @@
         function renderLoadModMismatchDetails(modMismatch = {}) {
             if (loadModMismatchDetails) {
                 loadModMismatchDetails.innerHTML = '';
-                const rows = [
+                const groups = [
                     {
-                        label: 'Required by save but inactive now',
-                        values: Array.isArray(modMismatch.missingFromActive) ? modMismatch.missingFromActive : []
+                        label: 'Newly added mods',
+                        description: 'Enabled now, but not present in this save.',
+                        values: Array.isArray(modMismatch.extraActive) ? modMismatch.extraActive : []
                     },
                     {
-                        label: 'Active now but not saved with this game',
-                        values: Array.isArray(modMismatch.extraActive) ? modMismatch.extraActive : []
+                        label: 'Missing mods',
+                        description: 'Enabled in this save, but not active now.',
+                        values: Array.isArray(modMismatch.missingFromActive) ? modMismatch.missingFromActive : []
                     }
                 ];
-                rows.forEach(row => {
-                    const item = document.createElement('li');
-                    const values = row.values.length ? row.values.join(', ') : 'none';
-                    item.textContent = `${row.label}: ${values}`;
-                    loadModMismatchDetails.appendChild(item);
+                groups.forEach(group => {
+                    const groupItem = document.createElement('li');
+                    groupItem.className = 'load-game-mismatch-list__group';
+
+                    const title = document.createElement('strong');
+                    title.className = 'load-game-mismatch-list__title';
+                    title.textContent = group.label;
+                    groupItem.appendChild(title);
+
+                    const description = document.createElement('span');
+                    description.className = 'load-game-mismatch-list__description';
+                    description.textContent = group.description;
+                    groupItem.appendChild(description);
+
+                    const valueList = document.createElement('ul');
+                    valueList.className = 'load-game-mismatch-list__values';
+                    const values = group.values
+                        .map(value => (typeof value === 'string' ? value.trim() : ''))
+                        .filter(Boolean);
+                    if (values.length) {
+                        values.forEach(value => {
+                            const valueItem = document.createElement('li');
+                            valueItem.textContent = value;
+                            valueList.appendChild(valueItem);
+                        });
+                    } else {
+                        const emptyItem = document.createElement('li');
+                        emptyItem.className = 'load-game-mismatch-list__empty';
+                        emptyItem.textContent = 'None';
+                        valueList.appendChild(emptyItem);
+                    }
+                    groupItem.appendChild(valueList);
+                    loadModMismatchDetails.appendChild(groupItem);
                 });
             }
         }
@@ -16914,6 +18094,25 @@
             craftingModalBackdrop.addEventListener('click', () => {
                 closeCraftingModal();
             });
+        }
+
+        if (moduleWorkbenchCloseBtn) {
+            moduleWorkbenchCloseBtn.addEventListener('click', () => {
+                closeModuleWorkbenchModal();
+            });
+        }
+        if (moduleWorkbenchCancelButton) {
+            moduleWorkbenchCancelButton.addEventListener('click', () => {
+                closeModuleWorkbenchModal();
+            });
+        }
+        if (moduleWorkbenchModalBackdrop) {
+            moduleWorkbenchModalBackdrop.addEventListener('click', () => {
+                closeModuleWorkbenchModal();
+            });
+        }
+        if (moduleWorkbenchInventoryFilterInput) {
+            moduleWorkbenchInventoryFilterInput.addEventListener('input', () => renderModuleWorkbenchInventory());
         }
 
         if (salvageIntentSubmitBtn) {
@@ -19724,6 +20923,7 @@
             }
 
             const safeItems = Array.isArray(items) ? items : [];
+            safeItems.forEach(cacheThingData);
             syncThingListViewOptions(viewShell, panelKey);
             const viewMode = getThingListViewState(panelKey);
             const normalizedTableConfig = normalizeThingTableConfig(tableConfig);
@@ -20032,7 +21232,9 @@
                 return;
             }
 
-            const safeItems = Array.isArray(items) ? items : [];
+            const rawItems = Array.isArray(items) ? items : [];
+            rawItems.forEach(cacheThingData);
+            const safeItems = getStandaloneInventoryItems(rawItems);
             renderThingCollectionPanel({
                 items: safeItems,
                 panelKey: 'npcInventory',
@@ -20103,6 +21305,7 @@
                                 context: 'npc-inventory',
                                 npcId: currentNpcInventoryNpcId
                             });
+                            registerThingModuleDropTarget(card, thing, { context: 'npc-inventory', npcId: currentNpcInventoryNpcId });
                         }
                         if (isThingGridEquipmentPillViewMode(activeViewMode)) {
                             appendThingEquipToggle({
@@ -20834,9 +22037,12 @@
                 return;
             }
             const visibleOwnOffers = offers.filter(offer => (
-                isBarterShowUnavailableEnabled(side)
-                || !isBarterOfferUnavailable(offer, side)
-                || getBarterCartForSide(side).has(offer.itemId)
+                !isInstalledModuleThing(offer.item)
+                && (
+                    isBarterShowUnavailableEnabled(side)
+                    || !isBarterOfferUnavailable(offer, side)
+                    || getBarterCartForSide(side).has(offer.itemId)
+                )
             ));
             const items = visibleOwnOffers.map(offer => buildBarterDisplayItem(offer, {
                 sourceSide: side,
@@ -21596,10 +22802,14 @@
                         alert(error?.message || 'Failed to move item.');
                     }
                 });
+                if (source === 'player') {
+                    registerThingModuleDropTarget(card, thing, { context: 'container-player-inventory' });
+                }
             };
 
+            currentThingContainerPlayerInventory.forEach(cacheThingData);
             currentThingContainerVisiblePlayerInventory = renderThingCollectionPanel({
-                items: currentThingContainerPlayerInventory,
+                items: getStandaloneInventoryItems(currentThingContainerPlayerInventory),
                 panelKey: 'containerPlayerInventory',
                 grid: containerPlayerInventoryGrid,
                 empty: containerPlayerInventoryEmpty,
@@ -22795,6 +24005,9 @@
                     return;
                 }
                 items.forEach(item => {
+                    if (isInstalledModuleThing(item)) {
+                        return;
+                    }
                     if (!item || typeof item.id !== 'string' || !item.id.trim()) {
                         return;
                     }
@@ -30875,12 +32088,13 @@
 
         let draggedLocationThing = null;
         const locationThingDropInFlightIds = new Set();
+        const moduleCardDropInFlightIds = new Set();
 
         const resetThingDragState = (expectedThingId = null) => {
             if (!expectedThingId || draggedLocationThing?.id === expectedThingId) {
                 draggedLocationThing = null;
             }
-            document.querySelectorAll('.inventory-drop-target.is-drop-hover, .thing-type-drop-target.is-drop-hover').forEach(el => {
+            document.querySelectorAll('.inventory-drop-target.is-drop-hover, .thing-type-drop-target.is-drop-hover, .thing-module-drop-target.is-drop-hover').forEach(el => {
                 el.classList.remove('is-drop-hover');
             });
         };
@@ -31065,6 +32279,227 @@
             return false;
         }
 
+        function getModuleDropHolderItems(options = {}) {
+            const context = typeof options.context === 'string' ? options.context.trim() : '';
+            if (context === 'npc-inventory' || context === 'npc-equipment') {
+                return Array.isArray(currentNpcInventory) ? currentNpcInventory : [];
+            }
+            if (context === 'container-player-inventory') {
+                return Array.isArray(currentThingContainerPlayerInventory)
+                    ? currentThingContainerPlayerInventory
+                    : (Array.isArray(window.currentPlayerData?.inventory) ? window.currentPlayerData.inventory : []);
+            }
+            if (context === 'location') {
+                return Array.isArray(currentLocationThingCollections.allItems)
+                    ? currentLocationThingCollections.allItems
+                    : (Array.isArray(currentLocationThingCollections.items) ? currentLocationThingCollections.items : []);
+            }
+            return Array.isArray(window.currentPlayerData?.inventory) ? window.currentPlayerData.inventory : [];
+        }
+
+        function resolveModuleDropBaseItem(baseItem, options = {}) {
+            const baseItemId = typeof baseItem?.id === 'string' ? baseItem.id.trim() : '';
+            if (!baseItemId) {
+                return null;
+            }
+            return getModuleDropHolderItems(options).find(item => item?.id === baseItemId)
+                || thingDataCache.get(baseItemId)
+                || baseItem
+                || null;
+        }
+
+        function getModuleCardItemSourceForOptions(options = {}) {
+            return options.context === 'location' ? 'location' : 'inventory';
+        }
+
+        function resolveModuleDropSourceFromModalDragState(dragState = null) {
+            const context = typeof dragState?.context === 'string' ? dragState.context.trim() : '';
+            if (context === 'npc-inventory' || context === 'player-inventory' || context === 'container-player-inventory') {
+                return 'inventory';
+            }
+            return '';
+        }
+
+        function canDropModuleIntoBaseItem(moduleItem, baseItem, options = {}) {
+            const resolvedBaseItem = resolveModuleDropBaseItem(baseItem, options);
+            if (!moduleItem?.id || !resolvedBaseItem?.id || moduleItem.id === resolvedBaseItem.id) {
+                return false;
+            }
+            const moduleType = getThingModuleType(moduleItem);
+            if (!moduleType || getThingInstalledModuleBaseId(moduleItem)) {
+                return false;
+            }
+            if (moduleItem.isEquipped || moduleItem.equippedSlot) {
+                return false;
+            }
+            const moduleCount = Number(moduleItem.count || 1);
+            if (Number.isFinite(moduleCount) && moduleCount > 1) {
+                return false;
+            }
+            try {
+                return countOpenModuleSlots(resolvedBaseItem, getModuleDropHolderItems(options), moduleType) > 0;
+            } catch (error) {
+                console.warn('Failed to evaluate module drop compatibility:', error);
+                return false;
+            }
+        }
+
+        function resolveThingModuleDropSource(baseItem, options = {}) {
+            const baseItemId = typeof baseItem?.id === 'string' ? baseItem.id.trim() : '';
+            if (!baseItemId) {
+                return null;
+            }
+
+            if (draggedLocationThing?.id && draggedLocationThing.id !== baseItemId) {
+                const draggedType = normalizeThingTypeForDrag(draggedLocationThing.thingType);
+                const moduleItem = thingDataCache.get(draggedLocationThing.id)
+                    || draggedLocationThing.thing
+                    || { id: draggedLocationThing.id };
+                if (draggedType === 'item' && canDropModuleIntoBaseItem(moduleItem, baseItem, options)) {
+                    return {
+                        moduleItem,
+                        moduleItemSource: 'location',
+                        dragState: draggedLocationThing,
+                        modalDragState: null
+                    };
+                }
+            }
+
+            if (modalInventoryDragState?.thingId && modalInventoryDragState.thingId !== baseItemId) {
+                const moduleItem = thingDataCache.get(modalInventoryDragState.thingId)
+                    || modalInventoryDragState.thing
+                    || { id: modalInventoryDragState.thingId };
+                const moduleItemSource = resolveModuleDropSourceFromModalDragState(modalInventoryDragState);
+                if (moduleItemSource && canDropModuleIntoBaseItem(moduleItem, baseItem, options)) {
+                    return {
+                        moduleItem,
+                        moduleItemSource,
+                        dragState: null,
+                        modalDragState: modalInventoryDragState
+                    };
+                }
+            }
+
+            return null;
+        }
+
+        async function installModuleFromCardDrop({ baseItem, moduleItem, moduleItemSource, options = {} } = {}) {
+            const resolvedBaseItem = resolveModuleDropBaseItem(baseItem, options);
+            if (!resolvedBaseItem?.id || !moduleItem?.id) {
+                throw new Error('Module drop requires a modular item and a module item.');
+            }
+            const owner = resolveModThingContextActionOwner(options);
+            if (!owner.ownerId) {
+                throw new Error('Module drop requires a player or NPC inventory owner.');
+            }
+            const baseItemSource = getModuleWorkbenchItemSource(
+                resolvedBaseItem,
+                getModuleCardItemSourceForOptions(options)
+            );
+            const response = await fetch(`/api/mod-thing-context-actions/${encodeURIComponent('modules:install-module')}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    thingId: resolvedBaseItem.id,
+                    context: options.context || 'general',
+                    locationId: options.locationId || null,
+                    npcId: options.npcId || null,
+                    baseItemId: resolvedBaseItem.id,
+                    baseItemSource: baseItemSource,
+                    moduleItemId: moduleItem.id,
+                    moduleItemSource,
+                    slotType: getThingModuleType(moduleItem),
+                    ...owner
+                })
+            });
+            const result = await response.json().catch(() => ({}));
+            if (!response.ok || !result?.success) {
+                throw new Error(result?.error || `HTTP ${response.status}`);
+            }
+            await refreshAfterModThingContextAction(result, options, resolvedBaseItem);
+            return result;
+        }
+
+        function registerThingModuleDropTarget(card, thing, options = {}) {
+            if (!(card instanceof HTMLElement) || !thing?.id || !getThingModuleSlots(thing).length) {
+                return;
+            }
+            card.classList.add('thing-module-drop-target');
+
+            const getDropSource = () => resolveThingModuleDropSource(thingDataCache.get(thing.id) || thing, options);
+            const clearHover = () => card.classList.remove('is-drop-hover');
+
+            card.addEventListener('dragover', (event) => {
+                const dropSource = getDropSource();
+                if (!dropSource) {
+                    return;
+                }
+                event.preventDefault();
+                event.stopPropagation();
+                event.stopImmediatePropagation?.();
+                if (event.dataTransfer) {
+                    event.dataTransfer.dropEffect = 'move';
+                }
+                card.classList.add('is-drop-hover');
+            });
+
+            card.addEventListener('dragenter', (event) => {
+                const dropSource = getDropSource();
+                if (!dropSource) {
+                    return;
+                }
+                event.preventDefault();
+                event.stopPropagation();
+                event.stopImmediatePropagation?.();
+                card.classList.add('is-drop-hover');
+            });
+
+            card.addEventListener('dragleave', (event) => {
+                if (!card.contains(event.relatedTarget)) {
+                    clearHover();
+                }
+            });
+
+            card.addEventListener('drop', async (event) => {
+                const dropSource = getDropSource();
+                if (!dropSource) {
+                    return;
+                }
+                event.preventDefault();
+                event.stopPropagation();
+                event.stopImmediatePropagation?.();
+                clearHover();
+                const moduleItemId = dropSource.moduleItem?.id || '';
+                if (moduleItemId && moduleCardDropInFlightIds.has(moduleItemId)) {
+                    return;
+                }
+                if (moduleItemId) {
+                    moduleCardDropInFlightIds.add(moduleItemId);
+                }
+                try {
+                    await installModuleFromCardDrop({
+                        baseItem: thingDataCache.get(thing.id) || thing,
+                        moduleItem: dropSource.moduleItem,
+                        moduleItemSource: dropSource.moduleItemSource,
+                        options
+                    });
+                } catch (error) {
+                    console.warn('Failed to install dropped module:', error);
+                    window.alert(error?.message || 'Failed to install module.');
+                } finally {
+                    if (moduleItemId) {
+                        moduleCardDropInFlightIds.delete(moduleItemId);
+                    }
+                    if (dropSource.dragState) {
+                        resetThingDragState(moduleItemId);
+                    }
+                    if (dropSource.modalDragState) {
+                        clearModalInventoryDragState(moduleItemId);
+                    }
+                }
+            });
+        }
+
         function resolveThingContainerDropSource(containerThing) {
             const containerId = typeof containerThing?.id === 'string' ? containerThing.id.trim() : '';
             if (!containerId) {
@@ -31233,9 +32668,11 @@
             const sceneryThings = safeThings
                 .filter(thing => thing && thing.thingType === 'scenery')
                 .map(thing => cloneThingRecord(thing) || { ...thing });
-            const itemThings = safeThings
+            const allItemThings = safeThings
                 .filter(thing => thing && thing.thingType !== 'scenery')
                 .map(thing => cloneThingRecord(thing) || { ...thing });
+            allItemThings.forEach(cacheThingData);
+            const itemThings = allItemThings.filter(thing => !isInstalledModuleThing(thing));
             const containerContents = Array.isArray(safeLocation?.workbenchContainerContents)
                 ? safeLocation.workbenchContainerContents
                     .filter(thing => thing && thing.thingType !== 'scenery')
@@ -31249,6 +32686,7 @@
             currentLocationThingCollections = {
                 locationId: safeLocation?.id || null,
                 items: itemThings,
+                allItems: allItemThings,
                 scenery: sceneryThings,
                 containerContents
             };
@@ -31298,6 +32736,7 @@
                         card.addEventListener('dragend', () => {
                             card.classList.remove('is-dragging');
                         });
+                        registerThingModuleDropTarget(card, thing, { context: 'location', locationId: safeLocation?.id || null });
                         registerThingContainerDropTarget(card, thing, { locationId: safeLocation?.id || null });
                     }
                 })
@@ -31348,6 +32787,7 @@
                         card.addEventListener('dragend', () => {
                             card.classList.remove('is-dragging');
                         });
+                        registerThingModuleDropTarget(card, thing, { context: 'location', locationId: safeLocation?.id || null });
                         registerThingContainerDropTarget(card, thing, { locationId: safeLocation?.id || null });
                     }
                 })
@@ -31361,7 +32801,9 @@
             }
             const things = [
                 ...(Array.isArray(currentLocationThingCollections.scenery) ? currentLocationThingCollections.scenery : []),
-                ...(Array.isArray(currentLocationThingCollections.items) ? currentLocationThingCollections.items : [])
+                ...(Array.isArray(currentLocationThingCollections.allItems)
+                    ? currentLocationThingCollections.allItems
+                    : (Array.isArray(currentLocationThingCollections.items) ? currentLocationThingCollections.items : []))
             ];
             renderLocationThingCollections(activeLocation, things);
         }
@@ -32381,6 +33823,7 @@
                     currentLocationThingCollections = {
                         locationId: null,
                         items: [],
+                        allItems: [],
                         scenery: [],
                         containerContents: []
                     };

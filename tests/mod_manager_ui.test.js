@@ -33,6 +33,10 @@ test('load game UI includes mod mismatch modal with accept keep and cancel choic
   assert.match(source, /id="loadModMismatchAcceptBtn"/);
   assert.match(source, /id="loadModMismatchKeepBtn"/);
   assert.match(source, /id="loadModMismatchCancelBtn"/);
+  assert.match(source, /Newly added mods/);
+  assert.match(source, /Missing mods/);
+  assert.match(source, /missingFromActive/);
+  assert.match(source, /extraActive/);
   assert.match(source, /modMismatchChoice:\s*'keep-current'/);
   assert.match(source, /fetch\('\/api\/mods\/apply-save-config'/);
 });

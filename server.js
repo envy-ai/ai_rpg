@@ -20247,7 +20247,13 @@ function getRegisteredThingEntityFields(filter = {}) {
     if (!registry || typeof registry.getEntityFields !== 'function') {
         return [];
     }
-    return registry.getEntityFields('thing', filter)
+    const setting = typeof getActiveSettingSnapshot === 'function'
+        ? getActiveSettingSnapshot()
+        : null;
+    return registry.getEntityFields('thing', {
+        ...filter,
+        descriptionContext: { setting }
+    })
         .filter(field => field && field.xmlPrompt && typeof field.xmlPrompt.tagName === 'string');
 }
 

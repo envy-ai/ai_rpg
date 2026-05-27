@@ -1485,29 +1485,50 @@ const entityFieldSchema = (field) => {
     const type = typeof field?.type === 'string' && field.type.trim()
         ? field.type.trim()
         : 'string';
-    const schema = {
-        type: type === 'integer' ? 'integer' : type
-    };
+    const schema = field?.toolSchema && typeof field.toolSchema === 'object' && !Array.isArray(field.toolSchema)
+        ? JSON.parse(JSON.stringify(field.toolSchema))
+        : {
+            type: type === 'integer' ? 'integer' : type
+        };
+    if (!schema.type) {
+        schema.type = type === 'integer' ? 'integer' : type;
+    }
     if (typeof field?.description === 'string' && field.description.trim()) {
         schema.description = field.description.trim();
     }
-    if (schema.type === 'array') {
+    if (schema.type === 'array' && !schema.items) {
         schema.items = {};
     }
     return schema;
 };
 
-const getRegisteredThingFields = (modExtensionRegistry, filter = {}) => {
+const buildRegisteredThingFieldDescriptionContext = ({ getActiveSettingSnapshot } = {}) => ({
+    setting: typeof getActiveSettingSnapshot === 'function'
+        ? getActiveSettingSnapshot()
+        : (global.currentSetting || null)
+});
+
+const getRegisteredThingFields = (modExtensionRegistry, filter = {}, options = {}) => {
     if (!modExtensionRegistry || typeof modExtensionRegistry.getEntityFields !== 'function') {
         return [];
     }
-    return modExtensionRegistry.getEntityFields('thing', filter);
+    return modExtensionRegistry.getEntityFields('thing', {
+        ...filter,
+        descriptionContext: buildRegisteredThingFieldDescriptionContext(options)
+    });
 };
 
-const applyRegisteredThingFieldsToToolDefinition = (toolDefinition, { modExtensionRegistry = null } = {}) => {
+const applyRegisteredThingFieldsToToolDefinition = (toolDefinition, {
+    modExtensionRegistry = null,
+    getActiveSettingSnapshot = null
+} = {}) => {
     const functionName = toolDefinition?.function?.name;
     if (functionName === 'createThing') {
-        const createFields = getRegisteredThingFields(modExtensionRegistry, { exposeToCreateTool: true });
+        const createFields = getRegisteredThingFields(
+            modExtensionRegistry,
+            { exposeToCreateTool: true },
+            { getActiveSettingSnapshot }
+        );
         if (!createFields.length) {
             return toolDefinition;
         }
@@ -1519,7 +1540,11 @@ const applyRegisteredThingFieldsToToolDefinition = (toolDefinition, { modExtensi
     }
 
     if (functionName === 'updateObjectFields') {
-        const updateFields = getRegisteredThingFields(modExtensionRegistry, { exposeToUpdateTool: true });
+        const updateFields = getRegisteredThingFields(
+            modExtensionRegistry,
+            { exposeToUpdateTool: true },
+            { getActiveSettingSnapshot }
+        );
         if (updateFields.length) {
             const fieldNames = updateFields.map(field => field.fieldName).join(', ');
             toolDefinition.function.description = `${toolDefinition.function.description} Registered Thing fields may also be updated when exposed by enabled mods: ${fieldNames}.`;
@@ -1530,10 +1555,10 @@ const applyRegisteredThingFieldsToToolDefinition = (toolDefinition, { modExtensi
     return toolDefinition;
 };
 
-const getChatToolDefinitions = ({ modExtensionRegistry = null } = {}) => CHAT_TOOL_DEFINITIONS
+const getChatToolDefinitions = ({ modExtensionRegistry = null, getActiveSettingSnapshot = null } = {}) => CHAT_TOOL_DEFINITIONS
     .map(toolDefinition => applyRegisteredThingFieldsToToolDefinition(
         cloneToolDefinition(toolDefinition),
-        { modExtensionRegistry }
+        { modExtensionRegistry, getActiveSettingSnapshot }
     ));
 
 const ensureFunction = (value, name) => {

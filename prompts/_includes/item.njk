@@ -8,7 +8,7 @@
 <slot>{% if thingSeed.slot %}{{ thingSeed.slot }}{% else %}<!--Available gear slots: {% for slot in equipmentSlots %}{{ slot }}{% if not loop.last %}, {% endif %}{% endfor %}
     N/A if not equippable -->{% endif %}</slot>
 {% if thingGeneratorPromptFields %}{% for field in thingGeneratorPromptFields %}
-<{{ field.xmlPrompt.tagName }}>{% if thingSeed[field.fieldName] is defined and thingSeed[field.fieldName] != null and thingSeed[field.fieldName] != '' %}{{ thingSeed[field.fieldName] }}{% else %}<!--{{ field.xmlPrompt.placeholder }}-->{% endif %}</{{ field.xmlPrompt.tagName }}>
+<{{ field.xmlPrompt.tagName }}>{% if thingSeed[field.fieldName] is defined and thingSeed[field.fieldName] != null and thingSeed[field.fieldName] != '' %}{% if field.type == 'array' or field.type == 'object' %}{{ thingSeed[field.fieldName] | dump }}{% else %}{{ thingSeed[field.fieldName] }}{% endif %}{% else %}<!--{{ field.xmlPrompt.placeholder }}-->{% endif %}</{{ field.xmlPrompt.tagName }}>
 {% endfor %}{% endif %}
 <rarity>{% if thingSeed.rarity %}{{ thingSeed.rarity }}{% else %}<!--{%- for rarity in rarityDefinitions -%}{{ rarity.label or rarity.key }}{%- if not loop.last -%}, {% endif %}{%- endfor -%}
 -->{% endif %}</rarity>

@@ -1,0 +1,358 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const path = require('path');
+
+const ModExtensionRegistry = require('../ModExtensionRegistry.js');
+const ModLoader = require('../ModLoader.js');
+const { getChatToolDefinitions } = require('../chat_tool_calls.js');
+
+function createModulesScope(registry) {
+    const loader = new ModLoader(path.join(__dirname, '..'), { config: { mods: { modules: { enabled: true } } } });
+    const scopeBase = {
+        modExtensionRegistry: registry,
+        getCurrentPlayer: () => null,
+        getActiveSettingSnapshot: () => ({
+            modSettings: {
+                modules: {
+                    slotTypes: [
+                        { id: 'core', label: 'Core', description: 'Main module socket.' },
+                        { id: 'edge', label: 'Edge', description: 'Secondary socket.' }
+                    ]
+                }
+            }
+        }),
+        findActorByName: () => null
+    };
+    return loader.createModScope(
+        'modules',
+        path.join(__dirname, '..', 'mods', 'modules'),
+        scopeBase,
+        { mod: {}, modConfig: {} }
+    );
+}
+
+function item(overrides = {}) {
+    return {
+        id: overrides.id || `item_${Math.random().toString(36).slice(2)}`,
+        name: overrides.name || 'Item',
+        thingType: 'item',
+        slot: null,
+        count: 1,
+        moduleSlots: [],
+        installedModuleIds: [],
+        moduleType: null,
+        moduleInstalledOnItemId: null,
+        metadata: {},
+        ...overrides
+    };
+}
+
+function actorWith(items) {
+    return {
+        id: 'actor_1',
+        name: 'Tester',
+        inventory: items,
+        getInventoryItems() {
+            return this.inventory;
+        },
+        hasInventoryItem(id) {
+            return this.inventory.some(entry => entry?.id === id);
+        },
+        addInventoryItem(thing) {
+            if (!thing?.id || this.hasInventoryItem(thing.id)) {
+                return false;
+            }
+            this.inventory.push(thing);
+            thing.metadata = { ...(thing.metadata || {}), ownerId: this.id };
+            delete thing.metadata.locationId;
+            return true;
+        },
+        removeInventoryItem(idOrThing) {
+            const id = typeof idOrThing === 'string' ? idOrThing : idOrThing?.id;
+            const before = this.inventory.length;
+            this.inventory = this.inventory.filter(entry => entry?.id !== id);
+            return this.inventory.length !== before;
+        },
+        withHealthRatioPreserved(mutator) {
+            mutator();
+        }
+    };
+}
+
+function locationWith(things, allThings = things) {
+    return {
+        id: 'loc_1',
+        name: 'Workshop Floor',
+        thingIds: things.map(thing => thing.id),
+        get things() {
+            return this.thingIds.map(id => allThings.find(thing => thing.id === id)).filter(Boolean);
+        },
+        addThingId(id) {
+            if (!this.thingIds.includes(id)) {
+                this.thingIds.push(id);
+            }
+            const thing = allThings.find(entry => entry.id === id);
+            if (thing) {
+                thing.metadata = { ...(thing.metadata || {}), locationId: this.id };
+                delete thing.metadata.ownerId;
+            }
+            return true;
+        },
+        removeThingId(id) {
+            const before = this.thingIds.length;
+            this.thingIds = this.thingIds.filter(existing => existing !== id);
+            const thing = allThings.find(entry => entry.id === id);
+            if (thing?.metadata?.locationId === this.id) {
+                delete thing.metadata.locationId;
+            }
+            return this.thingIds.length !== before;
+        }
+    };
+}
+
+test('bundled modules mod registers settings, Thing fields, badges, actions, tools, and contributors', () => {
+    const registry = new ModExtensionRegistry();
+    const modulesMod = require('../mods/modules/mod.js');
+
+    modulesMod.register(createModulesScope(registry));
+
+    const tab = registry.getSettingTabs().find(entry => entry.id === 'modules');
+    assert.ok(tab, 'modules settings tab should be registered');
+    assert.deepEqual(
+        tab.fields.map(field => field.key),
+        ['applyPreset', 'displayLabel', 'itemLabel', 'slotTypes']
+    );
+    assert.equal(tab.fields.find(field => field.key === 'slotTypes')?.type, 'array');
+
+    const fields = registry.getEntityFields('thing');
+    assert.deepEqual(
+        fields.map(field => field.fieldName).sort(),
+        ['installedModuleIds', 'moduleInstalledOnItemId', 'moduleSlots', 'moduleType']
+    );
+    assert.ok(fields.every(field => field.exposeToCreateTool));
+    assert.ok(fields.every(field => field.exposeToUpdateTool));
+    assert.ok(fields.every(field => field.exposeToXmlParser));
+
+    assert.ok(registry.getThingImageBadges().some(badge => badge.fullId === 'modules:module-compatible'));
+    assert.ok(registry.getThingImageBadges().some(badge => badge.fullId === 'modules:module-type'));
+    const modularBadge = registry.getThingImageBadges().find(badge => badge.fullId === 'modules:module-compatible');
+    const moduleBadge = registry.getThingImageBadges().find(badge => badge.fullId === 'modules:module-type');
+    assert.equal(modularBadge?.position, 'top-left');
+    assert.match(modularBadge?.iconUrl || modularBadge?.imageUrl || '', /\/mods\/modules\/assets\/modular\.svg$/);
+    assert.equal(moduleBadge?.position, 'top-left');
+    assert.match(moduleBadge?.iconUrl || moduleBadge?.imageUrl || '', /\/mods\/modules\/assets\/module\.svg$/);
+
+    assert.deepEqual(
+        registry.getThingContextActions().map(action => action.fullId).sort(),
+        ['modules:install-module', 'modules:remove-module']
+    );
+    assert.ok(
+        registry.getThingContextActions()
+            .find(action => action.fullId === 'modules:install-module')
+            ?.contexts.includes('location')
+    );
+    assert.equal(
+        registry.getThingContextActions().find(action => action.fullId === 'modules:remove-module')?.fieldName,
+        'installedModuleIds'
+    );
+
+    const toolNames = registry.getChatToolDefinitions().map(tool => tool.function.name);
+    assert.ok(toolNames.includes('installModule'));
+    assert.ok(toolNames.includes('removeModule'));
+    assert.equal(registry.getXmlEventByTagName('moduleInstalled')?.eventKey, 'module_installed');
+    assert.equal(registry.getXmlEventByTagName('moduleRemoved')?.eventKey, 'module_removed');
+    assert.equal(registry.getAttributeModifierContributors().length, 1);
+    assert.equal(registry.getStatusEffectContributors().length, 1);
+    assert.equal(registry.getInventorySyncContributors().length, 1);
+    assert.equal(registry.getActorStatusContributors().length, 1);
+    assert.equal(registry.getBaseContextContributors().length, 1);
+    assert.equal(registry.getThingTargetStatusEffectContributors().length, 1);
+});
+
+test('modules createThing schema describes module slot object shape', () => {
+    const registry = new ModExtensionRegistry();
+    const modulesMod = require('../mods/modules/mod.js');
+
+    modulesMod.register(createModulesScope(registry));
+
+    const createThing = getChatToolDefinitions({
+        modExtensionRegistry: registry,
+        getActiveSettingSnapshot: () => ({
+            modSettings: {
+                modules: {
+                    slotTypes: [{ id: 'module', label: 'Module', description: 'General-purpose module slot.' }]
+                }
+            }
+        })
+    }).find(entry => entry?.function?.name === 'createThing')?.function || null;
+
+    const moduleSlotsSchema = createThing?.parameters?.properties?.moduleSlots;
+    assert.equal(moduleSlotsSchema?.type, 'array');
+    assert.equal(moduleSlotsSchema?.items?.type, 'object');
+    assert.deepEqual(moduleSlotsSchema?.items?.required, ['type']);
+    assert.equal(moduleSlotsSchema?.items?.additionalProperties, false);
+    assert.equal(moduleSlotsSchema?.items?.properties?.type?.type, 'string');
+    assert.equal(moduleSlotsSchema?.items?.properties?.label, undefined);
+});
+
+test('module presets include comfortable terminology options', () => {
+    const modulesMod = require('../mods/modules/mod.js');
+    const presets = modulesMod.loadPresetDefinitions();
+    const presetLabels = presets.map(preset => preset.itemLabel);
+
+    assert.deepEqual(presetLabels, ['Module', 'Crystal', 'Mod', 'Materia']);
+    assert.ok(presets.every(preset => Array.isArray(preset.slotTypes) && preset.slotTypes.length > 0));
+});
+
+test('module action can install a loose location module into an inventory base item', () => {
+    const registry = new ModExtensionRegistry();
+    const modulesMod = require('../mods/modules/mod.js');
+
+    modulesMod.register(createModulesScope(registry));
+
+    const sword = item({
+        id: 'sword_1',
+        name: 'Socketed Sword',
+        slot: 'weapon',
+        moduleSlots: [{ type: 'core' }]
+    });
+    const crystal = item({
+        id: 'crystal_1',
+        name: 'Loose Core Crystal',
+        moduleType: 'core',
+        metadata: { locationId: 'loc_1' }
+    });
+    const actor = actorWith([sword]);
+    const location = locationWith([crystal]);
+    const things = new Map([
+        [sword.id, sword],
+        [crystal.id, crystal]
+    ]);
+    const action = registry.getThingContextActionRecord('modules:install-module');
+
+    const result = action.handler({
+        thing: sword,
+        actor,
+        currentPlayer: actor,
+        requestBody: {
+            context: 'player-inventory',
+            baseItemId: sword.id,
+            baseItemSource: 'inventory',
+            moduleItemId: crystal.id,
+            moduleItemSource: 'location',
+            locationId: location.id,
+            slotType: 'core'
+        },
+        things,
+        locations: new Map([[location.id, location]])
+    });
+
+    assert.deepEqual(sword.installedModuleIds, [crystal.id]);
+    assert.equal(crystal.moduleInstalledOnItemId, sword.id);
+    assert.ok(actor.hasInventoryItem(crystal.id));
+    assert.equal(location.thingIds.includes(crystal.id), false);
+    assert.equal(result.actor, actor);
+    assert.equal(result.location, location);
+});
+
+test('module action can install an inventory module into a loose location base item', () => {
+    const registry = new ModExtensionRegistry();
+    const modulesMod = require('../mods/modules/mod.js');
+
+    modulesMod.register(createModulesScope(registry));
+
+    const sword = item({
+        id: 'sword_1',
+        name: 'Socketed Sword',
+        slot: 'weapon',
+        moduleSlots: [{ type: 'core' }],
+        metadata: { locationId: 'loc_1' }
+    });
+    const crystal = item({
+        id: 'crystal_1',
+        name: 'Inventory Core Crystal',
+        moduleType: 'core'
+    });
+    const actor = actorWith([crystal]);
+    const location = locationWith([sword], [sword, crystal]);
+    const things = new Map([
+        [sword.id, sword],
+        [crystal.id, crystal]
+    ]);
+    const action = registry.getThingContextActionRecord('modules:install-module');
+
+    const result = action.handler({
+        thing: sword,
+        actor,
+        currentPlayer: actor,
+        requestBody: {
+            context: 'location',
+            baseItemId: sword.id,
+            baseItemSource: 'location',
+            moduleItemId: crystal.id,
+            moduleItemSource: 'inventory',
+            locationId: location.id,
+            slotType: 'core'
+        },
+        things,
+        locations: new Map([[location.id, location]])
+    });
+
+    assert.deepEqual(sword.installedModuleIds, [crystal.id]);
+    assert.equal(crystal.moduleInstalledOnItemId, sword.id);
+    assert.equal(actor.hasInventoryItem(crystal.id), false);
+    assert.ok(location.thingIds.includes(crystal.id));
+    assert.equal(result.actor, actor);
+    assert.equal(result.location, location);
+});
+
+test('module action can remove the only installed module from a loose location base item', () => {
+    const registry = new ModExtensionRegistry();
+    const modulesMod = require('../mods/modules/mod.js');
+
+    modulesMod.register(createModulesScope(registry));
+
+    const sword = item({
+        id: 'sword_1',
+        name: 'Socketed Sword',
+        slot: 'weapon',
+        moduleSlots: [{ type: 'core' }],
+        installedModuleIds: ['crystal_1'],
+        metadata: { locationId: 'loc_1' }
+    });
+    const crystal = item({
+        id: 'crystal_1',
+        name: 'Installed Core Crystal',
+        moduleType: 'core',
+        moduleInstalledOnItemId: sword.id,
+        metadata: { locationId: 'loc_1' }
+    });
+    const actor = actorWith([]);
+    const location = locationWith([sword, crystal]);
+    const things = new Map([
+        [sword.id, sword],
+        [crystal.id, crystal]
+    ]);
+    const action = registry.getThingContextActionRecord('modules:remove-module');
+
+    const result = action.handler({
+        thing: sword,
+        actor,
+        currentPlayer: actor,
+        requestBody: {
+            context: 'location',
+            baseItemId: sword.id,
+            baseItemSource: 'location',
+            locationId: location.id
+        },
+        things,
+        locations: new Map([[location.id, location]])
+    });
+
+    assert.deepEqual(sword.installedModuleIds, []);
+    assert.equal(crystal.moduleInstalledOnItemId, null);
+    assert.equal(actor.hasInventoryItem(crystal.id), false);
+    assert.ok(location.thingIds.includes(crystal.id));
+    assert.equal(result.actor, actor);
+    assert.equal(result.location, location);
+});

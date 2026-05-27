@@ -296,6 +296,29 @@ function sanitizeBarterPricingXmlForParsing(value, { warn = console.warn } = {})
     return text.replace(/\uFFFD/g, '');
 }
 
+function isMeaningfulInstalledModuleReference(value) {
+    if (typeof value !== 'string') {
+        return false;
+    }
+    const normalized = value.trim().toLowerCase();
+    return Boolean(normalized && normalized !== 'n/a' && normalized !== 'none' && normalized !== 'null');
+}
+
+function isInstalledModuleInventoryItem(item) {
+    if (!item || typeof item !== 'object') {
+        return false;
+    }
+    return isMeaningfulInstalledModuleReference(item.moduleInstalledOnItemId)
+        || isMeaningfulInstalledModuleReference(item.metadata?.moduleInstalledOnItemId);
+}
+
+function getStandaloneInventoryItems(items = []) {
+    if (!Array.isArray(items)) {
+        throw new Error('Inventory items must be an array.');
+    }
+    return items.filter(item => !isInstalledModuleInventoryItem(item));
+}
+
 function buildBarterItemReferenceIndex(items = []) {
     const byId = new Map();
     const byName = new Map();
@@ -2625,13 +2648,13 @@ module.exports = function registerApiRoutes(scope) {
             }
             const barterConfig = getBarterRuntimeConfig();
             const baseContext = await prepareBasePromptContext({ locationOverride: resolveNpcLocationForBarter(npc) });
-            const playerItems = currentPlayer.getInventoryItems()
+            const playerItems = getStandaloneInventoryItems(currentPlayer.getInventoryItems())
                 .filter(item => item && item.thingType !== 'scenery')
                 .map(item => serializeBarterPromptItem(item, 'playerInventory'));
-            const npcInventoryItems = npc.getInventoryItems()
+            const npcInventoryItems = getStandaloneInventoryItems(npc.getInventoryItems())
                 .filter(item => item && item.thingType !== 'scenery')
                 .map(item => serializeBarterPromptItem(item, 'inventory'));
-            const npcBarterItems = npc.getBarterInventoryItems()
+            const npcBarterItems = getStandaloneInventoryItems(npc.getBarterInventoryItems())
                 .filter(item => item && item.thingType !== 'scenery')
                 .map(item => serializeBarterPromptItem(item, 'barterInventory'));
 
@@ -2759,7 +2782,7 @@ module.exports = function registerApiRoutes(scope) {
                     count: getThingCountForBarter(item),
                     item: item ? serializeBarterPromptItem(item, 'playerInventory') : null
                 };
-            }).filter(offer => offer.item);
+            }).filter(offer => offer.item && !isInstalledModuleInventoryItem(offer.item));
             const merchantOffers = Array.from(session.merchantOffers.values()).map(offer => {
                 const lookup = offer.source === 'inventory' ? npcInventoryById : npcBarterById;
                 const item = lookup.get(offer.itemId) || Thing.getById(offer.itemId);
@@ -2768,7 +2791,7 @@ module.exports = function registerApiRoutes(scope) {
                     count: getThingCountForBarter(item),
                     item: item ? serializeBarterPromptItem(item, offer.source) : null
                 };
-            }).filter(offer => offer.item);
+            }).filter(offer => offer.item && !isInstalledModuleInventoryItem(offer.item));
             return {
                 success: true,
                 session: {
@@ -17893,52 +17916,72 @@ module.exports = function registerApiRoutes(scope) {
             };
 
             const appliedStatusEffects = [];
-            const weaponEffect = (() => {
+            const weaponEffects = (() => {
+                let weaponThing = null;
                 const resolvedWeaponId = attackOutcome?.damage?.weaponThingId || null;
                 if (resolvedWeaponId) {
                     const byResolvedId = Thing.getById(resolvedWeaponId);
-                    if (byResolvedId?.causeStatusEffectOnTarget) {
-                        return byResolvedId.causeStatusEffectOnTarget;
+                    if (byResolvedId) {
+                        weaponThing = byResolvedId;
                     }
                 }
 
-                const attackWeaponName = sanitizeNamedValue(
-                    attackContext?.attackEntry?.weapon
-                    || attackOutcome?.damage?.weaponName
-                );
-                if (attackWeaponName) {
-                    const byAttackName = resolveWeaponThing(attacker, attackWeaponName);
-                    if (byAttackName?.causeStatusEffectOnTarget) {
-                        return byAttackName.causeStatusEffectOnTarget;
+                if (!weaponThing) {
+                    const attackWeaponName = sanitizeNamedValue(
+                        attackContext?.attackEntry?.weapon
+                        || attackOutcome?.damage?.weaponName
+                    );
+                    if (attackWeaponName) {
+                        const byAttackName = resolveWeaponThing(attacker, attackWeaponName);
+                        if (byAttackName) {
+                            weaponThing = byAttackName;
+                        }
                     }
                 }
 
-                if (!attacker || typeof attacker.getEquippedItemIdForType !== 'function') {
-                    return null;
+                if (!weaponThing && attacker && typeof attacker.getEquippedItemIdForType === 'function') {
+                    const weaponId = attacker.getEquippedItemIdForType('weapon');
+                    if (weaponId) {
+                        weaponThing = Thing.getById(weaponId);
+                    }
                 }
-                const weaponId = attacker.getEquippedItemIdForType('weapon');
-                if (!weaponId) {
-                    return null;
+
+                if (!weaponThing) {
+                    return [];
                 }
-                const weaponThing = Thing.getById(weaponId);
-                if (!weaponThing || !weaponThing.causeStatusEffectOnTarget) {
-                    return null;
+
+                const effects = [];
+                if (weaponThing.causeStatusEffectOnTarget) {
+                    effects.push(weaponThing.causeStatusEffectOnTarget);
                 }
-                return weaponThing.causeStatusEffectOnTarget;
+                const registry = Globals.modExtensionRegistry || modExtensionRegistry || null;
+                if (registry && typeof registry.collectThingTargetStatusEffectContributions === 'function') {
+                    effects.push(...registry.collectThingTargetStatusEffectContributions(attacker, weaponThing, {
+                        attackContext,
+                        attackOutcome,
+                        targetActor
+                    }));
+                }
+                return effects;
             })();
 
-            if (weaponEffect && typeof targetActor.addStatusEffect === 'function') {
-                try {
-                    const applied = targetActor.addStatusEffect(weaponEffect, weaponEffect.duration ?? 1);
-                    if (applied) {
-                        appliedStatusEffects.push({
-                            name: weaponEffect.name || 'Status Effect',
-                            description: weaponEffect.description || '',
-                            duration: weaponEffect.duration ?? 1
-                        });
+            if (weaponEffects.length && typeof targetActor.addStatusEffect === 'function') {
+                for (const weaponEffect of weaponEffects) {
+                    if (!weaponEffect) {
+                        continue;
                     }
-                } catch (error) {
-                    console.warn('Failed to apply weapon status effect on target:', error.message);
+                    try {
+                        const applied = targetActor.addStatusEffect(weaponEffect, weaponEffect.duration ?? 1);
+                        if (applied) {
+                            appliedStatusEffects.push({
+                                name: weaponEffect.name || 'Status Effect',
+                                description: weaponEffect.description || '',
+                                duration: weaponEffect.duration ?? 1
+                            });
+                        }
+                    } catch (error) {
+                        console.warn('Failed to apply weapon status effect on target:', error.message);
+                    }
                 }
             }
 
@@ -37915,9 +37958,15 @@ module.exports = function registerApiRoutes(scope) {
                     requestBody: req.body || {},
                     players,
                     things,
+                    locations: gameLocations,
                     Globals
                 });
                 const resultActor = result?.actor || actor || null;
+                const resultLocation = result?.location || null;
+                let resultLocationPayload = null;
+                if (resultLocation && typeof buildLocationResponse === 'function') {
+                    resultLocationPayload = buildLocationResponse(resultLocation);
+                }
                 const refreshedThing = things.get(thingId) || thing;
                 res.json({
                     success: true,
@@ -37928,7 +37977,8 @@ module.exports = function registerApiRoutes(scope) {
                         : refreshedThing,
                     actor: resultActor && typeof serializeNpcForClient === 'function'
                         ? serializeNpcForClient(resultActor)
-                        : (resultActor && typeof resultActor.getStatus === 'function' ? resultActor.getStatus() : null)
+                        : (resultActor && typeof resultActor.getStatus === 'function' ? resultActor.getStatus() : null),
+                    location: resultLocationPayload
                 });
             } catch (error) {
                 res.status(400).json({

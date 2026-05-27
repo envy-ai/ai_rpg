@@ -183,6 +183,35 @@ test('item XML prompt renders registered generator fields with placeholders and 
     assert.match(seeded, /<implantSlot>neural<\/implantSlot>/);
 });
 
+test('item XML prompt renders registered array seed values as JSON', () => {
+    const registry = new ModExtensionRegistry();
+    registry.registerEntityField({
+        modName: 'modules',
+        entityType: 'thing',
+        fieldName: 'moduleSlots',
+        type: 'array',
+        exposeToGeneratorPrompt: true,
+        exposeToXmlParser: true,
+        xmlPrompt: {
+            placeholder: '[] unless this item has module slots.'
+        }
+    });
+    const promptEnv = createPromptEnv();
+
+    const rendered = promptEnv.render('_includes/item.njk', {
+        thingSeed: {
+            moduleSlots: [{ type: 'module', label: 'Top Rail' }]
+        },
+        thingGeneratorPromptFields: registry.getEntityFields('thing', { exposeToGeneratorPrompt: true }),
+        equipmentSlots: ['hands'],
+        rarityDefinitions: [{ label: 'Common' }],
+        attributes: ['strength']
+    });
+
+    assert.match(rendered, /<moduleSlots>\[\{"type":"module","label":"Top Rail"\}\]<\/moduleSlots>/);
+    assert.doesNotMatch(rendered, /\[object Object\]/);
+});
+
 test('base prompt context exposes registered generator fields to crafting item XML prompts', () => {
     const registry = new ModExtensionRegistry();
     registerImplantField(registry);
