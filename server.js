@@ -7126,6 +7126,9 @@ function buildBasePromptContext({
     context.modEventPromptSchemas = modExtensionRegistry && typeof modExtensionRegistry.getXmlEventPromptSchemas === 'function'
         ? modExtensionRegistry.getXmlEventPromptSchemas()
         : [];
+    context.modPlayerActionPromptSteps = modExtensionRegistry && typeof modExtensionRegistry.getPlayerActionPromptSteps === 'function'
+        ? modExtensionRegistry.getPlayerActionPromptSteps()
+        : [];
 
     return context;
 }

@@ -1163,6 +1163,23 @@
                         <label for="questEditName">Name</label>
                         <input type="text" id="questEditName" name="name" required>
                     </div>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="questEditGiverName">Quest Giver</label>
+                            <input type="text" id="questEditGiverName" name="giverName" list="questEditGiverOptions" autocomplete="off">
+                            <datalist id="questEditGiverOptions"></datalist>
+                        </div>
+                        <div class="form-group quest-edit-checkbox-group">
+                            <label class="quest-edit-flag" for="questEditPaused">
+                                <input type="checkbox" id="questEditPaused" name="paused">
+                                <span>Paused</span>
+                            </label>
+                            <label class="quest-edit-flag" for="questEditRewardClaimed">
+                                <input type="checkbox" id="questEditRewardClaimed" name="rewardClaimed">
+                                <span>Reward Claimed</span>
+                            </label>
+                        </div>
+                    </div>
                     <div class="form-group">
                         <label for="questEditDescription">Description</label>
                         <textarea id="questEditDescription" name="description" rows="3"></textarea>
@@ -1603,6 +1620,11 @@
                 </div>
                 <div class="npc-view-sections">
                     <section class="npc-view-section" id="npcViewAttributesSection">
+                        <div class="npc-view-calculated-attributes" id="npcViewCalculatedAttributesSection" hidden>
+                            <h4>Calculated Attributes</h4>
+                            <div class="npc-view-calculated-attributes__grid" id="npcViewCalculatedAttributesList"></div>
+                            <div class="npc-view-empty" id="npcViewCalculatedAttributesEmpty">No calculated attributes available.</div>
+                        </div>
                         {% set attributeSectionId = 'npcViewAttributeAllocationSection' %}
                         {% set attributeSectionHeading = 'Attributes' %}
                         {% set attributePointsLabel = 'Unspent Attribute Points' %}
@@ -9505,6 +9527,9 @@
         const npcViewVulnerabilitiesInput = document.getElementById('npcViewVulnerabilities');
         const npcViewDispositions = document.getElementById('npcViewDispositions');
         const npcViewDispositionsList = document.getElementById('npcViewDispositionsList');
+        const npcViewCalculatedAttributesSection = document.getElementById('npcViewCalculatedAttributesSection');
+        const npcViewCalculatedAttributesList = document.getElementById('npcViewCalculatedAttributesList');
+        const npcViewCalculatedAttributesEmpty = document.getElementById('npcViewCalculatedAttributesEmpty');
         const npcViewAttributeAllocationSection = document.getElementById('npcViewAttributeAllocationSection');
         const npcViewAttributeGrid = document.getElementById('npcViewAttributeGrid');
         const npcViewAttributePointsRemaining = document.getElementById('npcViewAttributePointsRemaining');
@@ -25360,6 +25385,105 @@
             return values;
         }
 
+        function formatNpcViewCalculatedAttributeNumber(value) {
+            const numeric = Number(value);
+            if (!Number.isFinite(numeric)) {
+                return '';
+            }
+            return Number.isInteger(numeric) ? String(numeric) : String(Number(numeric.toFixed(2)));
+        }
+
+        function resolveNpcViewCalculatedAttributeEntries(actor = {}) {
+            const entries = [];
+            if (actor?.attributeInfo && typeof actor.attributeInfo === 'object') {
+                for (const [key, info] of Object.entries(actor.attributeInfo)) {
+                    const baseValue = Number(info?.baseValue ?? info?.value);
+                    const modifiedValue = Number(info?.modifiedValue ?? baseValue);
+                    if (!Number.isFinite(baseValue) || !Number.isFinite(modifiedValue)) {
+                        continue;
+                    }
+                    const label = typeof info?.label === 'string' && info.label.trim()
+                        ? info.label.trim()
+                        : titleCase(key);
+                    const delta = modifiedValue - baseValue;
+                    entries.push({
+                        key,
+                        label,
+                        baseValue,
+                        modifiedValue,
+                        delta,
+                        state: delta > 0 ? 'higher' : (delta < 0 ? 'lower' : 'same')
+                    });
+                }
+                return entries;
+            }
+
+            if (actor?.attributes && typeof actor.attributes === 'object') {
+                for (const [key, value] of Object.entries(actor.attributes)) {
+                    const numeric = Number(value);
+                    if (!Number.isFinite(numeric)) {
+                        continue;
+                    }
+                    entries.push({
+                        key,
+                        label: titleCase(key),
+                        baseValue: numeric,
+                        modifiedValue: numeric,
+                        delta: 0,
+                        state: 'same'
+                    });
+                }
+            }
+            return entries;
+        }
+
+        function renderNpcViewCalculatedAttributes(actor = {}) {
+            if (!npcViewCalculatedAttributesSection || !npcViewCalculatedAttributesList || !npcViewCalculatedAttributesEmpty) {
+                return;
+            }
+            const entries = resolveNpcViewCalculatedAttributeEntries(actor);
+            npcViewCalculatedAttributesList.innerHTML = '';
+
+            if (!entries.length) {
+                npcViewCalculatedAttributesSection.setAttribute('hidden', '');
+                npcViewCalculatedAttributesEmpty.removeAttribute('hidden');
+                return;
+            }
+
+            npcViewCalculatedAttributesSection.removeAttribute('hidden');
+            npcViewCalculatedAttributesEmpty.setAttribute('hidden', '');
+
+            entries.forEach(entry => {
+                const item = document.createElement('div');
+                item.className = `npc-view-calculated-attribute npc-view-calculated-attribute--${entry.state}`;
+                item.dataset.attribute = entry.key;
+
+                const name = document.createElement('span');
+                name.className = 'npc-view-calculated-attribute__name';
+                name.textContent = entry.label;
+
+                const value = document.createElement('span');
+                value.className = 'npc-view-calculated-attribute__value';
+                value.textContent = formatNpcViewCalculatedAttributeNumber(entry.modifiedValue);
+
+                const delta = document.createElement('span');
+                delta.className = 'npc-view-calculated-attribute__delta';
+                if (entry.delta === 0) {
+                    delta.textContent = 'Unmodified';
+                } else {
+                    const deltaText = entry.delta > 0
+                        ? `+${formatNpcViewCalculatedAttributeNumber(entry.delta)}`
+                        : formatNpcViewCalculatedAttributeNumber(entry.delta);
+                    delta.textContent = `${deltaText} from base ${formatNpcViewCalculatedAttributeNumber(entry.baseValue)}`;
+                }
+
+                item.appendChild(name);
+                item.appendChild(value);
+                item.appendChild(delta);
+                npcViewCalculatedAttributesList.appendChild(item);
+            });
+        }
+
         function resolveNpcViewSkillValues(actor = {}) {
             const values = {};
             if (Array.isArray(actor?.skills)) {
@@ -25818,6 +25942,7 @@
             const safeLevel = Number.isFinite(levelValue) ? levelValue : 1;
             const unspentAttributePoints = Number(latestNpc?.unspentAttributePoints);
             const unspentSkillPoints = Number(latestNpc?.unspentSkillPoints);
+            renderNpcViewCalculatedAttributes(latestNpc);
 
             try {
                 const allocator = await ensureNpcViewAllocator({
@@ -26436,6 +26561,21 @@
                 image.appendChild(placeholder);
             }
 
+            function resolveFavoriteLocationTravelTimeText() {
+                if (isCurrent) {
+                    return 'Current location';
+                }
+                const rawTravelTime = location?.computedTravelTimeMinutes;
+                if (rawTravelTime === null || rawTravelTime === undefined) {
+                    return 'No known route';
+                }
+                const travelTimeMinutes = Number(rawTravelTime);
+                if (!Number.isFinite(travelTimeMinutes) || !Number.isInteger(travelTimeMinutes) || travelTimeMinutes < 0) {
+                    return 'No known route';
+                }
+                return `Travel ${formatMinutesCompactDurationLabel(travelTimeMinutes)}`;
+            }
+
             const body = document.createElement('div');
             body.className = 'favorite-location-card__body';
 
@@ -26451,6 +26591,10 @@
                 ? `${location?.regionName || 'Unknown Region'} · Current location`
                 : (location?.regionName || 'Unknown Region');
 
+            const travelTime = document.createElement('div');
+            travelTime.className = 'favorite-location-card__travel-time';
+            travelTime.textContent = resolveFavoriteLocationTravelTimeText();
+
             const descriptionText = typeof location?.shortDescription === 'string' && location.shortDescription.trim()
                 ? location.shortDescription.trim()
                 : (typeof location?.description === 'string' ? location.description.trim() : '');
@@ -26458,9 +26602,9 @@
                 const description = document.createElement('div');
                 description.className = 'favorite-location-card__description';
                 description.textContent = descriptionText;
-                body.append(title, meta, description);
+                body.append(title, meta, travelTime, description);
             } else {
-                body.append(title, meta);
+                body.append(title, meta, travelTime);
             }
 
             card.append(image, body);
@@ -34329,6 +34473,10 @@
             const questEditBackdrop = document.getElementById('questEditBackdrop');
             const questEditForm = document.getElementById('questEditForm');
             const questEditName = document.getElementById('questEditName');
+            const questEditGiverName = document.getElementById('questEditGiverName');
+            const questEditGiverOptions = document.getElementById('questEditGiverOptions');
+            const questEditPaused = document.getElementById('questEditPaused');
+            const questEditRewardClaimed = document.getElementById('questEditRewardClaimed');
             const questEditDescription = document.getElementById('questEditDescription');
             const questEditSecretNotes = document.getElementById('questEditSecretNotes');
             const questEditRewardCurrency = document.getElementById('questEditRewardCurrency');
@@ -34704,6 +34852,40 @@
                 }
             };
 
+            const populateQuestGiverOptions = async (selectedName = '') => {
+                if (!questEditGiverOptions) {
+                    return;
+                }
+
+                const currentName = typeof selectedName === 'string' ? selectedName.trim() : '';
+                const seenNames = new Set();
+                questEditGiverOptions.innerHTML = '';
+
+                const appendOption = (name) => {
+                    const normalizedName = typeof name === 'string' ? name.trim() : '';
+                    if (!normalizedName) {
+                        return;
+                    }
+                    const key = normalizedName.toLowerCase();
+                    if (seenNames.has(key)) {
+                        return;
+                    }
+                    seenNames.add(key);
+                    const option = document.createElement('option');
+                    option.value = normalizedName;
+                    questEditGiverOptions.appendChild(option);
+                };
+
+                appendOption(currentName);
+
+                try {
+                    const { list } = await loadQuestNpcOptions();
+                    list.forEach(entry => appendOption(entry.name));
+                } catch (error) {
+                    console.warn('Failed to load NPC options for quest giver:', error);
+                }
+            };
+
             const resolveQuestFactionRewardName = (factionId) => {
                 const normalizedFactionId = normalizeFactionId(factionId);
                 if (!normalizedFactionId) {
@@ -35011,6 +35193,12 @@
                 }
 
                 if (questEditName) questEditName.value = quest.name || '';
+                if (questEditGiverName) questEditGiverName.value = quest.giverName || quest.giver || '';
+                if (questEditPaused) questEditPaused.checked = Boolean(quest.paused);
+                if (questEditRewardClaimed) questEditRewardClaimed.checked = Boolean(quest.rewardClaimed);
+                populateQuestGiverOptions(quest.giverName || quest.giver || '').catch(error => {
+                    console.warn('Failed to populate quest giver options:', error);
+                });
                 if (questEditDescription) questEditDescription.value = quest.description || '';
                 if (questEditSecretNotes) questEditSecretNotes.value = quest.secretNotes || '';
                 if (questEditRewardCurrency) questEditRewardCurrency.value = Number(quest.rewardCurrency) || 0;
@@ -35553,6 +35741,9 @@
                     const payload = {
                         questId: questBeingEdited.id,
                         name: questEditName ? questEditName.value.trim() : questBeingEdited.name,
+                        giverName: questEditGiverName ? questEditGiverName.value.trim() : (questBeingEdited.giverName || questBeingEdited.giver || ''),
+                        paused: questEditPaused ? questEditPaused.checked : Boolean(questBeingEdited.paused),
+                        rewardClaimed: questEditRewardClaimed ? questEditRewardClaimed.checked : Boolean(questBeingEdited.rewardClaimed),
                         description: questEditDescription ? questEditDescription.value : questBeingEdited.description,
                         secretNotes: questEditSecretNotes ? questEditSecretNotes.value : questBeingEdited.secretNotes,
                         rewardCurrency: questEditRewardCurrency ? Number(questEditRewardCurrency.value) : questBeingEdited.rewardCurrency,

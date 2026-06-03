@@ -26,3 +26,7 @@ Response:
 - 400 for invalid input, missing summaries, malformed quotes, or unknown display numbers.
 
 `persisted` is `true` when a loaded save directory was available and the route rewrote `sceneSummaries.json` plus `metadata.json`; otherwise runtime state is updated and the next normal save persists it.
+
+## Chat Tool Reruns
+
+Generic prompt chat tools can call `rerunSceneSummary({ sceneNumber })` to regenerate an existing stored scene by display number. The tool resolves the scene's stored range, reruns the server-side scene-summary prompt for that range with `redo: true`, replaces overlapping stored summaries, and persists the current save's scene-summary files when a save directory is loaded.

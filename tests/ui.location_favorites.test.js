@@ -81,6 +81,19 @@ test('Favorites use a dedicated API route and reuse map travel behavior', () => 
     assert.match(viewSource, /window\.activateTab\?\.\('adventure'\)/);
 });
 
+test('Favorite location cards include computed shortest-route travel times', () => {
+    const apiSource = read('api.js');
+    const viewSource = read('views/index.njk');
+    const scssSource = read('public/css/main.scss');
+
+    assert.match(apiSource, /computedTravelTimeMinutes/);
+    assert.match(apiSource, /Location\.findShortestTravelTimeMinutes\(currentLocationForFavorites,\s*location\)/);
+    assert.match(viewSource, /function resolveFavoriteLocationTravelTimeText/);
+    assert.match(viewSource, /favorite-location-card__travel-time/);
+    assert.match(viewSource, /computedTravelTimeMinutes/);
+    assert.match(scssSource, /\.favorite-location-card__travel-time/);
+});
+
 test('Favorites tab activation can request a refresh before location display init registers the helper', () => {
     const viewSource = read('views/index.njk');
 

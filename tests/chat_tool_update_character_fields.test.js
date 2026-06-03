@@ -427,6 +427,41 @@ test('updateCharacterFields applies allowed scalar and map fields directly to an
     ]);
 });
 
+test('updateCharacterFields applies nested personality fields to persisted NPC personality fields', async () => {
+    const npc = makeNpc();
+    const runtime = makeRuntime({
+        npc,
+        firstResponse: toolResponse({
+            character: 'Neka',
+            fields: {
+                personality: {
+                    type: 'Cautious analyst',
+                    traits: 'Hypervigilant, patient',
+                    notes: 'Keeps emotional distance until trust is earned.',
+                    aiNotes: 'Avoids committing to dangerous plans without concrete evidence.'
+                }
+            }
+        })
+    });
+
+    const result = await runtime.runChatCompletionWithToolLoop({
+        requestOptions: { messages: [{ role: 'user', content: '@Update Neka personality.' }] },
+        metadataLabel: 'test_update_character_fields_personality'
+    });
+
+    assert.equal(npc.personalityType, 'Cautious analyst');
+    assert.equal(npc.personalityTraits, 'Hypervigilant, patient');
+    assert.equal(npc.personalityNotes, 'Keeps emotional distance until trust is earned.');
+    assert.equal(npc.aiNotes, 'Avoids committing to dangerous plans without concrete evidence.');
+    assert.equal(result.toolInvocations[0].metadata.status, 'success');
+    assert.deepEqual(result.toolInvocations[0].metadata.updatedFields, [
+        'personality.type',
+        'personality.traits',
+        'personality.notes',
+        'personality.aiNotes'
+    ]);
+});
+
 test('updateObjectFields resolves NPC aliases and applies the character allowlist', async () => {
     const npc = makeNpc({ aliases: ['Patch'] });
     const runtime = makeRuntime({

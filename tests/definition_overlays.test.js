@@ -5,6 +5,7 @@ const os = require('os');
 const path = require('path');
 
 const ModLoader = require('../ModLoader.js');
+const ModExtensionRegistry = require('../ModExtensionRegistry.js');
 const {
     clearFrozenEnabledModManifests,
     freezeEnabledModManifests
@@ -107,6 +108,55 @@ test('ModLoader treats defs-only directories as valid mods', () => {
         assert.deepEqual(results.loaded, ['defs_only']);
         assert.equal(results.failed.length, 0);
         assert.equal(results.total, 1);
+    } finally {
+        clearFrozenEnabledModManifests(rootDir);
+        fs.rmSync(rootDir, { recursive: true, force: true });
+    }
+});
+
+test('ModLoader supports mods that provide both mod.js hooks and defs overlays', () => {
+    const rootDir = makeTempGameDir();
+
+    try {
+        writeFile(rootDir, 'defs/example.yaml', 'value: [base]\n');
+        writeFile(rootDir, 'mods/hybrid/defs/example.yaml', 'value: [hybrid]\n');
+        writeFile(rootDir, 'mods/hybrid/mod.js', `
+module.exports = {
+  meta: { name: 'Hybrid Test Mod' },
+  register(scope) {
+    scope.registerBaseContextContributor(() => 'hybrid-hook-loaded');
+  }
+};
+`);
+
+        assert.deepEqual(getOverlayModDirectories(rootDir), ['hybrid']);
+
+        const { value } = loadMergedDefinitionFile({
+            baseDir: rootDir,
+            filename: 'example.yaml'
+        });
+        assert.deepEqual(JSON.parse(JSON.stringify(value)), {
+            value: ['base', 'hybrid']
+        });
+
+        const registry = new ModExtensionRegistry();
+        const loader = new ModLoader(rootDir);
+        const results = loader.loadMods({
+            modExtensionRegistry: registry
+        });
+
+        assert.deepEqual(results.loaded, ['hybrid']);
+        assert.equal(results.failed.length, 0);
+        assert.deepEqual(
+            registry.collectBaseContextContributions({}).map(entry => entry.value),
+            ['hybrid-hook-loaded']
+        );
+
+        const loaded = loader.loadedMods.get('hybrid');
+        assert.equal(loaded.hasModJs, true);
+        assert.equal(loaded.hasDefsDir, true);
+        assert.equal(loaded.dataOnly, false);
+        assert.equal(loaded.meta.name, 'Hybrid Test Mod');
     } finally {
         clearFrozenEnabledModManifests(rootDir);
         fs.rmSync(rootDir, { recursive: true, force: true });

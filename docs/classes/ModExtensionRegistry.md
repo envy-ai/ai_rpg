@@ -7,6 +7,7 @@ Central registry for mod-provided runtime extension hooks. The server creates on
 - `registerChatTool({ definition, executor, allowedInRegularProse, allowedInGenericPrompt })`: adds a live chat tool. API route filtering combines built-in tools with registry tools at request time, so mods may load after route registration.
 - `registerXmlEvent({ tagName, eventKey, promptSchema, parser, handler })`: adds a camelCase XML event tag, parser, prompt-schema entry, and outcome handler. `promptSchema` should be `{ name, description, xml }`; `name` defaults to the tag name when omitted.
 - `registerBaseContextContributor(fn)`: contributes generic mod context for base prompts.
+- `registerPlayerActionPromptStep({ id, step, text, order })`: adds a mod-owned step to the `player-action` prompt self-correction process. `step` is required and currently accepts only `1` or `3`. The server exposes sorted steps as `modPlayerActionPromptSteps` and numbers them automatically per stage.
 - `registerActorStatusContributor(fn)`: contributes actor profile/status sections for prompts and client payloads.
 - `registerAttributeModifierContributor(fn)`: contributes numeric attribute bonuses, used by `Player.getModifiedAttribute`.
 - `registerStatusEffectContributor(fn)`: contributes continuous actor status effects, used by `Player.getStatusEffects`.
@@ -20,7 +21,7 @@ Central registry for mod-provided runtime extension hooks. The server creates on
 - `registerStartupValidator(fn)`: runs after mods and merged definitions load.
 
 ## Notes
-- Duplicate chat tool names, XML tags, XML event keys, setting tabs, setting fields, entity fields, Thing image badges, and Thing context actions fail loudly.
+- Duplicate chat tool names, XML tags, XML event keys, setting tabs, setting fields, entity fields, Thing image badges, Thing context actions, and per-mod player-action prompt step ids fail loudly.
 - A field that references an unknown setting tab fails during registration.
 - Select setting field options are cloned into registry snapshots. Preset-style options may include a `settings` object whose namespace/key values are copied into other editable mod fields by the Worlds UI after confirmation.
 - Non-persisted setting fields are UI controls only; they are rendered, but skipped when the Worlds UI writes `SettingInfo.modSettings`.
@@ -35,3 +36,4 @@ Central registry for mod-provided runtime extension hooks. The server creates on
 - Thing context actions are sorted by numeric `order` and then full id. `fieldName`/`fieldValue` control client visibility, while the server handler performs authoritative validation.
 - XML event prompt schema entries are injected into `prompts/_includes/events-xml.njk` through `modEventPromptSchemas`, where the prompt renders each entry's `name`, `description`, and `xml`.
 - Registered XML tags are converted to JSON raw payloads before the mod parser runs, so mod parsers can consume object-shaped event data without string-splitting legacy arrows.
+- Player-action prompt steps with `step: 1` are rendered after built-in step `1f` and receive labels such as `1g.`, `1h.`, and so on. Steps with `step: 3` are rendered in the GLM repetition-buster editing/pruning sequence after built-in step `3j` and receive labels such as `3k.`, `3l.`, and so on.

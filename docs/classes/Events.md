@@ -33,7 +33,7 @@ For a full reference of non-dummy event type keys, payloads, and application beh
 - `get players()` / `get things()`.
 
 ## Private Helpers (Grouped)
-- Tracking helpers: `_resetTrackingSets`, `_isItemAlreadyTracked`, `_trackItemsFromParsing`, `_pruneExcludedItemEntries`.
+- Tracking helpers: `_resetTrackingSets`, `_isItemAlreadyTracked`, `_trackItemsFromParsing`, `_pruneExcludedItemEntries`, `_applyIndependentEventEntries`, `_warnEventEntryFailures`.
 - Prompt helpers: `_enqueueFollowupEventCheck`, `_runEventChecksForRewardProse`, `_runNeedBarEventChecks`, `_runXmlEventChecks`, `_runMysteryThreadCheckPrompt`, `_runMysteryBoxUpdatePrompt`.
 - Parser helpers: `_buildParsers`, `_parseEventPromptResponse`, `_parseXmlEventCheckResponse`, `_extractEventsXmlBlock`, `_extractNumberedResponses`, `_parseNeedBarPromptResponse`, `_serializeNeedBarPromptEntries`.
 - NPC ensuring: `_ensureNpcMentions`.
@@ -72,6 +72,7 @@ For a full reference of non-dummy event type keys, payloads, and application beh
 - Event-created items and characters write any post-generation final name back into the parsed event payload after duplicate/slop-name regeneration. Chat event-summary rows and client-pushed structured events therefore use the final `Thing`/NPC name instead of the originally requested collision/slop name.
 - `LLMClient.logPrompt` is always used for event-check logging; failures should surface loudly.
 - Many helpers are defensive and throw on missing dependencies to avoid silent corruption.
+- Independent multi-entry handlers skip only the failed entry when a single item/NPC entry cannot be applied, then continue later entries and emit one warning listing the skipped entries and error messages. This applies to item animation, consumption, alteration, transfer, pickup, container placement/removal, dropping, item appearance, disposition checks, and hostile-to-friendly transitions. Handler-level preconditions such as missing dependencies, invalid global config, or missing required current location still throw for the whole handler.
 - Item alteration updates `Thing.shortDescription` when provided by the alteration prompt, otherwise preserving the existing value.
 - Item alteration treats optional list/effect fields in the returned item XML as authoritative. Missing or empty attribute bonuses and `causeStatusEffectOnTarget`/`causeStatusEffectOnEquipper` tags remove the corresponding previous data; populated tags replace it. Populated target/equipper status effects are synchronously expanded through status-effect generation before the altered item is persisted or logged, so normal `alter_item` events and chat-tool alterations get the same mechanical stats.
 - `item_inflict` events ignore the prompt-provided status effect text and always apply the item's configured target inflict effect (`causeStatusEffectOnTarget`) to the target when available.

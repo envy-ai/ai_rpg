@@ -37,3 +37,32 @@ test('NPC view does not hide read-only point totals', () => {
 
     assert.doesNotMatch(visibilityBlock, /setAttribute\('hidden'/);
 });
+
+test('NPC view renders calculated attributes above base attribute controls', () => {
+    const scssSource = fs.readFileSync(path.join(__dirname, '..', 'public', 'css', 'main.scss'), 'utf8');
+    const attributesSection = extractBlock(
+        viewSource,
+        '<section class="npc-view-section" id="npcViewAttributesSection">',
+        '<section class="npc-view-section" id="npcViewSkillsSection">'
+    );
+    const showBlock = extractBlock(
+        viewSource,
+        'async function showNpcViewModal(npc)',
+        'function initTabs()'
+    );
+
+    assert.match(attributesSection, /id="npcViewCalculatedAttributesSection"/);
+    assert.match(attributesSection, /id="npcViewCalculatedAttributesList"/);
+    assert.ok(
+        attributesSection.indexOf('id="npcViewCalculatedAttributesSection"')
+            < attributesSection.indexOf("{% set attributeSectionId = 'npcViewAttributeAllocationSection' %}"),
+        'calculated attributes should appear above the base attribute controls'
+    );
+    assert.match(viewSource, /const npcViewCalculatedAttributesList = document\.getElementById\('npcViewCalculatedAttributesList'\)/);
+    assert.match(viewSource, /function resolveNpcViewCalculatedAttributeEntries\(actor = \{\}\)/);
+    assert.match(viewSource, /function renderNpcViewCalculatedAttributes\(actor = \{\}\)/);
+    assert.match(showBlock, /renderNpcViewCalculatedAttributes\(latestNpc\)/);
+    assert.match(scssSource, /\.npc-view-calculated-attribute--higher/);
+    assert.match(scssSource, /\.npc-view-calculated-attribute--lower/);
+    assert.match(scssSource, /\.npc-view-calculated-attribute--same/);
+});

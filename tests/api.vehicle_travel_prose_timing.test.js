@@ -64,7 +64,7 @@ test('travelProse vehicle state changes and due arrivals request a final client 
     );
     assert.match(
         travelSource,
-        /vehicleStateChanged,\s+location,/,
+        /vehicleStateChanged,\s+timeAdjustment: playerMoveTimeAdjustment,\s+location,/,
         'runTravelProseEventChecks should return vehicleStateChanged with travel results'
     );
     assert.match(

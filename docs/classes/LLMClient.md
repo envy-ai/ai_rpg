@@ -67,6 +67,7 @@ Centralized client for LLM chat completions with concurrency limits, streaming p
 - `runInBackground: true` still allows a request to run through normal retry/logging/progress handling, but it is labeled as background for progress display and receives lower semaphore priority so gameplay foreground prompts can start ahead of queued background work.
 - Streamed tool calls are allowed: empty textual content is accepted when valid tool calls are present, and regex/XML output validation is skipped for those tool-call turns.
 - Retries are built in; stream timeouts are incrementally increased on retry.
+- Per-attempt `ERROR_chatCompletionError_*` logs include enumerable `message`, `status` when available, `attemptNumber`, `maxAttempts`, and `willRetry` fields in `Error Details`, so an intermediate failed stream can be distinguished from the final exhausted attempt.
 - Manual retries from prompt-progress UI do not consume configured automatic retry attempts for the prompt call.
 - Retry attempts re-resolve active AI runtime settings (including `ai_model_overrides` selected by `metadataLabel`) before each request attempt, so model/endpoint/key and other settings can change between retries.
 - When `ai_model_overrides` apply, console debugging prints the prompt label and matching profile names, but does not dump the merged override object or emit one line per overridden key.

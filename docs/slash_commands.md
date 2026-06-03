@@ -38,6 +38,9 @@ Slash Commands Quick Guide
   - `/promptstats` shows the persistent output-character averages recorded in `logs/prompt-output-character-stats.json` as a markdown table.
   - `/promptstats clear` clears all stored prompt output-character averages through `LLMClient.clearPromptOutputCharacterStats()`.
 
+- Legacy debug cleanup
+  - `/scrub_legacy_debug [dry_run]` removes old check/tool-call debug pollution from chat history and stored scene summaries. It removes standalone diagnostic chat entries, strips embedded `Checks: ...` and `Tool call debug: ...` lines, preserves non-debug system entries, and supports `dry_run=true` to report counts without saving.
+
 - Scheduled events
   - `/scheduled` lists pending `ScheduledEvent` records as readable markdown, using a numbered list with per-event fields so long event text wraps cleanly.
 

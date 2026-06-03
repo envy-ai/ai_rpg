@@ -4391,10 +4391,33 @@ class LLMClient {
                         }
                     } else {
                         const promptAppend = LLMClient.formatMessagesForErrorLog(payload?.messages || requestMessages || messages);
+                        const willRetry = attempt < retryAttempts;
+                        let errorForLog = error;
+                        if (errorForLog && typeof errorForLog === 'object') {
+                            errorForLog.message = typeof errorForLog.message === 'string'
+                                ? errorForLog.message
+                                : String(errorForLog);
+                            if (Number.isFinite(errorStatus) && errorForLog.status === undefined) {
+                                errorForLog.status = errorStatus;
+                            }
+                            errorForLog.attemptNumber = attempt + 1;
+                            errorForLog.maxAttempts = retryAttempts + 1;
+                            errorForLog.willRetry = willRetry;
+                        } else {
+                            errorForLog = {
+                                message: String(errorForLog),
+                                attemptNumber: attempt + 1,
+                                maxAttempts: retryAttempts + 1,
+                                willRetry
+                            };
+                            if (Number.isFinite(errorStatus)) {
+                                errorForLog.status = errorStatus;
+                            }
+                        }
                         const filePath = LLMClient.writeLogFile({
                             prefix: 'chatCompletionError',
                             metadataLabel: resolvedErrorLogLabel,
-                            error: error,
+                            error: errorForLog,
                             payload: responseContent || '',
                             append: promptAppend,
                             onFailureMessage: 'Failed to write chat completion error log file'

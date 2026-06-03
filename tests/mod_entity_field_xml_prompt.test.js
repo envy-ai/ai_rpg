@@ -244,6 +244,41 @@ test('base prompt context exposes registered generator fields to crafting item X
     assert.match(rendered, /<implantSlot><!--N\/A unless this item can be installed as an implant; otherwise use neural, dermal, ocular, skeletal, or arcane\.--><\/implantSlot>/);
 });
 
+test('base prompt context exposes registered player-action prompt steps', () => {
+    const registry = new ModExtensionRegistry();
+    registry.registerPlayerActionPromptStep({
+        modName: 'implants',
+        id: 'implant-consistency',
+        step: 3,
+        text: 'Check whether implant behavior stayed consistent with installed hardware.'
+    });
+    const buildBasePromptContext = loadBuildBasePromptContext(registry);
+    const baseContext = buildBasePromptContext({
+        locationOverride: {
+            id: 'loc_1',
+            name: 'Test Lab',
+            description: 'A test workshop.',
+            items: [],
+            scenery: [],
+            getDetails: () => ({
+                name: 'Test Lab',
+                description: 'A test workshop.',
+                exits: {}
+            })
+        }
+    });
+
+    assert.deepEqual(baseContext.modPlayerActionPromptSteps, [{
+        modName: 'implants',
+        id: 'implant-consistency',
+        fullId: 'implants:implant-consistency',
+        step: 3,
+        number: '3k',
+        text: 'Check whether implant behavior stayed consistent with installed hardware.',
+        order: 1
+    }]);
+});
+
 test('thing XML parser maps registered item prompt fields onto first-class parsed properties', async () => {
     const registry = new ModExtensionRegistry();
     registerImplantField(registry);

@@ -77,6 +77,8 @@ need_bars:
         effect: Good mood, slight bonuses
   stamina:
     name: Stamina
+    aliases:
+      - energy
     description: Represents the character's minute-to-minute energy levels. If this reaches 0, it will be difficult for them to swing weapons or do other strenuous acts. Regenerates very quickly.
     related_attribute: strength
     player: true

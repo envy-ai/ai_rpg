@@ -91,6 +91,9 @@ class ModLoader {
             this.loadedMods.set(modName, {
                 name: modName,
                 dir: modDir,
+                hasModJs: false,
+                hasDefsDir,
+                dataOnly: true,
                 mod: {},
                 meta: {
                     name: modName,
@@ -124,6 +127,9 @@ class ModLoader {
         this.loadedMods.set(modName, {
             name: modName,
             dir: modDir,
+            hasModJs: true,
+            hasDefsDir,
+            dataOnly: false,
             mod: mod,
             meta: mod.meta || {},
             config: modConfig
@@ -253,6 +259,16 @@ class ModLoader {
                     throw new Error(`Mod "${modName}" cannot register base context contributors because no ModExtensionRegistry is available.`);
                 }
                 return modExtensionRegistry.registerBaseContextContributor({ modName, contributor });
+            },
+
+            registerPlayerActionPromptStep: (options = {}) => {
+                if (!modExtensionRegistry || typeof modExtensionRegistry.registerPlayerActionPromptStep !== 'function') {
+                    throw new Error(`Mod "${modName}" cannot register player-action prompt steps because no ModExtensionRegistry is available.`);
+                }
+                return modExtensionRegistry.registerPlayerActionPromptStep({
+                    ...options,
+                    modName
+                });
             },
 
             registerActorStatusContributor: (contributor) => {

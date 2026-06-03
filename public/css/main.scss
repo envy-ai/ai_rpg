@@ -2281,6 +2281,13 @@ p:not(:last-child) {
   line-height: 1.2;
 }
 
+.favorite-location-card__travel-time {
+  color: rgba(191, 219, 254, 0.9);
+  font-size: 0.8rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
 .favorite-location-card__description {
   color: rgba(203, 213, 225, 0.8);
   font-size: 0.84rem;
@@ -9305,6 +9312,10 @@ body.modal-open {
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }
 
+.quest-edit-checkbox-group {
+  justify-content: flex-end;
+}
+
 .quest-edit-section-header,
 .quest-edit-objective-header {
   display: flex;
@@ -11792,6 +11803,87 @@ body.modal-open {
 .npc-view-allocation-buttons {
   display: flex;
   justify-content: flex-end;
+}
+
+.npc-view-calculated-attributes {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 18px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.npc-view-calculated-attributes[hidden] {
+  display: none;
+}
+
+.npc-view-calculated-attributes__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.npc-view-calculated-attribute {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "name value"
+    "delta delta";
+  gap: 3px 10px;
+  align-items: baseline;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.38);
+}
+
+.npc-view-calculated-attribute__name {
+  grid-area: name;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: rgba(226, 232, 240, 0.86);
+  font-weight: 600;
+}
+
+.npc-view-calculated-attribute__value {
+  grid-area: value;
+  color: #ffffff;
+  font-size: 1.25rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.npc-view-calculated-attribute__delta {
+  grid-area: delta;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: rgba(203, 213, 225, 0.72);
+  font-size: 0.78rem;
+}
+
+.npc-view-calculated-attribute--higher {
+  border-color: rgba(52, 211, 153, 0.32);
+
+  .npc-view-calculated-attribute__value,
+  .npc-view-calculated-attribute__delta {
+    color: #34d399;
+  }
+}
+
+.npc-view-calculated-attribute--lower {
+  border-color: rgba(248, 113, 113, 0.32);
+
+  .npc-view-calculated-attribute__value,
+  .npc-view-calculated-attribute__delta {
+    color: #f87171;
+  }
+}
+
+.npc-view-calculated-attribute--same {
+  .npc-view-calculated-attribute__value {
+    color: #ffffff;
+  }
 }
 
 .npc-view-attributes {

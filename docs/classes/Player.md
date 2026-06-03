@@ -47,7 +47,7 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
   - `setNpcInventoryChangeHandler(handler)`, `setLevelUpHandler(handler)`.
 
 ## Accessors (Grouped)
-- Identity and descriptors: `id`, `name`, `aliases`, `description`, `shortDescription`, `imageId`, `class`, `race`, `gender`, `personalityType`, `personalityTraits`, `personalityNotes`, `aiNotes`, `resistances`, `vulnerabilities`.
+- Identity and descriptors: `id`, `name`, `aliases`, `description`, `shortDescription`, `imageId`, `class`, `race`, `gender`, `personalityType`, `personalityTraits`, `personalityNotes`, `aiNotes`, `resistances`, `vulnerabilities`. Direct character-field chat tools may also accept the serialized `personality` object, but only its `type`, `traits`, `notes`, and `aiNotes` keys map back to these persisted fields.
 - Factions: `factionId`.
 - State: `level`, `experience`, `health`, `maxHealth`, `healthAttribute`, `isDead`, `persistWhenDead`, `isDisabled` (dead, zero-health, or carrying an exact `Incapacitated` status effect), `inCombat`, `isHostile`, `hiddenFromPlayer` / `isHiddenFromPlayer`, `corpseCountdown`, `elapsedTime`, `createdAt`, `lastUpdated`.
 - Locations: `currentLocation`, `location`, `currentVehicle`, `previousLocationId`, `previousLocation`, `currentLocationObject`, `lastVisitedTime`, `last_seen_time`, `last_seen_location`, `was_in_player_location_previous_round` (plus camelCase aliases).
@@ -125,6 +125,7 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
   - `tradeRefusalExpiresAt`, `barterStockUpdatedAt`, `barterProfile`.
 - Movement:
   - `setLocationByName(name)`, `setLocation(location)`, `moveToLocation(direction, locationMap)`.
+  - `setLocation(...)` records the pre-arrival `visited` / `lastVisitedTime` state for non-NPC destination moves before marking the destination visited, preserving the data used by the while-you-were-away arrival gate.
   - `getCurrentLocationName()`, `getCurrentLocationInfo(locationMap)`, `getAvailableExits(locationMap)`.
   - `updatePreviousLocation()`.
   - `recordLastSeenByPlayer({ time, locationId, wasInPlayerLocationPreviousRound })`.
@@ -182,6 +183,6 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
 - `getById(id)` is index-backed (`#indexById`) so party XP and other lookups resolve the canonical current instance, not stale insertion-order instances.
 - `unregister(target)` now rebuilds indexes after removals to prevent stale id/name registry entries.
 - Direct unspent-point mutators (`setUnspent*`/`adjustUnspent*`) now throw by design.
-- `setLocation(locationId)` now warns with a stack trace and leaves `currentLocation` unchanged when the provided string id cannot be resolved.
+- `setLocation(locationId)` now warns with a stack trace and leaves `currentLocation` unchanged when the provided string id cannot be resolved. For non-NPC moves to a different destination, it also snapshots the destination's pre-move visit state before `markVisited()` updates `lastVisitedTime`.
 - NPC last-seen state is persisted as snake_case save fields: `last_seen_time` stores an absolute world-minute timestamp, `last_seen_location` stores the location id, and `was_in_player_location_previous_round` records whether the NPC was with the player continuously from the previous round. Chat, direct movement, crafting/processing, and location-modification actions snapshot same-location NPCs at turn start, then update sightings after successful turn resolution so base-context can mention absent NPCs and expose newly present NPCs without implying continuously present NPCs have recently vanished.
 - NPC hidden visibility is persisted as `hiddenFromPlayer`. Current-location client payloads still include hidden NPCs, and the Adventure UI hides living hidden NPCs by default until its `show hidden` eye toggle is enabled. Last-seen recording skips living hidden NPCs until an event, automatic hide/perception opposed check, or prose tool reveals them. Dead NPCs/corpses are always treated as visible even if their persisted record is hidden. Base-context still includes living hidden NPCs in character XML with `<hidden>true</hidden>`; visible characters and corpses omit the field rather than rendering `<hidden>false</hidden>`.

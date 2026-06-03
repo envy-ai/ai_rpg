@@ -60,6 +60,81 @@ test('LLMClient.chatCompletion includes the prompt label in chat completion erro
     }
 });
 
+test('LLMClient.chatCompletion marks per-attempt error logs when another retry will run', { concurrency: false }, async () => {
+    const originalAxiosPost = axios.post;
+    const originalConfig = Globals.config;
+    const originalBaseDir = Globals.baseDir;
+    const tmpRoot = path.resolve(__dirname, '..', 'tmp');
+    fs.mkdirSync(tmpRoot, { recursive: true });
+    const tempBaseDir = fs.mkdtempSync(path.join(tmpRoot, 'llmclient-retry-log-'));
+    let calls = 0;
+
+    axios.post = async (_endpoint, payload) => {
+        calls += 1;
+        if (calls === 1) {
+            const error = new Error('Synthetic transient chat completion failure.');
+            error.status = 500;
+            throw error;
+        }
+        return {
+            status: 200,
+            statusText: 'OK',
+            headers: {},
+            config: {},
+            data: {
+                id: 'mock_response',
+                model: payload.model,
+                choices: [
+                    {
+                        message: { content: 'Recovered response.' },
+                        finish_reason: 'stop'
+                    }
+                ],
+                usage: { total_tokens: 12 }
+            }
+        };
+    };
+    Globals.baseDir = tempBaseDir;
+    Globals.config = {
+        ai: {
+            backend: 'openai_compatible',
+            endpoint: 'https://example.invalid/v1/chat/completions',
+            apiKey: 'test-key',
+            model: 'test-model',
+            stream: false,
+            retryAttempts: 1,
+            max_concurrent_requests: 1,
+            supress_seed: true
+        }
+    };
+
+    try {
+        const result = await LLMClient.chatCompletion({
+            messages: [{ role: 'user', content: 'Trigger one transient error.' }],
+            metadataLabel: 'while_you_were_away',
+            validateXML: false,
+            stream: false,
+            retryAttempts: 1,
+            output: 'silent'
+        });
+
+        assert.equal(result, 'Recovered response.');
+        assert.equal(calls, 2);
+        const logDir = path.join(tempBaseDir, 'logs');
+        const filenames = fs.readdirSync(logDir);
+        const retryLogName = filenames.find(filename => /^ERROR_chatCompletionError_while_you_were_away_\d+\.log$/.test(filename));
+        assert.ok(retryLogName, `Expected while-you-were-away retry log, got: ${filenames.join(', ')}`);
+        const retryLog = fs.readFileSync(path.join(logDir, retryLogName), 'utf8');
+        assert.match(retryLog, /"attemptNumber":1/);
+        assert.match(retryLog, /"maxAttempts":2/);
+        assert.match(retryLog, /"willRetry":true/);
+    } finally {
+        axios.post = originalAxiosPost;
+        Globals.config = originalConfig;
+        Globals.baseDir = originalBaseDir;
+    }
+});
+
 test('LLMClient.chatCompletion uses forceOutput string without network call', async () => {
     const originalAxiosPost = axios.post;
     const originalConfig = Globals.config;

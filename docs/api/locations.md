@@ -21,7 +21,7 @@ Request:
 Responses:
 - 200 (scope=current): `{ success: true, location: LocationResponse }`
 - 200 (default list): `{ success: true, locations: Array<{ id, name, shortDescription, description, regionId, regionName, label, favorite, visited, isStub, imageId, image? }> }`
-- 200 (scope=favorites): same list shape, filtered to visited, non-stub locations with `favorite=true`.
+- 200 (scope=favorites): same list shape plus nullable `computedTravelTimeMinutes`, filtered to visited, non-stub locations with `favorite=true`. The computed time is the shortest directed route from the active player's current location, or `null` when no route is known.
 - 404: `{ success: false, error }` (scope=current with no current location)
 - 500: `{ success: false, error }`
 
@@ -236,6 +236,7 @@ Responses:
 Notes:
 - Concurrent requests are supported. In-flight dedupe only applies when an explicit non-empty `name` is provided.
 - Single-NPC creation now waits for its generated progression pass before returning, so the created NPC should already have any LLM-assigned skill spec applied in the response payload.
+- Generic/scheduled chat prompts can also use the world-mutation `createNpc(...)` chat tool, which delegates to the same single-NPC generation path and supports matching seed fields plus `relativeLevel`, `hiddenFromPlayer`, `aiNotes`, and non-persisted generation `notes`.
 
 ## POST /api/locations/:id/things
 

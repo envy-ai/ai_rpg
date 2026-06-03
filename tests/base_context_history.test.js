@@ -67,6 +67,52 @@ test('base-context history all-entry mode includes status and level-up entries w
     );
 });
 
+test('base-context history all-entry mode excludes system and diagnostic entries', () => {
+    const entries = [
+        {
+            type: 'tool-call-debug',
+            role: 'system',
+            content: 'Tool calls for player_action\n\n1. resolveSkillCheck\nStatus: completed',
+            summary: 'Tool call debug: 1 call, 1 complete, 0 errors.'
+        },
+        {
+            type: 'check-results',
+            role: 'assistant',
+            content: 'Checks for player_action\n\n1. Test: Success',
+            summary: 'Checks: 1 check, 1 complete, 0 errors.'
+        },
+        {
+            role: 'system',
+            content: 'Time-based effects adjusted needs for 3 actors.'
+        }
+    ];
+
+    for (const entry of entries) {
+        assert.equal(
+            shouldIncludeEntryInBaseContextHistory(entry, {
+                includeAllEntryTypes: true,
+                hasRenderableContent: true
+            }),
+            false
+        );
+    }
+
+    assert.equal(
+        shouldIncludeEntryInBaseContextHistory({
+            type: 'generic-prompt-response',
+            role: 'assistant',
+            content: 'Prior generic prompt response.',
+            metadata: {
+                excludeFromBaseContextHistory: true
+            }
+        }, {
+            includeAllEntryTypes: true,
+            hasRenderableContent: true
+        }),
+        true
+    );
+});
+
 test('generic prompt route requests full-entry-type base context while no-context prompt stays isolated', () => {
     const source = fs.readFileSync(require.resolve('../api.js'), 'utf8');
     assert.match(

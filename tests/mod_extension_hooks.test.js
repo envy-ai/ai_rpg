@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const nunjucks = require('nunjucks');
 
 const Globals = require('../Globals.js');
 const ModExtensionRegistry = require('../ModExtensionRegistry.js');
@@ -59,6 +60,13 @@ function makeThing(options = {}) {
         implantSlot: options.implantSlot,
         attributeBonuses: options.attributeBonuses || [],
         causeStatusEffectOnEquipper: options.causeStatusEffectOnEquipper || null
+    });
+}
+
+function createPromptEnv() {
+    return nunjucks.configure(path.join(process.cwd(), 'prompts'), {
+        autoescape: false,
+        throwOnUndefined: true
     });
 }
 
@@ -122,6 +130,181 @@ test('ModExtensionRegistry maps XML tags to parser and handler records', () => {
         description: 'Install an inventory-backed implant on an actor.',
         xml: '<implantEquipped>...</implantEquipped>'
     }]);
+});
+
+test('ModExtensionRegistry registers and numbers player-action prompt steps for supported stages', () => {
+    const registry = new ModExtensionRegistry();
+
+    registry.registerPlayerActionPromptStep({
+        modName: 'implants',
+        id: 'implant-consistency',
+        step: 3,
+        text: 'Check whether implant behavior stayed consistent with installed hardware.'
+    });
+    registry.registerPlayerActionPromptStep({
+        modName: 'need-bar-lust',
+        id: 'need-awareness',
+        step: 1,
+        text: 'Check whether urgent lust needs should affect selected NPC initiative.'
+    });
+    registry.registerPlayerActionPromptStep({
+        modName: 'spells',
+        id: 'spell-costs',
+        step: 3,
+        text: 'Check whether any spellcasting respected configured costs.'
+    });
+
+    assert.deepEqual(registry.getPlayerActionPromptSteps(), [
+        {
+            modName: 'need-bar-lust',
+            id: 'need-awareness',
+            fullId: 'need-bar-lust:need-awareness',
+            step: 1,
+            number: '1g',
+            text: 'Check whether urgent lust needs should affect selected NPC initiative.',
+            order: 2
+        },
+        {
+            modName: 'implants',
+            id: 'implant-consistency',
+            fullId: 'implants:implant-consistency',
+            step: 3,
+            number: '3k',
+            text: 'Check whether implant behavior stayed consistent with installed hardware.',
+            order: 1
+        },
+        {
+            modName: 'spells',
+            id: 'spell-costs',
+            fullId: 'spells:spell-costs',
+            step: 3,
+            number: '3l',
+            text: 'Check whether any spellcasting respected configured costs.',
+            order: 3
+        }
+    ]);
+    assert.deepEqual(
+        registry.getPlayerActionPromptSteps({ step: 1 }).map(step => step.number),
+        ['1g']
+    );
+    assert.deepEqual(
+        registry.getPlayerActionPromptSteps({ step: 3 }).map(step => step.number),
+        ['3k', '3l']
+    );
+    assert.throws(
+        () => registry.registerPlayerActionPromptStep({
+            modName: 'implants',
+            id: 'implant-consistency',
+            step: 3,
+            text: 'Duplicate.'
+        }),
+        /already registered/i
+    );
+    assert.throws(
+        () => registry.registerPlayerActionPromptStep({
+            modName: 'implants',
+            id: 'unsupported-stage',
+            step: 2,
+            text: 'Unsupported.'
+        }),
+        /step must be either 1 or 3/i
+    );
+});
+
+test('player-action prompt renders mod-registered steps at stages 1 and 3', () => {
+    const promptEnv = createPromptEnv();
+    const rendered = promptEnv.render('_includes/player-action.njk', {
+        setting: { writingStyleNotes: '' },
+        config: {
+            prose_length: '2 paragraphs',
+            prose_instructions: '',
+            prose_prompt_suffix: '',
+            repetition_buster: true,
+            repetition_buster_mode: 'glm',
+            use_legacy_prompt_checks: false
+        },
+        actionText: 'I inspect the relay.',
+        characterName: 'The player',
+        isAttack: false,
+        currentVehicle: {
+            name: '',
+            destination: '',
+            vehicleInfo: {
+                hasArrived: false,
+                isUnderway: false
+            }
+        },
+        currentLocationLastSeenNpcs: [],
+        npcs: [],
+        party: [],
+        modPlayerActionPromptSteps: [
+            {
+                step: 1,
+                number: '1g',
+                text: 'Check whether urgent lust needs should affect selected NPC initiative.'
+            },
+            {
+                step: 3,
+                number: '3k',
+                text: 'Check whether implant behavior stayed consistent with installed hardware.'
+            },
+            {
+                step: 3,
+                number: '3l',
+                text: 'Check whether spellcasting respected configured costs.'
+            }
+        ]
+    });
+
+    assert.match(rendered, /3j\. Did you create any "mystery boxes"\?/);
+    assert.match(rendered, /1g\. Check whether urgent lust needs should affect selected NPC initiative\./);
+    assert.match(rendered, /3k\. Check whether implant behavior stayed consistent with installed hardware\./);
+    assert.match(rendered, /3l\. Check whether spellcasting respected configured costs\./);
+    assert.ok(
+        rendered.indexOf('1f. Is the player currently under the effects') < rendered.indexOf('1g. Check whether urgent lust needs'),
+        'stage 1 mod prompt steps should render after the built-in 1f step'
+    );
+    assert.ok(
+        rendered.indexOf('3j. Did you create any "mystery boxes"?') < rendered.indexOf('3k. Check whether implant behavior'),
+        'mod prompt steps should render immediately after the built-in 3j step'
+    );
+});
+
+test('need-bar-lust mod registers stage 1 player-action prompt steps', () => {
+    const registry = new ModExtensionRegistry();
+    const lustMod = require('../mods/need-bar-lust/mod.js');
+
+    lustMod.register({
+        registerPlayerActionPromptStep(options = {}) {
+            return registry.registerPlayerActionPromptStep({
+                ...options,
+                modName: 'need-bar-lust'
+            });
+        }
+    });
+
+    const steps = registry.getPlayerActionPromptSteps();
+    assert.deepEqual(
+        steps.map(step => ({
+            fullId: step.fullId,
+            step: step.step,
+            number: step.number
+        })),
+        [
+            {
+                fullId: 'need-bar-lust:lustAdvance',
+                step: 1,
+                number: '1g'
+            },
+            {
+                fullId: 'need-bar-lust:takeTheLead',
+                step: 1,
+                number: '1h'
+            }
+        ]
+    );
+    assert.match(steps[0].text, /romantic and\/or sexual advance/);
+    assert.match(steps[1].text, /active participant/);
 });
 
 test('ModExtensionRegistry registers world setting tabs and groups fields by tab', () => {
@@ -727,7 +910,7 @@ module.exports = {
     }
 });
 
-test('ModLoader mod scope exposes mod asset URLs and Thing image badge registration', () => {
+test('ModLoader mod scope exposes mod asset URLs and prompt-step registration', () => {
     const registry = new ModExtensionRegistry();
     const tempBaseDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-rpg-mod-scope-'));
     const modDir = path.join(tempBaseDir, 'mods', 'implants');
@@ -751,6 +934,27 @@ test('ModLoader mod scope exposes mod asset URLs and Thing image badge registrat
         assert.deepEqual(
             registry.getThingImageBadges().map(badge => badge.fullId),
             ['implants:implant-chip']
+        );
+
+        scope.registerPlayerActionPromptStep({
+            id: 'implant-consistency',
+            step: 3,
+            text: 'Check whether implant behavior stayed consistent with installed hardware.'
+        });
+
+        assert.deepEqual(
+            registry.getPlayerActionPromptSteps().map(step => ({
+                fullId: step.fullId,
+                step: step.step,
+                number: step.number,
+                text: step.text
+            })),
+            [{
+                fullId: 'implants:implant-consistency',
+                step: 3,
+                number: '3k',
+                text: 'Check whether implant behavior stayed consistent with installed hardware.'
+            }]
         );
     } finally {
         fs.rmSync(tempBaseDir, { recursive: true, force: true });

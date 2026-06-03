@@ -33,6 +33,24 @@ test('quest editor gathers structured reward payloads from row editors', () => {
     assert.match(viewSource, /rewardNpcDispositions: gatherQuestNpcDispositionRewards\(\)/);
 });
 
+test('quest editor exposes persisted quest metadata fields in the modal payload', () => {
+    assert.match(viewSource, /id="questEditGiverName"[^>]*name="giverName"/);
+    assert.match(viewSource, /id="questEditPaused"[^>]*name="paused"/);
+    assert.match(viewSource, /id="questEditRewardClaimed"[^>]*name="rewardClaimed"/);
+
+    assert.match(viewSource, /const questEditGiverName = document\.getElementById\('questEditGiverName'\);/);
+    assert.match(viewSource, /const questEditPaused = document\.getElementById\('questEditPaused'\);/);
+    assert.match(viewSource, /const questEditRewardClaimed = document\.getElementById\('questEditRewardClaimed'\);/);
+
+    assert.match(viewSource, /questEditGiverName\.value = quest\.giverName \|\| quest\.giver \|\| '';/);
+    assert.match(viewSource, /questEditPaused\.checked = Boolean\(quest\.paused\);/);
+    assert.match(viewSource, /questEditRewardClaimed\.checked = Boolean\(quest\.rewardClaimed\);/);
+
+    assert.match(viewSource, /giverName: questEditGiverName \? questEditGiverName\.value\.trim\(\) : \(questBeingEdited\.giverName \|\| questBeingEdited\.giver \|\| ''\)/);
+    assert.match(viewSource, /paused: questEditPaused \? questEditPaused\.checked : Boolean\(questBeingEdited\.paused\)/);
+    assert.match(viewSource, /rewardClaimed: questEditRewardClaimed \? questEditRewardClaimed\.checked : Boolean\(questBeingEdited\.rewardClaimed\)/);
+});
+
 test('quest editor reward rows have dedicated styling hooks', () => {
     assert.match(scssSource, /\.quest-edit-reward-list/);
     assert.match(scssSource, /\.quest-edit-reward-row/);

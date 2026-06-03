@@ -64,6 +64,7 @@ const UPDATE_CHARACTER_FIELD_NAMES = Object.freeze([
     'isHostile',
     'factionId',
     'aliases',
+    'personality',
     'personalityType',
     'personalityTraits',
     'personalityNotes',
@@ -77,6 +78,12 @@ const UPDATE_CHARACTER_FIELD_NAMES = Object.freeze([
     'willingToTrade'
 ]);
 const UPDATE_CHARACTER_FIELD_SET = new Set(UPDATE_CHARACTER_FIELD_NAMES);
+const UPDATE_CHARACTER_PERSONALITY_FIELD_MAP = Object.freeze({
+    type: 'personalityType',
+    traits: 'personalityTraits',
+    notes: 'personalityNotes',
+    aiNotes: 'aiNotes'
+});
 const UPDATE_OBJECT_TYPE_VALUES = Object.freeze([
     'character',
     'thing',
@@ -286,6 +293,105 @@ const CHAT_TOOL_DEFINITIONS = Object.freeze([
                     }
                 },
                 required: ['sceneNumber'],
+                additionalProperties: false
+            }
+        }
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'editChatLogEntry',
+            description: 'Edit one stored chat log entry. Generic-prompt mutation tool only. Use ids, timestamps, or zero-based history indexes returned by getHistory/getFullScene; do not invent entries.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    entry: {
+                        type: 'string',
+                        description: 'Optional chat entry id, timestamp, or zero-based history index as returned by getHistory/getFullScene.'
+                    },
+                    index: {
+                        type: 'integer',
+                        minimum: 0,
+                        description: 'Optional zero-based chatHistory index as returned by getHistory/getFullScene.'
+                    },
+                    content: {
+                        type: 'string',
+                        description: 'Replacement entry content. Must be non-empty.'
+                    },
+                    reason: {
+                        type: 'string',
+                        description: 'Optional private reason for the edit, used only in tool metadata.'
+                    }
+                },
+                required: ['content'],
+                additionalProperties: false
+            }
+        }
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'rerunSceneSummary',
+            description: 'Re-run a stored Scene N summary by resolving its saved range and calling the scene summarizer again for that range. Generic-prompt mutation tool only.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    sceneNumber: {
+                        type: 'integer',
+                        minimum: 1,
+                        description: '1-based Scene N display number from <olderStoryHistory>, /scene_summaries, or getFullScene.'
+                    },
+                    reason: {
+                        type: 'string',
+                        description: 'Optional private reason for rerunning this scene summary, used only in tool metadata.'
+                    }
+                },
+                required: ['sceneNumber'],
+                additionalProperties: false
+            }
+        }
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'editSceneSummary',
+            description: 'Directly edit one stored Scene N summary, including its summary text, details, and quotes. Generic-prompt mutation tool only.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    sceneNumber: {
+                        type: 'integer',
+                        minimum: 1,
+                        description: '1-based Scene N display number from <olderStoryHistory>, /scene_summaries, or getFullScene.'
+                    },
+                    summary: {
+                        type: 'string',
+                        description: 'Replacement scene summary text. Must be non-empty.'
+                    },
+                    details: {
+                        type: 'array',
+                        items: { type: 'string' },
+                        description: 'Replacement detail bullet lines. Omit or pass an empty array for no detail lines.'
+                    },
+                    quotes: {
+                        type: 'array',
+                        items: {
+                            type: 'object',
+                            properties: {
+                                character: { type: 'string' },
+                                text: { type: 'string' }
+                            },
+                            required: ['character', 'text'],
+                            additionalProperties: false
+                        },
+                        description: 'Replacement notable quotes for the scene.'
+                    },
+                    reason: {
+                        type: 'string',
+                        description: 'Optional private reason for the edit, used only in tool metadata.'
+                    }
+                },
+                required: ['sceneNumber', 'summary'],
                 additionalProperties: false
             }
         }
@@ -881,6 +987,80 @@ const CHAT_TOOL_DEFINITIONS = Object.freeze([
                     }
                 },
                 required: ['shortDescription', 'itemOrScenery'],
+                additionalProperties: false
+            }
+        }
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'createNpc',
+            description: 'Create an NPC at a location using the single NPC generator. Returns the final created name, which may differ from the requested name after generation and name validation.',
+            parameters: {
+                type: 'object',
+                minProperties: 1,
+                properties: {
+                    location: {
+                        type: 'string',
+                        description: 'Optional location ID or name. Defaults to current player location.'
+                    },
+                    region: {
+                        type: 'string',
+                        description: 'Optional region ID or name used to disambiguate location matching.'
+                    },
+                    name: {
+                        type: 'string',
+                        description: 'Optional preferred NPC name.'
+                    },
+                    description: {
+                        type: 'string',
+                        description: 'Optional long description seed.'
+                    },
+                    shortDescription: {
+                        type: 'string',
+                        description: 'Optional short description seed.'
+                    },
+                    role: {
+                        type: 'string',
+                        description: 'Optional narrative role seed, such as guard, merchant, rival, or witness.'
+                    },
+                    class: {
+                        type: 'string',
+                        description: 'Optional class/profession/archetype seed.'
+                    },
+                    race: {
+                        type: 'string',
+                        description: 'Optional species/ancestry seed.'
+                    },
+                    level: {
+                        type: 'integer',
+                        description: 'Optional absolute desired level. Do not provide when relativeLevel is provided.'
+                    },
+                    relativeLevel: {
+                        type: 'integer',
+                        description: 'Optional level delta from the target location base level. Do not provide when level is provided.'
+                    },
+                    currency: {
+                        type: 'integer',
+                        description: 'Optional starting currency.'
+                    },
+                    isHostile: {
+                        type: 'boolean',
+                        description: 'Optional hostile flag.'
+                    },
+                    hiddenFromPlayer: {
+                        type: 'boolean',
+                        description: 'Optional hidden flag for NPCs that start present but unnoticed.'
+                    },
+                    aiNotes: {
+                        type: 'string',
+                        description: 'Optional private AI notes to persist on the NPC.'
+                    },
+                    notes: {
+                        type: 'string',
+                        description: 'Optional extra generation instructions. These are prompt guidance and are not persisted directly.'
+                    }
+                },
                 additionalProperties: false
             }
         }
@@ -1695,6 +1875,99 @@ const toSearchableValues = (input) => {
     return [];
 };
 
+const summarizeHistoryEntryStructuredContent = (entry) => {
+    if (!entry || typeof entry !== 'object') {
+        return '';
+    }
+
+    const summaryItems = Array.isArray(entry.summaryItems)
+        ? entry.summaryItems
+            .map(item => {
+                if (!item || typeof item !== 'object') {
+                    return '';
+                }
+                const icon = typeof item.icon === 'string' ? item.icon.trim() : '';
+                const text = typeof item.text === 'string' ? item.text.trim() : '';
+                return [icon, text].filter(Boolean).join(' ');
+            })
+            .filter(Boolean)
+        : [];
+    if (summaryItems.length) {
+        return summaryItems.join('\n');
+    }
+
+    const checkResults = Array.isArray(entry.checkResults)
+        ? entry.checkResults
+            .map(record => {
+                if (!record || typeof record !== 'object') {
+                    return '';
+                }
+                const sequence = Number.isInteger(Number(record.sequence))
+                    ? `${Number(record.sequence)}.`
+                    : '';
+                const summary = typeof record.summary === 'string' ? record.summary.trim() : '';
+                const status = typeof record.status === 'string' ? `Status: ${record.status.trim()}` : '';
+                return [sequence, summary, status].filter(Boolean).join(' ');
+            })
+            .filter(Boolean)
+        : [];
+    if (checkResults.length) {
+        return checkResults.join('\n');
+    }
+
+    const toolCalls = Array.isArray(entry.toolCalls)
+        ? entry.toolCalls
+            .map(record => {
+                if (!record || typeof record !== 'object') {
+                    return '';
+                }
+                const sequence = Number.isInteger(Number(record.sequence))
+                    ? `${Number(record.sequence)}.`
+                    : '';
+                const name = typeof record.name === 'string' ? record.name.trim() : '';
+                const status = typeof record.status === 'string' ? `Status: ${record.status.trim()}` : '';
+                return [sequence, name, status].filter(Boolean).join(' ');
+            })
+            .filter(Boolean)
+        : [];
+    if (toolCalls.length) {
+        return toolCalls.join('\n');
+    }
+
+    const structuredFields = [
+        entry.plausibility,
+        entry.slopRemoval,
+        entry.skillCheck,
+        entry.resolution,
+        entry.attackSummary,
+        entry.attackCheck
+    ];
+    const structuredValues = structuredFields.flatMap(toSearchableValues);
+    return structuredValues.join('\n').trim();
+};
+
+const getHistoryEntrySearchText = (entry, { includeAllEntryTypes = false } = {}) => {
+    if (!entry || typeof entry !== 'object') {
+        return '';
+    }
+
+    const content = typeof entry.content === 'string' ? entry.content : '';
+    if (content.trim()) {
+        return content;
+    }
+
+    if (!includeAllEntryTypes) {
+        return '';
+    }
+
+    const summary = typeof entry.summary === 'string' ? entry.summary : '';
+    if (summary.trim()) {
+        return summary;
+    }
+
+    return summarizeHistoryEntryStructuredContent(entry);
+};
+
 const normalizeHistoryQueries = (query) => {
     if (typeof query === 'string') {
         const trimmed = query.trim();
@@ -1740,6 +2013,56 @@ const normalizeRequiredPositiveInteger = (value, name, toolName) => {
         throw new Error(`${toolName} "${name}" must be an integer >= 1.`);
     }
     return numeric;
+};
+
+const normalizeSceneSummaryDetailsForTool = (value) => {
+    if (value === null || value === undefined) {
+        return [];
+    }
+    if (!Array.isArray(value)) {
+        throw new ToolVisibleError(
+            'editSceneSummary "details" must be an array of strings when provided.',
+            { code: 'invalid_scene_summary_details' }
+        );
+    }
+    return value.map((entry, index) => {
+        if (typeof entry !== 'string') {
+            throw new ToolVisibleError(
+                `editSceneSummary details[${index}] must be a string.`,
+                { code: 'invalid_scene_summary_details' }
+            );
+        }
+        return entry.trim();
+    }).filter(Boolean);
+};
+
+const normalizeSceneSummaryQuotesForTool = (value) => {
+    if (value === null || value === undefined) {
+        return [];
+    }
+    if (!Array.isArray(value)) {
+        throw new ToolVisibleError(
+            'editSceneSummary "quotes" must be an array when provided.',
+            { code: 'invalid_scene_summary_quotes' }
+        );
+    }
+    return value.map((quote, index) => {
+        if (!quote || typeof quote !== 'object' || Array.isArray(quote)) {
+            throw new ToolVisibleError(
+                `editSceneSummary quotes[${index}] must be an object.`,
+                { code: 'invalid_scene_summary_quotes' }
+            );
+        }
+        const character = typeof quote.character === 'string' ? quote.character.trim() : '';
+        const text = typeof quote.text === 'string' ? quote.text.trim() : '';
+        if (!character || !text) {
+            throw new ToolVisibleError(
+                `editSceneSummary quotes[${index}] requires non-empty character and text fields.`,
+                { code: 'invalid_scene_summary_quotes' }
+            );
+        }
+        return { character, text };
+    });
 };
 
 const normalizeMoreInfoType = (value) => {
@@ -1841,6 +2164,8 @@ const createChatToolRuntime = ({
     getConfig,
     getChatHistory,
     getSceneSummaries = null,
+    summarizeScenesForHistoryRange = null,
+    persistSceneSummaries = null,
     isAssistantProseLikeEntry,
     serializeNpcForClient,
     buildLocationResponse,
@@ -1848,6 +2173,7 @@ const createChatToolRuntime = ({
     createLocationFromEvent,
     createRegionStubFromEvent,
     generateItemsByNames,
+    generateNpcFromEvent = null,
     ensureExitConnection,
     findRegionByLocationId,
     alterThingByPrompt = null,
@@ -1873,6 +2199,12 @@ const createChatToolRuntime = ({
 } = {}) => {
     ensureFunction(getConfig, 'getConfig');
     ensureFunction(getChatHistory, 'getChatHistory');
+    if (summarizeScenesForHistoryRange !== null && summarizeScenesForHistoryRange !== undefined) {
+        ensureFunction(summarizeScenesForHistoryRange, 'summarizeScenesForHistoryRange');
+    }
+    if (persistSceneSummaries !== null && persistSceneSummaries !== undefined) {
+        ensureFunction(persistSceneSummaries, 'persistSceneSummaries');
+    }
     ensureFunction(isAssistantProseLikeEntry, 'isAssistantProseLikeEntry');
     ensureFunction(serializeNpcForClient, 'serializeNpcForClient');
     ensureFunction(buildLocationResponse, 'buildLocationResponse');
@@ -4345,6 +4677,173 @@ const createChatToolRuntime = ({
         };
     };
 
+    const executeCreateNpcTool = async ({
+        location = null,
+        region = null,
+        name = null,
+        description = null,
+        shortDescription = null,
+        role = null,
+        class: className = null,
+        race = null,
+        level = null,
+        relativeLevel = null,
+        currency = null,
+        isHostile = null,
+        hiddenFromPlayer = null,
+        aiNotes = null,
+        notes = null
+    } = {}) => {
+        const functionName = 'createNpc';
+        if (typeof generateNpcFromEvent !== 'function') {
+            throw new ToolVisibleError(
+                'createNpc is unavailable because the NPC generation helper was not configured.',
+                { code: 'tool_unavailable' }
+            );
+        }
+
+        const locationQuery = normalizeOptionalString(location);
+        const regionQuery = normalizeOptionalString(region);
+        let targetLocation = null;
+        if (locationQuery) {
+            targetLocation = resolveLocationReference(locationQuery, {
+                fieldName: 'location',
+                regionQuery
+            });
+        } else {
+            const currentPlayer = getCurrentPlayer();
+            if (!currentPlayer || !toTrimmedString(currentPlayer.currentLocation)) {
+                throw new ToolVisibleError(
+                    'createNpc requires "location" when no current player location is available.',
+                    { code: 'missing_location' }
+                );
+            }
+            targetLocation = getLocationByIdLoose(currentPlayer.currentLocation);
+            if (!targetLocation) {
+                throw new ToolVisibleError(
+                    `createNpc could not find current player location "${currentPlayer.currentLocation}".`,
+                    { code: 'missing_location' }
+                );
+            }
+            if (regionQuery) {
+                const regionFilter = resolveRegionReference(regionQuery, {
+                    fieldName: 'region',
+                    allowPending: true,
+                    allowMissing: false
+                });
+                const targetRegionId = locationRegionId(targetLocation);
+                if (regionFilter?.id && targetRegionId !== regionFilter.id) {
+                    throw new ToolVisibleError(
+                        `Current location "${targetLocation.name || targetLocation.id}" is not in region "${regionFilter.name}".`,
+                        { code: 'location_region_mismatch' }
+                    );
+                }
+            }
+        }
+
+        const seed = {};
+        const requestedName = normalizeOptionalString(name);
+        if (requestedName) seed.name = requestedName;
+        const descriptionValue = normalizeOptionalString(description);
+        if (descriptionValue) seed.description = descriptionValue;
+        const shortDescriptionValue = normalizeOptionalString(shortDescription);
+        if (shortDescriptionValue) seed.shortDescription = shortDescriptionValue;
+        const roleValue = normalizeOptionalString(role);
+        if (roleValue) seed.role = roleValue;
+        const classValue = normalizeOptionalString(className);
+        if (classValue) seed.class = classValue;
+        const raceValue = normalizeOptionalString(race);
+        if (raceValue) seed.race = raceValue;
+        const aiNotesValue = normalizeOptionalString(aiNotes);
+        if (aiNotesValue) seed.aiNotes = aiNotesValue;
+
+        const levelInteger = normalizeOptionalInteger(level, { functionName, fieldName: 'level' });
+        const relativeLevelInteger = normalizeOptionalInteger(relativeLevel, { functionName, fieldName: 'relativeLevel' });
+        if (levelInteger !== null && relativeLevelInteger !== null) {
+            throw new ToolVisibleError(
+                'createNpc accepts either "level" or "relativeLevel", not both.',
+                { code: 'invalid_arguments' }
+            );
+        }
+        if (relativeLevelInteger !== null) {
+            seed.relativeLevel = relativeLevelInteger;
+        } else if (levelInteger !== null) {
+            const targetRegion = findRegionByLocationId(targetLocation.id) || null;
+            const currentPlayer = getCurrentPlayer();
+            const locationBaseLevel = Number.isFinite(Number(targetLocation.baseLevel))
+                ? Number(targetLocation.baseLevel)
+                : (Number.isFinite(Number(targetRegion?.averageLevel))
+                    ? Number(targetRegion.averageLevel)
+                    : (Number.isFinite(Number(currentPlayer?.level)) ? Number(currentPlayer.level) : 1));
+            seed.relativeLevel = levelInteger - locationBaseLevel;
+        }
+
+        const currencyInteger = normalizeOptionalInteger(currency, { functionName, fieldName: 'currency' });
+        if (currencyInteger !== null) seed.currency = currencyInteger;
+        const isHostileValue = normalizeOptionalBoolean(isHostile, { functionName, fieldName: 'isHostile' });
+        if (isHostileValue !== null) seed.isHostile = isHostileValue;
+        const hiddenFromPlayerValue = normalizeOptionalBoolean(hiddenFromPlayer, { functionName, fieldName: 'hiddenFromPlayer' });
+        if (hiddenFromPlayerValue !== null) seed.hiddenFromPlayer = hiddenFromPlayerValue;
+        const notesValue = normalizeOptionalString(notes);
+
+        if (!Object.keys(seed).length && !notesValue) {
+            throw new ToolVisibleError(
+                'createNpc requires at least one NPC seed field or notes.',
+                { code: 'invalid_arguments' }
+            );
+        }
+
+        const targetRegion = findRegionByLocationId(targetLocation.id) || null;
+        const generatedNpc = await generateNpcFromEvent({
+            name: requestedName || '',
+            npc: seed,
+            location: targetLocation,
+            region: targetRegion,
+            additionalInstructions: notesValue || ''
+        });
+
+        if (!generatedNpc) {
+            throw new ToolVisibleError(
+                'NPC generation did not return a created NPC.',
+                { code: 'npc_generation_failed' }
+            );
+        }
+
+        const finalName = normalizeOptionalString(generatedNpc?.name);
+        if (!finalName) {
+            throw new ToolVisibleError(
+                'NPC generation completed but final name is missing.',
+                { code: 'npc_generation_failed' }
+            );
+        }
+
+        const lines = [
+            '<createNpcResult>',
+            '  <status>success</status>',
+            ...renderXmlNode('npc', {
+                id: generatedNpc?.id || null,
+                requestedName: requestedName || null,
+                finalName,
+                locationId: targetLocation.id || null,
+                locationName: targetLocation.name || null,
+                regionId: locationRegionId(targetLocation),
+                regionName: locationRegionName(targetLocation)
+            }, 1),
+            '</createNpcResult>'
+        ];
+
+        return {
+            content: lines.join('\n'),
+            metadata: {
+                status: 'success',
+                npcId: generatedNpc?.id || null,
+                requestedName: requestedName || null,
+                finalName,
+                locationId: targetLocation.id || null
+            }
+        };
+    };
+
     const executeAlterThingTool = async ({
         thing,
         alteration
@@ -4664,6 +5163,41 @@ const createChatToolRuntime = ({
                         throw new ToolVisibleError(`${functionName} cannot update "aliases" on this NPC.`, { code: 'unsupported_field' });
                     }
                     addOperation(fieldName, () => targetNpc.setAliases(value));
+                    break;
+                }
+                case 'personality': {
+                    const personalityMap = normalizeCharacterFieldMap(rawValue, { functionName, fieldName });
+                    const personalityEntries = Object.entries(personalityMap);
+                    if (!personalityEntries.length) {
+                        throw new ToolVisibleError(
+                            `${functionName} "personality" must include at least one of: ${Object.keys(UPDATE_CHARACTER_PERSONALITY_FIELD_MAP).join(', ')}.`,
+                            { code: 'invalid_arguments' }
+                        );
+                    }
+                    for (const [rawPersonalityFieldName, rawPersonalityValue] of personalityEntries) {
+                        const personalityFieldName = normalizeCharacterFieldString(rawPersonalityFieldName, {
+                            functionName,
+                            fieldName: 'personality key',
+                            requireNonEmpty: true
+                        });
+                        const targetFieldName = UPDATE_CHARACTER_PERSONALITY_FIELD_MAP[personalityFieldName];
+                        if (!targetFieldName) {
+                            throw new ToolVisibleError(
+                                `${functionName} cannot update personality subfield "${personalityFieldName}". Allowed subfields: ${Object.keys(UPDATE_CHARACTER_PERSONALITY_FIELD_MAP).join(', ')}.`,
+                                {
+                                    code: 'unsupported_field',
+                                    details: { fieldName: `personality.${personalityFieldName}` }
+                                }
+                            );
+                        }
+                        const value = normalizeCharacterFieldString(rawPersonalityValue, {
+                            functionName,
+                            fieldName: `personality.${personalityFieldName}`
+                        });
+                        addOperation(`personality.${personalityFieldName}`, () => {
+                            targetNpc[targetFieldName] = value;
+                        });
+                    }
                     break;
                 }
                 case 'attributes': {
@@ -6731,7 +7265,7 @@ const createChatToolRuntime = ({
             if (!includeAllEntryTypes && !isAssistantProseLikeEntry(entry)) {
                 continue;
             }
-            const content = typeof entry.content === 'string' ? entry.content : '';
+            const content = getHistoryEntrySearchText(entry, { includeAllEntryTypes });
             if (!content.trim()) {
                 continue;
             }
@@ -7054,6 +7588,445 @@ const createChatToolRuntime = ({
                 returnedCount: sceneResult.entries.length,
                 entryIndexes: sceneResult.entries.map(entry => entry.historyIndex),
                 sceneEntryIndexes: sceneResult.entries.map(entry => entry.sceneEntryIndex)
+            }
+        };
+    };
+
+    const truncateToolPreview = (value, maxLength = 500) => {
+        const text = typeof value === 'string' ? value : '';
+        if (text.length <= maxLength) {
+            return text;
+        }
+        return `${text.slice(0, maxLength)}...`;
+    };
+
+    const getMutableChatHistory = (functionName) => {
+        const chatHistory = getChatHistory();
+        if (!Array.isArray(chatHistory)) {
+            throw new ToolVisibleError(
+                `Chat history is unavailable for ${functionName}.`,
+                { code: 'chat_history_unavailable' }
+            );
+        }
+        return chatHistory;
+    };
+
+    const applyPlainTextChatLogEdit = (target, content) => {
+        if (!target || typeof target !== 'object') {
+            throw new ToolVisibleError(
+                'Cannot edit an invalid chat log entry.',
+                { code: 'invalid_entry' }
+            );
+        }
+
+        const oldContent = getHistoryEntrySearchText(target, { includeAllEntryTypes: true });
+        target.content = content;
+
+        const entryType = typeof target.type === 'string' ? target.type.trim().toLowerCase() : '';
+        const hasStructuredDisplay = entryType === 'event-summary'
+            || entryType === 'status-summary'
+            || entryType === 'check-results'
+            || entryType === 'tool-call-debug'
+            || entryType === 'plausibility'
+            || entryType === 'slop-remover'
+            || entryType === 'skill-check'
+            || entryType === 'attack-check'
+            || Array.isArray(target.summaryItems)
+            || Array.isArray(target.checkResults)
+            || Array.isArray(target.toolCalls)
+            || Boolean(target.plausibility && typeof target.plausibility === 'object')
+            || Boolean(target.slopRemoval && typeof target.slopRemoval === 'object')
+            || Boolean(target.skillCheck && typeof target.skillCheck === 'object')
+            || Boolean(target.resolution && typeof target.resolution === 'object')
+            || Boolean(target.attackSummary && typeof target.attackSummary === 'object')
+            || Boolean(target.attackCheck && typeof target.attackCheck === 'object');
+
+        if (typeof target.summary === 'string' || hasStructuredDisplay) {
+            target.summary = content;
+        }
+
+        if (entryType === 'event-summary' || entryType === 'status-summary' || Array.isArray(target.summaryItems)) {
+            target.summaryItems = [{
+                icon: '•',
+                text: content
+            }];
+            target.summaryTitle = target.summaryTitle || (entryType === 'status-summary'
+                ? '🌀 Status Changes'
+                : 'Event Summary');
+        }
+        if (Array.isArray(target.checkResults) || entryType === 'check-results') {
+            target.checkResults = [];
+        }
+        if (Array.isArray(target.toolCalls) || entryType === 'tool-call-debug') {
+            target.toolCalls = [];
+        }
+        if (target.plausibility && typeof target.plausibility === 'object') {
+            target.plausibility = null;
+        }
+        if (target.slopRemoval && typeof target.slopRemoval === 'object') {
+            target.slopRemoval = null;
+        }
+        if (target.skillCheck && typeof target.skillCheck === 'object') {
+            target.skillCheck = null;
+        }
+        if (target.resolution && typeof target.resolution === 'object') {
+            target.resolution = null;
+        }
+        if (target.attackSummary && typeof target.attackSummary === 'object') {
+            target.attackSummary = null;
+        }
+        if (target.attackCheck && typeof target.attackCheck === 'object') {
+            target.attackCheck = null;
+        }
+
+        if (hasStructuredDisplay) {
+            target.metadata = {
+                ...(target.metadata && typeof target.metadata === 'object' ? target.metadata : {}),
+                editedPlainText: true,
+                originalStructuredType: typeof target.type === 'string' && target.type.trim()
+                    ? target.type.trim()
+                    : null
+            };
+        }
+
+        return {
+            oldContent,
+            replacedStructuredDisplay: hasStructuredDisplay
+        };
+    };
+
+    const resolveChatLogEntryIndex = ({ entry = null, index = null } = {}) => {
+        const chatHistory = getMutableChatHistory('editChatLogEntry');
+        const hasEntryReference = entry !== null && entry !== undefined && String(entry).trim() !== '';
+        const hasIndexReference = index !== null && index !== undefined && index !== '';
+
+        if (!hasEntryReference && !hasIndexReference) {
+            throw new ToolVisibleError(
+                'editChatLogEntry requires either "entry" or "index".',
+                { code: 'missing_entry_reference' }
+            );
+        }
+
+        const resolveByIndex = (rawValue, label) => {
+            const numeric = Number(rawValue);
+            if (!Number.isInteger(numeric) || numeric < 0) {
+                throw new ToolVisibleError(
+                    `editChatLogEntry "${label}" must be a zero-based non-negative integer.`,
+                    { code: 'invalid_entry_index' }
+                );
+            }
+            if (numeric >= chatHistory.length || !chatHistory[numeric]) {
+                throw new ToolVisibleError(
+                    `No chat log entry exists at zero-based index ${numeric}.`,
+                    { code: 'entry_not_found' }
+                );
+            }
+            return numeric;
+        };
+
+        const resolveByEntry = (rawValue) => {
+            const reference = String(rawValue).trim();
+            const byId = chatHistory.findIndex(candidate => (
+                candidate && typeof candidate.id === 'string' && candidate.id === reference
+            ));
+            if (byId !== -1) {
+                return byId;
+            }
+            const byTimestamp = chatHistory.findIndex(candidate => (
+                candidate && typeof candidate.timestamp === 'string' && candidate.timestamp === reference
+            ));
+            if (byTimestamp !== -1) {
+                return byTimestamp;
+            }
+            if (/^\d+$/.test(reference)) {
+                return resolveByIndex(Number(reference), 'entry');
+            }
+            throw new ToolVisibleError(
+                `Chat log entry "${reference}" was not found by id, timestamp, or zero-based index.`,
+                { code: 'entry_not_found' }
+            );
+        };
+
+        const resolvedFromEntry = hasEntryReference ? resolveByEntry(entry) : null;
+        const resolvedFromIndex = hasIndexReference ? resolveByIndex(index, 'index') : null;
+        if (
+            resolvedFromEntry !== null
+            && resolvedFromIndex !== null
+            && resolvedFromEntry !== resolvedFromIndex
+        ) {
+            throw new ToolVisibleError(
+                `editChatLogEntry entry and index refer to different chat log entries (${resolvedFromEntry} vs ${resolvedFromIndex}).`,
+                { code: 'conflicting_entry_reference' }
+            );
+        }
+        return resolvedFromIndex !== null ? resolvedFromIndex : resolvedFromEntry;
+    };
+
+    const executeEditChatLogEntryTool = ({ entry = null, index = null, content, reason = null } = {}) => {
+        if (typeof content !== 'string' || !content.trim()) {
+            throw new ToolVisibleError(
+                'editChatLogEntry requires non-empty replacement content.',
+                { code: 'invalid_content' }
+            );
+        }
+
+        const chatHistory = getMutableChatHistory('editChatLogEntry');
+        const resolvedIndex = resolveChatLogEntryIndex({ entry, index });
+        const target = chatHistory[resolvedIndex];
+        if (!target || typeof target !== 'object') {
+            throw new ToolVisibleError(
+                `No chat log entry exists at zero-based index ${resolvedIndex}.`,
+                { code: 'entry_not_found' }
+            );
+        }
+
+        const editResult = applyPlainTextChatLogEdit(target, content);
+        target.lastEditedAt = new Date().toISOString();
+        if (typeof target.timestamp !== 'string' || !target.timestamp.trim()) {
+            target.timestamp = new Date().toISOString();
+        }
+
+        const entryId = typeof target.id === 'string' && target.id.trim() ? target.id.trim() : null;
+        const timestamp = typeof target.timestamp === 'string' && target.timestamp.trim() ? target.timestamp.trim() : null;
+        const entryType = typeof target.type === 'string' && target.type.trim() ? target.type.trim() : null;
+        const role = typeof target.role === 'string' && target.role.trim() ? target.role.trim() : null;
+        const safeReason = toTrimmedString(reason) || null;
+
+        const lines = [
+            '<editChatLogEntryResult>',
+            `  <status>success</status>`,
+            `  <index>${resolvedIndex}</index>`
+        ];
+        if (entryId) {
+            lines.push(`  <id>${xmlEscapeText(entryId)}</id>`);
+        }
+        if (timestamp) {
+            lines.push(`  <timestamp>${xmlEscapeText(timestamp)}</timestamp>`);
+        }
+        if (entryType) {
+            lines.push(`  <type>${xmlEscapeText(entryType)}</type>`);
+        }
+        if (role) {
+            lines.push(`  <role>${xmlEscapeText(role)}</role>`);
+        }
+        if (safeReason) {
+            lines.push(`  <reason>${xmlEscapeText(safeReason)}</reason>`);
+        }
+        lines.push(
+            `  <oldContentPreview>${xmlEscapeText(truncateToolPreview(editResult.oldContent))}</oldContentPreview>`,
+            `  <newContentPreview>${xmlEscapeText(truncateToolPreview(content))}</newContentPreview>`,
+            '</editChatLogEntryResult>'
+        );
+
+        return {
+            content: lines.join('\n'),
+            metadata: {
+                status: 'success',
+                entryId,
+                timestamp,
+                type: entryType,
+                role,
+                index: resolvedIndex,
+                oldContentLength: editResult.oldContent.length,
+                newContentLength: content.length,
+                replacedStructuredDisplay: editResult.replacedStructuredDisplay,
+                reason: safeReason
+            }
+        };
+    };
+
+    const executeRerunSceneSummaryTool = async ({ sceneNumber, reason = null } = {}) => {
+        const normalizedSceneNumber = normalizeRequiredPositiveInteger(
+            sceneNumber,
+            'sceneNumber',
+            'rerunSceneSummary'
+        );
+        if (typeof summarizeScenesForHistoryRange !== 'function') {
+            throw new ToolVisibleError(
+                'Scene summary rerun is unavailable in this runtime.',
+                { code: 'scene_summary_rerun_unavailable' }
+            );
+        }
+
+        const scenes = getOrderedSceneSummaries();
+        if (scenes.length === 0) {
+            throw new ToolVisibleError(
+                'No scene summaries are stored.',
+                { code: 'scene_summary_not_found' }
+            );
+        }
+        if (normalizedSceneNumber > scenes.length) {
+            throw new ToolVisibleError(
+                `Scene summary ${normalizedSceneNumber} is out of range; stored scenes: ${scenes.length}.`,
+                { code: 'scene_summary_not_found' }
+            );
+        }
+
+        const scene = scenes[normalizedSceneNumber - 1];
+        const startIndex = Number(scene?.startIndex);
+        const endIndex = Number(scene?.endIndex);
+        if (!Number.isInteger(startIndex) || startIndex <= 0) {
+            throw new ToolVisibleError(
+                `Scene summary ${normalizedSceneNumber} has an invalid startIndex.`,
+                { code: 'invalid_scene_summary_range' }
+            );
+        }
+        if (!Number.isInteger(endIndex) || endIndex < startIndex) {
+            throw new ToolVisibleError(
+                `Scene summary ${normalizedSceneNumber} has an invalid endIndex.`,
+                { code: 'invalid_scene_summary_range' }
+            );
+        }
+
+        const chatHistory = getMutableChatHistory('rerunSceneSummary');
+        const summaryResult = await summarizeScenesForHistoryRange({
+            chatHistory,
+            startIndex,
+            endIndex,
+            redo: true
+        });
+        if (!summaryResult || typeof summaryResult !== 'object') {
+            throw new ToolVisibleError(
+                'Scene summary rerun returned no result.',
+                { code: 'scene_summary_rerun_failed' }
+            );
+        }
+
+        const persisted = typeof persistSceneSummaries === 'function'
+            ? Boolean(await persistSceneSummaries())
+            : false;
+        const safeReason = toTrimmedString(reason) || null;
+        const rerunRange = summaryResult.range && typeof summaryResult.range === 'object'
+            ? summaryResult.range
+            : {};
+        const summarizedRange = summaryResult.summarizedRange && typeof summaryResult.summarizedRange === 'object'
+            ? summaryResult.summarizedRange
+            : {};
+        const sceneCount = Array.isArray(summaryResult.scenes) ? summaryResult.scenes.length : 0;
+        const nullableInteger = (value) => {
+            if (value === null || value === undefined || value === '') {
+                return null;
+            }
+            const numeric = Number(value);
+            return Number.isInteger(numeric) ? numeric : null;
+        };
+
+        const lines = [
+            '<rerunSceneSummaryResult>',
+            `  <status>success</status>`,
+            `  <sceneNumber>${normalizedSceneNumber}</sceneNumber>`,
+            `  <originalRange start="${xmlEscapeAttribute(startIndex)}" end="${xmlEscapeAttribute(endIndex)}"/>`,
+            `  <rerunRange start="${xmlEscapeAttribute(rerunRange.start ?? '')}" end="${xmlEscapeAttribute(rerunRange.end ?? '')}"/>`,
+            `  <summarizedRange start="${xmlEscapeAttribute(summarizedRange.start ?? '')}" end="${xmlEscapeAttribute(summarizedRange.end ?? '')}"/>`,
+            `  <sceneCount>${sceneCount}</sceneCount>`,
+            `  <persisted>${persisted ? 'true' : 'false'}</persisted>`
+        ];
+        if (safeReason) {
+            lines.push(`  <reason>${xmlEscapeText(safeReason)}</reason>`);
+        }
+        lines.push('</rerunSceneSummaryResult>');
+
+        return {
+            content: lines.join('\n'),
+            metadata: {
+                status: 'success',
+                sceneNumber: normalizedSceneNumber,
+                originalRange: { start: startIndex, end: endIndex },
+                rerunRange: {
+                    start: nullableInteger(rerunRange.start),
+                    end: nullableInteger(rerunRange.end)
+                },
+                summarizedRange: {
+                    start: nullableInteger(summarizedRange.start),
+                    end: nullableInteger(summarizedRange.end)
+                },
+                sceneCount,
+                persisted,
+                reason: safeReason
+            }
+        };
+    };
+
+    const executeEditSceneSummaryTool = async ({
+        sceneNumber,
+        summary,
+        details = null,
+        quotes = null,
+        reason = null
+    } = {}) => {
+        const normalizedSceneNumber = normalizeRequiredPositiveInteger(
+            sceneNumber,
+            'sceneNumber',
+            'editSceneSummary'
+        );
+        const replacementSummary = normalizeRequiredString(summary, {
+            functionName: 'editSceneSummary',
+            fieldName: 'summary'
+        });
+
+        const sceneSummaries = typeof getSceneSummaries === 'function'
+            ? getSceneSummaries()
+            : null;
+        if (!sceneSummaries || typeof sceneSummaries.getScenesInOrder !== 'function') {
+            throw new ToolVisibleError(
+                'Scene summaries are unavailable for editSceneSummary.',
+                { code: 'scene_summaries_unavailable' }
+            );
+        }
+        if (typeof sceneSummaries.updateSceneAtDisplayIndex !== 'function') {
+            throw new ToolVisibleError(
+                'Scene summaries cannot be edited in this runtime.',
+                { code: 'scene_summary_edit_unavailable' }
+            );
+        }
+
+        const scenes = sceneSummaries.getScenesInOrder();
+        if (!Array.isArray(scenes) || scenes.length === 0) {
+            throw new ToolVisibleError(
+                'No scene summaries are stored.',
+                { code: 'scene_summary_not_found' }
+            );
+        }
+        if (normalizedSceneNumber > scenes.length) {
+            throw new ToolVisibleError(
+                `Scene summary ${normalizedSceneNumber} is out of range; stored scenes: ${scenes.length}.`,
+                { code: 'scene_summary_not_found' }
+            );
+        }
+
+        const updates = {
+            summary: replacementSummary,
+            details: normalizeSceneSummaryDetailsForTool(details),
+            quotes: normalizeSceneSummaryQuotesForTool(quotes)
+        };
+        const updatedScene = sceneSummaries.updateSceneAtDisplayIndex(normalizedSceneNumber, updates);
+        const persisted = typeof persistSceneSummaries === 'function'
+            ? Boolean(await persistSceneSummaries())
+            : false;
+        const safeReason = toTrimmedString(reason) || null;
+
+        const lines = [
+            '<editSceneSummaryResult>',
+            `  <status>success</status>`,
+            `  <sceneNumber>${normalizedSceneNumber}</sceneNumber>`,
+            `  <persisted>${persisted ? 'true' : 'false'}</persisted>`,
+            `  <summary>${xmlEscapeText(replacementSummary)}</summary>`,
+            `  <detailCount>${updates.details.length}</detailCount>`,
+            `  <quoteCount>${updates.quotes.length}</quoteCount>`
+        ];
+        if (safeReason) {
+            lines.push(`  <reason>${xmlEscapeText(safeReason)}</reason>`);
+        }
+        lines.push('</editSceneSummaryResult>');
+
+        return {
+            content: lines.join('\n'),
+            metadata: {
+                status: 'success',
+                sceneNumber: normalizedSceneNumber,
+                persisted,
+                updatedScene,
+                reason: safeReason
             }
         };
     };
@@ -7896,6 +8869,12 @@ const createChatToolRuntime = ({
                 });
             } else if (toolCall.functionName === 'getFullScene') {
                 toolResult = executeGetFullSceneTool(argumentsObject);
+            } else if (toolCall.functionName === 'editChatLogEntry') {
+                toolResult = executeEditChatLogEntryTool(argumentsObject);
+            } else if (toolCall.functionName === 'rerunSceneSummary') {
+                toolResult = executeRerunSceneSummaryTool(argumentsObject);
+            } else if (toolCall.functionName === 'editSceneSummary') {
+                toolResult = executeEditSceneSummaryTool(argumentsObject);
             } else if (toolCall.functionName === 'requestUserInput') {
                 toolResult = executeRequestUserInputTool(argumentsObject, {
                     requestUserInputHandler
@@ -7934,6 +8913,8 @@ const createChatToolRuntime = ({
                 toolResult = executeHideEntityTool(argumentsObject);
             } else if (toolCall.functionName === 'createThing') {
                 toolResult = executeCreateThingTool(argumentsObject);
+            } else if (toolCall.functionName === 'createNpc') {
+                toolResult = executeCreateNpcTool(argumentsObject);
             } else if (toolCall.functionName === 'deleteThing') {
                 toolResult = executeDeleteThingTool(argumentsObject, {
                     requestUserInputHandler

@@ -141,6 +141,84 @@ test('put_item_in_container moves a partial actor stack into a named container',
     assert.equal(containedSpikes[0].metadata.containerId, chest.id);
 });
 
+test('put_item_in_container continues applying later entries after one missing item', async () => {
+    const { location, player } = makeWorld();
+    const chest = new Thing({
+        id: 'thing-batch-chest',
+        name: 'Batch Chest',
+        description: 'A chest for batch event testing.',
+        thingType: 'scenery',
+        isContainer: true,
+    });
+    const firstCog = new Thing({
+        id: 'thing-first-cog',
+        name: 'First Cog',
+        description: 'The first cog.',
+        thingType: 'item',
+    });
+    const secondCog = new Thing({
+        id: 'thing-second-cog',
+        name: 'Second Cog',
+        description: 'The second cog.',
+        thingType: 'item',
+    });
+
+    location.addThingId(chest.id);
+    player.addInventoryItem(firstCog);
+    player.addInventoryItem(secondCog);
+
+    const warnings = [];
+    const originalWarn = console.warn;
+    console.warn = (...args) => {
+        warnings.push(args.map(String).join(' '));
+    };
+
+    Events.initialize({
+        getConfig: () => ({ omit_npc_generation: true }),
+        findActorByName: (name) => {
+            const normalized = String(name || '').trim().toLowerCase();
+            return normalized === 'player' || normalized === 'baato' ? player : null;
+        },
+    });
+
+    try {
+        await Events.applyEventOutcomes({
+            parsed: {
+                put_item_in_container: [
+                    {
+                        character: 'player',
+                        item: 'First Cog',
+                        quantity: 1,
+                        containerName: 'Batch Chest',
+                    },
+                    {
+                        character: 'player',
+                        item: 'Missing Cog',
+                        quantity: 1,
+                        containerName: 'Batch Chest',
+                    },
+                    {
+                        character: 'player',
+                        item: 'Second Cog',
+                        quantity: 1,
+                        containerName: 'Batch Chest',
+                    },
+                ],
+            },
+            rawEntries: {},
+        }, { location });
+    } finally {
+        console.warn = originalWarn;
+    }
+
+    const containedNames = chest.getInventoryItems().map(thing => thing.name).sort();
+    assert.deepEqual(containedNames, ['First Cog', 'Second Cog']);
+    assert.equal(player.hasInventoryItem(firstCog.id), false);
+    assert.equal(player.hasInventoryItem(secondCog.id), false);
+    assert.match(warnings.join('\n'), /put_item_in_container/i);
+    assert.match(warnings.join('\n'), /Missing Cog/);
+});
+
 test('remove_item_from_container moves a partial contained stack to the current location when no actor is named', async () => {
     const { location } = makeWorld();
     const chest = new Thing({

@@ -74,6 +74,12 @@ const INFORMATION_GATHERING_CHAT_TOOL_NAMES = new Set([
     'locateThings'
 ]);
 
+const GENERIC_PROMPT_ONLY_BUILT_IN_CHAT_TOOL_NAMES = new Set([
+    'editChatLogEntry',
+    'rerunSceneSummary',
+    'editSceneSummary'
+]);
+
 const LEGACY_PROMPT_CHECK_CHAT_TOOL_NAMES = new Set([
     'resolveAttack',
     'resolveAreaAttack',
@@ -253,8 +259,16 @@ function filterEnabledChatTools({ allowWorldMutationTools = false, modExtensionR
     return [...builtInTools, ...modTools];
 }
 
-function getAllChatToolDefinitions({ modExtensionRegistry = null } = {}) {
-    const builtInTools = getChatToolDefinitions({ modExtensionRegistry });
+function getAllChatToolDefinitions({ modExtensionRegistry = null, includeGenericPromptOnly = true } = {}) {
+    const builtInTools = getChatToolDefinitions({ modExtensionRegistry }).filter(toolDefinition => {
+        if (includeGenericPromptOnly) {
+            return true;
+        }
+        const functionName = typeof toolDefinition?.function?.name === 'string'
+            ? toolDefinition.function.name.trim()
+            : '';
+        return !GENERIC_PROMPT_ONLY_BUILT_IN_CHAT_TOOL_NAMES.has(functionName);
+    });
     const modTools = modExtensionRegistry && typeof modExtensionRegistry.getChatToolDefinitions === 'function'
         ? modExtensionRegistry.getChatToolDefinitions()
         : [];
@@ -2025,6 +2039,17 @@ module.exports = function registerApiRoutes(scope) {
             getConfig: () => config,
             getChatHistory: () => chatHistory,
             getSceneSummaries: () => Globals.getSceneSummaries(),
+            summarizeScenesForHistoryRange: (args) => {
+                if (typeof Globals.summarizeScenesForHistoryRange !== 'function') {
+                    throw new Error('Scene summarizer helper is unavailable.');
+                }
+                return Globals.summarizeScenesForHistoryRange(args);
+            },
+            persistSceneSummaries: () => (
+                typeof Globals.persistSceneSummariesToCurrentSave === 'function'
+                    ? Globals.persistSceneSummariesToCurrentSave()
+                    : false
+            ),
             isAssistantProseLikeEntry: (entry) => isAssistantProseLikeEntry(entry),
             serializeNpcForClient,
             buildLocationResponse,
@@ -2032,6 +2057,7 @@ module.exports = function registerApiRoutes(scope) {
             createLocationFromEvent,
             createRegionStubFromEvent,
             generateItemsByNames,
+            generateNpcFromEvent,
             ensureExitConnection,
             findRegionByLocationId,
             alterThingByPrompt: typeof alterThingByPrompt === 'function' ? alterThingByPrompt : null,
@@ -6191,12 +6217,19 @@ module.exports = function registerApiRoutes(scope) {
                         : NaN
                 );
             if (whileYouWereAwayThresholdMinutes > 0 && Number.isFinite(rawLastVisitedTime)) {
-                const rawCurrentTime = Number.isFinite(Number(Globals?.elapsedTime))
-                    ? Number(Globals.elapsedTime)
+                const totalWorldMinutes = typeof Globals?.getTotalWorldMinutes === 'function'
+                    ? Number(Globals.getTotalWorldMinutes())
+                    : NaN;
+                const rawCurrentTime = Number.isFinite(totalWorldMinutes)
+                    ? totalWorldMinutes
                     : (
-                        Number.isFinite(Number(currentPlayer?.elapsedTime))
-                            ? Number(currentPlayer.elapsedTime)
-                            : (typeof Globals?.getTotalWorldMinutes === 'function' ? Number(Globals.getTotalWorldMinutes()) : NaN)
+                        Number.isFinite(Number(Globals?.elapsedTime))
+                            ? Number(Globals.elapsedTime)
+                            : (
+                                Number.isFinite(Number(currentPlayer?.elapsedTime))
+                                    ? Number(currentPlayer.elapsedTime)
+                                    : NaN
+                            )
                     );
                 if (Number.isFinite(rawCurrentTime)
                     && rawCurrentTime - rawLastVisitedTime < whileYouWereAwayThresholdMinutes) {
@@ -6253,7 +6286,8 @@ module.exports = function registerApiRoutes(scope) {
                     { role: 'user', content: parsedTemplate.generationPrompt }
                 ],
                 metadataLabel: 'while_you_were_away',
-                validateXML: false
+                validateXML: false,
+                requiredRegex: /<response[\s\S]*<\/response>/i
             };
             if (typeof parsedTemplate.temperature === 'number') {
                 requestOptions.temperature = parsedTemplate.temperature;
@@ -6577,7 +6611,8 @@ module.exports = function registerApiRoutes(scope) {
             }
 
             const scheduledEventTools = getAllChatToolDefinitions({
-                modExtensionRegistry
+                modExtensionRegistry,
+                includeGenericPromptOnly: false
             });
             const requestOptions = {
                 messages: [
@@ -14419,6 +14454,7 @@ module.exports = function registerApiRoutes(scope) {
             let vehicleStartedTimedTrip = false;
             let vehicleMoved = false;
             let playerMoved = false;
+            let playerMoveTimeAdjustment = null;
 
             const originEventLocationName = location?.name
                 || (typeof currentPlayer?.getCurrentLocationName === 'function'
@@ -14510,12 +14546,26 @@ module.exports = function registerApiRoutes(scope) {
                     }
 
                     if (!suppressPlayerMove && currentPlayer && currentPlayer.currentLocation !== destinationLocation.id) {
+                        const playerMoveOriginLocation = location || null;
                         if (typeof Globals.recordPlayerArrivalVisitState === 'function') {
                             Globals.recordPlayerArrivalVisitState(destinationLocation);
                         }
                         currentPlayer.setLocation(destinationLocation);
                         location = destinationLocation;
                         playerMoved = true;
+                        const playerMoveTravelTimeMinutes = resolveTravelProsePlayerMoveTimeMinutes({
+                            originLocation: playerMoveOriginLocation,
+                            destinationLocation,
+                            promptTravelTimeMinutes: playerDestinationTravelTimeMinutes,
+                            suppressTimeAdvance
+                        });
+                        if (playerMoveTravelTimeMinutes > 0) {
+                            playerMoveTimeAdjustment = await adjustWorldTimeByMinutes(playerMoveTravelTimeMinutes, {
+                                source: 'travel_prose_player_move',
+                                emitClientRefresh: false,
+                                clientId: stream?.clientId || null
+                            });
+                        }
                     } else if (currentPlayer?.currentLocation && gameLocations instanceof Map) {
                         location = gameLocations.get(currentPlayer.currentLocation) || location;
                     }
@@ -14551,8 +14601,15 @@ module.exports = function registerApiRoutes(scope) {
                         locationOverride: travelProseEventLocationRepresentsVehicle
                             ? travelProseEventLocation
                             : location || null,
-                        initialTimeProgress
+                        initialTimeProgress: playerMoveTimeAdjustment?.timeProgress || initialTimeProgress
                     });
+                }
+                if (playerMoveTimeAdjustment?.timeProgress
+                    && (!combinedEventResult || !combinedEventResult.timeProgress)) {
+                    if (!combinedEventResult || typeof combinedEventResult !== 'object') {
+                        combinedEventResult = {};
+                    }
+                    combinedEventResult.timeProgress = { ...playerMoveTimeAdjustment.timeProgress };
                 }
                 return {
                     eventResult: combinedEventResult,
@@ -14562,6 +14619,7 @@ module.exports = function registerApiRoutes(scope) {
                     destinationEventLocationName: null,
                     vehicleMovement,
                     vehicleStateChanged,
+                    timeAdjustment: playerMoveTimeAdjustment,
                     location,
                     destinationLocation,
                     traveledToLocationId: destinationLocation?.id || traveledToLocationId
@@ -14584,18 +14642,27 @@ module.exports = function registerApiRoutes(scope) {
                     allowMoveTurnAppearances: true,
                     suppressTimeAdvance: Boolean(suppressTimeAdvance),
                     locationOverride: destinationLocation || null,
-                    initialTimeProgress
+                    initialTimeProgress: playerMoveTimeAdjustment?.timeProgress || initialTimeProgress
                 });
+            }
+            let splitEventResult = mergeEventResults([originEventResult, destinationEventResult]);
+            if (playerMoveTimeAdjustment?.timeProgress
+                && (!splitEventResult || !splitEventResult.timeProgress)) {
+                if (!splitEventResult || typeof splitEventResult !== 'object') {
+                    splitEventResult = {};
+                }
+                splitEventResult.timeProgress = { ...playerMoveTimeAdjustment.timeProgress };
             }
 
             return {
-                eventResult: mergeEventResults([originEventResult, destinationEventResult]),
+                eventResult: splitEventResult,
                 originEventResult,
                 destinationEventResult,
                 originEventLocationName,
                 destinationEventLocationName,
                 vehicleMovement,
                 vehicleStateChanged,
+                timeAdjustment: playerMoveTimeAdjustment,
                 location,
                 destinationLocation,
                 traveledToLocationId: destinationLocation?.id || traveledToLocationId
@@ -23373,6 +23440,18 @@ module.exports = function registerApiRoutes(scope) {
                                 if (travelResult.vehicleStateChanged) {
                                     responseData.locationRefreshRequested = true;
                                 }
+                                if (Array.isArray(travelResult.timeAdjustment?.statusNeedAdjustments)
+                                    && travelResult.timeAdjustment.statusNeedAdjustments.length) {
+                                    statusNeedAdjustments.push(...travelResult.timeAdjustment.statusNeedAdjustments);
+                                }
+                                if (Array.isArray(travelResult.timeAdjustment?.vehicleArrivals)
+                                    && travelResult.timeAdjustment.vehicleArrivals.length) {
+                                    vehicleArrivalsThisTurn.push(...travelResult.timeAdjustment.vehicleArrivals);
+                                }
+                                if (Array.isArray(travelResult.timeAdjustment?.scheduledEvents)
+                                    && travelResult.timeAdjustment.scheduledEvents.some(event => event?.locationRefreshRequested)) {
+                                    responseData.locationRefreshRequested = true;
+                                }
                                 location = travelResult.location;
                                 traveledToLocationId = travelResult.traveledToLocationId || traveledToLocationId;
                                 questResult = await Events.runQuestChecks();
@@ -24742,6 +24821,7 @@ module.exports = function registerApiRoutes(scope) {
             fs.writeFileSync(path.join(saveDir, 'metadata.json'), JSON.stringify(metadata, null, 2));
             return true;
         };
+        Globals.persistSceneSummariesToCurrentSave = persistSceneSummariesToCurrentSave;
 
         const persistMysteryBoxesToCurrentSave = () => {
             const saveInfo = typeof Globals.getCurrentSaveInfo === 'function'
@@ -31436,6 +31516,44 @@ module.exports = function registerApiRoutes(scope) {
                     return rawName || null;
                 };
 
+                const currentLocationForFavorites = (() => {
+                    if (!requestFavorites) {
+                        return null;
+                    }
+                    const currentLocationId = typeof currentPlayer?.currentLocation === 'string'
+                        ? currentPlayer.currentLocation.trim()
+                        : '';
+                    if (!currentLocationId) {
+                        return null;
+                    }
+                    if (gameLocations instanceof Map && gameLocations.has(currentLocationId)) {
+                        return gameLocations.get(currentLocationId) || null;
+                    }
+                    try {
+                        return Location.get(currentLocationId) || null;
+                    } catch (_) {
+                        return null;
+                    }
+                })();
+
+                const resolveFavoriteTravelTimeMinutes = (location) => {
+                    if (!requestFavorites || !currentLocationForFavorites || !location) {
+                        return null;
+                    }
+                    const computedTravelTimeMinutes = Location.findShortestTravelTimeMinutes(currentLocationForFavorites, location);
+                    if (computedTravelTimeMinutes === null) {
+                        return null;
+                    }
+                    if (
+                        !Number.isFinite(computedTravelTimeMinutes)
+                        || !Number.isInteger(computedTravelTimeMinutes)
+                        || computedTravelTimeMinutes < 0
+                    ) {
+                        throw new Error(`Favorite location travel-time resolution produced an invalid value for "${location.id || 'unknown'}".`);
+                    }
+                    return computedTravelTimeMinutes;
+                };
+
                 const pushLocation = (location) => {
                     if (!location || !location.id || seenIds.has(location.id)) {
                         return;
@@ -31473,6 +31591,7 @@ module.exports = function registerApiRoutes(scope) {
                         favorite: Boolean(location.favorite),
                         visited: Boolean(location.visited),
                         isStub: Boolean(location.isStub),
+                        ...(requestFavorites ? { computedTravelTimeMinutes: resolveFavoriteTravelTimeMinutes(location) } : {}),
                         imageId: location.imageId || null,
                         image: location.imageId
                             ? {
@@ -44948,6 +45067,40 @@ module.exports = function registerApiRoutes(scope) {
             }
 
             return shortestTravelTimeMinutes;
+        }
+
+        function resolveTravelProsePlayerMoveTimeMinutes({
+            originLocation = null,
+            destinationLocation = null,
+            promptTravelTimeMinutes = null,
+            suppressTimeAdvance = false
+        } = {}) {
+            if (suppressTimeAdvance || !originLocation || !destinationLocation) {
+                return 0;
+            }
+            if (locationContextRepresentsVehicle(originLocation)) {
+                return 0;
+            }
+
+            const shortestTravelTimeMinutes = Location.findShortestTravelTimeMinutes(originLocation, destinationLocation);
+            if (shortestTravelTimeMinutes !== null && shortestTravelTimeMinutes !== undefined) {
+                if (!Number.isFinite(shortestTravelTimeMinutes)
+                    || !Number.isInteger(shortestTravelTimeMinutes)
+                    || shortestTravelTimeMinutes < 0) {
+                    throw new Error('Travel-prose route resolution produced an invalid minute value.');
+                }
+                return shortestTravelTimeMinutes;
+            }
+
+            if (promptTravelTimeMinutes === null || promptTravelTimeMinutes === undefined) {
+                return 0;
+            }
+
+            const promptMinutes = Number(promptTravelTimeMinutes);
+            if (!Number.isFinite(promptMinutes) || !Number.isInteger(promptMinutes) || promptMinutes < 0) {
+                throw new Error('Travel-prose prompt travel time must be a non-negative integer minute amount.');
+            }
+            return promptMinutes;
         }
 
         function buildFastTravelSummaryItem({

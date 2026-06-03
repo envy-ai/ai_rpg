@@ -24,6 +24,13 @@ Mods can now add behavior through the shared `ModExtensionRegistry` instead of o
 - Contributions are exposed as `modStatusSections` in prompt context, `/api/player`, client actor profiles, and detailed `/api/npcs/:id` character status responses.
 - Character view detail refreshes preserve existing `modStatusSections` when a partial detail response is missing them, so a later attribute/details refresh does not erase mod-owned sections from the modal.
 
+## Player-Action Prompt Steps
+- Mods can call `scope.registerPlayerActionPromptStep({ id, step, text, order? })` to append an instruction to the player-action self-correction process in `prompts/_includes/player-action.njk`.
+- `step` is required and currently accepts only `1` or `3`. Step `1` entries render after built-in `1f`; step `3` entries render in the GLM editing/pruning sequence after built-in `3j`.
+- The `id` is scoped to the registering mod; duplicate ids for the same mod fail loudly.
+- `text` is rendered as the body of the step. The server assigns labels automatically per stage: step `1` starts at `1g`, then `1h`, and step `3` starts at `3k`, then `3l`.
+- `order` is optional. When omitted, steps keep registration order; when provided, it controls sorting before automatic numbering.
+
 ## Entity Fields
 - Mods can call `scope.registerEntityField(...)` to add first-class mod-owned fields to core entities. The first supported `entityType` is `thing`.
 - Registered Thing fields persist as top-level `Thing` JSON, are available through `thing.getExtensionField(fieldName)` / `thing.setExtensionField(fieldName, value)`, and are also installed as direct instance accessors when possible.

@@ -154,6 +154,11 @@ Follow these steps:
 
 1f. Is the player currently under the effects of any kind of mental compulsion? If so, they may need to make a check in order to act on their own desires instead of the compulsion, or to resist doing something they don't want to do. If this is the case, call the necessary skill/attribute check tool and list the results here, then adhere to those results in your writing.
 
+{% for step in modPlayerActionPromptSteps | default([], true) %}{% if (step.step | default(3, true)) == 1 %}
+{{ step.number }}. {{ step.text }}
+{% endif %}
+{% endfor %}
+
 {% if config.use_legacy_prompt_checks %}
 2. Draft Response: Generate a preliminary but full draft that continues the story based on the current context, strictly adhering to this degree of success/failure: "{{ success_or_failure }}" regardless of how hard the action is. This is just a first attempt. Use no more than {{ config.prose_length }}.
 {% else %}
@@ -174,13 +179,20 @@ Follow these steps:
 
   3f. Is the plot (conversation, etc) going in two directions at once? If so, choose one and cut the other. If the player is actively involved in one, keep that one and cut the other. Conversations and plots can occasionally be interrupted for dramatic effect, if and only if it adds something to the scene as a whole. Don't interrupt if it's been done recently in the story history.
 
-  3g. Characters are NOT OMNIECNENT. If any character is aware of something they shouldn't be, cut or rephrase it. For example, if a character is hearing whispered dialogue not intended for them, cut or rephrase it so that they don't hear it. If a character is remembering something that they were absent for, cut or rephrase it so that they don't remember it. If a character is acting on knowledge they couldn't possibly have, cut or rephrase it so that they don't have that knowledge.
+  3g. Characters are NOT OMNIECNENT. List each character who stated that they're aware of something and 5-10 words about what they were aware of. Does it make sense for them to be aware of that? If not, cut it.
 
   3h. Did you use any tropes you're not supposed to use? Cut or rewrite them.
 
   3i. Are any characters indicating knowledge of recent events that they weren't present for? If so, cut or rephrase it.
 
   3j. Did you create any "mystery boxes"? If so, list them and explain them here. In your second and final drafts, explanations for them in in <hidden>...</hidden> tags in the prose to keep track of them so they can be resolved. The reader can tell when you just make up mystery boxes without any real reasoning. Hidden tags do not count toward the length limit.
+
+  {% for step in modPlayerActionPromptSteps | default([], true) %}
+  {% if (step.step | default(3, true)) == 3 %}
+  {{ step.number }}. {{ step.text }}
+
+  {% endif %}
+  {% endfor %}
 {% else %}
 3. Analysis and planning. Don't view these points of analysis as conflicting; understand that they're a balancing act, and sometimes you need to use the context of the story and the scene to decide which ones win out to maximize writing quality and depth. Do the following analysis on your draft response, in whatever format feels the most comfortable: 
 - **Railroading:** This is a collaborative storytelling effort. If you've got more than a total of about 2-4 paragraphs (use your judgement here based on paragraph size), there's a good chance you're pushing the plot too far without player input. If you're doing this, pare off some of the end and get it to a reasonable length.

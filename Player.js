@@ -5970,6 +5970,13 @@ class Player {
             this.#currentLocation = null;
         } else if (typeof location === 'object' && location.id) {
             // Store Location object or just its ID
+            if (
+                !this.#isNPC
+                && this.#currentLocation !== location.id
+                && typeof Globals.recordPlayerArrivalVisitState === 'function'
+            ) {
+                Globals.recordPlayerArrivalVisitState(location);
+            }
             this.#currentLocation = location.id || location;
             if (!this.#isNPC) {
                 if (typeof location.markVisited === 'function') {

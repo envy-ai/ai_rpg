@@ -2364,36 +2364,39 @@ class AIRPGChat {
         if (!entry) {
             return null;
         }
+        const renderEditedPlainText = entry.metadata?.editedPlainText === true
+            && typeof entry.content === 'string'
+            && entry.content.trim();
 
-        if (entry.type === 'event-summary') {
+        if (!renderEditedPlainText && entry.type === 'event-summary') {
             return this.createEventSummaryElement(entry);
         }
 
-        if (entry.type === 'status-summary') {
+        if (!renderEditedPlainText && entry.type === 'status-summary') {
             return this.createStatusSummaryElement(entry);
         }
 
-        if (entry.type === 'plausibility') {
+        if (!renderEditedPlainText && entry.type === 'plausibility') {
             return this.createPlausibilityEntryElement(entry);
         }
 
-        if (entry.type === 'slop-remover') {
+        if (!renderEditedPlainText && entry.type === 'slop-remover') {
             return this.createSlopRemovalEntryElement(entry);
         }
 
-        if (entry.type === 'skill-check') {
+        if (!renderEditedPlainText && entry.type === 'skill-check') {
             return this.createSkillCheckEntryElement(entry);
         }
 
-        if (entry.type === 'attack-check') {
+        if (!renderEditedPlainText && entry.type === 'attack-check') {
             return this.createAttackCheckEntryElement(entry);
         }
 
-        if (entry.type === 'check-results') {
+        if (!renderEditedPlainText && entry.type === 'check-results') {
             return this.createCheckResultsEntryElement(entry);
         }
 
-        if (entry.type === 'tool-call-debug') {
+        if (!renderEditedPlainText && entry.type === 'tool-call-debug') {
             return this.createToolCallDebugEntryElement(entry);
         }
 
@@ -2466,6 +2469,7 @@ class AIRPGChat {
         messageDiv.className = 'message ai-message tool-call-debug-message';
         messageDiv.dataset.type = 'tool-call-debug';
         messageDiv.dataset.timestamp = entry.timestamp || '';
+        messageDiv.dataset.entryId = entry.id || '';
 
         const senderDiv = document.createElement('div');
         senderDiv.className = 'message-sender';
@@ -2500,6 +2504,11 @@ class AIRPGChat {
         messageDiv.appendChild(senderDiv);
         messageDiv.appendChild(contentDiv);
         messageDiv.appendChild(timestampDiv);
+
+        const actions = this.createMessageActions(entry, { allowSystem: true, allowEdit: false });
+        if (actions) {
+            messageDiv.appendChild(actions);
+        }
 
         return messageDiv;
     }
@@ -3422,11 +3431,11 @@ class AIRPGChat {
         return container;
     }
 
-    createMessageActions(entry) {
-        if (!entry || (entry.role === 'system')) {
+    createMessageActions(entry, { allowSystem = false, allowEdit = true } = {}) {
+        if (!entry || (entry.role === 'system' && !allowSystem)) {
             return null;
         }
-        if (!entry.timestamp) {
+        if (!this.getEntryKey(entry)) {
             return null;
         }
 
@@ -3455,15 +3464,18 @@ class AIRPGChat {
             wrapper.appendChild(redoButton);
         }
 
-        const editButton = document.createElement('button');
-        editButton.type = 'button';
-        editButton.className = 'message-action message-action--edit';
-        editButton.title = 'Edit message';
-        editButton.setAttribute('aria-label', 'Edit message');
-        editButton.textContent = '✏️';
-        editButton.addEventListener('click', () => {
-            this.openEditModal(entry);
-        });
+        if (allowEdit) {
+            const editButton = document.createElement('button');
+            editButton.type = 'button';
+            editButton.className = 'message-action message-action--edit';
+            editButton.title = 'Edit message';
+            editButton.setAttribute('aria-label', 'Edit message');
+            editButton.textContent = '✏️';
+            editButton.addEventListener('click', () => {
+                this.openEditModal(entry);
+            });
+            wrapper.appendChild(editButton);
+        }
 
         const deleteButton = document.createElement('button');
         deleteButton.type = 'button';
@@ -3475,7 +3487,6 @@ class AIRPGChat {
             this.handleDeleteMessage(entry);
         });
 
-        wrapper.appendChild(editButton);
         wrapper.appendChild(deleteButton);
         return wrapper;
     }
@@ -3955,7 +3966,7 @@ class AIRPGChat {
     }
 
     async handleDeleteMessage(entry) {
-        if (!entry || !entry.timestamp) {
+        if (!entry || !this.getEntryKey(entry)) {
             return;
         }
         const confirmed = window.confirm('Delete this message? This action cannot be undone.');

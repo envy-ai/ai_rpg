@@ -23,7 +23,7 @@ Centralized static state and helpers used across the server. Provides access to 
 - `getSceneSummaries()`: throws if not initialized.
 - `get currentPlayer()` / `set currentPlayer(player)`: resolves through `Player` unless overridden.
 - `set processedMove(value)` / `get processedMove()`.
-- `clearPlayerArrivalVisitStates()`, `recordPlayerArrivalVisitState(locationOrId, wasVisited?)`, `getPlayerArrivalWasVisitedBeforeMove(locationOrId)`, `getPlayerArrivalLastVisitedTimeBeforeMove(locationOrId)`: transient helpers used by player-movement paths to preserve whether an arrival destination was already visited, and when it was last visited, before `Player.setLocation(...)` marks it visited.
+- `clearPlayerArrivalVisitStates()`, `recordPlayerArrivalVisitState(locationOrId, wasVisited?)`, `getPlayerArrivalWasVisitedBeforeMove(locationOrId)`, `getPlayerArrivalLastVisitedTimeBeforeMove(locationOrId)`: transient helpers used by player-movement paths and non-NPC `Player.setLocation(...)` to preserve whether an arrival destination was already visited, and when it was last visited, before the destination is marked visited.
 - `setInCombat(value)` / `isInCombat()`.
 - `get location()` / `get region()` / `get elapsedTime()` / `set elapsedTime(value)`.
 - Time/calendar:
@@ -53,7 +53,7 @@ Centralized static state and helpers used across the server. Provides access to 
 ## Notes
 - Many getters warn if `Globals.config` is missing to avoid silent failures.
 - `currentPlayer` setter also installs a resolver in `Player` when available.
-- Player-arrival visit-state helpers are runtime-only and are cleared at the start of player chat/direct-move/teleport flows. They let while-you-were-away logic skip first-time arrivals, missing pre-arrival snapshots, and too-recent revisits even though `Player.setLocation(...)` stamps the destination as visited before the arrival prompt would otherwise run.
+- Player-arrival visit-state helpers are runtime-only and are cleared at the start of player chat/direct-move/teleport flows. Non-NPC `Player.setLocation(...)` snapshots the destination before marking it visited, so while-you-were-away logic can skip first-time arrivals, missing pre-arrival snapshots, and too-recent revisits even when movement is applied by event checks or other shared movement code.
 - Canonical world time is minute-based: `worldTime = { dayIndex, timeMinutes }`.
 - World-time init/context helpers now use an internal non-recursive path (`skipEnsure`)
   so `ensureWorldTimeInitialized()` can safely return full time context.

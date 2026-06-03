@@ -190,6 +190,7 @@ function loadWhileYouWereAwayHelpers({
     regions = new Map(),
     prepareBasePromptContext = async () => ({ whileYouWereAwayNpcs: [] }),
     llmResponse = '',
+    captureChatCompletionOptions = null,
     promptTemplate = {
         systemPrompt: 'system',
         generationPrompt: 'generation'
@@ -203,7 +204,9 @@ function loadWhileYouWereAwayHelpers({
     }),
     recordSlopRemovalEntry = null,
     eventsRunEventChecks = async () => null,
-    appendEventSummariesToChat = () => {}
+    appendEventSummariesToChat = () => {},
+    globalsElapsedTime = typeof currentPlayer?.elapsedTime === 'number' ? currentPlayer.elapsedTime : 0,
+    globalsTotalWorldMinutes = globalsElapsedTime
 } = {}) {
     const source = fs.readFileSync(require.resolve('../api.js'), 'utf8');
     const start = source.indexOf('        function resolveRegionForLocationObject(location) {');
@@ -299,7 +302,8 @@ function loadWhileYouWereAwayHelpers({
         config,
         Globals: {
             config,
-            elapsedTime: typeof currentPlayer?.elapsedTime === 'number' ? currentPlayer.elapsedTime : 0,
+            elapsedTime: globalsElapsedTime,
+            getTotalWorldMinutes: () => globalsTotalWorldMinutes,
             scrubGeneratedBrackets: value => value
         },
         currentPlayer,
@@ -334,7 +338,12 @@ function loadWhileYouWereAwayHelpers({
         parseXMLTemplate: () => ({ ...promptTemplate }),
         prepareBasePromptContext,
         LLMClient: {
-            chatCompletion: async () => llmResponse,
+            chatCompletion: async (options) => {
+                if (typeof captureChatCompletionOptions === 'function') {
+                    captureChatCompletionOptions(options);
+                }
+                return llmResponse;
+            },
             logPrompt: () => {}
         },
         Events: {
@@ -548,6 +557,55 @@ test('parseWhileYouWereAwayResponse allows empty characterUpdates when no names 
 
     assert.equal(parsed.updates.length, 0);
     assert.equal(parsed.proseForPlayer, 'The old room smells faintly of dust and cold ash.');
+});
+
+test('runWhileYouWereAwayPrompt requires a complete response wrapper from LLMClient', async () => {
+    const square = createLocation({ id: 'square', name: 'Town Square', regionId: 'alpha' });
+    const regions = new Map([
+        ['alpha', { id: 'alpha', name: 'Alpha', locationIds: ['square'], entranceLocationId: 'square' }]
+    ]);
+    const gameLocations = new Map([[square.id, square]]);
+    const capturedOptions = [];
+
+    const { runWhileYouWereAwayPrompt } = loadWhileYouWereAwayHelpers({
+        currentPlayer: {
+            id: 'player',
+            name: 'Baato',
+            currentLocation: 'square'
+        },
+        gameLocations,
+        regions,
+        prepareBasePromptContext: async () => ({
+            whileYouWereAwayNpcs: []
+        }),
+        llmResponse: `
+<response>
+  <characterUpdates></characterUpdates>
+  <proseForPlayer>The square is quiet.</proseForPlayer>
+</response>
+`,
+        captureChatCompletionOptions: options => capturedOptions.push(options)
+    });
+
+    await runWhileYouWereAwayPrompt({
+        locationOverride: square,
+        locationId: square.id,
+        locationWasVisitedBeforeArrival: true,
+        returnEntries: true
+    });
+
+    assert.equal(capturedOptions.length, 1);
+    assert.equal(capturedOptions[0].metadataLabel, 'while_you_were_away');
+    assert.equal(capturedOptions[0].validateXML, false);
+    assert.equal(typeof capturedOptions[0].requiredRegex?.test, 'function');
+    assert.match(
+        '<response><characterUpdates></characterUpdates></response>',
+        capturedOptions[0].requiredRegex
+    );
+    assert.doesNotMatch(
+        '<response><characterUpdates></characterUpdates>',
+        capturedOptions[0].requiredRegex
+    );
 });
 
 test('resolveWhileYouWereAwayDestination prefers the current region and supports region-only travel', () => {
@@ -803,6 +861,79 @@ test('runWhileYouWereAwayPrompt skips previously visited locations below the rev
     assert.equal(result.skipped, true);
     assert.equal(result.skipReason, 'recent_location_visit');
     assert.equal(pushedEntries.length, 0);
+});
+
+test('runWhileYouWereAwayPrompt compares revisit threshold against total world minutes', async () => {
+    const square = createLocation({
+        id: 'square',
+        name: 'Town Square',
+        regionId: 'alpha',
+        npcIds: ['mira'],
+        visited: true,
+        lastVisitedTime: 7097
+    });
+    const regions = new Map([
+        ['alpha', { id: 'alpha', name: 'Alpha', locationIds: ['square'], entranceLocationId: 'square' }]
+    ]);
+    const gameLocations = new Map([[square.id, square]]);
+    const npc = {
+        id: 'mira',
+        isNPC: true,
+        name: 'Mira',
+        currentLocation: 'square',
+        _bars: [],
+        getNeedBars() {
+            return this._bars;
+        },
+        setNeedBarValue() {
+            throw new Error('No need bars should be changed in this test.');
+        },
+        setLocation(destination) {
+            this.currentLocation = typeof destination === 'string' ? destination : destination.id;
+        }
+    };
+    const players = new Map([[npc.id, npc]]);
+    const { runWhileYouWereAwayPrompt, pushedEntries } = loadWhileYouWereAwayHelpers({
+        config: {
+            ai: {},
+            while_you_were_away_threshold_minutes: 30
+        },
+        currentPlayer: {
+            id: 'player',
+            name: 'Baato',
+            currentLocation: 'square',
+            elapsedTime: 480
+        },
+        players,
+        gameLocations,
+        regions,
+        globalsElapsedTime: 480,
+        globalsTotalWorldMinutes: 7680,
+        prepareBasePromptContext: async () => ({
+            whileYouWereAwayNpcs: [{ id: npc.id, name: npc.name }]
+        }),
+        llmResponse: `
+<response>
+  <characterUpdates>
+    <characterUpdate>
+      <name>Mira</name>
+      <update>Mira kept watch while the player was away.</update>
+    </characterUpdate>
+  </characterUpdates>
+</response>
+`
+    });
+
+    const result = await runWhileYouWereAwayPrompt({
+        locationOverride: square,
+        locationId: square.id,
+        locationWasVisitedBeforeArrival: true,
+        locationLastVisitedTimeBeforeArrival: square.lastVisitedTime,
+        returnEntries: true
+    });
+
+    assert.equal(result.skipped, undefined);
+    assert.equal(pushedEntries.some(entry => entry.type === 'while-you-were-away'), true);
 });
 
 test('runWhileYouWereAwayPrompt runs scoped event checks while ignoring handled need bars and arrivals', async () => {

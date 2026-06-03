@@ -14,6 +14,7 @@ class ModExtensionRegistry {
     #entityFieldsByType = new Map();
     #thingImageBadges = new Map();
     #thingContextActions = new Map();
+    #playerActionPromptSteps = new Map();
     #startupValidators = [];
 
     static #thingReservedFieldNames = new Set([
@@ -463,6 +464,51 @@ class ModExtensionRegistry {
         };
     }
 
+    static #stepNumberSuffixFromIndex(index) {
+        const letters = 'abcdefghijklmnopqrstuvwxyz';
+        let value = Number(index);
+        if (!Number.isInteger(value) || value < 0) {
+            throw new Error('Prompt step index must be a non-negative integer.');
+        }
+        let result = '';
+        do {
+            result = letters[value % letters.length] + result;
+            value = Math.floor(value / letters.length) - 1;
+        } while (value >= 0);
+        return result;
+    }
+
+    static #stepNumberIndexFromSuffix(suffix) {
+        const normalized = ModExtensionRegistry.#normalizeString(suffix, 'prompt step start suffix').toLowerCase();
+        if (!/^[a-z]+$/.test(normalized)) {
+            throw new Error('prompt step start suffix must contain only letters.');
+        }
+        let index = 0;
+        for (const char of normalized) {
+            index = (index * 26) + (char.charCodeAt(0) - 96);
+        }
+        return index - 1;
+    }
+
+    static #normalizePlayerActionPromptStep(value) {
+        const numeric = Number(value);
+        if (!Number.isInteger(numeric) || ![1, 3].includes(numeric)) {
+            throw new Error('Player-action prompt step must be either 1 or 3.');
+        }
+        return numeric;
+    }
+
+    static #getPlayerActionPromptStepNumbering(step) {
+        switch (step) {
+            case 1:
+                return { prefix: '1', startSuffix: 'g' };
+            case 3:
+                return { prefix: '3', startSuffix: 'k' };
+            default:
+                throw new Error('Player-action prompt step must be either 1 or 3.');
+        }
+    }
+
     static #normalizeBoolean(value) {
         return value === true;
     }
@@ -492,6 +538,7 @@ class ModExtensionRegistry {
         this.#entityFieldsByType.clear();
         this.#thingImageBadges.clear();
         this.#thingContextActions.clear();
+        this.#playerActionPromptSteps.clear();
         this.#startupValidators = [];
     }
 
@@ -669,6 +716,74 @@ class ModExtensionRegistry {
 
     getInventorySyncContributors() {
         return [...this.#inventorySyncContributors];
+    }
+
+    registerPlayerActionPromptStep({
+        modName,
+        id,
+        step,
+        text,
+        order = null
+    } = {}) {
+        const normalizedModName = ModExtensionRegistry.#normalizeModName(modName);
+        const normalizedId = ModExtensionRegistry.#normalizeIdentifier(id, 'player-action prompt step id');
+        const normalizedStep = ModExtensionRegistry.#normalizePlayerActionPromptStep(step);
+        const normalizedText = ModExtensionRegistry.#normalizeString(text, `player-action prompt step "${normalizedId}" text`);
+        const fullId = `${normalizedModName}:${normalizedId}`;
+        if (this.#playerActionPromptSteps.has(fullId)) {
+            throw new Error(`Player-action prompt step "${fullId}" is already registered.`);
+        }
+        const sequence = this.#playerActionPromptSteps.size + 1;
+        const numericOrder = order === null || order === undefined || order === ''
+            ? sequence
+            : Number(order);
+        if (!Number.isFinite(numericOrder)) {
+            throw new Error(`Player-action prompt step "${fullId}" order must be a finite number.`);
+        }
+        this.#playerActionPromptSteps.set(fullId, {
+            modName: normalizedModName,
+            id: normalizedId,
+            fullId,
+            step: normalizedStep,
+            text: normalizedText,
+            order: numericOrder,
+            sequence
+        });
+    }
+
+    getPlayerActionPromptSteps({
+        step = null,
+        stepPrefix = null,
+        startSuffix = null
+    } = {}) {
+        const requestedStep = step === null || step === undefined || step === ''
+            ? null
+            : ModExtensionRegistry.#normalizePlayerActionPromptStep(step);
+        const nextIndexByStep = new Map();
+        return Array.from(this.#playerActionPromptSteps.values())
+            .filter(record => requestedStep === null || record.step === requestedStep)
+            .sort((a, b) => (a.step - b.step) || (a.order - b.order) || (a.sequence - b.sequence) || a.fullId.localeCompare(b.fullId))
+            .map((record) => {
+                const numbering = ModExtensionRegistry.#getPlayerActionPromptStepNumbering(record.step);
+                const prefix = stepPrefix === null || stepPrefix === undefined || stepPrefix === ''
+                    ? numbering.prefix
+                    : ModExtensionRegistry.#normalizeString(stepPrefix, 'prompt step prefix');
+                const suffix = startSuffix === null || startSuffix === undefined || startSuffix === ''
+                    ? numbering.startSuffix
+                    : startSuffix;
+                const startIndex = ModExtensionRegistry.#stepNumberIndexFromSuffix(suffix);
+                const stepIndex = nextIndexByStep.get(record.step) || 0;
+                nextIndexByStep.set(record.step, stepIndex + 1);
+                return {
+                modName: record.modName,
+                id: record.id,
+                fullId: record.fullId,
+                step: record.step,
+                number: `${prefix}${ModExtensionRegistry.#stepNumberSuffixFromIndex(startIndex + stepIndex)}`,
+                text: record.text,
+                order: record.order
+                };
+            });
     }
 
     collectBaseContextContributions(context) {

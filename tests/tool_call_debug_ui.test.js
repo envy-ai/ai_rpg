@@ -31,6 +31,29 @@ this.prepareToolCallDebugSectionDisplay = prepareToolCallDebugSectionDisplay;`,
     };
 }
 
+function extractMethod(source, signature) {
+    const start = source.indexOf(signature);
+    assert.notEqual(start, -1, `${signature} should exist`);
+    const bodyOpenMarker = source.indexOf(') {', start);
+    assert.notEqual(bodyOpenMarker, -1, `${signature} should have a body`);
+    const bodyStart = bodyOpenMarker + 2;
+
+    let depth = 0;
+    for (let index = bodyStart; index < source.length; index += 1) {
+        const char = source[index];
+        if (char === '{') {
+            depth += 1;
+        } else if (char === '}') {
+            depth -= 1;
+            if (depth === 0) {
+                return source.slice(start, index + 1);
+            }
+        }
+    }
+
+    assert.fail(`${signature} body should close`);
+}
+
 test('tool-call debug display extracts readable result and error content fields only', () => {
     const {
         prepareToolCallDebugSectionValue,
@@ -93,4 +116,20 @@ test('tool-call debug display extracts readable result and error content fields 
     });
     assert.deepEqual(toPlainObject(parametersDisplay.contentFields), []);
     assert.equal(parametersDisplay.jsonValue.content, '&lt;literal user input&gt;');
+});
+
+test('tool-call debug log entries expose the normal delete affordance without edit', () => {
+    const renderSource = extractMethod(chatSource, '    createToolCallDebugEntryElement(entry)');
+    const actionsSource = extractMethod(chatSource, '    createMessageActions(entry');
+    const deleteSource = extractMethod(chatSource, '    async handleDeleteMessage(entry)');
+
+    assert.match(renderSource, /messageDiv\.dataset\.entryId = entry\.id \|\| '';/);
+    assert.match(renderSource, /this\.createMessageActions\(entry,\s*\{\s*allowSystem:\s*true,\s*allowEdit:\s*false\s*\}\)/);
+    assert.match(actionsSource, /\{\s*allowSystem = false,\s*allowEdit = true\s*\} = \{\}/);
+    assert.match(actionsSource, /entry\.role === 'system' && !allowSystem/);
+    assert.match(actionsSource, /this\.getEntryKey\(entry\)/);
+    assert.match(actionsSource, /if \(allowEdit\) \{[\s\S]*wrapper\.appendChild\(editButton\);[\s\S]*\}/);
+    assert.match(actionsSource, /wrapper\.appendChild\(deleteButton\);/);
+    assert.doesNotMatch(deleteSource, /!entry\.timestamp/);
+    assert.match(deleteSource, /this\.getEntryKey\(entry\)/);
 });

@@ -5,7 +5,7 @@
 ## World Profile Settings
 - The `Modules` tab has editable `displayLabel`, `itemLabel`, and `slotTypes`.
 - `slotTypes` is a positive row-edited list of `{ id, label, description }`.
-- Presets are defined in `mods/modules/presets.yaml`: Module, Crystal, Mod, and Materia.
+- Presets are defined in `mods/modules/presets.yaml`: Module, Crystal, Mod, and Materia. The `modules` preset id is the required default used during mod registration, so it must remain present.
 
 ## Thing Fields
 - `moduleSlots`: array of slot entries on equippable base items. Each entry is `{ "type": "configured-slot-type" }`; individual slots are not named.

@@ -4,6 +4,9 @@ const {
     resolveEntryRecordId,
     shouldExcludeSummaryEntry
 } = require('./chat_history_utils.js');
+const {
+    shouldExcludeEntryFromPromptHistory
+} = require('./base_context_history.js');
 
 const HIDDEN_SCENE_SUMMARY_ENTRY_TYPES = new Set([
     'supplemental-story-info',
@@ -27,8 +30,7 @@ function shouldIncludeEntryInSceneSummaryIndex(entry, { excludeSummaries = true 
         return false;
     }
 
-    const role = typeof entry.role === 'string' ? entry.role.trim().toLowerCase() : '';
-    if (role === 'system') {
+    if (shouldExcludeEntryFromPromptHistory(entry)) {
         return false;
     }
 

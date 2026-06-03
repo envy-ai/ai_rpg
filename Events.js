@@ -2225,6 +2225,65 @@ class Events {
         return this.newItems.has(trimmed) || this.obtainedItems.has(trimmed);
     }
 
+    static _formatEventEntryForLog(entry) {
+        if (entry === null || entry === undefined) {
+            return String(entry);
+        }
+        if (typeof entry === "string") {
+            return entry;
+        }
+        try {
+            return JSON.stringify(entry);
+        } catch (_) {
+            return String(entry);
+        }
+    }
+
+    static _formatEventErrorForLog(error) {
+        if (error instanceof Error && error.message) {
+            return error.message;
+        }
+        if (error && typeof error.message === "string") {
+            return error.message;
+        }
+        return String(error);
+    }
+
+    static _warnEventEntryFailures(eventKey, failures = []) {
+        const normalizedFailures = Array.isArray(failures)
+            ? failures.filter((failure) => failure?.error)
+            : [];
+        if (!normalizedFailures.length) {
+            return;
+        }
+
+        const entryLabel = normalizedFailures.length === 1 ? "entry" : "entries";
+        const details = normalizedFailures
+            .map((failure, index) => {
+                const entryText = this._formatEventEntryForLog(failure.entry);
+                const errorText = this._formatEventErrorForLog(failure.error);
+                return `${index + 1}. ${entryText}: ${errorText}`;
+            })
+            .join("\n");
+        console.warn(
+            `${eventKey}: skipped ${normalizedFailures.length} ${entryLabel} after per-entry failure:\n${details}`,
+        );
+    }
+
+    static async _applyIndependentEventEntries(eventKey, entries, applyEntry) {
+        const failures = [];
+        for (const entry of entries) {
+            try {
+                // eslint-disable-next-line no-await-in-loop
+                await applyEntry(entry);
+            } catch (error) {
+                failures.push({ entry, error });
+            }
+        }
+        this._warnEventEntryFailures(eventKey, failures);
+        return failures;
+    }
+
     static _buildSceneItemNameSet(location, eventLabel = "item_appear") {
         const resolvedLocation = this.resolveLocationCandidate(location);
         if (!resolvedLocation) {
@@ -9064,79 +9123,69 @@ class Events {
                 };
 
                 const player = context.player || this.currentPlayer;
-                const tasks = [];
+                await this._applyIndependentEventEntries("item_to_npc", entries, async (entry) => {
+                    const itemName = normalizeString(entry.item);
+                    const npcName = normalizeString(entry.npc);
+                    if (!npcName) {
+                        return;
+                    }
+                    const item = itemName ? findThingByName(itemName) : null;
+                    if (!item) {
+                        throw new Error(
+                            `item_to_npc could not find item "${itemName || "<unknown>"}"`,
+                        );
+                    }
 
-                for (const entry of entries) {
-                    tasks.push(
-                        (async () => {
-                            const itemName = normalizeString(entry.item);
-                            const npcName = normalizeString(entry.npc);
-                            if (!npcName) {
-                                return;
-                            }
-                            const item = itemName ? findThingByName(itemName) : null;
-                            if (!item) {
-                                throw new Error(
-                                    `item_to_npc could not find item "${itemName || "<unknown>"}"`,
-                                );
-                            }
+                    let location = context.location || null;
+                    if (!location && item.metadata?.locationId) {
+                        location = resolveLocation(item.metadata.locationId);
+                    }
+                    if (!location && player?.currentLocation) {
+                        location = resolveLocation(player.currentLocation);
+                    }
+                    if (!location) {
+                        throw new Error(
+                            `item_to_npc could not resolve location for "${npcName}" transformation.`,
+                        );
+                    }
 
-                            let location = context.location || null;
-                            if (!location && item.metadata?.locationId) {
-                                location = resolveLocation(item.metadata.locationId);
-                            }
-                            if (!location && player?.currentLocation) {
-                                location = resolveLocation(player.currentLocation);
-                            }
-                            if (!location) {
-                                throw new Error(
-                                    `item_to_npc could not resolve location for "${npcName}" transformation.`,
-                                );
-                            }
+                    const transformationContext = { ...context, location };
+                    if (
+                        !transformationContext.region &&
+                        typeof findRegionByLocationId === "function"
+                    ) {
+                        try {
+                            transformationContext.region =
+                                findRegionByLocationId(location.id) || null;
+                        } catch (_) {
+                            transformationContext.region = null;
+                        }
+                    }
 
-                            const transformationContext = { ...context, location };
-                            if (
-                                !transformationContext.region &&
-                                typeof findRegionByLocationId === "function"
-                            ) {
-                                try {
-                                    transformationContext.region =
-                                        findRegionByLocationId(location.id) || null;
-                                } catch (_) {
-                                    transformationContext.region = null;
-                                }
-                            }
-
-                            this._detachThingFromWorld(item);
-                            if (itemName) {
-                                this.animatedItems.add(itemName);
-                                this.destroyedItems.add(itemName);
-                            }
-                            const npc = await ensureNpcByName(npcName, transformationContext);
-                            if (!npc) {
-                                throw new Error(
-                                    `item_to_npc failed to create NPC "${npcName}"`,
-                                );
-                            }
-                            const finalNpcName = normalizeString(npc.name);
-                            if (!finalNpcName) {
-                                throw new Error(
-                                    `item_to_npc created NPC "${npcName}" but the actor has no final name.`,
-                                );
-                            }
-                            if (finalNpcName !== npcName) {
-                                entry.originalNpc = npcName;
-                                entry.npc = finalNpcName;
-                            }
-                            this.newCharacters.add(finalNpcName);
-                            this.arrivedCharacters.add(finalNpcName);
-                        })(),
-                    );
-                }
-
-                if (tasks.length) {
-                    await Promise.all(tasks);
-                }
+                    this._detachThingFromWorld(item);
+                    if (itemName) {
+                        this.animatedItems.add(itemName);
+                        this.destroyedItems.add(itemName);
+                    }
+                    const npc = await ensureNpcByName(npcName, transformationContext);
+                    if (!npc) {
+                        throw new Error(
+                            `item_to_npc failed to create NPC "${npcName}"`,
+                        );
+                    }
+                    const finalNpcName = normalizeString(npc.name);
+                    if (!finalNpcName) {
+                        throw new Error(
+                            `item_to_npc created NPC "${npcName}" but the actor has no final name.`,
+                        );
+                    }
+                    if (finalNpcName !== npcName) {
+                        entry.originalNpc = npcName;
+                        entry.npc = finalNpcName;
+                    }
+                    this.newCharacters.add(finalNpcName);
+                    this.arrivedCharacters.add(finalNpcName);
+                });
             },
             consume_item: function (items = [], context = {}) {
                 if (!Array.isArray(items) || !items.length) {
@@ -9149,61 +9198,67 @@ class Events {
                     );
                 }
 
+                const failures = [];
                 for (const entry of items) {
-                    const itemName =
-                        typeof entry === "string"
-                            ? entry.trim()
-                            : entry && entry.item
-                                ? String(entry.item).trim()
-                                : "";
-                    if (!itemName) {
-                        continue;
-                    }
-                    const quantity = parseRequiredEventQuantity(entry?.quantity, {
-                        eventKey: "consume_item",
-                        entryText: JSON.stringify(entry),
-                    });
-                    const item = findThingByName(itemName);
-                    if (!item) {
-                        console.debug(
-                            `[consume_item] Unable to locate item "${itemName}" for consumption.`,
-                        );
-                        continue;
-                    } else {
-                        console.debug(`[consume_item] Consuming ${quantity} of "${itemName}".`);
-                    }
-
-                    const candidates = this._findThingsByExactName(itemName, {
-                        preferredThing: item,
-                        location: context.location || null,
-                    });
-                    let remaining = quantity;
-                    for (const candidate of candidates) {
-                        if (remaining <= 0) {
-                            break;
+                    try {
+                        const itemName =
+                            typeof entry === "string"
+                                ? entry.trim()
+                                : entry && entry.item
+                                    ? String(entry.item).trim()
+                                    : "";
+                        if (!itemName) {
+                            continue;
                         }
-                        const candidateCount = this._getThingCount(candidate);
-                        const amountToConsume = Math.min(candidateCount, remaining);
-                        const result = this._consumeThingQuantity(candidate, amountToConsume, {
+                        const quantity = parseRequiredEventQuantity(entry?.quantity, {
+                            eventKey: "consume_item",
+                            entryText: JSON.stringify(entry),
+                        });
+                        const item = findThingByName(itemName);
+                        if (!item) {
+                            console.debug(
+                                `[consume_item] Unable to locate item "${itemName}" for consumption.`,
+                            );
+                            continue;
+                        } else {
+                            console.debug(`[consume_item] Consuming ${quantity} of "${itemName}".`);
+                        }
+
+                        const candidates = this._findThingsByExactName(itemName, {
+                            preferredThing: item,
                             location: context.location || null,
                         });
-                        if (result.decremented) {
-                            console.debug(
-                                `[consume_item] Decremented "${itemName}" from ${result.priorCount} to ${result.remainingCount}.`,
-                            );
-                        } else {
-                            console.debug(`[consume_item] Fully removed "${itemName}" from the world.`);
+                        let remaining = quantity;
+                        for (const candidate of candidates) {
+                            if (remaining <= 0) {
+                                break;
+                            }
+                            const candidateCount = this._getThingCount(candidate);
+                            const amountToConsume = Math.min(candidateCount, remaining);
+                            const result = this._consumeThingQuantity(candidate, amountToConsume, {
+                                location: context.location || null,
+                            });
+                            if (result.decremented) {
+                                console.debug(
+                                    `[consume_item] Decremented "${itemName}" from ${result.priorCount} to ${result.remainingCount}.`,
+                                );
+                            } else {
+                                console.debug(`[consume_item] Fully removed "${itemName}" from the world.`);
+                            }
+                            remaining -= amountToConsume;
                         }
-                        remaining -= amountToConsume;
-                    }
 
-                    if (remaining > 0) {
-                        throw new Error(
-                            `consume_item could not satisfy quantity ${quantity} for "${itemName}". ${remaining} still missing.`,
-                        );
+                        if (remaining > 0) {
+                            throw new Error(
+                                `consume_item could not satisfy quantity ${quantity} for "${itemName}". ${remaining} still missing.`,
+                            );
+                        }
+                        this.destroyedItems.add(itemName);
+                    } catch (error) {
+                        failures.push({ entry, error });
                     }
-                    this.destroyedItems.add(itemName);
                 }
+                this._warnEventEntryFailures("consume_item", failures);
             },
             item_inflict: async function (entries = [], context = {}) {
                 await applyItemTriggeredStatuses(this, entries, context, {
@@ -9237,11 +9292,9 @@ class Events {
                     );
                 }
 
-                const tasks = [];
-
-                for (const entry of entries) {
+                await this._applyIndependentEventEntries("alter_item", entries, async (entry) => {
                     if (!entry) {
-                        continue;
+                        return;
                     }
 
                     const originalName = entry.originalName || entry.from || null;
@@ -9257,7 +9310,7 @@ class Events {
                         normalizedTargetName === "consumed" ||
                         normalizedTargetName === "n/a"
                     ) {
-                        continue;
+                        return;
                     }
 
                     const lookupCandidates = [originalName, targetName].filter(
@@ -9277,196 +9330,188 @@ class Events {
                     }
 
                     if (!thing) {
-                        continue;
+                        return;
                     }
 
-                    tasks.push(
-                        (async () => {
-                            let thingToAlter = thing;
-                            let partialSplitRollback = null;
-                            let ownerCandidate = null;
+                    let thingToAlter = thing;
+                    let partialSplitRollback = null;
+                    let ownerCandidate = null;
 
-                            const metadataOwnerId = thingToAlter.metadata?.ownerId;
-                            if (metadataOwnerId && typeof findActorById === "function") {
-                                try {
-                                    const found = findActorById(metadataOwnerId);
-                                    if (found) {
-                                        ownerCandidate = found;
+                    const metadataOwnerId = thingToAlter.metadata?.ownerId;
+                    if (metadataOwnerId && typeof findActorById === "function") {
+                        try {
+                            const found = findActorById(metadataOwnerId);
+                            if (found) {
+                                ownerCandidate = found;
+                            }
+                        } catch (_) {
+                            ownerCandidate = null;
+                        }
+                    }
+
+                    if (
+                        !ownerCandidate &&
+                        typeof thingToAlter.whoseInventory === "function"
+                    ) {
+                        try {
+                            const owners = thingToAlter.whoseInventory() || [];
+                            if (Array.isArray(owners) && owners.length > 0) {
+                                ownerCandidate = owners[0] || null;
+                            }
+                        } catch (_) {
+                            ownerCandidate = null;
+                        }
+                    }
+
+                    const containerCandidate =
+                        this._resolveContainingThing(thingToAlter);
+
+                    let locationCandidate = null;
+                    const metadataLocationId = thingToAlter.metadata?.locationId;
+                    if (
+                        metadataLocationId &&
+                        Location &&
+                        typeof Location.get === "function"
+                    ) {
+                        try {
+                            locationCandidate =
+                                Location.get(metadataLocationId) || null;
+                        } catch (_) {
+                            locationCandidate = null;
+                        }
+                    }
+                    if (!locationCandidate) {
+                        locationCandidate = context.location || null;
+                    }
+                    if (
+                        !locationCandidate &&
+                        ownerCandidate?.currentLocation &&
+                        Location &&
+                        typeof Location.get === "function"
+                    ) {
+                        try {
+                            locationCandidate =
+                                Location.get(ownerCandidate.currentLocation) || null;
+                        } catch (_) {
+                            locationCandidate = null;
+                        }
+                    }
+
+                    const sourceCount = this._getThingCount(thingToAlter);
+                    const quantityIsAll =
+                        typeof entry.quantity === "string" &&
+                        entry.quantity.trim().toLowerCase() === "all";
+                    const requestedQuantity =
+                        quantityIsAll
+                            ? sourceCount
+                            : parseRequiredEventQuantity(entry?.quantity, {
+                                eventKey: "alter_item",
+                                entryText: JSON.stringify(entry),
+                            });
+                    if (requestedQuantity > sourceCount) {
+                        throw new Error(
+                            `alter_item requested ${requestedQuantity} of "${thingToAlter.name}", but the stack only contains ${sourceCount}.`,
+                        );
+                    }
+
+                    if (requestedQuantity < sourceCount) {
+                        const sourceThing = thingToAlter;
+                        const originalSourceCount = sourceCount;
+                        const originalSourceMetadata =
+                            sourceThing.metadata && typeof sourceThing.metadata === "object"
+                                ? { ...sourceThing.metadata }
+                                : {};
+                        let splitThing = null;
+                        try {
+                            splitThing = this._splitThingForQuantity(
+                                sourceThing,
+                                requestedQuantity,
+                            );
+                            this._placeSplitThingWithSourceContext(splitThing, {
+                                owner: ownerCandidate,
+                                container: containerCandidate,
+                                location: locationCandidate,
+                            });
+                            partialSplitRollback = () => {
+                                sourceThing.count = originalSourceCount;
+                                sourceThing.metadata = {
+                                    ...originalSourceMetadata,
+                                    count: originalSourceCount,
+                                };
+                                if (this.things instanceof Map) {
+                                    this.things.delete(splitThing.id);
+                                }
+                                if (typeof splitThing.delete === "function") {
+                                    splitThing.delete();
+                                } else {
+                                    splitThing.removeFromWorld?.();
+                                }
+                            };
+                            thingToAlter = splitThing;
+                        } catch (error) {
+                            sourceThing.count = originalSourceCount;
+                            sourceThing.metadata = {
+                                ...originalSourceMetadata,
+                                count: originalSourceCount,
+                            };
+                            if (splitThing) {
+                                if (this.things instanceof Map) {
+                                    this.things.delete(splitThing.id);
+                                }
+                                if (typeof splitThing.delete === "function") {
+                                    try {
+                                        splitThing.delete();
+                                    } catch (_) {
+                                        splitThing.removeFromWorld?.();
                                     }
-                                } catch (_) {
-                                    ownerCandidate = null;
+                                } else {
+                                    splitThing.removeFromWorld?.();
                                 }
                             }
+                            throw error;
+                        }
+                    }
 
-                            if (
-                                !ownerCandidate &&
-                                typeof thingToAlter.whoseInventory === "function"
-                            ) {
-                                try {
-                                    const owners = thingToAlter.whoseInventory() || [];
-                                    if (Array.isArray(owners) && owners.length > 0) {
-                                        ownerCandidate = owners[0] || null;
-                                    }
-                                } catch (_) {
-                                    ownerCandidate = null;
-                                }
-                            }
+                    let outcome = null;
+                    try {
+                        outcome = await alterThingByPrompt({
+                            thing: thingToAlter,
+                            changeDescription,
+                            newName: targetName,
+                            location: locationCandidate || Globals.location,
+                            owner:
+                                ownerCandidate ||
+                                context.player ||
+                                this.currentPlayer ||
+                                null,
+                        });
+                    } catch (error) {
+                        if (typeof partialSplitRollback === "function") {
+                            partialSplitRollback();
+                        }
+                        throw error;
+                    }
 
-                            const containerCandidate =
-                                this._resolveContainingThing(thingToAlter);
+                    if (outcome?.originalName) {
+                        this.alteredItems.add(outcome.originalName);
+                    }
+                    if (outcome?.newName) {
+                        this.alteredItems.add(outcome.newName);
+                    }
 
-                            let locationCandidate = null;
-                            const metadataLocationId = thingToAlter.metadata?.locationId;
-                            if (
-                                metadataLocationId &&
-                                Location &&
-                                typeof Location.get === "function"
-                            ) {
-                                try {
-                                    locationCandidate =
-                                        Location.get(metadataLocationId) || null;
-                                } catch (_) {
-                                    locationCandidate = null;
-                                }
-                            }
-                            if (!locationCandidate) {
-                                locationCandidate = context.location || null;
-                            }
-                            if (
-                                !locationCandidate &&
-                                ownerCandidate?.currentLocation &&
-                                Location &&
-                                typeof Location.get === "function"
-                            ) {
-                                try {
-                                    locationCandidate =
-                                        Location.get(ownerCandidate.currentLocation) || null;
-                                } catch (_) {
-                                    locationCandidate = null;
-                                }
-                            }
+                    entry.originalName =
+                        outcome?.originalName || originalName || null;
+                    entry.newName = outcome?.newName || targetName || null;
+                    entry.changeDescription =
+                        outcome?.changeDescription || changeDescription || null;
+                    entry.description = entry.changeDescription;
+                    entry.from = entry.originalName;
+                    entry.to = entry.newName;
 
-                            const sourceCount = this._getThingCount(thingToAlter);
-                            const quantityIsAll =
-                                typeof entry.quantity === "string" &&
-                                entry.quantity.trim().toLowerCase() === "all";
-                            const requestedQuantity =
-                                quantityIsAll
-                                    ? sourceCount
-                                    : parseRequiredEventQuantity(entry?.quantity, {
-                                        eventKey: "alter_item",
-                                        entryText: JSON.stringify(entry),
-                                    });
-                            if (requestedQuantity > sourceCount) {
-                                throw new Error(
-                                    `alter_item requested ${requestedQuantity} of "${thingToAlter.name}", but the stack only contains ${sourceCount}.`,
-                                );
-                            }
-
-                            if (requestedQuantity < sourceCount) {
-                                const sourceThing = thingToAlter;
-                                const originalSourceCount = sourceCount;
-                                const originalSourceMetadata =
-                                    sourceThing.metadata && typeof sourceThing.metadata === "object"
-                                        ? { ...sourceThing.metadata }
-                                        : {};
-                                let splitThing = null;
-                                try {
-                                    splitThing = this._splitThingForQuantity(
-                                        sourceThing,
-                                        requestedQuantity,
-                                    );
-                                    this._placeSplitThingWithSourceContext(splitThing, {
-                                        owner: ownerCandidate,
-                                        container: containerCandidate,
-                                        location: locationCandidate,
-                                    });
-                                    partialSplitRollback = () => {
-                                        sourceThing.count = originalSourceCount;
-                                        sourceThing.metadata = {
-                                            ...originalSourceMetadata,
-                                            count: originalSourceCount,
-                                        };
-                                        if (this.things instanceof Map) {
-                                            this.things.delete(splitThing.id);
-                                        }
-                                        if (typeof splitThing.delete === "function") {
-                                            splitThing.delete();
-                                        } else {
-                                            splitThing.removeFromWorld?.();
-                                        }
-                                    };
-                                    thingToAlter = splitThing;
-                                } catch (error) {
-                                    sourceThing.count = originalSourceCount;
-                                    sourceThing.metadata = {
-                                        ...originalSourceMetadata,
-                                        count: originalSourceCount,
-                                    };
-                                    if (splitThing) {
-                                        if (this.things instanceof Map) {
-                                            this.things.delete(splitThing.id);
-                                        }
-                                        if (typeof splitThing.delete === "function") {
-                                            try {
-                                                splitThing.delete();
-                                            } catch (_) {
-                                                splitThing.removeFromWorld?.();
-                                            }
-                                        } else {
-                                            splitThing.removeFromWorld?.();
-                                        }
-                                    }
-                                    throw error;
-                                }
-                            }
-
-                            let outcome = null;
-                            try {
-                                outcome = await alterThingByPrompt({
-                                    thing: thingToAlter,
-                                    changeDescription,
-                                    newName: targetName,
-                                    location: locationCandidate || Globals.location,
-                                    owner:
-                                        ownerCandidate ||
-                                        context.player ||
-                                        this.currentPlayer ||
-                                        null,
-                                });
-                            } catch (error) {
-                                if (typeof partialSplitRollback === "function") {
-                                    partialSplitRollback();
-                                }
-                                throw error;
-                            }
-
-                            if (outcome?.originalName) {
-                                this.alteredItems.add(outcome.originalName);
-                            }
-                            if (outcome?.newName) {
-                                this.alteredItems.add(outcome.newName);
-                            }
-
-                            entry.originalName =
-                                outcome?.originalName || originalName || null;
-                            entry.newName = outcome?.newName || targetName || null;
-                            entry.changeDescription =
-                                outcome?.changeDescription || changeDescription || null;
-                            entry.description = entry.changeDescription;
-                            entry.from = entry.originalName;
-                            entry.to = entry.newName;
-
-                            if (outcome?.thing?.thingType === "scenery") {
-                                thingToAlter.drop();
-                            }
-                        })(),
-                    );
-                }
-
-                if (tasks.length) {
-                    await Promise.all(tasks);
-                }
+                    if (outcome?.thing?.thingType === "scenery") {
+                        thingToAlter.drop();
+                    }
+                });
             },
             transfer_item: async function (entries = [], context = {}) {
                 if (!Array.isArray(entries) || !entries.length) {
@@ -9517,7 +9562,7 @@ class Events {
                     thing.metadata = metadata;
                 };
 
-                for (const entry of entries) {
+                await this._applyIndependentEventEntries("transfer_item", entries, async (entry) => {
                     const giver = entry.giver ? findActorByName(entry.giver) : null;
                     const receiver = entry.receiver
                         ? findActorByName(entry.receiver)
@@ -9529,11 +9574,11 @@ class Events {
 
                     if (!giver || typeof giver.removeInventoryItem !== "function") {
                         console.warn("transfer_item: No valid giver found.", entry);
-                        continue;
+                        return;
                     }
                     if (!receiver || typeof receiver.addInventoryItem !== "function") {
                         console.warn("transfer_item: No valid receiver found.", entry);
-                        continue;
+                        return;
                     }
 
                     const originalItemName = entry.item;
@@ -9618,7 +9663,7 @@ class Events {
                     if (entry.item) {
                         this.obtainedItems.add(entry.item);
                     }
-                }
+                });
             },
             harvest_gather: async function (entries = [], context = {}) {
                 if (!Array.isArray(entries) || !entries.length) {
@@ -9743,118 +9788,108 @@ class Events {
                     return null;
                 };
 
-                const tasks = [];
+                await this._applyIndependentEventEntries("pick_up_item", entries, async (entry) => {
+                    if (!entry) {
+                        console.warn("pick_up_item event entry is invalid:", entry);
+                        console.trace();
+                        return;
+                    }
 
-                for (const entry of entries) {
-                    tasks.push(
-                        (async () => {
-                            if (!entry) {
-                                console.warn("pick_up_item event entry is invalid:", entry);
-                                console.trace();
-                                return;
-                            }
+                    const itemName =
+                        typeof entry.item === "string" ? entry.item.trim() : "";
+                    if (!itemName) {
+                        console.warn(
+                            "pick_up_item event entry has no valid item name:",
+                            entry,
+                        );
+                        console.trace();
+                        return;
+                    }
+                    const quantity = parseRequiredEventQuantity(entry?.quantity, {
+                        eventKey: "pick_up_item",
+                        entryText: JSON.stringify(entry),
+                    });
 
-                            const itemName =
-                                typeof entry.item === "string" ? entry.item.trim() : "";
-                            if (!itemName) {
-                                console.warn(
-                                    "pick_up_item event entry has no valid item name:",
-                                    entry,
-                                );
-                                console.trace();
-                                return;
-                            }
-                            const quantity = parseRequiredEventQuantity(entry?.quantity, {
-                                eventKey: "pick_up_item",
-                                entryText: JSON.stringify(entry),
-                            });
+                    if (this.obtainedItems.has(itemName)) {
+                        console.warn(
+                            "pick_up_item event entry has already been obtained:",
+                            entry,
+                        );
+                        console.trace();
+                        return;
+                    }
 
-                            if (this.obtainedItems.has(itemName)) {
-                                console.warn(
-                                    "pick_up_item event entry has already been obtained:",
-                                    entry,
-                                );
-                                console.trace();
-                                return;
-                            }
+                    const actor =
+                        typeof findActorByName === "function"
+                            ? findActorByName(entry.name)
+                            : null;
+                    if (!actor || typeof actor.addInventoryItem !== "function") {
+                        console.warn(
+                            "pick_up_item event could not find valid actor for entry:",
+                            entry,
+                        );
+                        console.trace();
+                        return;
+                    }
 
-                            const actor =
-                                typeof findActorByName === "function"
-                                    ? findActorByName(entry.name)
-                                    : null;
-                            if (!actor || typeof actor.addInventoryItem !== "function") {
-                                console.warn(
-                                    "pick_up_item event could not find valid actor for entry:",
-                                    entry,
-                                );
-                                console.trace();
-                                return;
-                            }
+                    let availableThings = this._findThingsByExactName(itemName, {
+                        location: context.location || null,
+                        unownedOnly: true,
+                        preferredThing: resolveAvailableThing(itemName),
+                    });
 
-                            let availableThings = this._findThingsByExactName(itemName, {
-                                location: context.location || null,
-                                unownedOnly: true,
-                                preferredThing: resolveAvailableThing(itemName),
-                            });
-
-                            const availableQuantity = availableThings.reduce(
-                                (total, candidate) => total + this._getThingCount(candidate),
-                                0,
-                            );
-                            if (availableQuantity < quantity) {
-                                const existingAvailableThings = availableThings.slice();
-                                const generatedItems = await this._generateItemsIntoWorld(
-                                    [itemName],
-                                    context.location,
-                                );
-                                const generatedThing = Array.isArray(generatedItems)
-                                    ? generatedItems.find((candidate) => candidate?.name === itemName) || generatedItems[0] || null
-                                    : null;
-                                if (!generatedThing) {
-                                    throw new Error(
-                                        `Unable to generate item "${itemName}" for pick_up_item.`,
-                                    );
-                                }
-                                const finalItemName = this._getGeneratedThingFinalName(
-                                    generatedThing,
-                                    {
-                                        requestedName: itemName,
-                                        eventKey: "pick_up_item",
-                                    },
-                                );
-                                if (finalItemName !== itemName) {
-                                    entry.originalItem = entry.item;
-                                    entry.item = finalItemName;
-                                }
-                                const shortfall = quantity - availableQuantity;
-                                generatedThing.count = shortfall;
-                                const generatedAvailableThings = this._findThingsByExactName(finalItemName, {
-                                    location: context.location || null,
-                                    unownedOnly: true,
-                                    preferredThing: generatedThing,
-                                });
-                                availableThings = finalItemName === itemName
-                                    ? generatedAvailableThings
-                                    : [...existingAvailableThings, ...generatedAvailableThings];
-                            }
-
-                            const selectedThings = this._extractThingQuantityFromCandidates(
-                                availableThings,
-                                quantity,
-                                { itemName: entry.item, eventKey: "pick_up_item" },
-                            );
-                            selectedThings.forEach((thing) => {
-                                actor.addInventoryItem(thing);
-                                thing.metadata = { ...(thing.metadata || {}), ownerId: actor.id };
-                            });
-                            this.obtainedItems.add(entry.item);
-                        })(),
+                    const availableQuantity = availableThings.reduce(
+                        (total, candidate) => total + this._getThingCount(candidate),
+                        0,
                     );
-                }
+                    if (availableQuantity < quantity) {
+                        const existingAvailableThings = availableThings.slice();
+                        const generatedItems = await this._generateItemsIntoWorld(
+                            [itemName],
+                            context.location,
+                        );
+                        const generatedThing = Array.isArray(generatedItems)
+                            ? generatedItems.find((candidate) => candidate?.name === itemName) || generatedItems[0] || null
+                            : null;
+                        if (!generatedThing) {
+                            throw new Error(
+                                `Unable to generate item "${itemName}" for pick_up_item.`,
+                            );
+                        }
+                        const finalItemName = this._getGeneratedThingFinalName(
+                            generatedThing,
+                            {
+                                requestedName: itemName,
+                                eventKey: "pick_up_item",
+                            },
+                        );
+                        if (finalItemName !== itemName) {
+                            entry.originalItem = entry.item;
+                            entry.item = finalItemName;
+                        }
+                        const shortfall = quantity - availableQuantity;
+                        generatedThing.count = shortfall;
+                        const generatedAvailableThings = this._findThingsByExactName(finalItemName, {
+                            location: context.location || null,
+                            unownedOnly: true,
+                            preferredThing: generatedThing,
+                        });
+                        availableThings = finalItemName === itemName
+                            ? generatedAvailableThings
+                            : [...existingAvailableThings, ...generatedAvailableThings];
+                    }
 
-                if (tasks.length) {
-                    await Promise.all(tasks);
-                }
+                    const selectedThings = this._extractThingQuantityFromCandidates(
+                        availableThings,
+                        quantity,
+                        { itemName: entry.item, eventKey: "pick_up_item" },
+                    );
+                    selectedThings.forEach((thing) => {
+                        actor.addInventoryItem(thing);
+                        thing.metadata = { ...(thing.metadata || {}), ownerId: actor.id };
+                    });
+                    this.obtainedItems.add(entry.item);
+                });
             },
             put_item_in_container: function (entries = [], context = {}) {
                 if (!Array.isArray(entries) || !entries.length) {
@@ -9882,58 +9917,64 @@ class Events {
                     return actor;
                 };
 
+                const failures = [];
                 for (const entry of entries) {
-                    if (!entry) {
-                        continue;
-                    }
-                    const itemName = normalizeString(entry.item);
-                    const containerName = normalizeString(entry.containerName || entry.container);
-                    if (!itemName || !containerName) {
-                        continue;
-                    }
-                    const quantity = parseRequiredEventQuantity(entry?.quantity, {
-                        eventKey: "put_item_in_container",
-                        entryText: JSON.stringify(entry),
-                    });
-                    const actor = resolveActor(entry.character);
-                    const container = this._resolveContainerByExactName(containerName, {
-                        actor,
-                        location: context.location || null,
-                        eventKey: "put_item_in_container",
-                    });
-                    if (typeof container.addInventoryItem !== "function") {
-                        throw new Error(
-                            `put_item_in_container resolved "${containerName}" but it cannot hold inventory.`,
-                        );
-                    }
-
-                    let candidates;
-                    if (actor) {
-                        candidates = this._findThingsByExactName(itemName, { owner: actor });
-                    } else {
-                        if (!context.location) {
+                    try {
+                        if (!entry) {
+                            continue;
+                        }
+                        const itemName = normalizeString(entry.item);
+                        const containerName = normalizeString(entry.containerName || entry.container);
+                        if (!itemName || !containerName) {
+                            continue;
+                        }
+                        const quantity = parseRequiredEventQuantity(entry?.quantity, {
+                            eventKey: "put_item_in_container",
+                            entryText: JSON.stringify(entry),
+                        });
+                        const actor = resolveActor(entry.character);
+                        const container = this._resolveContainerByExactName(containerName, {
+                            actor,
+                            location: context.location || null,
+                            eventKey: "put_item_in_container",
+                        });
+                        if (typeof container.addInventoryItem !== "function") {
                             throw new Error(
-                                `put_item_in_container requires a location when no actor is specified for "${itemName}".`,
+                                `put_item_in_container resolved "${containerName}" but it cannot hold inventory.`,
                             );
                         }
-                        candidates = this._findThingsByExactName(itemName, {
-                            location: context.location,
-                            unownedOnly: true,
+
+                        let candidates;
+                        if (actor) {
+                            candidates = this._findThingsByExactName(itemName, { owner: actor });
+                        } else {
+                            if (!context.location) {
+                                throw new Error(
+                                    `put_item_in_container requires a location when no actor is specified for "${itemName}".`,
+                                );
+                            }
+                            candidates = this._findThingsByExactName(itemName, {
+                                location: context.location,
+                                unownedOnly: true,
+                            });
+                        }
+
+                        const selectedThings = this._extractThingQuantityFromCandidates(
+                            candidates,
+                            quantity,
+                            { itemName, eventKey: "put_item_in_container" },
+                        );
+                        selectedThings.forEach((thing) => {
+                            container.addInventoryItem(thing);
                         });
+
+                        entry.character = actor?.name || null;
+                        entry.containerName = container.name || containerName;
+                    } catch (error) {
+                        failures.push({ entry, error });
                     }
-
-                    const selectedThings = this._extractThingQuantityFromCandidates(
-                        candidates,
-                        quantity,
-                        { itemName, eventKey: "put_item_in_container" },
-                    );
-                    selectedThings.forEach((thing) => {
-                        container.addInventoryItem(thing);
-                    });
-
-                    entry.character = actor?.name || null;
-                    entry.containerName = container.name || containerName;
                 }
+                this._warnEventEntryFailures("put_item_in_container", failures);
             },
             remove_item_from_container: async function (entries = [], context = {}) {
                 if (!Array.isArray(entries) || !entries.length) {
@@ -9961,14 +10002,14 @@ class Events {
                     return actor;
                 };
 
-                for (const entry of entries) {
+                await this._applyIndependentEventEntries("remove_item_from_container", entries, async (entry) => {
                     if (!entry) {
-                        continue;
+                        return;
                     }
                     let itemName = normalizeString(entry.item);
                     const containerName = normalizeString(entry.containerName || entry.container);
                     if (!itemName || !containerName) {
-                        continue;
+                        return;
                     }
                     const quantity = parseRequiredEventQuantity(entry?.quantity, {
                         eventKey: "remove_item_from_container",
@@ -10055,7 +10096,7 @@ class Events {
 
                     entry.character = actor?.name || null;
                     entry.containerName = container.name || containerName;
-                }
+                });
             },
             drop_item: function (entries = [], context = {}) {
                 const location = context.location;
@@ -10066,32 +10107,38 @@ class Events {
                     throw new Error("drop_item events require a valid location.");
                 }
                 const { findActorByName } = this._deps;
+                const failures = [];
                 for (const entry of entries) {
-                    const quantity = parseRequiredEventQuantity(entry?.quantity, {
-                        eventKey: "drop_item",
-                        entryText: JSON.stringify(entry),
-                    });
-                    const actor =
-                        typeof findActorByName === "function"
-                            ? findActorByName(entry.name)
-                            : null;
-                    if (!actor || typeof actor.hasInventoryItem !== "function") {
-                        continue;
+                    try {
+                        const quantity = parseRequiredEventQuantity(entry?.quantity, {
+                            eventKey: "drop_item",
+                            entryText: JSON.stringify(entry),
+                        });
+                        const actor =
+                            typeof findActorByName === "function"
+                                ? findActorByName(entry.name)
+                                : null;
+                        if (!actor || typeof actor.hasInventoryItem !== "function") {
+                            continue;
+                        }
+                        const candidates = this._findThingsByExactName(entry.item, {
+                            owner: actor,
+                        });
+                        const selectedThings = this._extractThingQuantityFromCandidates(
+                            candidates,
+                            quantity,
+                            { itemName: entry.item, eventKey: "drop_item" },
+                        );
+                        selectedThings.forEach((thing) => {
+                            location.addThingId(thing.id);
+                        });
+                        entry.character = actor.name;
+                        this.droppedItems.add(entry.item);
+                    } catch (error) {
+                        failures.push({ entry, error });
                     }
-                    const candidates = this._findThingsByExactName(entry.item, {
-                        owner: actor,
-                    });
-                    const selectedThings = this._extractThingQuantityFromCandidates(
-                        candidates,
-                        quantity,
-                        { itemName: entry.item, eventKey: "drop_item" },
-                    );
-                    selectedThings.forEach((thing) => {
-                        location.addThingId(thing.id);
-                    });
-                    entry.character = actor.name;
-                    this.droppedItems.add(entry.item);
                 }
+                this._warnEventEntryFailures("drop_item", failures);
             },
             item_appear: async function (items = [], context = {}) {
                 if (!Array.isArray(items) || !items.length) {
@@ -10106,31 +10153,38 @@ class Events {
                     context.location,
                     "item_appear",
                 );
-                const filteredItems = items.filter((entry) => {
-                    const name = typeof entry?.name === "string" ? entry.name.trim() : "";
-                    if (!name || this._isItemAlreadyTracked(name)) {
-                        return false;
-                    }
-                    if (sceneItemNames.has(name)) {
-                        const quantity = parseRequiredEventQuantity(entry?.quantity, {
-                            eventKey: "item_appear",
-                            entryText: JSON.stringify(entry),
-                        });
-                        const existingThing = this._findSceneThingByExactName(
-                            context.location,
-                            name,
-                            "item_appear",
-                        );
-                        if (existingThing) {
-                            this._addQuantityToSceneThingStack(existingThing, quantity);
-                            this._trackGeneratedItemNames(name, name);
+                const failures = [];
+                const filteredItems = [];
+                for (const entry of items) {
+                    try {
+                        const name = typeof entry?.name === "string" ? entry.name.trim() : "";
+                        if (!name || this._isItemAlreadyTracked(name)) {
+                            continue;
                         }
-                        return false;
+                        if (sceneItemNames.has(name)) {
+                            const quantity = parseRequiredEventQuantity(entry?.quantity, {
+                                eventKey: "item_appear",
+                                entryText: JSON.stringify(entry),
+                            });
+                            const existingThing = this._findSceneThingByExactName(
+                                context.location,
+                                name,
+                                "item_appear",
+                            );
+                            if (existingThing) {
+                                this._addQuantityToSceneThingStack(existingThing, quantity);
+                                this._trackGeneratedItemNames(name, name);
+                            }
+                            continue;
+                        }
+                        filteredItems.push(entry);
+                    } catch (error) {
+                        failures.push({ entry, error });
                     }
-                    return true;
-                });
+                }
 
                 if (!filteredItems.length) {
+                    this._warnEventEntryFailures("item_appear", failures);
                     return;
                 }
 
@@ -10142,37 +10196,42 @@ class Events {
                 }
 
                 for (const entry of filteredItems) {
-                    const originalName = entry.name;
-                    const generatedItems = await generateItemsByNames({
-                        itemNames: [originalName],
-                        location: context.location || null,
-                        seeds: [{
-                            name: originalName,
-                            description: entry.description || undefined,
-                        }],
-                    });
-                    const generatedThing = Array.isArray(generatedItems)
-                        ? generatedItems.find((candidate) => candidate?.name === originalName) || generatedItems[0] || null
-                        : null;
-                    if (!generatedThing) {
-                        throw new Error(
-                            `item_appear failed to generate "${originalName}".`,
+                    try {
+                        const originalName = entry.name;
+                        const generatedItems = await generateItemsByNames({
+                            itemNames: [originalName],
+                            location: context.location || null,
+                            seeds: [{
+                                name: originalName,
+                                description: entry.description || undefined,
+                            }],
+                        });
+                        const generatedThing = Array.isArray(generatedItems)
+                            ? generatedItems.find((candidate) => candidate?.name === originalName) || generatedItems[0] || null
+                            : null;
+                        if (!generatedThing) {
+                            throw new Error(
+                                `item_appear failed to generate "${originalName}".`,
+                            );
+                        }
+                        const finalName = this._getGeneratedThingFinalName(
+                            generatedThing,
+                            {
+                                requestedName: originalName,
+                                eventKey: "item_appear",
+                            },
                         );
+                        if (finalName !== originalName) {
+                            entry.originalName = originalName;
+                            entry.name = finalName;
+                        }
+                        generatedThing.count = entry.quantity;
+                        this._trackGeneratedItemNames(originalName, finalName);
+                    } catch (error) {
+                        failures.push({ entry, error });
                     }
-                    const finalName = this._getGeneratedThingFinalName(
-                        generatedThing,
-                        {
-                            requestedName: originalName,
-                            eventKey: "item_appear",
-                        },
-                    );
-                    if (finalName !== originalName) {
-                        entry.originalName = originalName;
-                        entry.name = finalName;
-                    }
-                    generatedThing.count = entry.quantity;
-                    this._trackGeneratedItemNames(originalName, finalName);
                 }
+                this._warnEventEntryFailures("item_appear", failures);
             },
             scenery_appear: async function (items = [], context = {}) {
                 if (!Array.isArray(items) || !items.length) {
@@ -11822,79 +11881,85 @@ class Events {
                 }
 
                 const appliedEntries = [];
+                const failures = [];
                 for (const entry of entries) {
-                    const npcName = normalizeString(entry?.npcName);
-                    const beforeFeeling = normalizeString(entry?.before);
-                    const afterFeeling = normalizeString(entry?.after);
-                    if (!npcName || !beforeFeeling || !afterFeeling) {
-                        continue;
-                    }
+                    try {
+                        const npcName = normalizeString(entry?.npcName);
+                        const beforeFeeling = normalizeString(entry?.before);
+                        const afterFeeling = normalizeString(entry?.after);
+                        if (!npcName || !beforeFeeling || !afterFeeling) {
+                            continue;
+                        }
 
-                    const direction = resolveDispositionDirection(
-                        beforeFeeling,
-                        afterFeeling,
-                    );
-                    if (direction === 0) {
-                        continue;
-                    }
-
-                    const npc = findActorByName(npcName);
-                    if (!npc || npc === (context.player || this.currentPlayer)) {
-                        continue;
-                    }
-                    if (
-                        typeof npc.getDispositionTowardsCurrentPlayer !== "function" ||
-                        typeof npc.setDispositionTowardsCurrentPlayer !== "function"
-                    ) {
-                        throw new Error(
-                            `disposition_check handler requires disposition methods for ${npc.name || npcName}.`,
+                        const direction = resolveDispositionDirection(
+                            beforeFeeling,
+                            afterFeeling,
                         );
-                    }
+                        if (direction === 0) {
+                            continue;
+                        }
 
-                    const previousRaw = npc.getDispositionTowardsCurrentPlayer(
-                        defaultType.key,
-                    );
-                    const previousValue = Number.isFinite(Number(previousRaw))
-                        ? Number(previousRaw)
-                        : 0;
-                    let newValue = previousValue + direction * typicalStep;
-                    if (Number.isFinite(minRange)) {
-                        newValue = Math.max(minRange, newValue);
-                    }
-                    if (Number.isFinite(maxRange)) {
-                        newValue = Math.min(maxRange, newValue);
-                    }
+                        const npc = findActorByName(npcName);
+                        if (!npc || npc === (context.player || this.currentPlayer)) {
+                            continue;
+                        }
+                        if (
+                            typeof npc.getDispositionTowardsCurrentPlayer !== "function" ||
+                            typeof npc.setDispositionTowardsCurrentPlayer !== "function"
+                        ) {
+                            throw new Error(
+                                `disposition_check handler requires disposition methods for ${npc.name || npcName}.`,
+                            );
+                        }
 
-                    npc.setDispositionTowardsCurrentPlayer(defaultType.key, newValue);
+                        const previousRaw = npc.getDispositionTowardsCurrentPlayer(
+                            defaultType.key,
+                        );
+                        const previousValue = Number.isFinite(Number(previousRaw))
+                            ? Number(previousRaw)
+                            : 0;
+                        let newValue = previousValue + direction * typicalStep;
+                        if (Number.isFinite(minRange)) {
+                            newValue = Math.max(minRange, newValue);
+                        }
+                        if (Number.isFinite(maxRange)) {
+                            newValue = Math.min(maxRange, newValue);
+                        }
 
-                    const delta = newValue - previousValue;
-                    if (!delta) {
-                        continue;
+                        npc.setDispositionTowardsCurrentPlayer(defaultType.key, newValue);
+
+                        const delta = newValue - previousValue;
+                        if (!delta) {
+                            continue;
+                        }
+
+                        const applied = {
+                            npcId: npc.id || null,
+                            npcName: npc.name || npcName,
+                            typeKey: defaultType.key,
+                            typeLabel: defaultType.label || defaultType.key,
+                            before: beforeFeeling,
+                            after: afterFeeling,
+                            reason: entry?.reason ? String(entry.reason).trim() : null,
+                            delta,
+                            previousValue,
+                            newValue,
+                        };
+                        context.dispositionChanges.push(applied);
+                        appliedEntries.push({
+                            ...entry,
+                            npcName: applied.npcName,
+                            delta,
+                            previousValue,
+                            newValue,
+                            typeKey: applied.typeKey,
+                            typeLabel: applied.typeLabel,
+                        });
+                    } catch (error) {
+                        failures.push({ entry, error });
                     }
-
-                    const applied = {
-                        npcId: npc.id || null,
-                        npcName: npc.name || npcName,
-                        typeKey: defaultType.key,
-                        typeLabel: defaultType.label || defaultType.key,
-                        before: beforeFeeling,
-                        after: afterFeeling,
-                        reason: entry?.reason ? String(entry.reason).trim() : null,
-                        delta,
-                        previousValue,
-                        newValue,
-                    };
-                    context.dispositionChanges.push(applied);
-                    appliedEntries.push({
-                        ...entry,
-                        npcName: applied.npcName,
-                        delta,
-                        previousValue,
-                        newValue,
-                        typeKey: applied.typeKey,
-                        typeLabel: applied.typeLabel,
-                    });
                 }
+                this._warnEventEntryFailures("disposition_check", failures);
 
                 entries.length = 0;
                 if (appliedEntries.length) {
@@ -12028,41 +12093,47 @@ class Events {
                 }
 
                 const filteredEntries = [];
+                const failures = [];
 
                 for (const entry of entries) {
-                    if (!entry?.name) {
-                        continue;
-                    }
-
-                    const npc = findActorByName(entry.name);
-                    if (!npc || npc.isHostile !== true) {
-                        continue;
-                    }
-
-                    if (
-                        typeof npc.getDispositionTowardsCurrentPlayer !== "function" ||
-                        typeof npc.setDispositionTowardsCurrentPlayer !== "function"
-                    ) {
-                        throw new Error(
-                            `hostile_to_friendly handler requires disposition methods for ${npc.name || entry.name}.`,
-                        );
-                    }
-
-                    for (const typeDef of dispositionTypes) {
-                        const key = typeDef.key || typeDef.label;
-                        if (!key) {
+                    try {
+                        if (!entry?.name) {
                             continue;
                         }
-                        const currentValue =
-                            npc.getDispositionTowardsCurrentPlayer(key) ?? 0;
-                        const nextValue = Math.max(0, Number(currentValue) || 0);
-                        npc.setDispositionTowardsCurrentPlayer(key, nextValue);
+
+                        const npc = findActorByName(entry.name);
+                        if (!npc || npc.isHostile !== true) {
+                            continue;
+                        }
+
+                        if (
+                            typeof npc.getDispositionTowardsCurrentPlayer !== "function" ||
+                            typeof npc.setDispositionTowardsCurrentPlayer !== "function"
+                        ) {
+                            throw new Error(
+                                `hostile_to_friendly handler requires disposition methods for ${npc.name || entry.name}.`,
+                            );
+                        }
+
+                        for (const typeDef of dispositionTypes) {
+                            const key = typeDef.key || typeDef.label;
+                            if (!key) {
+                                continue;
+                            }
+                            const currentValue =
+                                npc.getDispositionTowardsCurrentPlayer(key) ?? 0;
+                            const nextValue = Math.max(0, Number(currentValue) || 0);
+                            npc.setDispositionTowardsCurrentPlayer(key, nextValue);
+                        }
+
+                        npc.isHostile = false;
+
+                        filteredEntries.push(entry);
+                    } catch (error) {
+                        failures.push({ entry, error });
                     }
-
-                    npc.isHostile = false;
-
-                    filteredEntries.push(entry);
                 }
+                this._warnEventEntryFailures("hostile_to_friendly", failures);
 
                 entries.length = 0;
                 if (filteredEntries.length) {
